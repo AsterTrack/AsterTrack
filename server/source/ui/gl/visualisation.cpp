@@ -310,6 +310,19 @@ void visualiseCamera(Eigen::Isometry3f camera, Color color)
 	cameraMesh->draw();
 }
 
+void visualiseOrigin(Eigen::Vector3f pos, float scale, float lineWidth)
+{
+	flatVertColorShader->use();
+	glUniformMatrix4fv(flatVertColorShader->uProjAdr, 1, GL_FALSE, vpMat.data());
+	Eigen::Isometry3f model = Eigen::Isometry3f::Identity();
+	model.translation() = pos;
+	model.linear() *= scale;
+	glUniformMatrix4fv(flatVertColorShader->uModelAdr, 1, GL_FALSE, model.matrix().data());
+
+	glLineWidth(lineWidth);
+	coordinateOriginMesh->draw();
+}
+
 void visualisePose(const Eigen::Isometry3f &pose, Color color, float scale, float lineWidth)
 {
 	flatUniformColorShader->use();

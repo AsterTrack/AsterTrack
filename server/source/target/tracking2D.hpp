@@ -129,6 +129,15 @@ bool matchTargetPointsFast(
 	const TargetMatchingParametersFast params, float distFactor, Eigen::Vector2f offset = Eigen::Vector2f::Zero());
 
 /**
+ * Matches a relevant set of projected target points to a relevant set of point observations
+ */
+void matchTargetPointsSlow(
+	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
+	const std::vector<Eigen::Vector2f> &projected2D, const std::vector<int> &relevantProjected2D,
+	std::vector<std::pair<int, int>> &matches, TargetMatchingData &matchData,
+	const TargetMatchingParametersSlow params, float distFactor, Eigen::Vector2f offset = Eigen::Vector2f::Zero());
+
+/**
  * Optimises the pose to better fit the matched observations
  */
 template<bool OUTLIER = true>
@@ -149,7 +158,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
 
 /**
  * Redetect the target in the observed 2D points using a predicted pose
- * First re-aquires the previously visible markers and finds a better pose with them,
+ * First re-acquires the previously visible markers and finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit all matched observations
  */
 TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pose, Eigen::Vector3f stdDev,

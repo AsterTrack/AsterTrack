@@ -59,7 +59,9 @@ uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_
 // Get real-time of full timestamp
 TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 {
-	TimePoint_t synced = time.lastTime + std::chrono::microseconds((long)((double)(timestamp-time.lastTimestamp) * (1.0+time.drift) + time.driftAccum));
+	long passed = ((long long)timestamp) - time.lastTimestamp;
+	passed = (long)((double)passed * (1.0+time.drift) + time.driftAccum);
+	TimePoint_t synced = time.lastTime + std::chrono::microseconds(passed);
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)
 	{

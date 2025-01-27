@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
 #if defined(LOG_H) && defined(LOG_MAX_LEVEL) && (!defined(FIXED_LOG_LEVEL) || FIXED_LOG_LEVEL != LOG_MAX_LEVEL)
 #error Conflicting LOG_MAX_LEVEL overrides, make sure LOG_MAX_LEVEL is defined before the first log.hpp inclusion in the file!
 #endif

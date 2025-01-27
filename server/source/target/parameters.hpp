@@ -99,7 +99,7 @@ struct TargetDetectionParameters
 	// Initial marker matching (before trackTarget2D)
 	float expandMarkerFoV = 0.0f;
 	float normaliseDistance = 5.0f;
-	TargetMatchingParametersFast match = {};
+	TargetMatchingParametersSlow match = {};
 	TargetOptimisationParameters opt = {};
 	// Quality
 	struct {

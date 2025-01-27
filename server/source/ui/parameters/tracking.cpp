@@ -137,8 +137,11 @@ void InterfaceState::UpdateTrackingSettings(InterfaceWindow &window)
 		BeginSection("2D Point Matching");
 		modified |= ScalarProperty<float>("Expand Marker FoV", "", &params.expandMarkerFoV, &standard.expandMarkerFoV, 0, 2.0f, 0.02f);
 		modified |= ScalarProperty<float>("Normalise for Distance", "m", &params.normaliseDistance, &standard.normaliseDistance, 0, 10, 0.5f);
-		modified |= ScalarProperty<float>("Match Radius", "px", &params.match.matchRadius, &standard.match.matchRadius, 0, 100, 1.0f, PixelFactor);
-		modified |= matchAlgParamUI(params.match.match, standard.match.match);
+		if (ImGui::TreeNode("Algorithm"))
+		{
+			modified |= matchParamUI(params.match, standard.match);
+			ImGui::TreePop();
+		}
 		EndSection();
 
 		BeginSection("Quality");

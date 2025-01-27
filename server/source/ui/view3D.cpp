@@ -224,17 +224,15 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			if (visTarget.hasPose)
 			{
 				Eigen::Projective3f proj = view3D.getProj(viewWin->InnerRect.GetHeight() / viewWin->InnerRect.GetWidth()) * view3D.viewTransform.inverse();
-				auto projectPointUI = [&proj, &posToUI](Eigen::Vector3f pos3D)
-				{
-					Eigen::Vector2f pos2D = (proj * pos3D.homogeneous()).hnormalized().head<2>();
-					// GL z and y are inverted, so just invert y
-					return posToUI(Eigen::Vector2f(pos2D.x(), -pos2D.y()));
-				};
 				float radiusPx = 8.0f;
 				for (auto &cam : pipeline.cameras)
 				{
 					Eigen::Vector3f dir = (cam->calib.transform.translation().cast<float>() - frame.pose.translation()).normalized();
-					ImVec2 posUI = projectPointUI(frame.pose.translation() + dir*0.2f);
+					Eigen::Vector3f pos3D = frame.pose.translation() + dir*0.2f;
+					Eigen::Vector3f pos2D = (proj * pos3D.homogeneous()).hnormalized();
+					if (pos2D.z() < 0) continue;
+					// GL z and y are inverted, so just invert y
+					ImVec2 posUI = posToUI(Eigen::Vector2f(pos2D.x(), -pos2D.y()));
 					//viewWin->DrawList->AddCircleFilled(posUI + viewWin->Pos, radiusPx, IM_COL32(100, 100, 150, 255));
 					ImGui::SetCursorPos(posUI - ImVec2(radiusPx, radiusPx));
 					ImGui::SetNextItemAllowOverlap();
@@ -378,6 +376,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 	visualiseSkybox(time);
 	visualiseFloor();
+	if (visState.room.showOrigin)
+		visualiseOrigin(visState.room.origin, 1, 5);
 
 	for (auto &camera : pipeline.cameras)
 		visualiseCamera(camera->calib.transform.cast<float>());
@@ -444,7 +444,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		visualisePointsSpheresDepthSorted(markerPoints);
 
 		// Draw transparent cones sticking out of spheres
-		if (visFrame.target.hasPose && visState.targetCalib.markerViewCones)
+		if (visFrame.target.hasPose && visState.targetCalib.markerViewCones && visFrame.target.targetTemplate)
 		{ // Show calculated directionality and field of view of each marker
 			visualiseVisTargetMarkerFoV(pipeline.getCalibs(), visState, visFrame.target);
 		}
@@ -474,14 +474,14 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 				{
 					points[m].pos = trackedTarget.pose * marker.pos;
 					points[m].size = marker.size;
-					points[m].color = Color{ 0.5f, 0.1f, 0.1f, 0.6f };
+					points[m].color = Color{ 0.5f, 0.1f, 0.1f, 0.8f };
 				}
 				else // Already setup by one camera, lerp green to 1
 					points[m].color.g = points[m].color.g*0.7f + 0.3f;
 			}
 		}
 		visualisePointsSpheres(points);
-		visualisePose(trackedTarget.pose, { 0.2f, 0.4f, 0.6f, 0.8f }, 0.1f, 2.0f);
+		visualisePose(trackedTarget.pose, { 0.8f, 0.4f, 0.4f, 0.8f }, 0.2f, 4.0f);
 
 		if (visState.tracking.showPredictedTarget)
 		{

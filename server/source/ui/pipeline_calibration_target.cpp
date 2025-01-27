@@ -41,7 +41,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		"These TargetViews will then be reconstructed to get an estimate of the 3D structure of the markers.");
 
 	if (sectionTargetViews)
-	{ // Target Observations to aquire Target Views
+	{ // Target Observations to acquire Target Views
 		ImGui::Checkbox("Record Target Observations", &pipeline.recordSequences);
 		ImGui::SetItemTooltip("Record visible markers into observations as continous sequences.");
 
@@ -215,7 +215,11 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto viewIt = std::find_if(views_lock->begin(), views_lock->end(),
 					[&](const auto &v){ return v == viewPtr; });
 				if (viewIt != views_lock->end())
+				{
+					if (viewIt->get()->control.running())
+						viewIt->get()->control.stop_source.request_stop();
 					views_lock->erase(viewIt);
+				}
 				targetViewsSorted.erase(targetViewsSorted.begin()+i);
 				i--;
 			}
@@ -268,7 +272,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		ImGui::BeginDisabled(view.control.stopping());
 		if (view.control.running())
 		{
-			if (ImGui::Button(view.control.stopping()? "Aborting...##Abort" : "Abort##Abort", ButtonSize))
+			if (ImGui::Button(view.control.stopping()? "Stopping..." : "Stop", ButtonSize))
 			{
 				view.control.stop_source.request_stop();
 			}

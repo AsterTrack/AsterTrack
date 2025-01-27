@@ -108,7 +108,7 @@ enum InterfaceWindows
 
 struct VisualisationState
 {
-	VisFrameLock lockVisFrame(const PipelineState &pipeline) const;
+	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool forceRealtime = false) const;
 	Eigen::Vector3f getPreferredTarget(const VisFrameLock &visFrame) const;
 
 	bool showMarkerTrails = false;
@@ -180,7 +180,7 @@ struct VisualisationState
 		std::shared_ptr<TargetAssemblyStage> stage = nullptr;
 		int stageSubIndex = -1, stageSubSubIndex = -1;
 		// Selection of target from shared database (continuous calibration)
-		int contCalibTargetID = -1;
+		int contCalibTargetID = 0;
 		TargetTemplate3D contCalibTargetTemplate;
 		// Frame within TargetCalibVisState
 		int frameIdx = 0, frameNum = 0;
@@ -209,6 +209,14 @@ struct VisualisationState
 		int markerCount = 0; // To check if observations were cleared
 		bool dirty = false;
 	} incObsUpdate;
+
+	// Visualisation of reference points in virtual space
+	struct
+	{
+		// TODO: Add other cameras, floorplane once calibrated, etc.
+		bool showOrigin = false;
+		Eigen::Vector3f origin = Eigen::Vector3f::Zero();
+	} room;
 };
 
 struct View3D
@@ -235,6 +243,7 @@ struct View3D
 		const float a = -(zFar+zNear)/(zFar-zNear), b = (2*zNear*zFar)/(zFar-zNear);
 		float sY = 1.0f / fInvFromFoV(fov);
 		float sX = sY*aspect;
+		// Projection - negative z because of blender-style camera coordinate system
 		proj.matrix() <<
 			sX, 0, 0, 0,
 			0, sY, 0, 0,

@@ -351,7 +351,7 @@ public:
  * - e.g. beginIndex() > 0 - iterators have index() methods to get the index
  * - the Views pos() / operator[] methods use that shifted index, so pos(0) will NOT necessarily yield begin()
  * 
- * Internally uses a mutex but takes care to not hold it for very long. The following operations aquire the mutex:
+ * Internally uses a mutex but takes care to not hold it for very long. The following operations acquire the mutex:
  * - push_back/insert: short state-copy and block-check, as well as allocation for any new blocks required while locked
  * - getView: very short O(1) state-copy and increasing of the reference counter of the current block range
  * - cull_front/cull_all/cull_clear: very short O(1) access to switch state pointers and swap the current reference counter

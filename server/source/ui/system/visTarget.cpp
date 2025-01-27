@@ -50,7 +50,7 @@ VisTargetLock VisualisationState::lockVisTarget() const
 		state.hasPose = true;
 		state.templateGT = targetCalib.stage->base.simulation.targetGT;
 	}
-	else if (targetCalib.contCalibTargetID >= 0)
+	else if (targetCalib.contCalibTargetID != 0)
 	{
 		assert(targetCalib.contCalibTargetTemplate.id == targetCalib.contCalibTargetID);
 		auto &pipeline = GetState().pipeline;
@@ -68,6 +68,7 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	else // No target to visualise
 		return state;
 	assert(state);
+	assert(!state.target->frames.empty());
 	state.frameIdx = targetCalib.frameIdx % state.target->frames.size();
 	return state;
 }
@@ -90,7 +91,7 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	targetCalib.stage = nullptr;
 	targetCalib.stageSubIndex = -1;
 	targetCalib.stageSubSubIndex = -1;
-	targetCalib.contCalibTargetID = -1;
+	targetCalib.contCalibTargetID = 0;
 	targetCalib.contCalibTargetTemplate = {};
 	return true;
 }

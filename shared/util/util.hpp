@@ -105,7 +105,7 @@ static inline INT shortDiff(UINT a, UINT b, INT bias, INT overflow)
 {
 	static_assert(std::numeric_limits<UINT>::lowest() == 0);
 	assert(a < overflow && b < overflow);
-	INT passed = b - a;
+	INT passed = ((INT)b) - a;
 	if (passed < -bias)
 		passed += overflow;
 	else if (passed > overflow-bias)

@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/matching.hpp"
 #include "util/eigenalg.hpp"
+#include "util/stats.hpp"
 #include "util/log.hpp"
 
 #include "poselib/p3p_ding.hpp"
@@ -42,9 +43,10 @@ static std::mt19937 gen = std::mt19937(std::random_device{}());
 
 static std::vector<std::array<int,3>> generateTriplets(int n);
 
-static float getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D);
+static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D, float maxError);
 
-static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(const TargetTemplate3D &target3D, const CameraCalib &calib,
+static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token stopToken,
+	const TargetTemplate3D &target3D, const CameraCalib &calib,
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
 	const TargetDetectionParameters &params)
 {
@@ -74,12 +76,14 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(const TargetTempl
 	// TODO: Precalculate triples likely to be seen together by analyzing projections from all angles
 
 	// Evaluate all possible combinations
-	std::vector<float> itErrors(permIndices.size(), std::numeric_limits<float>::max());
+	std::vector<std::pair<int,float>> itResults(permIndices.size(), { 0, std::numeric_limits<float>::max() });
 	std::vector<Eigen::Isometry3f> itPoses(permIndices.size());
 #pragma omp parallel for schedule(static, 100)
 	for (int i = 0; i < permIndices.size(); i++)
 	{
 		const auto &perm = permIndices[i];
+		if (stopToken.stop_requested())
+			continue;
 
 		std::array<Eigen::Isometry3f,4> poses;
 		int poseCnt = poselib::p3p_ding(camPoints_triplet,
@@ -94,33 +98,35 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(const TargetTempl
 			// Reproject target points and estimate 2D error
 			thread_local std::vector<Eigen::Vector2f> projected2D;
 			projectTargetTemplate(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], 0.1f);
-			float error = getMatchErrorApprox(points2D, projected2D);
-			if (error < itErrors[i])
+			auto res = getMatchErrorApprox(points2D, projected2D, params.search.errorMax);
+			if (res.first >= itResults[i].first && res.second < itResults[i].second)
 			{
-				itErrors[i] = error;
+				itResults[i] = res;
 				itPoses[i] = poses[j];
 			}
 		}
 	}
+	if (stopToken.stop_requested())
+		return {};
 
 	// Sort solutions by lowest error
 	std::vector<int> bestSolutions(permIndices.size());
 	std::iota(bestSolutions.begin(), bestSolutions.end(), 0);
 	std::stable_sort(bestSolutions.begin(), bestSolutions.end(),
-		[&itErrors](const int &a, const int &b) { return itErrors[a] < itErrors[b]; });
+		[&itResults](const int &a, const int &b) { return itResults[a].first > itResults[b].first || (itResults[a].first == itResults[b].first && itResults[a].second < itResults[b].second); });
 
-	float bestError = itErrors[bestSolutions[0]];
-	if (bestError > params.search.errorMax)
+	auto bestResult = itResults[bestSolutions[0]];
+	if (bestResult.first < params.minObservations.focus || bestResult.second > params.search.errorMax)
 		return {};
 
 	std::vector<Eigen::Isometry3f> poseCandidates;
 	poseCandidates.reserve(params.search.maxCandidates);
 	for (int it : bestSolutions)
 	{
-		if (itErrors[it] > bestError*params.search.errorSigma || itErrors[it] > params.search.errorMax)
+		if (itResults[it].first < params.minObservations.focus || itResults[it].second > bestResult.second*params.search.errorSigma || itResults[it].second > params.search.errorMax)
 			break;
-		LOGC(LDebug, "    Considering pose candidate %d from iteration %d with %fpx approximate error!",
-			(int)poseCandidates.size(), it, itErrors[it]*PixelFactor);
+		LOGC(LDebug, "    Considering pose candidate %d from iteration %d with %d matches and %fpx RMSE!",
+			(int)poseCandidates.size(), it, itResults[it].first, itResults[it].second*PixelFactor);
 		// Record pose transformed from camera-space into world-space
 		poseCandidates.push_back(calib.transform.cast<float>() * itPoses[it]);
 		if (poseCandidates.size() >= params.search.maxCandidates)
@@ -129,7 +135,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(const TargetTempl
 	return poseCandidates;
 }
 
-TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
@@ -143,8 +149,10 @@ TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector
 		focus, (int)relevantPoints2D[focusCamera]->size());
 
 	// Brute-force a few candidate poses based on 3 points only
-	auto candidates = bruteForcePoseCandidates(target3D, calibs[focusCamera],
+	auto candidates = bruteForcePoseCandidates(stopToken, target3D, calibs[focusCamera],
 		*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera], params);
+	if (stopToken.stop_requested())
+		return {};
 
 	LOGC(LDebug, "Found %d candidates by brute forcing camera %d's %d points!",
 		(int)candidates.size(), focus, (int)relevantPoints2D[focusCamera]->size());
@@ -161,6 +169,9 @@ TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector
 	int i = 0;
 	for (const Eigen::Isometry3f &pose : candidates)
 	{
+		if (stopToken.stop_requested())
+			return {};
+
 		TargetMatch2D targetMatch2D = {};
 		targetMatch2D.targetTemplate = &target3D;
 		targetMatch2D.pose = pose;
@@ -176,7 +187,7 @@ TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector
 
 		// Add focus camera point matches using initial pose
 		auto &cameraMatches = targetMatch2D.points2D[focus];
-		matchTargetPointsFast(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
+		matchTargetPointsSlow(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
 			projected2D, relevantProjected2D, cameraMatches, matchData,
 			params.match, distFactor);
 		targetMatch2D.pointCount = cameraMatches.size();
@@ -194,7 +205,7 @@ TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			targetMatch2D.pointCount, errors.mean*PixelFactor);
 
-		// Properly track to expand to other cameras to aquire more certainty
+		// Properly track to expand to other cameras to acquire more certainty
 		targetMatch2D = trackTarget2D(target3D, targetMatch2D.pose, Eigen::Vector3f::Constant(params.initialStdDev),
 			calibs, cameraCount, points2D, properties, relevantPoints2D, track, trackData);
 
@@ -230,9 +241,11 @@ static std::vector<std::array<int,3>> generateTriplets(int n)
 	return triplets;
 }
 
-static float getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D)
+static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D, float maxError)
 {
 	float error = 0;
+	int maxMatches = std::min(points2D.size(), reprojected2D.size());
+	MultipleExtremum<float, -1> bestErrors(std::numeric_limits<float>::max());
 	for (int i = 0; i < points2D.size(); ++i)
 	{
 		float minErrorSq = std::numeric_limits<float>::max();
@@ -242,7 +255,8 @@ static float getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, c
 			if (errorSq < minErrorSq)
 				minErrorSq = errorSq;
 		}
-		error += std::sqrt(minErrorSq);
+		if (minErrorSq < maxError*maxError)
+			bestErrors.min(minErrorSq, maxMatches);
 	}
-	return error / points2D.size();
+	return std::make_pair(bestErrors.rank.size(), std::sqrt(bestErrors.average()));
 }

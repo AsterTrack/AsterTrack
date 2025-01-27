@@ -1619,6 +1619,22 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		io_tracker->second->mainloop();
 	}
 
+	// Add cameras as trackers to give clients an opportunity to display them as references
+	// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
+	for (auto &camera : state.pipeline.cameras)
+	{
+		auto io_tracker = state.io.vrpn_trackers.find(camera->id);
+		if (io_tracker == state.io.vrpn_trackers.end())
+		{
+			std::string path = asprintf_s("AsterCamera_%d", camera->index);
+			auto vrpn_tracker = make_opaque<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.io.vrpn_server.get());
+			io_tracker = state.io.vrpn_trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
+		}
+
+		io_tracker->second->updatePose(camera->calib.transform.cast<float>());
+		io_tracker->second->mainloop();
+	}
+
 	state.io.vrpn_server->mainloop();
 	if (!state.io.vrpn_server->doing_okay())
 	{
@@ -1749,6 +1765,8 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		auto start = sclock::now();
 		ProcessFrame(pipeline, frame); // new shared_ptr
 		auto end = sclock::now();
+
+		std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
 		UpdateTrackingIO(GetState(), frame);
 

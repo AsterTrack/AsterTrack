@@ -73,5 +73,16 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::TreePop();
 	}
 
+	if (ImGui::TreeNode("Room References"))
+	{
+		ImGui::Checkbox("Origin", &visState.room.showOrigin);
+		ImGui::SameLine();
+		ImGui::BeginDisabled(!visState.room.showOrigin);
+		ImGui::InputFloat3("##Origin", visState.room.origin.data(), "%.3f");
+		ImGui::EndDisabled();
+
+		ImGui::TreePop();
+	}
+
 	ImGui::End();
 }

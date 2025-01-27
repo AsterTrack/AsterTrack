@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib_target/assembly.hpp"
 
+#include "ui/system/vis.hpp"
 #include "point/sequence_data.inl"
 #include "calib/camera_system.inl"
 
@@ -150,6 +151,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			}
 		}
 
+		// TODO: Don't rely on locking pipelineLock, interferes with pipeline performance
+		// Instead use latest frames tracking results to update an internal map of targets and their status
+
 		EndSection();
 
 		if (displayInternalDebug && visState.tracking.focusedTargetID != 0 && trackedTarget)
@@ -244,15 +248,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		BeginSection("Optimisation Database");
 		{
-			auto db_lock = pipeline.obsDatabase.contextualRLock();
+			auto db_lock = pipeline.obsDatabase.lock();
 			ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
-			for (auto &tgt : db_lock->targets)
+			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end(); tgtIt++)
 			{
+				auto tgt = *tgtIt;
 				ImGui::PushID(tgt.targetID);
 				std::string label = asprintf_s("Target %d: %d frames, %d samples, %d outliers###TgtCont",
 					tgt.targetID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
 				bool selected = visState.targetCalib.contCalibTargetID == tgt.targetID;
-				if (ImGui::Selectable(label.c_str(), visState.targetCalib.contCalibTargetID == tgt.targetID))
+				if (ImGui::Selectable(label.c_str(), visState.targetCalib.contCalibTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
 				{
 					if (visState.targetCalib.contCalibTargetID != tgt.targetID)
 					{
@@ -268,6 +273,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						visState.targetCalib.contCalibTargetID = tgt.targetID;
 					}
 					else visState.resetVisTarget(false);
+				}
+				// Button to delete
+				SameLineTrailing(ImGui::GetFrameHeight());
+				bool del = CrossButton("Del");
+				if (del)
+				{
+					if (visState.targetCalib.contCalibTargetID == tgt.targetID)
+						visState.resetVisTarget(false);
+					tgtIt = db_lock->targets.erase(tgtIt);
 				}
 				ImGui::PopID();
 			}
@@ -332,20 +346,29 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					LOGCL("Before optimising with optimisation database:");
 					updateReprojectionErrors(data, calibs);
 
-					LOGCL("Optimising camera position and target markers:");
+					LOGCL("Optimising target markers:");
 					OptimisationOptions options(true, false, false, false, false);
 					optimiseData<OptSparse>(options, data, calibs, itUpdate, 1);
+
+					LOGCL("Done optimising! Applying to targets!");
 
 					{ // Update Targets
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
 						for (auto &tgtNew : data.targets)
 						{
+							bool found = false;
 							for (auto &tgt : pipeline.tracking.targetTemplates3D)
 							{
-								if (tgt.id != tgtNew.targetID) continue;
+								if (std::abs(tgt.id) != std::abs(tgtNew.targetID)) continue;
 								updateMarkerOrientations(tgt.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
 								tgt.updateMarkers();
+								found = true;
 								break;
+							}
+							if (!found)
+							{
+								state.pipeline.tracking.targetTemplates3D.push_back(TargetTemplate3D(std::abs(tgtNew.targetID), "New Target",
+									finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post)));
 							}
 						}
 					}
@@ -356,21 +379,23 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						{
 							for (auto &tgtOld : db_lock->targets)
 							{
-								if (tgtOld.targetID != tgtNew.targetID) continue;
+								if (std::abs(tgtOld.targetID) != std::abs(tgtNew.targetID)) continue;
 								tgtOld.markers = tgtNew.markers;
 								auto frameIt = tgtNew.frames.begin();
 								for (auto &frame : tgtOld.frames)
 								{
-									assert(frameIt->frame == frame.frame);
+									while (frameIt != tgtNew.frames.end() && frameIt->frame < frame.frame)
+										frameIt++;
+									while (frameIt == tgtNew.frames.end()) break;
+									assert (frameIt->frame == frame.frame);
 									// Apply new outliers, new pose, and error
-									tgtNew.outlierSamples += frameIt->samples.size() - frame.samples.size();
+									tgtOld.outlierSamples += frameIt->samples.size() - frame.samples.size();
 									*frameIt = std::move(frame);
 								}
 								break;
 							}
 						}
 					}
-
 				}, *db_lock);
 			}
 			ImGui::SameLine();

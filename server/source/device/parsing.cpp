@@ -756,6 +756,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 			{ // Store compressed image record in frameRecord for later use
 				auto frames = GetState().pipeline.frameRecords.getView<false>();
 				// TODO: Create frame record anyway even if it doesn't exist yet just to store images?
+				if (frames.empty()) return;
 				if (frames.size() <= imageRecord->frameID)
 				{
 					LOG(LParsing, LWarn, "Cannot record received camera image since frame ID %d is not yet recorded, latest frame number %d with ID %d!",

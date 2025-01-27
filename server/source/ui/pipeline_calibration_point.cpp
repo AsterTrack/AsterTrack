@@ -299,7 +299,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::BeginDisabled(ptCalib.control.stopping());
 	if (ptCalib.control.running())
 	{
-		if (ImGui::Button(ptCalib.control.stopping()? "Aborting...##Abort" : "Abort##Abort", ButtonSize))
+		if (ImGui::Button(ptCalib.control.stopping()? "Stopping..." : "Stop", ButtonSize))
 		{
 			ptCalib.control.stop_source.request_stop();
 		}
@@ -379,7 +379,13 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ScalarInput<float>("Distance 1-2", "mm", &ptCalib.distance12, 1.0f, 2000.0f);
 	ImGui::SetItemTooltip("Distance between the first two points, used to calibrate scale. In millimeter.");
 
-	if (ImGui::Button("Calibrate Floor", SizeWidthFull()))
+	if (ImGui::Button("Normalise Room", SizeWidthDiv2()))
+	{
+		ptCalib.normaliseRoom = true;
+	}
+	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
+	ImGui::SameLine();
+	if (ImGui::Button("Calibrate Floor", SizeWidthDiv2()))
 	{
 		ptCalib.calibrateFloor = true;
 	}

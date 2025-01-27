@@ -87,6 +87,8 @@ struct TrackedTarget
 
 	// Tracking results for visualisation purposes
 	TargetMatch2D match2D;
+
+	int lastTrackedFrame;
 };
 
 template<typename ScalarType>

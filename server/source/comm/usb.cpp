@@ -290,8 +290,8 @@ static void comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransf
 					LOG(LUSB, LWarn, "Interrupt transfer %p has been blocked and is considered cancelled!\n", libusb->intIN[i][j]);
 					libusb->intCancelCounter++;
 					// TODO: Previously could result in a crash because a later event handler still assumes this transfer to exist. Verify this isn't the case anymore.
-					if (freeTransfers)
-						libusb_free_transfer(libusb->intIN[i][j]);
+					//if (freeTransfers)
+					//	libusb_free_transfer(libusb->intIN[i][j]);
 					manuallyCancelled++;
 				}
 				else if (ret == LIBUSB_SUCCESS)

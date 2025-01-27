@@ -191,10 +191,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 			}
 
-			ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+			ImGui::Text("Jump To Frame");
+			SameLineTrailing(SizeWidthDiv3_2().x);
+			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
 			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
 			ImGui::SameLine();
-			if (ImGui::Button("Jump To Frame", SizeWidthDiv2()))
+			if (ImGui::Button("Jump", SizeWidthDiv3()))
 			{
 				// Stop advancing replay
 				int prevState = state.simAdvanceCount;
@@ -206,7 +208,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (frameJumpTarget <= pipeline.frameNum)
 				{
 					auto frames = pipeline.frameRecords.getView();
-					if (frameJumpTarget < frames.size())
+					if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
 						AdoptFrameRecordState(pipeline, *frames[frameJumpTarget]);
 				}
 				else if (frameJumpTarget < state.loadedFrameRecords.size())

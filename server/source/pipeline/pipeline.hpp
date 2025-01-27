@@ -153,6 +153,10 @@ struct PipelineState
 		std::list<std::pair<TargetTemplate3D const *,int>> lostTargets;
 		// Asynchronous Detections
 		bool asyncDetection;
+		int asyncDetectTargetID = 0;
+		std::stop_source asyncDetectionStop, syncDetectionStop;
+		// Add information which cluster async detection handles to interrupt it should that cluster disappear or be detected
+		// Currently we only check for which target ID is being attempted to be detected, to abort when that target has been found 
 	} tracking = {};
 
 	// Point calibration state
@@ -177,7 +181,7 @@ struct PipelineState
 		// Room parameters
 		std::vector<PointCalibration<double>> floorPoints;
 		float distance12 = 50.0f; // In mm
-		bool calibrateFloor;
+		bool normaliseRoom, calibrateFloor;
 	} pointCalib = {};
 
 	// Target calibration state
@@ -185,7 +189,7 @@ struct PipelineState
 		TargetCalibParameters params;
 		// State for heuristic target view aquisition
 		Synchronised<TargetViewAquisition> aquisition;
-		// Aquired target views and their reconstruction
+		// Acquired target views and their reconstruction
 		Synchronised<std::vector<std::shared_ptr<TargetView>>> views;
 		// State and stages of assembly of views into final target
 		std::shared_ptr<TargetView> baseView = nullptr;

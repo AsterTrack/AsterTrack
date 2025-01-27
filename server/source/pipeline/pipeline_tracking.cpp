@@ -149,7 +149,7 @@ static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTargetFilter
 	return true;
 }
 
-static bool detectTarget(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
+static bool detectTarget(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -162,7 +162,7 @@ static bool detectTarget(PipelineState &pipeline, std::shared_ptr<FrameRecord> &
 
 	// Detect target first in this cameras 2D points, and then match with others
 	TargetTracking2DData tracking2DData(pipeline.cameras.size());
-	TargetMatch2D targetMatch2D = detectTarget2D(*target, calibs, points2D, properties, relevantPoints2D,
+	TargetMatch2D targetMatch2D = detectTarget2D(stopToken, *target, calibs, points2D, properties, relevantPoints2D,
 		focus, pipeline.cameras.size(), params.detect, params.track, tracking2DData);
 	if (targetMatch2D.pointCount < params.detect.minObservations.total)
 		return false;
@@ -179,7 +179,7 @@ static bool detectTarget(PipelineState &pipeline, std::shared_ptr<FrameRecord> &
 	return true;
 }
 
-static bool detectTargetAsync(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
+static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<int>> &detectionPoints2D,
 	int focus, const TargetTemplate3D *target)
@@ -197,9 +197,12 @@ static bool detectTargetAsync(PipelineState &pipeline, std::shared_ptr<FrameReco
 			properties[c] = &frame->cameras[calibs[c].index].properties;
 			relevantPoints2D[c] = &detectionPoints2D[c];
 		}
-		if (!detectTarget(pipeline, frame, calibs, points2D, properties, relevantPoints2D, focus, target, tracker))
+		if (!detectTarget(stopToken, pipeline, frame, calibs, points2D, properties, relevantPoints2D, focus, target, tracker))
 			return false;
 	}
+	if (stopToken.stop_requested())
+		return false;
+
 	// Then continue on tracking to catch up with the latest realtime frame
 	// TODO: Skip some frames to catch up faster, should handle some skips as long as prediction is accurate
 	// But may also want intermediate frames tracked for recording purposes, so do those afterwards anyway
@@ -235,12 +238,16 @@ static bool detectTargetAsync(PipelineState &pipeline, std::shared_ptr<FrameReco
 			}
 			frameRec.tracking.trackingCatchups++;
 			lastTimestamp = frameRec.time;
+			if (stopToken.stop_requested())
+				return false;
 		}
 		// Release view when leaving scope
 		frameIndex = frameRecIt.index();
 	}
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	if (stopToken.stop_requested())
+		return false;
 
 	{ // Finish the rest of the frames that were processed while waiting for the lock
 		auto frames = pipeline.frameRecords.getView<false>();
@@ -269,9 +276,12 @@ static bool detectTargetAsync(PipelineState &pipeline, std::shared_ptr<FrameReco
 			}
 			frameRec.tracking.trackingCatchups++;
 			lastTimestamp = frameRec.time;
+			if (stopToken.stop_requested())
+				return false;
 		}
 		// Release view when leaving scope
 		frameIndex = frameRecIt.index();
+		tracker.lastTrackedFrame = frameIndex;
 	}
 
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex-1);
@@ -367,6 +377,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// Occupy all 2D points of tracked target
 				occupyTargetMatches(trackedTarget->match2D);
 				recordTrackingResults(pipeline, frame, *trackedTarget);
+				trackedTarget->lastTrackedFrame = frame->num;
 
 				/* if (targetMatch2D.error.mean*PixelFactor > 0.5 && IsDebugging())
 				{
@@ -374,6 +385,21 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					Breakpoint();
 					pipeline.pipelineLock.lock();
 				} */
+			}
+			else if (frame->num - trackedTarget->lastTrackedFrame < 4)
+			{
+				LOG(LTracking, LDarn, "Failed to find continuation of target %d (name %s) after %d measurements, got with %d observations and %.3fpx mean error!\n",
+					target.id, target.label.c_str(), trackedTarget->filter.measurements, trackedTarget->match2D.pointCount, trackedTarget->match2D.error.mean*PixelFactor);
+
+				if (IsDebugging())
+				{
+					pipeline.pipelineLock.unlock();
+					Breakpoint();
+					pipeline.pipelineLock.lock();
+				}
+
+				trackedTarget++;
+				continue;
 			}
 			else
 			{
@@ -582,7 +608,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				auto targetMatch2D = expandTargetMatches2D(&target, candidate, detect.opt);
 				auto trackedTarget = createTrackedTarget(&target, std::move(targetMatch2D));
 				occupyTargetMatches(trackedTarget.match2D);
+				{ // Make sure no async detection of this target is ongoing
+					if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
+						pipeline.tracking.asyncDetectionStop.request_stop();
+				}
 				recordTrackingResults(pipeline, frame, trackedTarget);
+				trackedTarget.lastTrackedFrame = frame->num;
 				frame->tracking.detections3D++;
 
 				LOG(LTracking, LInfo, "    Added lost tracked target back with %d points and %fmm RMSE"
@@ -640,7 +671,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				auto targetMatch2D = expandTargetMatches2D(&target, candidate, detect.opt);
 				auto trackedTarget = createTrackedTarget(&target, std::move(targetMatch2D));
 				occupyTargetMatches(trackedTarget.match2D);
+				{ // Make sure no async detection of this target is ongoing
+					if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
+						pipeline.tracking.asyncDetectionStop.request_stop();
+				}
 				recordTrackingResults(pipeline, frame, trackedTarget);
+				trackedTarget.lastTrackedFrame = frame->num;
 				frame->tracking.detections3D++;
 
 				LOG(LTracking, LInfo, "    Added new tracked target with %d points and %fmm RMSE"
@@ -756,11 +792,18 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				std::vector<std::vector<int> const *> detectionPoints2D = relevantPoints2D;
 				// TODO: Check specific cluster that is likely
 				//detectionPoints2D[c] = clusters2D.front();
+				pipeline.tracking.syncDetectionStop = {};
 				TrackedTargetFiltered trackedTarget;
-				if (detectTarget(pipeline, frame, calibs, points2D, properties, detectionPoints2D, c, &target, trackedTarget))
+				if (detectTarget(pipeline.tracking.syncDetectionStop.get_token(), pipeline, frame, calibs,
+					points2D, properties, detectionPoints2D, c, &target, trackedTarget))
 				{
 					occupyTargetMatches(trackedTarget.match2D);
+					{ // Make sure no async detection of this target is ongoing
+						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
+							pipeline.tracking.asyncDetectionStop.request_stop();
+					}
 					recordTrackingResults(pipeline, frame, trackedTarget);
+					trackedTarget.lastTrackedFrame = frame->num;
 					pipeline.tracking.trackedTargets.push_back(std::move(trackedTarget));
 					lostTarget = pipeline.tracking.lostTargets.erase(lostTarget);
 					break;
@@ -773,13 +816,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				//detectionPoints2D[c] = clusters2D.front();
 
 				pipeline.tracking.asyncDetection = true;
-				threadPool.push([&pipeline](int, std::shared_ptr<FrameRecord> frameRec,
+				pipeline.tracking.asyncDetectionStop = {};
+				pipeline.tracking.asyncDetectTargetID = target.id;
+				threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
 					std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
 					const TargetTemplate3D *target, int focus)
 				{
-					bool success = detectTargetAsync(pipeline, frameRec, calibs, detectionPoints2D, focus, target);
+					bool success = detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, focus, target);
 					pipeline.tracking.asyncDetection = false;
-				}, frame, calibs, detectionPoints2D, &target, c);
+				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2D, &target, c);
 				break;
 			}
 			lostTarget++;
@@ -805,11 +850,18 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				std::vector<std::vector<int> const *> detectionPoints2D = relevantPoints2D;
 				// TODO: Check specific cluster that is likely
 				//detectionPoints2D[c] = clusters2D.front();
+				pipeline.tracking.syncDetectionStop = {};
 				TrackedTargetFiltered trackedTarget;
-				if (detectTarget(pipeline, frame, calibs, points2D, properties, detectionPoints2D, c, &target, trackedTarget))
+				if (detectTarget(pipeline.tracking.syncDetectionStop.get_token(), pipeline, frame, calibs,
+				points2D, properties, detectionPoints2D, c, &target, trackedTarget))
 				{
 					occupyTargetMatches(trackedTarget.match2D);
 					recordTrackingResults(pipeline, frame, trackedTarget);
+					trackedTarget.lastTrackedFrame = frame->num;
+					{ // Make sure no async detection of this target is ongoing
+						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
+							pipeline.tracking.asyncDetectionStop.request_stop();
+					}
 					pipeline.tracking.trackedTargets.push_back(std::move(trackedTarget));
 					unusedTarget = pipeline.tracking.unusedTargets.erase(unusedTarget);
 					break;
@@ -821,14 +873,16 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// TODO: Check specific cluster that is likely
 				//detectionPoints2D[c] = clusters2D.front();
 
+				pipeline.tracking.asyncDetectionStop = {};
 				pipeline.tracking.asyncDetection = true;
-				threadPool.push([&pipeline](int, std::shared_ptr<FrameRecord> frameRec,
+				pipeline.tracking.asyncDetectTargetID = target.id;
+				threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
 					std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
 					const TargetTemplate3D *target, int focus)
 				{
-					bool success = detectTargetAsync(pipeline, frameRec, calibs, detectionPoints2D, focus, target);
+					bool success = detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, focus, target);
 					pipeline.tracking.asyncDetection = false;
-				}, frame, calibs, detectionPoints2D, &target, c);
+				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2D, &target, c);
 				break;
 			}
 			unusedTarget++;

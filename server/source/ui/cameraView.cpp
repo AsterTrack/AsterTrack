@@ -1101,6 +1101,8 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			visSetupCamera(postProjMat, calib, mode, viewSize);
 			for (auto &targetRecord : frameState->tracking.targets)
 				visualisePose(targetRecord.pose, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
+			if (visState.room.showOrigin)
+				visualiseOrigin(visState.room.origin, 1, 5);
 			visSetupProjection(postProjMat, viewSize);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;

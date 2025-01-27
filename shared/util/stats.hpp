@@ -30,6 +30,8 @@ SOFTWARE.
 #define _USE_MATH_DEFINES // Not enough if cmath was included previously, so defined in build system
 #endif
 #include <cmath>
+#include <vector>
+#include <array>
 
 enum StatOptions
 {
@@ -161,35 +163,66 @@ typedef StatValue<float> StatAvgf;
  template<typename Scalar, int N = 2>
 struct MultipleExtremum
 {
-	std::array<Scalar, N> rank;
+	using Dynamic = std::conditional_t<N <= 0, std::true_type, std::false_type>;
+	using Container = std::conditional_t<Dynamic::value, std::vector<Scalar>, std::array<Scalar, (std::size_t)N>>;
+	Container rank;
 	Scalar signal;
-	MultipleExtremum(Scalar init) : signal(init) { std::fill_n(rank.begin(), N, init); }
-
-	void max(Scalar value)
+	MultipleExtremum(Scalar init) : signal(init)
 	{
-		if (rank[N-1] != signal && rank[N-1] > value) return;
-		int i = 0;
-		for (; i < N; i++)
-			if (rank[i] == signal || rank[i] < value) break;
-		for (; i < N; i++)
-			std::swap(value, rank[i]);
+		if constexpr (!Dynamic::value)
+		 	std::fill_n(rank.begin(), N, init);
 	}
-	void min(Scalar value)
+
+	void max(Scalar value, int maxMatches = -1)
 	{
-		if (rank[N-1] != signal && rank[N-1] < value) return;
+		if (rank.size() >= std::max(1,maxMatches) && rank.back() != signal && rank.back() < value) return;
+		int i = 0;
+		for (; i < rank.size(); i++)
+			if (rank[i] == signal || rank[i] < value) break;
+		for (; i < rank.size(); i++)
+			std::swap(value, rank[i]);
+		if constexpr (Dynamic::value)
+		{
+			rank.reserve(maxMatches);
+			if (rank.size() < maxMatches)
+				rank.push_back(value);
+		}
+	}
+	void min(Scalar value, int maxMatches = -1)
+	{
+		if (rank.size() >= std::max(1,maxMatches) && rank.back() != signal && rank.back() < value) return;
 		int i = 0;
 		for (; i < N; i++)
 			if (rank[i] == signal || rank[i] > value) break;
 		for (; i < N; i++)
 			std::swap(value, rank[i]);
+		if constexpr (Dynamic::value)
+		{
+			rank.reserve(maxMatches);
+			if (rank.size() < maxMatches)
+				rank.push_back(value);
+		}
 	}
 
 	int weakest()
 	{
-		for (int i = 0; i < N; i++)
+		for (int i = 0; i < rank.size(); i++)
 			if (rank[i] == signal)
 				return i-1;
 		return N-1;
+	}
+
+	int average()
+	{
+		Scalar avg;
+		for (int i = 0; i < rank.size(); i++)
+		{
+			if constexpr (!Dynamic::value)
+				if (rank[i] == signal)
+					return avg/i;
+			avg += rank[i];
+		}
+		return avg / rank.size();
 	}
 
 	bool hasAll() { return rank[N-1] != signal; }

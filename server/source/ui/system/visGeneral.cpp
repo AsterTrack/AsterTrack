@@ -23,7 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline) const
+VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime) const
 {
 	VisFrameLock snapshot = {};
 	snapshot.frames = pipeline.frameRecords.getView();
@@ -34,7 +34,13 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline) con
 	snapshot.target = lockVisTarget();
 	if (snapshot.target)
 	{ // Visualise selected past frame
-		snapshot.frameIt = snapshot.frames.pos(snapshot.target.target->frames[snapshot.target.frameIdx].frame);
+		auto frame = snapshot.target.target->frames[snapshot.target.frameIdx].frame;
+		if (frame >= snapshot.frames.endIndex())
+		{
+			snapshot.hasFrame = snapshot.isRealtimeFrame = false;
+			return snapshot;
+		}
+		snapshot.frameIt = snapshot.frames.pos(frame);
 		snapshot.isRealtimeFrame = false;
 	}
 	else

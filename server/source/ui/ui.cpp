@@ -613,7 +613,7 @@ extern "C" {
 
 EXPORT void _SignalShouldClose()
 {
-	if (!InterfaceInstance || !ImGui::GetCurrentContext())
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
 	GetUI().setCloseInterface = true;
 	glfwPostEmptyEvent(); // Wake up UI thread
@@ -621,7 +621,7 @@ EXPORT void _SignalShouldClose()
 
 EXPORT void _SignalLogUpdate()
 {
-	if (!InterfaceInstance || !ImGui::GetCurrentContext())
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
 	if (!GetUI().logsStickToNew)
 		return; // Don't need to update with new logs
@@ -635,7 +635,7 @@ EXPORT void _SignalLogUpdate()
 
 EXPORT void _SignalCameraRefresh(CameraID id)
 {
-	if (!InterfaceInstance || !ImGui::GetCurrentContext())
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
 	// Update parts of the screen with OnDemand rendered items
 	if (id == 0)
@@ -646,7 +646,7 @@ EXPORT void _SignalCameraRefresh(CameraID id)
 
 EXPORT void _SignalPipelineUpdate()
 {
-	if (!InterfaceInstance || !ImGui::GetCurrentContext())
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
 	GetUI().targetViewsDirty = true;
 	GetUI().RequestUpdates();
@@ -654,7 +654,7 @@ EXPORT void _SignalPipelineUpdate()
 
 EXPORT void _SignalServerEvent(ServerEvents event)
 {
-	if (!InterfaceInstance || !ImGui::GetCurrentContext())
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
 	switch(event)
 	{

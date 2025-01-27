@@ -62,6 +62,20 @@ void vrpn_Tracker_AsterTrack::updatePose(Eigen::Isometry3f pose)
 	vrpn_gettimeofday(&_timestamp, NULL);
 	vrpn_Tracker::timestamp = _timestamp;
 
+	// We're using a left-handed coordinate system (same as Unreal, or a rotated Unity one)
+	// VRPN (along with OpenCV, Blender, etc.) use right-handed coordinate systems
+	// So flip handedness here
+	Eigen::Isometry3f flipXY;
+	flipXY.matrix()
+	 << 0, 1, 0, 0,
+		1, 0, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1;
+	pose = flipXY * pose * flipXY;
+
+	// Additionally, the camera points into the positive z direction, which is convenient for CV (z == distance)
+	// However, other tools like Blender have the camera point into the negative z direction
+
 	// send tracker orientation
 	d_sensor = 0;
 	Eigen::Quaternionf rotQ(pose.rotation());
@@ -77,7 +91,7 @@ void vrpn_Tracker_AsterTrack::updatePose(Eigen::Isometry3f pose)
 	static char buffer[1000];
 	int length = vrpn_Tracker::encode_to(buffer);
 	int error = d_connection->pack_message(length, _timestamp, position_m_id, d_sender_id, buffer, vrpn_CONNECTION_LOW_LATENCY);
-	if (error) LOG(LDefault, LError, "Failed to write VRPN message with error %d!\n", error);
+	if (error) LOG(LIO, LError, "Failed to write VRPN message with error %d!\n", error);
 }
 
 void vrpn_Tracker_AsterTrack::mainloop()

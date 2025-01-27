@@ -24,6 +24,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target.hpp"
 #include "tracking2D.hpp"
 
+#include <stop_token>
+
 /**
  * Detecting a target (set of markers) in a set of 2D points
  */
@@ -32,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * Detect a marker in 2D observations, returns all candidates
  */
-TargetMatch2D detectTarget2D(const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,

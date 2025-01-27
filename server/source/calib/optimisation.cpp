@@ -406,6 +406,8 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 	return status;
 }
 
+template int optimiseData<OptSparse>(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor);
+
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations
  * Parameters may include camera extrinsics and intrinsics, target structure and motion, etc.

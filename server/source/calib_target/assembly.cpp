@@ -268,7 +268,7 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 		// Check assignments plus candidates for significant overlap indicating they might be the same
 		// Check assignments for conflicts, e.g. two sequences of one camera with temporal overlap
 	
-	// Use for loaded TargetViews to try to re-aquire
+	// Use for loaded TargetViews to try to re-acquire
 		// NO - can just to an update to frames based on markerMap
 	// Use for merging markers
 		// 
@@ -515,6 +515,8 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 					m1, m2, support1.first, markerSEsum[m1].first, RMSE1*PixelFactor, support2.first, markerSEsum[m2].first, RMSE2*PixelFactor);
 				continue;
 			}
+			// TODO: Consider direction both markers are viewed from and only merge if consistent with assumed FoV
+			// Assuming flat markers, that would prevent false merging of two markers on different sides of a thin structure
 			for (auto &map1 : target.markerMap)
 			{
 				if (markerMap[map1.second] != m1) continue;

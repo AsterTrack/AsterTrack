@@ -169,6 +169,11 @@ void visualiseMesh(const std::vector<VisPoint> &vertices, unsigned int mode);
 void visualiseCamera(Eigen::Isometry3f camera, Color color = { 0.3f, 0.3f, 0.3f, 1.0f });
 
 /**
+ * Render coordinate origin
+ */
+void visualiseOrigin(Eigen::Vector3f pos, float scale, float lineWidth);
+
+/**
  * Render coordinate origin at pose
  */
 void visualisePose(const Eigen::Isometry3f &pose, Color color, float scale, float lineWidth);

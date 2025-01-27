@@ -207,8 +207,8 @@ bool matchTargetPointsFast(
 		auto &match = cand.matches.front();
 		if (match.valid() && match.value < matchRadiusSq)
 		{ // TODO: Technically match.value also accounts for size, so not entirely accurate, but fine
-			LOGC(LTrace, "                   Accepted match mk%d / pt%d with shift disagreement %.4f\n",
-				relevantProjected2D[cand.context], match.index, match.value);
+			LOGC(LTrace, "                   Accepted match mk%d / pt%d with distance %.4f\n",
+				relevantProjected2D[cand.context], match.index, match.value*PixelFactor);
 			matches.push_back({ relevantProjected2D[cand.context], match.index });
 
 			// Update internal data for visualisation purposes (low overhead)
@@ -224,8 +224,8 @@ bool matchTargetPointsFast(
 		}
 		else
 		{
-			LOGC(LTrace, "                   Discarded match mk%d with shift disagreement %.4f\n",
-				relevantProjected2D[cand.context], match.value);
+			LOGC(LTrace, "                   Discarded match mk%d with distance %.4f\n",
+				relevantProjected2D[cand.context], match.value*PixelFactor);
 		}
 	}
 	LOGC(LDebug, "               Matched %d points!\n", (int)matches.size());
@@ -239,7 +239,7 @@ void matchTargetPointsSlow(
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
 	const std::vector<Eigen::Vector2f> &projected2D, const std::vector<int> &relevantProjected2D,
 	std::vector<std::pair<int, int>> &matches, TargetMatchingData &matchData,
-	const TargetMatchingParametersSlow params, float distFactor, Eigen::Vector2f offset = Eigen::Vector2f::Zero())
+	const TargetMatchingParametersSlow params, float distFactor, Eigen::Vector2f offset)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingMatch);
 
@@ -704,7 +704,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
 
 /**
  * Redetect the target in the observed 2D points using a predicted pose
- * First re-aquires the previously visible markers, finds a better pose with them,
+ * First re-acquires the previously visible markers, finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit the observations
  */
 TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pose, Eigen::Vector3f stdDev,
@@ -854,9 +854,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 
 			for (int c = 0; c < calibs.size(); c++)
 			{
-				if (relevantProjected2D[c].empty() || closePoints2D[c].empty()) continue;
 				const CameraCalib &calib = calibs[c];
-				auto &matchingData = internalData.matching.at(calib.index);
 				auto &cameraMatches = targetMatch2D.points2D[calib.index];
 				if (cameraMatches.size() == closePoints2D[c].size())
 				{ // If no observations left in bounds, skip
@@ -864,6 +862,10 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 					continue;
 				}
 				int prevPointCount = cameraMatches.size();
+				cameraMatches.clear();
+				if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
+					continue; // Even if we did match, it's not visible with the current pose anymore
+				auto &matchingData = internalData.matching.at(calib.index);
 
 				// Normalise pixel parameters to a fixed distance
 				float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();
@@ -948,9 +950,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 			for (int c = 0; c < calibs.size(); c++)
 			{
 				if (dominantCamera == c) continue;
-				if (relevantProjected2D[c].empty() || closePoints2D[c].empty()) continue;
 				const CameraCalib &calib = calibs[c];
-				auto &matchingData = internalData.matching.at(calib.index);
 				auto &cameraMatches = targetMatch2D.points2D[calib.index];
 				if (cameraMatches.size() == closePoints2D[c].size())
 				{ // If no observations left in bounds, skip
@@ -958,6 +958,10 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 					continue;
 				}
 				int prevPointCount = cameraMatches.size();
+				cameraMatches.clear();
+				if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
+					continue; // Even if we did match, it's not visible with the current pose anymore
+				auto &matchingData = internalData.matching.at(calib.index);
 
 				// Try to shift along uncertain axis to align the prediction with the observations of this camera
 				int obsConsidered = shiftPointsAlongAxis(
@@ -1017,9 +1021,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	bool nothingNew = true;
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (relevantProjected2D[c].empty() || closePoints2D[c].empty()) continue;
 		const CameraCalib &calib = calibs[c];
-		auto &matchingData = internalData.matching.at(calib.index);
 		auto &cameraMatches = targetMatch2D.points2D[calib.index];
 		if (cameraMatches.size() == closePoints2D[c].size())
 		{ // If no observations left in bounds, skip
@@ -1027,6 +1029,10 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 			continue;
 		}
 		int prevPointCount = cameraMatches.size();
+		cameraMatches.clear();
+		if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
+			continue; // Even if we did match, it's not visible with the current pose anymore
+		auto &matchingData = internalData.matching.at(calib.index);
 
 		// Normalise pixel parameters to a fixed distance
 		float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();

@@ -49,7 +49,7 @@ void InitPointCalibration(PipelineState &pipeline)
 }
 
 template<typename Scalar>
-static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Scalar height = 4.0, Scalar pairwiseDist = 4.0)
+static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Scalar height = 4.5, Scalar distFromOrigin = 4.0)
 {
 	Eigen::Matrix<Scalar,3,1> origin = Eigen::Matrix<Scalar,3,1>::Zero();
 	for (auto &calib : calibs)
@@ -69,9 +69,19 @@ static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Sca
 	Eigen::Matrix<Scalar,3,1> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
 	Eigen::Matrix<Scalar,3,1> rankValues = evd_N.eigenvalues().template head<3>(); */
 
+	// Flip room up axis based on camera orientations
+	Scalar alignment = 0;
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		Eigen::Vector3<Scalar> forward = calibs[c].transform.rotation() * Eigen::Matrix<Scalar,3,1>::UnitZ();
+		alignment += axis.dot(forward);
+	}
+	if (alignment > 0)
+		axis = -axis;
+
 	// Get transform to calibrated room from up axis, origin and scale
 	Eigen::Matrix<Scalar,3,3> rotation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Eigen::Matrix<Scalar,3,1>::UnitZ()).toRotationMatrix();
-	Scalar scaling = pairwiseDist / N.colwise().norm().mean();
+	Scalar scaling = distFromOrigin / N.colwise().norm().mean();
 	Eigen::Transform<Scalar,3,Eigen::Affine> transform;
 	transform.linear() = rotation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
 	transform.translation() = -transform.linear()*origin + Eigen::Matrix<Scalar,3,1>(0, 0, height);
@@ -83,8 +93,6 @@ static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Sca
 		calib.transform.translation() = transform * calib.transform.translation();
 		calib.UpdateDerived();
 	}
-
-	// TODO: Detect if cameras are pointing upward and flip whole setup
 }
 
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras)
@@ -107,6 +115,22 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			ptCalib.control.thread = new std::thread(ThreadCalibrationReconstruction, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
 		else if (ptCalib.settings.typeFlags & 0b10)
 			ptCalib.control.thread = new std::thread(ThreadCalibrationOptimisation, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
+		SignalPipelineUpdate();
+	}
+
+	if (ptCalib.normaliseRoom)
+	{
+		ptCalib.normaliseRoom = false;
+		std::vector<CameraCalib> calibs(pipeline.cameras.size());
+		for (int c = 0; c < pipeline.cameras.size(); c++)
+			calibs[c] = cameras[c]->calib;
+		NormaliseCalibration(calibs);
+		for (int c = 0; c < pipeline.cameras.size(); c++)
+		{
+			if (pipeline.cameras[c]->calib.invalid()) continue;
+			pipeline.cameras[c]->calib = calibs[c];
+		}
+		SignalServerEvent(EVT_UPDATE_CALIBS);
 		SignalPipelineUpdate();
 	}
 

@@ -496,7 +496,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 				if (m->second == ptIdx)
 				{ // Remove
 					pts.erase(m);
-					edit.pointCount--;
+					edit.error.samples--;
 				}
 				else // Else, replace
 					m->second = ptIdx;
@@ -504,7 +504,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 			}
 			// Nothing found, add new
 			pts.push_back({ mkIdx, ptIdx });
-			edit.pointCount++;
+			edit.error.samples++;
 		};
 		button.color = toggle? Color{ 0.6f, 0.6f, 1.0f, 1 } : Color{ 1.0f, 0.6f, 0.6f, 1 };
 		return button;

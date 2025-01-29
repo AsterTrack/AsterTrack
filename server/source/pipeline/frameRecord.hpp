@@ -20,9 +20,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define FRAME_RECORD_H
 
 #include "util/eigendef.hpp"
-#include "util/util.hpp"
+#include "util/util.hpp" // TimePoint_t
 
 #include <vector>
+#include <memory>
 
 typedef uint32_t FrameID;
 
@@ -86,12 +87,17 @@ struct CameraFrameRecord
 	std::shared_ptr<CameraImageRecord> image; // Assigned only if pipeline.keepFrameImages is true
 };
 
+struct TargetMatchResult
+{
+	float mean, stdDev, max;
+	int samples;
+};
+
 struct TrackedTargetRecord
 {
 	int id;
 	Eigen::Isometry3f pose;
-	int sampleCnt, cameraCnt;
-	float error2DAvg, error2DMax;
+	TargetMatchResult error;
 
 	// For visualisation only
 	// TODO: Consider garbage-collecting intermediate results from frameRecords
@@ -99,6 +105,7 @@ struct TrackedTargetRecord
 	// However, we may visualise a past frame, usually just because the current frame is different and still processing
 	// Maybe retroactively garbage-collect frame record if neither visualisation, async detection, etc. needs it
 	Eigen::Isometry3f prediction;
+	Eigen::Vector3f predStdDev;
 	std::vector<std::vector<int>> visibleMarkers;
 };
 

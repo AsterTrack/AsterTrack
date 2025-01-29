@@ -149,8 +149,7 @@ struct PipelineState
 		std::list<TrackedTargetFiltered> trackedTargets;
 		std::list<TrackedMarker<float>> trackedMarkers;
 		// Targets not currently tracked
-		std::list<TargetTemplate3D const *> unusedTargets;
-		std::list<std::pair<TargetTemplate3D const *,int>> lostTargets;
+		std::list<std::pair<TargetTemplate3D const *,int>> dormantTargets;
 		// Asynchronous Detections
 		bool asyncDetection;
 		int asyncDetectTargetID = 0;
@@ -180,7 +179,7 @@ struct PipelineState
 		} state;
 		// Room parameters
 		std::vector<PointCalibration<double>> floorPoints;
-		float distance12 = 50.0f; // In mm
+		float distance12 = 0.01f; // In m
 		bool normaliseRoom, calibrateFloor;
 	} pointCalib = {};
 
@@ -231,7 +230,7 @@ void ResetPipeline(PipelineState &pipeline);
 
 // Calibration
 void InitPointCalibration(PipelineState &pipeline);
-void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras);
+void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame);
 
 // Target Calibration
 void InitTargetCalibration(PipelineState &pipeline);

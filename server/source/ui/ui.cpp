@@ -672,6 +672,8 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 		case EVT_START_STREAMING:
 			break;
 		case EVT_STOP_STREAMING:
+			// TODO: Might need lock, not in UI thread right now
+			GetUI().visState.tracking.targets.clear();
 			break;
 		case EVT_UPDATE_CAMERAS:
 			GetUI().UpdateCameras();

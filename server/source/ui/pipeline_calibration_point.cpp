@@ -376,7 +376,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::SameLine();
 	ImGui::Text("%d floor points%s", (int)ptCalib.floorPoints.size(), ptCalib.floorPoints.size() < 3? ", need 3+" : "");
 
-	ScalarInput<float>("Distance 1-2", "mm", &ptCalib.distance12, 1.0f, 2000.0f);
+	ScalarInput<float>("Distance 1-2", "mm", &ptCalib.distance12, 1.0f, 5000.0f, 1, 1000);
 	ImGui::SetItemTooltip("Distance between the first two points, used to calibrate scale. In millimeter.");
 
 	if (ImGui::Button("Normalise Room", SizeWidthDiv2()))

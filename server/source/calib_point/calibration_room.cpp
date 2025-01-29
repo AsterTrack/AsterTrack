@@ -259,6 +259,9 @@ int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Sca
 	Eigen::Matrix<Scalar,3,1> rankValues = evd_N.eigenvalues().template head<3>();
 	LOG(LPointCalib, LDebug, "    PCA for rotation has ranks (%f, %f, %f)\n", rankValues(2), rankValues(1), rankValues(0));
 
+	// TODO: Properly check other data (e.g. observation database) on which "side" the room is, and on which the floor
+	if (axis.z() < 0) axis = -axis;
+
 	if (rankValues(0)*10 > rankValues(1))
 	{
 		LOG(LPointCalib, LError, "    Failed to completely constrain the floor orientation! Rank values (%f, %f) - %f\n", rankValues(2), rankValues(1), rankValues(1));

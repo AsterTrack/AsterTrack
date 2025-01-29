@@ -79,7 +79,7 @@ struct TargetReprojectionError
 	{
 		static_assert(Options&OptUndistorted);
 		m_observedPoints.clear();
-		m_observedPoints.reserve(match.pointCount);
+		m_observedPoints.reserve(match.error.samples);
 		for (int c = 0; c < m_cams.size(); c++)
 		{ // Only regard cameras for which we got the calibration
 			int index = m_cams[c];
@@ -93,8 +93,6 @@ struct TargetReprojectionError
 			if (Options&OptCorrectivePose)
 				m_mvps[index] = m_calibs[index].camera * match.pose.template cast<Scalar>();
 		}
-
-		assert(match.pointCount == m_observedPoints.size());
 	}
 #endif
 

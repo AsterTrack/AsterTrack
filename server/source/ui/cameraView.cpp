@@ -1310,7 +1310,7 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 	bool gotBounds = false;
 
 	{ // Try to find a big nearby cluster to keep focus on
-		auto clusters2D = dbscan<2,float>(points, 50.0f*PixelSize, 3);
+		auto clusters2D = dbscan<2,float, int>(points, 50.0f*PixelSize, 3);
 		int bestCluster = -1;
 		float bestScore = 0;
 		for (int i = 0; i < clusters2D.size(); i++)

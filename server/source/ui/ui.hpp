@@ -132,6 +132,8 @@ struct VisualisationState
 	{
 		// Tracking target to focus on		
 		int focusedTargetID = 0;
+		std::map<int, std::pair<TargetTemplate3D const *, long>> targets;
+		TargetTracking2DData retrackData;
 
 		// Tracking visualisations
 		bool showSearchBounds = false;

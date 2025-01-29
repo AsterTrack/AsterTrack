@@ -40,6 +40,7 @@ void InterfaceState::UpdateCameras()
 	{
 		if (cameraViews.find(cam->id) == cameraViews.end())
 		{ // Add new camera
+			std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 			CameraView view = {};
 			view.camera = cam; // new shared_ptr
 			if (cam->pipeline)
@@ -55,6 +56,7 @@ void InterfaceState::UpdateCameras()
 		auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [&view](const auto &c) { return c->id == view->first; });
 		if (cam == state.cameras.end())
 		{ // Remove old camera view
+			std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 			view = cameraViews.erase(view);
 			cameraGridDirty = true;
 		}

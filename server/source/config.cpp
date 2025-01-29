@@ -740,10 +740,10 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 			auto poseArr = target.pose.matrix().array();
 			for (auto &val : jsTarget["pose"])
 				poseArr(i++) = val.get<float>();
-			target.sampleCnt = jsTarget["sampleCnt"].get<int>();
-			target.cameraCnt = jsTarget["cameraCnt"].get<int>();
-			target.error2DAvg = jsTarget["error2DAvg"].get<float>();
-			target.error2DMax = jsTarget["error2DMax"].get<float>();
+			target.error.samples = jsTarget["num"].get<int>();
+			target.error.mean = jsTarget["avg"].get<float>();
+			target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
+			target.error.max = jsTarget["max"].get<float>();
 			jsFrames["targets"].push_back(std::move(jsTarget));
 		}
 
@@ -817,10 +817,10 @@ void dumpTrackingResults(std::string path, const Iterator &frameStart, const Ite
 			auto poseArr = target.pose.matrix().array();
 			for (int i = 0; i < 16; i++)
 				jsTarget["pose"].push_back(poseArr(i));
-			jsTarget["sampleCnt"] = target.sampleCnt;
-			jsTarget["cameraCnt"] = target.cameraCnt;
-			jsTarget["error2DAvg"] = target.error2DAvg;
-			jsTarget["error2DMax"] = target.error2DMax;
+			jsTarget["num"] = target.error.samples;
+			jsTarget["avg"] = target.error.mean;
+			jsTarget["dev"] = target.error.stdDev;
+			jsTarget["max"] = target.error.max;
 			jsFrame["targets"].push_back(std::move(jsTarget));
 			targetIDs.insert(target.id);
 		}

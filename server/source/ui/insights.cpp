@@ -523,17 +523,15 @@ static bool ShowTrackingPanel()
 			}
 			ImGui::PopID();
 		};
-		for (auto &target : pipeline.tracking.trackedTargets)
-			TargetSelect(*target.target);
-		for (auto &target : pipeline.tracking.lostTargets)
-			TargetSelect(*target.first);
+		for (auto &target : pipeline.tracking.targetTemplates3D)
+			TargetSelect(target);
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
-	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.lostTargets.empty()))
+	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.targetTemplates3D.empty()))
 	{
-		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target : pipeline.tracking.lostTargets.front().first;
+		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target : &pipeline.tracking.targetTemplates3D.front();
 		curTargetID = target->id;
 		curTargetLabel = target->label;
 	}
@@ -602,8 +600,8 @@ static bool ShowTrackingPanel()
 			if (!stats.isTracking)
 				stats.isTracking = true;
 			stats.tracking[index] = true;
-			stats.sampleCount[index] = tracked->sampleCnt;
-			stats.errors2D[index] = tracked->error2DAvg * PixelFactor;
+			stats.sampleCount[index] = tracked->error.samples;
+			stats.errors2D[index] = tracked->error.mean * PixelFactor;
 		};
 
 		// Update frameRange
@@ -1050,6 +1048,9 @@ static bool ShowTimingPanel()
 {
 	InterfaceState &ui = GetUI();
 
+	// TODO: Show total tracking latency & frame processing times in separate graph
+	// So Latency / TimeSync are two tabs
+
 	auto &controller = *GetState().controllers.front();
 	controller.recordTimeSyncMeasurements = true;
 	controller.timeSyncMeasurements.delete_culled();
@@ -1109,7 +1110,7 @@ static bool ShowTimingPanel()
 				and the top when it was received, representing the latency
 		*/
 
-		ImPlot::SetupAxis(ImAxis_X1, "Controller Time (us)");
+		ImPlot::SetupAxis(ImAxis_X1, "Controller Time (us)", ImPlotAxisFlags_AutoFit);
 
 		auto formatter = [](double value, char* buff, int size, void* data)
 		{
@@ -1128,7 +1129,7 @@ static bool ShowTimingPanel()
 		};
 
 		ImPlot::SetupAxisFormat(ImAxis_X1, formatter);
-		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency (us)");
+		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency (us)", ImPlotAxisFlags_AutoFit);
 
 		thread_local std::vector<double> controllerTimes;
 		thread_local std::vector<double> measuredTimesOffset;
@@ -1146,10 +1147,11 @@ static bool ShowTimingPanel()
 			resetEventX.clear();
 			resetEventY.clear();
 
-			controllerTimes.reserve(samples.size());
-			measuredTimesOffset.reserve(samples.size());
-			estimatedTimesOffset.reserve(samples.size());
-			emulatedTimesOffset.reserve(samples.size());
+			std::size_t sampleCount = samples.endIndex()-samples.beginIndex();
+			controllerTimes.reserve(sampleCount);
+			measuredTimesOffset.reserve(sampleCount);
+			estimatedTimesOffset.reserve(sampleCount);
+			emulatedTimesOffset.reserve(sampleCount);
 
 			TimeSync emulatedTimeSync = init;
 

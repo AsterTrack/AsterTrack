@@ -423,10 +423,10 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				{
 					for (auto &target : frame->get()->tracking.targets)
 					{
-						results.frames.update(target.error2DAvg);
-						for (int i = 0; i < target.sampleCnt; i++)
-							results.samples.update(target.error2DAvg);
-						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, target.error2DAvg*PixelFactor);
+						results.frames.update(target.error.mean);
+						for (int i = 0; i < target.error.samples; i++)
+							results.samples.update(target.error.mean);
+						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, target.error.mean*PixelFactor);
 					}
 					results.losses += frame->get()->tracking.trackingLosses;
 					results.detections += frame->get()->tracking.detections2D;

@@ -114,7 +114,7 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	{ // TODO: Reformulate camera calibration for future continuous calibration
 		// Then point calibration would just being explicit instructions by UI to camera calibration and sequence2D
 		// And continuous calibration would be a background algorithm to optimise camera calibration based on tracking data
-		UpdatePointCalibration(pipeline, cameras);
+		UpdatePointCalibration(pipeline, cameras, frame);
 	}
 
 	if (pipeline.phase == PHASE_Calibration_Target)// || pipeline.phase == PHASE_Automatic)
@@ -175,7 +175,10 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 		tracker.target = &*track;
 		tracker.filter.init(targetRecord.pose);
 		pipeline.tracking.trackedTargets.push_back(std::move(tracker));
-		pipeline.tracking.unusedTargets.remove(&*track);
+		auto targetIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
+			[&](auto &e){ return e.first == &*track; });
+		if (targetIt != pipeline.tracking.dormantTargets.end())
+			pipeline.tracking.dormantTargets.erase(targetIt);
 	}
 }
 

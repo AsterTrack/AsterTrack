@@ -124,55 +124,69 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		BeginSection("Tracking (?)");
 		ImGui::SetItemTooltip("Any calibrated target will be detected and tracked automatically.\n");
 
-		TrackedTargetFiltered *trackedTarget = nullptr;
-
-		std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(200));
-		if (pipeline_lock.owns_lock())
+		// Gather tracked targets from latest frame and update UI-local record of tracked targets
+		long frameNum = pipeline.frameNum;
+		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
+		if (visFrame)
 		{
-			for (auto &tracked : pipeline.tracking.trackedTargets)
+			frameNum = visFrame.frameIt.index();
+			auto &tracking = visFrame.frameIt->get()->tracking;
+			for (auto &tracked : tracking.targets)
 			{
-				const TargetTemplate3D *target = tracked.target;
-				ImGui::PushID(target->id);
-				std::string label = asprintf_s("Tracking '%s' (%d)###TgtTrk", target->label.c_str(), target->id);
-				if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == target->id, ImGuiSelectableFlags_SpanAllColumns))
-					visState.tracking.focusedTargetID = target->id;
-				if (visState.tracking.focusedTargetID == target->id)
-					trackedTarget = &tracked;
-				ImGui::PopID();
-			}
-			for (auto &tracked : pipeline.tracking.lostTargets)
-			{
-				const TargetTemplate3D *target = tracked.first;
-				ImGui::PushID(target->id);
-				std::string label = asprintf_s("Lost '%s' (%d)###TgtTrk", target->label.c_str(), target->id);
-				if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == target->id, ImGuiSelectableFlags_SpanAllColumns))
-					visState.tracking.focusedTargetID = target->id;
-				ImGui::PopID();
+				auto &t = visState.tracking.targets[tracked.id];
+				if (!t.first)
+				{
+					auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+						[&](auto &t){ return t.id == tracked.id; });
+					assert(target != pipeline.tracking.targetTemplates3D.end());
+					t.first = &*target;
+				}
+				t.second = frameNum;
 			}
 		}
 
-		// TODO: Don't rely on locking pipelineLock, interferes with pipeline performance
-		// Instead use latest frames tracking results to update an internal map of targets and their status
+		// Display list of trackable targets
+		for (auto &target : visState.tracking.targets)
+		{
+			ImGui::PushID(target.first);
+			long ago = frameNum - target.second.second;
+			TargetTemplate3D const *tgtTemplate = target.second.first;
+			std::string label;
+			if (ago < 5)
+				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tgtTemplate->label.c_str(), target.first);
+			else if (ago < 1000)
+				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tgtTemplate->label.c_str(), target.first, ago);
+			else
+				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tgtTemplate->label.c_str(), target.first);
+			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == target.first, ImGuiSelectableFlags_SpanAllColumns))
+				visState.tracking.focusedTargetID = target.first;
+			ImGui::PopID();
+		}
 
 		EndSection();
 
-		if (displayInternalDebug && visState.tracking.focusedTargetID != 0 && trackedTarget)
+		if (displayInternalDebug && visFrame && visState.tracking.focusedTargetID != 0 &&
+			visState.tracking.targets[visState.tracking.focusedTargetID].second == frameNum)
 		{
 			BeginSection("Tracking Debug");
 
 			// Temporary debug tools, data, etc.
 
+			auto &frame = *visFrame.frameIt->get();
+			auto tracked = std::find_if(frame.tracking.targets.begin(), frame.tracking.targets.end(),
+						[&](auto &t){ return t.id == visState.tracking.focusedTargetID; });
+			assert(tracked != frame.tracking.targets.end());
+			auto &target = *visState.tracking.targets[visState.tracking.focusedTargetID].first;
 			auto &debugVis = visState.tracking.debug;
 
 			std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
 			std::vector<std::vector<BlobProperty> const *> properties(pipeline.cameras.size());
 			std::vector<std::vector<int>> remainingPoints2D(pipeline.cameras.size());
 			std::vector<std::vector<int> const *> relevantPoints2D(pipeline.cameras.size());
-			const auto &frame = pipeline.frameRecords.getView()[pipeline.frameNum];
 			for (int c = 0; c < pipeline.cameras.size(); c++)
 			{
-				points2D[c] = &frame->cameras[c].points2D;
-				properties[c] = &frame->cameras[c].properties;
+				points2D[c] = &frame.cameras[c].points2D;
+				properties[c] = &frame.cameras[c].properties;
 				remainingPoints2D[c].resize(points2D[c]->size());
 				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
 				relevantPoints2D[c] = &remainingPoints2D[c];
@@ -181,20 +195,20 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (ImGui::Button("Redo tracking for this frame", SizeWidthFull()) || debugVis.needsUpdate)
 			{
 				debugVis.needsUpdate = false;
-				trackedTarget->tracking2DData.init(pipeline.cameras.size());
-				debugVis.targetMatch2D = trackTarget2D(*trackedTarget->target,
-					trackedTarget->filter.predPose, trackedTarget->filter.predStdDev,
+				visState.tracking.retrackData.init(pipeline.cameras.size());
+				debugVis.targetMatch2D = trackTarget2D(target,
+					tracked->prediction, tracked->predStdDev,
 					pipeline.getCalibs(), pipeline.cameras.size(),
-					points2D, properties, relevantPoints2D, pipeline.params.track, trackedTarget->tracking2DData);
+					points2D, properties, relevantPoints2D, pipeline.params.track, visState.tracking.retrackData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
-				debugVis.trackerID = trackedTarget->target->id;
-				debugVis.frameNum = frame->num;
+				debugVis.trackerID = visState.tracking.focusedTargetID;
+				debugVis.frameNum = frameNum;
 			}
 
-			if (debugVis.frameNum == pipeline.frameNum)
+			if (debugVis.frameNum == frameNum)
 			{
 				ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-					trackedTarget->match2D.error.mean*PixelFactor, trackedTarget->match2D.error.stdDev*PixelFactor, trackedTarget->match2D.error.max*PixelFactor);
+					tracked->error.mean*PixelFactor, tracked->error.stdDev*PixelFactor, tracked->error.max*PixelFactor);
 				ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max",
 					debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor);
 				ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max",
@@ -526,14 +540,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					for (auto &tracker : current.targets)
 					{
 						auto &tgt = targetsFrame[tracker.id];
-						tgt.samplesCurrent = tracker.sampleCnt;
-						tgt.errorCurrent = tracker.error2DAvg;
+						tgt.samplesCurrent = tracker.error.samples;
+						tgt.errorCurrent = tracker.error.mean;
 					}
 					for (auto &tracker : loaded.targets)
 					{
 						auto &tgt = targetsFrame[tracker.id];
-						tgt.samplesLoaded = tracker.sampleCnt;
-						tgt.errorLoaded = tracker.error2DAvg;
+						tgt.samplesLoaded = tracker.error.samples;
+						tgt.errorLoaded = tracker.error.mean;
 					}
 					// Update changes to each targets tracking results
 					for (auto &tgt : targetsFrame)

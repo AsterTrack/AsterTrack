@@ -11,7 +11,13 @@
 /**
  * Cluster closeby points (pairwise distance below eps)
 */
-template<int N, typename Scalar>
-std::vector<std::vector<uint32_t>> dbscan(const std::vector<Eigen::Matrix<Scalar,N,1>> &data, Scalar eps, int min_pts);
+template<int N, typename Scalar, typename Index = int>
+std::vector<std::vector<Index>> dbscan(const std::vector<Eigen::Matrix<Scalar,N,1>> &data, Scalar eps, int min_pts);
+
+/**
+ * Cluster closeby points (pairwise distance below eps)
+*/
+template<int N, typename Scalar, typename Index = int>
+std::vector<std::vector<Index>> dbscanSubset(const std::vector<Eigen::Matrix<Scalar,N,1>> &data, const std::vector<Index> &indices, Scalar eps, int min_pts);
 
 #endif // DBSCAN_H

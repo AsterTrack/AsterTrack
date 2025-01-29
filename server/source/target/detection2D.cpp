@@ -190,30 +190,29 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &
 		matchTargetPointsSlow(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
 			projected2D, relevantProjected2D, cameraMatches, matchData,
 			params.match, distFactor);
-		targetMatch2D.pointCount = cameraMatches.size();
 	
 		{ // For debug only
-			TgtErrorRes errors = calculateTargetErrors(calibs, points2D, targetMatch2D);
+			TargetMatchResult errors = calculateTargetErrors(calibs, points2D, targetMatch2D);
 			LOGC(LDebug, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
-				i++, targetMatch2D.pointCount, focus, errors.mean*PixelFactor);
+				i++, errors.samples, focus, errors.mean*PixelFactor);
 		}
-		if (targetMatch2D.pointCount < params.minObservations.focus)
+		if (cameraMatches.size() < params.minObservations.focus)
 			continue;
 
 		// Optimise and remove outliers
-		TgtErrorRes errors = optimiseTargetPose(calibs, points2D, targetMatch2D, params.opt);
+		TargetMatchResult errors = optimiseTargetPose(calibs, points2D, targetMatch2D, params.opt);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
-			targetMatch2D.pointCount, errors.mean*PixelFactor);
+			errors.samples, errors.mean*PixelFactor);
 
 		// Properly track to expand to other cameras to acquire more certainty
 		targetMatch2D = trackTarget2D(target3D, targetMatch2D.pose, Eigen::Vector3f::Constant(params.initialStdDev),
 			calibs, cameraCount, points2D, properties, relevantPoints2D, track, trackData);
 
-		if (bestMatch.error.mean/bestMatch.pointCount > targetMatch2D.error.mean/targetMatch2D.pointCount)
+		if (bestMatch.error.mean/bestMatch.error.samples > targetMatch2D.error.mean/targetMatch2D.error.samples)
 		{
 			LOGC(LDebug, "      Candidate ursurped current best candidate with %d points and error %fpx (ratio %f better than %f)!",
-				targetMatch2D.pointCount, errors.mean*PixelFactor, targetMatch2D.error.mean/targetMatch2D.pointCount, 
-				bestMatch.error.mean/bestMatch.pointCount);
+				targetMatch2D.error.samples, errors.mean*PixelFactor, targetMatch2D.error.mean/targetMatch2D.error.samples, 
+				bestMatch.error.mean/bestMatch.error.samples);
 			bestMatch = std::move(targetMatch2D);
 			std::swap(internalData, trackData);
 		}

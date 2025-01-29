@@ -698,12 +698,12 @@ public:
 	template<typename U = T>
 	void push_back(U&& x)
 	{
-		std::size_t index, b, i;
+		std::size_t index;
 		BlockIt<false> block;
 		{
 			std::unique_lock lock(m_mutex);
 			index = m_state.index++;
-			ensure_block(index/N);
+			if (!ensure_block(index/N)) return; // In culled block - not an error per-se
 			block = m_state.back;
 		}
 		(*block)[index%N] = std::forward<U>(x);
@@ -824,20 +824,19 @@ public:
 		{
 			m_state.start += m_state.count+num;
 			m_state.count = -num;
-			m_state.index = m_state.start*N;
 			m_state.begin = std::next(BASE::end(), num);
 			m_state.const_begin = std::next(std::add_const_t<BASE>::end(), num);
-			m_state.back = BASE::end();
-			m_state.const_back = std::add_const_t<BASE>::end();
+			m_state.back = std::prev(BASE::end());
+			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
 		}
 		else
 		{
 			m_state.start += num;
 			m_state.count -= num;
-			m_state.begin = std::next(BASE::begin(), num);
-			m_state.const_begin = std::next(std::add_const_t<BASE>::begin(), num);
-			m_state.back = BASE::end();
-			m_state.const_back = std::add_const_t<BASE>::end();
+			m_state.begin = std::next(m_state.begin, num);
+			m_state.const_begin = std::next(m_state.const_begin, num);
+			m_state.back = std::prev(BASE::end());
+			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
 		}
 		detachBlocks(front, m_state.begin);
 	}

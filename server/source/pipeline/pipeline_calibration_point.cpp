@@ -28,6 +28,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "scope_guard/scope_guard.hpp"
 
+#include <numeric>
+
 static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
 static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
 
@@ -49,7 +51,7 @@ void InitPointCalibration(PipelineState &pipeline)
 }
 
 template<typename Scalar>
-static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Scalar height = 4.5, Scalar distFromOrigin = 4.0)
+static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Scalar height = 4.5, Scalar pairwiseDist = 4.0)
 {
 	Eigen::Matrix<Scalar,3,1> origin = Eigen::Matrix<Scalar,3,1>::Zero();
 	for (auto &calib : calibs)
@@ -81,7 +83,7 @@ static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Sca
 
 	// Get transform to calibrated room from up axis, origin and scale
 	Eigen::Matrix<Scalar,3,3> rotation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Eigen::Matrix<Scalar,3,1>::UnitZ()).toRotationMatrix();
-	Scalar scaling = distFromOrigin / N.colwise().norm().mean();
+	Scalar scaling = pairwiseDist / N.colwise().norm().mean();
 	Eigen::Transform<Scalar,3,Eigen::Affine> transform;
 	transform.linear() = rotation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
 	transform.translation() = -transform.linear()*origin + Eigen::Matrix<Scalar,3,1>(0, 0, height);
@@ -95,7 +97,7 @@ static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Sca
 	}
 }
 
-void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras)
+void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
 {
 	auto &ptCalib = pipeline.pointCalib;
 
@@ -142,7 +144,7 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 		LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
 		Eigen::Matrix3d roomOrientation;
 		Eigen::Affine3d roomTransform;
-		int pointCount = calibrateFloor<double>(ptCalib.floorPoints, ptCalib.distance12/1000.0f, roomOrientation, roomTransform);
+		int pointCount = calibrateFloor<double>(ptCalib.floorPoints, ptCalib.distance12, roomOrientation, roomTransform);
 		if (pointCount > 0)
 		{
 			LOG(LPointCalib, LDebug, "Calibrated floor with %d points!\n", pointCount);
@@ -163,6 +165,54 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 	else
 	{
+		if (!ptCalib.floorPoints.empty() && pipeline.phase == PHASE_Calibration_Point)
+		{ // Triangulate unoccupied 2D points, since tracking stage is not running
+			auto &track = pipeline.tracking;
+			const auto &detect = pipeline.params.detect;
+
+			// Aggregate points and camera calibrations
+			std::vector<CameraCalib> calibs(cameras.size());
+			std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameras.size());
+			std::vector<std::vector<int> const *> relevantPoints2D(calibs.size());
+			std::vector<std::vector<int>> remainingPoints2D(calibs.size());
+			for (int c = 0; c < cameras.size(); c++)
+			{
+				calibs[c]= cameras[c]->calib;
+				points2D[c] = &frame->cameras[calibs[c].index].points2D;
+				remainingPoints2D[c].resize(points2D[c]->size());
+				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
+				relevantPoints2D[c] = &remainingPoints2D[c];
+			}
+
+			// Clear past frames' triangulations
+			track.triangulations3D.clear();
+			track.discarded3D.clear();
+			track.points3D.clear();
+
+			auto &params = pipeline.params.tri;
+
+			// Find potential point correspondences as TriangulatedPoints
+			triangulateRayIntersections(calibs, points2D, relevantPoints2D, track.triangulations3D,
+				params.maxIntersectError, params.minIntersectError);
+
+			// Resolve conflicts by assigning points based on confidences and reevaluating confidences
+			// Note this uses internal data from triangulateRayIntersections to help resolve
+			resolveTriangulationConflicts(track.triangulations3D, params.maxIntersectError);
+
+			// Remove the least confident points
+			filterTriangulatedPoints(track.triangulations3D, track.discarded3D,
+				params.minIntersectionConfidence);
+			LOG(LTracking, LDebug, "%d triangulated points detected", (int)track.triangulations3D.size());
+
+			// Refine point positions
+			track.points3D.reserve(track.triangulations3D.size());
+			for (int p = 0; p < track.triangulations3D.size(); p++)
+			{
+				refineTriangulationIterative<float>(points2D, calibs, track.triangulations3D[p], params.refineIterations);
+				track.points3D.push_back(track.triangulations3D[p].pos);
+			}
+		}
+
 		for (int i = 0; i < ptCalib.floorPoints.size(); i++)
 		{
 			auto &point = ptCalib.floorPoints[i];
@@ -177,7 +227,7 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (point.sampleCount > 0)
 			{
 				Eigen::Vector3d curPos = point.pos / point.sampleCount;
-				if ((curPos.cast<float>() - pipeline.tracking.points3D[0]).norm() < 5)
+				if ((curPos.cast<float>() - pipeline.tracking.points3D[0]).norm() < 0.005)
 				{
 					point.pos += pipeline.tracking.points3D[0].cast<double>();
 					point.sampleCount++;
@@ -185,7 +235,7 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 			else
 			{
-				point.pos += pipeline.tracking.points3D[0].cast<double>();
+				point.pos = pipeline.tracking.points3D[0].cast<double>();
 				point.sampleCount++;
 				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", i);
 			}

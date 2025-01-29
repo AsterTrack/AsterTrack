@@ -881,8 +881,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 			if (!*frameIt) continue;
 			TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
 			LOG(LTargetCalib, LDebug, "    Trying to fill in frame %ld yielded %d matches with %fpx error!",
-				frameIt.index(), targetMatch2D.pointCount, targetMatch2D.error.mean*PixelFactor);
-			if (targetMatch2D.pointCount < params.minTrackPts || targetMatch2D.error.mean > (target.frames[i].error+params.uncertainty)*params.sigmaFill)
+				frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
+			if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[i].error+params.uncertainty)*params.sigmaFill)
 			{
 				if (frameIt.index()-target.frames[refFrame].frame >= 2) break;
 				else continue;
@@ -910,8 +910,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 	{
 		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
 		LOG(LTargetCalib, LDebug, "    Trying to prepend frame %ld yielded %d matches with %fpx error!",
-			frameIt.index(), targetMatch2D.pointCount, targetMatch2D.error.mean*PixelFactor);
-		if (targetMatch2D.pointCount < params.minTrackPts || targetMatch2D.error.mean > (target.frames[0].error+params.uncertainty)*params.sigmaAdd)
+			frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
+		if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[0].error+params.uncertainty)*params.sigmaAdd)
 		{
 			if (target.frames[refFrame].frame-frameIt.index() >= 2) break;
 			else continue;
@@ -932,8 +932,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 	{
 		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
 		LOG(LTargetCalib, LDebug, "    Trying to append frame %ld yielded %d matches with %fpx error!",
-			frameIt.index(), targetMatch2D.pointCount, targetMatch2D.error.mean*PixelFactor);
-		if (targetMatch2D.pointCount < params.minTrackPts || targetMatch2D.error.mean > (target.frames[prevFrames-1].error+params.uncertainty)*params.sigmaAdd)
+			frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
+		if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[prevFrames-1].error+params.uncertainty)*params.sigmaAdd)
 		{
 			if (frameIt.index()-target.frames[refFrame].frame >= 2) break;
 			else continue;
@@ -991,7 +991,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 
 		auto &frameRecord = frames[frame.frame];
 		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, frameRecord, trkTarget, target, frame, params.track);	
-		if (targetMatch2D.pointCount == 0)
+		if (targetMatch2D.error.samples == 0)
 		{
 			invalidFrames++;
 			invalidSamples += frame.samples.size();
@@ -1005,7 +1005,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 
 		error.mean += targetMatch2D.error.mean;
 		error.max = std::max(error.max, targetMatch2D.error.max);
-		newSampleCnt += targetMatch2D.pointCount;
+		newSampleCnt += targetMatch2D.error.samples;
 
 		if constexpr (!APPLY) continue;
 
@@ -1017,7 +1017,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		}
 		frame.pose = targetMatch2D.pose;
 		frame.error = targetMatch2D.error.mean;
-		target.totalSamples += targetMatch2D.pointCount;
+		target.totalSamples += targetMatch2D.error.samples;
 	}
 
 	if constexpr (APPLY)
@@ -1055,7 +1055,6 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 		std::vector<std::vector<Eigen::Vector2f>> points2DRecStore(frameRecord->cameras.size());
 		TargetMatch2D targetMatch2D = {};
 		targetMatch2D.targetTemplate = &trkTarget;
-		targetMatch2D.pointCount = frame.samples.size();
 		targetMatch2D.pose = frame.pose;
 		targetMatch2D.points2D.resize(frameRecord->cameras.size());
 		for (auto &sample : frame.samples)

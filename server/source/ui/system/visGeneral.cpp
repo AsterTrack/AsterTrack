@@ -32,7 +32,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 	snapshot.frameIt = snapshot.frames.pos(std::max((long)0, std::min((long)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
 	if (!snapshot.frameIt.accessible()) snapshot.frameIt = std::prev(snapshot.frames.end());
 	snapshot.target = lockVisTarget();
-	if (snapshot.target)
+	if (snapshot.target && !forceRealtime)
 	{ // Visualise selected past frame
 		auto frame = snapshot.target.target->frames[snapshot.target.frameIdx].frame;
 		if (frame >= snapshot.frames.endIndex())
@@ -58,7 +58,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 
 Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFrame) const
 { // Try to find a 3D target to zoom into
-	if (visFrame.target.target)
+	if (visFrame.target)
 	{
 		if (targetCalib.focusOnMarkerSelection)
 		{

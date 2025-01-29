@@ -388,11 +388,11 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			visualiseCamera(camera->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
 	}
 
-	if (visState.showMarkerRays)
+	if (visState.showMarkerRays && visFrame)
 	{
-		auto frame = pipeline.frameRecords.getView().back();
+		auto &frame = *visFrame.frameIt->get();
 		for (auto &camera : pipeline.cameras)
-			visualiseRays(camera->calib, frame->cameras[camera->index].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
+			visualiseRays(camera->calib, frame.cameras[camera->index].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
 	}
 
 	if (visFrame.target)
@@ -454,9 +454,9 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 	// Else, show real-time situation
 	if (!visFrame) return;
-	std::shared_ptr<const FrameRecord> frameState = *visFrame.frameIt; // new shared_ptr
+	auto &frame = *visFrame.frameIt->get();
 
-	for (auto &trackedTarget : frameState->tracking.targets)
+	for (auto &trackedTarget : frame.tracking.targets)
 	{
 		auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 			[&](auto &t){ return t.id == trackedTarget.id; });

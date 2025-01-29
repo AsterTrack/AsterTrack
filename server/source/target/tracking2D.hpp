@@ -33,19 +33,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
-struct TgtErrorRes
-{
-	float mean, stdDev, max;
-	int samples;
-};
-
 struct TargetMatch2D
 {
 	TargetTemplate3D const *targetTemplate;
 	std::vector<std::vector<std::pair<int,int>>> points2D;
-	int pointCount;
 	Eigen::Isometry3f pose;
-	TgtErrorRes error;
+	TargetMatchResult error;
 };
 
 // Expose internal data for visualisation purposes (low overhead)
@@ -141,14 +134,14 @@ void matchTargetPointsSlow(
  * Optimises the pose to better fit the matched observations
  */
 template<bool OUTLIER = true>
-TgtErrorRes optimiseTargetPose(const std::vector<CameraCalib> &calibs,
+TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &candidate,
 	TargetOptimisationParameters params);
 
 /**
  * Calculates the reprojection error of the target candidate to the matched observations
  */
-TgtErrorRes calculateTargetErrors(const std::vector<CameraCalib> &calibs,
+TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &targetMatch2D);
 
 /**

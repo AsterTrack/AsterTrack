@@ -526,12 +526,11 @@ float matchTargetPointsAlongAxis(
  * Optimises the pose to better fit the matched observations
  */
 template<bool OUTLIER>
-TgtErrorRes optimiseTargetPose(const std::vector<CameraCalib> &calibs,
+TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
 	TargetOptimisationParameters params)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
-	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", match.pointCount);
 
 	// Create initial parameter vector for optimisation
 	//Eigen::VectorXf poseVec = EncodeAAPose(Eigen::Isometry3f::Identity());
@@ -546,6 +545,7 @@ TgtErrorRes optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
+	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", errorTerm.values());
 
 	// Outlier reporting
 	std::vector<bool> outlier;
@@ -652,24 +652,23 @@ TgtErrorRes optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			if constexpr (OUTLIER)
 				pointsMatch.resize(pointsMatch.size()-outliersCam);
 		}
-		if constexpr (OUTLIER)
-			match.pointCount = inlierNum;
 	}
 
-	return { errorMean, errorStdDev, (float)lm.fvec.maxCoeff(), inlierNum };
+	int samples = OUTLIER? inlierNum : errorTerm.values();
+	return { errorMean, errorStdDev, (float)lm.fvec.maxCoeff(), samples };
 }
 
-template TgtErrorRes optimiseTargetPose<true>(const std::vector<CameraCalib> &calibs,
+template TargetMatchResult optimiseTargetPose<true>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
 	TargetOptimisationParameters params);
-template TgtErrorRes optimiseTargetPose<false>(const std::vector<CameraCalib> &calibs,
+template TargetMatchResult optimiseTargetPose<false>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
 	TargetOptimisationParameters params);
 
 /**
  * Optimises the pose to better fit the matched observations
  */
-TgtErrorRes calculateTargetErrors(const std::vector<CameraCalib> &calibs,
+TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match)
 {
 	TargetReprojectionError<float, OptUndistorted> errorTerm(calibs);
@@ -680,9 +679,8 @@ TgtErrorRes calculateTargetErrors(const std::vector<CameraCalib> &calibs,
 	Eigen::VectorXf poseVec = EncodeAAPose(match.pose);
 	errorTerm.operator()<float>(poseVec, errors);
 	float errorMean = errors.sum()/errorTerm.values();
-	float errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/match.pointCount);
-	float errorMax = errors.maxCoeff();
-	return { errorMean, errorStdDev, errorMax, match.pointCount };
+	float errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/errorTerm.values());
+	return { errorMean, errorStdDev, errors.maxCoeff(), errorTerm.values() };
 }
 
 /**
@@ -717,10 +715,9 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	ScopedLogCategory scopedLogCategory(LTracking);
 
 	// Find candidate for 2D point matches
-	TargetMatch2D targetMatch2D;
+	TargetMatch2D targetMatch2D = {};
 	targetMatch2D.targetTemplate = &target;
 	targetMatch2D.pose = pose;
-	targetMatch2D.pointCount = 0;
 	targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 	int relevantCams = points2D.size();
 
@@ -792,18 +789,16 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	auto optimiseTargetMatch =  [&](bool quick)
 	{ // Optimise pose to observations
 		// TODO: Provide a quick option
-		int prevPtCnt = targetMatch2D.pointCount;
-		TgtErrorRes prevErrors;
-		if (SHOULD_LOGC(LDebug))
-			prevErrors = calculateTargetErrors(calibs, points2D, targetMatch2D);
+		TargetMatchResult prevErrors = calculateTargetErrors(calibs, points2D, targetMatch2D);
 		targetMatch2D.error = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, params.opt);
 		LOGC(LDebug, "        Reduced average pixel error of %d points from %.4fpx to %d inliers with %.4fpx error\n",
-			prevPtCnt, prevErrors.mean * PixelFactor, targetMatch2D.error.samples, targetMatch2D.error.mean * PixelFactor);
+			prevErrors.samples, prevErrors.mean * PixelFactor, targetMatch2D.error.samples, targetMatch2D.error.mean * PixelFactor);
 	};
 
 	reprojectTargetMarkers();
 
 	bool noGood = true, cameraGood = false;
+	int matchedSamples = 0;
 
 	// Try first with simple matching algorithm
 	for (int c = 0; c < calibs.size(); c++)
@@ -833,23 +828,22 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 		else
 		{
 			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-			targetMatch2D.pointCount += cameraMatches.size();
+			matchedSamples += cameraMatches.size();
 			if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
 				cameraGood = true;
 			noGood = false;
 		}
 	}
 	matchingStage++;
-	LOGC(LDebug, "        Matched a total of %d samples in initial fast-path!",
-		targetMatch2D.pointCount);
+	LOGC(LDebug, "        Matched a total of %d samples in initial fast-path!", matchedSamples);
 
-	if (!cameraGood || targetMatch2D.pointCount < params.minTotalObs)
+	if (!cameraGood || matchedSamples < params.minTotalObs)
 	{
 		LOGC(LDebug, "        Not one camaera had a good amount of samples, entering slow-path!");
 		for (int i = 0; i < maxComplexStages; i++)
 		{ // Try again with complex matching algorithm
 
-			targetMatch2D.pointCount = 0;
+			matchedSamples = 0;
 			bool nothingNew = true;
 
 			for (int c = 0; c < calibs.size(); c++)
@@ -858,7 +852,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 				auto &cameraMatches = targetMatch2D.points2D[calib.index];
 				if (cameraMatches.size() == closePoints2D[c].size())
 				{ // If no observations left in bounds, skip
-					targetMatch2D.pointCount += cameraMatches.size();
+					matchedSamples += cameraMatches.size();
 					continue;
 				}
 				int prevPointCount = cameraMatches.size();
@@ -887,7 +881,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 				else
 				{
 					LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-					targetMatch2D.pointCount += cameraMatches.size();
+					matchedSamples += cameraMatches.size();
 					if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
 						cameraGood = true;
 					if (prevPointCount < cameraMatches.size())
@@ -897,13 +891,13 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 			matchingStage++;
 
 			LOGC(LDebug, "        Matched a total of %d samples in matching slow-path %d!",
-				targetMatch2D.pointCount, i);
+				matchedSamples, i);
 
 			if (cameraGood) break; // Continue normally
 			if (nothingNew) return targetMatch2D; // No hope improving
 			if (i+1 >= maxComplexStages)
 			{ // Last iterations, don't optimise again
-				if (targetMatch2D.pointCount >= params.minTotalObs)
+				if (matchedSamples >= params.minTotalObs)
 					break; // Some new data after second try, continue normally
 				return targetMatch2D; // Else, not enough data still
 			}
@@ -915,7 +909,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 
 		LOGC(LDebug, "        Continuing normally after slow-path finished!");
 	}
-	assert(cameraGood || targetMatch2D.pointCount >= params.minTotalObs);
+	assert(cameraGood || matchedSamples >= params.minTotalObs);
 
 	if (cameraGood)
 	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
@@ -933,7 +927,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 			assert(dominantCamera >= 0);
 
 			LOGC(LDebug, "        Camera %d is dominant with %d out of %d total samples (next best %d)! Entering uncertainty compensation path!",
-				dominantCamera, camPoints.rank[0], targetMatch2D.pointCount, camPoints.rank[1]);
+				dominantCamera, camPoints.rank[0], matchedSamples, camPoints.rank[1]);
 			Breakpoint(2);
 
 			optimiseTargetMatch(true);
@@ -946,7 +940,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 
 			// Find more visible target points (which would be newly visible in this frame)
 			bool nothingNew = true;
-			targetMatch2D.pointCount = targetMatch2D.points2D[calibs[dominantCamera].index].size();
+			matchedSamples = targetMatch2D.points2D[calibs[dominantCamera].index].size();
 			for (int c = 0; c < calibs.size(); c++)
 			{
 				if (dominantCamera == c) continue;
@@ -954,7 +948,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 				auto &cameraMatches = targetMatch2D.points2D[calib.index];
 				if (cameraMatches.size() == closePoints2D[c].size())
 				{ // If no observations left in bounds, skip
-					targetMatch2D.pointCount += cameraMatches.size();
+					matchedSamples += cameraMatches.size();
 					continue;
 				}
 				int prevPointCount = cameraMatches.size();
@@ -995,7 +989,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 				{
 					LOGC(LDebug, "            Camera %d: Found %d matches in %d points shifted %.1fpx along uncertainty axis!",
 						c, (int)cameraMatches.size(), obsConsidered, bestShift*PixelFactor);
-					targetMatch2D.pointCount += cameraMatches.size();
+					matchedSamples += cameraMatches.size();
 					if (prevPointCount < cameraMatches.size())
 						nothingNew = false;
 				}
@@ -1017,7 +1011,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	LOGC(LDebug, "        Searching for final additions:");
 
 	// Find some more points if possible
-	targetMatch2D.pointCount = 0;
+	matchedSamples = 0;
 	bool nothingNew = true;
 	for (int c = 0; c < calibs.size(); c++)
 	{
@@ -1025,7 +1019,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 		auto &cameraMatches = targetMatch2D.points2D[calib.index];
 		if (cameraMatches.size() == closePoints2D[c].size())
 		{ // If no observations left in bounds, skip
-			targetMatch2D.pointCount += cameraMatches.size();
+			matchedSamples += cameraMatches.size();
 			continue;
 		}
 		int prevPointCount = cameraMatches.size();
@@ -1063,7 +1057,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 		else
 		{
 			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-			targetMatch2D.pointCount += cameraMatches.size();
+			matchedSamples += cameraMatches.size();
 			if (prevPointCount < cameraMatches.size())
 				nothingNew = false;
 		}

@@ -460,9 +460,9 @@ bool trackTarget(TrackedTargetFiltered &target, const std::vector<CameraCalib> &
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(*target.target, filter.predPose, filter.predStdDev, calibs, cameraCount, 
 		points2D, properties, relevantPoints2D, params, target.tracking2DData);
-	if (target.match2D.pointCount < params.minTotalObs) return false;
+	if (target.match2D.error.samples < params.minTotalObs) return false;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
-		target.match2D.error.mean*PixelFactor, target.match2D.pointCount);
+		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 
 	// Store pre-update state for later debug
 	//State prevFilterState = f.curState;
@@ -509,5 +509,5 @@ bool trackTarget(TrackedTargetFiltered &target, const std::vector<CameraCalib> &
 		(filter.pose.translation() - filter.predPose.translation()).norm()*1000, 
 		Eigen::AngleAxisf(filter.pose.rotation() * filter.predPose.rotation().transpose()).angle()/PI*180);
 
-	return target.match2D.pointCount >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
+	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }

@@ -67,7 +67,7 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 		LOG(LSOF, LWarn, "Skipped %d SOFs from lastSOFID %d to frameID %d!\n", sof.frameID-lastSOFID-1, lastSOFID, sof.frameID);
 		for (auto &frame : sync_lock->frames)
 		{
-			LOG(LSOF, LDebug, "Had SOF %d %fms ago!\n", frame.ID, dt(frame.SOF, receiveTime));	
+			LOG(LSOF, LDebug, "Had SOF %d %fms ago!\n", frame.ID, dtMS(frame.SOF, receiveTime));	
 		}
 	}
 
@@ -80,7 +80,7 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	if (dT < -10)
 	{ // Sync supposedly happened in the future, time sync has gone bad
 		LOG(LSOF, LWarn, "Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
-			-dT/1000.0f, dt(timeSync.lastTime, sclock::now()));
+			-dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
 		// NOTE: This previously happened when USB handlers took longer and longer due to logging slowing it down
 		// If this happens again, check the USB handler times to make sure they don't increase to unsustainable levels where timesync becomes invalid
 		// This is also partially adressed by putting USB packet parsing on a separate thread from the USB callbacks doing the timing
@@ -89,10 +89,10 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	LOG(LSOF, LDebug, "SOF packet %d with timestamp %dus was %.2fms ago, with time sync delay "
 		"avg %dus +- %dus (last timestamp %ldus, %.2fms ago)",
 		sof.frameID, sof.timeUS,
-		dt(timeSOF, sclock::now()),
+		dtMS(timeSOF, sclock::now()),
 		(int)(timeSync.diff.avg*1000), (int)(timeSync.diff.stdDev()*1000),
 		timeSync.lastTimestamp,
-		dt(timeSync.lastTime, sclock::now()));
+		dtMS(timeSync.lastTime, sclock::now()));
 	LOG(LSOF, LDebug, "Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
 		"so SOF should be %dus after last timestamp, ""with drift %dus, timesync says %ldus (drift is %.2f%%)\n",
 		sof.timeUS, timeSync.lastTimestamp&0xFFFFFF, sofTimestampUS, timeSync.lastTimestamp,
@@ -219,13 +219,13 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 		{ // Event supposedly happened in the future, time sync has gone bad
 			LOG(LTimesync, LWarn, "Got bad time sync, Event is %.2fms in the future, last timestamp %.2fms in the past"
 				" - changed timestamp from %u (ref %lu) to %lu (ref %lu)\n",
-				-dT/1000.0f, dt(timeSync.lastTime, sclock::now()),
+				-dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()),
 				timestamp, timeSync.lastTimestamp&0xFFFFFF, event.timestamp, timeSync.lastTimestamp);
 		}
 		else if (dT > 10000)
 		{ // Event supposedly happened far in the past
 			LOG(LTimesync, LWarn, "Got bad event time, Event is %.2fms in the past, last timestamp %.2fms in the past - maybe host lagged?\n",
-				dT/1000.0f, dt(timeSync.lastTime, sclock::now()));
+				dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
 			if (dT > 50000)
 			{
 				break;
@@ -237,7 +237,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 		if (event.id >= CONTROLLER_EVENT_MAX)
 		{
 			LOG(LControllerDevice, LWarn, "Received invalid event %d with timestamp %lu (%.2fus) - synced %fms ago!", 
-				event.id, event.timestamp, event.timestampUS, dt(event.syncedTime, sclock::now()));
+				event.id, event.timestamp, event.timestampUS, dtMS(event.syncedTime, sclock::now()));
 			error = true;
 			continue;
 		}
@@ -246,7 +246,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 		// That's too much events even for this light logging system
 		//LOG(LControllerDevice, LTrace, "Event %d (code %d) has timestamp %lu (%.2fus) - synced %fms ago!", 
 		//	event.id, eventCode, event.timestamp, event.timestampUS,
-		//	timeSync.measurements < 50? 0.0f : dt(event.syncedTime, sclock::now()));
+		//	timeSync.measurements < 50? 0.0f : dtMS(event.syncedTime, sclock::now()));
 		controller.eventLog.push_back(event);
 		lastEvent = event;
 	}
@@ -320,7 +320,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				auto error_lock = controller.cameras[i]->state.error.contextualLock();
 				if (error_lock->encountered)
 				{
-					if (dt(error_lock->time, sclock::now()) > 50)
+					if (dtMS(error_lock->time, sclock::now()) > 50)
 					{ // Might need this overlap protection to prevent race-conditions
 						error_lock->recovered = true;
 						error_lock->encountered = false;
@@ -370,7 +370,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				// currently just send a packet to it, so expects prior setup to be intact
 				if (camera.state.error.contextualRLock()->encountered)
 				{ // Might want to defer removal to give it a chance to recover / restart
-					if (dt(camera.state.error.contextualRLock()->time, sclock::now()) < 10000)
+					if (dtMS(camera.state.error.contextualRLock()->time, sclock::now()) < 10000)
 						continue; // 10s restart timer
 				}
 				LOG(LDefault, LInfo, "Removed Camera with ID %d from port %d!\n", camera.id, camera.port);

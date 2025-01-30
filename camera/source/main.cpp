@@ -828,7 +828,7 @@ int main(int argc, char **argv)
 						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 200 : 10))
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
-								dt(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
+								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
 							error = ERROR_GCS_TIMEOUT;
 							abortStreaming = true;
 							break;
@@ -844,7 +844,7 @@ int main(int argc, char **argv)
 					std::shared_ptr<FrameBuffer> pastFrame = std::move(frameExchange);
 #ifdef LOG_DROPS
 					if (pastFrame)
-						printf("%.2fms: CPU FRAME DROP ID %d\n", dt(time_start, sclock::now()), pastFrame->ID);
+						printf("%.2fms: CPU FRAME DROP ID %d\n", dtMS(time_start, sclock::now()), pastFrame->ID);
 #endif
 					cumulFramePassedCPU++;
 				}
@@ -874,10 +874,10 @@ int main(int argc, char **argv)
 				TimePoint_t time_cur = sclock::now();
 #ifdef LOG_DROPS
 				if (advanceFrames > 1)
-					printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dt(time_start, time_cur), advanceFrames-1, frameID);
+					printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dtMS(time_start, time_cur), advanceFrames-1, frameID);
 #endif
 
-				float newInterval = dt(time_frameRecv, time_cur);
+				float newInterval = dtMS(time_frameRecv, time_cur);
 				float expInterval = 1000.0f/state.camera.fps;
 
 				// Consider waiting a bit more for next frame to reset (accumulated) delay
@@ -911,11 +911,11 @@ int main(int argc, char **argv)
 					time_cur = sclock::now();
 #ifdef LOG_DROPS
 					printf("%.2fms: QPU: SKIPPED %.2fms TO CURRENT FRAME, new interval %ldus\n",
-						dt(time_start, time_cur), dt(waitStart, time_cur), dtUS(time_SOF, time_cur));
+						dtMS(time_start, time_cur), dtMS(waitStart, time_cur), dtUS(time_SOF, time_cur));
 					printf("%.2fms: QPU: Reason: time_diff %.2fms, time_delay %.2fms, advance frames %d, avg processing %.2fms, max delay %.2fms\n",
-						dt(time_start, time_cur), newInterval, timeDelay, advanceFrames, avgTimes.processing/1000.0f, maxDelay);
+						dtMS(time_start, time_cur), newInterval, timeDelay, advanceFrames, avgTimes.processing/1000.0f, maxDelay);
 #endif
-					newInterval = dt(time_frameRecv, time_cur);
+					newInterval = dtMS(time_frameRecv, time_cur);
 				} */
 
 				// Update frameID with advanced frames
@@ -1090,7 +1090,7 @@ int main(int argc, char **argv)
 
 				if (framePtrVC == 0)
 				{
-					printf("== %.2fms: QPU: Failed to access frame! ==\n", dt(time_start, sclock::now()));
+					printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
 					error = ERROR_MEM_ACCESS;
 					abortStreaming = true;
 					break;
@@ -1140,7 +1140,7 @@ int main(int argc, char **argv)
 				// Process frame to bitmask
 				if (code != 0)
 				{
-					printf("== %.2fms: QPU: Failed to process frame! ==\n", dt(time_start, sclock::now()));
+					printf("== %.2fms: QPU: Failed to process frame! ==\n", dtMS(time_start, sclock::now()));
 					error = ERROR_QPU_STALL_MSK;
 					abortStreaming = true;
 					break;
@@ -1177,7 +1177,7 @@ int main(int argc, char **argv)
 				frameReady.unlock();
 
 				TimePoint_t t5 = sclock::now();
-				//printf("%.2fms: QPU: Finished QPU processing after %.2fms, including sending off %.2fms\n", dt(time_start, t6), dt(t1, t5), dt(t1, t6));
+				//printf("%.2fms: QPU: Finished QPU processing after %.2fms, including sending off %.2fms\n", dtMS(time_start, t6), dtMS(t1, t5), dtMS(t1, t6));
 
 				// In case of only one CPU core: Switch to CPU thread to process frame
 				sched_yield();
@@ -1450,7 +1450,7 @@ int main(int argc, char **argv)
 			}
 
 			TimePoint_t time_cpu_end = sclock::now();
-			//printf("%.2fms: CPU: Finished CPU processing in %.2fms\n", dt(time_start, sclock::now()), dt(time_cpu_begin, time_cpu_end));
+			//printf("%.2fms: CPU: Finished CPU processing in %.2fms\n", dtMS(time_start, sclock::now()), dtMS(time_cpu_begin, time_cpu_end));
 
 
 			// ---- Reporting & Comms ---

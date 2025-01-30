@@ -125,7 +125,7 @@ EXPORT bool _InterfaceThread()
 	{
 		// Record render time
 		auto now = sclock::now();
-		ui.deltaTime = dt(ui.renderTime, now)/1000.0f;
+		ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
 		ui.renderTime = now;
 
 		// Update/render UI as requested
@@ -191,7 +191,7 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 	// Check render time
 	auto now = sclock::now();
 	if (dtUS(ui.renderTime, now) < targetIntervalUS) return;
-	ui.deltaTime = dt(ui.renderTime, now)/1000.0f;
+	ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
 	ui.renderTime = now;
 
 	// Update/render UI
@@ -340,7 +340,7 @@ void InterfaceState::GeneralUpdate()
 		if (visTarget && targetFramesAdvancing)
 		{
 			static TimePoint_t lastFrameIncrease;
-			if (dt(lastFrameIncrease, sclock::now()) > 1000.0f/60)
+			if (dtMS(lastFrameIncrease, sclock::now()) > 1000.0f/60)
 			{
 				lastFrameIncrease = sclock::now();
 
@@ -357,7 +357,7 @@ void InterfaceState::GeneralUpdate()
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{
 		static TimePoint_t lastObservationUpdate;
-		if (dt(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.dirty)
+		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.dirty)
 		{
 			lastObservationUpdate = sclock::now();
 			UpdateSequences();

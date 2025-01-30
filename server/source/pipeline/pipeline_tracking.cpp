@@ -223,7 +223,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecIt.index()-1);
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-			float timestep = dt(lastTimestamp, frameRec.time);
+			float timestep = dtMS(lastTimestamp, frameRec.time);
 			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt, frameRec.time, timestep))
 			{
 				frameRec.tracking.trackingLosses++;
@@ -262,7 +262,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecIt.index()-1);
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-			float timestep = dt(lastTimestamp, frameRec.time);
+			float timestep = dtMS(lastTimestamp, frameRec.time);
 			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt, frameRec.time, timestep))
 			{
 				frameRec.tracking.trackingLosses++;
@@ -730,15 +730,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	tpt1 = pclock::now();
 
 	{ // Log timing
-		float frameTime = dt(start, pclock::now());
+		float frameTime = dtMS(start, pclock::now());
 		static float accumFrameTime = 0.0f;
 		static int accumCount = 0;
 		accumFrameTime += frameTime;
 		accumCount++;
 		LOG(LPipeline, LDebug, "Tracking took %.3fms - average after %d cycles %f\n", frameTime, accumCount, accumFrameTime/accumCount);
 		LOG(LPipeline, LDebug, "Target Tracking %.3fms; Triangulation %f ms; Target Detection 3D %.3fms; Target Detection 2D %.3fms; Marker Tracking %.3fms\n",
-			dt(trk0, trk1), dt(tri0, tri3), dt(det0, det1), dt(det1, det2), dt(tpt0, tpt1));
+			dtMS(trk0, trk1), dtMS(tri0, tri3), dtMS(det0, det1), dtMS(det1, det2), dtMS(tpt0, tpt1));
 		LOG(LPipeline, LDebug, "Triangulation split up: Ray Intersection %.3fms; Filtering %.3fms; Refinement %.3fms\n",
-			dt(tri0, tri1), dt(tri1, tri2), dt(tri2, tri3));
+			dtMS(tri0, tri1), dtMS(tri1, tri2), dtMS(tri2, tri3));
 	}
 }

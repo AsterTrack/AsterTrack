@@ -899,7 +899,7 @@ static void onInterruptIN(libusb_transfer *transfer)
 		stats.lastReceive = receiveTime;
 		stats.receiveCount++;
 		stats.receiveBytes += transfer->actual_length;
-		state->largestIntLag = std::max(state->largestIntLag, dt(state->lastUSBIntIn, receiveTime));
+		state->largestIntLag = std::max(state->largestIntLag, dtMS(state->lastUSBIntIn, receiveTime));
 		state->lastUSBIntIn = receiveTime;
 		//state->statMutex.unlock();
 	}

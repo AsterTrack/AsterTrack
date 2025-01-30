@@ -710,7 +710,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 	int it = 0;
 	auto checkControlRequest = [](TrackingControllerState &controller, TrackingControllerState::USBRequest &request, const char* label, USBCommand command, int intervalMS)
 	{
-		float deltaT = dt(request.submitted, sclock::now());
+		float deltaT = dtMS(request.submitted, sclock::now());
 		if (request.transfer < 0 && deltaT > intervalMS)
 		{ // Interval lapsed, request transfer
 			request.submitted = sclock::now();
@@ -809,7 +809,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					}
 				}
 				TimePoint_t s1 = sclock::now();
-				float accumMS = dt(last, s1);
+				float accumMS = dtMS(last, s1);
 				last = s0;
 				for (auto &packet : packets)
 				{
@@ -820,12 +820,12 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				if (dtUS(s0, s2) > 2000)
 				{
 					LOG(LParsing, LDarn, "Parsing %d usb packets accumulated over %.2fms took %.2fms of processing plus %ldus of dequeing!",
-						(int)packets.size(), accumMS, dt(s1, s2), dtUS(s0,s1));
+						(int)packets.size(), accumMS, dtMS(s1, s2), dtUS(s0,s1));
 				}
 				//if (dtUS(start, s2) > 5000)
 				//{
 				//	LOG(LParsing, LDarn, "Been parsing %d packets for %.2fms, with %d left in queue, leaving loop!",
-				//		packetParsed, dt(start, s2), packets.size());
+				//		packetParsed, dtMS(start, s2), packets.size());
 				//	break;
 				//}
 			}
@@ -843,7 +843,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		if (dtUS(s0, s1) > 2000)
 		{
 			LOG(LParsing, LDarn, "Maintaining stream state took %.2fms!",
-				dt(s0,s1));
+				dtMS(s0,s1));
 		}
 
 		if (!state->isStreaming)
@@ -1666,12 +1666,12 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		if (frame.previouslyProcessed && frame.completed == frame.expecting)
 		{
 			LOG(LStreaming, LDebug, "Finally completing processing of frame ID %d (%d) after %.2fms!\n",
-				frame.ID, frame.ID&0xFF, dt(frame.SOF, sclock::now()));
+				frame.ID, frame.ID&0xFF, dtMS(frame.SOF, sclock::now()));
 		}
 		else if (frame.completed != frame.expecting)
 		{
 			LOG(LStreaming, LDebug, "Finally discarding frame ID %d (%d) after %.2fms!\n",
-				frame.ID, frame.ID&0xFF, dt(frame.SOF, sclock::now()));
+				frame.ID, frame.ID&0xFF, dtMS(frame.SOF, sclock::now()));
 		}
 	}
 
@@ -1795,7 +1795,7 @@ static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, u
 	{
 		if (request.stalling)
 		{
-			float deltaT = dt(request.submitted, sclock::now());
+			float deltaT = dtMS(request.submitted, sclock::now());
 			if (success)
 			{
 				LOG(LUSB, LWarn, "Stalled control transfer %d (%s) completed after %fms",
@@ -1910,7 +1910,7 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 		}
 		else
 		{ // Is continuous, got timestamp that the last packet within the endpoint was sent at for use with time sync
-			float commLag = dt(stats.lastReceived, sclock::now());
+			float commLag = dtMS(stats.lastReceived, sclock::now());
 			if (commLag > 20)
 			{ // Still fine, but controller should be responsible for sending a packet every ms at least to keep up time sync
 				LOG(LTimesync, LWarn, "Controller comms dropped out for %fms, this is bad for time sync!", commLag);
@@ -1923,7 +1923,7 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 			auto sync_lock = controller.timeSync.contextualLock();
 			std::pair<uint64_t, TimePoint_t> packetSentSync = UpdateTimeSync(*sync_lock, header.lastTimestamp, 1<<24, stats.lastReceived);
 			LOG(LTimesync, LDebug, "Packet of size %d had timestamp %uus for last packet received %.2fms ago, estimated to be sent %.2fms ago (this packet was received %.2fms ago)\n",
-				length, header.lastTimestamp, dt(stats.lastReceived, sclock::now()), dt(packetSentSync.second, sclock::now()), dt(receiveTime, sclock::now()));
+				length, header.lastTimestamp, dtMS(stats.lastReceived, sclock::now()), dtMS(packetSentSync.second, sclock::now()), dtMS(receiveTime, sclock::now()));
 
 			if (packetSentSync.first > 0 && controller.recordTimeSyncMeasurements)
 				controller.timeSyncMeasurements.push_back({ packetSentSync.first, packetSentSync.second, stats.lastReceived });

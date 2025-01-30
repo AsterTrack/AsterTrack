@@ -200,7 +200,7 @@ static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 		auto frameEnd = std::find_if(sync.frames.rbegin(), sync.frames.rend(), [](const SyncedFrame &frame) { return frame.receivedSOFs > 0; });
 		if (frameStart != sync.frames.end() && frameEnd != sync.frames.rend() && frameEnd->ID > frameStart->ID)
 		{ // Predicting frame interval
-			sync.frameIntervalMS = dt<float>(frameStart->SOF, frameEnd->SOF) / (frameEnd->ID - frameStart->ID);
+			sync.frameIntervalMS = dtMS<float>(frameStart->SOF, frameEnd->SOF) / (frameEnd->ID - frameStart->ID);
 		}
 		else
 		{ // External, unpredictable sync and no way to estimate
@@ -287,21 +287,21 @@ void RegisterSOF(SyncGroup &sync, FrameID frameID, TimePoint_t SOF)
 	if (frame != sync.frames.end())
 	{ // Retroactively update SOF
 		LOG(LSOF, LTrace, "Already recorded frame %d for %fms before this SOF!\n",
-			frame->ID, dt(frame->SOF, SOF));
+			frame->ID, dtMS(frame->SOF, SOF));
 		if (frame->receivedSOFs > 0)
 		{ // Received SOF from another controller in the same sync group, merge SOF times
 			int diffUS = dtUS(frame->SOF, SOF);
 			if (std::abs(diffUS) > 100)
 			{
 				LOG(LSOF, LDarn, "--------- Additional SOF for frame %d, has a difference of %dus from prior SOF estimate %.2fms ago - likely bad time sync!",
-					frame->ID, diffUS, dt(frame->SOF, sclock::now()));
+					frame->ID, diffUS, dtMS(frame->SOF, sclock::now()));
 			}
 			frame->SOF += std::chrono::microseconds(diffUS/(frame->receivedSOFs+1));
 		}
 		else
 		{ // Shouldn't happen, SOF should be first packet for frameID
 			LOG(LSOF, LDarn, "--------- SOF wasn't first packet of frame %d with %d prior SOFs and %d blocks, retroactively changed SOF time from %s %.2fms ago to %.2fms ago!",
-				frame->ID, frame->receivedSOFs, frame->blockCounter, frame->approxSOF? "approximately" : "exactly\n", dt(frame->SOF, sclock::now()), dt(SOF, sclock::now()));
+				frame->ID, frame->receivedSOFs, frame->blockCounter, frame->approxSOF? "approximately" : "exactly\n", dtMS(frame->SOF, sclock::now()), dtMS(SOF, sclock::now()));
 			frame->SOF = SOF;
 			frame->approxSOF = false;
 		}
@@ -338,7 +338,7 @@ SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameI
 	if (frame->cameras[index].announced)
 	{ // Duplicate packet from past frame?
 		LOG(LStreaming, LWarn, "Camera announced packet for frame %d (SOF %fms ago) but it was already announced and frame is %s processed!\n",
-			frameID, dt(frame->SOF, sclock::now()), frame->finallyProcessed? "finally" : (frame->previouslyProcessed? "partially" : "not"));
+			frameID, dtMS(frame->SOF, sclock::now()), frame->finallyProcessed? "finally" : (frame->previouslyProcessed? "partially" : "not"));
 		return nullptr;
 	}
 	frame->expecting++;
@@ -381,7 +381,7 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 	}
 
 	// Update statistics
-	float frameMS = dt(frame->SOF, packetTime);
+	float frameMS = dtMS(frame->SOF, packetTime);
 	sync.procLatency.update(frameMS);
 	sync.frameCount++;
 	return frame;
@@ -472,8 +472,8 @@ void MaintainStreamState(StreamState &state)
 		auto frame = sync->frames.begin();
 		while (frame != sync->frames.end())
 		{
-			float frameMS = dt(frame->SOF, now);
-			float packetLastMS = frame->receiving? dt(frame->lastBlock, now) : 0;
+			float frameMS = dtMS(frame->SOF, now);
+			float packetLastMS = frame->receiving? dtMS(frame->lastBlock, now) : 0;
 
 			auto processFrame = [&](bool premature)
 			{
@@ -500,7 +500,7 @@ void MaintainStreamState(StreamState &state)
 				const int deltaF = 1000;
 				if (sync->frameProcessedCount % deltaF == 0)
 				{
-					float deltaT = dt(sync->lastStatUpdate, sclock::now());
+					float deltaT = dtMS(sync->lastStatUpdate, sclock::now());
 					LOG(LStreaming, LInfo, "Group %d: Frame Rate: %.2f / Latency %.2fms +-%.2fms - Max %.2fms\n",
 						s, sync->frameProcessedCount/deltaT*1000.0f, sync->latency.avg, sync->latency.stdDev(), sync->latency.max);
 					LOG(LStreaming, LInfo, "    After %d processed frames: %d delayed, %d eventually outdated, caused by packets: missing %d, erroneous %d\n",
@@ -566,7 +566,7 @@ void MaintainStreamState(StreamState &state)
 						else
 						{
 							LOG(LStreaming, LDarn, "- Frame %d (%d) with %d packets received must've been announced before currently completed frame %d (%d)! Actual dt: %fms\n",
-								old->ID, old->ID&0xFF, old->receiving, frame->ID, frame->ID&0xFF, dt(old->firstPacket, frame->firstPacket));
+								old->ID, old->ID&0xFF, old->receiving, frame->ID, frame->ID&0xFF, dtMS(old->firstPacket, frame->firstPacket));
 						}
 					}
 				}
@@ -580,7 +580,7 @@ void MaintainStreamState(StreamState &state)
 			}
 			else if (sync->frameProcessedCount > 50)
 			{ // Haven't processed anything yet, and frame is not complete yet, but may want to start prematurely processing for realtime purposes
-				//float packetFirstMS = frame->receiving? dt(frame->firstPacket, now) : 0;
+				//float packetFirstMS = frame->receiving? dtMS(frame->firstPacket, now) : 0;
 				//(frame->receiving && (frame->cameraPackets.size() == frame->completed) && (packetLastMS > 1 || packetFirstMS > 4))
 				float maxLatency = sync->latency.avg + 5 * sync->latency.stdDev();
 				if ((frameMS > maxLatency && packetLastMS > 2) || packetLastMS > 5)

@@ -308,8 +308,8 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	LOGC(LDebug, 
 		"-- Reconstruction took %.2fms: "
 			"%.2fms proj. depth, %.2fms basis, %.2fms filling, %.2fms interim, %.2fms factorisation, %.2fms stratification, %.2fms camera factorisation\n", 
-		dt(start, end), 
-			dt(start, mid1), 	dt(mid1, mid2), dt(mid2, mid3), dt(mid3, mid4), dt(mid4, mid5), 	dt(mid5, mid6), 		dt(mid6, end));
+		dtMS(start, end), 
+			dtMS(start, mid1), dtMS(mid1, mid2), dtMS(mid2, mid3), dtMS(mid3, mid4), dtMS(mid4, mid5), dtMS(mid5, mid6), dtMS(mid6, end));
 
 	return reconstructionSuccess;
 }
@@ -515,7 +515,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	auto permIndices = generateQuadruplets(pointCount);
 	auto t1 = sclock::now();
 
-	LOGC(LDebug, "Took %fms to generate %d quadruplets for %d points!\n", dt(t0,t1), permIndices.size(), pointCount); */
+	LOGC(LDebug, "Took %fms to generate %d quadruplets for %d points!\n", dtMS(t0,t1), permIndices.size(), pointCount); */
 
 	// Limit the number of maximum possible computation
 	// TODO: Better limits, adapted to camera count etc.
@@ -605,7 +605,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		}
     }
 	auto p1 = sclock::now();
-	LOGC(LDebug, "Thread %d added %d potential parts in %fms!\n", omp_get_thread_num(), priv_partN.size(), dt(p0, p1));
+	LOGC(LDebug, "Thread %d added %d potential parts in %fms!\n", omp_get_thread_num(), priv_partN.size(), dtMS(p0, p1));
     #pragma omp critical
     partN.insert(partN.end(), priv_partN.begin(), priv_partN.end());
 	} */

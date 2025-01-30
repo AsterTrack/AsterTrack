@@ -242,7 +242,7 @@ struct ReprojectionError
 		s2 = sclock::now(); */
 
 		//JacobianType numericFullJac = jacobian;
-		//LOGC(LTrace, "NumericDiff Full: norm %f in %fms\n", jacobian.norm(), dt(s1, s2));
+		//LOGC(LTrace, "NumericDiff Full: norm %f in %fms\n", jacobian.norm(), dtMS(s1, s2));
 
 #ifdef OPT_AUTODIFF
 
@@ -254,7 +254,7 @@ struct ReprojectionError
 		s2 = sclock::now();
 
 		JacobianType autoFullJac = jacobian;
-		LOGC(LTrace, "AutoDiff Full: norm %f in %fms, diff to NumericDiff %f\n", jacobian.norm(), dt(s1, s2), (numericFullJac-autoFullJac).array().mean());
+		LOGC(LTrace, "AutoDiff Full: norm %f in %fms, diff to NumericDiff %f\n", jacobian.norm(), dtMS(s1, s2), (numericFullJac-autoFullJac).array().mean());
  */
 
 
@@ -316,7 +316,7 @@ struct ReprojectionError
 		s2 = sclock::now();
 
 		JacobianType autoPartJac = jacobian;
-		LOGC(LTrace, "AutoDiff Part: norm %f in %fms, diff to NumericDiff %f\n", jacobian.norm(), dt(s1, s2), (numericFullJac-autoPartJac).array().mean());
+		LOGC(LTrace, "AutoDiff Part: norm %f in %fms, diff to NumericDiff %f\n", jacobian.norm(), dtMS(s1, s2), (numericFullJac-autoPartJac).array().mean());
  */
 #endif
 
@@ -477,7 +477,7 @@ struct ReprojectionError
 		s2 = sclock::now();
 
 		//JacobianType numericPartJac = jacobian;
-		//LOGC(LTrace, "NumericDiff Part: norm %f in %fms\n", jacobian.norm(), dt(s1, s2));
+		//LOGC(LTrace, "NumericDiff Part: norm %f in %fms\n", jacobian.norm(), dtMS(s1, s2));
 
 		//jacobian = numericFullJac;
 

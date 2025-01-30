@@ -213,7 +213,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		auto bounds = imageRect.extendedBy(-params.base.radius);
 		applySeparableKernel(frame->image.data(), fullBaseImage.data(), tempImage.data(), stride, bounds, baseKernel);
 		TimePoint_t dt1 = sclock::now();
-		baseGaussianTime = dt(dt0, dt1);
+		baseGaussianTime = dtMS(dt0, dt1);
 		result->tempImages.emplace_back(fullBaseImage, 
 			asprintf_s("Base Gaussian Blur - Sigma %f, Radius %d - %fms###BaseGaussian",
 				params.base.sigma, params.base.radius, baseGaussianTime));
@@ -228,7 +228,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		auto actualParams = generateGaussianBlurBoxes(params.base.sigma, boxes);
 		applyBoxFilters(frame->image.data(), boxGaussian.data(), tempImage.data(), stride, boxBounds, boxes);
 		dt1 = sclock::now();
-		baseBoxBlurTime = dt(dt0, dt1);
+		baseBoxBlurTime = dtMS(dt0, dt1);
 		result->tempImages.emplace_back(boxGaussian, 
 			asprintf_s("Base Box Blur - Sigma %f, Radius %d, Boxes %d - %fms###BaseBox", 
 				actualParams.first, actualParams.second, (int)boxes.size(), baseBoxBlurTime));
@@ -260,8 +260,8 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		TimePoint_t dt0 = sclock::now();
 		applySeparableKernel(fullBaseImage.data(), ssrGaussians[s].data(), tempImage.data(), stride, baseBounds.extendedBy(-radius), ssrKernels[s]);
 		TimePoint_t dt1 = sclock::now();
-		ssrGaussianTimes += dt(dt0, dt1);
-		result->ssrImages.emplace_back(ssrGaussians[s], asprintf_s("Gaussian %d - Sigma %f, Radius %d - %fms", s, ssrSigmas[s], radius, dt(dt0, dt1)));
+		ssrGaussianTimes += dtMS(dt0, dt1);
+		result->ssrImages.emplace_back(ssrGaussians[s], asprintf_s("Gaussian %d - Sigma %f, Radius %d - %fms", s, ssrSigmas[s], radius, dtMS(dt0, dt1)));
 	}
 
 	LOG(LCameraEmulation, LInfo, "Calculating base image took %fms (%fms for box blur), full gaussian SSR took %fms",
@@ -283,7 +283,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	TimePoint_t t_masking_end = sclock::now();
 
 	LOG(LCameraEmulation, LInfo, "Emulated masking and CCL in %fms, found %d clusters",
-		dt(t_masking, t_masking_end), (int)result->clusters.size());
+		dtMS(t_masking, t_masking_end), (int)result->clusters.size());
 
 	{ // Update mask visualisation
 		for (const auto &clusters : result->clusters)
@@ -553,10 +553,10 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	TimePoint_t t_end = sclock::now();
 
 	LOG(LCameraEmulation, LInfo, "Took %fms to refine %d large blobs!",
-		dt(t_refinement, t_end), (int)result->refinedBlobs.size());
+		dtMS(t_refinement, t_end), (int)result->refinedBlobs.size());
 
 	LOG(LCameraEmulation, LInfo, "Took %fms to emulate camera frame in total, with %fms of preparation, and %fms of blurring/SSR!",
-		dt(t_prep, t_end), dt(t_prep, t_base), dt(t_base, t_masking));
+		dtMS(t_prep, t_end), dtMS(t_prep, t_base), dtMS(t_base, t_masking));
 
 	return result;
 }

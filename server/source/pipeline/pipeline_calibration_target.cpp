@@ -379,7 +379,7 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 				LOGC(LWarn, "    Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n",
 					viewPtr->state.numSteps, errors.mean, errors.stdDev, errors.max);
 
-			LOGC(LDebug, "   Optimisation step took %.2fms!\n", dt(lastIt, pclock::now()));
+			LOGC(LDebug, "   Optimisation step took %.2fms!\n", dtMS(lastIt, pclock::now()));
 			lastIt = pclock::now();
 
 			// Debug step
@@ -503,7 +503,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 		if (hasNaN)
 			LOGC(LWarn, "    Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n", steps, errors.mean, errors.stdDev, errors.max);
 
-		LOGC(LDebug, "   Optimisation step took %.2fms!\n", dt(lastIt, pclock::now()));
+		LOGC(LDebug, "   Optimisation step took %.2fms!\n", dtMS(lastIt, pclock::now()));
 		lastIt = pclock::now();
 
 		// Check if we want to interrupt optimisation to merge markers or delete frames

@@ -1528,7 +1528,7 @@ static void drawOverlayMessages(CameraView &view, ImRect rect)
 
 	// Check error message
 	auto error = *view.camera->state.error.contextualRLock();
-	bool drawErrorMsg = error.encountered || (error.recovered && dt(error.time, sclock::now()) < 3000);
+	bool drawErrorMsg = error.encountered || (error.recovered && dtMS(error.time, sclock::now()) < 3000);
 	// Check streaming button
 	bool setStreaming = (view.camera->mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
 	bool isStreaming = (view.camera->mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;

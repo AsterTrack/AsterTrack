@@ -556,8 +556,8 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 		{
 			auto s = sclock::now();
 			status1 = lm1.minimizeOneStep(calibParamsOpt[0]);
-			totalTime[0] += dt(s, sclock::now());
-			LOGCL("  Option 1 time %fms, status %d", dt(s, sclock::now()), status1);
+			totalTime[0] += dtMS(s, sclock::now());
+			LOGCL("  Option 1 time %fms, status %d", dtMS(s, sclock::now()), status1);
 			lastError[0] = logErrorStats("    Errors", lm1.fvec, outlierCount, removedOutlierCount);
 			itCount[0]++;
 		}
@@ -567,8 +567,8 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 		{
 			auto s = sclock::now();
 			status2 = lm2.minimizeOneStep(calibParamsOpt[1]);
-			totalTime[1] += dt(s, sclock::now());
-			LOGCL("  Option 2 time %fms, status %d", dt(s, sclock::now()), status2);
+			totalTime[1] += dtMS(s, sclock::now());
+			LOGCL("  Option 2 time %fms, status %d", dtMS(s, sclock::now()), status2);
 			lastError[1] = logErrorStats("    Errors", lm2.fvec, outlierCount, removedOutlierCount);
 			itCount[1]++;
 		}
@@ -577,8 +577,8 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 		{
 			auto s = sclock::now();
 			status3 = lm3.minimizeOneStep(calibParamsOpt[2]);
-			totalTime[2] += dt(s, sclock::now());
-			LOGCL("  Option 3 time %fms, status %d", dt(s, sclock::now()), status3);
+			totalTime[2] += dtMS(s, sclock::now());
+			LOGCL("  Option 3 time %fms, status %d", dtMS(s, sclock::now()), status3);
 			lastError[2] = logErrorStats("    Errors", lm3.fvec, outlierCount, removedOutlierCount);
 			itCount[2]++;
 		}

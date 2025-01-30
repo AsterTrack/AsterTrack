@@ -309,7 +309,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					auto itUpdate = [&](OptErrorRes errors){
 						lastError = errors;
 						LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
-							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dt(lastIt, pclock::now()));
+							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
 						lastIt = pclock::now();
 						return numSteps++ < maxSteps;
 					};
@@ -347,7 +347,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					int numSteps = 0, maxSteps = 5;
 					auto itUpdate = [&](OptErrorRes errors){
 						LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
-							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dt(lastIt, pclock::now()));
+							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
 						lastIt = pclock::now();
 						return numSteps++ < maxSteps;
 					};

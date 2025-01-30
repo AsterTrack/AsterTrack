@@ -56,7 +56,7 @@ static inline long dtUS(TimePoint t0, TimePoint t1)
 	return std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 }
 template<typename Scalar = float, typename TimePoint>
-static inline Scalar dt(TimePoint t0, TimePoint t1)
+static inline Scalar dtMS(TimePoint t0, TimePoint t1)
 {
 	return dtUS(t0, t1) / (Scalar)1000.0;
 }

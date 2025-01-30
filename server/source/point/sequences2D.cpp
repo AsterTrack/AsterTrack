@@ -1046,7 +1046,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 	TimePoint_t t6 = sclock::now();
 
 	//LOGC(LTrace, "Found %d matches - took %.1fms, %.1fms, %.1fms, %.1fms, %.1fms, %.1fms\n", 
-	//	matchedPoints, dt(t0, t1), dt(t1, t2), dt(t2, t3), dt(t3, t4), dt(t4, t5), dt(t5, t6));
+	//	matchedPoints, dtMS(t0, t1), dtMS(t1, t2), dtMS(t2, t3), dtMS(t3, t4), dtMS(t4, t5), dtMS(t5, t6));
 
 	return triggerConfidenceCheck;
 }

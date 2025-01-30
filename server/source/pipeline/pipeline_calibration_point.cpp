@@ -342,7 +342,7 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 
 	LOGC(LInfo, "== Done Reconstructing Calibration!\n");
 
-	LOGC(LDebug, "== Reconstruction took %.2fms in total!\n", dt(rec1, rec2));
+	LOGC(LDebug, "== Reconstruction took %.2fms in total!\n", dtMS(rec1, rec2));
 
 	LOGC(LInfo, "=======================\n");
 }
@@ -410,7 +410,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 		ptCalib.state.errors = errors;
 		ptCalib.state.numSteps++;
 
-		float dtOpt = dt(lastIt, pclock::now());
+		float dtOpt = dtMS(lastIt, pclock::now());
 		lastIt = pclock::now();
 
 		bool hasNaN = std::isnan(errors.mean) || std::isnan(errors.stdDev) || std::isnan(errors.max);
@@ -433,7 +433,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 			LOGCL("-- Determining more outliers:");
 			ptCalib.state.errors = determinePointOutliers(pointData, calibs, params.outliers);
 		}
-		LOGC(LDebug, "-- Finished optimisation step in %.2fms + %.2fms", dtOpt, dt(lastIt, pclock::now()));
+		LOGC(LDebug, "-- Finished optimisation step in %.2fms + %.2fms", dtOpt, dtMS(lastIt, pclock::now()));
 
 		return !stopToken.stop_requested() && ptCalib.state.numSteps < settings.maxSteps && !hasNaN;
 	};

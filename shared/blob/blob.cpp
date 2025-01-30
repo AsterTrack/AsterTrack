@@ -283,7 +283,7 @@ bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const R
 		(blob.centroid - houghCenter).norm(), blob.reliability);
 
 	LOG(LCameraEmulation, LDebug, "Took a total of %fms! Refining: %fms - Hough: %fms - Optimising: %fm\n",
-		dt(t1, sclock::now()), dt(t1, t2), dt(t2, t3), dt(t4, t5));
+		dtMS(t1, sclock::now()), dtMS(t1, t2), dtMS(t2, t3), dtMS(t4, t5));
 
 	return true;
 }

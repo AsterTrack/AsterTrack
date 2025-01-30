@@ -49,8 +49,7 @@ void InitTrackingPipeline(PipelineState &pipeline)
 static void recordTrackingResults(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTargetFiltered &trackedTarget)
 {
 	// Record target tracking results
-	frame->tracking.targets.emplace_back();
-	TrackedTargetRecord &target = frame->tracking.targets.back();
+	TrackedTargetRecord target = {};
 	target.id = trackedTarget.match2D.targetTemplate->id;
 	target.poseObserved = trackedTarget.getPoseObserved();
 	target.poseFiltered = trackedTarget.getPoseFiltered();
@@ -58,6 +57,8 @@ static void recordTrackingResults(PipelineState &pipeline, std::shared_ptr<Frame
 	target.stdDev = trackedTarget.getPredictionStdDev();
 	target.error = trackedTarget.match2D.error;
 	updateVisibleMarkers(target.visibleMarkers, trackedTarget.match2D);
+	// Not properly synchronised but should be fine
+	frame->tracking.targets.push_back(std::move(target));
 
 	// Consider recording target in optimisation database
 	auto &params = pipeline.params.cont.targetObs;
@@ -178,7 +179,6 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	int focus, const TargetTemplate3D *target)
 {
 	TrackedTargetFiltered tracker;
-	// TODO: Add stopToken so a successfull detection3D can abort even the brute forcing, or the later catchup parts
 
 	{ // Detect in the first frame
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
@@ -252,6 +252,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		for (; frameRecIt < frames.end(); frameRecIt++)
 		{
 			assert(frameRecIt.accessible());
+			if (!*frameRecIt) continue;
 			auto &frameRec = *frameRecIt->get();
 			if (!frameRec.finishedProcessing)
 				break;

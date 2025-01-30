@@ -461,129 +461,136 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 	fs >> file;
 	fs.close();
 
-	if (!file.contains("frameRecords")) return 0;
-	if (!file["frameRecords"].is_object()) return 0;
-	auto &jsRecords = file["frameRecords"];
-
-	if (!jsRecords.contains("frames")) return 0;
-	if (!jsRecords["frames"].is_array()) return 0;
-	auto &jsFrames = jsRecords["frames"];
-
-	if (jsRecords.contains("cameras") && jsRecords["cameras"].is_array())
-	{
-		auto &jsCameras = jsRecords["cameras"];
-		cameras.reserve(jsCameras.size());
-		for (auto &jsCamera : jsCameras)
-		{
-			if (jsCamera.is_object())
-			{
-				if (!jsCamera.contains("id")) return 0;
-				cameras.emplace_back(jsCamera["id"].get<CameraID>(),
-					jsCamera.contains("frameX")? jsCamera["frameX"].get<int>() : 1280,
-					jsCamera.contains("frameY")? jsCamera["frameY"].get<int>() : 800
-				);
-			}
-			else if (jsCamera.is_number_integer())
-				cameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
-			else
-				return 0;
-		}
-	}
-	else if (jsRecords.contains("cameraCount") && jsRecords["cameraCount"].is_number_integer())
-	{
-		cameras.reserve(jsRecords["cameraCount"].get<int>());
-		for (int i = 0; i < jsRecords["cameraCount"].get<int>(); i++)
-			cameras.emplace_back(i+1, 1280, 800);
-	}
-	else
-		return 0;
-
-	frameRecords.clear();
-	frameRecords.reserve((std::size_t)(jsFrames.size()*1.01f+100));
 	unsigned int frameOffset;
-	TimePoint_t startT = sclock::now();
-	bool foundFirst = false;
-	for (auto &jsFrame : jsFrames)
+	try {
+		if (!file.contains("frameRecords")) return 0;
+		if (!file["frameRecords"].is_object()) return 0;
+		auto &jsRecords = file["frameRecords"];
+
+		if (!jsRecords.contains("frames")) return 0;
+		if (!jsRecords["frames"].is_array()) return 0;
+		auto &jsFrames = jsRecords["frames"];
+
+		if (jsRecords.contains("cameras") && jsRecords["cameras"].is_array())
+		{
+			auto &jsCameras = jsRecords["cameras"];
+			cameras.reserve(jsCameras.size());
+			for (auto &jsCamera : jsCameras)
+			{
+				if (jsCamera.is_object())
+				{
+					if (!jsCamera.contains("id")) return 0;
+					cameras.emplace_back(jsCamera["id"].get<CameraID>(),
+						jsCamera.contains("frameX")? jsCamera["frameX"].get<int>() : 1280,
+						jsCamera.contains("frameY")? jsCamera["frameY"].get<int>() : 800
+					);
+				}
+				else if (jsCamera.is_number_integer())
+					cameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
+				else
+					return 0;
+			}
+		}
+		else if (jsRecords.contains("cameraCount") && jsRecords["cameraCount"].is_number_integer())
+		{
+			cameras.reserve(jsRecords["cameraCount"].get<int>());
+			for (int i = 0; i < jsRecords["cameraCount"].get<int>(); i++)
+				cameras.emplace_back(i+1, 1280, 800);
+		}
+		else
+			return 0;
+
+		frameRecords.clear();
+		frameRecords.reserve((std::size_t)(jsFrames.size()*1.01f+100));
+		TimePoint_t startT = sclock::now();
+		bool foundFirst = false;
+		for (auto &jsFrame : jsFrames)
+		{
+			if (!jsFrame.contains("cameras")) continue;
+			if (!jsFrame["cameras"].is_array()) continue;
+			auto &jsCameras = jsFrame["cameras"];
+
+			unsigned int num = jsFrame["num"].get<unsigned int>();
+			if (!foundFirst)
+			{
+				frameOffset = num;
+				foundFirst = true;
+			}
+			frameRecords.resize(num-frameOffset+1);
+			FrameRecord &frame = frameRecords[num-frameOffset];
+			frame.ID = jsFrame["id"].get<unsigned int>();
+			frame.num = num-frameOffset;
+			frame.time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
+			frame.cameras.reserve(cameras.size());
+
+			for (auto &jsCamera : jsCameras)
+			{
+				if (frame.cameras.size() >= cameras.size())
+					return frameOffset;
+				if (!jsCamera.contains("blobs")) continue;
+				if (!jsCamera["blobs"].is_array()) continue;
+				auto &jsBlobs = jsCamera["blobs"];
+
+				frame.cameras.push_back({});
+				auto &camera = frame.cameras.back();
+				camera.rawPoints2D.reserve(jsBlobs.size());
+				camera.properties.reserve(jsBlobs.size());
+
+				for (auto &jsBlob : jsBlobs)
+				{
+					camera.rawPoints2D.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
+					camera.properties.emplace_back(
+						jsBlob["s"].get<float>(),
+						jsBlob.contains("v")? jsBlob["v"].get<float>() : 1000);
+				}
+
+				if (!jsCamera.contains("image")) continue;
+				json jsImage = jsCamera["image"];
+
+				std::vector<uint8_t> jpeg;
+				{ // Try to load jpeg image
+					auto imgPath = imgFolder / jsImage["path"].get<std::string>();
+					std::ifstream fif(imgPath, std::ios::binary);
+					if (!fif.is_open()) continue;
+					fif.unsetf(std::ios::skipws);
+					fif.seekg(0, std::ios::end);
+					jpeg.reserve(fif.tellg());
+					fif.seekg(0, std::ios::beg);
+					jpeg.insert(jpeg.begin(),
+							std::istream_iterator<uint8_t>(fif),
+							std::istream_iterator<uint8_t>());
+				}
+
+				// Record image
+				camera.image = std::make_shared<CameraImageRecord>();
+				auto &image = *camera.image;
+				int camIndex = frame.cameras.size()-1;
+				image.cameraID = cameras[camIndex].ID;
+				image.frameID = frame.ID;
+				image.jpeg = std::move(jpeg);
+
+				image.frameX = jsImage.contains("frameX")? jsImage["frameX"].get<int>() : cameras[camIndex].frameX;
+				image.frameY = jsImage.contains("frameY")? jsImage["frameY"].get<int>() : cameras[camIndex].frameY;
+
+				if (jsImage.contains("min") && jsImage.contains("max"))
+				{
+					image.boundsPx.minX = jsImage["min"]["x"].get<int>();
+					image.boundsPx.minY = jsImage["min"]["y"].get<int>();
+					image.boundsPx.maxX = jsImage["max"]["x"].get<int>();
+					image.boundsPx.maxY = jsImage["max"]["y"].get<int>();
+				}
+				else
+					image.boundsPx = Bounds2i(0, 0, image.frameX, image.frameY);
+
+				image.imageX = jsImage.contains("imageX")? jsImage["imageX"].get<int>() : image.boundsPx.extends().x();
+				image.imageY = jsImage.contains("imageY")? jsImage["imageY"].get<int>() : image.boundsPx.extends().y();
+			}
+		}
+	}
+	catch(json::exception e)
 	{
-		if (!jsFrame.contains("cameras")) continue;
-		if (!jsFrame["cameras"].is_array()) continue;
-		auto &jsCameras = jsFrame["cameras"];
-
-		unsigned int num = jsFrame["num"].get<unsigned int>();
-		if (!foundFirst)
-		{
-			frameOffset = num;
-			foundFirst = true;
-		}
-		frameRecords.resize(num-frameOffset+1);
-		FrameRecord &frame = frameRecords[num-frameOffset];
-		frame.ID = jsFrame["id"].get<unsigned int>();
-		frame.num = num-frameOffset;
-		frame.time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
-		frame.cameras.reserve(cameras.size());
-
-		for (auto &jsCamera : jsCameras)
-		{
-			if (frame.cameras.size() >= cameras.size())
-				return frameOffset;
-			if (!jsCamera.contains("blobs")) continue;
-			if (!jsCamera["blobs"].is_array()) continue;
-			auto &jsBlobs = jsCamera["blobs"];
-
-			frame.cameras.push_back({});
-			auto &camera = frame.cameras.back();
-			camera.rawPoints2D.reserve(jsBlobs.size());
-			camera.properties.reserve(jsBlobs.size());
-
-			for (auto &jsBlob : jsBlobs)
-			{
-				camera.rawPoints2D.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
-				camera.properties.emplace_back(
-					jsBlob["s"].get<float>(),
-					jsBlob.contains("v")? jsBlob["v"].get<float>() : 1000);
-			}
-
-			if (!jsCamera.contains("image")) continue;
-			json jsImage = jsCamera["image"];
-
-			std::vector<uint8_t> jpeg;
-			{ // Try to load jpeg image
-				auto imgPath = imgFolder / jsImage["path"].get<std::string>();
-				std::ifstream fif(imgPath, std::ios::binary);
-				if (!fif.is_open()) continue;
-				fif.unsetf(std::ios::skipws);
-				fif.seekg(0, std::ios::end);
-				jpeg.reserve(fif.tellg());
-				fif.seekg(0, std::ios::beg);
-				jpeg.insert(jpeg.begin(),
-						std::istream_iterator<uint8_t>(fif),
-						std::istream_iterator<uint8_t>());
-			}
-
-			// Record image
-			camera.image = std::make_shared<CameraImageRecord>();
-			auto &image = *camera.image;
-			int camIndex = frame.cameras.size()-1;
-			image.cameraID = cameras[camIndex].ID;
-			image.frameID = frame.ID;
-			image.jpeg = std::move(jpeg);
-
-			image.frameX = jsImage.contains("frameX")? jsImage["frameX"].get<int>() : cameras[camIndex].frameX;
-			image.frameY = jsImage.contains("frameY")? jsImage["frameY"].get<int>() : cameras[camIndex].frameY;
-
-			if (jsImage.contains("min") && jsImage.contains("max"))
-			{
-				image.boundsPx.minX = jsImage["min"]["x"].get<int>();
-				image.boundsPx.minY = jsImage["min"]["y"].get<int>();
-				image.boundsPx.maxX = jsImage["max"]["x"].get<int>();
-				image.boundsPx.maxY = jsImage["max"]["y"].get<int>();
-			}
-			else
-				image.boundsPx = Bounds2i(0, 0, image.frameX, image.frameY);
-
-			image.imageX = jsImage.contains("imageX")? jsImage["imageX"].get<int>() : image.boundsPx.extends().x();
-			image.imageY = jsImage.contains("imageY")? jsImage["imageY"].get<int>() : image.boundsPx.extends().y();
-		}
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return frameOffset;
 	}
 
 	return frameOffset;
@@ -708,70 +715,77 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 	fs >> file;
 	fs.close();
 
-	if (!file.contains("trackingResults")) return;
-	if (!file["trackingResults"].is_object()) return;
-	auto &jsRecords = file["trackingResults"];
+	try {
+		if (!file.contains("trackingResults")) return;
+		if (!file["trackingResults"].is_object()) return;
+		auto &jsRecords = file["trackingResults"];
 
-	if (!jsRecords.contains("frames")) return;
-	if (!jsRecords["frames"].is_array()) return;
-	auto &jsFrames = jsRecords["frames"];
+		if (!jsRecords.contains("frames")) return;
+		if (!jsRecords["frames"].is_array()) return;
+		auto &jsFrames = jsRecords["frames"];
 
-	for (auto &jsFrames : jsFrames)
-	{
-		if (!jsFrames.contains("num")) continue;
-		if (!jsFrames.contains("targets")) continue;
-		if (!jsFrames["targets"].is_array()) continue;
-		auto &jsTargets = jsFrames["targets"];
-
-		unsigned int num = jsFrames["num"].get<unsigned int>();
-		if (num < frameOffset) continue;
-		if (num > frameOffset+frameRecords.size()) break;
-
-		FrameRecord &frame = frameRecords[num-frameOffset];
-		frame.tracking = {};
-		frame.tracking.targets.reserve(jsTargets.size());
-		for (auto &jsTarget : jsTargets)
+		for (auto &jsFrames : jsFrames)
 		{
-			if (!jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
-			frame.tracking.targets.push_back({});
-			auto &target = frame.tracking.targets.back();
-			target.id = jsTarget["id"].get<int>();
-			int i = 0;
-			auto poseArr = target.poseObserved.matrix().array();
-			for (auto &val : jsTarget["pose"])
-				poseArr(i++) = val.is_number_float()? val.get<float>() : NAN;
-			target.error.samples = jsTarget["num"].get<int>();
-			target.error.mean = jsTarget["avg"].get<float>();
-			target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
-			target.error.max = jsTarget["max"].get<float>();
-			jsFrames["targets"].push_back(std::move(jsTarget));
-		}
+			if (!jsFrames.contains("num")) continue;
+			if (!jsFrames.contains("targets")) continue;
+			if (!jsFrames["targets"].is_array()) continue;
+			auto &jsTargets = jsFrames["targets"];
 
-		if (!jsFrames.contains("events")) continue;
-		if (!jsFrames["events"].is_array()) continue;
-		for (auto &evt : jsFrames["events"])
-		{
-			switch (evt.get<int>())
+			unsigned int num = jsFrames["num"].get<unsigned int>();
+			if (num < frameOffset) continue;
+			if (num > frameOffset+frameRecords.size()) break;
+
+			FrameRecord &frame = frameRecords[num-frameOffset];
+			frame.tracking = {};
+			frame.tracking.targets.reserve(jsTargets.size());
+			for (auto &jsTarget : jsTargets)
 			{
-				case 1:
-					frame.tracking.trackingLosses++;
-					break;
-				case 2:
-					frame.tracking.searches2D++;
-					break;
-				case 3:
-					frame.tracking.detections2D++;
-					break;
-				case 4:
-					frame.tracking.detections3D++;
-					break;
-				case 5:
-					frame.tracking.trackingCatchups++;
-					break;
-				default:
-					break;
+				if (!jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
+				frame.tracking.targets.push_back({});
+				auto &target = frame.tracking.targets.back();
+				target.id = jsTarget["id"].get<int>();
+				int i = 0;
+				auto poseArr = target.poseObserved.matrix().array();
+				for (auto &val : jsTarget["pose"])
+					poseArr(i++) = val.is_number_float()? val.get<float>() : NAN;
+				target.error.samples = jsTarget["num"].get<int>();
+				target.error.mean = jsTarget["avg"].get<float>();
+				target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
+				target.error.max = jsTarget["max"].get<float>();
+				jsFrames["targets"].push_back(std::move(jsTarget));
+			}
+
+			if (!jsFrames.contains("events")) continue;
+			if (!jsFrames["events"].is_array()) continue;
+			for (auto &evt : jsFrames["events"])
+			{
+				switch (evt.get<int>())
+				{
+					case 1:
+						frame.tracking.trackingLosses++;
+						break;
+					case 2:
+						frame.tracking.searches2D++;
+						break;
+					case 3:
+						frame.tracking.detections2D++;
+						break;
+					case 4:
+						frame.tracking.detections3D++;
+						break;
+					case 5:
+						frame.tracking.trackingCatchups++;
+						break;
+					default:
+						break;
+				}
 			}
 		}
+	}
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return;
 	}
 }
 

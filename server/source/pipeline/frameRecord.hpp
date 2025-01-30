@@ -96,7 +96,7 @@ struct TargetMatchResult
 struct TrackedTargetRecord
 {
 	int id;
-	Eigen::Isometry3f pose;
+	Eigen::Isometry3f poseObserved, poseFiltered;
 	TargetMatchResult error;
 
 	// For visualisation only
@@ -104,8 +104,8 @@ struct TrackedTargetRecord
 	// Storing this for all frames, forever, is not great
 	// However, we may visualise a past frame, usually just because the current frame is different and still processing
 	// Maybe retroactively garbage-collect frame record if neither visualisation, async detection, etc. needs it
-	Eigen::Isometry3f prediction;
-	Eigen::Vector3f predStdDev;
+	Eigen::Isometry3f posePredicted;
+	Eigen::Vector3f stdDev;
 	std::vector<std::vector<int>> visibleMarkers;
 };
 

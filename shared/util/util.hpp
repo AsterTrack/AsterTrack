@@ -60,6 +60,11 @@ static inline Scalar dt(TimePoint t0, TimePoint t1)
 {
 	return dtUS(t0, t1) / (Scalar)1000.0;
 }
+template<typename Scalar = float, typename TimePoint>
+static inline Scalar dtS(TimePoint t0, TimePoint t1)
+{
+	return dtUS(t0, t1) / (Scalar)1000000.0;
+}
 
 
 /* asprintf_s */

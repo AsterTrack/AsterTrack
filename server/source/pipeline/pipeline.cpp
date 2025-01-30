@@ -171,10 +171,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 		auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 			[&](auto &t){ return t.id == targetRecord.id; });
 		if (track == pipeline.tracking.targetTemplates3D.end()) continue;
-		TrackedTargetFiltered tracker;
-		tracker.target = &*track;
-		tracker.filter.init(targetRecord.pose);
-		pipeline.tracking.trackedTargets.push_back(std::move(tracker));
+		pipeline.tracking.trackedTargets.emplace_back(&*track, targetRecord.poseObserved);
 		auto targetIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 			[&](auto &e){ return e.first == &*track; });
 		if (targetIt != pipeline.tracking.dormantTargets.end())

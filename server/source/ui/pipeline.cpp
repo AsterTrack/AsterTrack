@@ -197,7 +197,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				debugVis.needsUpdate = false;
 				visState.tracking.retrackData.init(pipeline.cameras.size());
 				debugVis.targetMatch2D = trackTarget2D(target,
-					tracked->prediction, tracked->predStdDev,
+					tracked->posePredicted, tracked->stdDev,
 					pipeline.getCalibs(), pipeline.cameras.size(),
 					points2D, properties, relevantPoints2D, pipeline.params.track, visState.tracking.retrackData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
@@ -256,7 +256,6 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		}
 		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
 		// Maybe make TrackedTarget::filter object an opaque pointer, and have a few method calls abstracted away
-		// Then predPose and pose should be accessible in TrackedTarget directly
 
 		EndSection();
 

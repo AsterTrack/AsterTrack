@@ -1615,7 +1615,8 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 			io_tracker = state.io.vrpn_trackers.insert({ trackedTarget.id, std::move(vrpn_tracker) }).first;
 		}
 
-		io_tracker->second->updatePose(trackedTarget.pose);
+		// TODO: Send both poseObserved and poseFiltered?
+		io_tracker->second->updatePose(trackedTarget.poseFiltered);
 		io_tracker->second->mainloop();
 	}
 

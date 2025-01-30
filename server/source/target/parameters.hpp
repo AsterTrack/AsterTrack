@@ -136,6 +136,10 @@ struct TargetTrackingParameters
 	float maxTotalError = 5.0f*PixelSize;
 	// Optimisation
 	TargetOptimisationParameters opt = {};
+	// Filtering
+	float uncertaintyPos = 0.00001f, uncertaintyRot = 0.0005f;
+	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
+	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 };
 
 // Two more used statically, no easy access to TargetDetectionParameters::triDetection, but recorded here nonetheless

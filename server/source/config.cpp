@@ -737,9 +737,9 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 			auto &target = frame.tracking.targets.back();
 			target.id = jsTarget["id"].get<int>();
 			int i = 0;
-			auto poseArr = target.pose.matrix().array();
+			auto poseArr = target.poseObserved.matrix().array();
 			for (auto &val : jsTarget["pose"])
-				poseArr(i++) = val.get<float>();
+				poseArr(i++) = val.is_number_float()? val.get<float>() : NAN;
 			target.error.samples = jsTarget["num"].get<int>();
 			target.error.mean = jsTarget["avg"].get<float>();
 			target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
@@ -814,7 +814,7 @@ void dumpTrackingResults(std::string path, const Iterator &frameStart, const Ite
 			json jsTarget;
 			jsTarget["id"] = target.id;
 			jsTarget["pose"] = json::array();
-			auto poseArr = target.pose.matrix().array();
+			auto poseArr = target.poseObserved.matrix().array();
 			for (int i = 0; i < 16; i++)
 				jsTarget["pose"].push_back(poseArr(i));
 			jsTarget["num"] = target.error.samples;

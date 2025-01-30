@@ -1063,7 +1063,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			visSetupCamera(postProjMat, calib, mode, viewSize);
 			for (auto &targetRecord : frameState->tracking.targets)
 			{
-				visualisePose(targetRecord.pose, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
+				visualisePose(targetRecord.poseFiltered, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
 			}
 			// TODO: Implement marker tracking once it becomes useful
 			/* for (auto &markerRecord : frameState->tracking.markers)
@@ -1100,7 +1100,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			// Display poses in 3D
 			visSetupCamera(postProjMat, calib, mode, viewSize);
 			for (auto &targetRecord : frameState->tracking.targets)
-				visualisePose(targetRecord.pose, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
+				visualisePose(targetRecord.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
 			if (visState.room.showOrigin)
 				visualiseOrigin(visState.room.origin, 1, 5);
 			visSetupProjection(postProjMat, viewSize);
@@ -1115,17 +1115,17 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 				// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
 				projectTargetTemplate(projected2D, target, calib,
-					targetRecord.pose, pipeline.params.track.expandMarkerFoV);
+					targetRecord.poseObserved, pipeline.params.track.expandMarkerFoV);
 				visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
 
 				// Visualise target points that are tracked this frame
 				projectTargetTemplate(projected2D,
-					target, targetRecord.visibleMarkers[camera.pipeline->index], calib, targetRecord.pose, 1.0f);
+					target, targetRecord.visibleMarkers[camera.pipeline->index], calib, targetRecord.poseObserved, 1.0f);
 				visualisePoints2D(projected2D, Color{ 0.8, 0.0, 0.2, 0.6f }, 2.0f);
 
 				if (visState.tracking.showSearchBounds)
 				{ // Visualise search bounds
-					Eigen::Projective3f mvp = calib.camera.cast<float>() * targetRecord.pose;
+					Eigen::Projective3f mvp = calib.camera.cast<float>() * targetRecord.poseObserved;
 					Bounds2f bounds = projectBounds(mvp, target.bounds);
 					bounds.extendBy({ pipeline.params.track.addUncertaintyPx, pipeline.params.track.addUncertaintyPx });
 					visualiseBounds2D(bounds);
@@ -1134,7 +1134,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				if (visState.tracking.showPredictedTarget)
 				{
 					projectTargetTemplate(projected2D, target, calib,
-						targetRecord.prediction, pipeline.params.track.expandMarkerFoV);
+						targetRecord.posePredicted, pipeline.params.track.expandMarkerFoV);
 					visualisePoints2D(projected2D, Color{ 0.2, 0.5, 0.7, 0.4f }, 2.0f);
 				}
 			}

@@ -24,6 +24,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/target.hpp"
 #include "target/tracking2D.hpp"
 
+#include "flexkalman/process/PoseSeparatelyDampedConstantVelocity.h"
+#include "flexkalman/state/PoseState.h"
+
+
 #include <vector>
 
 /**
@@ -35,6 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct None { };
 
+// Own EKF-based filter variants based on kalman library
 template<typename FilterImpl>
 struct TrackingFilter
 {
@@ -45,9 +50,10 @@ struct TrackingFilter
 
 	// State
 	int measurements;
-	StateFilter curStateFilter;
 	StatePred curStatePred;
-	Isometry3<Scalar> pose; // Pose as measured with tracking algorithms - not filtered
+	StateFilter curStateFilter;
+	Isometry3<Scalar> poseObserved; // Pose as observed by the cameras
+	Isometry3<Scalar> poseFiltered; // Pose filtered from all observations
 
 	// Filter
 	typename FilterImpl::Filter filter;
@@ -58,8 +64,8 @@ struct TrackingFilter
 	// Prediction
 	StateFilter predStateFilter; // Only stored for debug
 	StatePred predStatePred; // Only stored for debug
-	Isometry3<Scalar> predPose;
-	Eigen::Matrix<Scalar,3,1> predStdDev;
+	Isometry3<Scalar> posePredicted;
+	Eigen::Matrix<Scalar,3,1> stdDev;
 	Scalar errorProbability;
 
 	void init(Isometry3<Scalar> initialPose);
@@ -69,6 +75,34 @@ struct TrackingFilter
 	inline void debugState(StateFilter &stateFilter, StatePred &statePred, std::string label, TimeStep timeStep);
 };
 
+// UKF-based Filter from monado based on flexkalman
+struct FlexUKFFilter
+{
+	using Scalar = float;
+	using StateFilter = flexkalman::pose_externalized_rotation::State;
+	using ProcessModel = flexkalman::PoseSeparatelyDampedConstantVelocityProcessModel<StateFilter>;
+
+	// State
+	int measurements;
+	TimePoint_t curTime;
+	StateFilter curStateFilter;
+	Isometry3<Scalar> poseObserved; // Pose as observed by the cameras
+	Isometry3<Scalar> poseFiltered; // Pose filtered from all observations
+
+	// Filter
+	ProcessModel movementModel;
+
+	// Prediction
+	Isometry3<Scalar> posePredicted;
+	Eigen::Matrix<Scalar,3,1> stdDev;
+
+	void init(Isometry3<Scalar> initialPose)
+	{
+		curStateFilter.position() = initialPose.translation().cast<double>();
+		curStateFilter.setQuaternion(Eigen::Quaterniond(initialPose.rotation().cast<double>()));
+	}
+};
+
 template<typename FilterImpl>
 struct TrackedTarget
 {
@@ -76,7 +110,7 @@ struct TrackedTarget
 	using Scalar = typename FilterImpl::Scalar;
 
 	// Filter providing filtering and smoothing
-	TrackingFilter<FilterImpl> filter;
+	FilterImpl filter;
 
 	// Calibrated target template
 	TargetTemplate3D const * target;
@@ -89,6 +123,18 @@ struct TrackedTarget
 	TargetMatch2D match2D;
 
 	int lastTrackedFrame;
+
+	TrackedTarget() {}
+	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose) : target(target)
+	{
+		filter.init(pose.cast<Scalar>());
+	}
+
+	Isometry3<Scalar> getPoseObserved() const { return filter.poseObserved; }
+	Isometry3<Scalar> getPoseFiltered() const { return filter.poseFiltered; }
+	Isometry3<Scalar> getPosePredicted() const { return filter.posePredicted; }
+	Vector3<Scalar> getPredictionStdDev() const { return filter.stdDev; }
+	int getMeasurements() const { return filter.measurements; }
 };
 
 template<typename ScalarType>
@@ -144,24 +190,26 @@ struct Filter_EKF_PA_EKF_RV
 };
 
 // Works fine
-typedef TrackedTarget<Filter_Man_PV_Man_RV<float>> TrackedTargetFiltered;
+//typedef TrackedTarget<TrackingFilter<Filter_Man_PV_Man_RV<float>>> TrackedTargetFiltered;
 
 // Works, not sure if this is any better than fully manual
-//typedef TrackedTarget<Filter_EKF_PV_Man_RV<float>> TrackedTargetFiltered;
+//typedef TrackedTarget<TrackingFilter<Filter_EKF_PV_Man_RV<float>>> TrackedTargetFiltered;
 
 // Very jittery, might need parameter tuning, won't use EKF with acceleration model for now
-//typedef TrackedTarget<Filter_EKF_PA_Man_RV<float>> TrackedTargetFiltered;
+//typedef TrackedTarget<TrackingFilter<Filter_EKF_PA_Man_RV<float>>> TrackedTargetFiltered;
 
 // Barely implemented, doesn't work well at all, but it is fully MEKF
-//typedef TrackedTarget<Filter_EKF_PA_EKF_RV<float>> TrackedTargetFiltered;
+//typedef TrackedTarget<TrackingFilter<Filter_EKF_PA_EKF_RV<float>>> TrackedTargetFiltered;
 
+typedef TrackedTarget<FlexUKFFilter> TrackedTargetFiltered;
 
 /* Functions */
 
-bool trackTarget(TrackedTargetFiltered &target, const std::vector<CameraCalib> &calibs,
+template<typename TARGET = TrackedTargetFiltered>
+bool trackTarget(TARGET &target, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	float timestep, int cameraCount, const TargetTrackingParameters &params);
+	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params);
 
 #endif // TRACKING_3D_H

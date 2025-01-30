@@ -224,6 +224,18 @@ void InterfaceState::UpdateTrackingSettings(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
 		EndSection();
 
+
+		BeginSection("Filtering");
+		modified |= ScalarProperty<float>("Uncertainty Pos", "mm", &params.uncertaintyPos, &standard.uncertaintyPos, 0, 1, 0.1f, 1000, "%.8f");
+		modified |= ScalarProperty<float>("Uncertainty Rot", "dg", &params.uncertaintyRot, &standard.uncertaintyRot, 0, 1, 0.1f, 180, "%.8f");
+		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
+		modified |= ScalarProperty<float>("Sigma Alpha", "", &params.sigmaAlpha, &standard.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Beta", "", &params.sigmaBeta, &standard.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Kappa", "", &params.sigmaKappa, &standard.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.dampeningPos, &standard.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.dampeningRot, &standard.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		EndSection();
+
 		if (modified)
 			frameRelevantParametersDirty = true;
 		if (modified && visState.tracking.debug.frameNum == state.pipeline.frameNum)

@@ -89,9 +89,9 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 			auto track = std::find_if(trackers.begin(), trackers.end(),
 				[&](auto &tgt){ return tgt.id == tracking.focusedTargetID; });
 			if (track != trackers.end())
-				return track->pose.translation();
+				return track->poseFiltered.translation();
 		}
-		return trackers.front().pose.translation();
+		return trackers.front().poseFiltered.translation();
 	}
 
 	return Eigen::Vector3f::Constant(NAN);

@@ -472,7 +472,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 				auto &marker = target->markers[m];
 				if (points[m].color.a == 0.0f)
 				{
-					points[m].pos = trackedTarget.pose * marker.pos;
+					points[m].pos = trackedTarget.poseFiltered * marker.pos;
 					points[m].size = marker.size;
 					points[m].color = Color{ 0.5f, 0.1f, 0.1f, 0.8f };
 				}
@@ -481,7 +481,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			}
 		}
 		visualisePointsSpheres(points);
-		visualisePose(trackedTarget.pose, { 0.8f, 0.4f, 0.4f, 0.8f }, 0.2f, 4.0f);
+		visualisePose(trackedTarget.poseFiltered, { 0.8f, 0.2f, 0.2f, 0.8f }, 0.2f, 4.0f);
+		visualisePose(trackedTarget.poseObserved, { 0.4f, 0.4f, 0.1f, 0.8f }, 0.2f, 2.0f);
 
 		if (visState.tracking.showPredictedTarget)
 		{
@@ -494,7 +495,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 					auto &marker = target->markers[m];
 					if (points[m].color.a == 0.0f)
 					{
-						points[m].pos = trackedTarget.prediction * marker.pos;
+						points[m].pos = trackedTarget.posePredicted * marker.pos;
 						points[m].size = marker.size/2;
 						points[m].color = Color{ 0.2f, 0.2f, 0.7f, 1.0f };
 					}

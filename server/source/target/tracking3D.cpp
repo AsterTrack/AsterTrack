@@ -17,7 +17,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "target/tracking3D.hpp"
+
+#include "util/flexUKF.hpp"
 #include "util/log.hpp"
+
+#include "flexkalman/measurement/AbsoluteOrientationMeasurement.h"
+#include "flexkalman/measurement/AbsolutePositionMeasurement.h"
+#include "flexkalman/FlexibleKalmanFilter.h"
+#include "flexkalman/FlexibleUnscentedCorrect.h"
 
 /**
  * Tracking a target (set of markers) in 3D space
@@ -27,10 +34,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Position predicted manually (velocity model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::init(Isometry3<Scalar> initialPose)
+template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::init(Isometry3<Scalar> pose)
 {
 	measurements = 1;
-	pose = initialPose;
+	poseObserved = pose;
 	curStatePred.setZero();
 	curStatePred.pos() = pose.translation();
 	curStatePred.setQuatR(Eigen::Quaternionf(pose.rotation()));
@@ -41,7 +48,7 @@ template<> Isometry3<float> TrackingFilter<Filter_Man_PV_Man_RV<float>>::predict
 	if (measurements == 1)
 	{
 		predStatePred = curStatePred;
-		predStdDev = Eigen::Vector3f::Constant(0.1f);
+		stdDev = Eigen::Vector3f::Constant(0.1f);
 	}
 	else
 	{
@@ -49,20 +56,25 @@ template<> Isometry3<float> TrackingFilter<Filter_Man_PV_Man_RV<float>>::predict
 		predStatePred.pos() = curStatePred.pos() + curStatePred.vel() * timeStep;
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep, curStatePred.getQuatV()));
-		predStdDev = predStatePred.vel()*2 + Eigen::Vector3f::Constant(0.05f);
+		stdDev = predStatePred.vel()*2 + Eigen::Vector3f::Constant(0.05f);
 	}
-	predPose.translation() = predStatePred.pos();
-	predPose.linear() = predStatePred.getQuatR().toRotationMatrix();
-	return predPose;
+	posePredicted.translation() = predStatePred.pos();
+	posePredicted.linear() = predStatePred.getQuatR().toRotationMatrix();
+	return posePredicted;
 }
 template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::update(TimeStep timeStep, Isometry3<Scalar> newPose)
 {
+	// Update manual position
 	curStatePred.vel() = (newPose.translation() - curStatePred.pos()) / timeStep;
 	curStatePred.pos() = newPose.translation();
+	// Update manual rotation
 	Eigen::Quaternionf newQuat(newPose.rotation());
 	curStatePred.setQuatV(Eigen::Quaternionf::Identity().slerp(1.0f/timeStep, newQuat * curStatePred.getQuatR().inverse()));
 	curStatePred.setQuatR(newQuat);
-	pose = newPose;
+	// Update poses
+	poseFiltered.translation() = curStatePred.pos();
+	poseFiltered.linear() = newPose.rotation();
+	poseObserved = newPose;
 }
 template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::updateError(TimeStep timeStep, Scalar sigma)
 {}
@@ -76,10 +88,10 @@ template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::debugState(StateFil
 // Position filtered with EKF (velocity model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::init(Isometry3<Scalar> initialPose)
+template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::init(Isometry3<Scalar> pose)
 {
 	measurements = 1;
-	pose = initialPose;
+	poseObserved = pose;
 	curStateFilter.setZero();
 	curStateFilter.pos() = pose.translation();
 	curStatePred.setZero();
@@ -93,32 +105,32 @@ template<> Isometry3<float> TrackingFilter<Filter_EKF_PV_Man_RV<float>>::predict
 	{
 		predStateFilter = curStateFilter;
 		predStatePred = curStatePred;
-		predStdDev = Eigen::Vector3f::Constant(0.1f);
+		stdDev = Eigen::Vector3f::Constant(0.1f);
 	}
 	else if (measurements == 2)
 	{
 		predStateFilter = movementModel.f(curStateFilter, timeStep);
-		predStdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
+		stdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
 	}
 	else
 	{
 		predStateFilter = filter.predict(movementModel, timeStep);
-		predStdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
+		stdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
 	}
-	predPose.translation() = predStateFilter.pos();
-	predPose.linear() = predStatePred.getQuatR().toRotationMatrix();
-	return predPose;
+	posePredicted.translation() = predStateFilter.pos();
+	posePredicted.linear() = predStatePred.getQuatR().toRotationMatrix();
+	return posePredicted;
 }
 template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::update(TimeStep timeStep, Isometry3<Scalar> newPose)
 {
 	// Update filtered position
 	if (measurements == 2)
 	{
-		curStateFilter.vel() = (newPose.translation() - pose.translation()) / timeStep.dt();
+		curStateFilter.vel() = (newPose.translation() - poseObserved.translation()) / timeStep.dt();
 		curStateFilter.pos() = newPose.translation();
 		filter.init(curStateFilter);
 	}
@@ -132,8 +144,10 @@ template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::update(TimeStep tim
 	Eigen::Quaternionf newQuat(newPose.rotation());
 	curStatePred.setQuatV(Eigen::Quaternionf::Identity().slerp(1.0f/timeStep.dt(), newQuat * curStatePred.getQuatR().inverse()));
 	curStatePred.setQuatR(newQuat);
-
-	pose = newPose;
+	// Update poses
+	poseFiltered.translation() = curStateFilter.pos();
+	poseFiltered.linear() = newPose.rotation();
+	poseObserved = newPose;
 }
 template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::updateError(TimeStep timeStep, Scalar sigma)
 {
@@ -160,10 +174,10 @@ template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::debugState(StateFil
 // Position filtered with EKF (acceleration model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::init(Isometry3<Scalar> initialPose)
+template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::init(Isometry3<Scalar> pose)
 {
 	measurements = 1;
-	pose = initialPose;
+	poseObserved = pose;
 	curStateFilter.setZero();
 	curStateFilter.pos() = pose.translation();
 	curStatePred.setZero();
@@ -177,37 +191,37 @@ template<> Isometry3<float> TrackingFilter<Filter_EKF_PA_Man_RV<float>>::predict
 	{
 		predStateFilter = curStateFilter;
 		predStatePred = curStatePred;
-		predStdDev = Eigen::Vector3f::Constant(0.1f);
+		stdDev = Eigen::Vector3f::Constant(0.1f);
 	}
 	else if (measurements == 2)
 	{
 		predStateFilter = movementModel.f(curStateFilter, timeStep);
-		predStdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
+		stdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
 	}
 	else
 	{
 		predStateFilter = filter.predict(movementModel, timeStep);
-		predStdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
+		stdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
 	}
-	predPose.translation() = predStateFilter.pos();
-	predPose.linear() = predStatePred.getQuatR().toRotationMatrix();
-	return predPose;
+	posePredicted.translation() = predStateFilter.pos();
+	posePredicted.linear() = predStatePred.getQuatR().toRotationMatrix();
+	return posePredicted;
 }
 template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::update(TimeStep timeStep, Isometry3<Scalar> newPose)
 {
 	// Update filtered position
 	if (measurements == 2)
 	{
-		curStateFilter.vel() = (newPose.translation() - pose.translation()) / timeStep.dt();
+		curStateFilter.vel() = (newPose.translation() - poseObserved.translation()) / timeStep.dt();
 		curStateFilter.pos() = newPose.translation();
 	}
 	else if (measurements == 3)
 	{
-		Eigen::Matrix<Scalar,3,1> vel = (newPose.translation() - pose.translation()) / timeStep.dt();
+		Eigen::Matrix<Scalar,3,1> vel = (newPose.translation() - poseObserved.translation()) / timeStep.dt();
 		curStateFilter.acc() = (vel - curStateFilter.vel()) / timeStep.dt();
 		curStateFilter.vel() = vel;
 		curStateFilter.pos() = newPose.translation();
@@ -223,8 +237,10 @@ template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::update(TimeStep tim
 	Eigen::Quaternionf newQuat(newPose.rotation());
 	curStatePred.setQuatV(Eigen::Quaternionf::Identity().slerp(1.0f/timeStep.dt(), newQuat * curStatePred.getQuatR().inverse()));
 	curStatePred.setQuatR(newQuat);
-
-	pose = newPose;
+	// Update poses
+	poseFiltered.translation() = curStateFilter.pos();
+	poseFiltered.linear() = newPose.rotation();
+	poseObserved = newPose;
 }
 template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::updateError(TimeStep timeStep, Scalar sigma)
 {
@@ -254,10 +270,10 @@ template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::debugState(StateFil
 
 // TODO: Fix the EKF filter for tracker position and rotation
 // Been a while since this code was tested, but it didn't work well before
-template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::init(Isometry3<Scalar> initialPose)
+template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::init(Isometry3<Scalar> pose)
 {
 	measurements = 1;
-	pose = initialPose;
+	poseObserved = pose;
 	curStateFilter.setZero();
 	curStateFilter.pos() = pose.translation();
 	curStateFilter.referenceQuat = Eigen::Quaternionf(pose.rotation());
@@ -272,7 +288,7 @@ template<> Isometry3<float> TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::predict
 	if (measurements == 1)
 	{
 		predStateFilter = curStateFilter;
-		predStdDev = Eigen::Vector3f::Constant(0.1f);
+		stdDev = Eigen::Vector3f::Constant(0.1f);
 		// Remove
 		predStatePred = curStatePred;
 
@@ -280,7 +296,7 @@ template<> Isometry3<float> TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::predict
 	else if (measurements == 2)
 	{
 		predStateFilter = movementModel.f(curStateFilter, timeStep);
-		predStdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
+		stdDev = curStateFilter.vel()*2 + Eigen::Vector3f::Constant(0.05f);
 		// Remove
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
@@ -288,14 +304,14 @@ template<> Isometry3<float> TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::predict
 	else
 	{
 		predStateFilter = filter.predict(movementModel, timeStep);
-		predStdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
+		stdDev = filter.getCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt();
 		// Remove
 		predStatePred.quatV() = curStatePred.quatV();
 		predStatePred.setQuatR(curStatePred.getQuatR() * Eigen::Quaternionf::Identity().slerp(timeStep.dt(), curStatePred.getQuatV()));
 	}
-	predPose.translation() = predStateFilter.pos();
-	predPose.linear() = predStateFilter.quat().toRotationMatrix();
-	return predPose;
+	posePredicted.translation() = predStateFilter.pos();
+	posePredicted.linear() = predStateFilter.quat().toRotationMatrix();
+	return posePredicted;
 }
 template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::update(TimeStep timeStep, Isometry3<Scalar> newPose)
 {
@@ -303,10 +319,10 @@ template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::update(TimeStep tim
 	if (measurements == 2)
 	{
 		// Position
-		curStateFilter.vel() = (newPose.translation() - pose.translation()) / timeStep.dt();
+		curStateFilter.vel() = (newPose.translation() - poseObserved.translation()) / timeStep.dt();
 		curStateFilter.pos() = newPose.translation();
 		// Rotation
-		Eigen::Quaternion<Scalar> newQuat(newPose.rotation()), oldQuat(pose.rotation());
+		Eigen::Quaternion<Scalar> newQuat(newPose.rotation()), oldQuat(poseObserved.rotation());
 		Eigen::Quaternion<Scalar> changeQuat = newQuat * oldQuat.inverse();
 		//Eigen::Quaternion<Scalar> changeQuat(newPose.rotation() * pose.rotation().transpose());
 		curStateFilter.setRVelQuat(Eigen::Quaternionf::Identity().slerp(1.0f/timeStep.dt(), changeQuat));
@@ -315,12 +331,12 @@ template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::update(TimeStep tim
 	else if (measurements == 3)
 	{
 		// Position
-		Eigen::Matrix<Scalar,3,1> vel = (newPose.translation() - pose.translation()) / timeStep.dt();
+		Eigen::Matrix<Scalar,3,1> vel = (newPose.translation() - poseObserved.translation()) / timeStep.dt();
 		curStateFilter.acc() = (vel - curStateFilter.vel()) / timeStep.dt();
 		curStateFilter.vel() = vel;
 		curStateFilter.pos() = newPose.translation();
 		// Rotation
-		Eigen::Quaternion<Scalar> newQuat(newPose.rotation()), oldQuat(pose.rotation());
+		Eigen::Quaternion<Scalar> newQuat(newPose.rotation()), oldQuat(poseObserved.rotation());
 		Eigen::Quaternion<Scalar> changeQuat = newQuat * oldQuat.inverse();
 		//Eigen::Quaternion<Scalar> changeQuat(newPose.rotation() * pose.rotation().transpose());
 		// Rotational acceleration? Dubious if necessary, just a manual predictor anyway
@@ -349,8 +365,10 @@ template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::update(TimeStep tim
 	Eigen::Quaternionf newQuat(newPose.rotation());
 	curStatePred.setQuatV(Eigen::Quaternionf::Identity().slerp(1.0f/timeStep.dt(), newQuat * curStatePred.getQuatR().inverse()));
 	curStatePred.setQuatR(newQuat);
-
-	pose = newPose;
+	// Update poses
+	poseFiltered.translation() = curStateFilter.pos();
+	poseFiltered.linear() = curStateFilter.quat().toRotationMatrix();
+	poseObserved = newPose;
 }
 template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::updateError(TimeStep timeStep, Scalar sigma)
 {
@@ -432,25 +450,28 @@ template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::debugState(StateFil
 // Tracking function
 // -------
 
-bool trackTarget(TrackedTargetFiltered &target, const std::vector<CameraCalib> &calibs,
+template<typename TARGET>
+bool trackTarget(TARGET &target, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	float timestep, int cameraCount, const TargetTrackingParameters &params)
+	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params)
 {
-	using Target = TrackedTargetFiltered;
+	using Target = TARGET;
 	using Scalar = typename Target::Scalar;
 	using StateFilter = typename Target::Filter::StateFilter;
 	using StatePred = typename Target::Filter::StatePred;
 
-	Target::Filter::TimeStep timeStep(timestep);
+	typename Target::Filter::TimeStep timeStep(timestep);
+
 	auto &filter = target.filter;
+	Eigen::Isometry3f oldObservedPose = target.filter.poseObserved;
 
 	// Predict new state
 	filter.predict(timeStep);
 
 	// Calculate uncertainty
-	Eigen::Vector3f uncertainty = Eigen::Vector3f::Constant(params.minUncertainty3D).cwiseMax(filter.predStdDev*params.uncertaintySigma);
+	Eigen::Vector3f uncertainty = Eigen::Vector3f::Constant(params.minUncertainty3D).cwiseMax(filter.stdDev*params.uncertaintySigma);
 	Eigen::Vector3f factor = Eigen::Vector3f::Constant(1).cwiseQuotient(uncertainty);
 	LOG(LTracking, LDebug, "    Predicted pose with uncertainty %.2fmm, matching target in 2D...\n", uncertainty.mean()*1000);
 
@@ -458,56 +479,109 @@ bool trackTarget(TrackedTargetFiltered &target, const std::vector<CameraCalib> &
 	target.tracking2DData.init(cameraCount);
 
 	// Match target with points and optimise pose
-	target.match2D = trackTarget2D(*target.target, filter.predPose, filter.predStdDev, calibs, cameraCount, 
+	target.match2D = trackTarget2D(*target.target, filter.posePredicted, filter.stdDev, calibs, cameraCount, 
 		points2D, properties, relevantPoints2D, params, target.tracking2DData);
 	if (target.match2D.error.samples < params.minTotalObs) return false;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 
-	// Store pre-update state for later debug
-	//State prevFilterState = f.curState;
-	//auto prevCovariance = f.getCovariance();
-
 	// Update filter
 	filter.measurements++;
 	filter.update(timeStep, target.match2D.pose);
-	filter.pose = target.match2D.pose;
-
-	// TODO: Ensure error probability is correct, and include 2D matching RMSE in error calculations
 
 	// Calculate error probability
-	Eigen::Vector3f compErrorProbability = (filter.pose.translation()-filter.predPose.translation()).cwiseAbs().cwiseProduct(factor);
+	Eigen::Vector3f compErrorProbability = (filter.poseObserved.translation()-filter.posePredicted.translation()).cwiseAbs().cwiseProduct(factor);
 	filter.errorProbability = 1-(Eigen::Vector3f::Constant(1)-compErrorProbability).prod();	
-
-	// Debug predicted state
-	filter.debugState(filter.predStateFilter, filter.predStatePred, "    Predicted State", timeStep);
-
-	/* if (f.measurements > 3 && f.curState.pos().hasNaN())
-	{
-		LOG(LTrackingFilter, LWarn, "Update failed! NAN!\n");
-		LOG(LTrackingFilter, LWarn, "  Prev State: %dx%d: \n%s\n", 1, 9, printMatrix(prevFilterState).c_str());
-		LOG(LTrackingFilter, LWarn, "  Prev Cov: %dx%d: \n%s\n", 9, 9, printMatrix(prevCovariance).c_str());
-		LOG(LTrackingFilter, LWarn, "After prediction:\n");
-		LOG(LTrackingFilter, LWarn, "  Pred State: %dx%d: \n%s\n", 1, 9, printMatrix(predFilterState).c_str());
-		LOG(LTrackingFilter, LWarn, "  Pred Cov: %dx%d: \n%s\n", 9, 9, printMatrix(predCovariance).c_str());
-		LOG(LTrackingFilter, LWarn, "After update:\n");
-		LOG(LTrackingFilter, LWarn, "  State: %dx%d: \n%s\n", 1, 9, printMatrix(f.getState()).c_str());
-		LOG(LTrackingFilter, LWarn, "  Covariance: %dx%d: \n%s\n", 9, 9, printMatrix(f.getCovariance()).c_str());
-	} */
-
-	// Debug updated state
-	filter.debugState(filter.curStateFilter, filter.curStatePred, "    Updated State", timeStep);
 
 	// Update error used during prediction
 	if (filter.measurements > 3)
 		filter.updateError(timeStep, params.uncertaintySigma);
 
-	LOG(LTracking, LDebug, "    Matched target with error probability %.2f%%! Change %.3fmm and %.3fdg; Error %.3fmm and %.3fdg!\n", 
+	LOG(LTrackingFilter, LDebug, "    Matched target with error probability %.2f%%! Change %.3fmm and %.3fdg; Error %.3fmm and %.3fdg!\n", 
 		100*filter.errorProbability, 
-		(filter.pose.translation() - filter.pose.translation()).norm()*1000, 
-		Eigen::AngleAxisf(filter.pose.rotation() * filter.pose.rotation().transpose()).angle()/PI*180, 
-		(filter.pose.translation() - filter.predPose.translation()).norm()*1000, 
-		Eigen::AngleAxisf(filter.pose.rotation() * filter.predPose.rotation().transpose()).angle()/PI*180);
+		(filter.poseObserved.translation() - oldObservedPose.translation()).norm()*1000, 
+		Eigen::AngleAxisf(filter.poseObserved.rotation() * oldObservedPose.rotation().transpose()).angle()/PI*180, 
+		(filter.poseObserved.translation() - filter.posePredicted.translation()).norm()*1000, 
+		Eigen::AngleAxisf(filter.poseObserved.rotation() * filter.posePredicted.rotation().transpose()).angle()/PI*180);
 
 	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }
+
+
+template<>
+bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &target, const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params)
+{
+	using Target = TrackedTarget<FlexUKFFilter>;
+	using Scalar = typename Target::Scalar;
+
+	auto &filter = target.filter;
+	Eigen::Isometry3f oldObservedPose = target.filter.poseObserved;
+
+	// Predict new state
+	filter.movementModel.setDamping(params.dampeningPos, params.dampeningRot);
+	flexkalman::predict(filter.curStateFilter, filter.movementModel, timestep);
+	filter.posePredicted = filter.curStateFilter.getIsometry().cast<float>();
+	filter.stdDev = filter.curStateFilter.errorCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt().cast<float>();
+
+	// Calculate uncertainty
+	Eigen::Vector3f uncertainty = Eigen::Vector3f::Constant(params.minUncertainty3D).cwiseMax(filter.stdDev*params.uncertaintySigma);
+	Eigen::Vector3f factor = Eigen::Vector3f::Constant(1).cwiseQuotient(uncertainty);
+	LOG(LTrackingFilter, LDebug, "    Predicted pose with uncertainty %.2fmm, matching target in 2D...\n", uncertainty.mean()*1000);
+
+	// Make sure to allocate memory for any newly added cameras and reset internal data
+	target.tracking2DData.init(cameraCount);
+
+	// Match target with points and optimise pose
+	target.match2D = trackTarget2D(*target.target, filter.posePredicted, filter.stdDev, calibs, cameraCount, 
+		points2D, properties, relevantPoints2D, params, target.tracking2DData);
+	if (target.match2D.error.samples < params.minTotalObs) return false;
+	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
+		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
+	
+	// TODO: Add predicted pose as weak influence to optimisation so we can optimise with less than 6 points
+	// TODO: Get variance/covariance from optimisation via jacobian
+	// Essentially, any parameter that barely influences output error has a high variance
+	// Neatly encapsulates the degrees of freedom (and their strength) left by varying distribution of blobs
+
+	// Update filter
+	filter.measurements++;
+	filter.curTime = time;
+	filter.poseObserved = target.match2D.pose;
+	auto measurement = AbsolutePoseMeasurement{
+		target.match2D.pose.translation().cast<double>(),
+		Eigen::Quaterniond(target.match2D.pose.rotation().cast<double>()),
+		Eigen::Vector3d::Constant(params.uncertaintyPos*params.uncertaintyPos),
+		Eigen::Vector3d::Constant(params.uncertaintyRot*params.uncertaintyRot)
+	};
+	flexkalman::SigmaPointParameters sigmaParams(params.sigmaAlpha, params.sigmaBeta, params.sigmaKappa);
+	if (!flexkalman::correctUnscented(filter.curStateFilter, measurement, true, sigmaParams))
+	{
+		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+	}
+	filter.poseFiltered = filter.curStateFilter.getIsometry().cast<float>();
+
+	// Calculate error probability
+	Eigen::Vector3f compErrorProbability = (filter.poseObserved.translation()-filter.posePredicted.translation()).cwiseAbs().cwiseProduct(factor);
+	float errorProbability = 1-(Eigen::Vector3f::Constant(1)-compErrorProbability).prod();	
+
+	LOG(LTrackingFilter, LDebug, "    Filter error %.2f%%! Obs change %.3fmm, %.3fdg; Pred diff %.3fmm, %.3fdg, Filter diff %.3fmm, %.3fdg!\n", 
+		100*errorProbability, 
+		(filter.poseObserved.translation() - oldObservedPose.translation()).norm()*1000, 
+		Eigen::AngleAxisf(filter.poseObserved.rotation() * oldObservedPose.rotation().transpose()).angle()/PI*180, 
+		(filter.poseObserved.translation() - filter.posePredicted.translation()).norm()*1000, 
+		Eigen::AngleAxisf(filter.poseObserved.rotation() * filter.posePredicted.rotation().transpose()).angle()/PI*180,
+		(filter.poseObserved.translation() - filter.poseFiltered.translation()).norm()*1000, 
+		Eigen::AngleAxisf(filter.poseObserved.rotation() * filter.poseFiltered.rotation().transpose()).angle()/PI*180);
+
+	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
+}
+
+template bool trackTarget<TrackedTargetFiltered>(TrackedTargetFiltered &target, const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params);

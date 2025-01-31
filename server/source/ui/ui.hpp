@@ -85,21 +85,29 @@ struct InterfaceWindow
 
 enum InterfaceWindows
 {
-	WIN_CAMERA_VIEWS,
 	WIN_3D_VIEW,
+	WIN_CAMERA_VIEWS,
 	WIN_VISUALISATION,
-	WIN_CAMERA_SETTINGS,
+
 	WIN_PIPELINE,
-	WIN_LOGGING,
-	WIN_SEQUENCES,
 	WIN_CONTROL,
-	WIN_WIRELESS,
+
+	WIN_LOGGING,
+	WIN_INSIGHTS,
+
+	WIN_TARGETS,
+
 	WIN_DEVICES,
-	WIN_SEQUENCE_SETTINGS,
-	WIN_POINT_CALIB_SETTINGS,
-	WIN_TARGET_CALIB_SETTINGS,
-	WIN_TRACKING_SETTINGS,
+	WIN_CAMERA_SETTINGS,
+	WIN_WIRELESS,
+
+	WIN_SEQUENCE_PARAMS,
+	WIN_POINT_CALIB_PARAMS,
+	WIN_TARGET_CALIB_PARAMS,
+	WIN_TRACKING_PARAMS,
+
 	WIN_LENS_SELECTION_TOOL,
+
 	WIN_STYLE_EDITOR,
 	WIN_IMGUI_DEMO,
 	WIN_IMPLOT_DEMO,
@@ -171,6 +179,22 @@ struct VisualisationState
 		int visSavedObs = -1;
 	} observations;
 
+	struct
+	{
+		// Selection of target for inspection outside of target calib
+		int selectedTargetID = 0;
+		TargetTemplate3D selectedTargetTemplate;
+
+		// Visualisation
+		std::vector<bool> cameraRays;
+		std::vector<bool> markerSelect;
+		bool focusOnMarkerSelection = false;
+		int markerFocussed = -1; // Hovered in "Insights/Target Markers" Sequencer
+		int markerHovered = -1; // Hovered in 3D View
+		bool markerObservations = false;
+		bool markerViewCones = true;
+	} target;
+
 	// Target Calibration
 	struct
 	{
@@ -181,20 +205,8 @@ struct VisualisationState
 		std::shared_ptr<TargetView> view = nullptr;
 		std::shared_ptr<TargetAssemblyStage> stage = nullptr;
 		int stageSubIndex = -1, stageSubSubIndex = -1;
-		// Selection of target from shared database (continuous calibration)
-		int contCalibTargetID = 0;
-		TargetTemplate3D contCalibTargetTemplate;
-		// Frame within TargetCalibVisState
+		// Frame within VisTargetLock
 		int frameIdx = 0, frameNum = 0;
-
-		// Visualisation
-		std::vector<bool> cameraRays;
-		std::vector<bool> markerSelect;
-		bool focusOnMarkerSelection = false;
-		int markerFocussed = -1; // Hovered in "Insights/Target Markers" Sequencer
-		int markerHovered = -1; // Hovered in 3D View
-		bool markerObservations = false;
-		bool markerViewCones = true;
 	} targetCalib;
 	VisTargetLock lockVisTarget() const;
 	bool resetVisTarget(bool keepFrame = true);
@@ -375,14 +387,16 @@ public:
 	void UpdateLogging(InterfaceWindow &window);
 	void UpdateInsights(InterfaceWindow &window);
 
+	void UpdateTargets(InterfaceWindow &window);
+
 	void UpdateDevices(InterfaceWindow &window);
 	void UpdateCameraSettings(InterfaceWindow &window);
 	void UpdateWirelessSetup(InterfaceWindow &window);
 
-	void UpdateSequenceSettings(InterfaceWindow &window);
-	void UpdatePointCalibSettings(InterfaceWindow &window);
-	void UpdateTargetCalibSettings(InterfaceWindow &window);
-	void UpdateTrackingSettings(InterfaceWindow &window);
+	void UpdateSequenceParameters(InterfaceWindow &window);
+	void UpdatePointCalibParameters(InterfaceWindow &window);
+	void UpdateTargetCalibParameters(InterfaceWindow &window);
+	void UpdateTrackingParameters(InterfaceWindow &window);
 
 	void UpdateLensSelectionTool(InterfaceWindow &window);
 

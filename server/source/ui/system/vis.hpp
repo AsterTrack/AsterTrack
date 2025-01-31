@@ -27,13 +27,24 @@ struct VisTargetLock
 {
 	SynchronisedS<ObsTarget>::ConstLockedPtr target_lock;
 	Synchronised<ObsData>::ConstLockedPtr db_lock;
-	const ObsTarget *target = nullptr;
-	const TargetTemplate3D *targetTemplate;
+	const ObsTarget *targetObs = nullptr;
+	const TargetTemplate3D *targetTemplate = nullptr;
 	bool hasPose = false;
 	int frameIdx = -1;
 	const TargetTemplate3D *templateGT = nullptr;
 
-    operator bool() const { return target != nullptr; }
+    operator bool() const { return targetTemplate != nullptr; }
+    bool hasObs() const { return targetObs != nullptr; }
+
+	Eigen::Isometry3f getPose() const
+	{
+		Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+		if (targetObs)
+			pose = targetObs->frames[frameIdx].pose;
+		else
+			pose.translation() = Eigen::Vector3f(0,0,1);
+		return pose;
+	}
 };
 
 struct VisFrameLock

@@ -128,6 +128,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					view->beginFrame = newRange.beginFrame;
 					view->endFrame = newRange.endFrame;
 					view->stats = newRange.stats;
+					view->targetTemplate.initialise(newRange.target.markers);
 					*view->target.contextualLock() = std::move(newRange.target);
 					if (pipeline.isSimulationMode)
 					{
@@ -269,6 +270,7 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 			LOGC(LDebug, "=======================\n");
 			return false;
 		}
+		viewPtr->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(calibs, target, params.post));
 		*viewPtr->target.contextualLock() = target;
 		viewPtr->stats.frameCount = target.frames.size();
 		viewPtr->stats.markerCount = target.markers.size();

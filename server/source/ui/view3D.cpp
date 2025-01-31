@@ -82,7 +82,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	 */
 
 	ImGuiIO &io = ImGui::GetIO();
-	if (viewFocused)
+	if (viewFocused || viewHovered)
 	{ // Process input
 		float dT = io.DeltaTime > 0.05f? 0.016f : io.DeltaTime;
 		float dM = dT *10.0f;
@@ -100,6 +100,10 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			{
 				RequestUpdates();
 				view3D.distance -= 1.0f*dT;
+			}
+			if (ImGui::IsKeyDown(ImGuiKey_U))
+			{
+				view3D.orbit = false;
 			}
 		}
 		else
@@ -133,6 +137,10 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			{
 				RequestUpdates();
 				transform.translation() += /*transform.rotation() **/ Eigen::Vector3f(0, 0, +3.0f*dT);
+			}
+			if (ImGui::IsKeyDown(ImGuiKey_Z))
+			{
+				view3D.orbit = true;
 			}
 		}
 	}
@@ -218,8 +226,11 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget)
+			visState.updateVisTarget(visTarget);
+
+		if (visTarget.hasObs())
 		{
-			auto &frame = visTarget.target->frames[visState.targetCalib.frameIdx % visTarget.target->frames.size()];
+			auto &frame = visTarget.targetObs->frames[visState.targetCalib.frameIdx % visTarget.targetObs->frames.size()];
 			viewLabel = asprintf_s("Frame %d", frame.frame);
 			if (visTarget.hasPose)
 			{
@@ -238,14 +249,14 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 					ImGui::SetNextItemAllowOverlap();
 					if (ImGui::Button(asprintf_s("##CamBtn%d", cam->index).c_str(), ImVec2(radiusPx*2, radiusPx*2)))
 					{
-						visState.targetCalib.cameraRays.resize(pipeline.cameras.size());
-						visState.targetCalib.cameraRays[cam->index] = !visState.targetCalib.cameraRays[cam->index];
+						visState.target.cameraRays.resize(pipeline.cameras.size());
+						visState.target.cameraRays[cam->index] = !visState.target.cameraRays[cam->index];
 					}
 				}
 			}
 		}
 
-		if (visState.targetCalib.markerHovered >= 0)
+		if (visTarget && visState.target.markerHovered >= 0)
 		{
 			ImGuiID id = ImGui::GetID("TargetCalibMarker");
 			ImVec2 pos = ImGui::GetMousePos();
@@ -257,12 +268,12 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 				bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 				if (pressed)
 				{
-					visState.targetCalib.markerSelect[visState.targetCalib.markerHovered] =
-						!visState.targetCalib.markerSelect[visState.targetCalib.markerHovered]; 
+					visState.target.markerSelect[visState.target.markerHovered] =
+						!visState.target.markerSelect[visState.target.markerHovered]; 
 				}
 			}
 		}
-		visState.targetCalib.markerHovered = -1;
+		visState.target.markerHovered = -1;
 	}
 
 	/**
@@ -346,9 +357,9 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget && ImGui::TreeNode("Target Calibration"))
 		{
-			ImGui::Checkbox("Show Marker FoV", &visState.targetCalib.markerViewCones);
-			ImGui::Checkbox("Show Marker Observations", &visState.targetCalib.markerObservations);
-			ImGui::Checkbox("Focus on Selection", &visState.targetCalib.focusOnMarkerSelection);
+			ImGui::Checkbox("Show Marker FoV", &visState.target.markerViewCones);
+			ImGui::Checkbox("Show Marker Observations", &visState.target.markerObservations);
+			ImGui::Checkbox("Focus on Selection", &visState.target.focusOnMarkerSelection);
 			ImGui::TreePop();
 		}
 
@@ -397,19 +408,19 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 	if (visFrame.target)
 	{ // Only show target calibration data, not real-time state
-		auto &frame = visFrame.target.target->frames[visFrame.target.frameIdx];
+		visState.updateVisTarget(visFrame.target);
 
-		if (visFrame.target.hasPose && visState.targetCalib.markerObservations)
+		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.target.markerObservations)
 		{ // Show show observations ray for each marker
 			visualiseVisTargetObservations(pipeline.getCalibs(), visState, visFrame.target);
 		}
 
-		if (visFrame.target.hasPose)
+		if (visFrame.target.hasObs() && visFrame.target.hasPose)
 		{ // Draw observation rays for focused cameras, if any
 			visualiseVisTargetObsCameraRays(pipeline.getCalibs(), visState, visFrame.target);
 		}
 
-		if (visFrame.target.hasPose && visState.targetCalib.selectedSequence >= 0)
+		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.targetCalib.selectedSequence >= 0)
 		{ // Draw all observation rays of a selected sequence
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
 			if (obs_lock->markers.size() > visState.targetCalib.selectedSequence)
@@ -438,13 +449,13 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 				}
 			}
 			if (interacting.second >= 0)
-				visState.targetCalib.markerHovered = interacting.second;
+				visState.target.markerHovered = interacting.second;
 		}
 		// Draw transparent spheres
 		visualisePointsSpheresDepthSorted(markerPoints);
 
 		// Draw transparent cones sticking out of spheres
-		if (visFrame.target.hasPose && visState.targetCalib.markerViewCones && visFrame.target.targetTemplate)
+		if (visState.target.markerViewCones)
 		{ // Show calculated directionality and field of view of each marker
 			visualiseVisTargetMarkerFoV(pipeline.getCalibs(), visState, visFrame.target);
 		}

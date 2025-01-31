@@ -240,7 +240,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 			obsCmp.triCount = pointData.totalSamples;
 		}
 		if (ImGui::BeginTable("ObsTable", 4,
-		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_PadOuterX))
+			ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_PadOuterX))
 		{
 			ImGui::TableSetupScrollFreeze(0, 1); // Fix top row even with scrolling
 			ImGui::TableSetupColumn("Markers");
@@ -255,6 +255,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 				ImGui::PushID(i);
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
+				ImGui::AlignTextToFramePadding();
 				ImGui::Text("%d", obsCmp.markerCount);
 				ImGui::TableNextColumn();
 				ImGui::Text("%d", obsCmp.obsCount);
@@ -266,7 +267,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 				{
 					visState.observations.visSavedObs = select? i : -1;
 				}
-				ImGui::SameLine();
+				ImGui::SameLine(0, 0);
 				if (CrossButton("##Del"))
 				{
 					if (visState.observations.visSavedObs == i)

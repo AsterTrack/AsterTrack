@@ -26,15 +26,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime) const
 {
 	VisFrameLock snapshot = {};
+	snapshot.target = lockVisTarget();
 	snapshot.frames = pipeline.frameRecords.getView();
 	if (snapshot.frames.empty())
 		return snapshot;
 	snapshot.frameIt = snapshot.frames.pos(std::max((long)0, std::min((long)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
 	if (!snapshot.frameIt.accessible()) snapshot.frameIt = std::prev(snapshot.frames.end());
-	snapshot.target = lockVisTarget();
-	if (snapshot.target && !forceRealtime)
+	if (snapshot.target.hasObs() && !forceRealtime)
 	{ // Visualise selected past frame
-		auto frame = snapshot.target.target->frames[snapshot.target.frameIdx].frame;
+		auto frame = snapshot.target.targetObs->frames[snapshot.target.frameIdx].frame;
 		if (frame >= snapshot.frames.endIndex())
 		{
 			snapshot.hasFrame = snapshot.isRealtimeFrame = false;
@@ -60,24 +60,25 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 { // Try to find a 3D target to zoom into
 	if (visFrame.target)
 	{
-		if (targetCalib.focusOnMarkerSelection)
+		Eigen::Isometry3f tgtPose = visFrame.target.getPose();
+		if (target.focusOnMarkerSelection)
 		{
 			Eigen::Vector3f target3D = Eigen::Vector3f::Zero();
 			int highlightCnt = 0;
-			for (int m = 0; m < visFrame.target.target->markers.size() && m < targetCalib.markerSelect.size(); m++)
+			for (int m = 0; m < visFrame.target.targetTemplate->markers.size() && m < target.markerSelect.size(); m++)
 			{
-				if (!targetCalib.markerSelect[m]) continue;
-				target3D += visFrame.target.target->markers[m];
+				if (!target.markerSelect[m]) continue;
+				target3D += visFrame.target.targetTemplate->markers[m].pos;
 				highlightCnt++;
 			}
 			if (highlightCnt > 0)
-				return visFrame.target.target->frames[visFrame.target.frameIdx].pose * (target3D/highlightCnt);
+				return tgtPose * (target3D/highlightCnt);
 			else
-				return visFrame.target.target->frames[visFrame.target.frameIdx].pose.translation();
+				return tgtPose.translation();
 		}
 		else
 		{
-			return visFrame.target.target->frames[visFrame.target.frameIdx].pose.translation();
+			return tgtPose.translation();
 		}
 	}
 

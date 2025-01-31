@@ -1129,6 +1129,7 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 		tgtView->beginFrame = target.frames.front().frame;
 		tgtView->endFrame = target.frames.back().frame;
 		if (tgtView->endFrame >= recordCount) continue;
+		tgtView->targetTemplate.initialise(target.markers);
 		*tgtView->target.contextualLock() = std::move(target);
 		views.push_back(std::move(tgtView));
 	}

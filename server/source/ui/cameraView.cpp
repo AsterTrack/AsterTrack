@@ -892,15 +892,15 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			}
 			visFrame.frameIt = imageIt;
 
-			if (visFrame.target.target)
+			if (visFrame.target.hasObs())
 			{ // Make sure it is in the target view, else pick next
-				if (visFrame.target.target->frames[visFrame.target.frameIdx].frame != visFrame.frameIt.index())
+				if (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame != visFrame.frameIt.index())
 				{ // Backtrack to frame with image (if possible, not when at beginning)
-					while (visFrame.target.target->frames[visFrame.target.frameIdx].frame > visFrame.frameIt.index() && visFrame.target.frameIdx > 0)
+					while (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame > visFrame.frameIt.index() && visFrame.target.frameIdx > 0)
 						visFrame.target.frameIdx--;
-					if (visFrame.target.target->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && visFrame.target.frameIdx < visFrame.target.target->frames.size())
+					if (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && visFrame.target.frameIdx < visFrame.target.targetObs->frames.size())
 						visFrame.target.frameIdx++; // Pick next if there's no exact match
-					visFrame.frameIt = visFrame.frames.pos(visFrame.target.target->frames[visFrame.target.frameIdx].frame);
+					visFrame.frameIt = visFrame.frames.pos(visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame);
 				}
 			}
 		}
@@ -1151,7 +1151,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 		else if (phase == PHASE_Calibration_Target)
 		{
-			if (visFrame.target)
+			if (visFrame.target.hasObs())
 			{
 				visSetupCamera(postProjMat, calib, mode, viewSize);
 

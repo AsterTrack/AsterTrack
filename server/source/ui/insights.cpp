@@ -54,22 +54,22 @@ public:
 
 	bool needsUpdate(const VisTargetLock &visTarget)
 	{
-		return tgtPtr != (intptr_t)visTarget.target || sampleCount != visTarget.target->totalSamples
-			|| frameCount != visTarget.target->frames.size() || markerCount != visTarget.target->markers.size();
+		return tgtPtr != (intptr_t)visTarget.targetObs || sampleCount != visTarget.targetObs->totalSamples
+			|| frameCount != visTarget.targetObs->frames.size() || markerCount != visTarget.targetObs->markers.size();
 		//	|| state != (m_view->calibrated? m_view->calibration->contextualRLock()->numSteps : -1);
 	}
 
 	TargetViewSequence(const VisTargetLock &visTarget, VisualisationState &visState, const std::vector<CameraCalib> &calibs)
 		: m_vis(&visState), m_start(0)
 	{
-		assert(visTarget.target);
+		assert(visTarget.targetObs);
 		//if (m_view)
 		//	state = m_view->calibrated? m_view->calibration->contextualRLock()->numSteps : -1;
-		tgtPtr = (intptr_t)visTarget.target;
-		sampleCount = visTarget.target->totalSamples;
-		frameCount = visTarget.target->frames.size();
-		markerCount = visTarget.target->markers.size();
-		m_markers.resize(visTarget.target->markers.size());
+		tgtPtr = (intptr_t)visTarget.targetObs;
+		sampleCount = visTarget.targetObs->totalSamples;
+		frameCount = visTarget.targetObs->frames.size();
+		markerCount = visTarget.targetObs->markers.size();
+		m_markers.resize(visTarget.targetObs->markers.size());
 		for (int i = 0; i < m_markers.size(); i++)
 		{
 			m_markers[i].index = i;
@@ -83,18 +83,18 @@ public:
 			m_markers[i].observations.reserve(frameCount);
 		}
 		int f = 0;
-		for (auto &frame : visTarget.target->frames)
+		for (auto &frame : visTarget.targetObs->frames)
 		{
 			for (auto &sample : frame.samples)
 			{
-				int m = visTarget.target->markerMap.at(sample.marker);
+				int m = visTarget.targetObs->markerMap.at(sample.marker);
 				auto &marker = m_markers[m];
 				if (marker.frameStart < 0 || marker.frameStart > f)
 					marker.frameStart = f;
 				if (marker.frameEnd < f)
 					marker.frameEnd = f;
 				// Evaluate observation error
-				Eigen::Vector3f markerPt = visTarget.target->markers[m];
+				Eigen::Vector3f markerPt = visTarget.targetObs->markers[m];
 				Eigen::Vector2f proj = projectPoint2D(calibs[sample.camera].camera, frame.pose * markerPt);
 				Eigen::Vector2f point = undistortPoint<float>(calibs[sample.camera], sample.point);
 				float error = (point - proj).norm();
@@ -147,7 +147,7 @@ public:
 	{
 		MarkerSequence& marker = m_markers[index];
 		if (color)
-			*color = m_vis->targetCalib.markerSelect[index]? IM_COL32(0xFF, 0xDD, 0x00, 0xFF) : IM_COL32(0x80, 0x80, 0xDD, 0xFF);
+			*color = m_vis->target.markerSelect[index]? IM_COL32(0xFF, 0xDD, 0x00, 0xFF) : IM_COL32(0x80, 0x80, 0xDD, 0xFF);
 		if (start)
 			*start = &marker.frameStart;
 		if (end)
@@ -158,7 +158,7 @@ public:
 
 	virtual void DoubleClick(int index)
 	{
-		m_vis->targetCalib.markerSelect[index] = !m_vis->targetCalib.markerSelect[index];
+		m_vis->target.markerSelect[index] = !m_vis->target.markerSelect[index];
 	}
 
 	virtual void CustomDrawCompact(int index, ImDrawList* draw_list, const ImRect& rc, const ImRect& clippingRect)
@@ -167,7 +167,7 @@ public:
 		if (marker.colorBand.size() < 2) return;
 		float dx = (rc.Max.x - rc.Min.x)/frameCount;
 		draw_list->PushClipRect(clippingRect.Min, clippingRect.Max, true);
-		if (m_vis->targetCalib.markerSelect[index])
+		if (m_vis->target.markerSelect[index])
 		{ // Draw marked background
 			draw_list->AddRectFilled(clippingRect.Min, clippingRect.Max, IM_COL32(200, 200, 200, 160));
 		}
@@ -459,7 +459,7 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
-		if ((visTarget || pipeline.phase == PHASE_Calibration_Target)
+		if ((visTarget.hasObs() || pipeline.phase == PHASE_Calibration_Target)
 			&& ImGui::BeginTabItem("Target Calibration"))
 		{
 			if (!ShowTargetCalibrationPanel(visTarget))
@@ -838,7 +838,7 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 
 	static float targetViewZoom = 10.0f;
 
-	if (visTarget && ImGui::BeginTabItem(targetMarkerLabel))
+	if (visTarget.hasObs() && ImGui::BeginTabItem(targetMarkerLabel))
 	{
 		curTab = targetMarkerLabel;
 
@@ -857,7 +857,7 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 		}
 		targetViewZoom = ui.seqTarget->framePixelWidthTarget;
 
-		ImSequencer::Sequencer(ui.seqTarget.get(), &ui.visState.targetCalib.frameIdx, nullptr, &ui.visState.targetCalib.markerFocussed, &ui.seqTarget->m_start,
+		ImSequencer::Sequencer(ui.seqTarget.get(), &ui.visState.targetCalib.frameIdx, nullptr, &ui.visState.target.markerFocussed, &ui.seqTarget->m_start,
 			ImSequencer::SEQUENCER_CHANGE_FRAME);
 
 		ImGui::EndTabItem();

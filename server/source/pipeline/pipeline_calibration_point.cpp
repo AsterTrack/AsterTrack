@@ -87,6 +87,7 @@ static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Sca
 	Eigen::Transform<Scalar,3,Eigen::Affine> transform;
 	transform.linear() = rotation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
 	transform.translation() = -transform.linear()*origin + Eigen::Matrix<Scalar,3,1>(0, 0, height);
+	LOG(LPointCalib, LInfo, "Scaled calibration by %f during normalisation!", scaling);
 
 	// Apply normalised transform
 	for (auto &calib : calibs)
@@ -147,7 +148,9 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 		int pointCount = calibrateFloor<double>(ptCalib.floorPoints, ptCalib.distance12, roomOrientation, roomTransform);
 		if (pointCount > 0)
 		{
-			LOG(LPointCalib, LDebug, "Calibrated floor with %d points!\n", pointCount);
+			LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
+			LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
+				roomTransform.linear().colwise().norm().mean());
 			for (auto &cam : pipeline.cameras)
 			{
 				if (cam->calib.invalid()) continue;

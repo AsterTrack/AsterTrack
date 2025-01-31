@@ -29,7 +29,7 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	VisTargetLock state = {};
 	if (targetCalib.edit)
 	{
-		state.target = &targetCalib.edit->target;
+		state.targetObs = &targetCalib.edit->target;
 		state.targetTemplate = &targetCalib.edit->targetTemplate;
 		state.hasPose = true;
 		state.templateGT = targetCalib.edit->simulation.targetGT;
@@ -37,39 +37,52 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	else if (targetCalib.view)
 	{
 		state.target_lock = targetCalib.view->target.contextualRLock();
-		state.target = &*state.target_lock;
+		state.targetObs = &*state.target_lock;
+		thread_local TargetTemplate3D tempTargetTemplate = {};
+		tempTargetTemplate.initialise(state.targetObs->markers);
+		state.targetTemplate = &tempTargetTemplate;
+		//state.targetTemplate = &targetCalib.view->targetTemplate;
 		state.hasPose = targetCalib.view->state.calibrated;
 		state.templateGT = targetCalib.view->simulation.targetGT;
 	}
 	else if (targetCalib.stage)
 	{
-		state.target = &targetCalib.stage->base.target;
+		state.targetObs = &targetCalib.stage->base.target;
 		state.targetTemplate = &targetCalib.stage->base.targetTemplate;
 		//if (targetCalib.highlightedStageTarget >= 0 && targetCalib.highlightedStageTarget < targetCalib.selStage->mergeTests.size())
 		//	state.target = &targetCalib.selStage->mergeTests[targetCalib.highlightedStageTarget].newBase.optTarget;
 		state.hasPose = true;
 		state.templateGT = targetCalib.stage->base.simulation.targetGT;
 	}
-	else if (targetCalib.contCalibTargetID != 0)
+	else if (target.selectedTargetID != 0)
 	{
-		assert(targetCalib.contCalibTargetTemplate.id == targetCalib.contCalibTargetID);
 		auto &pipeline = GetState().pipeline;
+		// Get TargetTemplate3D
+		auto tgtIt = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+			[&](auto &tgt){ return tgt.id == target.selectedTargetID; });
+		if (tgtIt != pipeline.tracking.targetTemplates3D.end())
+			state.targetTemplate = &*tgtIt;
+		else if (target.selectedTargetTemplate.id == target.selectedTargetID)
+			state.targetTemplate = &target.selectedTargetTemplate;
+		else
+			return state;
+		state.templateGT = nullptr;
+		// Get ObsTarget if tracking data exists
 		auto db_lock = pipeline.obsDatabase.contextualRLock();
-		auto tgtIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-			[&](auto &tgt){ return tgt.targetID == targetCalib.contCalibTargetID; });
-		if (tgtIt == db_lock->targets.end())
+		auto obsIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
+			[&](auto &tgt){ return tgt.targetID == target.selectedTargetID; });
+		if (obsIt == db_lock->targets.end())
 			return state;
 		state.db_lock = std::move(db_lock);
-		state.target = &*tgtIt;
-		state.targetTemplate = &targetCalib.contCalibTargetTemplate;
+		state.targetObs = &*obsIt;
 		state.hasPose = true;
-		state.templateGT = nullptr;
 	}
 	else // No target to visualise
 		return state;
-	assert(state);
-	assert(!state.target->frames.empty());
-	state.frameIdx = targetCalib.frameIdx % state.target->frames.size();
+	assert(state.targetTemplate);
+	assert(state.targetObs);
+	assert(!state.targetObs->frames.empty());
+	state.frameIdx = targetCalib.frameIdx % state.targetObs->frames.size();
 	return state;
 }
 
@@ -82,8 +95,8 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	{ // Try to store real frame to restore later
 		targetCalib.frameNum = -1;
 		VisTargetLock visTarget = lockVisTarget();
-		if (visTarget)
-			targetCalib.frameNum = visTarget.target->frames[targetCalib.frameIdx % visTarget.target->frames.size()].frame;
+		if (visTarget.hasObs())
+			targetCalib.frameNum = visTarget.targetObs->frames[targetCalib.frameIdx % visTarget.targetObs->frames.size()].frame;
 	}
 	// Reset state
 	targetCalib.edit = nullptr;
@@ -91,24 +104,26 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	targetCalib.stage = nullptr;
 	targetCalib.stageSubIndex = -1;
 	targetCalib.stageSubSubIndex = -1;
-	targetCalib.contCalibTargetID = 0;
-	targetCalib.contCalibTargetTemplate = {};
+	target.selectedTargetID = 0;
+	target.selectedTargetTemplate = {};
+	target.markerSelect.clear();
 	return true;
 }
 
 void VisualisationState::updateVisTarget(const VisTargetLock &visTarget)
 {
-	if (targetCalib.frameNum >= 0)
+	if (visTarget.hasObs() && targetCalib.frameNum >= 0)
 	{ // Try to re-focus on the same frame while switching
-		for (targetCalib.frameIdx = 0; targetCalib.frameIdx < visTarget.target->frames.size(); targetCalib.frameIdx++)
+		for (targetCalib.frameIdx = 0; targetCalib.frameIdx < visTarget.targetObs->frames.size(); targetCalib.frameIdx++)
 		{
-			if (visTarget.target->frames[targetCalib.frameIdx].frame >= targetCalib.frameNum)
+			if (visTarget.targetObs->frames[targetCalib.frameIdx].frame >= targetCalib.frameNum)
 				break;
 		}
 		targetCalib.frameNum = -1;
 	}
-	targetCalib.frameIdx = targetCalib.frameIdx % visTarget.target->frames.size();
-	targetCalib.markerSelect.resize(visTarget.target->markers.size(), false);
+	if (visTarget.hasObs())
+		targetCalib.frameIdx = targetCalib.frameIdx % visTarget.targetObs->frames.size();
+	target.markerSelect.resize(visTarget.targetTemplate->markers.size(), false);
 }
 
 void VisualisationState::updateVisTarget()
@@ -120,9 +135,10 @@ void VisualisationState::updateVisTarget()
 
 thread_local std::vector<VisPoint> markerPoints;
 thread_local std::vector<int> markerIndices;
-std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT, const VisualisationState &visState, const VisTargetLock &tgt)
+std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT, const VisualisationState &visState, const VisTargetLock &visTarget)
 {
-	auto &frame = tgt.target->frames[tgt.frameIdx];
+	assert(visTarget);
+	Eigen::Isometry3f tgtPose = visTarget.getPose();
 
 	float focusSizeFactor = 2.0f;
 	float visibleAlphaFactor = 1.5f;
@@ -138,21 +154,27 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 	Color8 mkHighlight = Color{ 0.6f, 0.4f, 0.1f, 0.4f };
 	
 	// Get markers that were recorded in a sequence this frame
-	std::vector<bool> markersVisible(tgt.target->markers.size());
-	for (auto &sample : frame.samples)
-		markersVisible[tgt.target->markerMap.at(sample.marker)] = true;
+	std::vector<bool> markersVisible(visTarget.targetTemplate->markers.size());
+	if (visTarget.hasObs())
+	{
+		assert(markersVisible.size() == visTarget.targetObs->markers.size());
+		auto &frame = visTarget.targetObs->frames[visTarget.frameIdx];
+		for (auto &sample : frame.samples)
+			markersVisible[visTarget.targetObs->markerMap.at(sample.marker)] = true;
+	}
 
 	markerPoints.clear();
 	markerIndices.clear();
 
-	if (tgt.templateGT && pipelineGT.isSimulationMode)
+	if (visTarget.hasObs() && visTarget.hasPose && visTarget.templateGT && pipelineGT.isSimulationMode)
 	{ // Draw markers of GT target
 		Eigen::Isometry3f pose;
 		int mBase = markerPoints.size();
 		{
 			auto sim_lock = pipelineGT.simulation.contextualRLock();
+			auto &frame = visTarget.targetObs->frames[visTarget.frameIdx];
 			pose = sim_lock->framePoses[frame.frame]; // Have to rely on it being primary object at the time of calibration
-			for (const auto &marker : tgt.templateGT->markers)
+			for (const auto &marker : visTarget.templateGT->markers)
 			{
 				markerPoints.emplace_back(pose * marker.pos, gtColor, gtSize);
 				markerIndices.push_back(-1);
@@ -160,14 +182,14 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 		}
 		{
 			auto obs_lock = pipelineGT.seqDatabase.contextualRLock();
-			for (auto &map : tgt.target->markerMap)
+			for (auto &map : visTarget.targetObs->markerMap)
 			{
 				auto gtMarker = obs_lock->markers[map.first].resolveGTMarker();
 				auto &markerPt = markerPoints[mBase+gtMarker.first];
 				markerIndices[mBase+gtMarker.first] = map.second;
-				if (visState.targetCalib.markerSelect[map.second])
+				if (visState.target.markerSelect[map.second])
 					markerPt.color = gtHighlight;
-				if (visState.targetCalib.markerFocussed == map.second)
+				if (visState.target.markerFocussed == map.second)
 					markerPt.size *= focusSizeFactor;
 				if (markersVisible[map.second])
 					markerPt.color.a = std::min(255, (int)(markerPt.color.a * visibleAlphaFactor));
@@ -176,12 +198,12 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 		visualisePose(pose, gtColor, 0.1f, 2.0f);
 	}
 
-	if (tgt.hasPose && visState.targetCalib.stage && visState.targetCalib.stageSubIndex >= 0 &&
+	if (visTarget.hasPose && visState.targetCalib.stage && visState.targetCalib.stageSubIndex >= 0 &&
 		visState.targetCalib.stageSubIndex < visState.targetCalib.stage->alignResults.size() && visState.targetCalib.stageSubSubIndex >= 0)
 	{ // Draw markers of aligning result of selected assembly stage
 		auto &viewRes = visState.targetCalib.stage->alignResults[visState.targetCalib.stageSubIndex];
 		auto &cand = viewRes.candidates[visState.targetCalib.stageSubSubIndex];
-		Eigen::Isometry3f pose = frame.pose * cand.pose.inverse();
+		Eigen::Isometry3f pose = tgtPose * cand.pose.inverse();
 		int mBase = markerPoints.size();
 		for (int m = 0; m < viewRes.markers.size(); m++)
 		{
@@ -191,12 +213,12 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 			markerPoints.emplace_back(pose * marker, map < 0? auxColor : mappedColor, auxSize);
 			markerIndices.push_back(map);
 		}
-		if (visState.targetCalib.markerFocussed >= 0 && visState.targetCalib.markerFocussed < viewRes.markers.size())
-			markerPoints[mBase+visState.targetCalib.markerFocussed].size *= focusSizeFactor;
+		if (visState.target.markerFocussed >= 0 && visState.target.markerFocussed < viewRes.markers.size())
+			markerPoints[mBase+visState.target.markerFocussed].size *= focusSizeFactor;
 		visualisePose(pose, auxColor, 0.1f, 2.0f);
 	}
 
-	if (tgt.hasPose && visState.targetCalib.stage && visState.targetCalib.stageSubIndex >= 0 &&
+	if (visTarget.hasPose && visState.targetCalib.stage && visState.targetCalib.stageSubIndex >= 0 &&
 		visState.targetCalib.stageSubIndex < visState.targetCalib.stage->mergeTests.size())
 	{ // Draw markers of merging result of selected assembly stage
 		auto &viewRes = visState.targetCalib.stage->mergeTests[visState.targetCalib.stageSubIndex];
@@ -206,29 +228,28 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 			auto &marker = viewRes.markers[m];
 			// Highlight markers used for merging
 			int map = viewRes.pointMap[m];
-			markerPoints.emplace_back(frame.pose * marker, map < 0? auxColor : mappedColor, auxSize);
+			markerPoints.emplace_back(tgtPose * marker, map < 0? auxColor : mappedColor, auxSize);
 			markerIndices.push_back(map);
 		}
-		if (visState.targetCalib.markerFocussed >= 0 && visState.targetCalib.markerFocussed < viewRes.markers.size())
-			markerPoints[mBase+visState.targetCalib.markerFocussed].size *= focusSizeFactor;
+		if (visState.target.markerFocussed >= 0 && visState.target.markerFocussed < viewRes.markers.size())
+			markerPoints[mBase+visState.target.markerFocussed].size *= focusSizeFactor;
 	}
 
-	if (tgt.hasPose)
 	{ // Draw current markers of actively selected target (target view or assembly stage)
-		for (int m = 0; m < tgt.target->markers.size(); m++)
+		for (int m = 0; m < visTarget.targetTemplate->markers.size(); m++)
 		{
 			VisPoint markerPt = {};
-			markerPt.pos = frame.pose * tgt.target->markers[m];
-			markerPt.color = visState.targetCalib.markerSelect[m]? mkHighlight : mkColor;
+			markerPt.pos = tgtPose * visTarget.targetTemplate->markers[m].pos;
+			markerPt.color = visState.target.markerSelect[m]? mkHighlight : mkColor;
 			if (markersVisible[m])
 				markerPt.color.a = std::min(255, (int)(markerPt.color.a * visibleAlphaFactor));
 			markerPt.size = mkSize;
-			if (visState.targetCalib.markerFocussed == m)
+			if (visState.target.markerFocussed == m)
 				markerPt.size *= focusSizeFactor;
 			markerPoints.push_back(markerPt);
 			markerIndices.push_back(m);
 		}
-		visualisePose(frame.pose, mkColor, 0.1f, 2.0f);
+		visualisePose(tgtPose, mkColor, 0.1f, 2.0f);
 	}
 
 	return markerPoints;
@@ -276,11 +297,12 @@ std::pair<int,int> interactWithVisTargetMarker(Eigen::Isometry3f view, Eigen::Pr
 
 void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)
 {
-	auto &curFrame = visTarget.target->frames[visTarget.frameIdx];
+	assert(visTarget.hasObs() && visTarget.hasPose);
+	auto &curFrame = visTarget.targetObs->frames[visTarget.frameIdx];
 
 	thread_local std::vector<std::pair<VisPoint, VisPoint>> rayLines;
 	rayLines.clear();
-	std::vector<std::vector<Eigen::Vector3f>> markerRays(visTarget.target->markers.size());
+	std::vector<std::vector<Eigen::Vector3f>> markerRays(visTarget.targetObs->markers.size());
 	auto enterFrameObsRay = [&](const ObsTargetFrame &frame, bool enter, float length, Color cam, Color marker)
 	{
 		for (auto &sample : frame.samples)
@@ -288,9 +310,9 @@ void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, cons
 			Eigen::Vector2f point = undistortPoint(calibs[sample.camera], sample.point);
 			bool seqHighlight = visState.targetCalib.highlightedSequence == sample.marker;
 			Ray3f ray = castRay<float>(point, calibs[sample.camera]);
-			int m = visTarget.target->markerMap.at(sample.marker);
+			int m = visTarget.targetObs->markerMap.at(sample.marker);
 			float len = seqHighlight? length*2 : length;
-			Eigen::Vector3f mkPos = frame.pose * visTarget.target->markers[m];
+			Eigen::Vector3f mkPos = frame.pose * visTarget.targetObs->markers[m];
 			Eigen::Vector3f mkIx = ray.pos + ray.dir * getRaySection(ray, mkPos);
 			Eigen::Vector3f mkCam = mkIx + (ray.pos-mkIx).normalized()*len;
 			mkIx = frame.pose.inverse() * mkIx;
@@ -306,7 +328,7 @@ void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, cons
 	};
 
 	// Show all samples determining a marker as rays, with the current frame highlighted
-	for (auto &frame : visTarget.target->frames)
+	for (auto &frame : visTarget.targetObs->frames)
 		enterFrameObsRay(frame, true, 0.01f, { 0.3f, 0.9f, 0.3f, 1.0f }, { 0.9f, 0.4f, 0.3f, 1.0f });
 	visualiseLines(rayLines, 1.0f);
 
@@ -318,17 +340,16 @@ void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, cons
 
 void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)
 {
-	auto &curFrame = visTarget.target->frames[visTarget.frameIdx];
-
-	assert(visTarget.targetTemplate);
+	assert(visTarget);
+	Eigen::Isometry3f tgtPose = visTarget.getPose();
 
 	thread_local std::vector<std::pair<VisPoint, VisPoint>> rayLines;
 	rayLines.clear();
 
 	for (auto &marker : visTarget.targetTemplate->markers)
 	{
-		Eigen::Vector3f pos = curFrame.pose * marker.pos;
-		Eigen::Vector3f nrm = curFrame.pose * (marker.pos + marker.nrm * 0.02f);
+		Eigen::Vector3f pos = tgtPose * marker.pos;
+		Eigen::Vector3f nrm = tgtPose * (marker.pos + marker.nrm * 0.02f);
 		rayLines.emplace_back(
 			VisPoint{ pos, Color{ 0.2f, 0.8f, 0.7f, 1.0f } },
 			VisPoint{ nrm, Color{ 0.2f, 0.8f, 0.7f, 1.0f } }
@@ -341,8 +362,8 @@ void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const V
 	coneMesh.resize(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), Color{ 0.6f, 0.6f, 0.6f, 0.6f } });
 	for (auto &marker : visTarget.targetTemplate->markers)
 	{
-		Eigen::Vector3f pos = curFrame.pose * marker.pos;
-		Eigen::Vector3f nrm = curFrame.pose.linear() * marker.nrm;
+		Eigen::Vector3f pos = tgtPose * marker.pos;
+		Eigen::Vector3f nrm = tgtPose.linear() * marker.nrm;
 		coneMesh[0].pos = pos;
 		Eigen::Vector3f perp1(1, 0, 0);
 		perp1 = (perp1 - perp1.dot(nrm) * nrm).normalized();
@@ -360,7 +381,8 @@ void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const V
 
 void visualiseVisTargetObsCameraRays(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)
 {
-	auto &curFrame = visTarget.target->frames[visTarget.frameIdx];
+	assert(visTarget.hasObs() && visTarget.hasPose);
+	auto &curFrame = visTarget.targetObs->frames[visTarget.frameIdx];
 
 	Color rayColor = { 0.3f, 0.4f, 0.9f, 1.0f };
 	Color perpColor = { 0.9f, 0.4f, 0.2f, 1.0f };
@@ -368,11 +390,11 @@ void visualiseVisTargetObsCameraRays(const std::vector<CameraCalib> &calibs, con
 	rayLines.clear();
 	for (auto &sample : curFrame.samples)
 	{
-		if (visState.targetCalib.cameraRays.size() <= sample.camera || !visState.targetCalib.cameraRays[sample.camera]) continue;
+		if (visState.target.cameraRays.size() <= sample.camera || !visState.target.cameraRays[sample.camera]) continue;
 		Eigen::Vector2f point = undistortPoint(calibs[sample.camera], sample.point);
 		Ray3f ray = castRay<float>(point, calibs[sample.camera]);
-		int m = visTarget.target->markerMap.at(sample.marker);
-		Eigen::Vector3f mkPos = curFrame.pose * visTarget.target->markers[m];
+		int m = visTarget.targetObs->markerMap.at(sample.marker);
+		Eigen::Vector3f mkPos = curFrame.pose * visTarget.targetObs->markers[m];
 		Eigen::Vector3f mkIx = ray.pos + ray.dir * getRaySection(ray, mkPos);
 		rayLines.emplace_back(
 			VisPoint{ ray.pos, rayColor },
@@ -388,10 +410,11 @@ void visualiseVisTargetObsCameraRays(const std::vector<CameraCalib> &calibs, con
 
 void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const VisTargetLock &visTarget, const MarkerSequences &seq, int sequenceMarker)
 {
-	auto &curFrame = visTarget.target->frames[visTarget.frameIdx];
-	auto m = visTarget.target->markerMap.find(sequenceMarker);
-	if (m == visTarget.target->markerMap.end()) return;
-	Eigen::Vector3f marker = visTarget.target->markers[m->second];
+	assert(visTarget.hasObs() && visTarget.hasPose);
+	auto &curFrame = visTarget.targetObs->frames[visTarget.frameIdx];
+	auto m = visTarget.targetObs->markerMap.find(sequenceMarker);
+	if (m == visTarget.targetObs->markerMap.end()) return;
+	Eigen::Vector3f marker = visTarget.targetObs->markers[m->second];
 
 	Color inlierColor = { 0.3f, 0.4f, 0.9f, 1.0f };
 	Color outlierColor = { 0.9f, 0.4f, 0.2f, 1.0f };
@@ -401,11 +424,11 @@ void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const V
 	for (int c = 0; c < seq.cameras.size(); c++)
 	{
 		if (seq.cameras[c].sequences.empty()) continue;
-		auto frameIt = std::lower_bound(visTarget.target->frames.begin(), visTarget.target->frames.end(), seq.cameras[c].begin().frame(),
+		auto frameIt = std::lower_bound(visTarget.targetObs->frames.begin(), visTarget.targetObs->frames.end(), seq.cameras[c].begin().frame(),
 			[](auto &a, int f){ return a.frame < f; });
 		for (auto frame = seq.cameras[c].begin(); frame != seq.cameras[c].end(); frame++)
 		{
-			if (frameIt == visTarget.target->frames.end()) break;
+			if (frameIt == visTarget.targetObs->frames.end()) break;
 			if (frameIt->frame > frame.frame()) continue;
 			Ray3f ray = castRay<float>(*frame, calibs[c]);
 			Eigen::Vector3f mkPos = frameIt->pose * marker;

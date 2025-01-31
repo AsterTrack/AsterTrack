@@ -48,6 +48,8 @@ struct TargetView
 	BlockStats stats = {};
 	// Data
 	SynchronisedS<ObsTarget> target = {};
+	TargetTemplate3D targetTemplate = {};
+	// TODO: Synchronise together with target for use in VisTargetLock. Currently unused
 	// Calibration
 	bool planned;
 	ThreadControl control;

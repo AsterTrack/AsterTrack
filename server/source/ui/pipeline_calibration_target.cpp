@@ -39,6 +39,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 	ImGui::SetItemTooltip("Move around a target with sufficient flat markers on it, not too fast, and in good view of several cameras.\n"
 		"The system will look for good views (short segments of around one second where the view of the markers is good.\n"
 		"These TargetViews will then be reconstructed to get an estimate of the 3D structure of the markers.");
+	ImGui::PushID("TV");
 
 	if (sectionTargetViews)
 	{ // Target Observations to acquire Target Views
@@ -62,7 +63,6 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			
 			// Clean up UI state
 			targetViewsSorted.clear();
-			visState.targetCalib.markerSelect.clear();
 			visState.targetCalib.edit = nullptr;
 			visState.resetVisTarget();
 
@@ -209,7 +209,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				if (visState.targetCalib.view == viewPtr)
 				{
 					visState.targetCalib.view = nullptr;
-					visState.targetCalib.markerSelect.clear();
+					visState.resetVisTarget();
 				}
 				auto views_lock = pipeline.targetCalib.views.contextualLock();
 				auto viewIt = std::find_if(views_lock->begin(), views_lock->end(),
@@ -309,6 +309,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				reevaluateMarkerSequences<false>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 3 });
 				updateTargetObservations(*target_lock, obs_lock->markers);
 				view.state.errors = getTargetErrorDist(calibs, *target_lock);
+				view.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
 				// Plan optimisation
 				view.settings.outlierSigma = 10.0f;
 				view.settings.typeFlags = 0b10; // Assembly phases
@@ -327,6 +328,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				reevaluateMarkerSequences<true>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 10 });
 				updateTargetObservations(*target_lock, obs_lock->markers);
 				view.state.errors = getTargetErrorDist(calibs, *target_lock);
+				view.targetTemplate = trkTarget;
 				// Plan optimisation
 				view.settings.outlierSigma = 10.0f;
 				view.settings.typeFlags = 0b10; // Assembly phases
@@ -408,12 +410,15 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		} */
 	}
 
+	ImGui::PopID();
+
 	bool sectionTargetAssembly = ImGui::CollapsingHeader("Target Assembly (?)", ImGuiTreeNodeFlags_DefaultOpen);
 	ImGui::SetItemTooltip("Individual TargetViews are an incomplete, error-prone view of a target.\n"
 		"The next phase aims to combine these short segments by correlating marker observations.\n"
 		"TargetViews are aligned, some markers merged outright, and the rest adopted and merged as more data becomes available.\n"
 		"You can at any point stop automatic assembly, issue own directives, and then resume automatic assembly.\n"
 		"You can also manually edit the target (merging/splitting markers, swapping/removing observation sequences).");
+	ImGui::PushID("TA");
 
 	if (sectionTargetAssembly)
 	{ // Target assembly controls
@@ -471,7 +476,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		if (visState.targetCalib.edit && !assembly.control.running())
 		{ // Direct editing tools
 			auto &editTarget = visState.targetCalib.edit;
-			auto &selection = visState.targetCalib.markerSelect;
+			auto &selection = visState.target.markerSelect;
 			auto &markers = editTarget->target.markers;
 			int selectCnt = 0;
 			for (auto h : selection)
@@ -1065,6 +1070,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		}
 		ImGui::TreePop();
 	}
+
+	ImGui::PopID();
 
 	ImGui::PopStyleColor();
 }

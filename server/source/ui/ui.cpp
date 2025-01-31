@@ -289,8 +289,8 @@ void InterfaceState::GeneralInput()
 
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
-		if (visTarget)
-		{ // Have a target to visualise and locked it
+		if (visTarget.hasObs())
+		{ // Have a target with observation data to visualise and locked it
 			int frameJumpInterval = 1;
 			if (ImGui::IsKeyPressed(ImGuiKey_Space))
 			{
@@ -337,7 +337,7 @@ void InterfaceState::GeneralUpdate()
 
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
-		if (visTarget && targetFramesAdvancing)
+		if (visTarget.hasObs() && targetFramesAdvancing)
 		{
 			static TimePoint_t lastFrameIncrease;
 			if (dtMS(lastFrameIncrease, sclock::now()) > 1000.0f/60)
@@ -380,21 +380,30 @@ void InterfaceState::ResetWindowLayout()
 	ImGui::DockBuilderSplitNode(mainPanelID, ImGuiDir_Down, 0.5f, &bottomPanelID, &mainPanelID);
 
 	// Associate all static windows with a panel by default
-	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_VIEWS].title.c_str(), mainPanelID);
+
 	ImGui::DockBuilderDockWindow(windows[WIN_3D_VIEW].title.c_str(), mainPanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_VIEWS].title.c_str(), mainPanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_VISUALISATION].title.c_str(), auxPanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_SETTINGS].title.c_str(), sidePanelID);
+
 	ImGui::DockBuilderDockWindow(windows[WIN_PIPELINE].title.c_str(), sidePanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_LOGGING].title.c_str(), bottomPanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_SEQUENCES].title.c_str(), bottomPanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_CONTROL].title.c_str(), auxPanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_WIRELESS].title.c_str(), auxPanelID);
+	
+	ImGui::DockBuilderDockWindow(windows[WIN_LOGGING].title.c_str(), bottomPanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_INSIGHTS].title.c_str(), bottomPanelID);
+
+	ImGui::DockBuilderDockWindow(windows[WIN_TARGETS].title.c_str(), auxPanelID);
+
 	ImGui::DockBuilderDockWindow(windows[WIN_DEVICES].title.c_str(), edgePanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_SEQUENCE_SETTINGS].title.c_str(), sidePanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_POINT_CALIB_SETTINGS].title.c_str(), sidePanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_TARGET_CALIB_SETTINGS].title.c_str(), sidePanelID);
-	ImGui::DockBuilderDockWindow(windows[WIN_TRACKING_SETTINGS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_SETTINGS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_WIRELESS].title.c_str(), auxPanelID);
+
+	ImGui::DockBuilderDockWindow(windows[WIN_SEQUENCE_PARAMS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_POINT_CALIB_PARAMS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_TARGET_CALIB_PARAMS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_TRACKING_PARAMS].title.c_str(), sidePanelID);
+
 	ImGui::DockBuilderDockWindow(windows[WIN_LENS_SELECTION_TOOL].title.c_str(), sidePanelID);
+
 	ImGui::DockBuilderDockWindow(windows[WIN_STYLE_EDITOR].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_IMGUI_DEMO].title.c_str(), mainPanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_IMPLOT_DEMO].title.c_str(), mainPanelID);
@@ -539,22 +548,30 @@ bool InterfaceState::Init()
 	
 
 	// Initialise all static UI windows
-	windows[WIN_CAMERA_VIEWS] = InterfaceWindow("Camera Views", &InterfaceState::UpdateCameraViews, true);
-	windows[WIN_3D_VIEW] = InterfaceWindow("3D View", &InterfaceState::Update3DViewUI, true);
-	windows[WIN_VISUALISATION] = InterfaceWindow("Visualisation", &InterfaceState::UpdateVisualisationSettings, true);
-	windows[WIN_CAMERA_SETTINGS] = InterfaceWindow("Camera Settings", &InterfaceState::UpdateCameraSettings, true);
-	windows[WIN_PIPELINE] = InterfaceWindow("Pipeline", &InterfaceState::UpdatePipeline, true);
-	windows[WIN_LOGGING] = InterfaceWindow("Logging", &InterfaceState::UpdateLogging, true);
-	windows[WIN_SEQUENCES] = InterfaceWindow("Insights", &InterfaceState::UpdateInsights, true);
-	windows[WIN_CONTROL] = InterfaceWindow("Control", &InterfaceState::UpdateControl, true);
-	windows[WIN_WIRELESS] = InterfaceWindow("Wireless Setup", &InterfaceState::UpdateWirelessSetup, false);
-	windows[WIN_DEVICES] = InterfaceWindow("Devices", &InterfaceState::UpdateDevices, false);
-	windows[WIN_SEQUENCE_SETTINGS] = InterfaceWindow("Sequence2D Params", &InterfaceState::UpdateSequenceSettings, false);
-	windows[WIN_POINT_CALIB_SETTINGS] = InterfaceWindow("PointCalib Params", &InterfaceState::UpdatePointCalibSettings, false);
-	windows[WIN_TARGET_CALIB_SETTINGS] = InterfaceWindow("TargetCalib Params", &InterfaceState::UpdateTargetCalibSettings, false);
-	windows[WIN_TRACKING_SETTINGS] = InterfaceWindow("Tracking Params", &InterfaceState::UpdateTrackingSettings, false);
-	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow("Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
 
+	// Scene visualisation
+	windows[WIN_3D_VIEW] = InterfaceWindow("3D View", &InterfaceState::Update3DViewUI, true);
+	windows[WIN_CAMERA_VIEWS] = InterfaceWindow("Camera Views", &InterfaceState::UpdateCameraViews, true);
+	windows[WIN_VISUALISATION] = InterfaceWindow("Visualisation", &InterfaceState::UpdateVisualisationSettings, true);
+	// Primary interface
+	windows[WIN_PIPELINE] = InterfaceWindow("Pipeline", &InterfaceState::UpdatePipeline, true);
+	windows[WIN_CONTROL] = InterfaceWindow("Control", &InterfaceState::UpdateControl, true);
+	// Development
+	windows[WIN_LOGGING] = InterfaceWindow("Logging", &InterfaceState::UpdateLogging, true);
+	windows[WIN_INSIGHTS] = InterfaceWindow("Insights", &InterfaceState::UpdateInsights, true);
+	// Database
+	windows[WIN_TARGETS] = InterfaceWindow("Targets", &InterfaceState::UpdateTargets, false);
+	// Device mode
+	windows[WIN_DEVICES] = InterfaceWindow("Devices", &InterfaceState::UpdateDevices, false);
+	windows[WIN_CAMERA_SETTINGS] = InterfaceWindow("Camera Settings", &InterfaceState::UpdateCameraSettings, true);
+	windows[WIN_WIRELESS] = InterfaceWindow("Wireless Setup", &InterfaceState::UpdateWirelessSetup, false);
+	// Parameters
+	windows[WIN_SEQUENCE_PARAMS] = InterfaceWindow("Sequence2D Params", &InterfaceState::UpdateSequenceParameters, false);
+	windows[WIN_POINT_CALIB_PARAMS] = InterfaceWindow("PointCalib Params", &InterfaceState::UpdatePointCalibParameters, false);
+	windows[WIN_TARGET_CALIB_PARAMS] = InterfaceWindow("TargetCalib Params", &InterfaceState::UpdateTargetCalibParameters, false);
+	windows[WIN_TRACKING_PARAMS] = InterfaceWindow("Tracking Params", &InterfaceState::UpdateTrackingParameters, false);
+	// Tools
+	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow("Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
 	// Shortcut to ImGui's built-in style editor
 	windows[WIN_STYLE_EDITOR] = InterfaceWindow("Style Editor", &InterfaceState::UpdateStyleUI);
 	// Useful tool to debug and research UI

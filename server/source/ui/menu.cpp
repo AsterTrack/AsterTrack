@@ -107,7 +107,9 @@ void InterfaceState::UpdateMainMenuBar()
 		addWindowMenuItem(windows[WIN_CONTROL]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_LOGGING]);
-		addWindowMenuItem(windows[WIN_SEQUENCES]);
+		addWindowMenuItem(windows[WIN_INSIGHTS]);
+		ImGui::Separator();
+		addWindowMenuItem(windows[WIN_TARGETS]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_DEVICES]);
 		addWindowMenuItem(windows[WIN_CAMERA_SETTINGS]);
@@ -115,10 +117,10 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::Separator();
 		if (ImGui::BeginMenu("Parameters"))
 		{
-			addWindowMenuItem(windows[WIN_SEQUENCE_SETTINGS]);
-			addWindowMenuItem(windows[WIN_POINT_CALIB_SETTINGS]);
-			addWindowMenuItem(windows[WIN_TARGET_CALIB_SETTINGS]);
-			addWindowMenuItem(windows[WIN_TRACKING_SETTINGS]);
+			addWindowMenuItem(windows[WIN_SEQUENCE_PARAMS]);
+			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS]);
+			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS]);
+			addWindowMenuItem(windows[WIN_TRACKING_PARAMS]);
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Tools"))
@@ -184,15 +186,22 @@ void InterfaceState::UpdateMainMenuBar()
 			{
 				cachingCalibPaths = true;
 				pointCalibPaths.clear();
+				std::string prefix = "dump/point_observations_";
 				if (std::filesystem::exists(std::filesystem::path("dump")))
 				{
-					std::string pointPrefix = "dump/point_observations";
 					for (const auto &file : std::filesystem::directory_iterator("dump"))
 					{
-						if (file.path().string().compare(0, pointPrefix.length(), pointPrefix) == 0)
+						if (file.path().string().compare(0, prefix.length(), prefix) == 0)
 							pointCalibPaths.push_back(file.path());
 					}
 				}
+				std::sort(pointCalibPaths.begin(), pointCalibPaths.end(), [&](auto &a, auto &b){
+					int aNum, bNum;
+					if (sscanf(a.string().data()+prefix.length(), "%d", &aNum) == 1
+					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum))
+					 	return aNum > bNum;
+					return a.string().compare(b.string()) > 0;
+				});
 			}
 			if (pointCalibPaths.empty())
 			{
@@ -244,16 +253,23 @@ void InterfaceState::UpdateMainMenuBar()
 			{
 				cachingCapturePaths = true;
 				frameCapturePaths.clear();
+				std::string prefix = "dump/frame_capture_";
 				if (std::filesystem::exists(std::filesystem::path("dump")))
 				{
-					std::string targetPrefix = "dump/frame_capture";
 					for (const auto &file : std::filesystem::directory_iterator("dump"))
 					{
-						if (file.path().string().compare(0, targetPrefix.length(), targetPrefix) == 0
+						if (file.path().string().compare(0, prefix.length(), prefix) == 0
 							&& file.path().extension().compare(".json") == 0)
 							frameCapturePaths.push_back(file.path());
 					}
 				}
+				std::sort(frameCapturePaths.begin(), frameCapturePaths.end(), [&](auto &a, auto &b){
+					int aNum, bNum;
+					if (sscanf(a.string().data()+prefix.length(), "%d", &aNum) == 1
+					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum))
+					 	return aNum > bNum;
+					return a.string().compare(b.string()) > 0;
+				});
 			}
 			if (frameCapturePaths.empty())
 			{

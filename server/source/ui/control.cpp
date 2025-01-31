@@ -342,7 +342,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	static std::vector<FrameRange> frameRanges;
 	static std::unique_ptr<std::jthread> controlThread;
 
-	if (state.mode == MODE_Replay && windows[WIN_TRACKING_SETTINGS].open
+	if (state.mode == MODE_Replay && windows[WIN_TRACKING_PARAMS].open
 		&& ImGui::CollapsingHeader("Optimising Tracking Parameters"))
 	{
 		ImGui::PushID("OptParam");

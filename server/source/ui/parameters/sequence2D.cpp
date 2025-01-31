@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cmath>
 
-void InterfaceState::UpdateSequenceSettings(InterfaceWindow &window)
+void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 {
 	ServerState &state = GetState();
 	auto &params = state.pipeline.sequenceParams;

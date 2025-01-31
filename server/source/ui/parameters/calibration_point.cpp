@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cmath>
 
-void InterfaceState::UpdatePointCalibSettings(InterfaceWindow &window)
+void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 {
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{

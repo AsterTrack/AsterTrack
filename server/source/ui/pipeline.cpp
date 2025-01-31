@@ -269,21 +269,20 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::PushID(tgt.targetID);
 				std::string label = asprintf_s("Target %d: %d frames, %d samples, %d outliers###TgtCont",
 					tgt.targetID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
-				bool selected = visState.targetCalib.contCalibTargetID == tgt.targetID;
-				if (ImGui::Selectable(label.c_str(), visState.targetCalib.contCalibTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
+				bool selected = visState.target.selectedTargetID == tgt.targetID;
+				if (ImGui::Selectable(label.c_str(), visState.target.selectedTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (visState.targetCalib.contCalibTargetID != tgt.targetID)
+					if (visState.target.selectedTargetID != tgt.targetID)
 					{
+						visState.target.selectedTargetTemplate = {};
 						auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 							[&](auto &t){ return t.id == tgt.targetID; });
-						if (track != pipeline.tracking.targetTemplates3D.end())
-							visState.targetCalib.contCalibTargetTemplate = *track;
-						else
+						if (track == pipeline.tracking.targetTemplates3D.end())
 						{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-							visState.targetCalib.contCalibTargetTemplate = TargetTemplate3D(tgt.targetID, "Temp",
+							visState.target.selectedTargetTemplate = TargetTemplate3D(tgt.targetID, "Temp",
 								finaliseTargetMarkers(pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
 						}
-						visState.targetCalib.contCalibTargetID = tgt.targetID;
+						visState.target.selectedTargetID = tgt.targetID;
 					}
 					else visState.resetVisTarget(false);
 				}
@@ -292,7 +291,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				bool del = CrossButton("Del");
 				if (del)
 				{
-					if (visState.targetCalib.contCalibTargetID == tgt.targetID)
+					if (visState.target.selectedTargetID == tgt.targetID)
 						visState.resetVisTarget(false);
 					tgtIt = db_lock->targets.erase(tgtIt);
 				}

@@ -250,7 +250,7 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 		}
 		if (packet->readLength >= packet->header.length)
 		{
-			LOG(LProtocol, LDebug, "FINISHED packet %d of %d bytes, header block %d, ending block %d\n",
+			LOG(LProtocol, LTrace, "FINISHED packet %d of %d bytes, header block %d, ending block %d\n",
 				packet->header.tag, packet->readLength, packet->headerBlockID, packet->nextBlockID);
 			if (onPacketDone)
 				onPacketDone(userData, header.portNr, *packet);

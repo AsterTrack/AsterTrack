@@ -42,25 +42,47 @@ template<> void OpaqueDeleter<vrpn_Connection>::operator()(vrpn_Connection* ptr)
 { ptr->removeReference(); }
 
 
+/* Conversion from internally used steady_clock to timeval used by VRPN */
+
+static inline struct timeval createTimestamp(TimePoint_t time)
+{
+	// Create timestamp without assuming steady_clock to be equivalent to timeval
+	struct timeval time_now, time_diff, timestamp;
+	vrpn_gettimeofday(&time_now, NULL);
+	TimePoint_t time_ref = sclock::now();
+	time_diff.tv_usec = std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count();
+	time_diff.tv_sec = time_diff.tv_usec/1000000;
+	time_diff.tv_usec = time_diff.tv_usec%1000000;
+	timersub(&time_now, &time_diff, &timestamp);
+	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%ld, %ld)",
+		std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count()/1000.0f,
+		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, time_diff.tv_sec, time_diff.tv_usec)
+	return timestamp;
+}
+
+static inline TimePoint_t getTimestamp(struct timeval time_msg)
+{
+	// Recreate timestamp without assuming steady_clock to be equivalent to timeval
+	struct timeval time_now, time_diff;
+	vrpn_gettimeofday(&time_now, NULL);
+	TimePoint_t timestamp = sclock::now();
+	timersub(&time_now, &time_msg, &time_diff);
+	timestamp -= std::chrono::microseconds(time_diff.tv_usec);
+	timestamp -= std::chrono::seconds(time_diff.tv_sec);
+	return timestamp;
+}
 /* Wrapper for a VRPN tracker output */
 
 vrpn_Tracker_AsterTrack::vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index)
 	: vrpn_Tracker(path, connection), id(ID)
 {
-	// Reset position and rotation
-	memset(pos, 0, 3 * sizeof(float));
-	memset(d_quat, 0, 4 * sizeof(float));
-	d_quat[3] = 1.0;
-
-	vrpn_gettimeofday(&_timestamp, NULL);
 }
 
-void vrpn_Tracker_AsterTrack::updatePose(Eigen::Isometry3f pose)
+void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose)
 {
-	// Find out what time we received the new information, then send any
-	// changes to the client.
-	vrpn_gettimeofday(&_timestamp, NULL);
-	vrpn_Tracker::timestamp = _timestamp;
+	// Just used for local logging
+	vrpn_Tracker::timestamp = createTimestamp(time);
+	vrpn_Tracker::frame_count = 0;
 
 	// We're using a left-handed coordinate system (same as Unreal, or a rotated Unity one)
 	// VRPN (along with OpenCV, Blender, etc.) use right-handed coordinate systems
@@ -72,25 +94,24 @@ void vrpn_Tracker_AsterTrack::updatePose(Eigen::Isometry3f pose)
 		0, 0, 1, 0,
 		0, 0, 0, 1;
 	pose = flipXY * pose * flipXY;
-
 	// Additionally, the camera points into the positive z direction, which is convenient for CV (z == distance)
 	// However, other tools like Blender have the camera point into the negative z direction
 
-	// send tracker orientation
-	d_sensor = 0;
+	// Set packet data
+	d_sensor = sensor;
 	Eigen::Quaternionf rotQ(pose.rotation());
 	d_quat[0] = rotQ.x();
 	d_quat[1] = rotQ.y();
 	d_quat[2] = rotQ.z();
 	d_quat[3] = rotQ.w();
-	// in m
 	pos[0] = pose.translation().x();
 	pos[1] = pose.translation().y();
 	pos[2] = pose.translation().z();
 
+	// Encode and send packet
 	static char buffer[1000];
 	int length = vrpn_Tracker::encode_to(buffer);
-	int error = d_connection->pack_message(length, _timestamp, position_m_id, d_sender_id, buffer, vrpn_CONNECTION_LOW_LATENCY);
+	int error = d_connection->pack_message(length, vrpn_Tracker::timestamp, position_m_id, d_sender_id, buffer, vrpn_CONNECTION_LOW_LATENCY);
 	if (error) LOG(LIO, LError, "Failed to write VRPN message with error %d!\n", error);
 }
 
@@ -105,6 +126,7 @@ void vrpn_Tracker_AsterTrack::mainloop()
 static void handleTrackerPosRot(void *data, const vrpn_TRACKERCB t)
 {
 	vrpn_Tracker_Wrapper *tracker = (vrpn_Tracker_Wrapper*)data;
+	tracker->lastTimestamp = getTimestamp(t.msg_time);
 	tracker->lastPacket = sclock::now();
 	tracker->receivedPackets = true;
 
@@ -126,6 +148,7 @@ static void handleTrackerPosRot(void *data, const vrpn_TRACKERCB t)
 static void handleTrackerVelocity(void *data, const vrpn_TRACKERVELCB t)
 { // Currently not sent by AsterTrack
 	vrpn_Tracker_Wrapper *tracker = (vrpn_Tracker_Wrapper*)data;
+	tracker->lastTimestamp = getTimestamp(t.msg_time);
 	tracker->lastPacket = sclock::now();
 	tracker->receivedPackets = true;
 
@@ -140,6 +163,7 @@ static void handleTrackerVelocity(void *data, const vrpn_TRACKERVELCB t)
 static void handleTrackerAccel(void *data, const vrpn_TRACKERACCCB t)
 { // Currently not sent by AsterTrack
 	vrpn_Tracker_Wrapper *tracker = (vrpn_Tracker_Wrapper*)data;
+	tracker->lastTimestamp = getTimestamp(t.msg_time);
 	tracker->lastPacket = sclock::now();
 	tracker->receivedPackets = true;
 

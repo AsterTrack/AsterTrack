@@ -46,14 +46,11 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker
 	public:
 		vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index = 0);
 
-		void updatePose(Eigen::Isometry3f pose);
+		void updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose);
 
 		virtual void mainloop ();
 
 		int id;
-
-	protected:
-		struct timeval _timestamp;
 };
 
 struct vrpn_Tracker_Wrapper
@@ -61,7 +58,7 @@ struct vrpn_Tracker_Wrapper
 	std::string path;
 	std::unique_ptr<vrpn_Tracker_Remote> remote = nullptr;
 	bool receivedPackets = false;
-	TimePoint_t lastPacket;
+	TimePoint_t lastPacket, lastTimestamp;
 	bool logPackets = true;
 	Eigen::Isometry3f pose;
 

@@ -724,14 +724,14 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 		if (!jsRecords["frames"].is_array()) return;
 		auto &jsFrames = jsRecords["frames"];
 
-		for (auto &jsFrames : jsFrames)
+		for (auto &jsFrame : jsFrames)
 		{
-			if (!jsFrames.contains("num")) continue;
-			if (!jsFrames.contains("targets")) continue;
-			if (!jsFrames["targets"].is_array()) continue;
-			auto &jsTargets = jsFrames["targets"];
+			if (!jsFrame.contains("num")) continue;
+			if (!jsFrame.contains("targets")) continue;
+			if (!jsFrame["targets"].is_array()) continue;
+			auto &jsTargets = jsFrame["targets"];
 
-			unsigned int num = jsFrames["num"].get<unsigned int>();
+			unsigned int num = jsFrame["num"].get<unsigned int>();
 			if (num < frameOffset) continue;
 			if (num > frameOffset+frameRecords.size()) break;
 
@@ -740,7 +740,7 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 			frame.tracking.targets.reserve(jsTargets.size());
 			for (auto &jsTarget : jsTargets)
 			{
-				if (!jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
+				if (!jsTarget.is_object() || !jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
 				frame.tracking.targets.push_back({});
 				auto &target = frame.tracking.targets.back();
 				target.id = jsTarget["id"].get<int>();
@@ -752,12 +752,11 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 				target.error.mean = jsTarget["avg"].get<float>();
 				target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
 				target.error.max = jsTarget["max"].get<float>();
-				jsFrames["targets"].push_back(std::move(jsTarget));
 			}
 
-			if (!jsFrames.contains("events")) continue;
-			if (!jsFrames["events"].is_array()) continue;
-			for (auto &evt : jsFrames["events"])
+			if (!jsFrame.contains("events")) continue;
+			if (!jsFrame["events"].is_array()) continue;
+			for (auto &evt : jsFrame["events"])
 			{
 				switch (evt.get<int>())
 				{

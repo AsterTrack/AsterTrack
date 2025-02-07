@@ -39,6 +39,16 @@ void ResetPipeline(PipelineState &pipeline)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
+	// TODO: Rework when pipeline is reset to not accidentally loose data
+	// Currently, both Stop and Start streaming calls it
+	// And it resets recorded frames, target calibration, samples, etc., basically everything
+	// Preferrably those were managed separately, so they can be cleaned up, but independant of whether the cameras are on or not
+	// So e.g. target calibration is cleaned up after use by explicit action of user to close it
+	// Continuous calibration automatically keeps only X samples
+	// Recorded sections are kept until user deletes it
+	// frameRecords can be configured to automatically keep only X minutes except if data is still used for any of the above
+	// And internal frame indexing (frameNum) needs a rework anyway, so better to keep it running between streaming start/stops
+
 	// Init subsystems
 	InitTrackingPipeline(pipeline);
 	InitTargetCalibration(pipeline);

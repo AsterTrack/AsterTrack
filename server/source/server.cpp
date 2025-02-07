@@ -1088,10 +1088,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
 					continue;
 				}
+				if (state->frameRecordReplayPos == 0)
+					state->frameRecordReplayTime = sclock::now();
 				frameRecord = std::make_shared<FrameRecord>();
 				frameRecord->ID = loadedRecord.ID;
 				frameRecord->num = loadedRecord.num;
-				frameRecord->time = loadedRecord.time; // Relative to loading time
+				frameRecord->time = state->frameRecordReplayTime + (loadedRecord.time - state->loadedFrameRecords.front().time);
 				frameRecord->cameras = loadedRecord.cameras;
 				assert(frameRecord->num == pipeline.frameNum);
 				assert(frameRecord->cameras.size() == pipeline.cameras.size());
@@ -1099,7 +1101,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				if (state->loadedFrameRecords.size() > state->frameRecordReplayPos)
 				{ // Replicate original frame pacing
 					auto &nextFrame = state->loadedFrameRecords[state->frameRecordReplayPos];
-					desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame.time - frameRecord->time).count();
+					desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame.time - loadedRecord.time).count();
 				}
 				for (auto &cam : state->cameras)
 				{ // Set camera image in cameras
@@ -1144,9 +1146,6 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 			SignalCameraRefresh(0);
 			SignalPipelineUpdate();
-
-			if (pipeline.phase != PHASE_Idle)
-				LOG(LDefault, LTrace, "Frame time took %fms\n", dt(start, end));
 		}//, frameRecord); // new shared_ptr
 
 		{ // Special cases for advancing
@@ -1616,7 +1615,7 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		}
 
 		// TODO: Send both poseObserved and poseFiltered?
-		io_tracker->second->updatePose(trackedTarget.poseFiltered);
+		io_tracker->second->updatePose(0, frame->time, trackedTarget.poseFiltered);
 		io_tracker->second->mainloop();
 	}
 
@@ -1632,7 +1631,7 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 			io_tracker = state.io.vrpn_trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
 		}
 
-		io_tracker->second->updatePose(camera->calib.transform.cast<float>());
+		io_tracker->second->updatePose(0, frame->time, camera->calib.transform.cast<float>());
 		io_tracker->second->mainloop();
 	}
 
@@ -1776,10 +1775,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 			if (camera)
 				SignalCameraRefresh(camera->id);
 		}
-
-		if (pipeline.phase != PHASE_Idle && dtUS(start, end) > 1000)
-			LOG(LDefault, LInfo, "Frame time took %fms\n", dt(start, end));
-
 	}, frameRecord); // new shared_ptr
 
 	// Record frame even before processing
@@ -1922,7 +1917,7 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 			// Update time sync with the last packet in the endpoint as the newly gathered sample point
 			auto sync_lock = controller.timeSync.contextualLock();
 			std::pair<uint64_t, TimePoint_t> packetSentSync = UpdateTimeSync(*sync_lock, header.lastTimestamp, 1<<24, stats.lastReceived);
-			LOG(LTimesync, LDebug, "Packet of size %d had timestamp %uus for last packet received %.2fms ago, estimated to be sent %.2fms ago (this packet was received %.2fms ago)\n",
+			LOG(LTimesync, LTrace, "Packet of size %d had timestamp %uus for last packet received %.2fms ago, estimated to be sent %.2fms ago (this packet was received %.2fms ago)\n",
 				length, header.lastTimestamp, dtMS(stats.lastReceived, sclock::now()), dtMS(packetSentSync.second, sclock::now()), dtMS(receiveTime, sclock::now()));
 
 			if (packetSentSync.first > 0 && controller.recordTimeSyncMeasurements)

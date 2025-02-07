@@ -226,10 +226,20 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 		if (libusb->ctrlINPending[i])
 		{
 			expectedCancelled++;
-			if ((ret = libusb_cancel_transfer(libusb->controlIN[i])) != 0)
-				LOG(LUSB, LDebug, "Could not cancel control IN transfer %p with code %d!", libusb->controlIN[i], ret)
-			else
+			ret = libusb_cancel_transfer(libusb->controlIN[i]);
+			if (ret == LIBUSB_ERROR_NOT_FOUND)
+			{ // Still pending
+				LOG(LUSB, LWarn, "Control IN transfer %p has been blocked and is considered cancelled!\n", libusb->controlIN[i]);
+				libusb->controlCancelCounter++;
+				// TODO: Previously could result in a crash because a later event handler still assumes this transfer to exist. Verify this isn't the case anymore.
+				//if (freeTransfers)
+				//	libusb_free_transfer(libusb->controlIN[i]);
+				//manuallyCancelled++;
+			}
+			else if (ret == LIBUSB_SUCCESS)
 				LOG(LUSB, LTrace, "Control IN transfer %p will be cancelled!", libusb->controlIN[i])
+			else
+				LOG(LUSB, LDarn, "Could not cancel control IN transfer %p with code %d!", libusb->controlIN[i], ret)
 		}
 		else
 		{
@@ -241,10 +251,19 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 		if (libusb->ctrlOUTPending[i])
 		{
 			expectedCancelled++;
-			if ((ret = libusb_cancel_transfer(libusb->controlOUT[i])) != 0)
-				LOG(LUSB, LDebug, "Could not cancel control OUT transfer %p with code %d!", libusb->controlOUT[i], ret)
-			else
+			if (ret == LIBUSB_ERROR_NOT_FOUND)
+			{ // Still pending
+				LOG(LUSB, LWarn, "Control OUT transfer %p has been blocked and is considered cancelled!\n", libusb->controlOUT[i]);
+				libusb->controlCancelCounter++;
+				// TODO: Previously could result in a crash because a later event handler still assumes this transfer to exist. Verify this isn't the case anymore.
+				//if (freeTransfers)
+				//	libusb_free_transfer(libusb->controlOUT[i]);
+				//manuallyCancelled++;
+			}
+			else if (ret == LIBUSB_SUCCESS)
 				LOG(LUSB, LTrace, "Control OUT transfer %p will be cancelled!", libusb->controlOUT[i])
+			else
+				LOG(LUSB, LDarn, "Could not cancel control OUT transfer %p with code %d!", libusb->controlOUT[i], ret)
 		}
 		else
 		{

@@ -108,6 +108,9 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 	// may have a simulated target that's calibrated, so exists as both simulated and calibrated variant
 	// Currently the former is < 0, latter > 0, what about calibrated simulated targets? Clarify
 
+	// TODO: Allow adoption of simulated target into pipeline.tracking.targetTemplates3D
+	// Would allow for kick-starting calibrations with a designed calibration
+
 	if (target)
 	{
 		ImGui::Text("Selected calibrated target %d '%s'", target->id, target->label.c_str());
@@ -129,6 +132,13 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}
+		}
+
+		if (ImGui::Button("Save Target as OBJ", SizeWidthFull()))
+		{
+			const char* tgtPathFmt = "dump/target_%d.obj";
+			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
+			writeTargetObjFile(tgtPath, TargetTemplate3D(target->markers));
 		}
 	}
 	else if (targetSim)

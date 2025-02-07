@@ -259,8 +259,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		EndSection();
 
-		BeginSection("Optimisation Database");
+		if (ImGui::CollapsingHeader("Optimisation Database"))
 		{
+			ImGui::PushID("OptDb");
+
 			auto db_lock = pipeline.obsDatabase.lock();
 			ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
 			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end(); tgtIt++)
@@ -454,8 +456,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				db_lock.unlock();
 				*pipeline.obsDatabase.contextualLock() = {};
 			}
+
+			ImGui::PopID();
 		}
-		EndSection();
 
 		if (state.mode == MODE_Replay)
 		{

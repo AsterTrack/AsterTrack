@@ -296,6 +296,11 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
 							// Write to path
 							auto records = pipeline.frameRecords.getView();
+							if (records.endIndex() < section.end)
+							{ // Already deleted
+								LOG(LGUI, LWarn, "The section to be saved has already been deleted internally!");
+								return;
+							}
 							dumpFrameRecords(section.path, records.pos(section.begin), records.pos(section.end), cameras);
 							dumpTrackingResults(section.path, records.pos(section.begin), records.pos(section.end), 0);
 							for (auto &s : GetUI().recordSections)

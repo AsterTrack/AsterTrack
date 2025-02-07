@@ -61,7 +61,12 @@ struct ThreadControl
 	{
 		stop_source.request_stop();
 		if (thread && thread->joinable())
-			thread->join(); // Wait for it to end
+		{
+			if (thread->get_id() == std::this_thread::get_id())
+				thread->detach(); // Will clean up ourself and exit
+			else
+				thread->join(); // Wait for it to end
+		}
 		delete thread;
 		thread = nullptr;
 		finished = false;

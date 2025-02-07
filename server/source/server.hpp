@@ -94,6 +94,7 @@ struct ServerState
 	unsigned int loadedFrameOffset;
 	std::vector<FrameRecord> loadedFrameRecords;
 	long frameRecordReplayPos;
+	TimePoint_t frameRecordReplayTime;
 
 	// All integrations
 	struct 

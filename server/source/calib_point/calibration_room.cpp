@@ -24,6 +24,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"
+#include "util/eigenalg.hpp"
+
+#include "dbscan/dbscan.hpp"
 
 #include "Eigen/Eigenvalues"
 
@@ -217,12 +220,32 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
 	return filteredErrors;
 }
 
+template<typename Scalar>
+void StaticPointSamples<Scalar>::update(const std::vector<CameraCalib> &calibs)
+{
+	std::vector<std::vector<Vector2<Scalar>>> samplePoints(calibs.size());
+	std::vector<const std::vector<Vector2<Scalar>>*> samplePointGroups(calibs.size());
+	TriangulatedPoint_t<Scalar> sampleTri(pos, 0, 0, calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		samplePointGroups[c] = &samplePoints[c];
+		if (samples[c].first == 0) continue;
+		sampleTri.blobs[c] = 0;
+		samplePoints[c].push_back(samples[c].second / samples[c].first);
+	}
+	pos = refineTriangulationIterative<Scalar>(samplePointGroups, calibs, sampleTri);
+}
+
+
+template void StaticPointSamples<double>::update(const std::vector<CameraCalib> &calibs);
+
 /**
  * Calibrate a transformation to the room coordinate system given 3 or more calibrated points on the floor, with the first being the new origin
  * The distance between the first two points should be passed as distance12 to determine the scale
  */
 template<typename Scalar>
-int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Scalar distance12, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform)
+int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12,
+	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform)
 {
 	if (floorPoints.size() < 3 || floorPoints.front().confidence < 1)
 	{
@@ -240,10 +263,10 @@ int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Sca
 		LOG(LPointCalib, LError, "    Got %d points calibrated, need at least 3 to calibrate the floor!\n", pointCount);
 		return 0;
 	}
-	Eigen::Matrix<Scalar,3,1> origin = floorPoints.front().pos;
+	Vector3<Scalar> origin = floorPoints.front().pos;
 
 	// Perform Principle Component Analysis to get the least represented axis, which is our axis going vertically through the plane of the points
-	Eigen::Matrix<Scalar,3,Eigen::Dynamic> N = Eigen::Matrix<Scalar,3,Eigen::Dynamic>(3, pointCount);
+	Eigen::Matrix3X<Scalar> N = Eigen::Matrix3X<Scalar>(3, pointCount);
 	int index = 0;
 	for (int i = 0; i < floorPoints.size(); i++)
 	{
@@ -251,15 +274,18 @@ int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Sca
 			N.col(index++) = floorPoints[i].pos-origin;
 	}
 	// TODO: Choose either SVD or EVD
-	/* Eigen::JacobiSVD<Eigen::Matrix<Scalar,3,3>, Eigen::ComputeFullU> svd_N(N);
-	Eigen::Matrix<Scalar,3,1> axis = svd_N.matrixU().block<3,1>(0, 2);
-	Eigen::Matrix<Scalar,3,1> rankValues = svd_N.singularValues().tail<3>().reverse(); */
-	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,3,3>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
-	Eigen::Matrix<Scalar,3,1> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
-	Eigen::Matrix<Scalar,3,1> rankValues = evd_N.eigenvalues().template head<3>();
+	/* Eigen::JacobiSVD<Matrix3<Scalar>, Eigen::ComputeFullU> svd_N(N);
+	Vector3<Scalar> axis = svd_N.matrixU().block<3,1>(0, 2);
+	Vector3<Scalar> rankValues = svd_N.singularValues().tail<3>().reverse(); */
+	Eigen::SelfAdjointEigenSolver<Matrix3<Scalar>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
+	Vector3<Scalar> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
+	Vector3<Scalar> rankValues = evd_N.eigenvalues().template head<3>();
 	LOG(LPointCalib, LDebug, "    PCA for rotation has ranks (%f, %f, %f)\n", rankValues(2), rankValues(1), rankValues(0));
 
-	// TODO: Properly check other data (e.g. observation database) on which "side" the room is, and on which the floor
+	// TODO: Account for marker size by shifting floor plane up by their radius
+	// Supporting varying sizes sounds like a pain though
+
+	// TODO: Properly check whether cameras are ontop of the floor and not under - currently relying on prior getCalibNormalisation
 	if (axis.z() < 0) axis = -axis;
 
 	if (rankValues(0)*10 > rankValues(1))
@@ -269,11 +295,173 @@ int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Sca
 	}
 
 	// Get transform to calibrated room from up axis, origin and scale
-	roomOrientation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Eigen::Matrix<Scalar,3,1>::UnitZ()).toRotationMatrix();
+	roomOrientation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Vector3<Scalar>::UnitZ()).toRotationMatrix();
 	Scalar scaling = distance12 / N.col(1).norm();
 	roomTransform.linear() = roomOrientation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
 	roomTransform.translation() = -roomTransform.linear()*origin;
 	return pointCount;
 }
-template int calibrateFloor(const std::vector<PointCalibration<double>> &floorPoints, double distance12, Eigen::Matrix3d &roomOrientation, Eigen::Affine3d &roomTransform);
-template int calibrateFloor(const std::vector<PointCalibration<float>> &floorPoints, float distance12, Eigen::Matrix3f &roomOrientation, Eigen::Affine3f &roomTransform);
+template int estimateFloorTransform(const std::vector<StaticPointSamples<double>> &floorPoints, double distance12,
+	Eigen::Matrix3d &roomOrientation, Eigen::Affine3d &roomTransform);
+template int estimateFloorTransform(const std::vector<StaticPointSamples<float>> &floorPoints, float distance12,
+	Eigen::Matrix3f &roomOrientation, Eigen::Affine3f &roomTransform);
+
+/**
+ * Normalise the calibration
+ */
+template<typename Scalar>
+void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Matrix3<Scalar> &roomOrientation,
+	Affine3<Scalar> &roomTransform, Scalar height, Scalar pairwiseDist)
+{
+	Vector3<Scalar> origin = Vector3<Scalar>::Zero();
+	for (auto &calib : calibs)
+		origin += calib.transform.translation();
+	origin /= calibs.size();
+
+	// Perform Principle Component Analysis to get the least represented axis, which is our axis going vertically through the plane of the points
+	Eigen::Matrix3X<Scalar> N = Eigen::Matrix3X<Scalar>(3, calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+		N.col(c) = calibs[c].transform.translation()-origin;
+
+	// TODO: Choose either SVD or EVD
+	Eigen::JacobiSVD<Eigen::Matrix3X<Scalar>, Eigen::ComputeFullU> svd_N(N);
+	Vector3<Scalar> axis = svd_N.matrixU().template block<3,1>(0, 2);
+	//Vector3<Scalar> rankValues = svd_N.singularValues().template tail<3>().reverse();
+	/* Eigen::SelfAdjointEigenSolver<Eigen::Matrix3X<Scalar>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
+	Vector3<Scalar> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
+	Vector3<Scalar> rankValues = evd_N.eigenvalues().template head<3>(); */
+
+	// Flip room up axis based on camera positions
+	Scalar flipAxis = 0;
+	for (int c = 0; c < calibs.size(); c++)
+		flipAxis += axis.dot(calibs[c].transform.translation() - origin);
+	if (flipAxis < 0)
+		axis = -axis;
+
+	// Get transform to calibrated room from up axis, origin and scale
+	roomOrientation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Vector3<Scalar>::UnitZ()).toRotationMatrix();
+	Scalar scaling = pairwiseDist/2 / N.colwise().norm().mean();
+	roomTransform.linear() = roomOrientation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
+	roomTransform.translation() = -roomTransform.linear()*origin + Vector3<Scalar>(0, 0, height);
+}
+template void getCalibNormalisation(const std::vector<CameraCalib_t<double>> &calibs,
+	Eigen::Matrix3d &roomOrientation,Eigen::Affine3d &roomTransform, double height, double pairwiseDist);
+template void getCalibNormalisation(const std::vector<CameraCalib_t<float>> &calibs,
+	Eigen::Matrix3f &roomOrientation, Eigen::Affine3f &roomTransform, float height, float pairwiseDist);
+
+/**
+ * Attempt to transfer the room calibration between calibrations - cameras should match and mostly retain their relations
+ * This is intended to be used between optimisations to ensure the room calibration isn't eroded away
+ * But it can also transfer if cameras moved as long as two didn't move
+ */
+template<typename Scalar>
+bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc, const std::vector<CameraCalib_t<Scalar>> &calibsTgt,
+	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform)
+{
+	roomTransform.setIdentity();
+	roomOrientation.setIdentity();
+
+	struct Correction
+	{
+		float weight = 0;
+		int agreeingCamera;
+		Isometry3<Scalar> transform = Isometry3<Scalar>::Identity();
+		float scale;
+	};
+	std::vector<Correction> guesses;
+	std::vector<float> guessesScale;
+	int unchangedCameras = 0;
+	for (int c = 0; c < calibsSrc.size(); c++)
+	{
+		// Guess scale by relation to other cameras
+		std::vector<Eigen::Vector<Scalar,1>> scaleGuesses;
+		for (int cc = 0; cc < calibsSrc.size(); cc++)
+		{
+			if (c == cc) continue;
+			float distSrc = (calibsSrc[c].transform.translation() - calibsSrc[cc].transform.translation()).norm();
+			float distTgt = (calibsTgt[c].transform.translation() - calibsTgt[cc].transform.translation()).norm();
+			scaleGuesses.push_back(Eigen::Vector<Scalar,1>(distSrc/distTgt));
+		}
+		auto scaleGroups = dbscan<1,double,int>(scaleGuesses, 0.01, 2);
+		if (!scaleGroups.empty())
+		{ // Found agreeing scales, take scale with most agreements as only guess
+			float scale = 0.0f;
+			for (int i : scaleGroups.front())
+				scale += scaleGuesses[i](0);
+			scaleGuesses = { Eigen::Vector<Scalar,1>(scale/scaleGroups.front().size()) };
+		}
+		LOG(LPointCalib, LTrace, "Finding corrective transform for camera %d, %d scale guesses (after %d groups)",
+			c, (int)scaleGuesses.size(), (int)scaleGroups.size());
+
+
+		for (auto scale : scaleGuesses)
+		{
+			// Find corrective transformation assuming scale guess is correct
+			Isometry3<Scalar> corr = calibsTgt[c].transform;
+			corr.translation() *= scale(0);
+			corr = calibsSrc[c].transform * corr.inverse();
+
+			int agreeing = 0;
+			float errorSum = 0;
+			for (int cc = 0; cc < calibsSrc.size(); cc++)
+			{
+				Isometry3<Scalar> corrDiff = calibsTgt[c].transform;
+				corrDiff.translation() *= scale(0);
+				corrDiff = corr * corrDiff;
+				corrDiff = calibsSrc[c].transform * corrDiff.inverse();
+				Scalar tError = corrDiff.translation().norm(), rError = Eigen::AngleAxis<Scalar>(corrDiff.rotation()).angle()/PI*180;
+				if (cc == c)
+					LOG(LPointCalib, LTrace, "    Correction by same camera yields errors %f, %f", tError*200, rError);
+				if (cc == c) continue;
+				LOG(LPointCalib, LTrace, "    Correction yields pair error %f, %f", tError*200, rError);
+				if (tError > 0.01f || rError > 2) continue; // Doesn't agree
+				agreeing++;
+				errorSum += tError * 200 + rError;
+			}
+			if (agreeing == 0) continue;
+
+			Correction correction;
+			correction.agreeingCamera = agreeing+1;
+			correction.weight = agreeing / (1.0+errorSum);
+			correction.transform = corr;
+			correction.scale = scale(0);
+			guesses.push_back(correction);
+			guessesScale.push_back(scale(0));
+			unchangedCameras = std::max(agreeing+1, unchangedCameras);
+			LOG(LPointCalib, LTrace, "Got correction with %d cameras and weight %f for scale %f", agreeing+1, correction.weight, scale(0));
+		}
+	}
+	if (unchangedCameras < 2) return false;
+	LOG(LPointCalib, LTrace, "Found %d corrective transformation guesses, consolidating them:", (int)guesses.size());
+
+	// Either do another dbscan on guessesScale
+	// Or just go with best guess and consolidate with agreeing guesses:
+	std::sort(guesses.begin(), guesses.end(), [](auto &a, auto &b){ return a.weight > b.weight; });
+
+	Isometry3<Scalar> accumIsometry, isometry;
+	accumIsometry.matrix().setZero();
+	Scalar accumScale = 0;
+	int contribCameras = 0;
+	for (int i = 0; i < guesses.size(); i++)
+	{
+		if (guesses[i].agreeingCamera < unchangedCameras)
+			continue;
+		if (contribCameras > 0)
+		{ // Verify it agrees
+			Isometry3<Scalar> diff = guesses[i].transform * isometry.inverse();
+			Scalar tError = diff.translation().norm(), rError = Eigen::AngleAxis<Scalar>(diff.rotation()).angle()/PI*180;
+			Scalar sError = guessesScale[i]/(accumScale/contribCameras);
+			LOG(LPointCalib, LTrace, "    Correction agrees with pair error %f, %f, %f%%", tError*200, rError, (sError-1)*100);
+			if (tError > 0.01f || rError > 2 || std::abs(sError-1) > 0.01) continue; // Doesn't agree
+		}
+		accumIsometry.matrix() += guesses[i].transform.matrix();
+		accumScale += guessesScale[i];
+		contribCameras++;
+		isometry.matrix() = accumIsometry.matrix() / contribCameras;
+	}
+	roomTransform = isometry * Eigen::UniformScaling<Scalar>(accumScale/contribCameras);
+	roomOrientation = isometry.linear();
+	return true;
+}
+template bool transferRoomCalibration(const std::vector<CameraCalib_t<double>> &calibsSrc, const std::vector<CameraCalib_t<double>> &calibsTgt,
+	Matrix3<double> &roomOrientation, Affine3<double> &roomTransform);

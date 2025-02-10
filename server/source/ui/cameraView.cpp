@@ -906,9 +906,9 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 	}
 	// Gather further frame data
-	std::shared_ptr<const FrameRecord> frameState = *visFrame.frameIt; // new shared_ptr
-	auto &frame = frameState->cameras[camera.pipeline->index];
-	long frameNum = frameState->num; // Long to assure correct calculations later on
+	std::shared_ptr<const FrameRecord> frameState = *visFrame.frameIt; // new shared_ptrframe
+	auto &frame = *frameState;
+	auto &camFrame = frame.cameras[camera.pipeline->index];
 	PipelinePhase phase = pipeline.phase.load();
 
 	/**
@@ -936,7 +936,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	 */
 	if (visCamera.view.autoZoom)
 	{ // Control zoom target based on phase
-		if (updateAutoZoom(visState, camera, visCamera, frame, visFrame))
+		if (updateAutoZoom(visState, camera, visCamera, camFrame, visFrame))
 		{ // Set new target, update UI
 			float diffRel = (visCamera.view.prevCenter-visCamera.view.center).norm()*mode.widthPx/2.0f * visCamera.view.zoom;
 			float zoomRel = visCamera.view.zoom / visCamera.view.prevZoom;
@@ -1036,7 +1036,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	if (visCamera.visMode == VIS_BACKGROUND_TILES)
 	{
 		float PixelSizeCur = 8 * (float)viewSize.x()/mode.widthPx * visCamera.view.zoom;
-		visualiseBlobs2D(frame.rawPoints2D, frame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
+		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 		visualisePoints2D(camera.state.background.contextualRLock()->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
 	}
 	else if (visCamera.visMode == VIS_BLOB)
@@ -1046,9 +1046,9 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		if (!hideBlobsOnFrame)
 		{
 			if (drawDistorted)
-				visualiseBlobs2D(frame.rawPoints2D, frame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
+				visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
 			else
-				visualiseBlobs2D(frame.points2D, frame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
+				visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 			if (visState.showMarkerTrails && visFrame.isRealtimeFrame)
 			{ // Only works with current frame, not past frames
 				auto obs_lock = visCamera.observations.contextualRLock();
@@ -1061,12 +1061,12 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		if (phase == PHASE_Automatic)
 		{
 			visSetupCamera(postProjMat, calib, mode, viewSize);
-			for (auto &targetRecord : frameState->tracking.targets)
+			for (auto &targetRecord : frame.tracking.targets)
 			{
 				visualisePose(targetRecord.poseFiltered, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
 			}
 			// TODO: Implement marker tracking once it becomes useful
-			/* for (auto &markerRecord : frameState->tracking.markers)
+			/* for (auto &markerRecord : frame.tracking.markers)
 			{
 				visualisePointsSpheres({ VisPoint{ markerRecord.position, Color{ 0.8, 0.8, 0, 1.0f }, 10.0f } });
 			} */
@@ -1074,9 +1074,9 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 		else if (phase == PHASE_Tracking)
 		{
-			if (visState.tracking.debug.frameNum > 0 && visState.tracking.debug.frameNum < frameState->num)
+			if (visState.tracking.debug.frameNum > 0 && visState.tracking.debug.frameNum < frame.num)
 				visState.tracking.debug = {}; // Any one camera can reset
-			if (displayInternalDebug && visState.tracking.debug.frameNum == frameState->num && visState.tracking.debugMatchingState)
+			if (displayInternalDebug && visState.tracking.debug.frameNum == frame.num && visState.tracking.debugMatchingState)
 			{ // Visualise internal tracking debug instead of normal vis
 				std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
 				if (!pipeline_lock.owns_lock()) return;
@@ -1086,7 +1086,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 					[&](auto &t){ return t.target->id == trackerID; });
 				if (tracker == pipeline.tracking.trackedTargets.end()) return;
 
-				visualiseTarget2DMatchingStages(visState, calib, frame, *tracker->target,
+				visualiseTarget2DMatchingStages(visState, calib, camFrame, *tracker->target,
 					tracker->tracking2DData.matching[calib.index], pipeline.params.track.expandMarkerFoV);
 
 				if (visState.tracking.showUncertaintyAxis)
@@ -1099,42 +1099,41 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 			// Display poses in 3D
 			visSetupCamera(postProjMat, calib, mode, viewSize);
-			for (auto &targetRecord : frameState->tracking.targets)
+			for (auto &targetRecord : frame.tracking.targets)
 				visualisePose(targetRecord.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
 			if (visState.room.showOrigin)
 				visualiseOrigin(visState.room.origin, 1, 5);
 			visSetupProjection(postProjMat, viewSize);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			for (auto &targetRecord : frameState->tracking.targets)
+			for (auto &trackedTarget : frame.tracking.targets)
 			{
-				auto tracker = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
-					[&](auto &t){ return t.id == targetRecord.id; });
-				if (tracker == pipeline.tracking.targetTemplates3D.end()) continue;
-				auto &target = *tracker;
+				auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+					[&](auto &t){ return t.id == trackedTarget.id; });
+				if (target == pipeline.tracking.targetTemplates3D.end()) continue;
 
 				// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-				projectTargetTemplate(projected2D, target, calib,
-					targetRecord.poseObserved, pipeline.params.track.expandMarkerFoV);
+				projectTargetTemplate(projected2D, *target, calib,
+					trackedTarget.poseObserved, pipeline.params.track.expandMarkerFoV);
 				visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
 
 				// Visualise target points that are tracked this frame
 				projectTargetTemplate(projected2D,
-					target, targetRecord.visibleMarkers[camera.pipeline->index], calib, targetRecord.poseObserved, 1.0f);
+					*target, trackedTarget.visibleMarkers[camera.pipeline->index], calib, trackedTarget.poseObserved, 1.0f);
 				visualisePoints2D(projected2D, Color{ 0.8, 0.0, 0.2, 0.6f }, 2.0f);
 
 				if (visState.tracking.showSearchBounds)
 				{ // Visualise search bounds
-					Eigen::Projective3f mvp = calib.camera.cast<float>() * targetRecord.poseObserved;
-					Bounds2f bounds = projectBounds(mvp, target.bounds);
+					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackedTarget.poseObserved;
+					Bounds2f bounds = projectBounds(mvp, target->bounds);
 					bounds.extendBy({ pipeline.params.track.addUncertaintyPx, pipeline.params.track.addUncertaintyPx });
 					visualiseBounds2D(bounds);
 				}
 
 				if (visState.tracking.showPredictedTarget)
 				{
-					projectTargetTemplate(projected2D, target, calib,
-						targetRecord.posePredicted, pipeline.params.track.expandMarkerFoV);
+					projectTargetTemplate(projected2D, *target, calib,
+						trackedTarget.posePredicted, pipeline.params.track.expandMarkerFoV);
 					visualisePoints2D(projected2D, Color{ 0.2, 0.5, 0.7, 0.4f }, 2.0f);
 				}
 			}
@@ -1186,6 +1185,21 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				visualisePoints2D(obs_lock->ptsTemp.begin(), obs_lock->ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 				visualisePoints2D(obs_lock->ptsInactive.begin(), obs_lock->ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 			}
+
+			if (!pipeline.pointCalib.room.floorPoints.empty())
+			{ // TODO: Accessing pipeline in vis without lock
+				visSetupCamera(postProjMat, calib, mode, viewSize);
+				thread_local std::vector<VisPoint> markerPoints;
+				markerPoints.clear();
+				Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
+				for (auto &pt : pipeline.pointCalib.room.floorPoints)
+				{
+					if (pt.sampleCount > 3)
+						markerPoints.emplace_back(pt.pos.cast<float>(), col, 0.01f);
+				}
+				visualisePointsSpheres(markerPoints);
+				visSetupProjection(postProjMat, viewSize);
+			}
 		}
 	}
 	else if (visCamera.visMode == VIS_ERROR_VIS)
@@ -1204,12 +1218,12 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		{
 			//visualiseDistortion(calib, pipeline.isSimulationMode? camera.pipeline->simulation.calib : calib, mode, 0.5f, 0.8f, 0.0f);
 		}
-		visualiseBlobs2D(frame.rawPoints2D, frame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
+		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
 	}
 	else if (visCamera.visMode == VIS_VISUAL_DEBUG)
 	{
 		// Show other blobs next to it normally
-		visualiseBlobs2D(frame.points2D, frame.properties, Color{ 1, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
+		visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 
 		auto vis_lock = camera.state.visualDebug.contextualRLock();
 		auto &visual = *vis_lock;
@@ -1263,7 +1277,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	}
 	else if (visCamera.visMode == VIS_EMULATION)
 	{
-		updateEmulationVisualisation(camera, visCamera, frame, viewSize);
+		updateEmulationVisualisation(camera, visCamera, camFrame, viewSize);
 	}
 }
 

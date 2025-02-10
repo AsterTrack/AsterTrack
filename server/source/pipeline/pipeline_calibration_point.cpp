@@ -47,55 +47,7 @@ void InitPointCalibration(PipelineState &pipeline)
 	ptCalib.planned = false;
 	ptCalib.settings = {};
 	ptCalib.state = {};
-	ptCalib.floorPoints.clear();
-}
-
-template<typename Scalar>
-static void NormaliseCalibration(std::vector<CameraCalib_t<Scalar>> &calibs, Scalar height = 4.5, Scalar pairwiseDist = 4.0)
-{
-	Eigen::Matrix<Scalar,3,1> origin = Eigen::Matrix<Scalar,3,1>::Zero();
-	for (auto &calib : calibs)
-		origin += calib.transform.translation();
-	origin /= calibs.size();
-
-	// Perform Principle Component Analysis to get the least represented axis, which is our axis going vertically through the plane of the points
-	Eigen::Matrix<Scalar,3,Eigen::Dynamic> N = Eigen::Matrix<Scalar,3,Eigen::Dynamic>(3, calibs.size());
-	for (int c = 0; c < calibs.size(); c++)
-		N.col(c) = calibs[c].transform.translation()-origin;
-
-	// TODO: Choose either SVD or EVD
-	Eigen::JacobiSVD<Eigen::Matrix<Scalar,3,Eigen::Dynamic>, Eigen::ComputeFullU> svd_N(N);
-	Eigen::Matrix<Scalar,3,1> axis = svd_N.matrixU().template block<3,1>(0, 2);
-	//Eigen::Matrix<Scalar,3,1> rankValues = svd_N.singularValues().template tail<3>().reverse();
-	/* Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,3,Eigen::Dynamic>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
-	Eigen::Matrix<Scalar,3,1> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
-	Eigen::Matrix<Scalar,3,1> rankValues = evd_N.eigenvalues().template head<3>(); */
-
-	// Flip room up axis based on camera orientations
-	Scalar alignment = 0;
-	for (int c = 0; c < calibs.size(); c++)
-	{
-		Eigen::Vector3<Scalar> forward = calibs[c].transform.rotation() * Eigen::Matrix<Scalar,3,1>::UnitZ();
-		alignment += axis.dot(forward);
-	}
-	if (alignment > 0)
-		axis = -axis;
-
-	// Get transform to calibrated room from up axis, origin and scale
-	Eigen::Matrix<Scalar,3,3> rotation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Eigen::Matrix<Scalar,3,1>::UnitZ()).toRotationMatrix();
-	Scalar scaling = pairwiseDist / N.colwise().norm().mean();
-	Eigen::Transform<Scalar,3,Eigen::Affine> transform;
-	transform.linear() = rotation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
-	transform.translation() = -transform.linear()*origin + Eigen::Matrix<Scalar,3,1>(0, 0, height);
-	LOG(LPointCalib, LInfo, "Scaled calibration by %f during normalisation!", scaling);
-
-	// Apply normalised transform
-	for (auto &calib : calibs)
-	{
-		calib.transform.linear() = rotation * calib.transform.linear();
-		calib.transform.translation() = transform * calib.transform.translation();
-		calib.UpdateDerived();
-	}
+	ptCalib.room.floorPoints.clear();
 }
 
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
@@ -121,54 +73,11 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 		SignalPipelineUpdate();
 	}
 
-	if (ptCalib.normaliseRoom)
-	{
-		ptCalib.normaliseRoom = false;
-		std::vector<CameraCalib> calibs(pipeline.cameras.size());
-		for (int c = 0; c < pipeline.cameras.size(); c++)
-			calibs[c] = cameras[c]->calib;
-		NormaliseCalibration(calibs);
-		for (int c = 0; c < pipeline.cameras.size(); c++)
-		{
-			if (pipeline.cameras[c]->calib.invalid()) continue;
-			pipeline.cameras[c]->calib = calibs[c];
-		}
-		SignalServerEvent(EVT_UPDATE_CALIBS);
-		SignalPipelineUpdate();
-	}
-
 	// TODO: Room calibration should be considered largely untested since it hasn't been used in a while
 	// Need to improve experience / instructions, visualise points on the floor, account for physical marker sizes, etc.
-	if (ptCalib.calibrateFloor)
+	if (!ptCalib.room.floorPoints.empty() && ptCalib.room.floorPoints.back().sampling)
 	{
-		ptCalib.calibrateFloor = false;
-		LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
-		Eigen::Matrix3d roomOrientation;
-		Eigen::Affine3d roomTransform;
-		int pointCount = calibrateFloor<double>(ptCalib.floorPoints, ptCalib.distance12, roomOrientation, roomTransform);
-		if (pointCount > 0)
-		{
-			LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
-			LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
-				roomTransform.linear().colwise().norm().mean());
-			for (auto &cam : pipeline.cameras)
-			{
-				if (cam->calib.invalid()) continue;
-				cam->calib.transform.linear() = roomOrientation * cam->calib.transform.linear();
-				cam->calib.transform.translation() = roomTransform * cam->calib.transform.translation();
-				cam->calib.UpdateDerived();
-			}
-			SignalServerEvent(EVT_UPDATE_CALIBS);
-			SignalPipelineUpdate();
-		}
-		else
-		{
-			LOG(LPointCalib, LDebug, "Failed to calibrate the floor!\n");
-		}
-	}
-	else
-	{
-		if (!ptCalib.floorPoints.empty() && pipeline.phase == PHASE_Calibration_Point)
+		if (pipeline.phase == PHASE_Calibration_Point)
 		{ // Triangulate unoccupied 2D points, since tracking stage is not running
 			auto &track = pipeline.tracking;
 			const auto &detect = pipeline.params.detect;
@@ -216,40 +125,60 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 		}
 
-		for (int i = 0; i < ptCalib.floorPoints.size(); i++)
+		auto &point = ptCalib.room.floorPoints.back();
+		if (pipeline.tracking.triangulations3D.empty())
 		{
-			auto &point = ptCalib.floorPoints[i];
-			if (!point.sampling) continue;
-			if (pipeline.tracking.points3D.empty())
+			LOG(LPointCalib, LDebug, "No markers visible to calibrate floor point!\n");
+			ptCalib.room.floorPoints.pop_back();
+		}
+		else
+		{
+			TriangulatedPoint tri;
+			if (point.sampleCount == 0)
 			{
-				LOG(LPointCalib, LDebug, "No markers visible to calibrate floor point!\n");
-				ptCalib.floorPoints.erase(ptCalib.floorPoints.begin()+i);
-				i--;
-				continue;
-			}
-			if (point.sampleCount > 0)
-			{
-				Eigen::Vector3d curPos = point.pos / point.sampleCount;
-				if ((curPos.cast<float>() - pipeline.tracking.points3D[0]).norm() < 0.005)
-				{
-					point.pos += pipeline.tracking.points3D[0].cast<double>();
-					point.sampleCount++;
-				}
+				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)ptCalib.room.floorPoints.size());
+				tri = pipeline.tracking.triangulations3D.front();
 			}
 			else
 			{
-				point.pos = pipeline.tracking.points3D[0].cast<double>();
-				point.sampleCount++;
-				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", i);
+				float closest = 0.005f;
+				for (auto &t : pipeline.tracking.triangulations3D)
+				{
+					float dist = (point.pos.cast<float>() - t.pos).norm();
+					if (dist < closest)
+					{
+						tri = t;
+						closest = dist;
+					}
+				}
 			}
-			if (point.sampleCount > 100)
+			if (!tri.blobs.empty())
 			{
-				point.pos = point.pos / point.sampleCount;
-				LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", i, point.sampleCount);
+				point.samples.resize(pipeline.cameras.size(), { 0, Eigen::Vector2d::Zero() });
+				for (int c = 0; c < tri.blobs.size(); c++)
+				{
+					if (tri.blobs[c] == InvalidBlob) continue;
+					auto &sample = point.samples[c];
+					sample.second += frame->cameras[c].points2D[tri.blobs[c]].cast<double>();
+					sample.first++;
+					point.sampleCount++;
+				}
+				point.update(pipeline.getCalibs());
+			}
+			if (point.sampleCount > 1000 || (point.sampleCount > 300 && point.startObservation-frame->num > 100))
+			{
+				LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", (int)ptCalib.room.floorPoints.size(), point.sampleCount);
 				point.sampling = false;
 				point.confidence = 10;
 			}
 		}
+	}
+	if (ptCalib.room.floorPoints.size() >= 2)
+	{ // Keep these invariant to potential calibration changes
+		// TODO: Consider updating these only when calibration changes occur - similar to UpdateCalibrationRelations
+		auto calibs = pipeline.getCalibs();
+		for (auto &floorPoint : pipeline.pointCalib.room.floorPoints)
+			floorPoint.update(calibs);
 	}
 }
 
@@ -304,10 +233,6 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		else
 			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3fdg\n", errors.first, errors.second);
 	}
-	else
-	{ // Normalise calibration so that all cameras are close to a plane, looking down, 2m above the ground
-		NormaliseCalibration(calibs);
-	}
 
 	if (stopToken.stop_requested())
 	{
@@ -335,6 +260,7 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
 		for (int c = 0; c < calibs.size(); c++)
 			pipeline->cameras[calibs[c].index]->calib = calibs[c];
+		normaliseRoom(*pipeline);
 	}
 
 	// Update fundamental matrices using calibration
@@ -423,6 +349,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 		{ // Update calibration
 			std::unique_lock pipeline_lock(pipeline->pipelineLock);
+			adoptRoomCalibration(*pipeline, calibs);
 			for (int c = 0; c < calibs.size(); c++)
 				pipeline->cameras[calibs[c].index]->calib = calibs[c];
 		}
@@ -499,6 +426,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 	{ // Update calibration
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
+		adoptRoomCalibration(*pipeline, calibs);
 		for (int c = 0; c < calibs.size(); c++)
 			pipeline->cameras[calibs[c].index]->calib = calibs[c];
 	}
@@ -510,4 +438,83 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	SignalPipelineUpdate();
 
 	LOGC(LDebug, "=======================\n");
+}
+
+void normaliseRoom(PipelineState &pipeline)
+{
+	Eigen::Matrix3d roomOrientation;
+	Eigen::Affine3d roomTransform;
+	getCalibNormalisation<double>(pipeline.getCalibs(), roomOrientation, roomTransform);
+	for (auto &cam : pipeline.cameras)
+	{
+		if (cam->calib.invalid()) continue;
+		cam->calibBackup = cam->calib;
+		cam->calib.transform.linear() = roomOrientation * cam->calib.transform.linear();
+		cam->calib.transform.translation() = roomTransform * cam->calib.transform.translation();
+		cam->calib.UpdateDerived();
+	}
+	SignalServerEvent(EVT_UPDATE_CALIBS);
+	SignalPipelineUpdate();
+}
+
+bool calibrateFloor(PipelineState &pipeline)
+{
+	auto &ptCalib = pipeline.pointCalib;
+	if (ptCalib.room.floorPoints.size() < 3)
+	{
+		LOG(LPointCalib, LDebug, "Could not calibrate floor!\n");
+		return false;
+	}
+
+	LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
+
+	// Re-evaluate positions incase calibration changed since observation
+	auto calibs = pipeline.getCalibs();
+	for (auto &point : ptCalib.room.floorPoints)
+		point.update(calibs);
+
+	// Estimate a transform to align floor plane to points with correct scale
+	Eigen::Matrix3d roomOrientation;
+	Eigen::Affine3d roomTransform;
+	int pointCount = estimateFloorTransform<double>(ptCalib.room.floorPoints, ptCalib.room.distance12, roomOrientation, roomTransform);
+	if (pointCount > 0)
+	{
+		LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
+		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
+			roomTransform.linear().colwise().norm().mean());
+		for (auto &cam : pipeline.cameras)
+		{
+			if (cam->calib.invalid()) continue;
+			cam->calibBackup = cam->calib;
+			cam->calib.transform.linear() = roomOrientation * cam->calib.transform.linear();
+			cam->calib.transform.translation() = roomTransform * cam->calib.transform.translation();
+			cam->calib.UpdateDerived();
+		}
+		SignalServerEvent(EVT_UPDATE_CALIBS);
+		SignalPipelineUpdate();
+		return true;
+	}
+	else
+	{
+		LOG(LPointCalib, LDebug, "Failed to calibrate the floor!\n");
+		return false;
+	}
+}
+
+bool adoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs)
+{
+	std::vector<CameraCalib> oldCalibs(calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+		oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
+	Eigen::Matrix3d roomOrientation;
+	Eigen::Affine3d roomTransform;
+	if (!transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
+		return false;
+	for (auto &calib : calibs)
+	{
+		calib.transform.linear() = roomOrientation * calib.transform.linear();
+		calib.transform.translation() = roomTransform * calib.transform.translation();
+		calib.UpdateDerived();
+	}
+	return true;
 }

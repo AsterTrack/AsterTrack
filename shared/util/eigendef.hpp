@@ -407,20 +407,6 @@ struct Bounds3
 typedef Bounds3<int> Bounds3i;
 typedef Bounds3<float> Bounds3f;
 
-/**
- * A calibration of a static point with multiple samples
- */
-template<typename Scalar>
-struct PointCalibration
-{
-	Eigen::Matrix<Scalar,3,1> pos;
-	Scalar confidence;
-	int startObservation;
-	int sampleCount;
-	bool sampling;
-};
-typedef PointCalibration<float> PointCalibration3f;
-
 
 /* Constants */
 

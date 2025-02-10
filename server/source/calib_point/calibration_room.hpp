@@ -32,17 +32,47 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 /**
+ * A calibration of a static point with multiple samples that is invariant to room calibration
+ */
+template<typename Scalar>
+struct StaticPointSamples
+{
+	std::vector<std::pair<int,Vector2<Scalar>>> samples;
+	Eigen::Matrix<Scalar,3,1> pos;
+	float confidence;
+	int startObservation;
+	int sampleCount;
+	bool sampling;
+
+    void update(const std::vector<CameraCalib> &calibs);
+};
+
+/**
  * Calculates, logs and returns overall camera reprojection errors. Also marks all outliers
  * Returns avg, stdDev, max in -1 to 1 coordinates
  */
 OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib> &cameraCalibs, const PointOutlierErrors &params);
-
 
 /**
  * Calibrate a transformation to the room coordinate system given 3 or more calibrated points on the floor, with the first being the new origin
  * The distance between the first two points should be passed as distance12 to determine the scale
  */
 template<typename Scalar>
-int calibrateFloor(const std::vector<PointCalibration<Scalar>> &floorPoints, Scalar distance12, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform);
+int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform);
+
+/**
+ * Normalise the calibration
+ */
+template<typename Scalar>
+void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform, Scalar height = 2.5, Scalar pairwiseDist = 4.0);
+
+/**
+ * Attempt to transfer the room calibration between calibrations - cameras should match and mostly retain their relations
+ * This is intended to be used between optimisations to ensure the room calibration isn't eroded away
+ * But it can also transfer if cameras moved as long as two didn't move
+ */
+template<typename Scalar>
+bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc, const std::vector<CameraCalib_t<Scalar>> &calibsTgt,
+	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform);
 
 #endif // CALIBRATION_ROOM_H

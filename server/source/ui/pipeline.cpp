@@ -315,7 +315,6 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						return numSteps++ < maxSteps;
 					};
 					auto calibs = pipeline.getCalibs();
-					auto calibsOpt = calibs;
 
 					ScopedLogCategory scopedLogCategory(LOptimisation);
 					ScopedLogLevel scopedLogLevel(LInfo);
@@ -324,14 +323,13 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					LOGCL("Optimising camera position:");
 					OptimisationOptions options(false, true, false, false, false);
-					optimiseData<OptSparse>(options, data, calibsOpt, itUpdate, 1);
-					for (int c = 0; c < calibs.size(); c++)
-						LOGCL("        Camera %d was moved by %.2fmm", calibs[c].id, (calibs[c].transform.translation() - calibsOpt[c].transform.translation()).norm()*1000);
+					optimiseData<OptSparse>(options, data, calibs, itUpdate, 1);
 
 					{ // Update calibration
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
-						for (int c = 0; c < calibsOpt.size(); c++)
-							pipeline.cameras[calibsOpt[c].index]->calib = calibsOpt[c];
+						adoptRoomCalibration(pipeline, calibs);
+						for (int c = 0; c < calibs.size(); c++)
+							pipeline.cameras[calibs[c].index]->calib = calibs[c];
 					}
 
 					// Update fundamental matrices using calibration

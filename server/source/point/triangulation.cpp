@@ -400,9 +400,9 @@ Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
  */
-template<typename Scalar, typename PointScalar, typename CalibScalar>
+template<typename Scalar, typename PointScalar, typename CalibScalar, typename TriScalar>
 Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups, 
-	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D, int maxIterations, float threshold3D)
+	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint_t<TriScalar> &point3D, int maxIterations, float threshold3D)
 {
 	typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> MatrixX;
 	typedef Eigen::Matrix<Scalar,4,1> Vector4;
@@ -456,7 +456,7 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 			break;
 		}
 	}
-	point3D.pos = lastTri.template cast<float>();
+	point3D.pos = lastTri.template cast<TriScalar>();
 	// Get reprojection error, not sure if properly in pixels
 	//point3D.error = (triSolve * triResult).cwiseAbs().mean()*1000;
 	// Actually, detection.cpp currently relies on this being "error" in m
@@ -485,9 +485,11 @@ template Eigen::Vector3d refineTriangulation(const std::vector<std::vector<Eigen
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
 
 template Eigen::Vector3f refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2f> const *> &pointGroups, 
-	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D, int maxIterations, float threshold3D);
+	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<float> &point3D, int maxIterations, float threshold3D);
 template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &pointGroups, 
-	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D, int maxIterations, float threshold3D);
+	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<float> &point3D, int maxIterations, float threshold3D);
+template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &pointGroups, 
+	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<double> &point3D, int maxIterations, float threshold3D);
 
 #ifdef OPT_AUTODIFF
 // For AutoDiff used in optimisation/optimisation.hpp ()

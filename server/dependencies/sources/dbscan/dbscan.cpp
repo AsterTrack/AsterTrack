@@ -172,4 +172,5 @@ std::vector<std::vector<Index>> dbscanSubset(const std::vector<Eigen::Matrix<Sca
 
 template std::vector<std::vector<int>> dbscan<3,float,int>(const std::vector<Eigen::Vector3f> &data, float eps, int min_pts);
 template std::vector<std::vector<int>> dbscan<2,float,int>(const std::vector<Eigen::Vector2f> &data, float eps, int min_pts);
+template std::vector<std::vector<int>> dbscan<1,double,int>(const std::vector<Eigen::Vector<double,1>> &data, double eps, int min_pts);
 template std::vector<std::vector<int>> dbscanSubset<2,float,int>(const std::vector<Eigen::Vector2f> &data, const std::vector<int> &indices, float eps, int min_pts);

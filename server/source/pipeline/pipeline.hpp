@@ -35,6 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/tracking3D.hpp" // TrackedTargetFiltered
 
 #include "calib_point/parameters.hpp" // PointCalibParameters
+#include "calib_point/calibration_room.hpp" // StaticPointSamples
 #include "calib_target/parameters.hpp" // TargetCalibParameters
 #include "calib_target/aquisition.hpp" // TargetViewAquisition
 #include "calib_target/assembly.hpp" // TargetView, TargetAssemblyStage, TargetAssemblyStageID
@@ -75,6 +76,7 @@ struct CameraPipeline
 	CameraID id = CAMERA_ID_NONE;
 	int index = -1;
 	CameraCalib calib = {};
+	CameraCalib calibBackup = {}; // To undo certain operations
 	CameraMode mode = {};
 
 	// Error data of calibration
@@ -136,7 +138,8 @@ struct PipelineState
 	TrackingParameters params = {};
 
 	// Tracking pipeline state
-	struct {
+	struct
+	{
 		TimePoint_t lastFrameTime; // Time of last tracked frame for timestep calculation
 		// All stored target calibrations
 		// TODO: This is the actual store, though pipeline resets needs this, it might be better stored in the main server
@@ -159,7 +162,8 @@ struct PipelineState
 	} tracking = {};
 
 	// Point calibration state
-	struct {
+	struct
+	{
 		PointCalibParameters params;
 		// Calibration State (both reconstruction and optimisation)
 		bool planned;
@@ -169,22 +173,25 @@ struct PipelineState
 			int typeFlags;
 			OptimisationOptions options = OptimisationOptions(false, true, true, true, true);
 			int maxSteps = 20;
-		} settings;
+		} settings = {};
 		struct
 		{
 			int numSteps = 0;
 			OptErrorRes errors = {};
 			int lastStopCode;
 			bool complete = false;
-		} state;
+		} state = {};
 		// Room parameters
-		std::vector<PointCalibration<double>> floorPoints;
-		float distance12 = 0.01f; // In m
-		bool normaliseRoom, calibrateFloor;
+		struct
+		{
+			std::vector<StaticPointSamples<double>> floorPoints;
+			float distance12 = 1.0f; // In m
+		} room = {};
 	} pointCalib = {};
 
 	// Target calibration state
-	struct {
+	struct
+	{
 		TargetCalibParameters params;
 		// State for heuristic target view aquisition
 		Synchronised<TargetViewAquisition> aquisition;
@@ -203,15 +210,15 @@ struct PipelineState
 				std::vector<TargetAssemblyStageID> instructions;
 				int maxSteps;
 				float tolerances;
-			} settings;
+			} settings = {};
 			struct
 			{
 				std::string currentStage;
 				bool optimising = false;
 				int numSteps = 0, maxSteps = 0;
 				OptErrorRes errors = {}; // Errors after last proper oprimisation
-			} state;
-		} assembly;
+			} state = {};
+		} assembly = {};
 		Synchronised<std::vector<std::shared_ptr<TargetAssemblyStage>>> assemblyStages;
 	} targetCalib = {};
 
@@ -253,6 +260,23 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record);
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord);
 
 /* General functions */
+
+/**
+ * Normalise the room (camera calibrations), discarding any room calibration done before
+ */
+void normaliseRoom(PipelineState &pipeline);
+
+/**
+ * Calibrate the room coordinate system given a number of floor points and scale for reference (pipeline state)
+ */
+bool calibrateFloor(PipelineState &pipeline);
+
+/**
+ * Adopts an existing room calibration into the given new calibrations.
+ * Tries to identify at least two cameras that have not changed between the current calibration and this one.
+ * If these don't exist, returns false.
+ */
+bool adoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations

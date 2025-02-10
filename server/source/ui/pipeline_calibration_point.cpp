@@ -365,32 +365,65 @@ void InterfaceState::UpdatePipelinePointCalib()
 		"Currently the interface is rough, it expects exactly one marker in the tracking volume at a time. \n"
 		"You will be able to select markers through the 3D View in the future.");
 
+	auto &roomCalib = ptCalib.room;
 	ImGui::BeginDisabled(ptCalib.control.running() || calibState.numUncalibrated || calibState.relUncertain);
 
-	if (ImGui::Button("Add Point", ButtonSize))
+	std::string label;
+	if (roomCalib.floorPoints.size() < 3)
+		label = asprintf_s("%d floor points, need 3 or more", (int)roomCalib.floorPoints.size());
+	else
+	 	label = asprintf_s("%d floor points - distance of 0-1 is %.2fmm", (int)roomCalib.floorPoints.size(),
+			(roomCalib.floorPoints[0].pos-roomCalib.floorPoints[1].pos).norm()*1000);
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(label.c_str());
+	SameLineTrailing(GetBarWidth(ImGui::GetFrameHeight(), 2));
+	if (ImGui::Button("-", ImVec2(ImGui::GetFrameHeight(), 0)))
 	{
-		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(20)); // Access anyway if fail
-		ptCalib.floorPoints.push_back({});
-		ptCalib.floorPoints.back().sampling = true;
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock() && !roomCalib.floorPoints.empty())
+			roomCalib.floorPoints.pop_back();
 	}
-	ImGui::SetItemTooltip("Put a Marker on the ground, and use Set Point to record it over a second.");
+	ImGui::SetItemTooltip("Remove the last point added.");
 	ImGui::SameLine();
-	ImGui::Text("%d floor points%s", (int)ptCalib.floorPoints.size(), ptCalib.floorPoints.size() < 3? ", need 3+" : "");
+	ImGui::BeginDisabled(!roomCalib.floorPoints.empty() && roomCalib.floorPoints.back().sampling);
+	if (ImGui::Button("+", ImVec2(ImGui::GetFrameHeight(), 0)))
+	{
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock())
+		{
+			roomCalib.floorPoints.push_back({});
+			roomCalib.floorPoints.back().sampling = true;
+		}
+	}
+	ImGui::SetItemTooltip("Put a Marker on the ground, and push this button to record it over the period of one second.");
+	ImGui::EndDisabled();
 
-	ScalarInput<float>("Distance 1-2", "mm", &ptCalib.distance12, 1.0f, 5000.0f, 1, 1000);
+	ScalarInput<float>("Distance 1-2", "mm", &roomCalib.distance12, 1.0f, 5000.0f, 1, 1000);
 	ImGui::SetItemTooltip("Distance between the first two points, used to calibrate scale. In millimeter.");
 
-	if (ImGui::Button("Normalise Room", SizeWidthDiv2()))
-	{
-		ptCalib.normaliseRoom = true;
-	}
-	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
-	ImGui::SameLine();
 	if (ImGui::Button("Calibrate Floor", SizeWidthDiv2()))
 	{
-		ptCalib.calibrateFloor = true;
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock())
+			calibrateFloor(pipeline);
 	}
 	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
+
+	ImGui::SameLine();
+	if (ImGui::Button("Undo Once", SizeWidthDiv2()))
+	{ // TODO: Disable this button if floor is not calibrated yet (or a new calibration exists)
+		// Or maybe simple store backups as transforms, and apply transforms (default being Isometry), so no chance of "restoring" a stale calibration exists
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock())
+		{
+			for (auto &camera : pipeline.cameras)
+			{
+				if (camera->calibBackup.valid())
+					camera->calib = camera->calibBackup;
+			}
+		}
+	}
+	ImGui::SetItemTooltip("Restore calibration to backup created before last floor calibration.");
 
 	ImGui::EndDisabled();
 

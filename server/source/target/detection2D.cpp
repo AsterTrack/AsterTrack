@@ -200,7 +200,7 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &
 			continue;
 
 		// Optimise and remove outliers
-		TargetMatchResult errors = optimiseTargetPose(calibs, points2D, targetMatch2D, params.opt);
+		TargetMatchResult errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 

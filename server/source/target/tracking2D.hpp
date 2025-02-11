@@ -133,28 +133,28 @@ void matchTargetPointsSlow(
 /**
  * Optimises the pose to better fit the matched observations
  */
-template<bool OUTLIER = true>
+template<bool REFERENCE = true, bool OUTLIER = true>
 TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &candidate,
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
 
 /**
  * Calculates the reprojection error of the target candidate to the matched observations
  */
 TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &targetMatch2D);
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match);
 
 /**
  * Updates visibleMarkers of target to those matched
  */
-void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const TargetMatch2D &match2D);
+void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const TargetMatch2D &match);
 
 /**
  * Redetect the target in the observed 2D points using a predicted pose
  * First re-acquires the previously visible markers and finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit all matched observations
  */
-TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pose, Eigen::Vector3f stdDev,
+TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

@@ -32,6 +32,7 @@ enum TgtOptOptions {
 	OptCorrectivePose = 2,
 	OptRotationMRP = 4,
 	OptUndistorted = 8,
+	OptReferencePose = 16,
 };
 
 template<typename Scalar = float, int Options = OptTgtNone>
@@ -51,6 +52,8 @@ struct TargetReprojectionError
 	std::vector<Projective3<Scalar>> m_mvps;
 	std::vector<std::tuple<int, Vector3<Scalar>, Vector2<Scalar>>> m_observedPoints;
 	std::vector<bool> *m_outlierMap;
+	Eigen::Matrix<Scalar,6,1> refPose;
+	Scalar refInfluence = 1.0f;
 
 	template<typename LoadScalar = Scalar>
 	TargetReprojectionError(const std::vector<CameraCalib_t<LoadScalar>> &calibs)
@@ -74,6 +77,33 @@ struct TargetReprojectionError
 		}
 	}
 
+	void setReferencePose(const Isometry3<Scalar> &pose, Scalar influence = 1.0f)
+	{
+		static_assert(Options&OptReferencePose);
+		refPose.template head<3>() = pose.translation();
+		if constexpr (Options&OptRotationMRP)
+			refPose.template tail<3>() = Quat2MRP(Eigen::Quaternion<Scalar>(pose.rotation()));
+		else
+			refPose.template tail<3>() = EncodeAARot<Scalar>(pose.rotation());
+		refInfluence = influence;
+	}
+
+	void setStartingPose(const Isometry3<Scalar> &pose)
+	{
+		if constexpr (Options&OptReferencePose)
+			assert(!refPose.matrix().hasNaN());
+		if constexpr (Options&OptCorrectivePose)
+		{
+			for (int c = 0; c < m_cams.size(); c++)
+			{
+				int index = m_cams[c];
+				m_mvps[index] = m_calibs[index].camera * pose;
+			}
+			if constexpr (Options&OptReferencePose)
+				refPose = refPose * pose.inverse();
+		}
+	}
+
 #ifdef TARGET_TRACKING_2D_H
 	void setData(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const TargetMatch2D &match)
 	{
@@ -89,10 +119,8 @@ struct TargetReprojectionError
 					match.targetTemplate->markers[pts.first].pos.template cast<Scalar>(),
 					points2D[c]->at(pts.second).template cast<Scalar>() // Already undistorted
 				});
-			
-			if (Options&OptCorrectivePose)
-				m_mvps[index] = m_calibs[index].camera * match.pose.template cast<Scalar>();
 		}
+		setStartingPose(match.pose.template cast<Scalar>());
 	}
 #endif
 
@@ -112,18 +140,19 @@ struct TargetReprojectionError
 				sample.point.template cast<Scalar>()  // Not yet undistorted
 			});
 		}
+		setStartingPose(frame.pose.template cast<Scalar>());
 	}
 #endif
 
 	template<typename DiffScalar = Scalar>
 	int operator()(const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors) const
 	{
-		Isometry3<DiffScalar> correction;
-		correction.translation() = poseVec.template head<3>();
-		if (Options&OptRotationMRP)
-			correction.linear() = MRP2Quat(poseVec.template tail<3>()).toRotationMatrix();
+		Isometry3<DiffScalar> pose;
+		pose.translation() = poseVec.template head<3>();
+		if constexpr (Options&OptRotationMRP)
+			pose.linear() = MRP2Quat(poseVec.template tail<3>()).toRotationMatrix();
 		else
-			correction.linear() = DecodeAARot<DiffScalar>(poseVec.template tail<3>());
+			pose.linear() = DecodeAARot<DiffScalar>(poseVec.template tail<3>());
 
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
@@ -135,11 +164,16 @@ struct TargetReprojectionError
 			auto &pt = m_observedPoints[p];
 			int c = std::get<0>(pt);
 			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
-			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], correction * tgtPt);
+			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
 			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
-			if (!(Options&OptUndistorted))
+			if constexpr (!(Options&OptUndistorted))
 				measurement = undistortPoint(m_calibs[c], measurement);
 			errors(p) = (proj - measurement).norm();
+		}
+
+		if constexpr (Options&OptReferencePose)
+		{
+			errors.template tail<6>() = refInfluence * (poseVec-refPose).array().square();
 		}
 
 		return 0;
@@ -156,7 +190,7 @@ struct TargetReprojectionError
 	}
 
 	int inputs() const { return 6; }
-	int values() const { return m_observedPoints.size(); }
+	int values() const { return m_observedPoints.size() + ((Options&OptReferencePose)? 6 : 0); }
 };
 
 #endif // REPROJECTION_ERROR_H

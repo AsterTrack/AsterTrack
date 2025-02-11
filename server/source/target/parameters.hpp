@@ -76,6 +76,7 @@ struct TargetOptimisationParameters
 	float tolerances = 1.0f;
 	float outlierSigma = 2.3f;
 	float outlierVarMin = 0.5f*PixelSize;
+	float predictionInfluence = 0.000005f;
 };
 
 struct TargetDetectionParameters

@@ -525,9 +525,9 @@ float matchTargetPointsAlongAxis(
 /**
  * Optimises the pose to better fit the matched observations
  */
-template<bool OUTLIER>
+template<bool REFERENCE, bool OUTLIER>
 TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
@@ -537,21 +537,23 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	Eigen::VectorXd poseVec = EncodeAAPose(match.pose).cast<double>();
 
 	// Initialise optimisation error term, preparing the data
-	typedef TargetReprojectionError<double, OptUndistorted | (OUTLIER? OptOutliers : 0)> TgtError;
+	typedef TargetReprojectionError<double, OptUndistorted | (OUTLIER? OptOutliers : 0) | (REFERENCE? OptReferencePose : 0)> TgtError;
 	TgtError errorTerm(calibs);
+	if constexpr (REFERENCE)
+		errorTerm.setReferencePose(prediction.cast<double>(), params.predictionInfluence);
 	errorTerm.setData(points2D, match);
-	if (errorTerm.values() < errorTerm.inputs())
+	if (errorTerm.values() < errorTerm.inputs() || errorTerm.m_observedPoints.empty())
 	{
 		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
-	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", errorTerm.values());
+	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", (int)errorTerm.m_observedPoints.size());
 
 	// Outlier reporting
 	std::vector<bool> outlier;
 	const bool doOutlier = SHOULD_LOGC(LTrace) || OUTLIER;
 	if (doOutlier)
-		outlier.resize(errorTerm.values());
+		outlier.resize(errorTerm.m_observedPoints.size());
 	if constexpr (OUTLIER)
 		errorTerm.m_outlierMap = &outlier;
 
@@ -571,13 +573,14 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	// Optimisation steps
 	int it = 0;
 	float errorMean, errorStdDev;
-	int inlierNum = errorTerm.values();
+	int inlierNum = errorTerm.m_observedPoints.size();
 	while (++it <= params.maxIterations)
 	{
 		status = lm.minimizeOneStep(poseVec);
-		errorMean = lm.fvec.sum()/inlierNum;
-		errorStdDev = std::sqrt((lm.fvec.array() - errorMean).square().sum()/inlierNum);
-		LOGC(LTrace, "            Current RMSE: %.4f (sum %f, inliers %d)\n", errorMean*PixelFactor, lm.fvec.sum(), inlierNum);
+		auto errors = lm.fvec.head(errorTerm.m_observedPoints.size());
+		errorMean = errors.sum() / inlierNum;
+		errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/inlierNum);
+		LOGC(LTrace, "            Current RMSE: %.4f (sum %f, inliers %d)\n", errorMean*PixelFactor, errors.sum(), inlierNum);
 		if (status != Eigen::LevenbergMarquardtSpace::Running)
 		{
 			LOGC(LDebug, "          Stopped optimisation: %s\n", getStopCodeText(status));
@@ -586,7 +589,7 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		if (!doOutlier) continue;
 		// Find outliers
 		float maxAllowed = errorMean + std::max(params.outlierSigma*errorStdDev, params.outlierVarMin);
-		for (int i = 0; i < errorTerm.values(); i++)
+		for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 		{
 			int cam = std::get<0>(errorTerm.m_observedPoints[i]);
 			// TODO: Per camera outlier limit, definitely need to treat dominant cameras differently than fringe cameras
@@ -654,15 +657,17 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		}
 	}
 
-	int samples = OUTLIER? inlierNum : errorTerm.values();
-	return { errorMean, errorStdDev, (float)lm.fvec.maxCoeff(), samples };
+	assert(!errorTerm.m_observedPoints.empty());
+	int samples = OUTLIER? inlierNum : errorTerm.m_observedPoints.size();
+	float errorMax = lm.fvec.head(errorTerm.m_observedPoints.size()).maxCoeff();
+	return { errorMean, errorStdDev, errorMax, samples };
 }
 
-template TargetMatchResult optimiseTargetPose<true>(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
+template TargetMatchResult optimiseTargetPose<true, true>(const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
-template TargetMatchResult optimiseTargetPose<false>(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
+template TargetMatchResult optimiseTargetPose<false, true>(const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
 
 /**
@@ -705,7 +710,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * First re-acquires the previously visible markers, finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit the observations
  */
-TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pose, Eigen::Vector3f stdDev,
+TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -717,7 +722,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	// Find candidate for 2D point matches
 	TargetMatch2D targetMatch2D = {};
 	targetMatch2D.targetTemplate = &target;
-	targetMatch2D.pose = pose;
+	targetMatch2D.pose = prediction;
 	targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 	int relevantCams = points2D.size();
 
@@ -790,7 +795,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 	{ // Optimise pose to observations
 		// TODO: Provide a quick option
 		TargetMatchResult prevErrors = calculateTargetErrors(calibs, points2D, targetMatch2D);
-		targetMatch2D.error = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, params.opt);
+		targetMatch2D.error = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt);
 		LOGC(LDebug, "        Reduced average pixel error of %d points from %.4fpx to %d inliers with %.4fpx error\n",
 			prevErrors.samples, prevErrors.mean * PixelFactor, targetMatch2D.error.samples, targetMatch2D.error.mean * PixelFactor);
 	};
@@ -809,7 +814,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 		auto &cameraMatches = targetMatch2D.points2D[calib.index];
 
 		// Normalise pixel parameters to a fixed distance
-		float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();
+		float distFactor = params.normaliseDistance / (prediction.translation() - calib.transform.translation().cast<float>()).norm();
 
 		// Internal data for stage
 		auto &matchData = matchingData[matchingStage];
@@ -862,7 +867,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 				auto &matchingData = internalData.matching.at(calib.index);
 
 				// Normalise pixel parameters to a fixed distance
-				float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();
+				float distFactor = params.normaliseDistance / (prediction.translation() - calib.transform.translation().cast<float>()).norm();
 
 				// Internal data for stage
 				auto &matchData = matchingData[matchingStage];
@@ -968,7 +973,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 					continue;
 
 				// Normalise pixel parameters to a fixed distance
-				float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();
+				float distFactor = params.normaliseDistance / (prediction.translation() - calib.transform.translation().cast<float>()).norm();
 
 				// Internal data for stage
 				auto &matchData = matchingData[matchingStage];
@@ -1029,7 +1034,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f po
 		auto &matchingData = internalData.matching.at(calib.index);
 
 		// Normalise pixel parameters to a fixed distance
-		float distFactor = params.normaliseDistance / (pose.translation() - calib.transform.translation().cast<float>()).norm();
+		float distFactor = params.normaliseDistance / (prediction.translation() - calib.transform.translation().cast<float>()).norm();
 
 		// Internal data for stage
 		auto &matchData = matchingData[matchingStage];

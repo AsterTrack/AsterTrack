@@ -541,8 +541,7 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 	if (target.match2D.error.samples < params.minTotalObs) return false;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
-	
-	// TODO: Add predicted pose as weak influence to optimisation so we can optimise with less than 6 points
+
 	// TODO: Get variance/covariance from optimisation via jacobian
 	// Essentially, any parameter that barely influences output error has a high variance
 	// Neatly encapsulates the degrees of freedom (and their strength) left by varying distribution of blobs

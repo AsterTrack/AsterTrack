@@ -212,7 +212,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		BeginSection("Quality");
 		modified |= ScalarProperty<int>("Good Camera Sample Count", "", &params.cameraGoodObs, &standard.cameraGoodObs, 0, 50);
 		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "px", &params.cameraGoodRatio, &standard.cameraGoodRatio, 0, 1, 0.05f);
-		modified |= ScalarProperty<int>("Min total Observations", "", &params.minTotalObs, &standard.minTotalObs, 6, 50); // 6 needed to optimise 6 parameters
+		modified |= ScalarProperty<int>("Min total Observations", "", &params.minTotalObs, &standard.minTotalObs, 1, 50); // 6 needed to optimise 6 parameters
 		modified |= ScalarProperty<int>("Min camera Observations", "", &params.minCameraObs, &standard.minCameraObs, 0, 50);
 		modified |= ScalarProperty<float>("Max total Error", "px", &params.maxTotalError, &standard.maxTotalError, 0, 10, 0.1f, PixelFactor, "%.2f");
 		EndSection();
@@ -222,8 +222,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 10, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
 		EndSection();
-
 
 		BeginSection("Filtering");
 		modified |= ScalarProperty<float>("Uncertainty Pos", "mm", &params.uncertaintyPos, &standard.uncertaintyPos, 0, 1, 0.002f, 1000, "%.4f");

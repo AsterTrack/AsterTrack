@@ -138,7 +138,7 @@ static void handleTrackerPosRot(void *data, const vrpn_TRACKERCB t)
 	}
 
 	Eigen::Vector3d pos = Eigen::Vector3d(t.pos[0], t.pos[1], t.pos[2]);
-	Eigen::Matrix3d rot = Eigen::Quaterniond(t.quat[0], t.quat[1], t.quat[2], t.quat[3]).toRotationMatrix();
+	Eigen::Matrix3d rot = Eigen::Quaterniond(t.quat[3], t.quat[0], t.quat[1], t.quat[2]).toRotationMatrix();
 	Eigen::Isometry3f pose;
 	pose.linear() = rot.cast<float>();
 	pose.translation() = pos.cast<float>();

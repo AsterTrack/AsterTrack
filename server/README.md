@@ -30,7 +30,8 @@ Also make sure that <a href="https://docs.microsoft.com/en-us/cpp/build/building
 
 **2. turbojpeg** <br>
 Get the latest 3.x release from the <a href="https://github.com/libjpeg-turbo/libjpeg-turbo/releases">libjpeg-turbo github</a> (`libjpeg-turbo-3.x.x-vc64.exe`) <br>
-You can either install it system-wide or extract it with 7-Zip and put the library files (`turbojpeg.lib` and `turbojpeg-static.lib`) into `dependencies/lib/win`
+You can run the file to install turbojpeg system-wide, just make sure to update the paths in CMakeLists.txt (it defaults to `C:/libjpeg-turbo64`). <br>
+Alternatively, you can extract it with 7-Zip and put the library files (`turbojpeg.lib` and `turbojpeg-static.lib`) into `dependencies/lib/win` as well as the include file `turbojpeg.h` into `dependencies/include`.
 
 #### VS Code
 Additional extensions for development in VS Code: <br>
@@ -42,7 +43,7 @@ To create a minimal build of the dependencies custom build scripts are provided.
 Note none of these are installing any systemwide files, after the clean operation the only changed files are in the projects include/ and lib/ folders. <br>
 
 #### VS Code
-Run Task "Build All Dependencies" and select normal mode.
+Run Task "Build All Dependencies" and select "normal" or "release" as mode.
 If successful (try building the program itself), you can run "Clean All Dependencies".
 
 #### Manually
@@ -58,9 +59,7 @@ To make it easier to debug problems, you can enter each individual dependencies/
   - If successful: `clean.[sh/bat] source all`
 
 
-NOTE 1: On windows, you need to install <a href="https://www.7-zip.org/">7-Zip</a> for an automatic local installation. TurboJPEG library is provided as an auto-extracting .exe file, which you can execute for a systemwide installation, but 7-Zip allows the shell scripts to unpack it for a local installation.
-
-NOTE 2: On windows, both release and debug builds of the application by default expect the corresponding release and debug builds of the dependencies. This can be disabled if you do not need to debug the dependencies:  <br>
+NOTE: On windows, both release and debug builds of the application by default expect the corresponding release and debug builds of the dependencies. This can be disabled if you do not need to debug the dependencies:  <br>
 In CMakeLists.txt, change `set(LIB_DIR ${PLT_LIB_DIR}/debug)` to `set(LIB_DIR ${PLT_LIB_DIR}/release)` <br>
 
 ### Compilation

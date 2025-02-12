@@ -95,13 +95,14 @@
             "presentation": { "reveal": "always", "panel": "new" },
             "options": { "cwd": "${workspaceFolder}/dependencies" },
             "command": "${workspaceFolder}/dependencies/clean.sh",
+            "args": [ "${input:cleanType}" ],
             "windows": {
                 "command": "${workspaceFolder}\\dependencies\\clean.bat",
                 "options": {
                     "cwd": "${workspaceFolder}\\dependencies",
                     "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] }
                 },
-                "args": [ "${input:buildType}" ]
+                "args": [ "${input:cleanType}" ]
             },
             "runOptions": { "reevaluateOnRerun": false }
             // To allow Rerun Last Task to skip prompting for type
@@ -115,12 +116,12 @@
             "command": "${workspaceFolder}/dependencies/buildfiles/${input:depName}/fetch.sh",
             "args": [ "&&", "${workspaceFolder}/dependencies/buildfiles/${input:depName}/build.sh", "${input:sanitizedOption}" ],
             "windows": {
-                "command": "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}\\build.bat",
+                "command": "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}\\fetch.bat",
+                "args": [ "&&", "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}\\build.bat", "${input:buildType}" ],
                 "options": {
                     "cwd": "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}",
                     "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] }
-                },
-                "args": [ "${input:buildType}" ]
+                }
             },
             "runOptions": { "reevaluateOnRerun": false }
             // To allow Rerun Last Task to skip prompting for type
@@ -134,7 +135,7 @@
             "type": "pickString",
             "options": [ "release", "debug" ]
         },
-        { // Allow sanitized builds on linux+gcc
+        { // Allow sanitized builds on linux (gcc and clang)
             "id": "linuxBuildType",
             "description": "Build Type:",
             "default": "release-verify",
@@ -160,6 +161,13 @@
             "description": "Dependency name:",
             "type": "pickString",
             "options": [ "Eigen", "glfw", "libusb", "vrpn" ]
+        },
+        { // Clean sources and build or just build
+            "id": "cleanType",
+            "description": "Clean Type:",
+            "default": "all",
+            "type": "pickString",
+            "options": [ "all", "build" ]
         },
     ]
 }

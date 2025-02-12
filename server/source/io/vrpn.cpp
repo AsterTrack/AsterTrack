@@ -47,28 +47,28 @@ template<> void OpaqueDeleter<vrpn_Connection>::operator()(vrpn_Connection* ptr)
 static inline struct timeval createTimestamp(TimePoint_t time)
 {
 	// Create timestamp without assuming steady_clock to be equivalent to timeval
-	struct timeval time_now, time_diff, timestamp;
+	struct timeval time_now, timestamp;
 	vrpn_gettimeofday(&time_now, NULL);
 	TimePoint_t time_ref = sclock::now();
-	time_diff.tv_usec = std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count();
-	time_diff.tv_sec = time_diff.tv_usec/1000000;
-	time_diff.tv_usec = time_diff.tv_usec%1000000;
-	timersub(&time_now, &time_diff, &timestamp);
-	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%ld, %ld)",
+	long diffUS = std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count();
+	long long timeUS = time_now.tv_sec * 1000000 + time_now.tv_usec;
+	timeUS -= diffUS;
+	timestamp.tv_sec = timeUS/1000000;
+	timestamp.tv_usec = timeUS%1000000;
+	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%ldus)",
 		std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count()/1000.0f,
-		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, time_diff.tv_sec, time_diff.tv_usec)
+		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, diffUS)
 	return timestamp;
 }
 
 static inline TimePoint_t getTimestamp(struct timeval time_msg)
 {
 	// Recreate timestamp without assuming steady_clock to be equivalent to timeval
-	struct timeval time_now, time_diff;
+	struct timeval time_now;
 	vrpn_gettimeofday(&time_now, NULL);
 	TimePoint_t timestamp = sclock::now();
-	timersub(&time_now, &time_msg, &time_diff);
-	timestamp -= std::chrono::microseconds(time_diff.tv_usec);
-	timestamp -= std::chrono::seconds(time_diff.tv_sec);
+	timestamp -= std::chrono::seconds(time_now.tv_sec-time_msg.tv_sec);
+	timestamp -= std::chrono::microseconds(time_now.tv_usec-time_msg.tv_usec);
 	return timestamp;
 }
 /* Wrapper for a VRPN tracker output */

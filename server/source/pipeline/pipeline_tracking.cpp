@@ -81,7 +81,7 @@ static void recordTrackingResults(PipelineState &pipeline, std::shared_ptr<Frame
 			targetIt->markers.reserve(trackedTarget.match2D.targetTemplate->markers.size());
 			for (auto &marker : trackedTarget.match2D.targetTemplate->markers)
 			{
-				targetIt->markerMap.emplace(targetIt->markers.size(), targetIt->markers.size());
+				targetIt->markerMap.emplace((int)targetIt->markers.size(), (int)targetIt->markers.size());
 				targetIt->markers.push_back(marker.pos);
 			}
 		}

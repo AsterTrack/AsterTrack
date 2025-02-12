@@ -1059,7 +1059,7 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 		targetMatch2D.points2D.resize(frameRecord->cameras.size());
 		for (auto &sample : frame.samples)
 		{
-			targetMatch2D.points2D[sample.camera].push_back({ target.markerMap.at(sample.marker), points2DRecStore[sample.camera].size() } );
+			targetMatch2D.points2D[sample.camera].push_back({ target.markerMap.at(sample.marker), (int)points2DRecStore[sample.camera].size() } );
 			points2DRecStore[sample.camera].push_back(undistortPoint(calibs[sample.camera], sample.point));
 		}
 

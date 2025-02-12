@@ -4,7 +4,7 @@
 :: Need newer version than old 3.4.0, change to fixed version as soon as one is released
 set FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/master/eigen-master.zip
 set FETCH_VERSION=master
-set FETCH_NAME=Eigen
+set FETCH_NAME=eigen
 set FETCH_ARCHIVE=source.zip
 
 if exist "source\srcversion" (

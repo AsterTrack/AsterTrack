@@ -25,8 +25,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp" // dtUS
 
-#include <cstdio>
+#if !defined(INTERFACE_LINKED) && !defined(_MSC_VER)
 #include <dlfcn.h>
+#define ALLOW_DYNAMIC_LINKING
+#else
+//#include "dlfcn/dlfcn.h"
+#endif
+
+#include <cstdio>
 
 AppState AppInstance;
 ServerState StateInstance = {};
@@ -78,10 +84,13 @@ static inline void UnlinkInterface(void *uidl = nullptr)
 	SignalCameraRefresh = [](CameraID){};
 	SignalPipelineUpdate = [](){};
 	SignalServerEvent = [](ServerEvents){};
+#ifdef ALLOW_DYNAMIC_LINKING
 	if (uidl) dlclose(uidl);
+#endif
 }
 static inline bool LinkInterface(void *uidl)
 {
+#ifdef ALLOW_DYNAMIC_LINKING
 	InterfaceThread = (InterfaceThread_t)dlsym(uidl, "_InterfaceThread");
 	SignalInterfaceShouldClose = (SignalShouldClose_t)dlsym(uidl, "_SignalShouldClose");
 	SignalLogUpdate = (SignalLogUpdate_t)dlsym(uidl, "_SignalLogUpdate");
@@ -89,6 +98,9 @@ static inline bool LinkInterface(void *uidl)
 	SignalPipelineUpdate = (SignalPipelineUpdate_t)dlsym(uidl, "_SignalPipelineUpdate");
 	SignalServerEvent = (SignalServerEvent_t)dlsym(uidl, "_SignalServerEvent");
 	return InterfaceThread && SignalInterfaceShouldClose && SignalLogUpdate && SignalCameraRefresh && SignalPipelineUpdate && SignalServerEvent;
+#else
+	return true;
+#endif
 }
 
 
@@ -148,6 +160,7 @@ int main (void)
 		void *uidl = nullptr;
 		if (!AssumeInterface())
 		{ // Open interface library and link it
+#ifdef ALLOW_DYNAMIC_LINKING
 			uidl = dlopen("astertrack-interface.so", RTLD_NOW);
 			if (!uidl || !LinkInterface(uidl))
 			{ // Error during linking
@@ -159,6 +172,9 @@ int main (void)
 				exit(-1); // TODO: notify user that UI failed to open
 				// But keeping as a zombie process is even worse
 			}
+#else
+			exit(-1);
+#endif
 		}
 
 		// Start UI thread that will be running for the lifetime of the UI

@@ -257,5 +257,5 @@ static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector
 		if (minErrorSq < maxError*maxError)
 			bestErrors.min(minErrorSq, maxMatches);
 	}
-	return std::make_pair(bestErrors.rank.size(), std::sqrt(bestErrors.average()));
+	return std::make_pair((int)bestErrors.rank.size(), std::sqrt(bestErrors.average()));
 }

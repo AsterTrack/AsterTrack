@@ -6,7 +6,8 @@ if (NOT CMAKE_BUILD_TYPE)
 	message(Defaulting to Release build...)
 	set(CMAKE_BUILD_TYPE Release)
 else()
-	if(CMAKE_BUILD_TYPE STREQUAL Release)
+	string(TOLOWER "${CMAKE_BUILD_TYPE}" buildType)
+	if(buildType STREQUAL release)
 		set(CMAKE_BUILD_TYPE Release)
 	else()
 		set(CMAKE_BUILD_TYPE Debug)
@@ -88,6 +89,7 @@ add_executable(astertrack WIN32 ${SOURCES_FILES})
 
 # Add include directories
 target_include_directories(astertrack PUBLIC "${PROJECT_SOURCE_DIR}/source")
+target_include_directories(astertrack PUBLIC "${PROJECT_SOURCE_DIR}/../shared")
 target_include_directories(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/dependencies/include")
 target_include_directories(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/dependencies/sources")
 target_include_directories(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/dependencies/sources/imgui")
@@ -110,7 +112,7 @@ if(MSVC)
 	set(PLT_LIB_DIR "${PROJECT_SOURCE_DIR}/dependencies/lib/win")
 
 	# MSVC-specific compiler setup
-	target_compile_definitions(astertrack PUBLIC _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES _ENABLE_EXTENDED_ALIGNED_STORAGE)
+	target_compile_definitions(astertrack PUBLIC _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES _ENABLE_EXTENDED_ALIGNED_STORAGE INTERFACE_LINKED)
 	target_compile_options(astertrack PUBLIC -nologo -bigobj -EHsc -W1)
 	target_link_options(astertrack PUBLIC -subsystem:windows -ENTRY:mainCRTStartup) # re-route GUI entry point to main
 #	target_compile_options(astertrack PUBLIC "-Wall -wd4477")
@@ -139,7 +141,15 @@ if(MSVC)
 	file(GLOB LIB_LUSB ${LIB_DIR}/libusb/libusb*.lib)
 	file(GLOB LIB_VRPN ${LIB_DIR}/vrpn/*.lib)
 	file(GLOB LIB_GLFW ${LIB_DIR}/glfw3.lib)
-	find_library(LIB_TJPEG NAMES turbojpeg-static PATHS ${PLT_LIB_DIR}) # Built with -MT by default
+	if(LIB_LUSB STREQUAL "" OR LIB_VRPN STREQUAL "" OR LIB_GLFW STREQUAL "")
+		message(STATUS "LIB_DIR: '${LIB_DIR}'")
+		message(STATUS "LIB_LUSB: '${LIB_LUSB}'")
+		message(STATUS "LIB_VRPN: '${LIB_VRPN}'")
+		message(STATUS "LIB_GLFW: '${LIB_GLFW}'")
+		message(FATAL_ERROR "Failed to find libraries! You may have to build the dependencies for the specific mode (release/debug)")
+	endif()
+	find_library(LIB_TJPEG NAMES turbojpeg-static PATHS ${PLT_LIB_DIR} "C:/libjpeg-turbo64/lib") # Built with -MT by default
+	target_include_directories(astertrack PRIVATE "C:/libjpeg-turbo64/include")
 
 	# Force CRT library to be statically linked (allows static linking with prebuilt turbojpeg which as been built with -MT instead of -MD)
 	set_property(TARGET astertrack APPEND_STRING PROPERTY LINK_FLAGS " -NODEFAULTLIB:msvcrt -NODEFAULTLIB:msvcrtd -NODEFAULTLIB:msvcprt -NODEFAULTLIB:msvcprtd")

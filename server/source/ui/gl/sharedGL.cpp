@@ -174,7 +174,7 @@ static void subdivide_icosphere(std::vector<float> &vertices, std::vector<unsign
 		if (key.first > key.second)
 			std::swap(key.first, key.second);
 
-		auto inserted = lookup.insert({key, vertices.size()/3});
+		auto inserted = lookup.insert({key, (int)vertices.size()/3});
 		if (inserted.second)
 		{
 			float d1 = vertices[v0*3+0] + vertices[v1*3+0];

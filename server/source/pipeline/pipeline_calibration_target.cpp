@@ -609,7 +609,7 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 		if (best < 0)
 			base.alignmentStats.erase(targetView->id);
 		else
-			base.alignmentStats[targetView->id] = std::make_pair(alignCandidates[best].points.size(), alignCandidates[best].MSE);
+			base.alignmentStats[targetView->id] = std::make_pair((int)alignCandidates[best].points.size(), alignCandidates[best].MSE);
 		if (best < 0 || alignCandidates[best].MSE > params.alignMaxRMSE*params.alignMaxRMSE
 			|| alignCandidates[best].points.size() <= params.alignMinPoints)
 		{ // Not good enough to align the view to base

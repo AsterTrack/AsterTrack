@@ -31,6 +31,7 @@ SOFTWARE.
 
 #include <string>
 #include <cstdio>
+#include <cmath>
 #include <algorithm>
 
 ImU32 tintColor(ImU32 base, ImU32 tint)

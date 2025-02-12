@@ -423,13 +423,13 @@ private:
 		{ // Start from begin
 			if constexpr (Const) it = state.const_begin;
 			else it = state.begin;
-			std::advance(it, block-state.start);
+			std::advance(it, (long)block-state.start);
 		}
 		else
 		{ // Start from end
 			if constexpr (Const) it = state.const_back;
 			else it = state.back;
-			std::advance(it, block-state.start-state.count+1);
+			std::advance(it, (long)block-(long)state.start-(long)state.count+1);
 		}
 		return it;
 	}

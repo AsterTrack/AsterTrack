@@ -26,7 +26,9 @@
 #include "ImSequencer.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+
 #include <cstdlib>
+#include <limits>
 
 namespace ImSequencer
 {
@@ -55,7 +57,9 @@ namespace ImSequencer
       return clickedBtn;
    }
 
+#if defined(__clang__) || defined(__GNUC__)
    __attribute__((no_sanitize("float-cast-overflow")))
+#endif
    bool Sequencer(SequenceInterface* sequence, int* currentFrame, bool* expanded, int* selectedEntry, int* firstFrame, int sequenceOptions)
    {
       bool ret = false;

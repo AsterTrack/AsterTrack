@@ -821,7 +821,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			float fovV = calib.f * std::tan(visState.calib.boundsFoV[1] / 180 * PI / 2);
 			float fovD = calib.f * std::tan(visState.calib.boundsFoV[2] / 180 * PI / 2);
 
-			float len = 0.1f, d = M_SQRT2f;
+			float len = 0.1f, d = (float)M_SQRT2;
 			Color8 col = Color{ 1.0f, 1.0f, 0.0f, 1.0f };
 			std::vector<std::pair<VisPoint,VisPoint>> lines = {
 				{ { Eigen::Vector3f(-len, +fovV, 0.1f), col }, { Eigen::Vector3f(+len, +fovV, 0.1f), col } },
@@ -1195,7 +1195,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				for (auto &pt : pipeline.pointCalib.room.floorPoints)
 				{
 					if (pt.sampleCount > 3)
-						markerPoints.emplace_back(pt.pos.cast<float>(), col, 0.01f);
+						markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
 				}
 				visualisePointsSpheres(markerPoints);
 				visSetupProjection(postProjMat, viewSize);

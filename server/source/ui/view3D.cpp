@@ -526,7 +526,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		for (auto &pt : pipeline.pointCalib.room.floorPoints)
 		{
 			if (pt.sampleCount > 3)
-				markerPoints.emplace_back(pt.pos.cast<float>(), col, 0.01f);
+				markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
 		}
 		visualisePointsSpheres(markerPoints);
 	}
@@ -541,7 +541,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		{
 			if (!object.enabled) continue;
 			for (const auto &pt : object.target->markers)
-				markerPoints.emplace_back(object.pose * pt.pos, gtCol, 0.01f*0.5f);
+				markerPoints.emplace_back(object.pose * pt.pos, (Color8)gtCol, 0.01f*0.5f);
 		}
 		visualisePointsSpheres(markerPoints);
 	}

@@ -1051,7 +1051,7 @@ auto lock(SynchronizedLocker... lockersIn)
   auto lockers = std::forward_as_tuple(lockersIn...);
 
   // make a list of null LockedPtr instances that we will return to the caller
-  auto lockedPtrs = std::tuple<typename SynchronizedLocker::LockedPtr...>{};
+  std::tuple<typename SynchronizedLocker::LockedPtr...> lockedPtrs = {};
 
   // Now need to iterate over both tuples with own types for each index
   // Achieved via fold expressions from C++17 and contexpr indexing
@@ -1087,7 +1087,7 @@ auto lock(SynchronizedLocker... lockersIn)
 
         // writing lockedPtrs = decltype(lockedPtrs){} does not compile on
         // gcc, I believe this is a bug D7676798
-        lockedPtrs = std::tuple<typename SynchronizedLocker::LockedPtr...>{};
+        lockedPtrs = {};
 
         std::this_thread::yield();
         std::get<I>(lockedPtrs) = std::get<I>(lockers).lock();

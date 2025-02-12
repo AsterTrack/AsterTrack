@@ -564,7 +564,7 @@ void visualisePoints2D(const std::vector<Eigen::Vector2f> &points2D, Color color
 	thread_local std::vector<VisPoint> vertices;
 	vertices.clear();
 	for (const auto &pt : points2D)
-		vertices.emplace_back(Eigen::Vector3f(pt.x(), pt.y(), 1-depth), color, size);
+		vertices.emplace_back(Eigen::Vector3f(pt.x(), pt.y(), 1-depth), (Color8)color, size);
 	visualisePointsSprites(vertices, round);
 }
 
@@ -575,7 +575,7 @@ void visualisePoints2D(it_type pts_begin, it_type pts_end, Color color, float si
 	vertices.clear();
 	while (pts_begin != pts_end)
 	{
-		vertices.emplace_back(Eigen::Vector3f(pts_begin->x(), pts_begin->y(), 1-depth), color, size);
+		vertices.emplace_back(Eigen::Vector3f(pts_begin->x(), pts_begin->y(), 1-depth), (Color8)color, size);
 		pts_begin++;
 	}
 	visualisePointsSprites(vertices, round);

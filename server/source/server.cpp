@@ -1002,8 +1002,8 @@ void StopSimulation(ServerState &state)
 
 	// Join coprocessing thread
 	state.coprocessingThread->request_stop();
-	static_cast<void>(state.simAdvance.try_lock());
-	state.simAdvance.unlock();
+	state.simAdvance = -1;
+	state.simAdvance.notify_all();
 	delete state.coprocessingThread;
 	state.coprocessingThread = NULL;
 
@@ -1041,10 +1041,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			break;
 
 		// Check after breakpoint to allow for halting while in breakpoint
-		if (state->simAdvanceCount == 0)
+		if (state->simAdvance == 0)
 		{ // Wait for next frame advance
-			state->simAdvanceCount.notify_all();
-			state->simAdvance.lock();
+			state->simWaiting = true;
+			state->simWaiting.notify_all();
+			state->simAdvance.wait(0);
+			state->simWaiting = false;
 		}
 
 		if (!state->isStreaming || stop_token.stop_requested())
@@ -1149,10 +1151,11 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}//, frameRecord); // new shared_ptr
 
 		{ // Special cases for advancing
-			int count = state->simAdvanceCount;
+			int count = state->simAdvance;
 			if (count > 0)
 			{ // Advance limited amount of frames, if it fails to reduce, no matter
-				state->simAdvanceCount.compare_exchange_weak(count, count-1);
+				state->simAdvance.compare_exchange_weak(count, count-1);
+				state->simAdvance.notify_all();
 			}
 			else if (count == -2)
 			{ // Advance until next image - halt advance since we received the next image
@@ -1161,8 +1164,8 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					haveImageData |= (bool)frameRecord->cameras[cam->pipeline->index].image;
 				if (haveImageData)
 				{
-					state->simAdvanceCount = 0;
-					static_cast<void>(state->simAdvance.try_lock());
+					state->simAdvance = 0;
+					state->simAdvance.notify_all();
 				}
 				else {} // Advance freely, do nothing
 			}
@@ -1243,8 +1246,8 @@ void StopReplay(ServerState &state)
 
 	// Join coprocessing thread
 	state.coprocessingThread->request_stop();
-	static_cast<void>(state.simAdvance.try_lock());
-	state.simAdvance.unlock();
+	state.simAdvance = -1;
+	state.simAdvance.notify_all();
 	delete state.coprocessingThread;
 	state.coprocessingThread = NULL;
 

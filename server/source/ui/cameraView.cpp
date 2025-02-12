@@ -1031,7 +1031,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	/**
 	 * Visualise frame based on phase
 	 */
-	bool displayInternalDebug = (GetState().mode == MODE_Replay || GetState().mode == MODE_Simulation) && (GetState().simAdvanceCount.load() == 0 || dbg_isBreaking);
+	bool displayInternalDebug = (GetState().mode == MODE_Replay || GetState().mode == MODE_Simulation) && (GetState().simAdvance.load() == 0 || dbg_isBreaking);
 	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f, blobCross = 2.0f / mode.widthPx;
 	if (visCamera.visMode == VIS_BACKGROUND_TILES)
 	{

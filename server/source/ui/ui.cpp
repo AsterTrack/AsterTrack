@@ -352,7 +352,7 @@ void InterfaceState::GeneralUpdate()
 		} 
 	}
 
-	if ((state.mode == MODE_Device || state.simAdvanceCount.load() != 0) &&
+	if ((state.mode == MODE_Device || state.simAdvance.load() != 0) &&
 		(state.mode != MODE_Replay || state.frameRecordReplayPos < state.loadedFrameRecords.size()) &&
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{

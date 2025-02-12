@@ -86,8 +86,8 @@ struct ServerState
 	std::jthread *coprocessingThread = NULL;
 
 	// Simulation/Replay control
-	std::mutex simAdvance;
-	std::atomic<int> simAdvanceCount = { -1 };
+	std::atomic<int> simAdvance = { -1 };
+	std::atomic<bool> simWaiting = { false };
 	bool simAdvanceQuickly;
 	// Replay data
 	std::string loadedFramePath;

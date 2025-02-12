@@ -45,7 +45,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	{
 		BeginSection(state.mode == MODE_Simulation? "Simulation" : "Replay");
 		{ // Show controls for simulation frame advancing
-			bool advancing = state.simAdvanceCount.load() != 0;
+			bool advancing = state.simAdvance.load() != 0;
 			ImGui::AlignTextToFramePadding();
 			AddOnDemandText("Frame 00000000", [](const ImDrawList* dl, const ImDrawCmd* dc)
 			{
@@ -58,22 +58,20 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				advancing = !advancing;
 				if (advancing)
 				{ // Continue freely (-1) or limited steps (positive integers)
-					state.simAdvanceCount = -1;
-					static_cast<void>(state.simAdvance.try_lock());
-					state.simAdvance.unlock();
+					state.simAdvance = -1;
+					state.simAdvance.notify_all();
 				}
 				else
 				{ // Halt
-					state.simAdvanceCount = 0;
-					static_cast<void>(state.simAdvance.try_lock());
+					state.simAdvance = 0;
 				}
 			}
 			ImGui::SameLine();
 			ImGui::BeginDisabled(advancing);
 			if (ImGui::Button("Advance", SizeWidthDiv3()))
 			{
-				static_cast<void>(state.simAdvance.try_lock());
-				state.simAdvance.unlock();
+				state.simAdvance = 1;
+				state.simAdvance.notify_all();
 			}
 			ImGui::EndDisabled();
 		}
@@ -85,18 +83,16 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
 			if (ImGui::Button("Next Image", SizeWidthDiv3()))
 			{
-				state.simAdvanceCount = -2;
-				static_cast<void>(state.simAdvance.try_lock());
-				state.simAdvance.unlock();
+				state.simAdvance = -2;
+				state.simAdvance.notify_all();
 			}
 		}
 
 		SameLineTrailing(SizeWidthDiv3().x);
 		if (ImGui::Button("Advance 10", SizeWidthDiv3()))
 		{
-			state.simAdvanceCount = 10;
-			static_cast<void>(state.simAdvance.try_lock());
-			state.simAdvance.unlock();
+			state.simAdvance = 10;
+			state.simAdvance.notify_all();
 		}
 
 
@@ -163,6 +159,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 		else if (state.mode == MODE_Replay)
 		{
+			ImGui::BeginDisabled(!state.isStreaming);
 			if (!state.loadedFrameRecords.empty())
 			{
 				ImGui::AlignTextToFramePadding();
@@ -174,20 +171,17 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (ImGui::Button("Restart", SizeWidthDiv3()))
 				{
 					// Stop advancing replay
-					int prevState = state.simAdvanceCount;
-					state.simAdvanceCount = 0;
-					static_cast<void>(state.simAdvance.try_lock());
-					// Make sure replay thread has submitted its last frame
-					std::this_thread::sleep_for(std::chrono::milliseconds(20));
+					int prevState = state.simAdvance;
+					state.simAdvance = 0;
+					state.simWaiting.wait(false);
 					// Reset pipeline after the last frame has processed
 					state.pipeline.seqDatabase.contextualLock()->clear();
 					UpdateSequences(true);
 					ResetPipeline(state.pipeline);
 					state.frameRecordReplayPos = 0;
 					// Continue advancing
-					state.simAdvanceCount = prevState;
-					if (prevState != 0) // Correct?
-						state.simAdvance.unlock();
+					state.simAdvance = prevState;
+					state.simAdvance.notify_all();
 				}
 			}
 
@@ -199,11 +193,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			if (ImGui::Button("Jump", SizeWidthDiv3()))
 			{
 				// Stop advancing replay
-				int prevState = state.simAdvanceCount;
-				state.simAdvanceCount = 0;
-				static_cast<void>(state.simAdvance.try_lock());
-				// Make sure replay thread has submitted its last frame
-				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+				int prevState = state.simAdvance;
+				state.simAdvance = 0;
+				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
 				if (frameJumpTarget <= pipeline.frameNum)
 				{
@@ -217,10 +209,10 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 				state.frameRecordReplayPos = frameJumpTarget+1;
 				// Continue advancing
-				state.simAdvanceCount = prevState;
-				if (prevState != 0) // Correct?
-					state.simAdvance.unlock();
+				state.simAdvance = prevState;
+				state.simAdvance.notify_all();
 			}
+			ImGui::EndDisabled();
 		}
 
 		EndSection();
@@ -360,14 +352,13 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			PipelineState &pipeline = state.pipeline;
 
 			// Assume control over pipeline processing
-			state.simAdvanceCount = 0;
-			static_cast<void>(state.simAdvance.try_lock());
-			// Make sure replay thread has submitted its last frame
-			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			int prevState = state.simAdvance;
+			state.simAdvance = 0;
+			state.simWaiting.wait(false);
 
 			while (!stop_token.stop_requested())
 			{
-				if (state.simAdvanceCount.load() < 0 || !state.isStreaming)
+				if (state.simAdvance.load() < 0 || !state.isStreaming)
 				{ // Halt condition
 					std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					continue;
@@ -411,14 +402,14 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 				state.frameRecordReplayPos = jumpTarget+1;
 				// Quickly advance through frame range
-				state.simAdvanceCount = range.end-range.begin;
 				state.simAdvanceQuickly = true;
-				state.simAdvance.unlock();
+				state.simAdvance = range.end-range.begin;
+				state.simAdvance.notify_all();
 				int count;
-				while ((count = state.simAdvanceCount.load()) > 0 && !stop_token.stop_requested())
-					state.simAdvanceCount.wait(count);
+				while ((count = state.simAdvance.load()) > 0 && !stop_token.stop_requested())
+					state.simAdvance.wait(count);
 				if (stop_token.stop_requested()) break;
-				if (state.simAdvanceCount.load() < 0) continue;
+				if (state.simAdvance.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
 				auto frames = pipeline.frameRecords.getView();
 				auto begin = frames.pos(range.begin), end = frames.pos(range.end);

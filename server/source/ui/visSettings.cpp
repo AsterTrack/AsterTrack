@@ -58,7 +58,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Checkbox("Show Predicted Target Pose", &visState.tracking.showPredictedTarget);
 		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
 
-		bool displayInternalDebug = state.simAdvanceCount.load() == 0 || dbg_isBreaking;
+		bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
 		if (displayInternalDebug && visState.tracking.debug.frameNum >= 0)
 		{
 			ImGui::Checkbox("Debug Matching Algorithm", &visState.tracking.debugMatchingState);

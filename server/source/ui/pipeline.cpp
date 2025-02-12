@@ -117,7 +117,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	ImVec2 ButtonSize = ImVec2(std::min(100.0f, SizeWidthDiv3().x), ImGui::GetFrameHeight());
 
-	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.simAdvanceCount.load() == 0 || dbg_isBreaking);
+	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.simAdvance.load() == 0 || dbg_isBreaking);
 
 	if (pipeline.phase == PHASE_Tracking)
 	{

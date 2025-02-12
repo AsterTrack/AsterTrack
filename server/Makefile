@@ -48,7 +48,7 @@ mode = release-native
 
 else ifeq ($(BUILD_TYPE), release-verify)
 # Fast, can verify memory is handled correctly, useful for testing code while not sacrificing much performance
-cmode = -O3 -g -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace
+cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace
 ifneq '' '$(findstring clang,$(CC))' # clang
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 else # gcc - may technically already break ABI, but doesn't matter for this project

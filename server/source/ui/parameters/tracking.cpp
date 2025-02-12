@@ -228,6 +228,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		BeginSection("Filtering");
 		modified |= ScalarProperty<float>("Uncertainty Pos", "mm", &params.uncertaintyPos, &standard.uncertaintyPos, 0, 1, 0.002f, 1000, "%.4f");
 		modified |= ScalarProperty<float>("Uncertainty Rot", "dg", &params.uncertaintyRot, &standard.uncertaintyRot, 0, 1, 0.002f, 180, "%.4f");
+		modified |= ScalarProperty<float>("Uncertainty State", "x", &params.initialUncertaintyState, &standard.initialUncertaintyState, 0, 1000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Uncertainty Change", "x", &params.initialUncertaintyChange, &standard.initialUncertaintyChange, 0, 1000, 1.0f, 1, "%.1f");
 		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
 		modified |= ScalarProperty<float>("Sigma Alpha", "", &params.sigmaAlpha, &standard.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Sigma Beta", "", &params.sigmaBeta, &standard.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");

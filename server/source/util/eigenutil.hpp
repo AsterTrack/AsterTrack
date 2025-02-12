@@ -127,7 +127,31 @@ Eigen::Matrix<Scalar,3,1> Quat2MRP(const Eigen::Quaternion<Scalar> quat)
 }
 
 /**
- * Decode rotation from an encoded vector of size 3
+ * Decode pose from an encoded pose vector of size 6 using MRP for rotation
+ */
+template<typename Scalar, typename Derived>
+Eigen::Transform<Scalar, 3, Eigen::Isometry> DecodeMRPPose(const Eigen::MatrixBase<Derived> &poseVec)
+{
+	Eigen::Transform<Scalar, 3, Eigen::Isometry> pose;
+	pose.translation() = poseVec.template head<3>().template cast<Scalar>();
+	pose.linear() = MRP2Quat(poseVec.template tail<3>()).template cast<Scalar>().toRotationMatrix();
+	return pose;
+}
+
+/**
+ * Encode pose to an encoded pose vector of size 6 using MRP for rotation
+ */
+template<typename Scalar>
+Eigen::Matrix<Scalar,6,1> EncodeMRPPose(const Eigen::Transform<Scalar, 3, Eigen::Isometry> &pose)
+{
+	Eigen::Matrix<Scalar,6,1> poseVec;
+	poseVec.template head<3>() = pose.translation();
+	poseVec.template tail<3>() = Quat2MRP(Eigen::Quaternion<Scalar>(pose.rotation()));
+	return poseVec;
+}
+
+/**
+ * Decode rotation from an encoded vector of size 3 using AA for rotation
  */
 template<typename Scalar, typename Derived>
 Eigen::Matrix<Scalar, 3, 3> DecodeAARot(const Eigen::MatrixBase<Derived> &rotVec)
@@ -139,7 +163,7 @@ Eigen::Matrix<Scalar, 3, 3> DecodeAARot(const Eigen::MatrixBase<Derived> &rotVec
 }
 
 /**
- * Encodes rotation to an encoded rotation vector of size 3
+ * Encodes rotation to an encoded rotation vector of size 3 using AA for rotation
  */
 template<typename Scalar>
 Eigen::Matrix<Scalar,3,1> EncodeAARot(const Eigen::Matrix<Scalar,3,3> &rot)
@@ -155,8 +179,8 @@ template<typename Scalar, typename Derived>
 Eigen::Transform<Scalar, 3, Eigen::Isometry> DecodeAAPose(const Eigen::MatrixBase<Derived> &poseVec)
 {
 	Eigen::Transform<Scalar, 3, Eigen::Isometry> pose;
-	pose.linear() = DecodeAARot<Scalar>(poseVec.template tail<3>());
 	pose.translation() = poseVec.template head<3>().template cast<Scalar>();
+	pose.linear() = DecodeAARot<Scalar>(poseVec.template tail<3>());
 	return pose;
 }
 
@@ -167,8 +191,8 @@ template<typename Scalar>
 Eigen::Matrix<Scalar,6,1> EncodeAAPose(const Eigen::Transform<Scalar, 3, Eigen::Isometry> &pose)
 {
 	Eigen::Matrix<Scalar,6,1> poseVec;
-	poseVec.template tail<3>() = EncodeAARot<Scalar>(pose.rotation());
 	poseVec.template head<3>() = pose.translation();
+	poseVec.template tail<3>() = EncodeAARot<Scalar>(pose.rotation());
 	return poseVec;
 }
 

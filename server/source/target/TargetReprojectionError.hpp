@@ -77,14 +77,28 @@ struct TargetReprojectionError
 		}
 	}
 
+	template<typename DiffScalar = Scalar>
+	VectorX<DiffScalar> encodePose(const Isometry3<DiffScalar> &pose) const
+	{
+		if constexpr (Options&OptRotationMRP)
+			return EncodeMRPPose<DiffScalar>(pose);
+		else
+			return EncodeAAPose<DiffScalar>(pose);
+	}
+
+	template<typename DiffScalar = Scalar, typename Derived>
+	Isometry3<DiffScalar> decodePose(const Eigen::MatrixBase<Derived> &poseVec) const
+	{
+		if constexpr (Options&OptRotationMRP)
+			return DecodeMRPPose<DiffScalar>(poseVec);
+		else
+			return DecodeAAPose<DiffScalar>(poseVec);
+	}
+
 	void setReferencePose(const Isometry3<Scalar> &pose, Scalar influence = 1.0f)
 	{
 		static_assert(Options&OptReferencePose);
-		refPose.template head<3>() = pose.translation();
-		if constexpr (Options&OptRotationMRP)
-			refPose.template tail<3>() = Quat2MRP(Eigen::Quaternion<Scalar>(pose.rotation()));
-		else
-			refPose.template tail<3>() = EncodeAARot<Scalar>(pose.rotation());
+		refPose = encodePose(pose);
 		refInfluence = influence;
 	}
 
@@ -145,15 +159,8 @@ struct TargetReprojectionError
 #endif
 
 	template<typename DiffScalar = Scalar>
-	int operator()(const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors) const
+	void calculateSampleErrors(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &errors) const
 	{
-		Isometry3<DiffScalar> pose;
-		pose.translation() = poseVec.template head<3>();
-		if constexpr (Options&OptRotationMRP)
-			pose.linear() = MRP2Quat(poseVec.template tail<3>()).toRotationMatrix();
-		else
-			pose.linear() = DecodeAARot<DiffScalar>(poseVec.template tail<3>());
-
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			if ((Options&OptOutliers) && m_outlierMap && m_outlierMap->at(p))
@@ -170,6 +177,14 @@ struct TargetReprojectionError
 				measurement = undistortPoint(m_calibs[c], measurement);
 			errors(p) = (proj - measurement).norm();
 		}
+	}
+
+	template<typename DiffScalar = Scalar>
+	int operator()(const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors) const
+	{
+		Isometry3<DiffScalar> pose = decodePose(poseVec);
+
+		calculateSampleErrors(pose, errors);
 
 		if constexpr (Options&OptReferencePose)
 		{
@@ -179,9 +194,10 @@ struct TargetReprojectionError
 		return 0;
 	}
 
-	int df(const VectorX<Scalar> &poseVec, JacobianType &jacobian) const
+	template<typename DiffScalar = Scalar>
+	int df(const VectorX<DiffScalar> &poseVec, JacobianType &jacobian) const
 	{
-		NumericDiffJacobian<Scalar>([this](const VectorX<Scalar> &poseVec, VectorX<Scalar> &errors)
+		NumericDiffJacobian<DiffScalar>([this](const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors)
 		{
 			return operator()(poseVec, errors);
 		}, poseVec, jacobian);

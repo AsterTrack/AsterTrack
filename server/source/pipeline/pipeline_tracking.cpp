@@ -167,7 +167,7 @@ static bool detectTarget(std::stop_token stopToken, PipelineState &pipeline, std
 	LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 		frame->num, (int)pipeline.frameNum.load(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
 
-	trackedTarget = TrackedTargetFiltered(target, targetMatch2D.pose);
+	trackedTarget = TrackedTargetFiltered(target, targetMatch2D.pose, params.track);
 	trackedTarget.tracking2DData = std::move(tracking2DData); // Reuse allocations
 	trackedTarget.match2D = std::move(targetMatch2D);
 	return true;
@@ -554,7 +554,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				acceptCandidate = targetMatch2D.error.samples >= pipeline.params.track.minTotalObs && targetMatch2D.error.mean < pipeline.params.track.maxTotalError;
 				if (acceptCandidate)
 				{ // Register as tracked target
-					TrackedTargetFiltered trackedTarget(&target, targetMatch2D.pose);
+					TrackedTargetFiltered trackedTarget(&target, targetMatch2D.pose, pipeline.params.track);
 					trackedTarget.tracking2DData = std::move(tracking2DData);
 					trackedTarget.match2D = std::move(targetMatch2D);
 					trackedTarget.lastTrackedFrame = frame->num;

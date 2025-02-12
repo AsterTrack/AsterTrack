@@ -188,6 +188,7 @@ struct MultipleExtremum
 				rank.push_back(value);
 		}
 	}
+
 	void min(Scalar value, int maxMatches = -1)
 	{
 		if (rank.size() >= std::max(1,maxMatches) && rank.back() != signal && rank.back() < value) return;
@@ -212,14 +213,15 @@ struct MultipleExtremum
 		return N-1;
 	}
 
-	int average()
+	Scalar average()
 	{
-		Scalar avg;
+		if (rank.empty()) return signal;
+		Scalar avg = 0.0;
 		for (int i = 0; i < rank.size(); i++)
 		{
 			if constexpr (!Dynamic::value)
 				if (rank[i] == signal)
-					return avg/i;
+					return i == 0? signal : avg/i;
 			avg += rank[i];
 		}
 		return avg / rank.size();

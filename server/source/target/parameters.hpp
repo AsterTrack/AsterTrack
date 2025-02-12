@@ -139,6 +139,7 @@ struct TargetTrackingParameters
 	TargetOptimisationParameters opt = {};
 	// Filtering
 	float uncertaintyPos = 0.00001f, uncertaintyRot = 0.0005f;
+	float initialUncertaintyState = 5, initialUncertaintyChange = 1000;
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 };

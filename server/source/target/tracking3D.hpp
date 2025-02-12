@@ -68,7 +68,7 @@ struct TrackingFilter
 	Eigen::Matrix<Scalar,3,1> stdDev;
 	Scalar errorProbability;
 
-	void init(Isometry3<Scalar> initialPose);
+	void init(Isometry3<Scalar> initialPose, const TargetTrackingParameters &params);
 	inline Isometry3<Scalar> predict(TimeStep timeStep);
 	inline void update(TimeStep timeStep, Isometry3<Scalar> newPose);
 	inline void updateError(TimeStep timeStep, Scalar sigma);
@@ -96,11 +96,7 @@ struct FlexUKFFilter
 	Isometry3<Scalar> posePredicted;
 	Eigen::Matrix<Scalar,3,1> stdDev;
 
-	void init(Isometry3<Scalar> initialPose)
-	{
-		curStateFilter.position() = initialPose.translation().cast<double>();
-		curStateFilter.setQuaternion(Eigen::Quaterniond(initialPose.rotation().cast<double>()));
-	}
+	void init(Isometry3<Scalar> pose, const TargetTrackingParameters &params);
 };
 
 template<typename FilterImpl>
@@ -125,9 +121,9 @@ struct TrackedTarget
 	int lastTrackedFrame;
 
 	TrackedTarget() {}
-	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose) : target(target)
+	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose, const TargetTrackingParameters &params) : target(target)
 	{
-		filter.init(pose.cast<Scalar>());
+		filter.init(pose.cast<Scalar>(), params);
 	}
 
 	Isometry3<Scalar> getPoseObserved() const { return filter.poseObserved; }

@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Position predicted manually (velocity model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::init(Isometry3<Scalar> pose)
+template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::init(Isometry3<Scalar> pose, const TargetTrackingParameters &params)
 {
 	measurements = 1;
 	poseObserved = pose;
@@ -88,7 +88,7 @@ template<> void TrackingFilter<Filter_Man_PV_Man_RV<float>>::debugState(StateFil
 // Position filtered with EKF (velocity model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::init(Isometry3<Scalar> pose)
+template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::init(Isometry3<Scalar> pose, const TargetTrackingParameters &params)
 {
 	measurements = 1;
 	poseObserved = pose;
@@ -174,7 +174,7 @@ template<> void TrackingFilter<Filter_EKF_PV_Man_RV<float>>::debugState(StateFil
 // Position filtered with EKF (acceleration model), rotation predicted manually (velocity model)
 // -------
 
-template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::init(Isometry3<Scalar> pose)
+template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::init(Isometry3<Scalar> pose, const TargetTrackingParameters &params)
 {
 	measurements = 1;
 	poseObserved = pose;
@@ -270,7 +270,7 @@ template<> void TrackingFilter<Filter_EKF_PA_Man_RV<float>>::debugState(StateFil
 
 // TODO: Fix the EKF filter for tracker position and rotation
 // Been a while since this code was tested, but it didn't work well before
-template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::init(Isometry3<Scalar> pose)
+template<> void TrackingFilter<Filter_EKF_PA_EKF_RV<float>>::init(Isometry3<Scalar> pose, const TargetTrackingParameters &params)
 {
 	measurements = 1;
 	poseObserved = pose;
@@ -507,6 +507,16 @@ bool trackTarget(TARGET &target, const std::vector<CameraCalib> &calibs,
 	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }
 
+void FlexUKFFilter::init(Isometry3<Scalar> pose, const TargetTrackingParameters &params)
+{
+	curStateFilter.position() = pose.translation().cast<double>();
+	curStateFilter.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
+	auto &errorCov = curStateFilter.errorCovariance();
+	errorCov.diagonal().segment<3>(0).setConstant(params.uncertaintyPos*params.initialUncertaintyState);
+	errorCov.diagonal().segment<3>(3).setConstant(params.uncertaintyRot*params.initialUncertaintyState);
+	errorCov.diagonal().segment<3>(6).setConstant(params.uncertaintyPos*params.initialUncertaintyChange);
+	errorCov.diagonal().segment<3>(9).setConstant(params.uncertaintyRot*params.initialUncertaintyChange);
+}
 
 template<>
 bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &target, const std::vector<CameraCalib> &calibs,

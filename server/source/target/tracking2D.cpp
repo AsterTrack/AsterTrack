@@ -532,12 +532,10 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
 
-	// Create initial parameter vector for optimisation
-	//Eigen::VectorXf poseVec = EncodeAAPose(Eigen::Isometry3f::Identity());
-	Eigen::VectorXd poseVec = EncodeAAPose(match.pose).cast<double>();
 
 	// Initialise optimisation error term, preparing the data
-	typedef TargetReprojectionError<double, OptUndistorted | (OUTLIER? OptOutliers : 0) | (REFERENCE? OptReferencePose : 0)> TgtError;
+	constexpr int OPTIONS = OptUndistorted | (OUTLIER? OptOutliers : 0) | (REFERENCE? OptReferencePose : 0);
+	typedef TargetReprojectionError<double, OPTIONS> TgtError;
 	TgtError errorTerm(calibs);
 	if constexpr (REFERENCE)
 		errorTerm.setReferencePose(prediction.cast<double>(), params.predictionInfluence);
@@ -548,6 +546,13 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
 	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", (int)errorTerm.m_observedPoints.size());
+
+	// Create initial parameter vector for optimisation
+	Eigen::VectorXd poseVec;
+	if constexpr (OPTIONS & OptCorrectivePose)
+		poseVec = errorTerm.encodePose(Eigen::Isometry3d::Identity());
+	else
+		poseVec = errorTerm.encodePose(match.pose.cast<double>());
 
 	// Outlier reporting
 	std::vector<bool> outlier;
@@ -619,12 +624,10 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	LOGC(LTrace, "          Finished with it %d / %d\n", it, params.maxIterations);
 
 	// Apply optimised pose correction
-	/* Eigen::Isometry3f correction;
-	correction.translation() = poseVec.head<3>();
-	correction.linear() = MRP2Quat(poseVec.tail<3>()).toRotationMatrix();
-	match.pose = match.pose * correction; */
-	//match.pose = match.pose * DecodeAAPose<float>(poseVec);
-	match.pose = DecodeAAPose<float>(poseVec);
+	if constexpr (OPTIONS & OptCorrectivePose)
+		match.pose = match.pose * errorTerm.decodePose(poseVec).template cast<float>();
+	else
+		match.pose = errorTerm.decodePose(poseVec).template cast<float>();
 
 	if (doOutlier)
 	{
@@ -681,8 +684,7 @@ TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
 	if (errorTerm.values() == 0)
 		return { 0, 0, 0, 0 };
 	Eigen::VectorXf errors(errorTerm.values());
-	Eigen::VectorXf poseVec = EncodeAAPose(match.pose);
-	errorTerm.operator()<float>(poseVec, errors);
+	errorTerm.calculateSampleErrors(match.pose, errors);
 	float errorMean = errors.sum()/errorTerm.values();
 	float errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/errorTerm.values());
 	return { errorMean, errorStdDev, errors.maxCoeff(), errorTerm.values() };

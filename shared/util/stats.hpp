@@ -1,0 +1,205 @@
+/**
+AsterTrack Optical Tracking System
+Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#ifndef STATS_H
+#define STATS_H
+
+#ifndef _USE_MATH_DEFINES // For MSVC
+#define _USE_MATH_DEFINES // Not enough if cmath was included previously, so defined in build system
+#endif
+#include <cmath>
+
+enum StatOptions
+{
+	StatFloating = 1,
+	StatExtremas = 2,
+	StatDistribution = 3,
+};
+
+template<typename Scalar = float, int Options = 0>
+struct StatValue
+{
+	Scalar sum, avg, floating, M2, min, max;
+	int num, floatCount;
+
+	StatValue() = default;
+	StatValue(int floatingCount) : floatCount(floatingCount) {}
+
+	/**
+	 * Updates the given statistical value with a new value
+	 */
+	inline void update(Scalar val)
+	{
+		if (num == 0)
+		{
+			reset();
+			if constexpr ((Options & StatExtremas) == StatExtremas)
+			{
+				min = val;
+				max = val;
+			}
+			if constexpr ((Options & StatFloating) == StatFloating)
+				floating = val;
+		}
+		else if constexpr ((Options & StatExtremas) == StatExtremas)
+		{
+			if (min > val) min = val;
+			if (max < val) max = val;
+		}
+		// Welford algorithm
+		num++;
+		sum += val;
+		Scalar fac = 1.0/num;
+		Scalar diff = val - avg;
+		avg += diff * fac;
+		if constexpr ((Options & StatDistribution) == StatDistribution)
+		{
+			Scalar diff2 = val - avg;
+			M2 += diff * diff2;
+		}
+		// Floating average
+		if constexpr ((Options & StatFloating) == StatFloating)
+		{
+			int floatNum = num < floatCount? num : floatCount;
+			floating = (floating*floatNum + val)/(floatNum+1);
+		}
+	}
+
+	inline Scalar variance() const { return num == 0? 0.0f : M2/num; }
+	inline Scalar stdDev() const { return std::sqrt(variance()); }
+
+	template<int O>
+	inline void merge(StatValue<Scalar, O> &o)
+	{
+		int total = num + o.num;
+		float fac = 1.0f/total;
+		float cAvg = (avg*num + o.avg*o.num) * fac;
+		if constexpr ((Options & StatDistribution) == StatDistribution && (O & StatDistribution) == StatDistribution)
+		{
+			if (num > 0 && o.num > 0)
+			{
+				float dAvg1 = (avg-cAvg), dAvg2 = (o.avg-cAvg);
+				M2 = num * std::sqrt(fac *
+					( M2*M2/num + dAvg1*dAvg1*num
+					+ o.M2*o.M2/o.num + dAvg2*dAvg2*o.num));
+			}
+			else if (o.num > 0)
+				M2 = o.M2;
+		}
+		num = total;
+		sum += o.sum;
+		avg = cAvg;
+		if constexpr ((Options & StatExtremas) == StatExtremas && (O & StatExtremas) == StatExtremas)
+		{
+			if (min > o.min) min = o.min;
+			if (max < o.max) max = o.max;
+		}
+		if constexpr ((Options & StatFloating) == StatFloating && (O & StatFloating) == StatFloating)
+		{ // Approximate
+			int floatNum1 = num < floatCount? num : floatCount;
+			int floatNum2 = o.num < o.floatCount? o.num : o.floatCount;
+			floating = (floating*floatNum1 + o.floating*floatNum2)/(floatNum1+floatNum2);
+		}
+	}
+
+	/**
+	 * Resets the statistical value to the default state
+	 */
+	inline void reset()
+	{
+	    avg = sum = floating = M2 = min = max = (Scalar)0.0;
+		num = 0;
+	}
+
+	inline float probabilityAbove(float value)
+	{
+		return 0.5f * erfc((value-avg)/stdDev() * M_SQRT1_2);
+	}
+
+	inline float probabilityBelow(float value)
+	{
+		return 0.5f + 0.5f * erf((value-avg)/stdDev() * M_SQRT1_2);
+	}
+
+	inline float probabilityDeviationWithin(float value)
+	{
+		return erf(value/stdDev());
+	}
+};
+
+typedef StatValue<float,StatFloating|StatExtremas|StatDistribution> Statisticsf;
+typedef StatValue<float,StatExtremas|StatDistribution> StatBlockf;
+typedef StatValue<float,StatDistribution> StatDistf;
+typedef StatValue<float,StatFloating> StatFloatingf;
+typedef StatValue<float> StatAvgf;
+
+/**
+ * Keeps min/max values where the following extrema are relevant
+ */
+ template<typename Scalar, int N = 2>
+struct MultipleExtremum
+{
+	std::array<Scalar, N> rank;
+	Scalar signal;
+	MultipleExtremum(Scalar init) : signal(init) { std::fill_n(rank.begin(), N, init); }
+
+	void max(Scalar value)
+	{
+		if (rank[N-1] != signal && rank[N-1] > value) return;
+		int i = 0;
+		for (; i < N; i++)
+			if (rank[i] == signal || rank[i] < value) break;
+		for (; i < N; i++)
+			std::swap(value, rank[i]);
+	}
+	void min(Scalar value)
+	{
+		if (rank[N-1] != signal && rank[N-1] < value) return;
+		int i = 0;
+		for (; i < N; i++)
+			if (rank[i] == signal || rank[i] > value) break;
+		for (; i < N; i++)
+			std::swap(value, rank[i]);
+	}
+
+	int weakest()
+	{
+		for (int i = 0; i < N; i++)
+			if (rank[i] == signal)
+				return i-1;
+		return N-1;
+	}
+
+	bool hasAll() { return rank[N-1] != signal; }
+	bool hasAny() { return rank[0] != signal; }
+};
+
+/**
+ * Keeps min/max values where the second extremum is relevant
+ */
+template<typename Scalar>
+using DualExtremum = MultipleExtremum<Scalar, 2>;
+
+#endif // STATS_H

@@ -1,0 +1,6 @@
+https://github.com/vinitjames/circularbuffer
+Modifications by Seneral:
+- renamed to hpp
+- commented locking mutex (not needed)
+- added license text
+- added initial_size

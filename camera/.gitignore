@@ -1,0 +1,13 @@
+# Extension Caches
+.cache
+.codechecker
+compile_commands.json
+
+# Build systems
+build/
+
+# Setup scripts
+setup/storage
+setup/data
+setup/download
+setup/*.img

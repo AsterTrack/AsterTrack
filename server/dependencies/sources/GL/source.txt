@@ -1,0 +1,6 @@
+This is default glew 2.2.0
+https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip
+https://github.com/nigels-com/glew/archive/715afa0ff56c0eb12c23938b80aa2813daa10d81.zip
+But those link have nasty code generation that downloads 200MB of data to generate includes and source files (make -c auto)
+So actually the following unofficial snapshot was used:
+https://deac-ams.dl.sourceforge.net/project/glew/glew/snapshots/glew-20220402.tgz

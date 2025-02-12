@@ -1,0 +1,45 @@
+
+# Set up desired OS version, project sources, and behaviour here
+
+# piCore version config
+MIRROR_URL=http://www.tinycorelinux.net
+VERSION="13.x"
+VERSION_SPECIFIC="13.1.0"
+KERNEL="5.10.77-piCore"
+MAIN_ARCH="v6"
+ARCHS="v6 v7" #v7, v7l # Full architectures to support
+BASE_REPO_URL="$MIRROR_URL/$VERSION/arm"
+MAIN_REPO_URL="$BASE_REPO_URL$MAIN_ARCH"
+
+# Sources config
+VC4ASM_URL=https://github.com/maazl/vc4asm/archive/dfc77f020fd7eb050fc57b482a673c36c801d007.zip
+
+# Device config
+HOSTNAME=trackcam							# Hostname of device for wifi&ssh
+GPU_MEM_SIZE=128							# GPU/CPU memory split (total 500MB) - need CPU mem for compiling, GPU mem for runtime use
+
+# Mount config
+MOUNT_BOOT=/mnt/TRCAM_BOOT					# Mounting point of boot partition
+MOUNT_DATA=/mnt/TRCAM_DATA					# Mounting point of TCE partition
+
+# Local folders config
+DATA_PATH=data 								# Temporary storage of user data used for setup
+DOWNLOAD_PATH=download 						# Cache storage of downloaded packages
+STORAGE_PATH=storage 						# Permanent storage of saved user data like wifi.db and built applications
+SCRIPTS_PATH=scripts 						# Storage of scripts to copy to device
+
+# Device path config
+TCE_PATH=$MOUNT_DATA/tce/					# Path where tinyCore extensions are located - piCore searches for tce
+PKG_PATH=$TCE_PATH/optional/				# Path where packages are found - default path for piCore
+DEV_HOME_PATH="/home/tc" 					# Home directory on device
+DEV_BUILD_PATH=$DEV_HOME_PATH 				# Path to put sources and build files on device
+HOME_PATH=$DATA_PATH$DEV_HOME_PATH 			# Home directory in local data folder
+BUILD_PATH=$DATA_PATH$DEV_BUILD_PATH 			# Path to put sources and build files in local data folder
+DATA_FILE_DEFAULT="mydata.tgz"				# Compressed file of user data in TCE_PATH, default template
+DATA_FILE=$DATA_FILE_DEFAULT				# Compressed file of user data in TCE_PATH TODO: Allow renaming
+
+# Storage config
+WIFI_DB="$STORAGE_PATH/wifi.db"				# Path of wifi credentials to use
+
+# IP/Hostname of server host (leave empty to disable server)
+SERVER_HOST=""

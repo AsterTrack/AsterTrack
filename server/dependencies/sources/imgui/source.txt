@@ -1,0 +1,2 @@
+Dear ImGui with customisations: https://github.com/Seneral/imgui
+Based on docking branch: https://github.com/ocornut/imgui/tree/docking

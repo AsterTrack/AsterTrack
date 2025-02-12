@@ -1,0 +1,6 @@
+https://github.com/PoseLib/PoseLib
+extracted from https://github.com/PoseLib/PoseLib/tree/master/PoseLib/solvers
+Modifications by Seneral:
+- merged internal dependencies p3p_common.h and p3p.h
+- switched from CameraPose to Eigen::Isometry
+- made templated and switched to arrays

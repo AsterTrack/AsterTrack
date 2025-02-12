@@ -1,0 +1,10 @@
+{
+	"simulation" : {
+		"blobPxStdDev": 0.3,
+		"trackingTargets" : [
+			{ "path": "store/Target_Ring.obj", "markerViewAngle": 115, "markerSizeMM": 8 },
+			{ "path": "store/Target_Sparse.obj", "markerViewAngle": 270, "markerSizeMM": 12 }
+		],
+		"cameras": "store/camera_simulated.json"
+	}
+}

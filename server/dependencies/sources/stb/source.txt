@@ -1,0 +1,2 @@
+https://github.com/nothings/stb
+stb_image.c has been added to be able to separately compile it

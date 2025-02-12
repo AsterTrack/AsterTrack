@@ -1,0 +1,21 @@
+{
+    "cameras": [
+    ],
+    "configurations": [
+        {
+            "absThreshold": 100,
+            "edgeThreshold": 10,
+            "enableStrobe": true,
+            "filter": 0,
+            "framerate": 120,
+            "gain": 2,
+            "label": "",
+            "resolutionX": 1280,
+            "resolutionY": 800,
+            "shutterSpeed": 52,
+            "strobeLength": 149,
+            "strobeOffset": 0,
+            "synchronised": true
+        }
+    ]
+}

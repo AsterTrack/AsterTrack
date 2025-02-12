@@ -1,0 +1,3 @@
+Part of: https://github.com/CedricGuillemet/ImGuizmo
+commit: b10e91756d32395f5c1fefd417899b657ed7cb88
+Modified by Seneral (minor fixes and callbacks that required a lot of code moving, so diff looks crazy)

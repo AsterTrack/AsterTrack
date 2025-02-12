@@ -1,0 +1,25 @@
+{
+	"configurations": [
+		{
+			"name": "RISC-V",
+			"includePath": [
+				"${workspaceFolder}/**"
+			],
+			"defines": [
+				"_DEBUG",
+				"DEBUG_FLASH",
+				"ERR_LOG",
+				"WARN_LOG",
+				"INFO_LOG",
+				"UNICODE",
+				"_UNICODE",
+				"CH32V307",
+				"ENABLE_LOG",
+				"ENABLE_EVENTS",
+				"DEBUG_USE_INT",
+				"EVENT_USE_INT"
+			]
+		}
+	],
+	"version": 4
+}

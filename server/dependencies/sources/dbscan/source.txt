@@ -1,0 +1,5 @@
+https://github.com/Eleobert/dbscan
+Modifications by Seneral:
+- made compatible with newer nanoflann (after two breaking changes on Nov 13th and Nov 18th, 2022)
+- uses Eigen directly (modified adaptor)
+- changed index type (made explicit after nanoflann changed defaults)

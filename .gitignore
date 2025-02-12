@@ -1,0 +1,7 @@
+# Extension Caches
+.cache
+.codechecker
+compile_commands.json
+
+# Build systems
+build/

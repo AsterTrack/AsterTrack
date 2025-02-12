@@ -1,0 +1,171 @@
+/**
+AsterTrack Optical Tracking System
+Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#ifndef TRACKING_CAMERA_H
+#define TRACKING_CAMERA_H
+
+#include "comm/streaming.hpp" // SyncGroup, FrameID, TruncFrameID
+#include "comm/packet.hpp" // StatPacket
+#include "pipeline/frameRecord.hpp"
+
+#include "util/eigendef.hpp"
+#include "util/synchronised.hpp"
+#include "util/util.hpp" // TimePoint_t
+
+#include <atomic>
+#include <vector>
+
+// Forward-declared opaque structs
+struct TrackingControllerState; // device/tracking_controller.hpp
+struct CameraPipeline; // pipeline/pipeline.hpp
+struct ClientCommState; // comm/server.hpp
+
+extern std::atomic<int> modeChangesWaiting, modeChangesConfirmed;
+
+struct ImageRequest
+{
+	Bounds2i bounds;
+	uint8_t subsampling;
+	uint8_t jpegQuality;
+	uint16_t frame;				// Either interval, or 8bits of past frameID to send (tbd)
+};
+
+struct TrackingCameraState
+{
+	CameraID id = CAMERA_ID_NONE;
+	std::string label;
+
+	// Pipeline State
+	std::shared_ptr<CameraPipeline> pipeline;
+
+	// Indirect communication channel over controller
+	std::shared_ptr<TrackingControllerState> controller;
+	int port = -1;
+	// Direct communication channel over TCP
+	ClientCommState *client = NULL;
+
+	// Realtime streaming state 
+	std::shared_ptr<Synchronised<SyncGroup>> sync;
+	int syncIndex;
+
+	// Device mode
+	TrCamMode setMode = TRCAM_STANDBY, mode = TRCAM_STANDBY;
+	inline bool hasSetMode(TrCamMode Mode) const { return (setMode&TRCAM_MODE_MASK) == Mode; }
+	inline bool isMode(TrCamMode Mode) const { return (mode&TRCAM_MODE_MASK) == Mode; }
+
+	void sendModeSet(uint8_t mode);
+	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length);
+
+	/**
+	* Device configuration
+	*/
+
+	struct ImageStreaming
+	{ // Camera image streaming configuration
+		bool enabled;
+		bool adaptive = true;		// Adapt to zoomed view instead of always sending full screen
+		int resolutionScale = 3;	// Preference for resolution scaling (depending frame or view resolution)
+		bool focusQuality;			// Whether to prefer image quality instead of framerate
+
+		// Current settings requested for camera image - set based on above settings
+		ImageRequest request;
+	};
+
+	struct HDMIVis
+	{ // HDMI Visualisation configuration
+		bool enabled;
+		int width = 480, height = 400, fps = 10;
+		bool displayFrame = true, displayBlobs = true;
+	};
+
+	struct Wireless
+	{ // Wireless configuration
+		bool enabled;
+		bool Server;
+		// Actual reported state:
+		bool updating;
+		bool connected, failed;
+		bool ServerStatus;
+		std::string SSID, IP, error;
+	};
+
+	struct 
+	{
+		ImageStreaming imageStreaming = {};
+		HDMIVis hdmiVis = {};
+		Wireless wireless = {};
+	} config = {};
+
+
+	/**
+	* Receiving state
+	*/
+
+	struct Errors
+	{ // Camera error data sent by the TrackingCamera
+		bool encountered, recovered;
+		ErrorTag code;
+		bool serious;
+		TimePoint_t time;
+	};
+
+	struct VisualDebug
+	{ // Visual Debug data sent by the TrackingCamera
+		bool hasBlob;
+		// Normal blob data
+		Eigen::Vector2f pos; // In image space
+		float size;
+		// Bounds
+		Bounds2i bounds; // In pixel space
+		Bounds2i lastBounds; // In pixel space
+		Eigen::Vector2f offset; // To last bounds, in pixel space
+		// Point debug
+		int refinementMethod;
+		int dbgPtCount;
+		// Grayscale image and binary mask
+		std::vector<uint8_t> image;
+		std::vector<uint8_t> mask;
+		std::vector<Eigen::Vector2f> boundPoints;
+	};
+
+	struct BackgroundCalib
+	{ // Background calibration data sent by the TrackingCamera
+		std::vector<Eigen::Vector2f> tiles;
+	};
+
+	struct ImageReceiving
+	{ // Camera image currently being received from the TrackingCamera
+		FrameID frameID;
+		std::vector<uint8_t> jpeg;
+		int received;
+		bool erroneous;
+	};
+
+	struct
+	{
+		Synchronised<Errors> error = {};
+		Synchronised<VisualDebug> visualDebug = {};
+		Synchronised<BackgroundCalib> background = {};
+		std::shared_ptr<const CameraImageRecord> latestFrameImageRecord = nullptr;
+		std::shared_ptr<const CameraImage> latestFrameImage = nullptr;
+		ImageReceiving parsingFrameImage = {};
+		Synchronised<StatPacket> statistics = {};
+	} state = {};
+};
+
+#endif // TRACKING_CAMERA_H

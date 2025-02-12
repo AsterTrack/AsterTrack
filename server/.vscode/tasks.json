@@ -1,0 +1,165 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "group": "build",
+            "command": "make",
+            "args": [ "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)" ],
+            "windows": {
+                "command": "mkdir",
+                "args": [
+                    "build", "&",
+                    "cd", "build", "&&",
+                    "cmake", "-DCMAKE_BUILD_TYPE=${input:buildType}", "..", "&&",
+                    "msbuild", "astertrack.sln", "-p:Configuration=${input:buildType}"
+                ],
+                "problemMatcher": "$msCompile",
+                "options": { "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] } }
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        },
+        {
+            "label": "Build (clangd)",
+            "type": "shell",
+            "group": "build",
+            "command": "mkdir",
+            "args": [
+                "build", "&",
+                "bear", "--output", "build/compile_commands.json", "--append", "--",
+                "make", "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)",
+                // Sadly, "make --dry-run", does not work, it intercepts commands
+            ],
+            "runOptions": { "reevaluateOnRerun": false }
+        },
+        {
+            "label": "Run AsterTrack",
+            "type": "shell",
+            "group": "test",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "command": "${workspaceFolder}/build/astertrack-server",
+            "options": { "env": { 
+                "TSAN_OPTIONS": "suppressions=.vscode/tsan_suppression.txt",
+                "UBSAN_OPTIONS": "print_stacktrace=1",
+                "ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=1",
+				"LSAN_OPTIONS": "suppressions=.vscode/lsan_suppression.txt",
+            } },
+            "windows": {
+                "command": "${workspaceFolder}\\build\\astertrack.exe"
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        },
+        {
+            "label": "Run AsterTrack - Static",
+            "type": "shell",
+            "group": "test",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "command": "${workspaceFolder}/build/astertrack-static",
+            "options": { "env": { 
+                "TSAN_OPTIONS": "suppressions=.vscode/tsan_suppression.txt",
+                "ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=1",
+				"LSAN_OPTIONS": "suppressions=.vscode/lsan_suppression.txt",
+            } },
+            "windows": {
+                "command": "${workspaceFolder}\\build\\astertrack.exe"
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        },
+        {
+            "label": "Build All Dependencies",
+            "type": "shell",
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "options": { "cwd": "${workspaceFolder}/dependencies" },
+            "command": "${workspaceFolder}/dependencies/build.sh",
+            "args": [ "${input:sanitizedOption}" ],
+            "windows": {
+                "command": "${workspaceFolder}\\dependencies\\build.bat",
+                "options": {
+                    "cwd": "${workspaceFolder}\\dependencies",
+                    "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] }
+                },
+                "args": [ "${input:buildType}" ]
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        },
+        {
+            "label": "Clean All Dependencies",
+            "type": "shell",
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "options": { "cwd": "${workspaceFolder}/dependencies" },
+            "command": "${workspaceFolder}/dependencies/clean.sh",
+            "windows": {
+                "command": "${workspaceFolder}\\dependencies\\clean.bat",
+                "options": {
+                    "cwd": "${workspaceFolder}\\dependencies",
+                    "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] }
+                },
+                "args": [ "${input:buildType}" ]
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        },
+        {
+            "label": "Build Specific Dependency",
+            "type": "shell",
+            "group": "build",
+            "presentation": { "reveal": "always", "panel": "new" },
+            "options": { "cwd": "${workspaceFolder}/dependencies/buildfiles/${input:depName}" },
+            "command": "${workspaceFolder}/dependencies/buildfiles/${input:depName}/fetch.sh",
+            "args": [ "&&", "${workspaceFolder}/dependencies/buildfiles/${input:depName}/build.sh", "${input:sanitizedOption}" ],
+            "windows": {
+                "command": "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}\\build.bat",
+                "options": {
+                    "cwd": "${workspaceFolder}\\dependencies\\buildfiles\\${input:depName}",
+                    "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] }
+                },
+                "args": [ "${input:buildType}" ]
+            },
+            "runOptions": { "reevaluateOnRerun": false }
+            // To allow Rerun Last Task to skip prompting for type
+        }
+    ],
+    "inputs": [
+        { // Only release and debug builds on windows, for both dependency and main file
+            "id": "buildType",
+            "description": "Build Type:",
+            "default": "release",
+            "type": "pickString",
+            "options": [ "release", "debug" ]
+        },
+        { // Allow sanitized builds on linux+gcc
+            "id": "linuxBuildType",
+            "description": "Build Type:",
+            "default": "release-verify",
+            "type": "pickString",
+            "options": [ "release", "release-native", "release-verify", "debug", "sanitize-thread", "sanitize-memory", "sanitize-address", "super-debug", "super-verify" ]
+        },
+        { // On Linux, allow selection of compiler
+            "id": "compiler",
+            "description": "Compiler:",
+            "default": "clang",
+            "type": "pickString",
+            "options": [ "clang", "gcc" ]
+        },
+        { // On Linux, allow dependencies to be build with sanitized option on. Release/Debug not needed, all "release"
+            "id": "sanitizedOption",
+            "description": "Sanitize builds?:",
+            "default": "normal",
+            "type": "pickString",
+            "options": [ "normal", "sanitize-thread" ]
+        },
+        {
+            "id": "depName",
+            "description": "Dependency name:",
+            "type": "pickString",
+            "options": [ "Eigen", "glfw", "libusb", "vrpn" ]
+        },
+    ]
+}

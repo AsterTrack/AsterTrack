@@ -1,0 +1,16 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Clangd Database",
+            "type": "shell",
+            "group": "build",
+            "command": "bear",
+            "args": [
+                "--output", "compile_commands.json", "--",
+                "env/build_commands.sh",
+            ],
+            "runOptions": { "reevaluateOnRerun": false }
+        },
+    ]
+}

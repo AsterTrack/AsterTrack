@@ -1,0 +1,9 @@
+{
+    "codechecker.backend.compilationDatabasePath": "${workspaceFolder}/build/compile_commands.json",
+    "codechecker.executor.logBuildCommand": "make BUILD_TYPE=release COMPILER=clang -j4",
+    "codechecker.executor.arguments": "--config .vscode/codechecker.json",
+//    "codechecker.executor.arguments": "--analyzers=clang-tidy --config .vscode/codechecker.json",
+//    "codechecker.executor.arguments": "--analyzers=cppcheck --config .vscode/codechecker.json",
+//    "codechecker.executor.arguments": "--analyzers=clangsa --ctu --config .vscode/codechecker.json",
+    "codechecker.executor.runOnSave": false,
+}

@@ -1,0 +1,3 @@
+These are files extracted from Facebook folly: https://github.com/facebook/folly
+They have been modified by Seneral to include/remove internal dependencies
+See files themselves for further details

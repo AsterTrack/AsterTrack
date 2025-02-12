@@ -1,0 +1,10 @@
+# LeakSanitizer suppressions file
+
+# Errors in libEGL, cannot fix
+# GLFW correctly calls eglGetPlatformDisplayEXT/eglGetDisplay, which leaks 2688B in unknown module:
+# Then eglInitialize leaks 128B, 144B, 40B, all despite eglTerminate being correctly called
+# Both are in _glfwInitEGL, but names aren't reliable
+leak:<unknown module>
+leak:_glfwInitEGL
+
+# For documentation, see https://github.com/google/sanitizers/wiki/AddressSanitizerLeakSanitizer#suppressions

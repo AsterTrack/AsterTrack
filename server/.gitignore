@@ -1,0 +1,28 @@
+# Extension Caches
+.cache
+.codechecker
+compile_commands.json
+
+# Build systems
+build/
+
+# Temporary Outputs
+log.txt
+imgui.ini
+imgui_log.txt
+# Permanent Outputs
+store
+dump
+
+# Unnecessary sources
+resources/*.xcf
+resources/*.svg
+
+# Dependency build cache
+dependencies/buildfiles/*/linux
+dependencies/buildfiles/*/win
+dependencies/buildfiles/*/source
+# Dependencies fetched and built locally
+dependencies/lib
+dependencies/include
+#dependencies/sources includes the managed dependencies

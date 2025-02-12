@@ -1,0 +1,6 @@
+# ThreadSanitizer suppressions file
+
+# Uninstrumented library
+called_from_lib:radeonsi_dri.so
+
+# For documentation, see https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions

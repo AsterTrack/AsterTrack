@@ -123,14 +123,19 @@ bool RetryButton(const char* str_id)
 	return pressed;
 }
 
-bool CircleButton(const char* str_id)
+bool CircleButton(const char* str_id, bool filled)
 {
 	float sz = ImGui::GetFrameHeight();
+	float radius = ImGui::GetFontSize() * 0.5f * 0.7071f;
+
 	ImRect bb;
 	bool pressed = IconButtonEx(str_id, ImVec2(sz, sz), ImGuiButtonFlags_None, bb);
 
 	const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
-	ImGui::GetWindowDrawList()->AddCircle(bb.GetCenter(), sz/2 - 1.0f, text_col, 20, 2.0f);
+	if (filled)
+		ImGui::GetWindowDrawList()->AddCircleFilled(bb.GetCenter(), radius, text_col, 20);
+	else
+		ImGui::GetWindowDrawList()->AddCircle(bb.GetCenter(), radius, text_col, 20, 2.0f);
 
 	return pressed;
 }

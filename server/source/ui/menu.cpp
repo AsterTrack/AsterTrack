@@ -355,11 +355,14 @@ void InterfaceState::UpdateMainMenuBar()
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 
 		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - ImGui::GetFrameHeight()*2);
-		if (ImGui::ArrowButton("##WindowMaxButton", glfwGetWindowAttrib(glfwWindow, GLFW_MAXIMIZED)? ImGuiDir_Left : ImGuiDir_Up))
+		if (glfwGetWindowAttrib(glfwWindow, GLFW_MAXIMIZED))
 		{
-			if (glfwGetWindowAttrib(glfwWindow, GLFW_MAXIMIZED))
+			if (CircleButton("##WindowMaxButton"))
 				glfwRestoreWindow(glfwWindow);
-			else
+		}
+		else
+		{
+			if (ImGui::ArrowButton("##WindowMaxButton", ImGuiDir_Up))
 				glfwMaximizeWindow(glfwWindow);
 		}
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
@@ -371,9 +374,15 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 
-
 		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInHeader && !focusOnUIElement)
 		{
+			// TODO: On wayland, drag start does not always restore the window first, and thus dragging does not work on the first try
+			// If we start dragging via other means (key combo + mouse), the same problem applies
+			// And while we can enforce unmaximised window here, it actually modifies the correct platform default behaviour
+			// e.g. only restoring and dragging once a threshold of mouse movement is reached
+			// So definitely something that should be fixed properly either within glfw or even wayland itself when drag is started
+			//if (glfwGetWindowAttrib(glfwWindow, GLFW_MAXIMIZED))
+			//	glfwRestoreWindow(glfwWindow);
 			glfwDragWindow(glfwWindow);
 		}
 

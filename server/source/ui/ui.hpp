@@ -157,6 +157,7 @@ struct VisualisationState
 		int trailLength = 0;
 		bool showCovariancePos = false, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
+		bool showCovarianceSamples = false;
 
 		// Debug visualisation settings & state
 		bool showUncertaintyAxis = false;

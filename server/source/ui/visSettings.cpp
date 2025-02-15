@@ -74,6 +74,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::Checkbox("Show Positional Covariance", &visState.tracking.showCovariancePos);
 			ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovariancePos);
 			ImGui::SliderFloat("Covariance Sigma", &visState.tracking.scaleCovariance, 1, 100);
+			ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
 
 			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
 			VisFrameLock visFrame = visState.lockVisFrame(pipeline);
@@ -93,7 +94,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 
 			ImGui::TreePop();
 		}
-		else visState.tracking.showCovariancePos = visState.tracking.showCovarianceRot = false;
+		else visState.tracking.showCovariancePos = visState.tracking.showCovarianceRot = visState.tracking.showCovarianceSamples = false;
 
 		bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
 		if (displayInternalDebug && visState.tracking.debug.frameNum >= 0)

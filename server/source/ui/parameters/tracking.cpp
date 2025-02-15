@@ -228,6 +228,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Filtering");
 		bool filterMod = false;
+		filterMod |= ScalarProperty<float>("StdDev Error", "px", &params.filter.stdDevError, &standard.filter.stdDevError, 0, 10, 0.01f, PixelFactor, "%.4f");
 		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
 		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
 		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.stdDevIMU, &standard.filter.stdDevIMU, 0, 1, 0.002f, 180, "%.4f");

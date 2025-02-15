@@ -85,6 +85,7 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.covPredicted = tracker.pose.covPredicted;
 	target.covObserved = tracker.pose.covObserved;
 	target.covFiltered = tracker.pose.covFiltered;
+	target.deviations = tracker.target.match2D.deviations;
 	target.error = tracker.target.match2D.error;
 	updateVisibleMarkers(target.visibleMarkers, tracker.target.match2D);
 
@@ -155,6 +156,7 @@ static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.covPredicted = tracker.pose.covPredicted;
 	target.covObserved.setIdentity();
 	target.covFiltered = tracker.pose.covFiltered;
+	target.deviations.clear();
 	target.error = { 0, 0, 0, 0};
 	// TODO: Properly record as loss
 	if (loss)

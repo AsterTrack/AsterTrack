@@ -113,6 +113,7 @@ struct TrackedTargetRecord
 	// However, we may visualise a past frame, usually just because the current frame is different and still processing
 	// Maybe retroactively garbage-collect frame record if neither visualisation, async detection, etc. needs it
 	std::vector<std::vector<int>> visibleMarkers;
+	std::vector<VectorX<float>> deviations;
 };
 
 struct FrameRecord

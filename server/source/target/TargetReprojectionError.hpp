@@ -21,8 +21,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //#define OPT_AUTODIFF
 #include "calib/opt/differentiation.hpp"
+#include "calib/opt/covariance.hpp"
 
 #include "util/eigenutil.hpp" // MRP2Quat, DecodeAARot, etc.
+
+#include "flexkalman/EigenQuatExponentialMap.h" // quat_exp, quat_ln
 
 #include <cassert>
 
@@ -204,6 +207,26 @@ struct TargetReprojectionError
 		}, poseVec, jacobian);
 
 		return 0; // <0 : abort, =0 : success, >0 : num function evaluation
+	}
+
+	template<typename DiffScalar = Scalar>
+	Eigen::Matrix<DiffScalar,6,6> covarianceEXP(const Isometry3<DiffScalar> &pose, DiffScalar errorStdDev, std::vector<VectorX<DiffScalar>> &deviations) const
+	{
+		Eigen::Matrix<DiffScalar,6,1> poseVec;
+		poseVec.template head<3>() = pose.translation();
+		poseVec.template tail<3>() = flexkalman::util::quat_ln(Eigen::Quaternion<DiffScalar>(pose.rotation()));
+
+		Eigen::Matrix<DiffScalar,6,6> covariance;
+		VectorX<DiffScalar> errors(m_observedPoints.size());
+		NumericCovariance<DiffScalar, false>([this, &errors](const VectorX<DiffScalar> &poseVec)
+		{
+			Isometry3<DiffScalar> pose;
+			pose.translation() = poseVec.template head<3>();
+			pose.linear() = flexkalman::util::quat_exp(poseVec.template tail<3>()).toRotationMatrix();
+			calculateSampleErrors<DiffScalar>(pose, errors);
+			return std::sqrt(errors.mean());
+		}, poseVec, covariance, errorStdDev, 0.01f*PixelSize, 0.001f, deviations);
+		return covariance;
 	}
 
 	int inputs() const { return 6; }

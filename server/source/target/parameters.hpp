@@ -81,6 +81,7 @@ struct TargetOptimisationParameters
 
 struct TargetFilteringParameters
 {
+	float stdDevError = 1.0f * PixelSize;
 	float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
 	float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
 	float sigmaInitState = 5, sigmaInitChange = 1000;

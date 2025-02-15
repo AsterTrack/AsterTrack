@@ -39,6 +39,8 @@ struct TargetMatch2D
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
 	TargetMatchError error;
+	CovarianceMatrix covariance;
+	std::vector<VectorX<float>> deviations;
 };
 
 // Expose internal data for visualisation purposes (low overhead)
@@ -136,7 +138,7 @@ void matchTargetPointsSlow(
 template<bool REFERENCE = true, bool OUTLIER = true>
 TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
-	TargetOptimisationParameters params);
+	TargetOptimisationParameters params, float errorStdDev = 0.0f, bool updateCovariance = false);
 
 /**
  * Evaluate the given target match and update its pose error
@@ -145,14 +147,19 @@ TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match);
 
 /**
+ * Evaluate the given target match and update its pose error, and numerically calculates its covariance
+ */
+TargetMatchError evaluateTargetPoseCovariance(const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, float errorStdDev);
+
+/**
  * Updates visibleMarkers of target to those matched
  */
 void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const TargetMatch2D &match);
 
 /**
  * Redetect the target in the observed 2D points using a predicted pose
- * First re-acquires the previously visible markers and finds a better pose with them,
- * then finds newly appearing markers and optimises the pose to fit all matched observations
+ * Iteratively matches fast, then slow if needed, optimises, matches more, and optimises
  */
 TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
 	const std::vector<CameraCalib> &calibs, int cameraCount,

@@ -167,6 +167,29 @@ void updateErrorPointsVBO(unsigned int &VBO, const std::vector<Eigen::Vector3f> 
 	updatePointsVBO(VBO, vertices);
 }
 
+/**
+ * Write target markers into given section of VisPoints using given pose
+ */
+void updateTargetMarkerVis(const PipelineState &pipeline, const TargetTemplate3D &target,
+	const std::vector<std::vector<int>> &visibleMarker, Eigen::Isometry3f pose, Color8 color, float scale, VisPoint *points)
+{
+	for (int c = 0; c < pipeline.cameras.size(); ++c)
+	{
+		for (const auto &m : visibleMarker[c])
+		{
+			auto &marker = target.markers[m];
+			if (points[m].color.a == 0.0f)
+			{
+				points[m].pos = pose * marker.pos;
+				points[m].size = marker.size * scale;
+				points[m].color = color;
+			}
+			else // Already setup by one camera, lerp alpha to 1
+				points[m].color.a = points[m].color.a*0.7f + 75;
+		}
+	}
+}
+
 void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, Color8 color)
 {
 	if (points2D.empty()) return;

@@ -74,6 +74,12 @@ void visualiseBlobs2D(const std::vector<Eigen::Vector2f> &points2D, const std::v
 void updateErrorPointsVBO(unsigned int &VBO, const std::vector<Eigen::Vector3f> &pointErrors, Color colorA, Color colorB, Color colorO, float size = 1.0f, float depth = 0.9f);
 
 /**
+ * Write target markers into given section of VisPoints using given pose
+ */
+void updateTargetMarkerVis(const PipelineState &pipeline, const TargetTemplate3D &target,
+	const std::vector<std::vector<int>> &visibleMarker, Eigen::Isometry3f pose, Color8 color, float scale, VisPoint *points);
+
+/**
  * Render 3D Rays coming from the camera emitter
  */
 void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, Color8 color = Color{ 0, 0.5f, 0, 1 });

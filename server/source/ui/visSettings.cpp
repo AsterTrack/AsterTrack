@@ -55,7 +55,10 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		&& ImGui::TreeNode("Target Tracking"))
 	{
 		ImGui::Checkbox("Show Axis of Uncertainty", &visState.tracking.showUncertaintyAxis);
-		ImGui::Checkbox("Show Predicted Target Pose", &visState.tracking.showPredictedTarget);
+		ImGui::Checkbox("Show Observed Target", &visState.tracking.showTargetObserved);
+		ImGui::Checkbox("Show Predicted Target", &visState.tracking.showTargetPredicted);
+		ImGui::Checkbox("Show Filtered Target", &visState.tracking.showTargetFiltered);
+		ImGui::Checkbox("Show Filtered Target in Camera", &visState.tracking.showTargetFilteredCamera);
 		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
 
 		bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;

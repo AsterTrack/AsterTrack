@@ -472,50 +472,38 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 			[&](auto &t){ return t.id == trackedTarget.id; });
 		if (target == pipeline.tracking.targetTemplates3D.end()) continue;
-		thread_local std::vector<VisPoint> points;
-		points.resize(target->markers.size());
-		for (auto &pt : points)
-			pt.color.a = 0.0f;
-		for (int c = 0; c < pipeline.cameras.size(); ++c)
-		{
-			for (const auto &m : trackedTarget.visibleMarkers[c])
-			{
-				auto &marker = target->markers[m];
-				if (points[m].color.a == 0.0f)
-				{
-					points[m].pos = trackedTarget.poseFiltered * marker.pos;
-					points[m].size = marker.size;
-					points[m].color = Color{ 0.5f, 0.1f, 0.1f, 0.8f };
-				}
-				else // Already setup by one camera, lerp green to 1
-					points[m].color.g = points[m].color.g*0.7f + 0.3f;
-			}
-		}
-		visualisePointsSpheres(points);
-		visualisePose(trackedTarget.poseFiltered, { 0.8f, 0.2f, 0.2f, 0.8f }, 0.2f, 4.0f);
-		visualisePose(trackedTarget.poseObserved, { 0.4f, 0.4f, 0.1f, 0.8f }, 0.2f, 2.0f);
 
-		if (visState.tracking.showPredictedTarget)
-		{
-			for (auto &pt : points)
-				pt.color.a = 0.0f;
-			for (int c = 0; c < pipeline.cameras.size(); ++c)
-			{
-				for (const auto &m : trackedTarget.visibleMarkers[c])
-				{
-					auto &marker = target->markers[m];
-					if (points[m].color.a == 0.0f)
-					{
-						points[m].pos = trackedTarget.posePredicted * marker.pos;
-						points[m].size = marker.size/2;
-						points[m].color = Color{ 0.2f, 0.2f, 0.7f, 1.0f };
-					}
-					else // Already setup by one camera, lerp green to 1
-						points[m].color.g = points[m].color.g*0.7f + 0.3f;
-				}
-			}
-			visualisePointsSpheres(points);
+		Color colPredicted = Color{ 0.2f, 0.2f, 0.7f, 1.0f };
+		Color colObserved = Color{ 0.4f, 0.8f, 0.2f, 0.6f };
+		Color colFiltered = Color{ 0.5f, 0.1f, 0.1f, 0.7f };
+
+		// Visualise visible target markers used for tracking
+		thread_local std::vector<VisPoint> markers;
+		markers.resize(target->markers.size()*3);
+		for (auto &pt : markers) pt.color.a = 0.0f;
+
+		if (visState.tracking.showTargetPredicted)
+		{ // Show target markers in predicted pose
+			updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
+				trackedTarget.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
+			visualisePose(trackedTarget.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
+
+		if (visState.tracking.showTargetObserved)
+		{ // Show target markers in observed pose
+			updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
+				trackedTarget.poseObserved, colObserved, 0.7f, &markers[target->markers.size()*0]);
+			visualisePose(trackedTarget.poseObserved, colObserved, 0.2f, 2.0f);
+		}
+
+		if (visState.tracking.showTargetFiltered)
+		{ // Show target markers in filtered pose
+			updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
+				trackedTarget.poseFiltered, colFiltered, 1.0f, &markers[target->markers.size()*2]);
+			visualisePose(trackedTarget.poseFiltered, colFiltered, 0.2f, 4.0f);
+		}
+
+		visualisePointsSpheresDepthSorted(markers);
 	}
 
 	if (pipeline.phase == PHASE_Calibration_Point && !pipeline.pointCalib.room.floorPoints.empty())

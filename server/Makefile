@@ -263,17 +263,17 @@ $(shell mkdir -p $(dir $(OBJECTS_INTERFACE)) >/dev/null)
 OBJECTS_STATIC = $(subst $(o)/app.obj,$(o)/app-static.obj,$(OBJECTS_SERVER)) $(OBJECTS_INTERFACE)
 $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
-$(b)/astertrack-static: $(OBJECTS_STATIC) .FORCE
+$(b)/astertrack-static: $(OBJECTS_STATIC)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
 
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
-$(b)/astertrack-server: $(OBJECTS_SERVER) .FORCE
+$(b)/astertrack-server: $(OBJECTS_SERVER)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
 
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
-$(b)/astertrack-interface.so: $(OBJECTS_INTERFACE) .FORCE
+$(b)/astertrack-interface.so: $(OBJECTS_INTERFACE)
 	$(CXX) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
 
 # Always force re-link at least, since different modes share the same target

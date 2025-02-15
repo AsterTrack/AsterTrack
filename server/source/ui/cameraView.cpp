@@ -1112,16 +1112,6 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 					[&](auto &t){ return t.id == trackedTarget.id; });
 				if (target == pipeline.tracking.targetTemplates3D.end()) continue;
 
-				// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-				projectTargetTemplate(projected2D, *target, calib,
-					trackedTarget.poseObserved, pipeline.params.track.expandMarkerFoV);
-				visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
-
-				// Visualise target points that are tracked this frame
-				projectTargetTemplate(projected2D,
-					*target, trackedTarget.visibleMarkers[camera.pipeline->index], calib, trackedTarget.poseObserved, 1.0f);
-				visualisePoints2D(projected2D, Color{ 0.8, 0.0, 0.2, 0.6f }, 2.0f);
-
 				if (visState.tracking.showSearchBounds)
 				{ // Visualise search bounds
 					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackedTarget.poseObserved;
@@ -1130,11 +1120,36 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 					visualiseBounds2D(bounds);
 				}
 
-				if (visState.tracking.showPredictedTarget)
+				Color colVisible = Color{ 0.0, 0.8, 0.2, 0.3f };
+				Color colMatched = Color{ 0.8, 0.0, 0.2, 0.6f };
+				Color colFiltered = Color{ 0.4f, 0.1f, 0.5f, 0.8f };
+				Color colPredicted = Color{ 0.2, 0.5, 0.7, 0.4f };
+
+				if (visState.tracking.showTargetObserved)
+				{
+					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
+					projectTargetTemplate(projected2D, *target, calib,
+						trackedTarget.poseObserved, pipeline.params.track.expandMarkerFoV);
+					visualisePoints2D(projected2D, colVisible, 2.0f);
+
+					// Visualise target points that are tracked this frame
+					projectTargetTemplate(projected2D,
+						*target, trackedTarget.visibleMarkers[camera.pipeline->index], calib, trackedTarget.poseObserved, 1.0f);
+					visualisePoints2D(projected2D, colMatched, 2.0f);
+				}
+
+				if (visState.tracking.showTargetPredicted)
 				{
 					projectTargetTemplate(projected2D, *target, calib,
 						trackedTarget.posePredicted, pipeline.params.track.expandMarkerFoV);
-					visualisePoints2D(projected2D, Color{ 0.2, 0.5, 0.7, 0.4f }, 2.0f);
+					visualisePoints2D(projected2D, colPredicted, 2.0f);
+				}
+
+				if (visState.tracking.showTargetFilteredCamera)
+				{
+					projectTargetTemplate(projected2D, *target, calib,
+						trackedTarget.poseFiltered, pipeline.params.track.expandMarkerFoV);
+					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}
 			}
 

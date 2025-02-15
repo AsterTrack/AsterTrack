@@ -51,17 +51,17 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 			functor(input, minVal); ret++;
 
 		#pragma omp parallel for schedule(dynamic)
-			for (int j = 0; j < input.rows(); ++j)
+			for (int i = 0; i < input.rows(); i++)
 			{
 				VectorX<Scalar> maxVal(jacobian.rows());
 				VectorX<Scalar> evalInput = input;
-				Scalar h = epsilon * abs(input[j]);
+				Scalar h = epsilon * abs(input[i]);
 				if (h == 0.)
 					h = epsilon;
-				evalInput[j] += h;
+				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
-				evalInput[j] = input[j];
-				jacobian.col(j) = (maxVal-minVal)/h;
+				evalInput[i] = input[i];
+				jacobian.col(i) = (maxVal-minVal)/h;
 			}
 		}
 
@@ -76,7 +76,7 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 		//#pragma omp threadprivate(evalInput, maxVal)
 
 		#pragma omp parallel for schedule(dynamic) //copyin(evalInput)
-			for (int j = 0; j < input.rows(); ++j)
+			for (int i = 0; i < input.rows(); i++)
 			{
 				VectorX<Scalar> maxVal(jacobian.rows());
 				VectorX<Scalar> evalInput = input;
@@ -84,34 +84,34 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 				//assert(evalInput.size() == jacobian.cols());
 				//assert(evalInput(0) == input(0));
 				//// This assert DOES fail
-				Scalar h = epsilon * abs(input[j]);
+				Scalar h = epsilon * abs(input[i]);
 				if (h == 0.)
 					h = epsilon;
-				evalInput[j] += h;
+				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
-				evalInput[j] = input[j];
-				jacobian.col(j) = (maxVal-minVal)/h;
+				evalInput[i] = input[i];
+				jacobian.col(i) = (maxVal-minVal)/h;
 			}
 		} */
 
 		if constexpr (Mode == NumericDiffCentral)
 		{
 		#pragma omp parallel for schedule(dynamic)
-			for (int j = 0; j < input.rows(); ++j)
+			for (int i = 0; i < input.rows(); i++)
 			{
 				thread_local VectorX<Scalar> minVal, maxVal;
 				minVal.resize(jacobian.rows());
 				maxVal.resize(jacobian.rows());
 				VectorX<Scalar> evalInput = input;
-				Scalar h = epsilon * abs(input[j]);
+				Scalar h = epsilon * abs(input[i]);
 				if (h == 0.)
 					h = epsilon;
-				evalInput[j] += h;
+				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
-				evalInput[j] -= 2*h;
+				evalInput[i] -= 2*h;
 				functor(evalInput, minVal); ret++;
-				evalInput[j] = input[j];
-				jacobian.col(j) = (maxVal-minVal)/(2*h);
+				evalInput[i] = input[i];
+				jacobian.col(i) = (maxVal-minVal)/(2*h);
 			}
 		}
 	}
@@ -128,26 +128,26 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 			functor(evalInput, minVal); ret++;
 		}
 
-		for (int j = 0; j < input.rows(); ++j)
+		for (int i = 0; i < input.rows(); i++)
 		{
-			Scalar h = epsilon * abs(input[j]);
+			Scalar h = epsilon * abs(input[i]);
 			if (h == 0.)
 				h = epsilon;
 			if constexpr (Mode == NumericDiffForward)
 			{
-				evalInput[j] += h;
+				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
-				evalInput[j] = input[j];
-				jacobian.col(j) = (maxVal-minVal)/h;
+				evalInput[i] = input[i];
+				jacobian.col(i) = (maxVal-minVal)/h;
 			}
 			else if constexpr (Mode == NumericDiffCentral)
 			{
-				evalInput[j] += h;
+				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
-				evalInput[j] -= 2*h;
+				evalInput[i] -= 2*h;
 				functor(evalInput, minVal); ret++;
-				evalInput[j] = input[j];
-				jacobian.col(j) = (maxVal-minVal)/(2*h);
+				evalInput[i] = input[i];
+				jacobian.col(i) = (maxVal-minVal)/(2*h);
 			}
 		}
 	}
@@ -167,8 +167,8 @@ static inline int AutoDiffJacobian(Functor &&functor, const VectorX<Scalar> &inp
 	VectorX<ActiveScalar> activeErrors(jacobian.rows());
 
 	// Initialise output sizes (needed?)
-	for (int j = 0; j < jacobian.rows(); j++)
-		activeErrors[j].derivatives().resize(input.rows());
+	for (int i = 0; i < jacobian.rows(); i++)
+		activeErrors[i].derivatives().resize(input.rows());
 
 	// Initialise input derivatives
 	for (int i = 0; i < input.rows(); i++)

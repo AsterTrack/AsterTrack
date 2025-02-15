@@ -29,7 +29,11 @@ SOFTWARE.
 #include "shader.hpp"
 #include "mesh.hpp"
 
-extern Mesh *coordinateOriginMesh, *xyPlaneMesh, *cameraMesh, *cubePointMesh, *icosahedronMesh, *spherePointMesh;
+#include <vector>
+
+extern Mesh *coordinateOriginMesh, *xyPlaneMesh, *cameraMesh, *cubePointMesh, *icosahedronMesh, *spherePointMesh, *smoothSphereMesh;
+extern std::vector<float> icosphereVerts;
+extern std::vector<unsigned int> icosphereTris;
 extern ShaderProgram *flatUniformColorShader, *flatVertColorShader, *flatTexShader;
 extern ShaderProgram *flatRoundPointShader, *flatSquarePointShader;
 extern ShaderProgram *imageShader, *undistortTexShader, *undistortAlgShader;
@@ -41,5 +45,7 @@ extern GLint squareSizeAdr; // For flatSquarePointShader
 
 void initSharedGL();
 void cleanSharedGL();
+
+void subdivide_icosphere(std::vector<float> &vertices, std::vector<unsigned int> &triangles);
 
 #endif // SHARED_GL_H

@@ -66,9 +66,10 @@ class Mesh
 	std::vector<VertexType> packing;
 	unsigned int FpV, vertexCount, elementCount;
 
-	Mesh(const std::vector<VertexType> Packing, const std::vector<float> Vertices, const std::vector<unsigned int> Elements, GLenum mode = GL_TRIANGLES);
+	Mesh(const std::vector<VertexType> &Packing, const std::vector<float> &Vertices, const std::vector<unsigned int> &Elements, GLenum mode = GL_TRIANGLES);
 	~Mesh(void);
-	void updateVertexData(const float *VertData, int VertDataSize);
+	void updateVertexData(const std::vector<float> &Vertices, bool stream = false);
+	void updateElementData(const std::vector<unsigned int> &Elements, bool stream = false);
 	void prepare(void);
 	void cleanup(void);
 	void drawPart(void);

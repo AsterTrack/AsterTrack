@@ -556,6 +556,11 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 	// Essentially, any parameter that barely influences output error has a high variance
 	// Neatly encapsulates the degrees of freedom (and their strength) left by varying distribution of blobs
 
+	Eigen::Matrix<double,6,6> covariance;
+	covariance.setIdentity();
+	covariance.diagonal().head<3>().setConstant(params.uncertaintyPos*params.uncertaintyPos);
+	covariance.diagonal().tail<3>().setConstant(params.uncertaintyRot*params.uncertaintyRot);
+
 	// Update filter
 	filter.measurements++;
 	filter.curTime = time;
@@ -563,8 +568,7 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 	auto measurement = AbsolutePoseMeasurement{
 		target.match2D.pose.translation().cast<double>(),
 		Eigen::Quaterniond(target.match2D.pose.rotation().cast<double>()),
-		Eigen::Vector3d::Constant(params.uncertaintyPos*params.uncertaintyPos),
-		Eigen::Vector3d::Constant(params.uncertaintyRot*params.uncertaintyRot)
+		covariance.cast<double>()
 	};
 	flexkalman::SigmaPointParameters sigmaParams(params.sigmaAlpha, params.sigmaBeta, params.sigmaKappa);
 	if (!flexkalman::correctUnscented(filter.curStateFilter, measurement, true, sigmaParams))

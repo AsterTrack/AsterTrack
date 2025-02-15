@@ -36,8 +36,9 @@ SOFTWARE.
 
 static int initCount = 0;
 
-Mesh *coordinateOriginMesh, *xyPlaneMesh, *cameraMesh, *cubePointMesh, *icosahedronMesh, *spherePointMesh;
-
+Mesh *coordinateOriginMesh, *xyPlaneMesh, *cameraMesh, *cubePointMesh, *icosahedronMesh, *spherePointMesh, *smoothSphereMesh;
+std::vector<float> icosphereVerts;
+std::vector<unsigned int> icosphereTris;
 ShaderProgram *flatUniformColorShader, *flatVertColorShader, *flatTexShader;
 ShaderProgram *flatRoundPointShader, *flatSquarePointShader;
 ShaderProgram *imageShader, *undistortTexShader, *undistortAlgShader;
@@ -49,8 +50,6 @@ GLint squareSizeAdr; // For flatSquarePointShader
 
 
 /* Functions */
-
-static void subdivide_icosphere(std::vector<float> &vertices, std::vector<unsigned int> &triangles);
 
 static void initSharedMeshes()
 {
@@ -122,7 +121,7 @@ static void initSharedMeshes()
 	const float X = 0.525731112119133606f;
 	const float Z = 0.850650808352039932f;
 	const float O = 0.0f;
-	std::vector<float> icosphereVerts = {
+	icosphereVerts = {
 		-X,  O,  Z,
 		 X,  O,  Z,
 		-X,  O, -Z,
@@ -136,7 +135,7 @@ static void initSharedMeshes()
 		 Z, -X,  O,
 		-Z, -X,  O
 	};
-	std::vector<unsigned int> icosphereTris = {
+	icosphereTris = {
 		0,4,1,
 		0,9,4,
 		9,5,4,
@@ -163,9 +162,12 @@ static void initSharedMeshes()
 	subdivide_icosphere(icosphereVerts, icosphereTris);
 	subdivide_icosphere(icosphereVerts, icosphereTris);
 	spherePointMesh = new Mesh({ POS }, icosphereVerts, icosphereTris, GL_TRIANGLES);
+	subdivide_icosphere(icosphereVerts, icosphereTris);
+	subdivide_icosphere(icosphereVerts, icosphereTris);
+	smoothSphereMesh = new Mesh({ POS }, icosphereVerts, icosphereTris, GL_TRIANGLES);
 }
 
-static void subdivide_icosphere(std::vector<float> &vertices, std::vector<unsigned int> &triangles)
+void subdivide_icosphere(std::vector<float> &vertices, std::vector<unsigned int> &triangles)
 {
 	std::map<std::pair<int, int>, int> lookup;
 	auto vertex_for_edge = [&lookup, &vertices](int v0, int v1)
@@ -590,4 +592,8 @@ void cleanSharedGL()
 	delete cubePointMesh;
 	delete icosahedronMesh;
 	delete spherePointMesh;
+	delete smoothSphereMesh;
+
+	icosphereVerts = {};
+	icosphereTris = {};
 }

@@ -1104,6 +1104,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				{ // Replicate original frame pacing
 					auto &nextFrame = state->loadedFrameRecords[state->frameRecordReplayPos];
 					desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame.time - loadedRecord.time).count();
+					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
 				for (auto &cam : state->cameras)
 				{ // Set camera image in cameras

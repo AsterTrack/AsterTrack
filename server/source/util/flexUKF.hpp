@@ -55,6 +55,11 @@ class AbsolutePoseMeasurement :
 		m_covariance.diagonal().tail<3>() = emVariance;
 	}
 
+	AbsolutePoseMeasurement(Eigen::Vector3d const &pos,
+							Eigen::Quaterniond const &quat,
+							Eigen::Matrix<double,6,6> const &covariance)
+		: m_pos(pos), m_quat(quat), m_covariance(covariance) {}
+
 	template <typename State>
 	MeasurementSquareMatrix const &getCovariance(State const &) {
 		return m_covariance;

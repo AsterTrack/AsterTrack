@@ -51,14 +51,13 @@ struct TargetReprojectionError
 	std::vector<CameraCalib_t<Scalar>> m_calibs;
 	std::vector<Projective3<Scalar>> m_mvps;
 	std::vector<std::tuple<int, Vector3<Scalar>, Vector2<Scalar>>> m_observedPoints;
-	std::vector<bool> *m_outlierMap;
+	std::vector<bool> m_outlierMap;
 	Eigen::Matrix<Scalar,6,1> refPose;
 	Scalar refInfluence = 1.0f;
 
 	template<typename LoadScalar = Scalar>
 	TargetReprojectionError(const std::vector<CameraCalib_t<LoadScalar>> &calibs)
 	{
-		m_outlierMap = nullptr;
 		int maxCameraIndex = 0;
 		for (const auto &calib : calibs)
 		{
@@ -163,7 +162,7 @@ struct TargetReprojectionError
 	{
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
-			if ((Options&OptOutliers) && m_outlierMap && m_outlierMap->at(p))
+			if ((Options&OptOutliers) && m_outlierMap.at(p))
 			{
 				errors(p) = 0;
 				continue;
@@ -176,6 +175,8 @@ struct TargetReprojectionError
 			if constexpr (!(Options&OptUndistorted))
 				measurement = undistortPoint(m_calibs[c], measurement);
 			errors(p) = (proj - measurement).norm();
+			// TODO: Switch to squaredNorm to save on many sqrts in tracking
+			// Previous attempts resulted in optimisation that couldn't optimise (did not abort early, just no progress)
 		}
 	}
 

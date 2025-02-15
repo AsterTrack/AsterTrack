@@ -38,7 +38,7 @@ struct TargetMatch2D
 	TargetTemplate3D const *targetTemplate;
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
-	TargetMatchResult error;
+	TargetMatchError error;
 };
 
 // Expose internal data for visualisation purposes (low overhead)
@@ -131,17 +131,17 @@ void matchTargetPointsSlow(
 	const TargetMatchingParametersSlow params, float distFactor, Eigen::Vector2f offset = Eigen::Vector2f::Zero());
 
 /**
- * Optimises the pose to better fit the matched observations
+ * Optimise the given target match and update its pose, pose error and variance
  */
 template<bool REFERENCE = true, bool OUTLIER = true>
-TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
+TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
 
 /**
- * Calculates the reprojection error of the target candidate to the matched observations
+ * Evaluate the given target match and update its pose error
  */
-TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
+TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match);
 
 /**

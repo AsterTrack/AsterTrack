@@ -87,7 +87,7 @@ struct CameraFrameRecord
 	std::shared_ptr<CameraImageRecord> image; // Assigned only if pipeline.keepFrameImages is true
 };
 
-struct TargetMatchResult
+struct TargetMatchError
 {
 	float mean, stdDev, max;
 	int samples;
@@ -97,7 +97,7 @@ struct TrackedTargetRecord
 {
 	int id;
 	Eigen::Isometry3f poseObserved, poseFiltered;
-	TargetMatchResult error;
+	TargetMatchError error;
 
 	// For visualisation only
 	// TODO: Consider garbage-collecting intermediate results from frameRecords

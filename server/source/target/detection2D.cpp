@@ -192,7 +192,7 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &
 			params.match, distFactor);
 	
 		{ // For debug only
-			TargetMatchResult errors = calculateTargetErrors(calibs, points2D, targetMatch2D);
+			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D);
 			LOGC(LDebug, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
 				i++, errors.samples, focus, errors.mean*PixelFactor);
 		}
@@ -200,7 +200,7 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &
 			continue;
 
 		// Optimise and remove outliers
-		TargetMatchResult errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt);
+		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 

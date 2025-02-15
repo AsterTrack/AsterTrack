@@ -523,15 +523,14 @@ float matchTargetPointsAlongAxis(
 }
 
 /**
- * Optimises the pose to better fit the matched observations
+ * Optimise the given target match and update its pose, pose error and variance
  */
 template<bool REFERENCE, bool OUTLIER>
-TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
+TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
-
 
 	// Initialise optimisation error term, preparing the data
 	constexpr int OPTIONS = OptUndistorted | (OUTLIER? OptOutliers : 0) | (REFERENCE? OptReferencePose : 0);
@@ -545,7 +544,11 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
-	LOGC(LDebug, "        Optimising Pose of %d point pairs!\n", (int)errorTerm.m_observedPoints.size());
+	LOGC(LDebug, "        Optimising target pose using %d point matches!\n", (int)errorTerm.m_observedPoints.size());
+
+	// On-the-fly outlier detection
+	if constexpr (OUTLIER)
+		errorTerm.m_outlierMap.resize(errorTerm.m_observedPoints.size());
 
 	// Create initial parameter vector for optimisation
 	Eigen::VectorXd poseVec;
@@ -553,14 +556,6 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		poseVec = errorTerm.encodePose(Eigen::Isometry3d::Identity());
 	else
 		poseVec = errorTerm.encodePose(match.pose.cast<double>());
-
-	// Outlier reporting
-	std::vector<bool> outlier;
-	const bool doOutlier = SHOULD_LOGC(LTrace) || OUTLIER;
-	if (doOutlier)
-		outlier.resize(errorTerm.m_observedPoints.size());
-	if constexpr (OUTLIER)
-		errorTerm.m_outlierMap = &outlier;
 
 	// Initialise optimisation algorithm
 	Eigen::LevenbergMarquardt<TgtError, double> lm(errorTerm);
@@ -577,30 +572,32 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 
 	// Optimisation steps
 	int it = 0;
-	float errorMean, errorStdDev;
-	int inlierNum = errorTerm.m_observedPoints.size();
+	int outlierCount = 0;
+	match.error.samples = errorTerm.m_observedPoints.size();
 	while (++it <= params.maxIterations)
 	{
 		status = lm.minimizeOneStep(poseVec);
 		auto errors = lm.fvec.head(errorTerm.m_observedPoints.size());
-		errorMean = errors.sum() / inlierNum;
-		errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/inlierNum);
-		LOGC(LTrace, "            Current RMSE: %.4f (sum %f, inliers %d)\n", errorMean*PixelFactor, errors.sum(), inlierNum);
+		match.error.mean = errors.sum() / match.error.samples;
+		match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
+		match.error.max = errors.maxCoeff();
+		LOGC(LTrace, "            Current RMSE: %.4f (sum %f, inliers %d)\n", match.error.mean*PixelFactor, errors.sum(), match.error.samples);
 		if (status != Eigen::LevenbergMarquardtSpace::Running)
 		{
 			LOGC(LDebug, "          Stopped optimisation: %s\n", getStopCodeText(status));
 			break;
 		}
-		if (!doOutlier) continue;
+		if constexpr (!OUTLIER) continue;
 		// Find outliers
-		float maxAllowed = errorMean + std::max(params.outlierSigma*errorStdDev, params.outlierVarMin);
+		float maxAllowed = match.error.mean + std::max(params.outlierSigma*match.error.stdDev, params.outlierVarMin);
 		for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 		{
 			int cam = std::get<0>(errorTerm.m_observedPoints[i]);
 			// TODO: Per camera outlier limit, definitely need to treat dominant cameras differently than fringe cameras
 			if (lm.fvec(i) <= maxAllowed) continue;
-			inlierNum--;
-			outlier[i] = true;
+			match.error.samples--;
+			outlierCount++;
+			errorTerm.m_outlierMap[i] = true;
 
 			// Rest is just for debug
 			int marker = -1, pt = -1;
@@ -616,21 +613,21 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			}
 			LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4f! %d inliers left, with %.4f max\n",
 				cam, marker, pt,
-				lm.fvec(i)*PixelFactor, inlierNum, maxAllowed*PixelFactor);
+				lm.fvec(i)*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
 		}
-		if (inlierNum < errorTerm.inputs())
+		if (errorTerm.values()-outlierCount < errorTerm.inputs())
 			break;
 	}
 	LOGC(LTrace, "          Finished with it %d / %d\n", it, params.maxIterations);
 
-	// Apply optimised pose correction
+	// Apply optimised pose
 	if constexpr (OPTIONS & OptCorrectivePose)
 		match.pose = match.pose * errorTerm.decodePose(poseVec).template cast<float>();
 	else
 		match.pose = errorTerm.decodePose(poseVec).template cast<float>();
 
-	if (doOutlier)
-	{
+	if constexpr (OUTLIER)
+	{ // Remove detected outliers from target match
 		int errorIndex = 0;
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -640,43 +637,37 @@ TargetMatchResult optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			int outliersCam = 0;
 			for (int i = 0; i < pointsMatch.size(); i++)
 			{
-				if (outlier[errorIndex])
+				if (errorTerm.m_outlierMap[errorIndex])
 				{
 					LOGC(LTrace, "            Camera %d Marker %d - Point %d, outlier!\n", calib.id, pointsMatch[i].first, pointsMatch[i].second);
-					if constexpr (OUTLIER)
-						outliersCam++;
+					outliersCam++;
 				}
 				else
 				{
 					LOGC(LTrace, "            Camera %d Marker %d - Point %d, remaining pixel error %.4f\n",
 						calib.id, pointsMatch[i].first, pointsMatch[i].second, lm.fvec(errorIndex)*PixelFactor);
-					if constexpr (OUTLIER)
-						pointsMatch[writeIndex++] = pointsMatch[i];
+					pointsMatch[writeIndex++] = pointsMatch[i];
 				}
 				errorIndex++;
 			}
-			if constexpr (OUTLIER)
-				pointsMatch.resize(pointsMatch.size()-outliersCam);
+			pointsMatch.resize(pointsMatch.size()-outliersCam);
 		}
 	}
 
-	assert(!errorTerm.m_observedPoints.empty());
-	int samples = OUTLIER? inlierNum : errorTerm.m_observedPoints.size();
-	float errorMax = lm.fvec.head(errorTerm.m_observedPoints.size()).maxCoeff();
-	return { errorMean, errorStdDev, errorMax, samples };
+	return match.error;
 }
 
-template TargetMatchResult optimiseTargetPose<true, true>(const std::vector<CameraCalib> &calibs,
+template TargetMatchError optimiseTargetPose<true, true>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
-template TargetMatchResult optimiseTargetPose<false, true>(const std::vector<CameraCalib> &calibs,
+template TargetMatchError optimiseTargetPose<false, true>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
 	TargetOptimisationParameters params);
 
 /**
- * Optimises the pose to better fit the matched observations
+ * Evaluate the given target match and update its pose error
  */
-TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
+TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match)
 {
 	TargetReprojectionError<float, OptUndistorted> errorTerm(calibs);
@@ -685,9 +676,11 @@ TargetMatchResult calculateTargetErrors(const std::vector<CameraCalib> &calibs,
 		return { 0, 0, 0, 0 };
 	Eigen::VectorXf errors(errorTerm.values());
 	errorTerm.calculateSampleErrors(match.pose, errors);
-	float errorMean = errors.sum()/errorTerm.values();
-	float errorStdDev = std::sqrt((errors.array() - errorMean).square().sum()/errorTerm.values());
-	return { errorMean, errorStdDev, errors.maxCoeff(), errorTerm.values() };
+	match.error.samples = errorTerm.values();
+	match.error.mean = errors.sum() / errorTerm.values();
+	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / errorTerm.values());
+	match.error.max = errors.maxCoeff();
+	return match.error;
 }
 
 /**
@@ -796,10 +789,15 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pr
 	auto optimiseTargetMatch =  [&](bool quick)
 	{ // Optimise pose to observations
 		// TODO: Provide a quick option
-		TargetMatchResult prevErrors = calculateTargetErrors(calibs, points2D, targetMatch2D);
-		targetMatch2D.error = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt);
+		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
+		TargetMatchError newErrors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt);
+		if (newErrors.samples == 0)
+		{
+			LOGC(LDarn, "        Failed to optimise pose of %d points!\n", prevErrors.samples);
+			return;
+		}
 		LOGC(LDebug, "        Reduced average pixel error of %d points from %.4fpx to %d inliers with %.4fpx error\n",
-			prevErrors.samples, prevErrors.mean * PixelFactor, targetMatch2D.error.samples, targetMatch2D.error.mean * PixelFactor);
+			prevErrors.samples, prevErrors.mean * PixelFactor, newErrors.samples, newErrors.mean * PixelFactor);
 	};
 
 	reprojectTargetMarkers();

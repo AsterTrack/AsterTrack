@@ -43,7 +43,7 @@ inline unsigned int PackedFloats (VertexType type)
 	return val;
 }
 
-Mesh::Mesh(const std::vector<VertexType> Packing, const std::vector<float> Vertices, const std::vector<unsigned int> Elements, GLenum Mode)
+Mesh::Mesh(const std::vector<VertexType> &Packing, const std::vector<float> &Vertices, const std::vector<unsigned int> &Elements, GLenum Mode)
 {
 	// Calculate Floats per vertex as specified by packing
 	packing = Packing;
@@ -80,14 +80,24 @@ Mesh::~Mesh(void)
 	glDeleteBuffers(1, &EBO_ID);
 }
 
-void Mesh::updateVertexData(const float *VertData, int VertDataSize)
+void Mesh::updateVertexData(const std::vector<float> &Vertices, bool stream)
 {
-	vertexCount = (unsigned int)std::floor((double)VertDataSize/FpV);
+	vertexCount = (unsigned int)std::floor((double)Vertices.size()/FpV);
 
 	// Setup vertex buffer
 	glBindBuffer(GL_ARRAY_BUFFER, VBO_ID);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * VertDataSize, VertData, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * Vertices.size(), &Vertices[0], stream? GL_STREAM_DRAW : GL_STATIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Mesh::updateElementData(const std::vector<unsigned int> &Elements, bool stream)
+{
+	elementCount = (unsigned int)Elements.size();
+
+	// Setup element buffer
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO_ID);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * Elements.size(), &Elements[0], stream? GL_STREAM_DRAW : GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 void Mesh::prepare(void)

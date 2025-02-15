@@ -79,6 +79,23 @@ struct TargetOptimisationParameters
 	float predictionInfluence = 0.000005f;
 };
 
+struct TargetFilteringParameters
+{
+	float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
+	float sigmaInitState = 5, sigmaInitChange = 1000;
+	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
+	float dampeningPos = 0.95f, dampeningRot = 0.9f;
+
+	template<typename Scalar>
+	Eigen::Matrix<Scalar,6,6> getCovariance() const
+	{
+		Eigen::Matrix<Scalar,6,6> covariance = Eigen::Matrix<Scalar,6,6>::Identity();
+		covariance.diagonal().template head<3>().setConstant(stdDevPos*stdDevPos);
+		covariance.diagonal().template tail<3>().setConstant(stdDevEXP*stdDevEXP);
+		return covariance;
+	}
+};
+
 struct TargetDetectionParameters
 {
 	// Detection algorithms (2D brute force, or quick based on 3D triangulations)
@@ -138,10 +155,8 @@ struct TargetTrackingParameters
 	// Optimisation
 	TargetOptimisationParameters opt = {};
 	// Filtering
-	float uncertaintyPos = 0.00001f, uncertaintyRot = 0.0005f;
-	float initialUncertaintyState = 5, initialUncertaintyChange = 1000;
-	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
-	float dampeningPos = 0.95f, dampeningRot = 0.9f;
+	TargetFilteringParameters filter = {};
+	// Tracking Loss
 	float lostTargetCoastMS = 100.0f;
 };
 

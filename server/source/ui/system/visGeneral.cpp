@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/ui.hpp"
 #include "ui/gl/visualisation.hpp"
 
+#include "Eigen/Eigenvalues"
 
 /* Functions */
 
@@ -60,7 +61,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFrame) const
 { // Try to find a 3D target to zoom into
 	if (visFrame.target)
-	{
+	{ // Pose from target observation database
 		Eigen::Isometry3f tgtPose = visFrame.target.getPose();
 		if (target.focusOnMarkerSelection)
 		{
@@ -84,7 +85,7 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 	}
 
 	if (visFrame && !visFrame.frameIt->get()->tracking.targets.empty())
-	{
+	{ // Pose from frame tracking records
 		auto &trackers = visFrame.frameIt->get()->tracking.targets;
 		if (tracking.focusedTargetID >= 0)
 		{
@@ -306,4 +307,21 @@ void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT,
 		visualisePoints2D(distortedGT, { 0,1,0,alphaGT }, 2.0f, 0.5f);
 	if (alphaCB > 0)
 		visualisePoints2D(distortedCB, { 1,1,0,alphaCB }, 2.0f, 0.4f);
+}
+
+/**
+ * Composes pose and covariance matrix into a transform to be used on a sphere model to visualise covariance
+ */
+Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float scale)
+{
+	Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd(covariance, Eigen::ComputeEigenvectors);
+	Eigen::Matrix3f axis = evd.eigenvectors();
+	Eigen::Vector3f stdDev = evd.eigenvalues().cwiseSqrt();
+	if (axis.determinant() < 0)
+		axis.col(0) *= -1;
+
+	Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+	transform.linear() = axis;
+	transform = pose * transform * Eigen::Scaling(stdDev*scale);
+	return transform;
 }

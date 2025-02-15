@@ -99,6 +99,10 @@ void visualiseBounds2D(Bounds2f bounds);
  */
 void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT, const CameraMode &mode, float alphaBS = 1.0, float alphaCB = 1.0, float alphaGT = 0.0);
 
+/**
+ * Composes pose and covariance matrix into a transform to be used on a sphere model to visualise covariance
+ */
+Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float scale);
 
 /**
  * VisTarget (target calibration visualisation)

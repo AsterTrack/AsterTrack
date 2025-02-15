@@ -57,10 +57,10 @@ struct TrackerState
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
 		auto &errorCov = state.errorCovariance();
-		errorCov.diagonal().segment<3>(0).setConstant(params.uncertaintyPos*params.initialUncertaintyState);
-		errorCov.diagonal().segment<3>(3).setConstant(params.uncertaintyRot*params.initialUncertaintyState);
-		errorCov.diagonal().segment<3>(6).setConstant(params.uncertaintyPos*params.initialUncertaintyChange);
-		errorCov.diagonal().segment<3>(9).setConstant(params.uncertaintyRot*params.initialUncertaintyChange);
+		errorCov.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
+		errorCov.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
+		errorCov.diagonal().segment<3>(6).setConstant(params.filter.stdDevPos*params.filter.sigmaInitChange);
+		errorCov.diagonal().segment<3>(9).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitChange);
 	}
 };
 
@@ -97,14 +97,15 @@ struct TrackerObservation
 	Eigen::Isometry3f predicted;
 	Eigen::Isometry3f observed; // Pose as observed by the cameras
 	Eigen::Isometry3f filtered; // Pose filtered from all observations
-	Eigen::Matrix<float,6,6> covariance;
+	Eigen::Matrix<float,6,6> covPredicted, covFiltered, covObserved;
 
 	TrackerObservation() {}
 	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params)
 		: predicted(pose), observed(pose), filtered(pose), time(time)
 	{
-		covariance.diagonal().segment<3>(0).setConstant(params.uncertaintyPos*params.initialUncertaintyState);
-		covariance.diagonal().segment<3>(3).setConstant(params.uncertaintyRot*params.initialUncertaintyState);
+		covObserved.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
+		covObserved.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
+		covPredicted = covFiltered = covObserved;
 	}
 };
 

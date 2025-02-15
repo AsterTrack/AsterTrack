@@ -263,6 +263,48 @@ void visualisePointsSpheresDepthSorted(const std::vector<VisPoint> &points)
 	glDisable(GL_CULL_FACE);
 }
 
+void visualiseMeshesDepthSorted(const std::vector<VisModel> &models, Mesh *mesh)
+{
+	if (models.empty() || !mesh) return;
+
+	flatUniformColorShader->use();
+	glUniformMatrix4fv(flatUniformColorShader->uProjAdr, 1, GL_FALSE, vpMat.data());
+
+	mesh->prepare();
+	// Opaque first, and register transparent
+	thread_local std::vector<std::pair<int, float>> transparentOrder;
+	transparentOrder.clear();
+	for (int i = 0; i < models.size(); i++)
+	{
+		auto &pt = models[i];
+		if (pt.color.a == 0) continue;
+		if (pt.color.a < 255)
+		{ // Register transparent
+			float dist = (viewMat * pt.pose.translation()).z();
+			transparentOrder.emplace_back(i, dist);
+		}
+		else
+		{ // Draw opaque
+			glUniformMatrix4fv(flatUniformColorShader->uModelAdr, 1, GL_FALSE, pt.pose.matrix().data());
+			Color col = pt.color;
+			glUniform4f(flatUniformColorShader->uColorAdr, col.r, col.g, col.b, col.a);
+			mesh->drawPart();
+		}
+	}
+	// Sort and draw transparent
+	std::sort(transparentOrder.begin(), transparentOrder.end(), 
+		[&](auto &a, auto &b) { return a.second > b.second; });
+	for (auto &p : transparentOrder)
+	{
+		auto &pt = models[p.first];
+		glUniformMatrix4fv(flatUniformColorShader->uModelAdr, 1, GL_FALSE, pt.pose.matrix().data());
+		Color col = pt.color;
+		glUniform4f(flatUniformColorShader->uColorAdr, col.r, col.g, col.b, col.a);
+		mesh->drawPart();
+	}
+	mesh->cleanup();
+}
+
 static void setupMesh(const VisPoint *data, unsigned int count)
 {
 	flatVertColorShader->use();

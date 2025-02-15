@@ -28,6 +28,8 @@ SOFTWARE.
 
 #include "util/eigendef.hpp"
 
+#include "mesh.hpp"
+
 #include <vector>
 
 
@@ -72,6 +74,11 @@ struct VisPoint
 	Eigen::Vector3f pos;
 	Color8 color;
 	float size;
+};
+struct VisModel
+{
+	Eigen::Affine3f pose;
+	Color8 color;
 };
 #pragma pack(pop)
 
@@ -147,6 +154,11 @@ void visualisePointsSpheres(const std::vector<VisPoint> &points);
  * Render points while accounting for depth for correct alpha blending
  */
 void visualisePointsSpheresDepthSorted(const std::vector<VisPoint> &points);
+
+/**
+ * Render meshes while accounting for depth (solely based on position) for correct alpha blending
+ */
+ void visualiseMeshesDepthSorted(const std::vector<VisModel> &models, Mesh *mesh);
 
 /**
  * Render segmented 3D lines

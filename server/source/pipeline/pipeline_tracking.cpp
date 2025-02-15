@@ -81,10 +81,12 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	// Record target tracking results
 	target.id = tracker.target.calib->id;
 	target.tracked = true;
+	target.posePredicted = tracker.pose.predicted;
 	target.poseObserved = tracker.pose.observed;
 	target.poseFiltered = tracker.pose.filtered;
-	target.posePredicted = tracker.pose.predicted;
-	target.stdDev = tracker.pose.covariance.diagonal().head<3>().cwiseSqrt();
+	target.covPredicted = tracker.pose.covPredicted;
+	target.covObserved = tracker.pose.covObserved;
+	target.covFiltered = tracker.pose.covFiltered;
 	target.error = tracker.target.match2D.error;
 	updateVisibleMarkers(target.visibleMarkers, tracker.target.match2D);
 
@@ -113,6 +115,8 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 				targetIt->markers.push_back(marker.pos);
 			}
 		}
+		if (!targetIt->frames.empty() && targetIt->frames.back().frame >= frame->num)
+			return;
 		targetIt->frames.push_back({});
 		auto &tgtFrame = targetIt->frames.back();
 		tgtFrame.error = tracker.target.match2D.error.mean;
@@ -143,10 +147,12 @@ static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	// Record target tracking failure
 	target.id = tracker.target.calib->id;
 	target.tracked = false;
+	target.posePredicted = tracker.pose.predicted;
 	target.poseObserved.setIdentity();
 	target.poseFiltered = tracker.pose.filtered;
-	target.posePredicted = tracker.pose.predicted;
-	target.stdDev = tracker.pose.covariance.diagonal().head<3>().cwiseSqrt();
+	target.covPredicted = tracker.pose.covPredicted;
+	target.covObserved.setIdentity();
+	target.covFiltered = tracker.pose.covFiltered;
 	target.error = { 0, 0, 0, 0};
 	// TODO: Properly record as loss
 	if (loss)

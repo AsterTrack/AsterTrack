@@ -18,6 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui.hpp"
 
+#include "ui/system/vis.hpp"
+
 #include "util/debugging.hpp"
 
 void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
@@ -60,6 +62,32 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Checkbox("Show Filtered Target", &visState.tracking.showTargetFiltered);
 		ImGui::Checkbox("Show Filtered Target in Camera", &visState.tracking.showTargetFilteredCamera);
 		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
+		ImGui::SliderInt("Trail Length", &visState.tracking.trailLength, 0, 100);
+
+		if (ImGui::TreeNode("Covariance"))
+		{
+			ImGui::Checkbox("Show Covariance", &visState.tracking.showCovariance);
+			ImGui::SliderFloat("Scale Covariance", &visState.tracking.scaleCovariance, 1, 100);
+
+			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
+			VisFrameLock visFrame = visState.lockVisFrame(pipeline);
+			if (displayInternalDebug && visFrame)
+			{
+				auto &trackers = visFrame.frameIt->get()->tracking.targets;
+				auto track = std::find_if(trackers.begin(), trackers.end(),
+					[&](auto &tgt){ return tgt.id == visState.tracking.focusedTargetID; });
+				if (track != trackers.end())
+				{
+					Eigen::Matrix3f covariance = track->covFiltered.topLeftCorner<3,3>().transpose();
+					ImGui::InputFloat3("##CovT1", covariance.data()+0, "%.8f");
+					ImGui::InputFloat3("##CovT2", covariance.data()+3, "%.8f");
+					ImGui::InputFloat3("##CovT3", covariance.data()+6, "%.8f");
+				}
+			}
+
+			ImGui::TreePop();
+		}
+		else visState.tracking.showCovariance = false;
 
 		bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
 		if (displayInternalDebug && visState.tracking.debug.frameNum >= 0)

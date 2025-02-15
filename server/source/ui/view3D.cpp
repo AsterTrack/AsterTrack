@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/pipeline.hpp"
 #include "gl/visualisation.hpp"
+#include "gl/sharedGL.hpp"
 #include "system/vis.hpp"
 
 #include "imgui/imgui_onDemand.hpp"
@@ -496,41 +497,98 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();
 
-	for (auto &trackedTarget : frame.tracking.targets)
+	for (auto &tracker : frame.tracking.targets)
 	{
 		auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
-			[&](auto &t){ return t.id == trackedTarget.id; });
+			[&](auto &t){ return t.id == tracker.id; });
 		if (target == pipeline.tracking.targetCalibrations.end()) continue;
 
-		Color colPredicted = Color{ 0.2f, 0.2f, 0.7f, 1.0f };
+		Color colPredicted = Color{ 0.2f, 0.2f, 0.8f, 1.0f };
 		Color colObserved = Color{ 0.4f, 0.8f, 0.2f, 0.6f };
-		Color colFiltered = Color{ 0.5f, 0.1f, 0.1f, 0.7f };
+		Color colFiltered = Color{ 0.5f, 0.1f, 0.1f, 0.6f };
 
 		// Visualise visible target markers used for tracking
 		thread_local std::vector<VisPoint> markers;
-		markers.resize(target->markers.size()*3);
+		markers.resize(target->markers.size()*3 + visState.tracking.trailLength*3);
 		for (auto &pt : markers) pt.color.a = 0.0f;
 
 		if (visState.tracking.showTargetPredicted)
 		{ // Show target markers in predicted pose
-			if (trackedTarget.tracked)
-				updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
-					trackedTarget.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
-			visualisePose(trackedTarget.posePredicted, colPredicted, 0.2f, 2.0f);
+			if (tracker.tracked)
+				updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
+					tracker.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
+			visualisePose(tracker.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
 
-		if (visState.tracking.showTargetObserved && trackedTarget.tracked)
+		if (visState.tracking.showTargetObserved && tracker.tracked)
 		{ // Show target markers in observed pose
-			updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
-				trackedTarget.poseObserved, colObserved, 0.7f, &markers[target->markers.size()*0]);
-			visualisePose(trackedTarget.poseObserved, colObserved, 0.2f, 2.0f);
+			updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
+				tracker.poseObserved, colObserved, 0.7f, &markers[target->markers.size()*0]);
+			visualisePose(tracker.poseObserved, colObserved, 0.2f, 2.0f);
 		}
 
-		if (visState.tracking.showTargetFiltered && trackedTarget.tracked)
+		if (visState.tracking.showTargetFiltered && tracker.tracked)
 		{ // Show target markers in filtered pose
-			updateTargetMarkerVis(pipeline, *target, trackedTarget.visibleMarkers,
-				trackedTarget.poseFiltered, colFiltered, 1.0f, &markers[target->markers.size()*2]);
-			visualisePose(trackedTarget.poseFiltered, colFiltered, 0.2f, 4.0f);
+			updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
+				tracker.poseFiltered, colFiltered, 1.0f, &markers[target->markers.size()*2]);
+			visualisePose(tracker.poseFiltered, colFiltered, 0.2f, 4.0f);
+		}
+
+		// For covariances and trails
+		colPredicted.a = 0.4f;
+		colObserved.a = 0.4f;
+		colFiltered.a = 0.4f;
+
+		thread_local std::vector<VisModel> covariances;
+		covariances.clear();
+		auto enterCovariances = [&](TrackedTargetRecord &trk)
+		{
+			if (visState.tracking.showTargetFiltered)
+				covariances.emplace_back(composeCovarianceTransform(
+					trk.poseFiltered, trk.covFiltered.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colFiltered);
+			if (visState.tracking.showTargetObserved)
+				covariances.emplace_back(composeCovarianceTransform(
+					trk.poseObserved, trk.covObserved.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colObserved);
+			if (visState.tracking.showTargetPredicted)
+				covariances.emplace_back(composeCovarianceTransform(
+					trk.posePredicted, trk.covPredicted.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colPredicted);
+		};
+
+		auto frameIt = visFrame.frameIt;
+		auto trailPts = &markers[target->markers.size()*3];
+		for (int i = 0; i < visState.tracking.trailLength; i++)
+		{
+			if (frameIt == visFrame.frames.begin()) break;
+			if (!(--frameIt)->get()->finishedProcessing) continue;
+			auto &pastTracks = frameIt->get()->tracking.targets;
+			auto pastTrack = std::find_if(pastTracks.begin(), pastTracks.end(),
+				[&](auto &t){ return t.id == tracker.id; });
+			if (pastTrack == pastTracks.end()) continue;
+			if (visState.tracking.showCovariance)
+			{ // Show covariances, not just points
+				enterCovariances(*pastTrack);
+				continue;
+			}
+			if (visState.tracking.showTargetPredicted)
+				trailPts[i*3+0] = { pastTrack->posePredicted.translation(), colPredicted, 0.001f };
+			if (visState.tracking.showTargetObserved)
+				trailPts[i*3+1] = { pastTrack->poseObserved.translation(), colObserved, 0.001f };
+			if (visState.tracking.showTargetFiltered)
+				trailPts[i*3+2] = { pastTrack->poseFiltered.translation(), colFiltered, 0.002f };
+		}
+
+		if (visState.tracking.showCovariance)
+		{ // Visualise covariance ellipsoids
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			enterCovariances(tracker);
+			visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
+			glDisable(GL_CULL_FACE);
+			glEnable(GL_DEPTH_TEST);
 		}
 
 		visualisePointsSpheresDepthSorted(markers);

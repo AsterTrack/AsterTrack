@@ -226,16 +226,16 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Filtering");
-		modified |= ScalarProperty<float>("Uncertainty Pos", "mm", &params.uncertaintyPos, &standard.uncertaintyPos, 0, 1, 0.002f, 1000, "%.4f");
-		modified |= ScalarProperty<float>("Uncertainty Rot", "dg", &params.uncertaintyRot, &standard.uncertaintyRot, 0, 1, 0.002f, 180, "%.4f");
-		modified |= ScalarProperty<float>("Uncertainty State", "x", &params.initialUncertaintyState, &standard.initialUncertaintyState, 0, 1000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Uncertainty Change", "x", &params.initialUncertaintyChange, &standard.initialUncertaintyChange, 0, 1000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
+		modified |= ScalarProperty<float>("StdDev Rot", "dg", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
 		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
-		modified |= ScalarProperty<float>("Sigma Alpha", "", &params.sigmaAlpha, &standard.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Sigma Beta", "", &params.sigmaBeta, &standard.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Sigma Kappa", "", &params.sigmaKappa, &standard.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.dampeningPos, &standard.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.dampeningRot, &standard.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
 		EndSection();
 
 		BeginSection("Tracking Loss");

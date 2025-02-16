@@ -36,8 +36,15 @@ extern "C"
 #define USBD_INTERFACE_ID			0			// Number of default interface (only one)
 
 // Control Endpoint
-#define USBD_EP_CTRL_SIZE			64			// Control Endpoint number 0 (max 64, but it's double buffered)
-#define USBD_CTRL_MAX_PACKET_SIZE	2048		// Control maximum packet size (assembled from multiple transfers)
+#define USBD_EP_CTRL_SIZE			64			// Max transfer size of Control Endpoint (max 64)
+#define USBD_CTRL_MAX_PACKET_SIZE	1024		// Max packet size of Control Endpoint (assembled)
+// WARNING: BAD VALUES MAY CAUSE A LINUX KERNEL CRASH ON HOST!
+// Just setting USBHSD->UEP0_MAX_LEN to a bad value yields this behaviour, so not my code?
+// Known bad values: 2048-2 to 2048+7. 2048-3 is fine, 2048+8 is fine.
+// BUG: kernel NULL pointer dereference, address: 0000000000000030
+// xhci_hcd 0000:c1:00.3: Timeout while waiting for setup device command
+// #PF: supervisor read access in kernel mode
+// #PF: error_code(0x0000) - not-present page
 
 // Interrupt Endpoints - direction IN (Device to host)
 #define USBD_EP_INT_IN_ADDR_BASE	(0x80 | 1)	// Start endpoint address

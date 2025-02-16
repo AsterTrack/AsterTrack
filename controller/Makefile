@@ -174,8 +174,8 @@ flash: $(BUILD_DIR)/isp55e0
 $(BUILD_DIR)/isp55e0: tools/isp55e0.c
 	gcc tools/isp55e0.c -O2 -Wall -Werror -lusb-1.0 -o $@
 
-$(BUILD_DIR)/configurator.elf: tools/configure_ch32v307.c $(BUILD_DIR)/startup_CH32V30x_D8C.o Makefile
-	$(CC) tools/configure_ch32v307.c $(BUILD_DIR)/startup_CH32V30x_D8C.o $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) $(LDFLAGS) -o $@
+$(BUILD_DIR)/configurator.elf: tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/startup_CH32V30x_D8C.o Makefile
+	$(CC) tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/startup_CH32V30x_D8C.o $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) $(LDFLAGS) -o $@
 	$(SZ) $@
 # CFLAGS already defines nano.specs passing $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) manually
 $(BUILD_DIR)/configurator.bin: $(BUILD_DIR)/configurator.elf | $(BUILD_DIR)

@@ -1,0 +1,3 @@
+https://github.com/libusb/hidapi
+master branch, commit b26f05799699f99edee7fb2dff01d5a46e477f57
+Extracted only relevant source files and modified "hidapi.h" include path to "hidapi/hidapi.h"

@@ -47,6 +47,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ctpl/ctpl.hpp"
 
+#include "hidapi/hidapi.h"
+
 #define USB_PACKET_QUEUE // Keep USB thread free for timing by queuing packets for device thread to parse
 
 /**
@@ -54,7 +56,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 // Processing
-ctpl::thread_pool threadPool = ctpl::thread_pool(5);
+ctpl::thread_pool threadPool = ctpl::thread_pool(6);
 
 // util/debugging.hpp
 std::atomic<bool> dbg_isBreaking;
@@ -469,6 +471,16 @@ bool StartDeviceMode(ServerState &state)
 	state.mode = MODE_Device;
 	state.pipeline.isSimulationMode = false;
 
+	// Connect to IMU providers
+	hid_init();
+	{ // Fetch IMU providers
+		auto imu_lock = state.imuProviders.contextualLock();
+		std::unique_lock hid_lock(state.hid_access);
+		detectSlimeVRReceivers(*imu_lock);
+		// TODO: Add more IMU integrations here
+	}
+
+	// Connect new controllers
 	DetectNewControllers(state);
 
 	//StartDeviceServer(state);
@@ -503,6 +515,10 @@ void StopDeviceMode(ServerState &state)
 
 	// Stop server and disconnect from cameras
 	//StopDeviceServer(state);
+
+	// Diconnect IMU providers
+	state.imuProviders.contextualLock()->clear();
+	hid_exit();
 
 	// Reset state
 	state.mode = MODE_None;
@@ -733,6 +749,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		}
 	};
 
+	bool checkingIMU = false;
+	TimePoint_t lastIMUCheck = sclock::now();
+
 	while (!stop_token.stop_requested())
 	{
 		it++;
@@ -826,6 +845,44 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			c++;
 		}
 
+		if (!checkingIMU && dtMS(lastIMUCheck, sclock::now()) > 500)
+		{ // Regularly check for new IMU providers
+			checkingIMU = true;
+			lastIMUCheck = sclock::now();
+			threadPool.push([&checkingIMU](int){
+				auto &state = GetState();
+				auto providers = *state.imuProviders.contextualLock();
+				{ // Fetch new IMU providers
+					std::unique_lock hid_lock(state.hid_access);
+					detectSlimeVRReceivers(providers);
+					// TODO: Add more IMU integrations here
+				}
+				*state.imuProviders.contextualLock() = providers;
+				checkingIMU = false;
+			});
+		}
+
+		bool imusRegistered = false, imusUpdated = false, imusChanged = false;
+		{ // Fetch new state from IMUs
+			auto imuLock = state->imuProviders.contextualLock();
+			imusRegistered = !imuLock->empty();
+			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
+			{
+				int updatedDevices, changedDevices;
+				if (imuProvider->get()->poll(updatedDevices, changedDevices) == IMU_STATUS_DISCONNECTED)
+				{
+					imusChanged = true;
+					imuProvider = imuLock->erase(imuProvider);
+					continue;
+				}
+				if (changedDevices > 0) imusChanged = true;
+				if (updatedDevices > 0) imusUpdated = true;
+				imuProvider++;
+			}
+		}
+		if (imusUpdated)
+			SignalPipelineUpdate();
+
 		// Frame consistency supervision and processing stream frames once deemed complete
 		TimePoint_t s0 = sclock::now();
 		if (state->isStreaming)
@@ -837,8 +894,12 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				dtMS(s0,s1));
 		}
 
-		if (!state->isStreaming)
+		// TODO: Consider pushing new state from IMUs to IO if no frame was finished in a bit
+
+		if (!state->isStreaming && !imusRegistered)
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		else if (!state->isStreaming)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 #ifndef USB_PACKET_QUEUE
 		else
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1779,10 +1840,10 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 
 		UpdateTrackingIO(GetState(), frame);
 
-		for (auto &camera : sync.cameras)
+		for (int c = 0; c < frame->cameras.size(); c++)
 		{
-			if (camera)
-				SignalCameraRefresh(camera->id);
+			if (frame->cameras[c].received)
+				SignalCameraRefresh(pipeline.cameras[c]->id);
 		}
 	}, frameRecord); // new shared_ptr
 }

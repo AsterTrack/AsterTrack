@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp" // Main processing pipeline
 #include "comm/streaming.hpp" // Streaming blob data in
 #include "comm/server.hpp"
+#include "imu/imu.hpp"
 
 #include "util/memory.hpp"
 
@@ -95,6 +96,10 @@ struct ServerState
 	TrackingRecord record;
 	long recordReplayFrame, recordFrameCount;
 	TimePoint_t recordReplayTime;
+
+	// IMU Device integration
+	std::mutex hid_access;
+	Synchronised<std::vector<std::shared_ptr<IMUDeviceProvider>>> imuProviders;
 
 	// All integrations
 	struct 

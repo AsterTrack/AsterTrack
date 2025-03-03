@@ -541,16 +541,21 @@ void MaintainStreamState(StreamState &state)
 				LOG(LStreaming, LError, "For some reason, already finallyProcessed with prev: %d, new data? %d", frame->previouslyProcessed? 1 : 0, frame->dataProcessed? 1 : 0);
 			}
 			assert(!frame->finallyProcessed);
+			if (frame->expecting == 0)
+			{ // Nothing arrived yet
+				frame++;
+				continue;
+			}
 			// Need to process frames with no data, unprocessed data, and frames with new data after premature processing
 
 			//assert(frame->completed <= sync->cameras.size());
-			if (frame->completed > frame->cameras.size())
+			if (frame->completed > frame->expecting)
 			{
 				LOG(LStreaming, LError, "Now got %d/%d completed~ skipping", frame->completed, (int)frame->cameras.size());
 				frame++;
 				continue;
 			}
-			if (frame->completed == frame->cameras.size())
+			if (frame->completed == frame->expecting)
 			{ // Fully finished frame, and no new delayed frame announcements are expected
 				LOG(LStreaming, frame->previouslyProcessed? LDebug : LTrace, "- Ending completed frame %d (%d) after %.2fms!\n", frame->ID, frame->ID&0xFF, frameMS);
 				assert(!frame->finallyProcessed);
@@ -580,12 +585,12 @@ void MaintainStreamState(StreamState &state)
 				LOG(LStreaming, LDebug, "- Processing next part of delayed frame %d (%d) after %.2fms!\n", frame->ID, frame->ID&0xFF, frameMS);
 				processFrame(true);
 			}
-			else if (sync->frameProcessedCount > 50)
+			else
 			{ // Haven't processed anything yet, and frame is not complete yet, but may want to start prematurely processing for realtime purposes
 				//float packetFirstMS = frame->receiving? dtMS(frame->firstPacket, now) : 0;
 				//(frame->receiving && (frame->cameraPackets.size() == frame->completed) && (packetLastMS > 1 || packetFirstMS > 4))
-				float maxLatency = sync->latency.avg + 5 * sync->latency.stdDev();
-				if ((frameMS > maxLatency && packetLastMS > 2) || packetLastMS > 5)
+				float maxLatency = sync->latency.num > 50? sync->latency.avg + 5 * sync->latency.stdDev() : 10000.0f;
+				if ((frameMS > maxLatency && packetLastMS > 5) || packetLastMS > 10)
 				{ // Start prematurely processing partial data for low-latency use
 					LOG(LStreaming, LDarn,
 						"- Frame %d (%d) is %.2fms%s into the expected frame (avg %.2fms, allowed %.2fms) "

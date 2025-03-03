@@ -464,6 +464,23 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		return;
 	}
 
+	{
+		auto &state = GetState();
+		auto imuLock = state.imuProviders.contextualRLock();
+		for (auto &provider : *imuLock)
+		{
+			for (auto &device : provider->devices)
+			{
+				if (!device || device->reports.empty()) continue;
+				auto &report = device->reports.back();
+				Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+				pose.linear() = report.quat.toRotationMatrix();
+				pose.translation() = Eigen::Vector3f(0,0,1);// + report.accel;
+				visualisePose(pose, Color{ 1.0f, 0.1f, 0.1f, 1.0f }, 0.2f, 4.0f);
+			}
+		}
+	}
+
 	// Else, show real-time situation
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();

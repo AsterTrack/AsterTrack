@@ -140,6 +140,7 @@ SERVER_CPP = \
 	comm/streaming.cpp comm/timesync.cpp \
 	device/tracking_device.cpp device/parsing.cpp \
 	io/vrpn.cpp \
+	imu/trackerSlimeVR.cpp \
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp \
 	pipeline/pipeline_calibration_point.cpp pipeline/pipeline_calibration_target.cpp \
 	calib/obs_data.cpp calib/optimisation.cpp \
@@ -161,7 +162,7 @@ SERVER_DEP_CPP = \
 	poselib/p3p_ding.cpp \
 	dbscan/dbscan.cpp
 
-SERVER_DEP_C =
+SERVER_DEP_C = hidapi/linux/hid.c
 
 
 INTERFACE_CPP = \
@@ -212,7 +213,8 @@ libdir = dependencies/lib/linux
 usblibs = $(libdir)/libusb/libusb-1.0.so.0
 vrpnlibs = $(libdir)/vrpn/libvrpn.a $(libdir)/vrpn/libquat.a
 glfwlibs = $(libdir)/libglfw3.a
-server_libs = $(usblibs) $(vrpnlibs) -lrt -lGL -lturbojpeg -latomic
+trackerlibs = -ludev
+server_libs = $(usblibs) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg -latomic
 interface_libs = $(glfwlibs)
 
 # Run prechecks before starting compilation

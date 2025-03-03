@@ -77,54 +77,6 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 	// Need to improve experience / instructions, visualise points on the floor, account for physical marker sizes, etc.
 	if (!ptCalib.room.floorPoints.empty() && ptCalib.room.floorPoints.back().sampling)
 	{
-		if (pipeline.phase == PHASE_Calibration_Point)
-		{ // Triangulate unoccupied 2D points, since tracking stage is not running
-			auto &track = pipeline.tracking;
-			const auto &detect = pipeline.params.detect;
-
-			// Aggregate points and camera calibrations
-			std::vector<CameraCalib> calibs(cameras.size());
-			std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameras.size());
-			std::vector<std::vector<int> const *> relevantPoints2D(calibs.size());
-			std::vector<std::vector<int>> remainingPoints2D(calibs.size());
-			for (int c = 0; c < cameras.size(); c++)
-			{
-				calibs[c]= cameras[c]->calib;
-				points2D[c] = &frame->cameras[calibs[c].index].points2D;
-				remainingPoints2D[c].resize(points2D[c]->size());
-				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-				relevantPoints2D[c] = &remainingPoints2D[c];
-			}
-
-			// Clear past frames' triangulations
-			track.triangulations3D.clear();
-			track.discarded3D.clear();
-			track.points3D.clear();
-
-			auto &params = pipeline.params.tri;
-
-			// Find potential point correspondences as TriangulatedPoints
-			triangulateRayIntersections(calibs, points2D, relevantPoints2D, track.triangulations3D,
-				params.maxIntersectError, params.minIntersectError);
-
-			// Resolve conflicts by assigning points based on confidences and reevaluating confidences
-			// Note this uses internal data from triangulateRayIntersections to help resolve
-			resolveTriangulationConflicts(track.triangulations3D, params.maxIntersectError);
-
-			// Remove the least confident points
-			filterTriangulatedPoints(track.triangulations3D, track.discarded3D,
-				params.minIntersectionConfidence);
-			LOG(LTracking, LDebug, "%d triangulated points detected", (int)track.triangulations3D.size());
-
-			// Refine point positions
-			track.points3D.reserve(track.triangulations3D.size());
-			for (int p = 0; p < track.triangulations3D.size(); p++)
-			{
-				refineTriangulationIterative<float>(points2D, calibs, track.triangulations3D[p], params.refineIterations);
-				track.points3D.push_back(track.triangulations3D[p].pos);
-			}
-		}
-
 		auto &point = ptCalib.room.floorPoints.back();
 		if (pipeline.tracking.triangulations3D.empty())
 		{

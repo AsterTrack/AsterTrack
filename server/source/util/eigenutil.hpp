@@ -109,12 +109,11 @@ inline Eigen::Matrix<typename Derived::Scalar,3,3> getRotationZYX(const Eigen::M
 template<typename Derived>
 Eigen::Quaternion<typename Derived::Scalar> MRP2Quat(const Eigen::MatrixBase<Derived> &mrp)
 {
-	auto a = mrp.squaredNorm();
-	auto factor = 1.0 / (16 + a);
-	auto base = 16 - a;
-	base *= factor;
-	Eigen::Matrix<typename Derived::Scalar,3,1> vec = mrp * 8*factor;
-	return Eigen::Quaternion<typename Derived::Scalar>(base, vec.x(), vec.y(), vec.z());
+	typename Derived::Scalar factor = 2 / (1 + mrp.norm());
+	Eigen::Quaternion<typename Derived::Scalar> quat;
+	quat.vec() = mrp * factor;
+	quat.w() = factor-1;
+	return quat;
 }
 
 /**
@@ -123,7 +122,7 @@ Eigen::Quaternion<typename Derived::Scalar> MRP2Quat(const Eigen::MatrixBase<Der
 template<typename Scalar>
 Eigen::Matrix<Scalar,3,1> Quat2MRP(const Eigen::Quaternion<Scalar> quat)
 {
-	return quat.vec() * (4/(1+quat.w()));
+	return quat.vec() * (1 / (1 + quat.w()));
 }
 
 /**

@@ -70,9 +70,12 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	// Accumulate cameras to update
 	std::vector<CameraPipeline*> cameras;
 	cameras.reserve(pipeline.cameras.size());
+	bool fullyCalibrated = true;
 	for (auto &cam : pipeline.cameras)
 	{
 		cameras.push_back(cam.get());
+		if (cam->calib.invalid())
+			fullyCalibrated = false;
 		auto &record = frame->cameras[cam->index];
 		PreprocessCameraData(cam->calib, record);
 	}
@@ -80,9 +83,10 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	// But they have been designed to support that by using cameras[x]->index for storage
 	// However, temporary data uses the same indexing as this subset of cameras
 
-	if (pipeline.phase == PHASE_Tracking || pipeline.phase == PHASE_Automatic)
+	if (fullyCalibrated)
 	{
-		UpdateTrackingPipeline(pipeline, cameras, frame);
+		bool targetTracking = pipeline.phase == PHASE_Tracking || pipeline.phase == PHASE_Automatic;
+		UpdateTrackingPipeline(pipeline, cameras, frame, targetTracking);
 	}
 
 	// TODO: Integrate tracking and calibrations into the same pipeline without phases, just hints

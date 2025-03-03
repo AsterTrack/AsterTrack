@@ -332,6 +332,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LControllerDevice]		= "Controller Logs";
 	LogCategoryDescriptions[LCameraDevice]			= "Camera Logs";
 	LogCategoryDescriptions[LCameraEmulation]		= "Emulated Blob Detection";
+	LogCategoryDescriptions[LIO]					= "Integrations";
 
 	LogLevelIdentifiers[LTrace]  = "TRACE";
 	LogLevelIdentifiers[LDebug]  = "DEBUG";

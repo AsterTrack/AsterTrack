@@ -988,7 +988,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				Color{1,1,1,0}, 1.0f, visState.image.brightness, visState.image.contrast);
 		}
 	}
-	
+
 	/**
 	 * Visualise outline of full frame and used area
 	 */
@@ -1035,6 +1035,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f, blobCross = 2.0f / mode.widthPx;
 	if (visCamera.visMode == VIS_BACKGROUND_TILES)
 	{
+		// TODO: Fix background calib visualisation, needs inversion of some sort
 		float PixelSizeCur = 8 * (float)viewSize.x()/mode.widthPx * visCamera.view.zoom;
 		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 		visualisePoints2D(camera.state.background.contextualRLock()->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);

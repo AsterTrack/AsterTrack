@@ -245,7 +245,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 
 // General Tracking
 void InitTrackingPipeline(PipelineState &pipeline);
-void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame);
+void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets);
 
 /**
  * Handles a new frame and returns it once processed

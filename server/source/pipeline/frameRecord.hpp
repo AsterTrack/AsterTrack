@@ -137,6 +137,8 @@ struct FrameRecord
 	{
 		int trackingLosses, searches2D, detections2D, detections3D, trackingCatchups;
 		std::vector<TrackedTargetRecord> targets;
+		//std::vector<TrackedMarkerRecord> markers;
+		std::vector<Eigen::Vector3f> triangulations;
 	} tracking;
 
 	// TODO: Put remainingPoints2D and other intermediate results in here?

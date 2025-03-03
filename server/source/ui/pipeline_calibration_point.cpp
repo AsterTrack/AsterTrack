@@ -320,6 +320,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 		{
 			ptCalib.settings.typeFlags = 0b01;
 			ptCalib.planned = true;
+			// Forgetting to do this is annoying as existing recorded data might get poisoned
+			pipeline.recordSequences = false;
 		}
 		ImGui::SetItemTooltip("Calculates an initial estimate of the camera setup (camera location, lens field of view).\n"
 			"It is an important first step in calibration, but it cannot determine non-linear parameters like lens-distortion, and so errors may be relatively high.");
@@ -329,6 +331,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 			ptCalib.settings.typeFlags = 0b10;
 			ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
 			ptCalib.planned = true;
+			// Forgetting to do this is annoying as existing recorded data might get poisoned
+			pipeline.recordSequences = false;
 		}
 		ImGui::SetItemTooltip("Optimise the selected parameters of the cameras and their lenses.\n"
 			"Required to determine non-linear parameters like lens-distortion.");
@@ -372,7 +376,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	if (roomCalib.floorPoints.size() < 3)
 		label = asprintf_s("%d floor points, need 3 or more", (int)roomCalib.floorPoints.size());
 	else
-	 	label = asprintf_s("%d floor points - distance of 0-1 is %.2fmm", (int)roomCalib.floorPoints.size(),
+	 	label = asprintf_s("%d floor points - distance of 1-2 is %.2fmm", (int)roomCalib.floorPoints.size(),
 			(roomCalib.floorPoints[0].pos-roomCalib.floorPoints[1].pos).norm()*1000);
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted(label.c_str());
@@ -401,7 +405,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ScalarInput<float>("Distance 1-2", "mm", &roomCalib.distance12, 1.0f, 5000.0f, 1, 1000);
 	ImGui::SetItemTooltip("Distance between the first two points, used to calibrate scale. In millimeter.");
 
-	if (ImGui::Button("Calibrate Floor", SizeWidthDiv2()))
+	ImGui::SetCursorPosX(GetRightAlignedCursorPos(SizeWidthDiv3_2().x));
+	if (ImGui::Button("Calibrate Floor", SizeWidthDiv3_2()))
 	{
 		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
 		if (pipeline_lock.owns_lock())
@@ -409,8 +414,29 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
 
-	ImGui::SameLine();
-	if (ImGui::Button("Undo Once", SizeWidthDiv2()))
+	static float floorHeight = -1.0f;
+	ScalarInput<float>("Floor Height", "mm", &floorHeight, -5000.0f, 5000.0f, 1, 1000);
+	ImGui::SetCursorPosX(GetRightAlignedCursorPos(SizeWidthDiv3_2().x));
+	if (ImGui::Button("Add to Floor", SizeWidthDiv3_2()))
+	{
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock())
+		{
+			for (auto &camera : pipeline.cameras)
+			{
+				camera->calibBackup = camera->calib;
+				camera->calib.transform.translation().z() += floorHeight;
+			}
+
+			// Re-evaluate positions incase calibration changed since observation
+			auto calibs = pipeline.getCalibs();
+			for (auto &point : ptCalib.room.floorPoints)
+				point.update(calibs);
+		}
+	}
+	ImGui::SetItemTooltip("Adjust the height of the floor-plane.");
+
+	if (ImGui::Button("Undo Once", SizeWidthFull()))
 	{ // TODO: Disable this button if floor is not calibrated yet (or a new calibration exists)
 		// Or maybe simple store backups as transforms, and apply transforms (default being Isometry), so no chance of "restoring" a stale calibration exists
 		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));

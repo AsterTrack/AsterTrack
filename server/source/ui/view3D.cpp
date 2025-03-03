@@ -506,16 +506,27 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		visualisePointsSpheresDepthSorted(markers);
 	}
 
-	if (pipeline.phase == PHASE_Calibration_Point && !pipeline.pointCalib.room.floorPoints.empty())
+	if (pipeline.phase == PHASE_Calibration_Point)
 	{ // TODO: Accessing pipeline in vis without lock
 		thread_local std::vector<VisPoint> markerPoints;
 		markerPoints.clear();
-		Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
-		for (auto &pt : pipeline.pointCalib.room.floorPoints)
+
+		if (!pipeline.pointCalib.room.floorPoints.empty())
 		{
-			if (pt.sampleCount > 3)
-				markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
+			Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
+			for (auto &pt : pipeline.pointCalib.room.floorPoints)
+			{
+				if (pt.sampleCount > 3)
+					markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
+			}
 		}
+
+		Color col = { 0.1f, 0.6f, 1.0f, 1.0f };
+		for (auto &pt : frame.tracking.triangulations)
+		{
+			markerPoints.emplace_back(pt.cast<float>(), (Color8)col, 0.01f);
+		}
+
 		visualisePointsSpheres(markerPoints);
 	}
 

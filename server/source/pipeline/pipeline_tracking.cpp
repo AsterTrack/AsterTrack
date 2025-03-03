@@ -285,7 +285,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	return true;
 }
 
-void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
+void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets)
 {
 	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, det0, det1, det2, tpt0, tpt1;
 	start = pclock::now();
@@ -528,7 +528,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det0 = pclock::now();
 
-	if (detect.enable3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
+	if (trackTargets && detect.enable3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
 	{ // Target re-detection
 
 		auto targetIt = pipeline.tracking.dormantTargets.begin();
@@ -625,7 +625,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			LOG(LTracking, LDebug, "    Cluster has %d 2D points!", (int)cluster.size());
 	}
 
-	if ((detect.enable2DSync || (detect.enable2DAsync && !pipeline.tracking.asyncDetection))
+	if (trackTargets && (detect.enable2DSync || (detect.enable2DAsync && !pipeline.tracking.asyncDetection))
 		&& clusterSelect > detect.minObservations.focus && !pipeline.tracking.dormantTargets.empty())
 	{ // 2D Target Detection
 
@@ -726,6 +726,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 		}
 	}*/
+
+	// TODO: Properly integrate
+	frame->tracking.triangulations = track.points3D;
 
 	tpt1 = pclock::now();
 

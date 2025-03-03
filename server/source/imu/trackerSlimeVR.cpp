@@ -5,7 +5,6 @@
 
 #include "hidapi/hidapi.h"
 
-#include "flexkalman/EigenQuatExponentialMap.h" // quat_exp, quat_ln
 
 enum SLIMEVR_BOARD_TYPE
 {
@@ -67,6 +66,8 @@ public:
 	~SlimeVRTracker() = default;
 };
 
+#define TRACKER_REPORT_SIZE 16 // 1B Header + 12B Data + 2B Timestamp (or 1B Header + 14B Data)
+#define HID_HEADER_SIZE 0 // 1B Header + 12B Data + 2B Timestamp (or 1B Header + 14B Data)
 class SlimeVRReceiver : public IMUDeviceProvider
 {
 public:
@@ -81,7 +82,16 @@ public:
 	}
 
 	IMUDeviceProviderStatus poll(int &updatedDevices, int &changedDevices);
-	bool parseIMUPacket(SlimeVRTracker &tracker, uint8_t data[16]);
+	bool parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRACKER_REPORT_SIZE], TimePoint_t &timestamp);
+};
+
+enum PACKET_HEADER_TYPE
+{
+	TYPE_INFO = 0,
+	TYPE_IMU = 1,
+	TYPE_IMU_STATUS = 2,
+	TYPE_INVALID = 3,
+	HEADER_SKIP = 0b11111111,
 };
 
 IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedDevices)
@@ -92,23 +102,37 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 	LOG(LIO, LDebug, "Polling SlimeVR Receiver %s!", path.c_str());
 	while ((read = hid_read(handle, data, sizeof(data))) > 0)
 	{
-		int packets = read/16;
-		LOG(LIO, LDebug, "  SlimeVR Receiver sent %d bytes (%d packets)!", read, packets);
+		TimePoint_t recvTime = sclock::now();
+		uint8_t *header = data;
+		uint8_t size = read;
+		if (read > 64)
+		{ // Multiple reports possible
+			int reportID = data[0];
+			LOG(LIO, LDebug, "  SlimeVR Receiver Report %d sent %d bytes!", reportID, read);
+			header = data+1;
+		}
+
+		uint8_t *packet = header+HID_HEADER_SIZE;
+		int packets = (size-HID_HEADER_SIZE)/TRACKER_REPORT_SIZE;
+		LOG(LIO, LDebug, "  SlimeVR Receiver sent %d bytes (%d packets)!", size, packets);
 		for (int p = 0; p < packets; p++)
 		{
-			int i = p*16;
-			if (data[i+0] == 255) continue;
-			uint8_t trkID = data[i+1];
-			if (devices.size() <= trkID)
-				devices.resize(trkID+1);
-			if (!devices[trkID])
+			int i = p*TRACKER_REPORT_SIZE;
+			if (packet[i+0] == HEADER_SKIP) continue;
+			uint8_t tracker_id = packet[i+1];
+			LOG(LIO, LTrace, "    Packet %d from tracker %d!", packet[i+0], packet[i+1]);
+			if (devices.size() <= tracker_id)
+				devices.resize(tracker_id+1);
+			if (!devices[tracker_id])
 			{
-				devices[trkID] = std::make_shared<SlimeVRTracker>();
-				LOG(LIO, LInfo, "    Registered new IMU!");
+				// TODO: Use receiver and tracker serial numbers
+				devices[tracker_id] = std::make_shared<SlimeVRTracker>();
+				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
 				changedDevices++;
 			}
-			SlimeVRTracker &tracker = *static_cast<SlimeVRTracker*>(devices[trkID].get());
-			if (parseIMUPacket(tracker, data+i))
+			SlimeVRTracker &tracker = *static_cast<SlimeVRTracker*>(devices[tracker_id].get());
+			TimePoint_t sampleTime = recvTime;
+			if (parseDataPacket(tracker, packet+i, sampleTime))
 				updatedDevices++;
 			/* else if (tracker.status == SLIMEVR_TRACKER_DISCONNECTED || tracker.status == SLIMEVR_TRACKER_ERROR)
 				devices[trkID] = nullptr; */
@@ -122,15 +146,15 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 	return IMU_STATUS_NORMAL;
 }
 
-bool SlimeVRReceiver::parseIMUPacket(SlimeVRTracker &tracker, uint8_t data[16])
+bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRACKER_REPORT_SIZE], TimePoint_t &timestamp)
 {
-	uint8_t pktID = data[0];
-	uint8_t trkID = data[1];
-	switch (pktID)
+	uint8_t type = data[0];
+	uint8_t tracker_id = data[1];
+	switch (type)
 	{
-		case 0:
+		case TYPE_INFO:
 		{
-			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", pktID, trkID);
+			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
 			tracker.hasBattery = data[2]&0x80;
 			tracker.isPlugged = data[2] == 255;
 			tracker.batteryLevel = (data[2]&0x7F)/128.0f;
@@ -146,9 +170,9 @@ bool SlimeVRReceiver::parseIMUPacket(SlimeVRTracker &tracker, uint8_t data[16])
 				tracker.MCU = SLIMEVR_MCU_UNKNOWN;
 			return false;
 		}
-		case 1:
+		case TYPE_IMU:
 		{
-			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", pktID, trkID);
+			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
 			IMUReport report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			report.quat = Eigen::Quaternionf(
@@ -160,13 +184,13 @@ bool SlimeVRReceiver::parseIMUPacket(SlimeVRTracker &tracker, uint8_t data[16])
 				*(int16_t*)(data+10) * vecScale,
 				*(int16_t*)(data+12) * vecScale,
 				*(int16_t*)(data+14) * vecScale);
-			report.timestamp = sclock::now(); // TODO: TimeSync
+			report.timestamp = timestamp;
 			tracker.reports.push_back(report);
 			return true;
 		}
-		case 2:
+		case TYPE_IMU_STATUS:
 		{
-			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", pktID, trkID);
+			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
 			bool hasBatt = data[2]&0x80;
 			tracker.isPlugged = data[2] == 255;
 			tracker.batteryLevel = (data[2]&0x7F)/128.0f;
@@ -191,17 +215,19 @@ bool SlimeVRReceiver::parseIMUPacket(SlimeVRTracker &tracker, uint8_t data[16])
 				*(int16_t*)(data+9) * vecScale,
 				*(int16_t*)(data+11) * vecScale,
 				*(int16_t*)(data+13) * vecScale);
-			report.timestamp = sclock::now(); // TODO: TimeSync
+			report.timestamp = timestamp;
+			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
+				tracker_id, dtMS(report.timestamp, sclock::now()));
 			tracker.reports.push_back(report);
 			return true;
 		}
-		case 3:
-			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", pktID, trkID);
+		case TYPE_INVALID:
+			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
 			tracker.status = (SLIMEVR_TRACKER_STATUS)data[2];
 			tracker.signalStrength = data[15];
 			return false;
 		default:
-			LOG(LIO, LDarn, "    Received invalid packet with id %d", pktID);
+			LOG(LIO, LDarn, "    Received invalid packet with id %d", type);
 			return false;
 	}
 }
@@ -219,10 +245,15 @@ bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &pro
 				return sp->path.compare(dev->path) == 0;
 			}) != providers.end())
 			continue; // Alraedy added
-		LOG(LIO, LInfo, "Adding SlimeVR Receiver %s", dev->path);
 		hid_device *handle = hid_open_path(dev->path);
+		if (!handle)
+		{
+			LOG(LIO, LWarn, "Failed to add original SlimeVR Receiver %s", dev->path);
+			continue;
+		}
 		hid_set_nonblocking(handle, true);
 		providers.emplace_back(new SlimeVRReceiver(dev->path, handle));
+		LOG(LIO, LInfo, "Adding SlimeVR Receiver %s", dev->path);
 		added = true;
 	}
 	hid_free_enumeration(devs);

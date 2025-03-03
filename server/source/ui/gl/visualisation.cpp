@@ -335,6 +335,17 @@ void visualisePose(const Eigen::Isometry3f &pose, Color color, float scale, floa
 	coordinateOriginMesh->draw();
 }
 
+void visualisePoseAxisColored(const Eigen::Isometry3f &pose, float scale, float lineWidth)
+{
+	flatVertColorShader->use();
+	glUniformMatrix4fv(flatVertColorShader->uProjAdr, 1, GL_FALSE, vpMat.data());
+	Eigen::Affine3f model = pose*Eigen::Scaling(scale);
+	glUniformMatrix4fv(flatVertColorShader->uModelAdr, 1, GL_FALSE, model.matrix().data());
+
+	glLineWidth(lineWidth);
+	coordinateOriginMesh->draw();
+}
+
 
 /*
  * Visualisation functions for 2D views exclusively

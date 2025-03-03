@@ -21,7 +21,8 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 enum IMUDeviceDriver
 {
-	IMU_DRIVER_SLIMEVR = 1
+	IMU_DRIVER_ASTERTRACK = 1,
+	IMU_DRIVER_SLIMEVR
 };
 
 enum IMUDeviceProviderStatus
@@ -75,6 +76,7 @@ protected:
 	IMUDeviceProvider(IMUDeviceDriver driver) : driver(driver) {}
 };
 
+bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
 bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
 
 #endif

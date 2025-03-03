@@ -140,7 +140,7 @@ SERVER_CPP = \
 	comm/streaming.cpp comm/timesync.cpp \
 	device/tracking_device.cpp device/parsing.cpp \
 	io/vrpn.cpp \
-	imu/trackerSlimeVR.cpp \
+	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp \
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp \
 	pipeline/pipeline_calibration_point.cpp pipeline/pipeline_calibration_target.cpp \
 	calib/obs_data.cpp calib/optimisation.cpp \

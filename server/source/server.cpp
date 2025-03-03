@@ -476,6 +476,7 @@ bool StartDeviceMode(ServerState &state)
 	{ // Fetch IMU providers
 		auto imu_lock = state.imuProviders.contextualLock();
 		std::unique_lock hid_lock(state.hid_access);
+		detectAsterTrackReceivers(*imu_lock);
 		detectSlimeVRReceivers(*imu_lock);
 		// TODO: Add more IMU integrations here
 	}
@@ -854,6 +855,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				auto providers = *state.imuProviders.contextualLock();
 				{ // Fetch new IMU providers
 					std::unique_lock hid_lock(state.hid_access);
+					detectAsterTrackReceivers(providers);
 					detectSlimeVRReceivers(providers);
 					// TODO: Add more IMU integrations here
 				}

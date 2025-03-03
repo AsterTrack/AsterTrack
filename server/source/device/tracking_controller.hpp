@@ -46,13 +46,6 @@ struct ControllerEventLog
 	bool isNewEvent;
 };
 
-struct TimeSyncMeasurement
-{
-	uint64_t timestamp;
-	TimePoint_t estimation;
-	TimePoint_t measurement;
-};
-
 struct TrackingControllerState
 {
 	int id = 0;
@@ -102,8 +95,11 @@ struct TrackingControllerState
 	// Event Log
 	BlockedQueue<ControllerEventLog, 4096> eventLog;
 	// TimeSync Log
-	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
 	bool recordTimeSyncMeasurements = false;
+	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
+	// Latency Log
+	bool recordLatencyMeasurements;
+	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
 };
 static bool operator==(const TrackingControllerState& a, const TrackingControllerState& b) { return &a == &b; }
 

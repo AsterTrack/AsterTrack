@@ -122,8 +122,6 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 		time.lastTimestamp = timestamp;
 		time.syncSwitch.reset();
 		time.diff.reset();
-		if (diffUS < 0)
-			timePred = measurement;
 		return { fullTimestamp, measurement };
 	}
 

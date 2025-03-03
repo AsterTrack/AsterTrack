@@ -85,6 +85,10 @@ public:
 	AsterTrackReceiver(const char *path, hid_device *handle) : path(path), handle(handle), IMUDeviceProvider(IMU_DRIVER_ASTERTRACK)
 	{
 		ResetTimeSync(timeSync);
+		// Unknown latencies of fusion and radio transmission, only the sample timestamp is sent
+		latencyDescriptions.descriptions.push_back("USB TX");
+		latencyDescriptions.descriptions.push_back("USB RX");
+		latencyDescriptions.descriptions.push_back("Fusion");
 	}
 
 	~AsterTrackReceiver()
@@ -131,6 +135,8 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updatedDevices, int &chang
 		LOG(LIO, LTrace, "Raw receiver timestamp of last packet is %d", timestampUS);
 		auto packetSentSync = UpdateTimeSync(timeSync, timestampUS, 1<<16, recvTime);
 		TimePoint_t sentTime = packetSentSync.second;
+		if (recordTimeSyncMeasurements)
+			timeSyncMeasurements.push_back({ packetSentSync.first, sentTime, recvTime });
 
 		uint8_t *packet = header+HID_HEADER_SIZE;
 		int packets = (size-HID_HEADER_SIZE)/TRACKER_REPORT_SIZE;
@@ -154,7 +160,16 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updatedDevices, int &chang
 			AsterTrackTracker &tracker = *static_cast<AsterTrackTracker*>(devices[tracker_id].get());
 			TimePoint_t sampleTime = recvTime;
 			if (parseDataPacket(tracker, packet+i, sampleTime))
+			{
+				if (recordLatencyMeasurements)
+				{ // TODO: Move latency measurement up after fusion
+					// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
+					latencyMeasurements.push_back({ sampleTime, { 
+						(uint16_t)dtUS(sampleTime, sentTime),
+						(uint16_t)dtUS(sampleTime, recvTime) } } );
+				}
 				updatedDevices++;
+			}
 			/* else if (tracker.status == SLIMEVR_TRACKER_DISCONNECTED || tracker.status == SLIMEVR_TRACKER_ERROR)
 				devices[trkID] = nullptr; */
 		}

@@ -29,6 +29,24 @@ SOFTWARE.
 #include "util/util.hpp" // TimePoint_t
 #include "util/stats.hpp"
 
+struct TimeSyncMeasurement
+{
+	uint64_t timestamp;
+	TimePoint_t estimation;
+	TimePoint_t measurement;
+};
+
+const int LatencyStackSize = 8;
+struct LatencyDescriptor
+{
+	std::vector<std::string> descriptions;
+};
+struct LatencyMeasurement
+{
+	TimePoint_t sample;
+	uint16_t latency[LatencyStackSize];
+};
+
 /*
  * Time Sync
  * Determines a best-estimate time sync between two systems (here over USB)
@@ -41,14 +59,14 @@ struct TimeSync
 	uint32_t measurements;
 	uint64_t lastTimestamp;
 	float drift; // actualUS = (long)(controllerUS * (1+drift))
-    float driftAccum;
-    float driftLerp = 0.0000004f;
-    float driftBias = 0.0000000f;
-    int driftInitRange = 1000;
-    float driftInitAdapt = 10.0f;
-    float driftDownwardCorrect = 200.0f;
-    float driftDownwardJump = 0.20f;
-    int timeOffsetUS = -20;
+	float driftAccum;
+	float driftLerp = 0.0000004f;
+	float driftBias = 0.0000000f;
+	int driftInitRange = 1000;
+	float driftInitAdapt = 10.0f;
+	float driftDownwardCorrect = 200.0f;
+	float driftDownwardJump = 0.20f;
+	int timeOffsetUS = -20;
 	TimePoint_t lastTime;
 	StatDistf diff;
 	StatDistf syncSwitch;

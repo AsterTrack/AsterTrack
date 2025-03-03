@@ -68,6 +68,13 @@ public:
 
 	std::vector<std::shared_ptr<IMUDevice>> devices;
 
+	// Can be optionally used to provide debug data about timing
+	bool recordTimeSyncMeasurements;
+	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
+	bool recordLatencyMeasurements;
+	LatencyDescriptor latencyDescriptions;
+	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
+
     virtual ~IMUDeviceProvider() = default;
 
 	virtual IMUDeviceProviderStatus poll(int &updatedDevices, int &changedDevices) = 0;

@@ -119,7 +119,7 @@ public:
 			}
 			f++;
 		}
-		
+
 		drawSequenceBars = false;
 	}
 
@@ -364,7 +364,7 @@ public:
 			followLastFrame = false;
 			intendedPos = 0;
 		}
-		
+
 		if (followLastFrame)
 		{ // Set start pos for PrepareRendering
 			intendedPos = viewStartTimeUS;
@@ -471,7 +471,7 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 		else if (lastPanel == 2)
 			CleanTargetCalibrationPanel();
 	}
-	
+
 	if (state.mode == MODE_Device && !state.controllers.empty() && ImGui::BeginTabItem("Tracking Controller"))
 	{
 		if (!ShowTrackingControllerPanel())
@@ -483,7 +483,7 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 	else if (lastPanel == 3)
 		CleanTrackingControllerPanel();
 
-	if (state.mode == MODE_Device && !state.controllers.empty() && ImGui::BeginTabItem("Timing"))
+	if (state.mode == MODE_Device && ImGui::BeginTabItem("Timing"))
 	{
 		if (!ShowTimingPanel())
 			CleanTimingPanel();
@@ -606,7 +606,7 @@ static bool ShowTrackingPanel()
 		};
 
 		// Update frameRange
-    	static ImPlotRange frameRange(0, 1000);
+		static ImPlotRange frameRange(0, 1000);
 		int maxOffset = std::max(10.0, frameRange.Size()/6);
 		if (followFrame)
 		{ // Apply offset due to new recent frame
@@ -782,31 +782,31 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 			unsigned int frameNum = pipeline.frameNum.load();
 			ImPlot::PushColormap(ImPlotColormap_Deep);
 
-            ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_Lock | ImPlotAxisFlags_NoLabel);
-            ImPlot::SetupAxisLimits(ImAxis_X1, 0, TargetViewAquisitionWindowSize);
+			ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_Lock | ImPlotAxisFlags_NoLabel);
+			ImPlot::SetupAxisLimits(ImAxis_X1, 0, TargetViewAquisitionWindowSize);
 
-            ImPlot::SetupAxis(ImAxis_Y1, "Markers",ImPlotAxisFlags_LockMin);
-            ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 20);
+			ImPlot::SetupAxis(ImAxis_Y1, "Markers",ImPlotAxisFlags_LockMin);
+			ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 20);
 
 			//ImPlot::SetNextLineStyle(ImVec4(1, 1, 1, 1));
-			ImPlot::PlotLine("Avg Marker Count", 
-				aquisition_lock->avgMarkerCount.data(), aquisition_lock->avgMarkerCount.size(), 
+			ImPlot::PlotLine("Avg Marker Count",
+				aquisition_lock->avgMarkerCount.data(), aquisition_lock->avgMarkerCount.size(),
 				1, 0, ImPlotLineFlags_None,
 				&aquisition_lock->avgMarkerCount.front()-aquisition_lock->avgMarkerCount.data());
 
 			//ImPlot::SetNextLineStyle(ImVec4(0, 0, 1, 0.8f));
-			ImPlot::PlotLine("Shared Marker Count", 
-				aquisition_lock->sharedMarkerCount.data(), aquisition_lock->sharedMarkerCount.size(), 
+			ImPlot::PlotLine("Shared Marker Count",
+				aquisition_lock->sharedMarkerCount.data(), aquisition_lock->sharedMarkerCount.size(),
 				1, 0, ImPlotLineFlags_None,
 				&aquisition_lock->sharedMarkerCount.front()-aquisition_lock->sharedMarkerCount.data());
 
 			double limit = pipeline.targetCalib.params.aquisition.minSharedMarkerCount;
 			if (ImPlot::DragLineY(1, &limit, ImPlot::GetLastItemColor()))
 				pipeline.targetCalib.params.aquisition.minSharedMarkerCount = (int)limit;
-	
+
 			//ImPlot::SetNextLineStyle(ImVec4(0, 1, 0, 0.8f));
-			ImPlot::PlotLine("Value", 
-				aquisition_lock->valueGraph.data(), aquisition_lock->valueGraph.size(), 
+			ImPlot::PlotLine("Value",
+				aquisition_lock->valueGraph.data(), aquisition_lock->valueGraph.size(),
 				1, 0, ImPlotLineFlags_None,
 				&aquisition_lock->valueGraph.front()-aquisition_lock->valueGraph.data());
 
@@ -1046,17 +1046,56 @@ static void CleanTrackingControllerPanel()
 	ui.seqEventsActive = false;
 	lastControllerTab = nullptr;
 }
-static bool ShowTimingPanel()
+static int timeType = -1;
+static int sourceType = -1;
+static int sourceIndex = -1;
+static int PlotFormatterTimeUS(double value, char* buff, int size, void* data)
+{
+	double width = ImPlot::GetPlotLimits(ImAxis_X1, ImAxis_Y1).Size().x;
+	long timeUS = (long)value;
+	if (width > 10000000)
+		return snprintf(buff, size, "%lds", timeUS/1000000);
+	else if (width > 500000)
+		return snprintf(buff, size, "%ldms", timeUS%10000000/1000);
+	else if (width > 10000)
+		return snprintf(buff, size, "%ldms", timeUS%1000000/1000);
+	else if (width > 500)
+		return snprintf(buff, size, "%ldus", timeUS%10000);
+	else
+		return snprintf(buff, size, "%ldus", timeUS%1000);
+}
+static bool ShowTimeSyncPanel()
 {
 	InterfaceState &ui = GetUI();
+	ServerState &state = GetState();
 
-	// TODO: Show total tracking latency & frame processing times in separate graph
-	// So Latency / TimeSync are two tabs
-
-	auto &controller = *GetState().controllers.front();
-	controller.recordTimeSyncMeasurements = true;
-	controller.timeSyncMeasurements.delete_culled();
-	auto samples = controller.timeSyncMeasurements.getView();
+	BlockedQueue<TimeSyncMeasurement, 4096> *syncMeasurements = nullptr;
+	if (sourceType == 0)
+	{
+		if (sourceIndex >= state.controllers.size())
+		{
+			sourceType = sourceIndex = -1;
+			return false;
+		}
+		syncMeasurements = &state.controllers[sourceIndex]->timeSyncMeasurements;
+		if (state.controllers[sourceIndex]->comm->commStreaming)
+			ui.RequestUpdates();
+	}
+	else if (sourceType == 1)
+	{
+		auto imuProviders = state.imuProviders.contextualRLock();
+		// Don't need to retain lock, measuremnts is BlockedQueue
+		if (sourceIndex >= imuProviders->size())
+		{
+			sourceType = sourceIndex = -1;
+			return false;
+		}
+		syncMeasurements = &imuProviders->at(sourceIndex)->timeSyncMeasurements;
+	}
+	if (!syncMeasurements)
+		return false;
+	syncMeasurements->delete_culled();
+	auto samples = syncMeasurements->getView();
 
 	static std::size_t graphBegin = 0, graphEnd = 0;
 	bool updateGraph = graphBegin != samples.beginIndex() || graphEnd != samples.endIndex();
@@ -1078,9 +1117,6 @@ static bool ShowTimingPanel()
 		referenceTime = sample.measurement;
 		initConfidence = index;
 	}
-
-	if (controller.comm->commStreaming)
-		ui.RequestUpdates();
 
 	static TimeSync init = {};
 	static bool emulate = false;
@@ -1104,7 +1140,7 @@ static bool ShowTimingPanel()
 			As the mapped real time changes with the time sync parameters
 			So the controller time (in US) is the basis and x-axis of the visualisation
 
-			For every packet, we record its controller time (in us) and its receive time on the host 
+			For every packet, we record its controller time (in us) and its receive time on the host
 			The Y axis shall then represent both the drift correction of timesync, and the latency of the individual packet
 				this is achieved by correcting all Y values from the diagonal to the horizontal X axis
 				e.g. subtracting the time that SHOULD have passed if there was no drift
@@ -1112,37 +1148,20 @@ static bool ShowTimingPanel()
 				and the top when it was received, representing the latency
 		*/
 
-		ImPlot::SetupAxis(ImAxis_X1, "Controller Time (us)", ImPlotAxisFlags_AutoFit);
-
-		auto formatter = [](double value, char* buff, int size, void* data)
-		{
-			double width = ImPlot::GetPlotLimits(ImAxis_X1, ImAxis_Y1).Size().x;
-			long timeUS = (long)value;
-			if (width > 10000000)
-				return snprintf(buff, size, "%lds", timeUS/1000000);
-			else if (width > 500000)
-				return snprintf(buff, size, "%ldms", timeUS%10000000/1000);
-			else if (width > 10000)
-				return snprintf(buff, size, "%ldms", timeUS%1000000/1000);
-			else if (width > 500)
-				return snprintf(buff, size, "%ldus", timeUS%10000);
-			else
-				return snprintf(buff, size, "%ldus", timeUS%1000);
-		};
-
-		ImPlot::SetupAxisFormat(ImAxis_X1, formatter);
+		ImPlot::SetupAxis(ImAxis_X1, "Base Timestamp (us)", ImPlotAxisFlags_AutoFit);
+		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS);
 		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency (us)", ImPlotAxisFlags_AutoFit);
 
-		thread_local std::vector<double> controllerTimes;
-		thread_local std::vector<double> measuredTimesOffset;
-		thread_local std::vector<double> estimatedTimesOffset;
-		thread_local std::vector<double> emulatedTimesOffset;
-		thread_local std::vector<double> resetEventX;
-		thread_local std::vector<double> resetEventY;
+		static std::vector<double> sourceTimestamps;
+		static std::vector<double> measuredTimesOffset;
+		static std::vector<double> estimatedTimesOffset;
+		static std::vector<double> emulatedTimesOffset;
+		static std::vector<double> resetEventX;
+		static std::vector<double> resetEventY;
 
 		if (updateGraph)
 		{
-			controllerTimes.clear();
+			sourceTimestamps.clear();
 			measuredTimesOffset.clear();
 			estimatedTimesOffset.clear();
 			emulatedTimesOffset.clear();
@@ -1150,7 +1169,7 @@ static bool ShowTimingPanel()
 			resetEventY.clear();
 
 			std::size_t sampleCount = samples.endIndex()-samples.beginIndex();
-			controllerTimes.reserve(sampleCount);
+			sourceTimestamps.reserve(sampleCount);
 			measuredTimesOffset.reserve(sampleCount);
 			estimatedTimesOffset.reserve(sampleCount);
 			emulatedTimesOffset.reserve(sampleCount);
@@ -1160,7 +1179,7 @@ static bool ShowTimingPanel()
 			for (const auto &sample : samples)
 			{
 				long long baseUS = sample.timestamp - referenceTimestamp;
-				controllerTimes.push_back((double)baseUS);
+				sourceTimestamps.push_back((double)baseUS);
 				measuredTimesOffset.push_back((double)(dtUS(referenceTime, sample.measurement) - baseUS));
 				estimatedTimesOffset.push_back((double)(dtUS(referenceTime, sample.estimation) - baseUS));
 
@@ -1178,11 +1197,11 @@ static bool ShowTimingPanel()
 		}
 
 		ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 2);
-		ImPlot::PlotScatter("Measurements", controllerTimes.data(), measuredTimesOffset.data(), controllerTimes.size(), ImPlotLineFlags_None);
-		ImPlot::PlotScatter("Estimations", controllerTimes.data(), estimatedTimesOffset.data(), controllerTimes.size(), ImPlotLineFlags_None);
+		ImPlot::PlotScatter("Measurements", sourceTimestamps.data(), measuredTimesOffset.data(), sourceTimestamps.size(), ImPlotLineFlags_None);
+		ImPlot::PlotScatter("Estimations", sourceTimestamps.data(), estimatedTimesOffset.data(), sourceTimestamps.size(), ImPlotLineFlags_None);
 		if (emulate)
 		{
-			ImPlot::PlotScatter("Emulated Estimations", controllerTimes.data(), emulatedTimesOffset.data(), controllerTimes.size(), ImPlotLineFlags_None);
+			ImPlot::PlotScatter("Emulated Estimations", sourceTimestamps.data(), emulatedTimesOffset.data(), sourceTimestamps.size(), ImPlotLineFlags_None);
 			ImPlot::PlotScatter("Emulated Resets", resetEventX.data(), resetEventY.data(), resetEventX.size(), ImPlotLineFlags_None);
 		}
 		ImPlot::PopStyleVar();
@@ -1191,9 +1210,228 @@ static bool ShowTimingPanel()
 	}
 
 	// Blocks of 4096 measurements each - keep only last 10
-	controller.timeSyncMeasurements.cull_front(-10);
+	syncMeasurements->cull_front(-10);
 
 	return true;
+}
+static bool ShowLatencyPanel()
+{
+	InterfaceState &ui = GetUI();
+	ServerState &state = GetState();
+
+	BlockedQueue<LatencyMeasurement, 4096> *latencyMeasurements = nullptr;
+	LatencyDescriptor *descriptor;
+	if (sourceType == 0)
+	{
+		if (sourceIndex >= state.controllers.size())
+		{
+			sourceType = sourceIndex = -1;
+			return false;
+		}
+		latencyMeasurements = &state.controllers[sourceIndex]->latencyMeasurements;
+		if (state.controllers[sourceIndex]->comm->commStreaming)
+			ui.RequestUpdates();
+	}
+	else if (sourceType == 1)
+	{
+		auto imuProviders = state.imuProviders.contextualRLock();
+		// Don't need to retain lock, measuremnts is BlockedQueue
+		if (sourceIndex >= imuProviders->size())
+		{
+			sourceType = sourceIndex = -1;
+			return false;
+		}
+		latencyMeasurements = &imuProviders->at(sourceIndex)->latencyMeasurements;
+		descriptor = &imuProviders->at(sourceIndex)->latencyDescriptions;
+	}
+	if (!latencyMeasurements)
+		return false;
+	latencyMeasurements->delete_culled();
+	auto samples = latencyMeasurements->getView();
+
+	static bool followFrame = true;
+	ImGui::SameLine(); // Append to header
+	ImGui::Checkbox("Follow Frame", &followFrame);
+
+	static std::size_t graphBegin = 0, graphEnd = 0;
+	static TimePoint_t timeBegin, timeEnd;
+	static double timeSpan;
+	bool updateGraph = graphBegin != samples.beginIndex() || graphEnd != samples.endIndex();
+	std::size_t sampleCount = samples.endIndex() - samples.beginIndex();
+	if (updateGraph)
+	{
+		graphBegin = samples.beginIndex();
+		graphEnd = samples.endIndex();
+		if (!samples.empty())
+		{
+			timeBegin = samples.front().sample;
+			timeEnd = samples.back().sample;
+			timeSpan = dtUS(timeBegin, timeEnd);
+		}
+	}
+
+	if (ImPlot::BeginPlot("##Latency", ImVec2(-1, -1)))
+	{
+		// Update frameRange
+    	static ImPlotRange frameRange(0, 1000000);
+		int maxOffset = std::max(1000.0, frameRange.Size()/6);
+		if (followFrame)
+		{ // Apply offset due to new recent frame
+			double offset = 0;
+			if (frameRange.Max < timeSpan+maxOffset)
+				offset = std::max(timeSpan + maxOffset - frameRange.Max, -frameRange.Min);
+			else if (frameRange.Min > timeSpan-maxOffset)
+				offset = std::max(timeSpan - maxOffset - frameRange.Min, -frameRange.Min);
+			frameRange.Min += offset;
+			frameRange.Max += offset;
+		}
+		double framesAxisMax = std::max(timeSpan, frameRange.Max);
+
+		// Setup plot
+		ImPlot::SetupAxis(ImAxis_X1, "Sample Timestamp (us)");
+		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS);
+		ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
+		ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
+		ImPlot::SetupAxis(ImAxis_Y1, "Latency (us)", ImPlotAxisFlags_LockMin);
+		ImPlot::SetupAxisFormat(ImAxis_Y1, PlotFormatterTimeUS);
+		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50000);
+
+		// Update frameRange from inputs
+		ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
+		frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
+
+		static std::vector<double> sampleTimesstamps;
+		static std::vector<double> latencyOffsets[LatencyStackSize];
+
+		if (updateGraph)
+		{
+			sampleTimesstamps.clear();
+			for (auto &latencyOffset : latencyOffsets)
+				latencyOffset.clear();
+
+			sampleTimesstamps.reserve(sampleCount);
+			for (int i = 0; i < descriptor->descriptions.size(); i++)
+				latencyOffsets[i].reserve(sampleCount);
+
+			for (const auto &sample : samples)
+			{
+				sampleTimesstamps.push_back((double)dtUS(timeBegin, sample.sample));
+				for (int i = 0; i < descriptor->descriptions.size(); i++)
+					latencyOffsets[i].push_back((double)sample.latency[i]);
+			}
+		}
+
+		ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 2);
+		for (int i = descriptor->descriptions.size()-1; i >= 0; i--)
+		{
+			ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+			ImPlot::PlotStems(descriptor->descriptions[i].c_str(), sampleTimesstamps.data(), latencyOffsets[i].data(), sampleCount);
+		}
+
+		ImPlot::PopStyleVar();
+
+		ImPlot::EndPlot();
+	}
+
+	// Blocks of 4096 measurements each - keep only last 10
+	latencyMeasurements->cull_front(-10);
+
+	return true;
+}
+static bool ShowTimingPanel()
+{
+	InterfaceState &ui = GetUI();
+	ServerState &state = GetState();
+
+	static const char* typeLabel = "Select Type";
+	if (timeType < 0) typeLabel = "Select Type";
+	const char* timeTypeSelection[] = { "TimeSync", "Latency" };
+	if (ImGui::BeginCombo("Type", typeLabel, ImGuiComboFlags_WidthFitPreview))
+	{
+		bool changed = false;
+		if ((changed = ImGui::Selectable(timeTypeSelection[0])))
+		{
+			typeLabel = timeTypeSelection[0];
+			timeType = 0;
+			if (sourceIndex >= state.controllers.size())
+				sourceType = sourceIndex = -1;
+			else
+			{
+				state.controllers[sourceIndex]->recordTimeSyncMeasurements = timeType == 0;
+				state.controllers[sourceIndex]->recordLatencyMeasurements = timeType == 1;
+			}
+		}
+		else if ((changed = ImGui::Selectable(timeTypeSelection[1])))
+		{
+			typeLabel = timeTypeSelection[1];
+			timeType = 1;
+			auto imuProviders = state.imuProviders.contextualRLock();
+			if (sourceIndex >= imuProviders->size())
+				sourceType = sourceIndex = -1;
+			else
+			{
+				imuProviders->at(sourceIndex)->recordTimeSyncMeasurements = timeType == 0;
+				imuProviders->at(sourceIndex)->recordLatencyMeasurements = timeType == 1;
+			}
+		}
+		ImGui::EndCombo();
+		if (changed)
+			ImGui::MarkItemEdited(ImGui::GetItemID());
+	}
+
+	ImGui::SameLine();
+	static std::string sourceLabel = "Select Source";
+	int numControllers = state.controllers.size();
+	if (ImGui::BeginCombo("Source", sourceLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
+	{
+		bool changed = false;
+		for (int i = 0; i < numControllers; i++)
+		{
+			std::string label = asprintf_s("Controller %d", i);
+			if (ImGui::Selectable(label.c_str()))
+			{
+				sourceType = 0;
+				sourceIndex = i;
+				sourceLabel = std::move(label);
+				changed = true;
+				state.controllers[sourceIndex]->recordTimeSyncMeasurements = timeType == 0;
+				state.controllers[sourceIndex]->recordLatencyMeasurements = timeType == 1;
+			}
+			else
+			{
+				state.controllers[i]->recordTimeSyncMeasurements = false;
+				state.controllers[i]->recordLatencyMeasurements = false;
+			}
+		}
+		auto imuProviders = state.imuProviders.contextualRLock();
+		for (int i = 0; i < imuProviders->size(); i++)
+		{ // TODO: Improve labels, at least based on type
+			std::string label = asprintf_s("IMU Provider %d", i);
+			if (ImGui::Selectable(label.c_str()))
+			{
+				sourceType = 1;
+				sourceIndex = i;
+				sourceLabel = std::move(label);
+				changed = true;
+				imuProviders->at(sourceIndex)->recordTimeSyncMeasurements = timeType == 0;
+				imuProviders->at(sourceIndex)->recordLatencyMeasurements = timeType == 1;
+			}
+			else
+			{
+				imuProviders->at(i)->recordTimeSyncMeasurements = false;
+				imuProviders->at(i)->recordLatencyMeasurements = false;
+			}
+		}
+		ImGui::EndCombo();
+		if (changed)
+			ImGui::MarkItemEdited(ImGui::GetItemID());
+	}
+
+	if (timeType == 0)
+		return ShowTimeSyncPanel();
+	else if (timeType == 1)
+		return ShowLatencyPanel();
+	else return false;
 }
 static void CleanTimingPanel()
 {
@@ -1202,9 +1440,19 @@ static void CleanTimingPanel()
 		controller->recordTimeSyncMeasurements = false;
 		controller->timeSyncMeasurements.cull_clear();
 	}
-
 	for (auto &controller : GetState().controllers)
 	{
 		controller->timeSyncMeasurements.delete_culled();
+	}
+
+	auto imuProviders = GetState().imuProviders.contextualRLock();
+	for (auto &provider : *imuProviders)
+	{
+		provider->recordTimeSyncMeasurements = false;
+		provider->timeSyncMeasurements.delete_culled();
+	}
+	for (auto &provider : *imuProviders)
+	{
+		provider->timeSyncMeasurements.delete_culled();
 	}
 }

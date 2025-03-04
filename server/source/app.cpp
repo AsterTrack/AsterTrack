@@ -34,6 +34,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cstdio>
 
+#ifdef __unix__
+#include <unistd.h>
+#elif defined(_WIN32)
+#include <securitybaseapi.h>
+#endif
+
 AppState AppInstance;
 ServerState StateInstance = {};
 static std::atomic<bool> quitApp = { false };
@@ -140,6 +146,28 @@ int main (void)
 			GetApp().FlushLog();
 		});
 	}
+
+#ifdef __unix__
+	if (geteuid() == 0)
+	{
+		printf("WARNING! Running with superuser privileges is NOT recommended and may expose you to security vulnerabilities!\n"
+			"If you have troubles with permissions make sure your udev rules are set up properly - check documentation/readme for details.\n");
+		LOG(LDefault, LWarn, "Running with superuser privileges is NOT recommended and may expose you to security vulnerabilities!");
+		LOG(LDefault, LWarn, "If you have troubles with permissions make sure your udev rules are set up properly - check documentation/readme for details.\n");
+	}
+#elif defined(_WIN32)
+	BOOL fIsRunAsAdmin = FALSE;
+	PSID pAdminSid = NULL;
+	if (CreateWellKnownSid(WinBuiltinAdministratorsSid, NULL, &pAdminSid))
+	{
+		if (CheckTokenMembership(NULL, pAdminSid, &fIsRunAsAdmin) && fIsRunAsAdmin)
+		{
+			printf("WARNING! Running with administrator privileges is NOT recommended and may expose you to security vulnerabilities!\n");
+			LOG(LDefault, LWarn, "Running with administrator privileges is NOT recommended and may expose you to security vulnerabilities!");
+		}
+		FreeSid(pAdminSid);
+	}
+#endif
 
 	{ // Init AsterTrack server
 		if (!ServerInit(StateInstance))

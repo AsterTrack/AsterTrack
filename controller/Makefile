@@ -155,7 +155,7 @@ COPTIONS = $(MCU) $(DFLAGS) $(OPT) $(COMMON_FLAGS)
 CFLAGS = $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) -specs=nano.specs 
 
 # Linker flags
-LDFLAGS = $(COPTIONS) -T$(LDSCRIPT) \
+LDFLAGS = $(COPTIONS) \
 	-Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref \
 	-Wl,--gc-sections \
 	-specs=nano.specs -specs=nosys.specs \
@@ -175,7 +175,7 @@ $(BUILD_DIR)/isp55e0: tools/isp55e0.c
 	gcc tools/isp55e0.c -O2 -Wall -Werror -lusb-1.0 -o $@
 
 $(BUILD_DIR)/configurator.elf: tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/startup_CH32V30x_D8C.o Makefile
-	$(CC) tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/startup_CH32V30x_D8C.o $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) $(LDFLAGS) -o $@
+	$(CC) tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/startup_CH32V30x_D8C.o $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) $(LDFLAGS) -T$(LDSCRIPT_Config) -o $@
 	$(SZ) $@
 # CFLAGS already defines nano.specs passing $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) manually
 $(BUILD_DIR)/configurator.bin: $(BUILD_DIR)/configurator.elf | $(BUILD_DIR)
@@ -193,7 +193,7 @@ $(BUILD_DIR)/%.o: %.s Makefile
 	$(AS) -c $(ASFLAGS) $< -o $@
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
-	$(LD) $(OBJECTS) $(LDFLAGS) -o $@
+	$(LD) $(OBJECTS) $(LDFLAGS) -T$(LDSCRIPT) -o $@
 	$(SZ) $@
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf

@@ -215,22 +215,45 @@ glfwlibs = $(libdir)/libglfw3.a
 server_libs = $(usblibs) $(vrpnlibs) -lrt -lGL -lturbojpeg -latomic
 interface_libs = $(glfwlibs)
 
-all: checkLibs mkbuild $(b)/astertrack-interface.so $(b)/astertrack-server $(b)/astertrack-static cpylib
+# Run prechecks before starting compilation
+checkLibs := $(shell ldconfig -p | grep libturbojpeg &> /dev/null; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error Turbojpeg library not found, make sure to install it systemwide)
+endif
+checkLibs := $(shell test -d "dependencies/include/Eigen"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error Eigen include files are missing, make sure to build dependencies)
+endif
+checkLibs := $(shell test -d "dependencies/include/GLFW"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error GLFW include files are missing, make sure to build dependencies)
+endif
+checkLibs := $(shell test -d "dependencies/include/libusb"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error libusb include files are missing, make sure to build dependencies)
+endif
+checkLibs := $(shell test -d "dependencies/include/vrpn"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error vrpn include files are missing, make sure to build dependencies)
+endif
+checkLibs := $(shell test -f "$(libdir)/libglfw3.a"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error GLFW library is missing ($(libdir)/libglfw3.a), make sure to build dependencies)
+endif
+checkLibs := $(shell test -d "$(libdir)/libusb"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error libusb library is missing ($(libdir)/libusb), make sure to build dependencies)
+endif
+checkLibs := $(shell test -d "$(libdir)/vrpn"; echo $$?)
+ifneq ($(checkLibs),0)
+  $(error vrpn library is missing ($(libdir)/vrpn), make sure to build dependencies)
+endif
 
-# Make sure libraries are built
-.PHONY: checkLibs
-checkLibs:
-	@test -d dependencies/include/vrpn || { echo "VRPN include files are missing (dependencies/include/vrpn)!"; }
-	@test -d "$(libdir)/libusb" || { echo "libusb library is missing ($(libdir)/libusb)!"; exit 1; }
-
-.PHONY: mkbuild
-mkbuild:
-	@if [ ! -d $(b) ]; then mkdir $(b); fi
-	@if [ ! -d $(o) ]; then mkdir $(o); fi
+all: $(b)/astertrack-interface.so $(b)/astertrack-server $(b)/astertrack-static cpylib
 
 .PHONY: cpylib
 cpylib:
-	cp -u $(usblibs) "$(b)/"
+	@cp -u $(usblibs) "$(b)/"
 
 
 # May prefix this before each target to measure compile times

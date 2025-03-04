@@ -37,6 +37,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "implot/implot.h"
 
+#include <filesystem>
+
 struct wl_display;
 struct wl_resource;
 #include "GL/glew.h"
@@ -507,6 +509,13 @@ bool InterfaceState::Init()
 	{
 		int x, y, n;
 		uint8_t *imageData = stbi_load(path, &x, &y, &n, 4);
+		if (!imageData)
+		{
+			printf("Failed to load '%s': %s\n", path, stbi_failure_reason());
+			LOG(LGUI, LError, "Failed to load '%s': %s", path, stbi_failure_reason());
+			return (ImTextureID)0;
+		}
+
 
 		GLuint tex;
 		glGenTextures(1, &tex);
@@ -527,25 +536,38 @@ bool InterfaceState::Init()
 		return (ImTextureID)(intptr_t)tex;
 	};
 
-	lightModeIcons.wireless = loadIcon("resources/wireless.png");
-	lightModeIcons.server = loadIcon("resources/server.png");
-	lightModeIcons.frameWireless = loadIcon("resources/frame_wireless.png");
-	lightModeIcons.frameHDMI = loadIcon("resources/frame_hdmi.png");
-	lightModeIcons.visual = loadIcon("resources/visual.png");
-	lightModeIcons.detach = loadIcon("resources/detach.png");
-	lightModeIcons.context = loadIcon("resources/dots.png");
-	lightModeIcons.controller = loadIcon("resources/controller.png");
-	lightModeIcons.camera = loadIcon("resources/camera.png");
-	darkModeIcons.wireless = loadIcon("resources/wireless_d.png");
-	darkModeIcons.server = loadIcon("resources/server_d.png");
-	darkModeIcons.frameWireless = loadIcon("resources/frame_wireless_d.png");
-	darkModeIcons.frameHDMI = loadIcon("resources/frame_hdmi_d.png");
-	darkModeIcons.visual = loadIcon("resources/visual_d.png");
-	darkModeIcons.detach = loadIcon("resources/detach_d.png");
-	darkModeIcons.context = loadIcon("resources/dots_d.png");
-	darkModeIcons.controller = loadIcon("resources/controller_d.png");
-	darkModeIcons.camera = loadIcon("resources/camera_d.png");
-	
+	if (std::filesystem::exists("resources/"))
+	{
+		lightModeIcons.wireless = loadIcon("resources/wireless.png");
+		lightModeIcons.server = loadIcon("resources/server.png");
+		lightModeIcons.frameWireless = loadIcon("resources/frame_wireless.png");
+		lightModeIcons.frameHDMI = loadIcon("resources/frame_hdmi.png");
+		lightModeIcons.visual = loadIcon("resources/visual.png");
+		lightModeIcons.detach = loadIcon("resources/detach.png");
+		lightModeIcons.context = loadIcon("resources/dots.png");
+		lightModeIcons.controller = loadIcon("resources/controller.png");
+		lightModeIcons.camera = loadIcon("resources/camera.png");
+		darkModeIcons.wireless = loadIcon("resources/wireless_d.png");
+		darkModeIcons.server = loadIcon("resources/server_d.png");
+		darkModeIcons.frameWireless = loadIcon("resources/frame_wireless_d.png");
+		darkModeIcons.frameHDMI = loadIcon("resources/frame_hdmi_d.png");
+		darkModeIcons.visual = loadIcon("resources/visual_d.png");
+		darkModeIcons.detach = loadIcon("resources/detach_d.png");
+		darkModeIcons.context = loadIcon("resources/dots_d.png");
+		darkModeIcons.controller = loadIcon("resources/controller_d.png");
+		darkModeIcons.camera = loadIcon("resources/camera_d.png");
+	}
+	else if (std::filesystem::exists("../resources/"))
+	{
+		printf("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
+		LOG(LDefault, LError, "'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+	}
+	else
+	{
+		printf("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
+		LOG(LDefault, LError, "'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
+	}
+
 
 	// Initialise all static UI windows
 
@@ -874,8 +896,21 @@ static void checkDPIUpdate(GLFWwindow *glfwWindow)
 		config.OversampleH = 2;
 		config.OversampleV = 2;
 		config.GlyphExtraSpacing.x = 1.0f;
-		ImGui::GetIO().Fonts->Clear();
-		ImGui::GetIO().Fonts->AddFontFromFileTTF("resources/Karla-Regular.ttf", 17*renderPixelRatio, &config);
+		if (std::filesystem::exists("resources/Karla-Regular.ttf"))
+		{
+			ImGui::GetIO().Fonts->Clear();
+			ImGui::GetIO().Fonts->AddFontFromFileTTF("resources/Karla-Regular.ttf", 17*renderPixelRatio, &config);
+		}
+		else if (std::filesystem::exists("../resources/Karla-Regular.ttf"))
+		{
+			printf("'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
+			LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+		}
+		else
+		{
+			printf("'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
+			LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!");
+		}
 		ImGui::GetIO().FontGlobalScale = 1.0f / renderPixelRatio;
 
 		ImGui_ImplOpenGL3_DestroyFontsTexture();

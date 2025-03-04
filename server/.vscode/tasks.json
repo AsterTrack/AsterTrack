@@ -27,7 +27,7 @@
             "group": "build",
             "command": "mkdir",
             "args": [
-                "build", "&",
+                "-p", "build", "&",
                 "bear", "--output", "build/compile_commands.json", "--append", "--",
                 "make", "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)",
                 // Sadly, "make --dry-run", does not work, it intercepts commands

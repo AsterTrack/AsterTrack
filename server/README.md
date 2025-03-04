@@ -8,10 +8,12 @@ While they are tightly integrated, the UI is also clearly separated from the ser
 ### Requirements
 
 #### Linux
+- If you use clang (recommended): (`clang`, `clangd`, `libc++`, `bear`, `libomp5`/`openmp`) <br>
 - If you use gcc: (`gcc`, `g++`) <br>
-- If you use clang: (`clang`, `clangd`, `libc++`, `bear`, `libomp5`/`openmp`) <br>
 - Standard build tools: (`cmake`, `autoconf`, `automake`) <br>
-- OpenGL development libraries (`libgl1-mesa-dev`, `libglu1-mesa-dev`, `libglew-dev`) <br>
+- OpenGL development libraries (`libgl1-mesa`, `libglu1-mesa`, `libglew`) <br>
+- Wayland development libraries (`libwayland`, `libxkbcommon`) <br>
+- X11 development libraries (`libxcursor`, `libxrandr`, `libxinerama`, `libxi`) <br>
 - TurboJPEG (`libturbojpeg`) <br>
 
 #### Windows

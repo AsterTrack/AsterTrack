@@ -216,7 +216,7 @@ server_libs = $(usblibs) $(vrpnlibs) -lrt -lGL -lturbojpeg -latomic
 interface_libs = $(glfwlibs)
 
 # Run prechecks before starting compilation
-checkLibs := $(shell ldconfig -p | grep libturbojpeg &> /dev/null; echo $$?)
+checkLibs := $(shell ldconfig -p | grep libturbojpeg > /dev/null 2>&1; echo $$?)
 ifneq ($(checkLibs),0)
   $(error Turbojpeg library not found, make sure to install it systemwide)
 endif

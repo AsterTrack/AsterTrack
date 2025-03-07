@@ -47,19 +47,29 @@ void InitTrackingPipeline(PipelineState &pipeline)
 		pipeline.tracking.dormantTargets.emplace_back(&targetTemplate, 1);
 }
 
-static void recordTrackingResults(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTargetFiltered &trackedTarget)
+static TrackedTargetRecord& recordTracking(std::shared_ptr<FrameRecord> &frame, const TargetTemplate3D &target)
+{
+	auto tgtRec = std::find_if(frame->tracking.targets.begin(), frame->tracking.targets.end(),
+		[&](auto &t){ return t.id == target.id; });
+	if (tgtRec == frame->tracking.targets.end())
+	{ // Enter into frame record
+		frame->tracking.targets.push_back({ target.id });
+		return frame->tracking.targets.back();
+	}
+	return *tgtRec;
+}
+
+static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTargetRecord &target, const TrackedTargetFiltered &trackedTarget, PipelineState &pipeline)
 {
 	// Record target tracking results
-	TrackedTargetRecord target = {};
 	target.id = trackedTarget.match2D.targetTemplate->id;
+	target.tracked = true;
 	target.poseObserved = trackedTarget.getPoseObserved();
 	target.poseFiltered = trackedTarget.getPoseFiltered();
 	target.posePredicted = trackedTarget.getPosePredicted();
 	target.stdDev = trackedTarget.getPredictionStdDev();
 	target.error = trackedTarget.match2D.error;
 	updateVisibleMarkers(target.visibleMarkers, trackedTarget.match2D);
-	// Not properly synchronised but should be fine
-	frame->tracking.targets.push_back(std::move(target));
 
 	// Consider recording target in optimisation database
 	auto &params = pipeline.params.cont.targetObs;
@@ -111,7 +121,22 @@ static void recordTrackingResults(PipelineState &pipeline, std::shared_ptr<Frame
 	}
 }
 
-static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTargetFiltered &trackedTarget, std::shared_ptr<FrameRecord> &frame, TimePoint_t time, float timestep)
+static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTargetRecord &target, const TrackedTargetFiltered &trackedTarget, bool loss = true)
+{
+	// Record target tracking failure
+	target.id = trackedTarget.match2D.targetTemplate->id;
+	target.tracked = false;
+	target.poseObserved.setIdentity();
+	target.poseFiltered = trackedTarget.getPoseFiltered();
+	target.posePredicted = trackedTarget.getPosePredicted();
+	target.stdDev = trackedTarget.getPredictionStdDev();
+	target.error = { 0, 0, 0, 0};
+	// TODO: Properly record as loss
+	if (loss)
+		frame->tracking.trackingLosses++;
+}
+
+static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTargetFiltered &trackedTarget, std::shared_ptr<FrameRecord> &frame)
 {
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
 	// TODO: Only take calibs of cameras actually part of the frame!
@@ -130,19 +155,22 @@ static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTargetFilter
 		relevantPoints2D[c] = &remainingPoints2D[c];
 	}
 
+	// Enter into frame record
+	TrackedTargetRecord &target = recordTracking(frame, *trackedTarget.target);
+
 	// Track just like in a normal frame
 	if (!trackTarget(trackedTarget, calibs, points2D, properties, relevantPoints2D,
-		time, timestep, pipeline.cameras.size(), pipeline.params.track))
+		frame->time, pipeline.cameras.size(), pipeline.params.track))
 	{
 		LOG(LDetection2D, LInfo, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
 			frame->num, trackedTarget.match2D.error.samples, trackedTarget.match2D.error.mean*PixelFactor);
+		// Don't record as real loss since this is retroactive
+		recordTrackingFailure(frame, target, trackedTarget);
 		return false;
 	}
 	LOG(LDetection2D, LDebug, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
 		frame->num, trackedTarget.match2D.error.mean*PixelFactor, trackedTarget.match2D.error.samples);
-
-	// Record target
-	recordTrackingResults(pipeline, frame, trackedTarget);
+	recordTrackingResults(frame, target, trackedTarget, pipeline);
 	return true;
 }
 
@@ -168,7 +196,7 @@ static bool detectTarget(std::stop_token stopToken, PipelineState &pipeline, std
 	LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 		frame->num, (int)pipeline.frameNum.load(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
 
-	trackedTarget = TrackedTargetFiltered(target, targetMatch2D.pose, params.track);
+	trackedTarget = TrackedTargetFiltered(target, targetMatch2D.pose, frame->time, params.track);
 	trackedTarget.tracking2DData = std::move(tracking2DData); // Reuse allocations
 	trackedTarget.match2D = std::move(targetMatch2D);
 	return true;
@@ -224,8 +252,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecIt.index()-1);
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-			float timestep = dtMS(lastTimestamp, frameRec.time);
-			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt, frameRec.time, timestep))
+			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt))
 			{
 				frameRec.tracking.trackingLosses++;
 				return false;
@@ -263,8 +290,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecIt.index()-1);
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-			float timestep = dtMS(lastTimestamp, frameRec.time);
-			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt, frameRec.time, timestep))
+			if (!retroactivelyTrackFrame(pipeline, tracker, *frameRecIt))
 			{
 				frameRec.tracking.trackingLosses++;
 				return false;
@@ -311,9 +337,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	int camCount = pipeline.cameras.size();
 	std::vector<int> triIndices;
 
-	float timestep = dtS(track.lastFrameTime, frame->time);
-	track.lastFrameTime = frame->time;
-
 	auto occupyTargetMatches = [&](const TargetMatch2D &targetMatch2D)
 	{
 		for (int c = 0; c < calibs.size(); c++)
@@ -350,8 +373,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			const TargetTemplate3D &target = *trackedTarget->target;
 			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!\n", target.id, target.label.c_str(), (int)target.markers.size());
 
+			// Enter into frame record
+			TrackedTargetRecord &targetRecord = recordTracking(frame, *trackedTarget->target);
+
 			if (trackTarget(*trackedTarget, calibs, points2D, properties, relevantPoints2D,
-				frame->time, timestep, camCount, pipeline.params.track))
+				frame->time, camCount, pipeline.params.track))
 			{
 				LOG(LTracking, LDebug, "    Found continuation of target %d (name %s) with %d observations and %.3fpx mean error!\n",
 					target.id, target.label.c_str(), trackedTarget->match2D.error.samples, trackedTarget->match2D.error.mean*PixelFactor);
@@ -359,7 +385,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// Occupy all 2D points of tracked target
 				trackedTarget->lastTrackedFrame = frame->num;
 				occupyTargetMatches(trackedTarget->match2D);
-				recordTrackingResults(pipeline, frame, *trackedTarget);
+				recordTrackingResults(frame, targetRecord, *trackedTarget, pipeline);
 
 				/* if (targetMatch2D.error.mean*PixelFactor > 0.5 && IsDebugging())
 				{
@@ -372,6 +398,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				LOG(LTracking, LDarn, "Failed to find continuation of target %d (name %s) after %d measurements, got with %d observations and %.3fpx mean error!\n",
 					target.id, target.label.c_str(), trackedTarget->getMeasurements(), trackedTarget->match2D.error.samples, trackedTarget->match2D.error.mean*PixelFactor);
+				recordTrackingFailure(frame, targetRecord, *trackedTarget);
 
 				if (IsDebugging())
 				{
@@ -387,6 +414,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				LOG(LTracking, LDarn, "Failed to find continuation of target %d (name %s) after %d measurements, got with %d observations and %.3fpx mean error!\n",
 					target.id, target.label.c_str(), trackedTarget->getMeasurements(), trackedTarget->match2D.error.samples, trackedTarget->match2D.error.mean*PixelFactor);
+				recordTrackingFailure(frame, targetRecord, *trackedTarget, true);
 
 				if (IsDebugging())
 				{
@@ -398,7 +426,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// Push to dormant targets for re-detection
 				track.dormantTargets.emplace_back(trackedTarget->target, 1);
 				trackedTarget = track.trackedTargets.erase(trackedTarget);
-				frame->tracking.trackingLosses++;
 				continue;
 			}
 
@@ -555,12 +582,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				acceptCandidate = targetMatch2D.error.samples >= pipeline.params.track.minTotalObs && targetMatch2D.error.mean < pipeline.params.track.maxTotalError;
 				if (acceptCandidate)
 				{ // Register as tracked target
-					TrackedTargetFiltered trackedTarget(&target, targetMatch2D.pose, pipeline.params.track);
+					TrackedTargetFiltered trackedTarget(&target, targetMatch2D.pose, frame->time, pipeline.params.track);
 					trackedTarget.tracking2DData = std::move(tracking2DData);
 					trackedTarget.match2D = std::move(targetMatch2D);
 					trackedTarget.lastTrackedFrame = frame->num;
 					occupyTargetMatches(trackedTarget.match2D);
-					recordTrackingResults(pipeline, frame, trackedTarget);
+					TrackedTargetRecord &targetRecord = recordTracking(frame, target);
+					recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);
 					{ // Make sure no async detection of this target is ongoing
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
 							pipeline.tracking.asyncDetectionStop.request_stop();
@@ -654,7 +682,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				trackedTarget.lastTrackedFrame = frame->num;
 				occupyTargetMatches(trackedTarget.match2D);
-				recordTrackingResults(pipeline, frame, trackedTarget);
+				TrackedTargetRecord &targetRecord = recordTracking(frame, target);
+				recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);
 				pipeline.tracking.trackedTargets.push_back(std::move(trackedTarget));
 			}
 			else
@@ -694,7 +723,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		auto marker = pipeline.tracking.trackedMarkers.begin();
 		while (marker != pipeline.tracking.trackedMarkers.end())
 		{
-			int matchedPoint = trackMarker(*marker, pipeline.tracking.points3D, triIndices, timestep, 3);
+			int matchedPoint = trackMarker(*marker, pipeline.tracking.points3D, triIndices, frame->time, 3);
 			if (matchedPoint >= 0)
 			{
 				triIndices.erase(std::find(triIndices.begin(), triIndices.end(), matchedPoint));
@@ -722,6 +751,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				marker.state.pos() = pos;
 				marker.errorScaleT = 100000; // To allow for quick adaption of correct velocity and acceleration
 				marker.measurements = 1;
+				marker.time = frame->time;
 				LOG(LTracking, LDebug, "Added new tracked point!\n");
 				occupied3D[p] = true;
 			}

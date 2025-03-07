@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 template<typename TrackedMarker>
 int trackMarker(TrackedMarker &marker,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
-	float timestep, float sigma)
+	TimePoint_t time, float sigma)
 {
 	using Scalar = typename TrackedMarker::ScalarType;
 
@@ -45,9 +45,10 @@ int trackMarker(TrackedMarker &marker,
 
 	// Predict new state
 	filter.model.setDamping(params.dampeningPos, params.dampeningRot);
-	flexkalman::predict(filter.state, filter.model, timestep);
+	flexkalman::predict(filter.state, filter.model, dtS(filter.time, time));
 	filter.posePredicted = filter.state.getIsometry().template cast<float>();
 	filter.stdDev = filter.state.errorCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt().template cast<float>();
+	filter.time = time;
 
 	Eigen::Vector3f predPos = filter.posePredicted.translation();
 	Eigen::Matrix3f predCov = filter.state.errorCovariance().template topLeftCorner<3,3>().template cast<float>();
@@ -93,4 +94,4 @@ int trackMarker(TrackedMarker &marker,
 
 template int trackMarker(TrackedMarker<float> &marker,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
-	float timestep, float sigma);
+	TimePoint_t time, float sigma);

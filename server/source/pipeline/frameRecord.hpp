@@ -96,6 +96,7 @@ struct TargetMatchError
 struct TrackedTargetRecord
 {
 	int id;
+	bool tracked;
 	Eigen::Isometry3f poseObserved, poseFiltered;
 	TargetMatchError error;
 

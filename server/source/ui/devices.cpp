@@ -197,15 +197,15 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			{
 				auto sync_lock = controller.sync->contextualRLock();
 				if (sync_lock->source == SYNC_NONE)
-				{
-					ImGui::Text("Free Running");
-				}
+					ImGui::Text("Free");
 				else if (sync_lock->source == SYNC_INTERNAL)
-				{
-					ImGui::Text("Lock");
-					ImGui::SameLine(colX);
-					ImGui::Text("%dHz", (int)(1000.0f/sync_lock->frameIntervalMS));
-				}
+					ImGui::Text(controller.syncGen? "Gen" : "Lock");
+				else if (sync_lock->source == SYNC_EXTERNAL)
+					ImGui::Text(controller.syncGen? "Ext" : "Lock");
+				else // Virtual should never be associated with a controller
+					ImGui::Text("????");
+				ImGui::SameLine(colX);
+				ImGui::Text("%dHz", (int)(1000.0f/sync_lock->frameIntervalMS));
 			}
 			else
 			{

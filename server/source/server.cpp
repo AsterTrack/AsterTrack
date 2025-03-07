@@ -1378,6 +1378,14 @@ void DevicesSetupSyncGroups(ServerState &state)
 		}
 	}
 
+	if (stream_lock->syncGroups.empty())
+	{
+		stream_lock->syncGroups.push_back(std::make_shared<Synchronised<SyncGroup>>()); // new shared_ptr
+		auto sync_lock = stream_lock->syncGroups.back()->contextualLock();
+		sync_lock->source = SYNC_VIRTUAL;
+		sync_lock->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
+	}
+
 	// Reset sync group states
 	ResetStreamState(*stream_lock);
 
@@ -1420,15 +1428,11 @@ void DevicesStartSync(ServerState &state)
 	for (auto &controller : state.controllers)
 	{
 		if (!controller->comm->commStreaming) continue;
-		if (!controller->sync || controller->sync->contextualRLock()->source == SYNC_NONE) continue;
-
-		if (controller->syncGen)
-		{ // Request to start generating frame signals
-			auto sync_lock = controller->syncGen->contextualRLock();
-			if (sync_lock->source == SYNC_INTERNAL)
-				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)1000.0f/sync_lock->frameIntervalMS, 0);
-			// Else external and it's just duplicating sync
-		}
+		if (!controller->syncGen) continue;
+		// Request to start generating frame signals
+		auto sync_lock = controller->syncGen->contextualRLock();
+		if (sync_lock->source == SYNC_INTERNAL)
+			comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)1000.0f/sync_lock->frameIntervalMS, 0);
 	}
 }
 
@@ -1719,9 +1723,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	}
 
 	PipelineState &pipeline = GetState().pipeline;
-	if (pipeline.cameras.empty())
-		return;
-
 
 	// Accept for realtime processing, create FrameState
 

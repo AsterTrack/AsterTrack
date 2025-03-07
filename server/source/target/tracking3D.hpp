@@ -86,9 +86,10 @@ struct TrackedTarget
 	int lastTrackedFrame;
 
 	TrackedTarget() {}
-	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose, const TargetTrackingParameters &params) : target(target)
+	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) : target(target)
 	{
 		filter.init(pose.cast<Scalar>(), params);
+		filter.time = time;
 	}
 
 	Isometry3<Scalar> getPoseObserved() const { return filter.poseObserved; }
@@ -107,6 +108,6 @@ bool trackTarget(TARGET &target, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params);
+	TimePoint_t time, int cameraCount, const TargetTrackingParameters &params);
 
 #endif // TRACKING_3D_H

@@ -744,6 +744,7 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 				frame.tracking.targets.push_back({});
 				auto &target = frame.tracking.targets.back();
 				target.id = jsTarget["id"].get<int>();
+				target.tracked = jsTarget.contains("trk")? jsTarget["trk"].get<bool>() : true;
 				int i = 0;
 				auto poseArr = target.poseObserved.matrix().array();
 				for (auto &val : jsTarget["pose"])
@@ -826,6 +827,7 @@ void dumpTrackingResults(std::string path, const Iterator &frameStart, const Ite
 		{
 			json jsTarget;
 			jsTarget["id"] = target.id;
+			jsTarget["trk"]	= target.tracked;
 			jsTarget["pose"] = json::array();
 			auto poseArr = target.poseObserved.matrix().array();
 			for (int i = 0; i < 16; i++)

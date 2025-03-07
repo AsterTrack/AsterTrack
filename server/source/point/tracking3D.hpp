@@ -51,6 +51,7 @@ struct TrackedMarker
 	Scalar size; // For matching of markers, either single marker size or target radius
 
 	// Filter
+	TimePoint_t time;
 	State state;
 	Model model;
 
@@ -69,6 +70,6 @@ struct TrackedMarker
 template<typename TrackedMarker = TrackedMarker<float>>
 int trackMarker(TrackedMarker &marker,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
-	float timestep, float sigma);
+	TimePoint_t time, float sigma);
 
 #endif // POINT_TRACKING_3D_H

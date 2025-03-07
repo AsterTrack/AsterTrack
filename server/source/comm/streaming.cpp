@@ -196,11 +196,11 @@ static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 {
 	if (sync.source == SYNC_EXTERNAL)
 	{ // Try to estimate frame interval first
-		auto frameStart = std::find_if(sync.frames.begin(), sync.frames.end(), [](const SyncedFrame &frame) { return frame.receivedSOFs > 0; });
-		auto frameEnd = std::find_if(sync.frames.rbegin(), sync.frames.rend(), [](const SyncedFrame &frame) { return frame.receivedSOFs > 0; });
+		auto frameStart = std::find_if(sync.frames.begin(), sync.frames.end(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
+		auto frameEnd = std::find_if(sync.frames.rbegin(), sync.frames.rend(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
 		if (frameStart != sync.frames.end() && frameEnd != sync.frames.rend() && frameEnd->ID > frameStart->ID)
 		{ // Predicting frame interval
-			sync.frameIntervalMS = dtMS<float>(frameStart->SOF, frameEnd->SOF) / (frameEnd->ID - frameStart->ID);
+			sync.frameIntervalMS = 0.5f*sync.frameIntervalMS * 0.5f*dtMS<float>(frameStart->SOF, frameEnd->SOF) / (frameEnd->ID - frameStart->ID);
 		}
 		else
 		{ // External, unpredictable sync and no way to estimate
@@ -215,7 +215,7 @@ static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 	StatValue<float, StatDistribution> diffUS = {};
 	for (auto frame = sync.frames.rbegin(); frame != sync.frames.rend(); frame++)
 	{
-		if (frame->receivedSOFs == 0) continue;
+		if (frame->approxSOF) continue;
 		int framesPassed = frameID-frame->ID;
 		if (framesPassed < 0) continue;
 		TimePoint_t predSOF = frame->SOF + std::chrono::microseconds((frameID-frame->ID) * (int)(sync.frameIntervalMS * 1000));
@@ -596,6 +596,29 @@ void MaintainStreamState(StreamState &state)
 			}
 
 			frame++;
+		}
+
+		// Check if new "empty" frame should be added
+		if (sync->frames.empty() && sync->source == SYNC_VIRTUAL)
+		{
+			SyncedFrame frame = {};
+			frame.cameras.resize(sync->cameras.size());
+			frame.ID = 0;
+			frame.approxSOF = false;
+			frame.SOF = sclock::now();
+			LOG(LStreaming, LInfo, "Started virtual frame generation!\n");
+			sync->frames.push_back(std::move(frame));
+			sync->frameCount++;
+		}
+		else if (dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS*1.5f)
+		{
+			SyncedFrame frame = {};
+			frame.cameras.resize(sync->cameras.size());
+			frame.ID = sync->frames.back().ID + 1;
+			frame.approxSOF = sync->source != SYNC_VIRTUAL;
+			frame.SOF = EstimateSOF(*sync, frame.ID);
+			sync->frames.push_back(std::move(frame));
+			sync->frameCount++;
 		}
 	}
 }

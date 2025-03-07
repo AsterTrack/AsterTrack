@@ -48,16 +48,17 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	TimePoint_t time, float timestep, int cameraCount, const TargetTrackingParameters &params)
+	TimePoint_t time, int cameraCount, const TargetTrackingParameters &params)
 {
 	auto &filter = target.filter;
-	Eigen::Isometry3f oldObservedPose = target.filter.poseObserved;
+	Eigen::Isometry3f oldObservedPose = filter.poseObserved;
+	filter.model.setDamping(params.dampeningPos, params.dampeningRot);
 
 	// Predict new state
-	filter.model.setDamping(params.dampeningPos, params.dampeningRot);
-	flexkalman::predict(filter.state, filter.model, timestep);
+	flexkalman::predict(filter.state, filter.model, dtS(filter.time, time));
 	filter.posePredicted = filter.state.getIsometry().cast<float>();
 	filter.stdDev = filter.state.errorCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt().cast<float>();
+	filter.time = time;
 
 	// Calculate uncertainty
 	Eigen::Vector3f uncertainty = Eigen::Vector3f::Constant(params.minUncertainty3D).cwiseMax(filter.stdDev*params.uncertaintySigma);
@@ -85,7 +86,6 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 
 	// Update filter
 	filter.measurements++;
-	filter.time = time;
 	filter.poseObserved = target.match2D.pose;
 	auto measurement = AbsolutePoseMeasurement(
 		target.match2D.pose.translation().cast<double>(),
@@ -114,3 +114,9 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 
 	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }
+
+template bool trackTarget<TrackedTargetFiltered>(TrackedTargetFiltered &target, const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	TimePoint_t time, int cameraCount, const TargetTrackingParameters &params);

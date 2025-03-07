@@ -27,6 +27,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/blocked_vector.hpp"
 #include "util/log.hpp"
 
+#ifndef NDEBUG
+#define JSON_NOEXCEPTION
+#endif
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -58,46 +61,57 @@ void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 	fs >> cfg;
 
 	// Parse JSON config file
-
-	if (cfg.contains("simulation"))
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		auto &simulation = cfg["simulation"];
-		if (simulation.contains("blobPxStdDev"))
-			config.simulation.blobPxStdDev = simulation["blobPxStdDev"].get<float>();
-		if (config.simulation.blobPxStdDev <= 0.0f)
-			config.simulation.blobPxStdDev = 0.0001f;
-		if (simulation.contains("trackingTargets"))
+		if (cfg.contains("simulation"))
 		{
-			float defaultMarkerFoV = 180;
-			float defaultMarkerSize = 0.005f;
-			auto &targets = simulation["trackingTargets"];
-			if (targets.is_array())
+			auto &simulation = cfg["simulation"];
+			if (simulation.contains("blobPxStdDev"))
+				config.simulation.blobPxStdDev = simulation["blobPxStdDev"].get<float>();
+			if (config.simulation.blobPxStdDev <= 0.0f)
+				config.simulation.blobPxStdDev = 0.0001f;
+			if (simulation.contains("trackingTargets"))
 			{
-				for (auto &md : targets)
+				float defaultMarkerFoV = 180;
+				float defaultMarkerSize = 0.005f;
+				auto &targets = simulation["trackingTargets"];
+				if (targets.is_array())
 				{
-					if (md.is_string())
-						parseTargetObjFile(md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
-					else if (md.is_object())
+					for (auto &md : targets)
 					{
-						float v = md.contains("markerViewAngle") && md["markerViewAngle"].is_number()? md["markerViewAngle"].get<float>() : defaultMarkerFoV;
-						float s = md.contains("markerSizeMM") && md["markerSizeMM"].is_number()? md["markerSizeMM"].get<float>() : defaultMarkerSize;
-						parseTargetObjFile(md["path"], config.simulation.trackingTargets, v, s);
+						if (md.is_string())
+							parseTargetObjFile(md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+						else if (md.is_object())
+						{
+							float v = md.contains("markerViewAngle") && md["markerViewAngle"].is_number()? md["markerViewAngle"].get<float>() : defaultMarkerFoV;
+							float s = md.contains("markerSizeMM") && md["markerSizeMM"].is_number()? md["markerSizeMM"].get<float>() : defaultMarkerSize;
+							parseTargetObjFile(md["path"], config.simulation.trackingTargets, v, s);
+						}
 					}
 				}
+				else if (targets.is_string())
+					parseTargetObjFile(targets, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
 			}
-			else if (targets.is_string())
-				parseTargetObjFile(targets, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
-		}
-		if (simulation.contains("cameras"))
-		{
-			auto &cameras = simulation["cameras"];
-			if (cameras.is_string())
+			if (simulation.contains("cameras"))
 			{
-				config.simulation.cameraDefPath = cameras.get<std::string>();
-				parseCameraCalibrations(cameras.get<std::string>(), config.simulation.cameraDefinitions);
+				auto &cameras = simulation["cameras"];
+				if (cameras.is_string())
+				{
+					config.simulation.cameraDefPath = cameras.get<std::string>();
+					parseCameraCalibrations(cameras.get<std::string>(), config.simulation.cameraDefinitions);
+				}
 			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return frameOffset;
+	}
+#endif
 }
 
 void storeGeneralConfigFile(const std::string &path, const GeneralConfig &config)
@@ -114,53 +128,65 @@ void parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
 	fs >> calib;
 	fs.close();
 
-	// Parse camera calibration
-	if (calib.contains("configurations"))
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		auto &configurations = calib["configurations"];
-		if (configurations.is_array())
+		// Parse camera calibration
+		if (calib.contains("configurations"))
 		{
-			configMap.configurations.resize(configurations.size());
-			int i = 0;
-			for (auto &cfg : configurations)
+			auto &configurations = calib["configurations"];
+			if (configurations.is_array())
 			{
-				CameraConfig &config = configMap.configurations[i++];
-				if (!cfg["label"].empty()) config.label = cfg["label"].get<std::string>();
-				if (!cfg["resolutionX"].empty()) config.width = cfg["resolutionX"].get<int>();
-				if (!cfg["resolutionY"].empty()) config.height = cfg["resolutionY"].get<int>();
-				if (!cfg["synchronised"].empty()) config.synchronised = cfg["synchronised"].get<bool>();
-				if (!cfg["framerate"].empty()) config.framerate = cfg["framerate"].get<int>();
-				if (!cfg["shutterSpeed"].empty()) config.exposure = cfg["shutterSpeed"].get<int>();
-				if (!cfg["gain"].empty()) config.gain = cfg["gain"].get<int>();
-				if (!cfg["absThreshold"].empty()) config.blobProcessing.thresholds.absolute = cfg["absThreshold"].get<int>();
-				if (!cfg["edgeThreshold"].empty()) config.blobProcessing.thresholds.edge = cfg["edgeThreshold"].get<int>();
-				if (!cfg["filter"].empty()) config.filter = cfg["filter"].get<int>();
-				if (config.filter != 0 || config.filter != 1) config.filter = 0; // Might have more than two in the future
-				if (!cfg["enableStrobe"].empty()) config.enableStrobe = cfg["enableStrobe"].get<bool>();
-				if (!cfg["strobeOffset"].empty()) config.strobeOffset = cfg["strobeOffset"].get<int>();
-				if (!cfg["strobeLength"].empty()) config.strobeLength = cfg["strobeLength"].get<int>();
+				configMap.configurations.resize(configurations.size());
+				int i = 0;
+				for (auto &cfg : configurations)
+				{
+					CameraConfig &config = configMap.configurations[i++];
+					if (!cfg["label"].empty()) config.label = cfg["label"].get<std::string>();
+					if (!cfg["resolutionX"].empty()) config.width = cfg["resolutionX"].get<int>();
+					if (!cfg["resolutionY"].empty()) config.height = cfg["resolutionY"].get<int>();
+					if (!cfg["synchronised"].empty()) config.synchronised = cfg["synchronised"].get<bool>();
+					if (!cfg["framerate"].empty()) config.framerate = cfg["framerate"].get<int>();
+					if (!cfg["shutterSpeed"].empty()) config.exposure = cfg["shutterSpeed"].get<int>();
+					if (!cfg["gain"].empty()) config.gain = cfg["gain"].get<int>();
+					if (!cfg["absThreshold"].empty()) config.blobProcessing.thresholds.absolute = cfg["absThreshold"].get<int>();
+					if (!cfg["edgeThreshold"].empty()) config.blobProcessing.thresholds.edge = cfg["edgeThreshold"].get<int>();
+					if (!cfg["filter"].empty()) config.filter = cfg["filter"].get<int>();
+					if (config.filter != 0 || config.filter != 1) config.filter = 0; // Might have more than two in the future
+					if (!cfg["enableStrobe"].empty()) config.enableStrobe = cfg["enableStrobe"].get<bool>();
+					if (!cfg["strobeOffset"].empty()) config.strobeOffset = cfg["strobeOffset"].get<int>();
+					if (!cfg["strobeLength"].empty()) config.strobeLength = cfg["strobeLength"].get<int>();
+				}
 			}
 		}
-	}
 
-	// Parse camera map
-	if (calib.contains("cameras"))
-	{
-		auto &cameras = calib["cameras"];
-		if (cameras.is_array())
+		// Parse camera map
+		if (calib.contains("cameras"))
 		{
-			for (auto &cam : cameras)
+			auto &cameras = calib["cameras"];
+			if (cameras.is_array())
 			{
-				if (cam["id"].empty() || !cam["id"].is_number_integer()) continue;
-				if (cam["configuration"].empty() || !cam["configuration"].is_number_integer()) continue;
-				int id = cam["id"].get<int>();
-				int cfg = cam["configuration"].get<int>();
-				if (cfg >= configMap.configurations.size()) continue;
-				configMap.cameraConfigs[id] = cfg;
-				LOGC(LInfo, "Loaded config %d for camera %d!", cfg, id);
+				for (auto &cam : cameras)
+				{
+					if (cam["id"].empty() || !cam["id"].is_number_integer()) continue;
+					if (cam["configuration"].empty() || !cam["configuration"].is_number_integer()) continue;
+					int id = cam["id"].get<int>();
+					int cfg = cam["configuration"].get<int>();
+					if (cfg >= configMap.configurations.size()) continue;
+					configMap.cameraConfigs[id] = cfg;
+					LOGC(LInfo, "Loaded config %d for camera %d!", cfg, id);
+				}
 			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return frameOffset;
+	}
+#endif
 }
 
 void storeCameraConfigFile(const std::string &path, const CameraConfigMap &config)
@@ -215,94 +241,105 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 	fs >> calib;
 	fs.close();
 
-	// Parse camera calibration
-	if (calib.contains("cameras"))
-	{
-		auto &jsCameras = calib["cameras"];
-		if (jsCameras.is_array())
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{ // Parse camera calibration
+		if (calib.contains("cameras"))
 		{
-			cameraCalib.resize(jsCameras.size(), {});
-			int i = 0;
-			for (auto &jsCamera : jsCameras)
+			auto &jsCameras = calib["cameras"];
+			if (jsCameras.is_array())
 			{
-				CameraCalib &calib = cameraCalib[i++];
+				cameraCalib.resize(jsCameras.size(), {});
+				int i = 0;
+				for (auto &jsCamera : jsCameras)
+				{
+					CameraCalib &calib = cameraCalib[i++];
 
-				// Parse intrinsic calibration
-				if (jsCamera.contains("id"))
-				{
-					calib.id = jsCamera["id"].get<int>();
-				}
-				if (jsCamera.contains("f"))
-				{
-					calib.f = jsCamera["f"].get<CVScalar>();
-					calib.fInv = 1.0/calib.f;
-				}
-				else if (jsCamera.contains("fov"))
-				{
-					if (jsCamera["fov"].is_number_float())
+					// Parse intrinsic calibration
+					if (jsCamera.contains("id"))
 					{
-						CVScalar fovH = jsCamera["fov"].get<CVScalar>();
-						calib.fInv = std::tan(fovH/180.0*PI/2);
-						calib.f = 1.0/calib.fInv;
+						calib.id = jsCamera["id"].get<int>();
 					}
-					else if (jsCamera["fov"].is_object())
+					if (jsCamera.contains("f"))
 					{
-						CVScalar sensorX = jsCamera["fov"]["sensorSizeX"].get<CVScalar>();
-						CVScalar focalLen = jsCamera["fov"]["focalLength"].get<CVScalar>();
-						calib.f = 2*focalLen/sensorX;
+						calib.f = jsCamera["f"].get<CVScalar>();
 						calib.fInv = 1.0/calib.f;
 					}
-				}
-				// Parse principal point
-				if (jsCamera.contains("principalPoint"))
-				{
-					auto &principalPoint = jsCamera["principalPoint"];
-					if (principalPoint.is_object())
+					else if (jsCamera.contains("fov"))
 					{
-						calib.principalPoint.x() = principalPoint["x"].get<CVScalar>();
-						calib.principalPoint.y() = principalPoint["y"].get<CVScalar>();
+						if (jsCamera["fov"].is_number_float())
+						{
+							CVScalar fovH = jsCamera["fov"].get<CVScalar>();
+							calib.fInv = std::tan(fovH/180.0*PI/2);
+							calib.f = 1.0/calib.fInv;
+						}
+						else if (jsCamera["fov"].is_object())
+						{
+							CVScalar sensorX = jsCamera["fov"]["sensorSizeX"].get<CVScalar>();
+							CVScalar focalLen = jsCamera["fov"]["focalLength"].get<CVScalar>();
+							calib.f = 2*focalLen/sensorX;
+							calib.fInv = 1.0/calib.f;
+						}
 					}
-				}
-				if (jsCamera.contains("distortion"))
-				{
-					auto &distortion = jsCamera["distortion"];
-					if (distortion.is_object())
+					// Parse principal point
+					if (jsCamera.contains("principalPoint"))
 					{
-						calib.distortion.k1 = distortion["k1"].get<CVScalar>();
-						calib.distortion.k2 = distortion["k2"].get<CVScalar>();
-						calib.distortion.k3 = distortion["k3"].get<CVScalar>();
-						calib.distortion.p1 = distortion["p1"].get<CVScalar>();
-						calib.distortion.p2 = distortion["p2"].get<CVScalar>();
+						auto &principalPoint = jsCamera["principalPoint"];
+						if (principalPoint.is_object())
+						{
+							calib.principalPoint.x() = principalPoint["x"].get<CVScalar>();
+							calib.principalPoint.y() = principalPoint["y"].get<CVScalar>();
+						}
 					}
-				}
-				// Parse extrinsic calibration
-				calib.transform = Eigen::Transform<CVScalar,3,Eigen::Isometry>::Identity();
-				if (jsCamera.contains("position"))
-				{
-					auto &position = jsCamera["position"];
-					if (position.is_object())
+					if (jsCamera.contains("distortion"))
 					{
-						calib.transform.translation().x() = position["x"].get<CVScalar>();
-						calib.transform.translation().y() = position["y"].get<CVScalar>();
-						calib.transform.translation().z() = position["z"].get<CVScalar>();
+						auto &distortion = jsCamera["distortion"];
+						if (distortion.is_object())
+						{
+							calib.distortion.k1 = distortion["k1"].get<CVScalar>();
+							calib.distortion.k2 = distortion["k2"].get<CVScalar>();
+							calib.distortion.k3 = distortion["k3"].get<CVScalar>();
+							calib.distortion.p1 = distortion["p1"].get<CVScalar>();
+							calib.distortion.p2 = distortion["p2"].get<CVScalar>();
+						}
 					}
-				}
-				if (jsCamera.contains("rotation"))
-				{
-					auto &rotation = jsCamera["rotation"];
-					if (rotation.is_object())
+					// Parse extrinsic calibration
+					calib.transform = Eigen::Transform<CVScalar,3,Eigen::Isometry>::Identity();
+					if (jsCamera.contains("position"))
 					{
-						Eigen::Vector3d rotEA;
-						rotEA.x() = rotation["x"].get<double>();
-						rotEA.y() = rotation["y"].get<double>();
-						rotEA.z() = rotation["z"].get<double>();
-						calib.transform.linear() = getRotationXYZ(rotEA.cast<CVScalar>() / 180.0f * PI);
+						auto &position = jsCamera["position"];
+						if (position.is_object())
+						{
+							calib.transform.translation().x() = position["x"].get<CVScalar>();
+							calib.transform.translation().y() = position["y"].get<CVScalar>();
+							calib.transform.translation().z() = position["z"].get<CVScalar>();
+						}
 					}
+					if (jsCamera.contains("rotation"))
+					{
+						auto &rotation = jsCamera["rotation"];
+						if (rotation.is_object())
+						{
+							Eigen::Vector3d rotEA;
+							rotEA.x() = rotation["x"].get<double>();
+							rotEA.y() = rotation["y"].get<double>();
+							rotEA.z() = rotation["z"].get<double>();
+							calib.transform.linear() = getRotationXYZ(rotEA.cast<CVScalar>() / 180.0f * PI);
+						}
+					}
+					calib.UpdateDerived();
 				}
-				calib.UpdateDerived();
 			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return frameOffset;
+	}
+#endif
 }
 
 void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib)
@@ -354,58 +391,70 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate
 	fs >> file;
 	fs.close();
 
-	// Parse target calibration
-	if (file.contains("targets"))
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		auto &jsTargets = file["targets"];
-		if (jsTargets.is_array())
+		// Parse target calibration
+		if (file.contains("targets"))
 		{
-			targetTemplates.reserve(targetTemplates.size() + jsTargets.size());
-			for (auto &jsTarget : jsTargets)
+			auto &jsTargets = file["targets"];
+			if (jsTargets.is_array())
 			{
-				TargetTemplate3D target;
-				if (!jsTarget.contains("id")) continue;
-				target.id = jsTarget["id"].get<int>();
-				target.label = jsTarget["label"].get<std::string>();
-
-				float defaultAngle = jsTarget.contains("DefaultAngle")? jsTarget["DefaultAngle"].get<float>() : 180;
-				float defaultSize = (jsTarget.contains("DefaultSize")? jsTarget["DefaultSize"].get<float>() : 8) / 1000.0f;
-				float defaultLimit = std::cos(defaultAngle/360*PI);
-
-				if (!jsTarget.contains("markers")) continue;
-				auto &jsMarkers = jsTarget["markers"];
-				if (!jsMarkers.is_array()) continue;
-				target.markers.reserve(jsMarkers.size());
-				for (auto &jsMarker : jsMarkers)
+				targetTemplates.reserve(targetTemplates.size() + jsTargets.size());
+				for (auto &jsTarget : jsTargets)
 				{
-					TargetMarker marker = {};
-					if (!jsMarker.is_object()) continue;
-					// Read position
-					if (!jsMarker.contains("Position")) continue;
-					auto &pos = jsMarker["Position"];
-					if (!pos.is_array() || pos.size() < 3) continue;
-					marker.pos = Eigen::Vector3f(pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>());
-					// Read normals
-					if (!jsMarker.contains("Normal")) continue;
-					auto &nrm = jsMarker["Normal"];
-					if (!nrm.is_array() || nrm.size() < 3) continue;
-					marker.nrm = Eigen::Vector3f(nrm[0].get<float>(), nrm[1].get<float>(), nrm[2].get<float>());
-					// Read other values
-					if (jsMarker.contains("Angle")) // In degrees
-						marker.angleLimit = std::cos(jsMarker["Angle"].get<float>()/360*PI);
-					else
-						marker.angleLimit = defaultLimit;
-					if (jsMarker.contains("Size")) // In mm
-						marker.size = jsMarker["Size"].get<float>() / 1000.0f;
-					else
-						marker.size = defaultSize;
-					target.markers.push_back(std::move(marker));
+					TargetTemplate3D target;
+					if (!jsTarget.contains("id")) continue;
+					target.id = jsTarget["id"].get<int>();
+					target.label = jsTarget["label"].get<std::string>();
+
+					float defaultAngle = jsTarget.contains("DefaultAngle")? jsTarget["DefaultAngle"].get<float>() : 180;
+					float defaultSize = (jsTarget.contains("DefaultSize")? jsTarget["DefaultSize"].get<float>() : 8) / 1000.0f;
+					float defaultLimit = std::cos(defaultAngle/360*PI);
+
+					if (!jsTarget.contains("markers")) continue;
+					auto &jsMarkers = jsTarget["markers"];
+					if (!jsMarkers.is_array()) continue;
+					target.markers.reserve(jsMarkers.size());
+					for (auto &jsMarker : jsMarkers)
+					{
+						TargetMarker marker = {};
+						if (!jsMarker.is_object()) continue;
+						// Read position
+						if (!jsMarker.contains("Position")) continue;
+						auto &pos = jsMarker["Position"];
+						if (!pos.is_array() || pos.size() < 3) continue;
+						marker.pos = Eigen::Vector3f(pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>());
+						// Read normals
+						if (!jsMarker.contains("Normal")) continue;
+						auto &nrm = jsMarker["Normal"];
+						if (!nrm.is_array() || nrm.size() < 3) continue;
+						marker.nrm = Eigen::Vector3f(nrm[0].get<float>(), nrm[1].get<float>(), nrm[2].get<float>());
+						// Read other values
+						if (jsMarker.contains("Angle")) // In degrees
+							marker.angleLimit = std::cos(jsMarker["Angle"].get<float>()/360*PI);
+						else
+							marker.angleLimit = defaultLimit;
+						if (jsMarker.contains("Size")) // In mm
+							marker.size = jsMarker["Size"].get<float>() / 1000.0f;
+						else
+							marker.size = defaultSize;
+						target.markers.push_back(std::move(marker));
+					}
+					target.updateMarkers();
+					targetTemplates.push_back(std::move(target));
 				}
-				target.updateMarkers();
-				targetTemplates.push_back(std::move(target));
 			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return frameOffset;
+	}
+#endif
 }
 
 void storeTargetCalibrations(const std::string &path, const std::vector<TargetTemplate3D> &targetTemplates)
@@ -462,7 +511,10 @@ std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigR
 	fs.close();
 
 	unsigned int frameOffset;
-	try {
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{
 		if (!file.contains("frameRecords")) return 0;
 		if (!file["frameRecords"].is_object()) return 0;
 		auto &jsRecords = file["frameRecords"];
@@ -588,11 +640,13 @@ std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigR
 			record.frames.insert(num-frameOffset, std::move(frame));
 		}
 	}
+#ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
 		return frameOffset;
 	}
+#endif
 
 	return frameOffset;
 }
@@ -720,8 +774,11 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 	fs >> file;
 	fs.close();
 
-	auto frames = record.frames.getView();
-	try {
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{
+		auto frames = record.frames.getView();
 		if (!file.contains("trackingResults")) return;
 		if (!file["trackingResults"].is_object()) return;
 		auto &jsRecords = file["trackingResults"];
@@ -790,11 +847,13 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
 		return;
 	}
+#endif
 }
 
 void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
@@ -891,80 +950,92 @@ SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID
 	fs >> file;
 	fs.close();
 
-	if (!file.contains("observations")) return sequences;
-	if (!file["observations"].is_object()) return sequences;
-	auto &jsObs = file["observations"];
-
-	if (!jsObs.contains("markers")) return sequences;
-	if (!jsObs["markers"].is_array()) return sequences;
-	auto &jsMarkers = jsObs["markers"];
-
-	int cameraCount = 0;
-	if (jsObs.contains("cameras") && jsObs["cameras"].is_array())
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		auto &jsCameras = jsObs["cameras"];
-		cameraCount = jsCameras.size();
-		for (auto &jsCam : jsCameras)
-			cameraIDs.push_back(jsCam.get<CameraID>());
-	}
-	else if (jsObs.contains("cameraCount") && jsObs["cameraCount"].is_number_integer())
-	{
-		cameraCount = jsObs["cameraCount"].get<int>();
-		for (int i = 0; i < cameraCount; i++)
-			cameraIDs.push_back(i+1);
-	}
-	else
-		return sequences;
-	sequences.temporary.resize(cameraCount);
+		if (!file.contains("observations")) return sequences;
+		if (!file["observations"].is_object()) return sequences;
+		auto &jsObs = file["observations"];
 
-	sequences.markers.resize(jsMarkers.size());
-	int m = 0;
-	for (auto &jsMarker : jsMarkers)
-	{
-		if (!jsMarker.contains("cameras")) continue;
-		if (!jsMarker["cameras"].is_array()) continue;
-		auto &jsCameras = jsMarker["cameras"];
+		if (!jsObs.contains("markers")) return sequences;
+		if (!jsObs["markers"].is_array()) return sequences;
+		auto &jsMarkers = jsObs["markers"];
 
-		MarkerSequences &marker = sequences.markers[m++];
-		marker.cameras.resize(cameraCount);
-
-		int c = 0;
-		for (auto &jsCamera : jsCameras)
+		int cameraCount = 0;
+		if (jsObs.contains("cameras") && jsObs["cameras"].is_array())
 		{
-			if (!jsCamera.contains("sequences")) continue;
-			if (!jsCamera["sequences"].is_array()) continue;
-			auto &jsSequences = jsCamera["sequences"];
-
-			auto &camera = marker.cameras[c++];
-			camera.sequences.resize(jsSequences.size());
-
-			int s = 0;
-			for (auto &jsSequence : jsSequences)
-			{
-				if (!jsSequence.contains("start")) continue;
-				if (!jsSequence["start"].is_number_integer()) continue;
-				camera.sequences[s].startFrame = jsSequence["start"].get<int>();
-
-				if (!jsSequence.contains("blobs")) continue;
-				if (!jsSequence["blobs"].is_array()) continue;
-				auto &jsBlobs = jsSequence["blobs"];
-				auto &points = camera.sequences[s].points;
-				auto &rawPoints = camera.sequences[s].rawPoints;
-				points.reserve(jsBlobs.size());
-				rawPoints.reserve(jsBlobs.size());
-				for (auto &jsBlob : jsBlobs)
-				{
-					points.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
-					rawPoints.emplace_back(jsBlob["rx"].get<float>(), jsBlob["ry"].get<float>());
-				}
-
-				marker.lastFrame = std::max(marker.lastFrame, camera.sequences[s].lastFrame());
-				s++;
-			}
+			auto &jsCameras = jsObs["cameras"];
+			cameraCount = jsCameras.size();
+			for (auto &jsCam : jsCameras)
+				cameraIDs.push_back(jsCam.get<CameraID>());
 		}
+		else if (jsObs.contains("cameraCount") && jsObs["cameraCount"].is_number_integer())
+		{
+			cameraCount = jsObs["cameraCount"].get<int>();
+			for (int i = 0; i < cameraCount; i++)
+				cameraIDs.push_back(i+1);
+		}
+		else
+			return sequences;
+		sequences.temporary.resize(cameraCount);
 
-		sequences.lastRecordedFrame = std::max(sequences.lastRecordedFrame, marker.lastFrame);
+		sequences.markers.resize(jsMarkers.size());
+		int m = 0;
+		for (auto &jsMarker : jsMarkers)
+		{
+			if (!jsMarker.contains("cameras")) continue;
+			if (!jsMarker["cameras"].is_array()) continue;
+			auto &jsCameras = jsMarker["cameras"];
+
+			MarkerSequences &marker = sequences.markers[m++];
+			marker.cameras.resize(cameraCount);
+
+			int c = 0;
+			for (auto &jsCamera : jsCameras)
+			{
+				if (!jsCamera.contains("sequences")) continue;
+				if (!jsCamera["sequences"].is_array()) continue;
+				auto &jsSequences = jsCamera["sequences"];
+
+				auto &camera = marker.cameras[c++];
+				camera.sequences.resize(jsSequences.size());
+
+				int s = 0;
+				for (auto &jsSequence : jsSequences)
+				{
+					if (!jsSequence.contains("start")) continue;
+					if (!jsSequence["start"].is_number_integer()) continue;
+					camera.sequences[s].startFrame = jsSequence["start"].get<int>();
+
+					if (!jsSequence.contains("blobs")) continue;
+					if (!jsSequence["blobs"].is_array()) continue;
+					auto &jsBlobs = jsSequence["blobs"];
+					auto &points = camera.sequences[s].points;
+					auto &rawPoints = camera.sequences[s].rawPoints;
+					points.reserve(jsBlobs.size());
+					rawPoints.reserve(jsBlobs.size());
+					for (auto &jsBlob : jsBlobs)
+					{
+						points.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
+						rawPoints.emplace_back(jsBlob["rx"].get<float>(), jsBlob["ry"].get<float>());
+					}
+
+					marker.lastFrame = std::max(marker.lastFrame, camera.sequences[s].lastFrame());
+					s++;
+				}
+			}
+
+			sequences.lastRecordedFrame = std::max(sequences.lastRecordedFrame, marker.lastFrame);
+		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return;
+	}
+#endif
 
 	return sequences;
 }
@@ -1123,28 +1194,40 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 	fs >> file;
 	fs.close();
 
-	if (!file.contains("views")) return views;
-	if (!file["views"].is_array()) return views;
-	auto &viewArr = file["views"];
-
-	views.reserve(viewArr.size());
-	std::size_t recordCount = frameRecords.getView().size();
-	for (auto &view : viewArr)
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		ObsTarget target;
-		if (!parseOptTarget(view, target)) continue;
+		if (!file.contains("views")) return views;
+		if (!file["views"].is_array()) return views;
+		auto &viewArr = file["views"];
 
-		std::shared_ptr<TargetView> tgtView = std::make_shared<TargetView>();
-		tgtView->state.calibrated = true;
-		tgtView->selected = true;
-		tgtView->id = views.size();
-		tgtView->beginFrame = target.frames.front().frame;
-		tgtView->endFrame = target.frames.back().frame;
-		if (tgtView->endFrame >= recordCount) continue;
-		tgtView->targetTemplate.initialise(target.markers);
-		*tgtView->target.contextualLock() = std::move(target);
-		views.push_back(std::move(tgtView));
+		views.reserve(viewArr.size());
+		std::size_t recordCount = frameRecords.getView().size();
+		for (auto &view : viewArr)
+		{
+			ObsTarget target;
+			if (!parseOptTarget(view, target)) continue;
+
+			std::shared_ptr<TargetView> tgtView = std::make_shared<TargetView>();
+			tgtView->state.calibrated = true;
+			tgtView->selected = true;
+			tgtView->id = views.size();
+			tgtView->beginFrame = target.frames.front().frame;
+			tgtView->endFrame = target.frames.back().frame;
+			if (tgtView->endFrame >= recordCount) continue;
+			tgtView->targetTemplate.initialise(target.markers);
+			*tgtView->target.contextualLock() = std::move(target);
+			views.push_back(std::move(tgtView));
+		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return;
+	}
+#endif
 
 	return views;
 }
@@ -1185,19 +1268,31 @@ bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base)
 	fs >> file;
 	fs.close();
 
-	if (!file.contains("initialViewID")) return false;
-	if (!file["initialViewID"].is_number_integer()) return false;
-	base.initialViewID = file["initialViewID"].get<int>();
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{
+		if (!file.contains("initialViewID")) return false;
+		if (!file["initialViewID"].is_number_integer()) return false;
+		base.initialViewID = file["initialViewID"].get<int>();
 
-	if (!file.contains("merged")) return false;
-	if (!file["merged"].is_array()) return false;
-	base.merged.reserve(file["merged"].size());
-	for (auto &m : file["merged"])
-		base.merged.push_back(m.get<int>());
+		if (!file.contains("merged")) return false;
+		if (!file["merged"].is_array()) return false;
+		base.merged.reserve(file["merged"].size());
+		for (auto &m : file["merged"])
+			base.merged.push_back(m.get<int>());
 
-	if (!file.contains("target")) return false;
-	if (!file["target"].is_object()) return false;
-	return parseOptTarget(file["target"], base.target);
+		if (!file.contains("target")) return false;
+		if (!file["target"].is_object()) return false;
+		return parseOptTarget(file["target"], base.target);
+	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return false;
+	}
+#endif
 }
 
 void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base)
@@ -1237,74 +1332,88 @@ bool parseTargetObjFile(const std::string &path, std::vector<TargetTemplate3D> &
 
 	float limit = std::cos(fov/360*PI);
 
-	while (true)
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
 	{
-		// Read line header if possible
-		std::string header;
-		if (!(fs >> header)) break;
-		// Handle line of data
-		if (header == "v")
-		{ // Read vertex
-			Eigen::Vector3f vert;
-			fs >> vert.x();
-			fs >> vert.z();
-			fs >> vert.y();
-			verts.push_back(vert);
-		}
-		else if (header == "vn")
-		{ // Read normal
-			Eigen::Vector3f nrm;
-			fs >> nrm.x();
-			fs >> nrm.z();
-			fs >> nrm.y();
-			nrms.push_back(nrm);
-		}
-		else if (header == "f")
-		{ // Read face
-			std::getline(fs, header);
-			TargetMarker pt;
-			pt.pos.setZero();
-			pt.nrm.setZero();
-			int pos = 0, sz = 0, count = 0;
-			int vID, nID;
-			while(sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
-			{ // Sum vert values
-				pos += sz;
-				count++;
-				pt.pos += verts.at(vID-1);
-				pt.nrm += nrms.at(nID-1);
+		while (true)
+		{
+			// Read line header if possible
+			std::string header;
+			if (!(fs >> header)) break;
+			// Handle line of data
+			if (header == "v")
+			{ // Read vertex
+				Eigen::Vector3f vert;
+				fs >> vert.x();
+				fs >> vert.z();
+				fs >> vert.y();
+				verts.push_back(vert);
 			}
-			if (count == 0) return false;
-			if (count < 3) continue; // Failed to read face, probably because UVs were exported
-			// Calculate face center as average
-			pt.pos = pt.pos/count;
-			pt.nrm.normalize();
-			pt.angleLimit = limit;
-			pt.size = size/1000.0f; // mm to m
-			curGroup->markers.push_back(pt);
+			else if (header == "vn")
+			{ // Read normal
+				Eigen::Vector3f nrm;
+				fs >> nrm.x();
+				fs >> nrm.z();
+				fs >> nrm.y();
+				nrms.push_back(nrm);
+			}
+			else if (header == "f")
+			{ // Read face
+				std::getline(fs, header);
+				TargetMarker pt;
+				pt.pos.setZero();
+				pt.nrm.setZero();
+				int pos = 0, sz = 0, count = 0;
+				int vID, nID;
+				while(sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
+				{ // Sum vert values
+					pos += sz;
+					count++;
+					pt.pos += verts.at(vID-1);
+					pt.nrm += nrms.at(nID-1);
+				}
+				if (count == 0) return false;
+				if (count < 3) continue; // Failed to read face, probably because UVs were exported
+				// Calculate face center as average
+				pt.pos = pt.pos/count;
+				pt.nrm.normalize();
+				pt.angleLimit = limit;
+				pt.size = size/1000.0f; // mm to m
+				curGroup->markers.push_back(pt);
+			}
+			else if (header == "g")
+			{ // Read next group name and assign current group
+				std::getline(fs >> std::ws, header);
+				curGroup = &groups[header];
+			}
+			else
+			{ // Skip line
+				std::getline(fs, header);
+			}
 		}
-		else if (header == "g")
-		{ // Read next group name and assign current group
-			std::getline(fs >> std::ws, header);
-			curGroup = &groups[header];
-		}
-		else
-		{ // Skip line
-			std::getline(fs, header);
-		}
-	}
 
-	// Turn vertex groups found into targets
-	for (auto &group : groups)
-	{
-		if (group.first != "Base" && group.first != "(null)" && (groups.size() == 1 || group.first != path))
-		{ // Given vertex group (polygroup) is a set of markers
-			group.second.id = -(targets.size() + 1);
-			group.second.label = std::move(group.first);
-			group.second.updateMarkers();
-			targets.push_back(std::move(group.second));
+		// Turn vertex groups found into targets
+		for (auto &group : groups)
+		{
+			if (group.first != "Base" && group.first != "(null)" && (groups.size() == 1 || group.first != path))
+			{ // Given vertex group (polygroup) is a set of markers
+				group.second.id = -(targets.size() + 1);
+				group.second.label = std::move(group.first);
+				group.second.updateMarkers();
+				targets.push_back(std::move(group.second));
+			}
 		}
 	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse OBJ file %s!", path.c_str())
+		fs.close();
+		return false;
+	}
+#endif
+
 	fs.close();
 	return true;
 }

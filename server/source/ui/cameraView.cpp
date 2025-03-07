@@ -906,9 +906,8 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 	}
 	// Gather further frame data
-	std::shared_ptr<const FrameRecord> frameState = *visFrame.frameIt; // new shared_ptrframe
-	auto &frame = *frameState;
-	auto &camFrame = frame.cameras[camera.pipeline->index];
+	std::shared_ptr<const FrameRecord> frame = *visFrame.frameIt; // new shared_ptr
+	auto &camFrame = frame->cameras[camera.pipeline->index];
 	PipelinePhase phase = pipeline.phase.load();
 
 	/**
@@ -1062,12 +1061,12 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		if (phase == PHASE_Automatic)
 		{
 			visSetupCamera(postProjMat, calib, mode, viewSize);
-			for (auto &targetRecord : frame.tracking.targets)
+			for (auto &targetRecord : frame->tracking.targets)
 			{
 				visualisePose(targetRecord.poseFiltered, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
 			}
 			// TODO: Implement marker tracking once it becomes useful
-			/* for (auto &markerRecord : frame.tracking.markers)
+			/* for (auto &markerRecord : frameState->tracking.markers)
 			{
 				visualisePointsSpheres({ VisPoint{ markerRecord.position, Color{ 0.8, 0.8, 0, 1.0f }, 10.0f } });
 			} */
@@ -1075,9 +1074,9 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 		else if (phase == PHASE_Tracking)
 		{
-			if (visState.tracking.debug.frameNum > 0 && visState.tracking.debug.frameNum < frame.num)
+			if (visState.tracking.debug.frameNum > 0 && visState.tracking.debug.frameNum < frame->num)
 				visState.tracking.debug = {}; // Any one camera can reset
-			if (displayInternalDebug && visState.tracking.debug.frameNum == frame.num && visState.tracking.debugMatchingState)
+			if (displayInternalDebug && visState.tracking.debug.frameNum == frame->num && visState.tracking.debugMatchingState)
 			{ // Visualise internal tracking debug instead of normal vis
 				std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
 				if (!pipeline_lock.owns_lock()) return;
@@ -1100,14 +1099,14 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 			// Display poses in 3D
 			visSetupCamera(postProjMat, calib, mode, viewSize);
-			for (auto &targetRecord : frame.tracking.targets)
+			for (auto &targetRecord : frame->tracking.targets)
 				visualisePose(targetRecord.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
 			if (visState.room.showOrigin)
 				visualiseOrigin(visState.room.origin, 1, 5);
 			visSetupProjection(postProjMat, viewSize);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			for (auto &trackedTarget : frame.tracking.targets)
+			for (auto &trackedTarget : frame->tracking.targets)
 			{
 				auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 					[&](auto &t){ return t.id == trackedTarget.id; });

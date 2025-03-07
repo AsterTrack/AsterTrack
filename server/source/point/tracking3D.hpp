@@ -19,14 +19,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef POINT_TRACKING_3D_H
 #define POINT_TRACKING_3D_H
 
-#include "util/eigendef.hpp"
-#include "util/kalman.hpp"
+#include "pipeline/parameters.hpp"
 #include "point/triangulation.hpp"
+
+#include "util/util.hpp" // TimePoint_t
+#include "util/eigendef.hpp"
+
+#include "flexkalman/process/PoseSeparatelyDampedConstantVelocity.h"
+#include "flexkalman/state/PoseState.h"
 
 #include <vector>
 
 /**
  * Tracking a single point (marker) in 3D space
+ * Treated as having a 6-DOF pose to allow for connecting with IMU later on for rotation
  */
 
 
@@ -36,30 +42,33 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 template<typename Scalar>
 struct TrackedMarker
 {
-	typedef Scalar ScalarType;
+	using ScalarType = Scalar;
+	using State = flexkalman::pose_externalized_rotation::State;
+	using Model = flexkalman::PoseSeparatelyDampedConstantVelocityProcessModel<State>;
 
-	// 3-DOF Kalman filter
-	typedef State3DOF<Scalar> State;
-	typedef SystemModel3DOF<Scalar> MovementModel;
-	typedef MeasurementModel3DOF<Scalar> MeasurementModel;
+	// State
+	int measurements = 0;
+	Scalar size; // For matching of markers, either single marker size or target radius
 
 	// Filter
-	Kalman::ExtendedKalmanFilter<State> filter;
-	MovementModel movementModel;
-	MeasurementModel measurementModel;
-	float errorScaleT;
-	// State
-	int measurements;
-	State3DOF<Scalar> state;
-	// Identification
-	Scalar size; // For matching of markers, either single marker size or target radius
+	State state;
+	Model model;
+
+	// Prediction
+	Isometry3<Scalar> posePredicted;
+	Eigen::Matrix<Scalar,3,1> stdDev;
+
+	// Results
+	Isometry3<Scalar> poseObserved; // Pose as observed by the cameras
+	Isometry3<Scalar> poseFiltered; // Pose filtered from all observations
 };
 
 
 /* Functions */
 
-int trackMarker(TrackedMarker<float> &marker,
-	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &indices,
+template<typename TrackedMarker = TrackedMarker<float>>
+int trackMarker(TrackedMarker &marker,
+	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
 	float timestep, float sigma);
 
 #endif // POINT_TRACKING_3D_H

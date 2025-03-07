@@ -23,26 +23,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef FLEX_UKF_H
-#define FLEX_UKF_H
+#ifndef TARGET_KALMAN_H
+#define TARGET_KALMAN_H
 
-#include "flexkalman/EigenQuatExponentialMap.h"
-#include "flexkalman/FlexibleKalmanBase.h"
 #include "flexkalman/BaseTypes.h"
-
-/**
- * AbsolutePoseMeasurement for use with flexkalman UKF
- */
-
-using namespace flexkalman;
+#include "flexkalman/FlexibleKalmanBase.h"
+#include "flexkalman/EigenQuatExponentialMap.h"
 
 class AbsolutePoseMeasurement :
-	public flexkalman::MeasurementBase<AbsolutePoseMeasurement> {
-  public:
+	public flexkalman::MeasurementBase<AbsolutePoseMeasurement>
+{
+public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	static constexpr size_t Dimension = 6;
-	using MeasurementVector = types::Vector<Dimension>;
-	using MeasurementSquareMatrix = types::SquareMatrix<Dimension>;
+	using MeasurementVector = flexkalman::types::Vector<Dimension>;
+	using MeasurementSquareMatrix = flexkalman::types::SquareMatrix<Dimension>;
 
 	AbsolutePoseMeasurement(Eigen::Vector3d const &pos,
 							Eigen::Quaterniond const &quat,
@@ -57,16 +52,18 @@ class AbsolutePoseMeasurement :
 
 	AbsolutePoseMeasurement(Eigen::Vector3d const &pos,
 							Eigen::Quaterniond const &quat,
-							Eigen::Matrix<double,6,6> const &covariance)
+							MeasurementSquareMatrix const &covariance)
 		: m_pos(pos), m_quat(quat), m_covariance(covariance) {}
 
 	template <typename State>
-	MeasurementSquareMatrix const &getCovariance(State const &) {
+	MeasurementSquareMatrix const &getCovariance(State const &)
+	{
 		return m_covariance;
 	}
 
 	template <typename State>
-	MeasurementVector predictMeasurement(State const &state) const {
+	MeasurementVector predictMeasurement(State const &state) const
+	{
 		MeasurementVector prediction;
 		prediction.head<3>() = state.position();
 		prediction.tail<3>() = state.incrementalOrientation();
@@ -75,36 +72,37 @@ class AbsolutePoseMeasurement :
 
 	template <typename State>
 	MeasurementVector getResidual(MeasurementVector const &prediction,
-								  State const &s) const {
+								  State const &state) const
+	{
 		// The prediction we're given is effectively "the state's incremental
 		// rotation", which is why we're using our measurement here as well as
 		// the prediction.
-		const Eigen::Quaterniond predictedQuat = util::quat_exp(
-			prediction.tail<3>() / 2.) * s.getQuaternion();
+		const Eigen::Quaterniond predictedQuat =
+			flexkalman::util::quat_exp(prediction.tail<3>() / 2) * state.getQuaternion();
 		MeasurementVector residual;
 		residual.head<3>() = m_pos - prediction.head<3>();
-		residual.tail<3>() = 2 * util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+		residual.tail<3>() = 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
 		return residual;
 	}
+
 	/*!
 	 * Gets the measurement residual, also known as innovation: predicts
 	 * the measurement from the predicted state, and returns the
 	 * difference.
-	 *
-	 * State type doesn't matter as long as we can
-	 * `.getCombinedQuaternion()`
 	 */
 	template <typename State>
-	MeasurementVector getResidual(State const &s) const {
-		const Eigen::Quaterniond predictedQuat = s.getCombinedQuaternion();
+	MeasurementVector getResidual(State const &state) const
+	{
+		const Eigen::Quaterniond predictedQuat = state.getCombinedQuaternion();
 		// Two equivalent quaternions: but their logs are typically
 		// different: one is the "short way" and the other is the "long
 		// way". We'll compute both and pick the "short way".
 		MeasurementVector residual;
-		residual.head<3>() = m_pos - s.position();
-		residual.tail<3>() = 2 * util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+		residual.head<3>() = m_pos - state.position();
+		residual.tail<3>() = 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
 		return residual;
 	}
+
 	//! Convenience method to be able to store and re-use measurements.
 	void setMeasurement(Eigen::Vector3d const &pos, Eigen::Quaterniond const &quat)
 	{
@@ -112,10 +110,10 @@ class AbsolutePoseMeasurement :
 		m_pos = pos;
 	}
 
-  private:
+private:
 	Eigen::Vector3d m_pos;
 	Eigen::Quaterniond m_quat;
 	MeasurementSquareMatrix m_covariance;
 };
 
-#endif // FLEX_UKF_H
+#endif // TARGET_KALMAN_H

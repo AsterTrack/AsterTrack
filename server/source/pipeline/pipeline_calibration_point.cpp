@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "calib/obs_data.inl"
 
 #include "util/log.hpp"
+#include "util/eigenutil.hpp"
 
 #include "scope_guard/scope_guard.hpp"
 

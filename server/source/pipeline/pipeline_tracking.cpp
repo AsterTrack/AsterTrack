@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/debugging.hpp"
 #include "util/log.hpp"
+#include "util/eigenutil.hpp"
 
 #include "dbscan/dbscan.hpp"
 

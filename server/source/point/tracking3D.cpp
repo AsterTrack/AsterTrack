@@ -17,7 +17,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "point/tracking3D.hpp"
+#include "point/kalman.inl"
+
 #include "util/log.hpp"
+
+#include "flexkalman/FlexibleKalmanFilter.h"
+#include "flexkalman/FlexibleUnscentedCorrect.h"
 
 /**
  * Tracking a single point (marker) in 3D space
@@ -26,51 +31,41 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-int trackMarker(TrackedMarker<float> &marker,
+template<typename TrackedMarker>
+int trackMarker(TrackedMarker &marker,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
 	float timestep, float sigma)
 {
-	TimeControl<float> timeStep;
-	timeStep.dt() = timestep;
-	
-	// Predict new state and uncertainty
-	State3DOF<float> predState;
-	Eigen::Vector3f predStdDev;
-	if (marker.measurements == 1)
-	{
-		predState = marker.state;
-		predStdDev = Eigen::Vector3f::Constant(10);
-	}
-	else if (marker.measurements == 2)
-	{
-		predState = marker.movementModel.f(marker.state, timeStep);
-		predStdDev = marker.state.vel()*2 + Eigen::Vector3f::Constant(1);
-	}
-	else
-	{
-		marker.movementModel.setExpectedError(marker.errorScaleT);
-		predState = marker.filter.predict(marker.movementModel, timeStep);
-		predStdDev = marker.filter.getCovariance().block<3,3>(0,0).diagonal().cwiseSqrt();
-	}
+	using Scalar = typename TrackedMarker::ScalarType;
 
-	// Calculate uncertainty
-	Eigen::Vector3f uncertainty = predStdDev*sigma;
-	Eigen::Vector3f factor = Eigen::Vector3f::Constant(1).cwiseQuotient(uncertainty);
+	auto &filter = marker;
+
+	// TODO: Move into parameters once this is used
+	TargetTrackingParameters params = {};
+
+	// Predict new state
+	filter.model.setDamping(params.dampeningPos, params.dampeningRot);
+	flexkalman::predict(filter.state, filter.model, timestep);
+	filter.posePredicted = filter.state.getIsometry().template cast<float>();
+	filter.stdDev = filter.state.errorCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt().template cast<float>();
+
+	Eigen::Vector3f predPos = filter.posePredicted.translation();
+	Eigen::Matrix3f predCov = filter.state.errorCovariance().template topLeftCorner<3,3>().template cast<float>();
 
 	// Find best candidate
 	int matchedPoint = -1;
 	float matchedErrorProbability = std::numeric_limits<float>::max();
 	for (int p : triIndices)
 	{
-		// Probability: >1, then outside confidence interval and likely not matching
-		// TODO: Proper gaussian probability calculation?
-		auto diff = points3D[p]-predState.pos();
-		auto compErrorProbability = diff.cwiseAbs().cwiseProduct(factor);
-		float errorProbability = 1-(Eigen::Vector3f::Constant(1)-compErrorProbability).prod();
-		if (errorProbability < matchedErrorProbability)
-		{
+		Eigen::Vector3f diff = points3D[p]-predPos;
+		float err = diff.norm();
+		Eigen::Vector3f dir = diff/err;
+		float var = dir.transpose() * predCov * dir;
+		float limit = std::sqrt(var) * 3;
+		if (err < limit)
+		{ // Within sigma interval
 			matchedPoint = p;
-			matchedErrorProbability = errorProbability;
+			matchedErrorProbability = err/limit;
 		}
 	}
 
@@ -80,58 +75,22 @@ int trackMarker(TrackedMarker<float> &marker,
 		return -1;
 	}
 
-	marker.measurements++;
-	Eigen::Vector3f position = points3D[matchedPoint];
-	float posError = (position - predState.pos()).norm();
-	float posDiff = (position - marker.state.pos()).norm();
-	
-	auto debugState = [](State3DOF<float> &state, std::string label = "State")
+	// Update filter
+	filter.measurements++;
+	filter.poseObserved.translation() = points3D[matchedPoint];
+	auto measurement = AbsolutePositionMeasurement(
+		points3D[matchedPoint].template cast<double>(),
+		Eigen::Vector3d::Constant(params.uncertaintyPos).eval());
+	flexkalman::SigmaPointParameters sigmaParams(params.sigmaAlpha, params.sigmaBeta, params.sigmaKappa);
+	if (!flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams))
 	{
-		LOG(LTracking, LDebug, "%s: %.3fcm/f, %.3fcm/f^2\n", label.c_str(), state.vel().norm(), state.acc().norm());
-	};
-
-	// Correct state and uncertainty
-	if (marker.measurements == 2)
-	{ // Calculate velocity
-		marker.state.vel() = (position - marker.state.pos())/timeStep.dt();
-		marker.state.pos() = position;
-
-		debugState(marker.state, "First State");
-		LOG(LTracking, LDebug, "Matched point %d with error probability %f%%, uncertainty %fcm! Moved %.3fcm, error %.3fcm! Preliminary State: %fcm/s\n", matchedPoint, 100*matchedErrorProbability, uncertainty.mean(), posDiff, posError, marker.state.vel().norm());
+		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
 	}
-	else if (marker.measurements == 3)
-	{ // Calculate acceleration and update velocity
-		Eigen::Vector3f vel = (position-marker.state.pos())/timeStep.dt();
-		marker.state.acc() = (vel-marker.state.vel())/timeStep.dt();
-		marker.state.vel() = vel;
-		marker.state.pos() = position;
-		marker.filter.init(marker.state);
-
-		debugState(marker.filter.getState(), "Second State");
-		LOG(LTracking, LDebug, "Matched point %d with error probability %f%%, uncertainty %fcm! Moved %.3fcm, error %.3fcm! Preliminary State: %fcm/s, %fcm/s^2\n", matchedPoint, 100*matchedErrorProbability, uncertainty.mean(), posDiff, posError, marker.filter.getState().vel().norm(), marker.filter.getState().acc().norm());
-	}
-	else
-	{ // Use initialised filter
-
-		// Debug predicted state
-		debugState(marker.filter.getState(), "Predicted State");
-
-		// Create measurement
-		marker.state.pos() = position;
-		auto measurement = marker.measurementModel.h(marker.state); 
-
-		// Update filter
-		marker.measurementModel.setExpectedError(0.1f); // Expecting 1mm accuracy.
-		// TODO: Adapt expected error like in trackMarker3D
-		marker.state = marker.filter.update(marker.measurementModel, measurement);
-		
-		// Adjust error scale so target confidence is reached
-		marker.errorScaleT = 0.5f*marker.errorScaleT + 0.5f*std::min(1.0f, matchedErrorProbability);
-
-		// Debug updated state
-		debugState(marker.filter.getState(), "Updated State");
-		LOG(LTracking, LDebug, "Matched point %d with error probability %.4f%%, uncertainty %.3fcm! Moved %.3fcm, error %.3fcm! State: %.3fcm/s, %.3fcm/s^2; Error scale adjusted to %.2f\n", matchedPoint, 100*matchedErrorProbability, uncertainty.mean(), posDiff, posError, marker.filter.getState().vel().norm(), marker.filter.getState().acc().norm(), marker.errorScaleT);
-	}
+	filter.poseFiltered = filter.state.getIsometry().template cast<float>() ;
 
 	return matchedPoint;
 }
+
+template int trackMarker(TrackedMarker<float> &marker,
+	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
+	float timestep, float sigma);

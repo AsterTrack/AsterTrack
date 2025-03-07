@@ -36,6 +36,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 #include "util/util.hpp" // printBuffer, TimePoint_t
 #include "util/debugging.hpp"
+#include "util/eigenutil.hpp"
 
 //#include <execinfo.h>
 //#include <signal.h>

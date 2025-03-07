@@ -63,7 +63,7 @@ void InterfaceState::UpdateSequences(bool reset)
 		// Do incremental update of all observation stats and visualisations
 		UpdateIncrementalSequencesVis(*pipeline.seqDatabase.contextualRLock(), false, false);
 
-		auto frames = pipeline.frameRecords.getView();
+		auto frames = pipeline.record.frames.getView();
 		if (!frames.empty())
 		{
 			auto &frame = frames.back();

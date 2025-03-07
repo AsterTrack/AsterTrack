@@ -286,12 +286,13 @@ void InterfaceState::UpdateMainMenuBar()
 				{
 					ServerState &state = GetState();
 					std::vector<CameraConfigRecord> cameras;
-					state.loadedFramePath = file;
-					state.loadedFrameOffset = parseFrameRecords(state.loadedFramePath, cameras, state.loadedFrameRecords);
-					parseTrackingResults(state.loadedFramePath, state.loadedFrameRecords, state.loadedFrameOffset);
-					state.frameRecordReplayPos = 0;
+					state.recordPath = file;
+					state.recordFrameOffset = parseFrameRecords(state.recordPath, cameras, state.record);
+					parseTrackingResults(state.recordPath, state.record, state.recordFrameOffset);
+					state.recordReplayFrame = 0;
+					state.recordFrameCount = state.record.frames.getView().size();
 
-					LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", state.loadedFrameRecords.size());
+					LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", state.recordFrameCount);
 					if (state.mode != MODE_None)
 					{
 						LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");

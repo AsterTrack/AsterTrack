@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/target.hpp"
 #include "target/parameters.hpp"
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 
 #include "util/eigendef.hpp"
 

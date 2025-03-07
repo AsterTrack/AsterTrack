@@ -89,12 +89,12 @@ struct ServerState
 	std::atomic<int> simAdvance = { -1 };
 	std::atomic<bool> simWaiting = { false };
 	bool simAdvanceQuickly;
-	// Replay data
-	std::string loadedFramePath;
-	unsigned int loadedFrameOffset;
-	std::vector<FrameRecord> loadedFrameRecords;
-	long frameRecordReplayPos;
-	TimePoint_t frameRecordReplayTime;
+	// Loaded record for replay
+	std::string recordPath;
+	unsigned int recordFrameOffset;
+	TrackingRecord record;
+	long recordReplayFrame, recordFrameCount;
+	TimePoint_t recordReplayTime;
 
 	// All integrations
 	struct 

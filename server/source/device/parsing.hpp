@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/protocol_packet.hpp"
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 
 #include "util/util.hpp"
 

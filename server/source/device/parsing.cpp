@@ -754,7 +754,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 			if (GetState().pipeline.keepFrameImages)
 			{ // Store compressed image record in frameRecord for later use
-				auto frames = GetState().pipeline.frameRecords.getView<false>();
+				auto frames = GetState().pipeline.record.frames.getView<false>();
 				// TODO: Create frame record anyway even if it doesn't exist yet just to store images?
 				if (frames.empty()) return;
 				if (frames.size() <= imageRecord->frameID)

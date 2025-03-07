@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "blob/qpu_blob_tiled.hpp" // To re-evaluate blob detection program layout and coverage
 #include "blob/resegmentation.hpp" // Resegmenting clusters to make sure only peaks are included
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 #include "ui/gl/visualisation.hpp"
 
 #include "util/eigendef.hpp"

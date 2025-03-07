@@ -463,26 +463,27 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			BeginSection("Tracking Results for this replay");
 			if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 			{
-				auto records = pipeline.frameRecords.getView();
-				dumpTrackingResults(state.loadedFramePath, records.begin(), records.end(), state.loadedFrameOffset);
+				dumpTrackingResults(state.recordPath, pipeline.record, 0, -1, state.recordFrameOffset);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Load from disk", SizeWidthDiv3()))
 			{
-				for (auto &record : state.loadedFrameRecords)
-					record.tracking = {};
-				parseTrackingResults(state.loadedFramePath, state.loadedFrameRecords, state.loadedFrameOffset);
+				for (auto &record : state.record.frames.getView())
+					if (record) record->tracking = {};
+				parseTrackingResults(state.recordPath, state.record, state.recordFrameOffset);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Set temporarily", SizeWidthDiv3()))
 			{
-				for (auto &record : state.loadedFrameRecords)
-					record.tracking = {};
-				for (const auto &record : pipeline.frameRecords.getView())
+				auto frames = pipeline.record.frames.getView();
+				auto stored = state.record.frames.getView();
+				for (auto &record : stored)
+					if (record) record->tracking = {};
+				for (const auto &record : frames)
 				{
 					if (!record) continue;
-					if (state.loadedFrameRecords.size() <= record->num) break;
-					state.loadedFrameRecords[record->num].tracking = record->tracking;
+					if (stored.size() <= record->num) break;
+					stored[record->num]->tracking = record->tracking;
 				}
 			}
 
@@ -517,12 +518,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				tracked = {};
 				targets.clear();
 				coveredFrames = 0;
-				for (const auto &record : pipeline.frameRecords.getView())
+				auto frames = pipeline.record.frames.getView();
+				auto stored = state.record.frames.getView();
+				for (const auto &record : frames)
 				{
 					if (!record) continue;
-					if (state.loadedFrameRecords.size() <= record->num) break;
+					if (stored.size() <= record->num) break;
 					coveredFrames++;
-					auto &loaded = state.loadedFrameRecords[record->num].tracking;
+					auto &loaded = stored[record->num]->tracking;
 					auto &current = record->tracking;
 					// Update changes to all tracking events
 					updateEventChange(losses, loaded.trackingLosses, current.trackingLosses);

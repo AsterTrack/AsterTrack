@@ -355,7 +355,7 @@ void InterfaceState::GeneralUpdate()
 	}
 
 	if ((state.mode == MODE_Device || state.simAdvance.load() != 0) &&
-		(state.mode != MODE_Replay || state.frameRecordReplayPos < state.loadedFrameRecords.size()) &&
+		(state.mode != MODE_Replay || state.recordReplayFrame < state.recordFrameCount) &&
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{
 		static TimePoint_t lastObservationUpdate;

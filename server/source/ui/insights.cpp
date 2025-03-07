@@ -547,9 +547,10 @@ static bool ShowTrackingPanel()
 		ImGui::Checkbox("Recorded", &showRec);
 	}
 
-	auto frames = pipeline.frameRecords.getView();
+	auto frames = pipeline.record.frames.getView();
+	auto stored = state.record.frames.getView();
 	unsigned int frameNum = pipeline.frameNum.load();
-	if (curTargetID != 0 && (!frames.empty() || !state.loadedFrameRecords.empty())
+	if (curTargetID != 0 && (!frames.empty() || !stored.empty())
 		&& ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
 	{
 		static struct {
@@ -617,7 +618,7 @@ static bool ShowTrackingPanel()
 			frameRange.Min += offset;
 			frameRange.Max += offset;
 		}
-		double framesAxisMax = std::max((double)std::max(frames.endIndex(), state.loadedFrameRecords.size()), frameRange.Max);
+		double framesAxisMax = std::max((double)std::max(frames.endIndex(), stored.size()), frameRange.Max);
 
 		// Setup plots
 		ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
@@ -656,18 +657,19 @@ static bool ShowTrackingPanel()
 			GetUI().RequestUpdates();
 		}
 
-		if (showRec && state.mode == MODE_Replay && !state.loadedFrameRecords.empty())
+		if (showRec && state.mode == MODE_Replay && !stored.empty())
 		{ // Gather stats for recorded tracking data
 			long long min = std::max<long long>(frameRange.Min-1, 0);
-			long long max = std::min<long long>(frameRange.Max+1, state.loadedFrameRecords.size()-1);
+			long long max = std::min<long long>(frameRange.Max+1, stored.size()-1);
 			if (max >= min)
 			{
 				std::size_t frameCnt = max-min+1;
 				recording.setup(frameCnt);
-				auto frameIt = state.loadedFrameRecords.begin() + max;
+				auto frameIt = stored.begin() + max;
 				for (int i = 0; i < frameCnt; i++, frameIt--)
 				{
-					updateFrameStats(recording, frameCnt-i-1, *frameIt, 0.4f);
+					if (*frameIt)
+						updateFrameStats(recording, frameCnt-i-1, *frameIt->get(), 0.4f);
 				}
 				frameShiftRec = (double)min;
 				drawRec = frameCnt > 0;

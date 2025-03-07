@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef PIPELINE_H
 #define PIPELINE_H
 
-#include "frameRecord.hpp"
+#include "record.hpp"
 
 #include "pipeline/parameters.hpp"
 
@@ -92,7 +92,6 @@ struct CameraPipeline
 	CameraPipeline(CameraID ID, int Index) : id(ID), index(Index) {}
 };
 
-
 /**
  * State of algorithms of different phases
  */
@@ -118,7 +117,7 @@ struct PipelineState
 
 	// Frames
 	std::atomic<long> frameNum = -1;
-	BlockedQueue<std::shared_ptr<FrameRecord>> frameRecords;
+	TrackingRecord record = {};
 	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true;
 	// TODO: Periodically cull_front+delete_culled to free old frame records
 	// Various calibration routines might need access to older frame records in the queue

@@ -55,9 +55,9 @@ void ResetPipeline(PipelineState &pipeline)
 	InitPointCalibration(pipeline);
 
 	pipeline.frameNum = -1;
-	pipeline.frameRecords.clear(); // Blocking
-	//pipeline.frameRecords.cull_clear(); // Non-blocking, might need another delete_culled later
-	//pipeline.frameRecords.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
+	pipeline.record.frames.clear(); // Blocking
+	//pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
+	//pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
 }
 
 /**
@@ -168,14 +168,14 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	{
-		auto frames = pipeline.frameRecords.getView();
+		auto frames = pipeline.record.frames.getView();
 		if (frames.size() <= frameRecord.num || !frames[frameRecord.num] || frames[frameRecord.num].get() != &frameRecord)
-			pipeline.frameRecords.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
+			pipeline.record.frames.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
 	}
 	pipeline.frameNum = frameRecord.num;
 
-	// Point and Target calibration pipeline can just stay as is, as long as frameRecords stays
-	// We will be overwriting frameRecords, so technically leaving them as-is is not thread-safe
+	// Point and Target calibration pipeline can just stay as is, as long as frame records stays
+	// We will be overwriting frame records, so technically leaving them as-is is not thread-safe
 
 	// Adopt recorded tracking state
 	InitTrackingPipeline(pipeline);

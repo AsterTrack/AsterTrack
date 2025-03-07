@@ -160,12 +160,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		else if (state.mode == MODE_Replay)
 		{
 			ImGui::BeginDisabled(!state.isStreaming);
-			if (!state.loadedFrameRecords.empty())
+			if (state.recordFrameCount > 0)
 			{
 				ImGui::AlignTextToFramePadding();
 				AddOnDemandText("Replaying 00000000 / 00000000 frames", [](const ImDrawList* dl, const ImDrawCmd* dc)
 				{
-					RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Replaying %ld / %ld frames", GetState().frameRecordReplayPos, GetState().loadedFrameRecords.size());
+					RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Replaying %ld / %ld frames", GetState().recordReplayFrame, GetState().recordFrameCount);
 				});
 				SameLineTrailing(SizeWidthDiv3().x);
 				if (ImGui::Button("Restart", SizeWidthDiv3()))
@@ -178,7 +178,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					state.pipeline.seqDatabase.contextualLock()->clear();
 					UpdateSequences(true);
 					ResetPipeline(state.pipeline);
-					state.frameRecordReplayPos = 0;
+					state.recordReplayFrame = 0;
 					// Continue advancing
 					state.simAdvance = prevState;
 					state.simAdvance.notify_all();
@@ -199,15 +199,17 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				// Jump to frame after last frame has been processed
 				if (frameJumpTarget <= pipeline.frameNum)
 				{
-					auto frames = pipeline.frameRecords.getView();
+					auto frames = pipeline.record.frames.getView();
 					if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
 						AdoptFrameRecordState(pipeline, *frames[frameJumpTarget]);
 				}
-				else if (frameJumpTarget < state.loadedFrameRecords.size())
+				else
 				{
-					AdoptFrameRecordState(pipeline, state.loadedFrameRecords[frameJumpTarget]);
+					auto frames = pipeline.record.frames.getView();
+					if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
+						AdoptFrameRecordState(pipeline, *frames[frameJumpTarget]);
 				}
-				state.frameRecordReplayPos = frameJumpTarget+1;
+				state.recordReplayFrame = frameJumpTarget+1;
 				// Continue advancing
 				state.simAdvance = prevState;
 				state.simAdvance.notify_all();
@@ -237,7 +239,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			}
 		}
 		ImGui::SameLine();
-		ImGui::BeginDisabled(pipeline.frameRecords.getView().empty());
+		ImGui::BeginDisabled(pipeline.record.frames.getView().empty());
 		if (ImGui::Button("Save All Frames", SizeWidthDiv2()))
 		{
 			recordSections.emplace_back(0, pipeline.frameNum, true);
@@ -287,14 +289,16 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							for (auto &cam : pipeline.cameras)
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
 							// Write to path
-							auto records = pipeline.frameRecords.getView();
-							if (records.endIndex() < section.end)
-							{ // Already deleted
-								LOG(LGUI, LWarn, "The section to be saved has already been deleted internally!");
-								return;
+							{
+								auto records = pipeline.record.frames.getView();
+								if (records.endIndex() < section.end)
+								{ // Already deleted
+									LOG(LGUI, LWarn, "The section to be saved has already been deleted internally!");
+									return;
+								}
 							}
-							dumpFrameRecords(section.path, records.pos(section.begin), records.pos(section.end), cameras);
-							dumpTrackingResults(section.path, records.pos(section.begin), records.pos(section.end), 0);
+							dumpFrameRecords(section.path, cameras, pipeline.record, section.begin, section.end);
+							dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);
 							for (auto &s : GetUI().recordSections)
 								if (s.begin == section.begin && s.end == section.end)
 									s.saved = true;
@@ -390,17 +394,19 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				int jumpTarget = range.begin-1;
 				if (jumpTarget <= pipeline.frameNum)
 				{
-					auto frames = pipeline.frameRecords.getView();
+					auto frames = pipeline.record.frames.getView();
 					for (int f = jumpTarget; f < frames.size(); f++)
 						if (frames[f]) frames[f]->finishedProcessing = false;
-					if (jumpTarget < frames.size())
+					if (jumpTarget < frames.size() && frames[jumpTarget])
 						AdoptFrameRecordState(pipeline, *frames[jumpTarget]);
 				}
-				else if (jumpTarget < state.loadedFrameRecords.size())
+				else
 				{
-					AdoptFrameRecordState(pipeline, state.loadedFrameRecords[jumpTarget]);
+					auto frames = pipeline.record.frames.getView();
+					if (jumpTarget < frames.size() && frames[jumpTarget])
+						AdoptFrameRecordState(pipeline, *frames[jumpTarget]);
 				}
-				state.frameRecordReplayPos = jumpTarget+1;
+				state.recordReplayFrame = jumpTarget+1;
 				// Quickly advance through frame range
 				state.simAdvanceQuickly = true;
 				state.simAdvance = range.end-range.begin;
@@ -411,7 +417,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (stop_token.stop_requested()) break;
 				if (state.simAdvance.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
-				auto frames = pipeline.frameRecords.getView();
+				auto frames = pipeline.record.frames.getView();
 				auto begin = frames.pos(range.begin), end = frames.pos(range.end);
 				FrameRange::Results results = {};
 				LOG(LGUI, LDebug, "Updating range from frame %d - %d", range.begin, range.end);
@@ -501,11 +507,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				addFrameRange[1] = frame.num;
 				inRange = true;
 			};
-			auto frames = pipeline.frameRecords.getView();
+			auto frames = pipeline.record.frames.getView();
 			for (auto &frame : frames)
-				handleFrame(*frame);
-			for (int f = addFrameRange[1]; f < state.loadedFrameRecords.size(); f++)
-				handleFrame(state.loadedFrameRecords[f]);
+				if (frame) handleFrame(*frame);
+			auto stored = state.record.frames.getView();
+			for (int f = addFrameRange[1]+1; f < stored.endIndex(); f++)
+				if (stored[f]) handleFrame(*stored[f]);
 			if (inRange)
 				frameRanges.push_back({ (unsigned int)std::max<long>(0, (long)addFrameRange[0]-reach), addFrameRange[1]+reach, true, false });
 		}

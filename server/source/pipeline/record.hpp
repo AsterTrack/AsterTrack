@@ -16,11 +16,12 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef FRAME_RECORD_H
-#define FRAME_RECORD_H
+#ifndef RECORD_H
+#define RECORD_H
 
 #include "util/eigendef.hpp"
 #include "util/util.hpp" // TimePoint_t
+#include "util/blocked_vector.hpp"
 
 #include <vector>
 #include <memory>
@@ -146,4 +147,12 @@ struct FrameRecord
 	// Both target calibration (tryTrackFrame) and async detection2D (retroactivelyTrackFrame) would benefit
 };
 
-#endif
+/**
+ * Record of all data for replay as well as tracking results
+ */
+struct TrackingRecord
+{
+	BlockedQueue<std::shared_ptr<FrameRecord>> frames;
+};
+
+#endif // RECORD_H

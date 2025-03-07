@@ -80,7 +80,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		if (ImGui::Button("Load##Observations", SizeWidthDiv3()))
 		{
 			auto views_lock = pipeline.targetCalib.views.contextualLock();
-			*views_lock = parseTargetViewRecords("dump/targetViewsDebug.json", pipeline.frameRecords);
+			*views_lock = parseTargetViewRecords("dump/targetViewsDebug.json", pipeline.record.frames);
 			for (auto &view : *views_lock)
 			{
 				{ // Fill target observations and calculate errors
@@ -324,7 +324,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto obs_lock = pipeline.seqDatabase.contextualRLock();
 				auto target_lock = visState.targetCalib.view->target.contextualLock();
 				TargetTemplate3D trkTarget(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
-				expandFrameObservations(calibs, pipeline.frameRecords, *target_lock, trkTarget, pipeline.targetCalib.params.assembly.trackFrame);
+				expandFrameObservations(calibs, pipeline.record.frames, *target_lock, trkTarget, pipeline.targetCalib.params.assembly.trackFrame);
 				reevaluateMarkerSequences<true>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 10 });
 				updateTargetObservations(*target_lock, obs_lock->markers);
 				view.state.errors = getTargetErrorDist(calibs, *target_lock);
@@ -727,7 +727,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				TargetAssemblyBase base = stages_lock->back()->base;
 				auto obs_lock = pipeline.seqDatabase.contextualRLock();
-				base.target = subsampleTargetObservations(pipeline.frameRecords, obs_lock->markers, base.target, pipeline.targetCalib.params.assembly.subsampling);
+				base.target = subsampleTargetObservations(pipeline.record.frames, obs_lock->markers, base.target, pipeline.targetCalib.params.assembly.subsampling);
 				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
 				base.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));

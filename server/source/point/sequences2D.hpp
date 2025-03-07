@@ -15,7 +15,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "calib/camera_system.hpp" // CameraSystemCalibration
 
-#include "pipeline/frameRecord.hpp" // BlobProperty
+#include "pipeline/record.hpp" // BlobProperty
 
 #define INCLUDE_MATCHING_PARAMS_ONLY
 #include "util/matching.hpp"

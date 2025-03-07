@@ -19,6 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include "pipeline/record.hpp"
+#include "blob/parameters.hpp"
+
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
@@ -26,8 +29,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <map>
 #include <string>
 #include <memory> // shared_ptr
-
-#include "blob/parameters.hpp"
 
 /**
  * Parsing and writing of Config and other files
@@ -37,7 +38,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* Structures */
 
 // Forward-declared opaque structs
-struct FrameRecord; // pipeline/frameRecord.hpp
+struct FrameRecord; // pipeline/record.hpp
 struct TargetTemplate3D; // target/target.hpp
 struct TargetView; // calib_target/assembly.hpp
 struct TargetAssemblyBase; // calib_target/assembly.hpp
@@ -140,13 +141,11 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate3D> &targetTemplates);
 void storeTargetCalibrations(const std::string &path, const std::vector<TargetTemplate3D> &targetTemplates);
 
-unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, std::vector<FrameRecord> &frameRecords);
-template<typename Iterator>
-void dumpFrameRecords(const std::string &path, const Iterator &frameStart, const Iterator &frameEnd, const std::vector<CameraConfigRecord> &cameras);
+std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
+void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
-void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecords, unsigned int frameOffset);
-template<typename Iterator>
-void dumpTrackingResults(std::string path, const Iterator &frameStart, const Iterator &frameEnd, unsigned int frameOffset);
+void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset);
+void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
 
 SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs);
 void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs);

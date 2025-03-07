@@ -27,7 +27,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 {
 	VisFrameLock snapshot = {};
 	snapshot.target = lockVisTarget();
-	snapshot.frames = pipeline.frameRecords.getView();
+	snapshot.frames = pipeline.record.frames.getView();
 	if (snapshot.frames.empty())
 		return snapshot;
 	snapshot.frameIt = snapshot.frames.pos(std::max((long)0, std::min((long)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));

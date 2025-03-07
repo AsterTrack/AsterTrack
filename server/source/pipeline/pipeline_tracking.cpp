@@ -233,7 +233,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	std::size_t frameIndex = frame->num;
 
 	{
-		auto frames = pipeline.frameRecords.getView<false>();
+		auto frames = pipeline.record.frames.getView<false>();
 		if (frames.size() < frameIndex)
 		{ // FrameRecords were cleared while starting detection, abort
 			return false;
@@ -271,7 +271,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		return false;
 
 	{ // Finish the rest of the frames that were processed while waiting for the lock
-		auto frames = pipeline.frameRecords.getView<false>();
+		auto frames = pipeline.record.frames.getView<false>();
 		if (frames.size() < frameIndex)
 		{ // FrameRecords were cleared while waiting for the lock, abort
 			return false;

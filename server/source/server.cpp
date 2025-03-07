@@ -1075,7 +1075,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 		else if (state->mode == MODE_Replay)
 		{
-			if (state->loadedFrameRecords.size() <= state->frameRecordReplayPos)
+			if (state->recordFrameCount <= state->recordReplayFrame)
 			{ // No frame records to replay (or only loaded observations and there were never any frame records)
 				frameRecord = std::make_shared<FrameRecord>();
 				frameRecord->num = frameRecord->ID = pipeline.frameNum;
@@ -1084,27 +1084,29 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			}
 			else
 			{
-				auto &loadedRecord = state->loadedFrameRecords[state->frameRecordReplayPos];
-				if (loadedRecord.num != state->frameRecordReplayPos)
+				auto stored = state->record.frames.getView();
+				auto &loadedRecord = stored[state->recordReplayFrame];
+				if (!loadedRecord || loadedRecord->num != state->recordReplayFrame)
 				{
-					state->frameRecordReplayPos++;
+					state->recordReplayFrame++;
 					std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
 					continue;
 				}
-				if (state->frameRecordReplayPos == 0)
-					state->frameRecordReplayTime = sclock::now();
+				if (state->recordReplayFrame == 0)
+					state->recordReplayTime = sclock::now();
 				frameRecord = std::make_shared<FrameRecord>();
-				frameRecord->ID = loadedRecord.ID;
-				frameRecord->num = loadedRecord.num;
-				frameRecord->time = state->frameRecordReplayTime + (loadedRecord.time - state->loadedFrameRecords.front().time);
-				frameRecord->cameras = loadedRecord.cameras;
-				assert(frameRecord->num == pipeline.frameNum);
+				frameRecord->ID = loadedRecord->ID;
+				frameRecord->num = loadedRecord->num;
+				frameRecord->time = state->recordReplayTime + (loadedRecord->time - stored.front()->time);
+				frameRecord->cameras = loadedRecord->cameras;
+				//assert(frameRecord->num == pipeline.frameNum);
 				assert(frameRecord->cameras.size() == pipeline.cameras.size());
-				state->frameRecordReplayPos++;
-				if (state->loadedFrameRecords.size() > state->frameRecordReplayPos)
+				state->recordReplayFrame++;
+				if (state->recordFrameCount > state->recordReplayFrame)
 				{ // Replicate original frame pacing
-					auto &nextFrame = state->loadedFrameRecords[state->frameRecordReplayPos];
-					desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame.time - loadedRecord.time).count();
+					auto &nextRecord = stored[state->recordReplayFrame];
+					if (nextRecord)
+						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
 				for (auto &cam : state->cameras)
@@ -1138,7 +1140,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		auto frameReceiveTime = sclock::now();
 
 		// Record frame even before processing
-		pipeline.frameRecords.insert(frameRecord->num, frameRecord); // new shared_ptr
+		pipeline.record.frames.insert(frameRecord->num, frameRecord); // new shared_ptr
 
 		//threadPool.push([&](int, std::shared_ptr<FrameRecord> frameRecord)
 		{
@@ -1204,7 +1206,7 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	// Initialise state
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
-	state.frameRecordReplayPos = 0;
+	state.recordReplayFrame = 0;
 
 	// Setup cameras
 	for (auto cam : cameras)
@@ -1261,8 +1263,8 @@ void StopReplay(ServerState &state)
 	state.controllers.clear();
 	state.cameras.clear();
 	state.pipeline.cameras.clear();
-	state.loadedFrameRecords.clear();
-	state.frameRecordReplayPos = 0;
+	state.record.frames.cull_clear();
+	state.recordReplayFrame = 0;
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1570,7 +1572,7 @@ void StopStreaming(ServerState &state)
 	}
 	if (state.mode == MODE_Replay)
 	{
-		state.frameRecordReplayPos = 0;
+		state.recordReplayFrame = 0;
 	}
 
 	state.isStreaming = false;
@@ -1784,7 +1786,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	}, frameRecord); // new shared_ptr
 
 	// Record frame even before processing
-	pipeline.frameRecords.insert(frameRecord->num, std::move(frameRecord));
+	pipeline.record.frames.insert(frameRecord->num, std::move(frameRecord));
 }
 
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data,

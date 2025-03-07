@@ -965,7 +965,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 					assembly.state.errors = errors;
 					assembly.state.numSteps++;
 				};
-				base.errors = optimiseTargetDataLoop(base.target, calibs, pipeline->frameRecords, observations, params.subsampling, aquisition,
+				base.errors = optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
 				assembly.state.errors = base.errors;
 				assembly.state.optimising = false;
@@ -1059,13 +1059,13 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				auto itUpdate = [&](OptErrorRes errors){ assembly.state.numSteps++; };
 				assembly.state.optimising = true;
 				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt/2;
-				optimiseTargetDataLoop(base.target, calibs, pipeline->frameRecords, observations, params.subsampling, aquisition,
+				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt/2, params.optTolerance, { 1000 }, stopToken, itUpdate);
 				assembly.state.optimising = false;
 				if (stopToken.stop_requested()) break;
 				assembly.state.optimising = true;
 				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt;
-				optimiseTargetDataLoop(base.target, calibs, pipeline->frameRecords, observations, params.subsampling, aquisition,
+				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
 				assembly.state.optimising = false;
 				if (stopToken.stop_requested()) break;
@@ -1113,7 +1113,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				auto itUpdate = [&](OptErrorRes errors){ assembly.state.numSteps++; };
 				assembly.state.optimising = true;
 				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt/2;
-				optimiseTargetDataLoop(base.target, calibs, pipeline->frameRecords, observations, params.subsampling, aquisition,
+				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
 				assembly.state.optimising = false;
 				if (stopToken.stop_requested()) break;
@@ -1156,7 +1156,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			{
 				assembly.state.currentStage = "Expanding frames";
 
-				expandFrameObservations(calibs, pipeline->frameRecords, base.target, base.targetTemplate, params.trackFrame);
+				expandFrameObservations(calibs, pipeline->record.frames, base.target, base.targetTemplate, params.trackFrame);
 				ReevaluateSequenceParameters reevalParams = params.reevaluation;
 				reevalParams.sigmaMerge = 0; // Disable marker merging
 				reevaluateMarkerSequences<true>(calibs, observations, base.target, reevalParams);

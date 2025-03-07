@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "config.hpp"
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 #include "target/target.hpp"
 #include "point/sequence_data.hpp"
 #include "calib_target/assembly.hpp"
@@ -450,7 +450,7 @@ void storeTargetCalibrations(const std::string &path, const std::vector<TargetTe
 	fs.close();
 }
 
-unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, std::vector<FrameRecord> &frameRecords)
+std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 
@@ -500,8 +500,8 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 		else
 			return 0;
 
-		frameRecords.clear();
-		frameRecords.reserve((std::size_t)(jsFrames.size()*1.01f+100));
+		record.frames.cull_clear();
+		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
 		TimePoint_t startT = sclock::now();
 		bool foundFirst = false;
 		for (auto &jsFrame : jsFrames)
@@ -516,23 +516,22 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 				frameOffset = num;
 				foundFirst = true;
 			}
-			frameRecords.resize(num-frameOffset+1);
-			FrameRecord &frame = frameRecords[num-frameOffset];
-			frame.ID = jsFrame["id"].get<unsigned int>();
-			frame.num = num-frameOffset;
-			frame.time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
-			frame.cameras.reserve(cameras.size());
+			auto frame = std::make_shared<FrameRecord>();
+			frame->ID = jsFrame["id"].get<unsigned int>();
+			frame->num = num-frameOffset;
+			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
+			frame->cameras.reserve(cameras.size());
 
 			for (auto &jsCamera : jsCameras)
 			{
-				if (frame.cameras.size() >= cameras.size())
+				if (frame->cameras.size() >= cameras.size())
 					return frameOffset;
 				if (!jsCamera.contains("blobs")) continue;
 				if (!jsCamera["blobs"].is_array()) continue;
 				auto &jsBlobs = jsCamera["blobs"];
 
-				frame.cameras.push_back({});
-				auto &camera = frame.cameras.back();
+				frame->cameras.push_back({});
+				auto &camera = frame->cameras.back();
 				camera.rawPoints2D.reserve(jsBlobs.size());
 				camera.properties.reserve(jsBlobs.size());
 
@@ -564,9 +563,9 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 				// Record image
 				camera.image = std::make_shared<CameraImageRecord>();
 				auto &image = *camera.image;
-				int camIndex = frame.cameras.size()-1;
+				int camIndex = frame->cameras.size()-1;
 				image.cameraID = cameras[camIndex].ID;
-				image.frameID = frame.ID;
+				image.frameID = frame->ID;
 				image.jpeg = std::move(jpeg);
 
 				image.frameX = jsImage.contains("frameX")? jsImage["frameX"].get<int>() : cameras[camIndex].frameX;
@@ -585,6 +584,8 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 				image.imageX = jsImage.contains("imageX")? jsImage["imageX"].get<int>() : image.boundsPx.extends().x();
 				image.imageY = jsImage.contains("imageY")? jsImage["imageY"].get<int>() : image.boundsPx.extends().y();
 			}
+
+			record.frames.insert(num-frameOffset, std::move(frame));
 		}
 	}
 	catch(json::exception e)
@@ -596,12 +597,18 @@ unsigned int parseFrameRecords(const std::string &path, std::vector<CameraConfig
 	return frameOffset;
 }
 
-template<typename Iterator>
-void dumpFrameRecords(const std::string &path, const Iterator &frameStart, const Iterator &frameEnd, const std::vector<CameraConfigRecord> &cameras)
+void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
 {
-	if (frameStart == frameEnd)
+	// Check frame range
+	auto frames = record.frames.getView(); 
+	begin = std::max(begin, frames.beginIndex());
+	end = std::min(end, frames.endIndex());
+	if (begin >= end)
 		return;
-	// Open file first
+	auto frameBegin = frames.pos(begin);
+	auto frameEnd = frames.pos(end);
+
+	// Open file
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 	std::ofstream fs(path);
@@ -627,7 +634,7 @@ void dumpFrameRecords(const std::string &path, const Iterator &frameStart, const
 	auto &jsFrames = file["frameRecords"]["frames"];
 	TimePoint_t start = sclock::now();
 	bool foundFirst = false;
-	for (Iterator frameIt = frameStart; frameIt != frameEnd; frameIt++)
+	for (auto frameIt = frameBegin; frameIt != frameEnd; frameIt++)
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
@@ -699,9 +706,7 @@ void dumpFrameRecords(const std::string &path, const Iterator &frameStart, const
 	fs.close();
 }
 
-template void dumpFrameRecords(const std::string &path, const BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator &frameStart, const BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator &frameEnd, const std::vector<CameraConfigRecord> &cameras);
-
-void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecords, unsigned int frameOffset)
+void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset)
 {
 	// Modify path (expecting frame_capture_XX.json)
 	std::size_t index = path.rfind("/frame_capture_");
@@ -715,6 +720,7 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 	fs >> file;
 	fs.close();
 
+	auto frames = record.frames.getView();
 	try {
 		if (!file.contains("trackingResults")) return;
 		if (!file["trackingResults"].is_object()) return;
@@ -733,9 +739,11 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 
 			unsigned int num = jsFrame["num"].get<unsigned int>();
 			if (num < frameOffset) continue;
-			if (num > frameOffset+frameRecords.size()) break;
+			if (num > frameOffset+frames.size()) break;
 
-			FrameRecord &frame = frameRecords[num-frameOffset];
+			auto &framePtr = frames[num-frameOffset];
+			if (!framePtr) continue;
+			FrameRecord &frame = *framePtr;
 			frame.tracking = {};
 			frame.tracking.targets.reserve(jsTargets.size());
 			for (auto &jsTarget : jsTargets)
@@ -789,16 +797,22 @@ void parseTrackingResults(std::string path, std::vector<FrameRecord> &frameRecor
 	}
 }
 
-template<typename Iterator>
-void dumpTrackingResults(std::string path, const Iterator &frameStart, const Iterator &frameEnd, unsigned int frameOffset)
+void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
 {
-	if (frameStart == frameEnd)
+	// Check frame range
+	auto frames = record.frames.getView(); 
+	begin = std::max(begin, frames.beginIndex());
+	end = std::min(end, frames.endIndex());
+	if (begin >= end)
 		return;
+	auto frameBegin = frames.pos(begin);
+	auto frameEnd = frames.pos(end);
+
 	// Modify path (expecting frame_capture_XX.json)
 	std::size_t index = path.rfind("/frame_capture_");
 	if (index != std::string::npos)
 		path.replace(index, 15, "/frame_tracking_");
-	// Open file first
+	// Open file
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;
 	fs << std::flush;
@@ -812,7 +826,7 @@ void dumpTrackingResults(std::string path, const Iterator &frameStart, const Ite
 	auto &jsRecords = file["trackingResults"];
 	jsRecords["frames"] = json::array();
 	auto &jsFrames = jsRecords["frames"];
-	for (Iterator frameIt = frameStart; frameIt != frameEnd; frameIt++)
+	for (auto frameIt = frameBegin; frameIt != frameEnd; frameIt++)
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
@@ -865,9 +879,6 @@ void dumpTrackingResults(std::string path, const Iterator &frameStart, const Ite
 	fs << std::setw(4) << file;
 	fs.close();
 }
-
-template void dumpTrackingResults(std::string path, const BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator &frameStart, const BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator &frameEnd, unsigned int frameOffset);
-
 
 SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs)
 {

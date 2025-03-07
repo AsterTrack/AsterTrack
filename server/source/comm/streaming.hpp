@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef COMM_STREAMING_H
 #define COMM_STREAMING_H
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 
 #include "util/util.hpp" // TimePoint_t
 #include "util/stats.hpp"

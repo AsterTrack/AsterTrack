@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "calib/optimisation.hpp" // OptErrorRes
 
-#include "pipeline/frameRecord.hpp"
+#include "pipeline/record.hpp"
 
 #include "target/target.hpp" // TargetTemplate3D
 #include "target/detection3D.hpp" // TargetCandidate3D, only for debug

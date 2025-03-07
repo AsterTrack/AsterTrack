@@ -879,6 +879,17 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				}
 				if (changedDevices > 0) imusChanged = true;
 				if (updatedDevices > 0) imusUpdated = true;
+				if (changedDevices > 0 && state->isStreaming)
+				{
+					for (auto &imu : imuProvider->get()->devices)
+					{
+						if (imu.use_count() == 1)
+						{ // New
+							state->pipeline.tracking.trackedIMUs.emplace_back(imu, state->pipeline.params.track);
+							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
+						}
+					}
+				}
 				imuProvider++;
 			}
 		}
@@ -1588,6 +1599,18 @@ bool StartStreaming(ServerState &state)
 
 		// Incase no controller is connected, provide virtual sync group for e.g. IMUs
 		SetupVirtualSyncGroup(state);
+
+		for (auto &imuProvider : *state.imuProviders.contextualRLock())
+		{
+			for (auto &imu : imuProvider->devices)
+			{
+				if (imu.use_count() == 1)
+				{ // New
+					state.pipeline.tracking.trackedIMUs.emplace_back(imu, state.pipeline.params.track);
+					LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
+				}
+			}
+		}
 	}
 
 	SignalServerEvent(EVT_START_STREAMING);

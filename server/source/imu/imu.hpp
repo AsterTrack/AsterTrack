@@ -10,11 +10,10 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #ifndef IMU_DEVICE_H
 #define IMU_DEVICE_H
 
-#include "util/eigendef.hpp"
-
 #include "comm/timesync.hpp"
 
 #include "util/util.hpp"
+#include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
 #include <deque>
@@ -31,11 +30,13 @@ enum IMUDeviceProviderStatus
 	IMU_STATUS_DISCONNECTED,
 };
 
-struct IMUReport
+struct IMUSample
 {
 	TimePoint_t timestamp;
 	Eigen::Quaternionf quat;
 	Eigen::Vector3f accel;
+
+	bool operator<(const TimePoint_t& ts) const { return timestamp < ts; }
 };
 
 class IMUDevice
@@ -52,13 +53,15 @@ public:
 	float temperature;
 	float signalStrength;
 
-	// IMU reports
-	std::deque<IMUReport> reports;
-	bool dirty;
+	// IMU samples
+	BlockedQueue<IMUSample> samples;
 
     virtual ~IMUDevice() = default;
 
 	// TODO: Methods to setup passthrough to IO, e.g. buttons to VRPN
+
+protected:
+	IMUDevice(IMUDeviceDriver driver, int provider, int device) : driver(driver), provider(provider), device(device) {}
 };
 
 class IMUDeviceProvider
@@ -69,9 +72,9 @@ public:
 	std::vector<std::shared_ptr<IMUDevice>> devices;
 
 	// Can be optionally used to provide debug data about timing
-	bool recordTimeSyncMeasurements;
+	bool recordTimeSyncMeasurements = false;
 	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
-	bool recordLatencyMeasurements;
+	bool recordLatencyMeasurements = false;
 	LatencyDescriptor latencyDescriptions;
 	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
 

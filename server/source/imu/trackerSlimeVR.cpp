@@ -1,5 +1,5 @@
 
-#include "imu.hpp"
+#include "imu/imu.hpp"
 
 #include "util/log.hpp"
 
@@ -64,6 +64,9 @@ public:
 	SLIMEVR_TRACKER_STATUS status;
 
 	~SlimeVRTracker() = default;
+
+	SlimeVRTracker(int provider, int device) : IMUDevice(IMU_DRIVER_SLIMEVR, provider, device)
+	{}
 };
 
 #define TRACKER_REPORT_SIZE 16 // 1B Header + 12B Data + 2B Timestamp (or 1B Header + 14B Data)
@@ -126,7 +129,7 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 			if (!devices[tracker_id])
 			{
 				// TODO: Use receiver and tracker serial numbers
-				devices[tracker_id] = std::make_shared<SlimeVRTracker>();
+				devices[tracker_id] = std::make_shared<SlimeVRTracker>(-1, tracker_id);
 				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
 				changedDevices++;
 			}
@@ -173,7 +176,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 		case TYPE_IMU:
 		{
 			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
-			IMUReport report = {};
+			IMUSample report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			report.quat = Eigen::Quaternionf(
 				*(int16_t*)(data+8) * quatScale,
@@ -185,7 +188,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 				*(int16_t*)(data+12) * vecScale,
 				*(int16_t*)(data+14) * vecScale);
 			report.timestamp = timestamp;
-			tracker.reports.push_back(report);
+			tracker.samples.push_back(report);
 			return true;
 		}
 		case TYPE_IMU_STATUS:
@@ -199,7 +202,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 			tracker.signalStrength = data[15];
 			LOG(LIO, LInfo, "    Temperature is %f", tracker.temperature);
 
-			IMUReport report = {};
+			IMUSample report = {};
 			constexpr float scale10 = 1.0f / (1<<10), scale11 = 1.0f / (1<<11), vecScale = 1.0f / (1<<7);
 			uint32_t qData = *(uint32_t*)(data+5);
 			Eigen::Vector3f quatEnc(
@@ -218,7 +221,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 			report.timestamp = timestamp;
 			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
 				tracker_id, dtMS(report.timestamp, sclock::now()));
-			tracker.reports.push_back(report);
+			tracker.samples.push_back(report);
 			return true;
 		}
 		case TYPE_INVALID:

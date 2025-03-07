@@ -30,6 +30,10 @@ SOFTWARE.
 #include "flexkalman/FlexibleKalmanBase.h"
 #include "flexkalman/EigenQuatExponentialMap.h"
 
+/**
+ * AbsolutePoseMeasurement for use with flexkalman UKF
+ */
+
 class AbsolutePoseMeasurement :
 	public flexkalman::MeasurementBase<AbsolutePoseMeasurement>
 {
@@ -112,6 +116,73 @@ public:
 
 private:
 	Eigen::Vector3d m_pos;
+	Eigen::Quaterniond m_quat;
+	MeasurementSquareMatrix m_covariance;
+};
+
+/**
+ * FusedIMUMeasurement for use with flexkalman UKF
+ */
+
+class FusedIMUMeasurement :
+	public flexkalman::MeasurementBase<FusedIMUMeasurement>
+{
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	static constexpr size_t Dimension = 3;
+	using MeasurementVector = flexkalman::types::Vector<Dimension>;
+	using MeasurementSquareMatrix = flexkalman::types::SquareMatrix<Dimension>;
+
+	FusedIMUMeasurement(Eigen::Quaterniond const &quat,
+						flexkalman::types::Vector<3> const &emVariance)
+		: m_quat(quat), m_covariance(emVariance.asDiagonal()) {}
+
+	template <typename State>
+	MeasurementSquareMatrix const &getCovariance(State const &)
+	{
+		return m_covariance;
+	}
+
+	template <typename State>
+	MeasurementVector predictMeasurement(State const &state) const
+	{
+		return state.incrementalOrientation();
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(MeasurementVector const &prediction,
+								  State const &state) const
+	{
+		// The prediction we're given is effectively "the state's incremental
+		// rotation", which is why we're using our measurement here as well as
+		// the prediction.
+		const Eigen::Quaterniond predictedQuat =
+			flexkalman::util::quat_exp(prediction / 2) * state.getQuaternion();
+		return 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+	}
+
+	/*!
+	 * Gets the measurement residual, also known as innovation: predicts
+	 * the measurement from the predicted state, and returns the
+	 * difference.
+	 */
+	template <typename State>
+	MeasurementVector getResidual(State const &state) const
+	{
+		const Eigen::Quaterniond predictedQuat = state.getCombinedQuaternion();
+		// Two equivalent quaternions: but their logs are typically
+		// different: one is the "short way" and the other is the "long
+		// way". We'll compute both and pick the "short way".
+		return 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+	}
+
+	//! Convenience method to be able to store and re-use measurements.
+	void setMeasurement(Eigen::Quaterniond const &quat)
+	{
+		m_quat = quat;
+	}
+
+private:
 	Eigen::Quaterniond m_quat;
 	MeasurementSquareMatrix m_covariance;
 };

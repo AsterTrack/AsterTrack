@@ -69,6 +69,9 @@ public:
 	SLIMEVR_TRACKER_STATUS status;
 
 	~AsterTrackTracker() = default;
+
+	AsterTrackTracker(int provider, int device) : IMUDevice(IMU_DRIVER_ASTERTRACK, provider, device)
+	{}
 };
 
 #define TRACKER_INFO_SIZE 11 // 1B Header + 10B Info
@@ -153,7 +156,7 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updatedDevices, int &chang
 			if (!devices[tracker_id])
 			{
 				// TODO: Use receiver and tracker serial numbers
-				devices[tracker_id] = std::make_shared<AsterTrackTracker>();
+				devices[tracker_id] = std::make_shared<AsterTrackTracker>(-1, tracker_id);
 				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
 				changedDevices++;
 			}
@@ -222,7 +225,7 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 	{
 		case TYPE_IMU_CAYLEY:
 		{
-			IMUReport report = {};
+			IMUSample report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			Eigen::Vector3f quatEnc(
 				*(int16_t*)(data+1) * quatScale,
@@ -251,7 +254,7 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 			timestamp = report.timestamp;
 			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
 				tracker_id, dtMS(report.timestamp, sclock::now()));
-			tracker.reports.push_back(report);
+			tracker.samples.push_back(report);
 			return true;
 		}
 		case TYPE_REGISTER:

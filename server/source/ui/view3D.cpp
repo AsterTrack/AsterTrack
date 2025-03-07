@@ -471,13 +471,24 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		{
 			for (auto &device : provider->devices)
 			{
-				if (!device || device->reports.empty()) continue;
-				auto &report = device->reports.back();
+				if (!device) continue;
+				Eigen::Quaternionf quat;
+				{
+					auto view = device->samples.getView();
+					if (view.empty()) continue;
+					quat = view.back().quat;
+				} 
 				Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
-				pose.linear() = report.quat.toRotationMatrix();
+				pose.linear() = quat.toRotationMatrix();
 				pose.translation() = Eigen::Vector3f(0,0,1);// + report.accel;
 				visualisePose(pose, Color{ 1.0f, 0.1f, 0.1f, 1.0f }, 0.2f, 4.0f);
 			}
+		}
+	}
+	{
+		for (auto &trackedIMU : pipeline.tracking.trackedIMUs)
+		{
+			visualisePose(trackedIMU.getPoseFiltered(), Color{ 0.1f, 0.1f, 1.0f, 1.0f }, 0.2f, 4.0f);
 		}
 	}
 

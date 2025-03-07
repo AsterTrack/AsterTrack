@@ -85,7 +85,7 @@ bool trackTarget<TrackedTarget<FlexUKFFilter>>(TrackedTarget<FlexUKFFilter> &tar
 	covariance.diagonal().tail<3>().setConstant(params.uncertaintyRot*params.uncertaintyRot);
 
 	// Update filter
-	filter.measurements++;
+	filter.opticalMeasurements++;
 	filter.poseObserved = target.match2D.pose;
 	auto measurement = AbsolutePoseMeasurement(
 		target.match2D.pose.translation().cast<double>(),
@@ -120,3 +120,97 @@ template bool trackTarget<TrackedTargetFiltered>(TrackedTargetFiltered &target, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
 	TimePoint_t time, int cameraCount, const TargetTrackingParameters &params);
+
+template<typename Target>
+bool integrateIMU(Target &target, TimePoint_t time,
+	const TargetTrackingParameters &params)
+{
+	using Scalar = typename Target::Scalar;
+
+	if (!target.imu) return false;
+
+	auto &filter = target.filter;
+	filter.model.setDamping(params.dampeningPos, params.dampeningRot);
+
+	TimePoint_t curTime = filter.time;
+
+	// Find first IMU sample after last filter time (e.g. last frame)
+	auto samples = target.imu->samples.template getView<true>();
+	BlockedQueue<IMUSample>::const_iterator itBegin;
+	if (target.lastIMUSample > samples.beginIndex() && target.lastIMUSample < samples.endIndex())
+	{ // Start search from last sample used
+		itBegin = samples.pos(target.lastIMUSample);
+		while (itBegin != samples.end() && itBegin->timestamp < curTime) itBegin++;
+	}
+	else // Cold start
+		itBegin = std::lower_bound(samples.begin(), samples.end(), curTime);
+	if (itBegin == samples.end()) return false;
+
+	// Pick reference sample (last or first)
+	Eigen::Quaternionf lastQuat;
+	if (itBegin == samples.begin() || dtMS(std::prev(itBegin)->timestamp, itBegin->timestamp) > 50)
+	{ // No prior reference, use first IMU sample as reference
+		if (filter.opticalMeasurements == 0 && filter.inertialMeasurements == 0)
+		{ // Initialise with first IMU orientation
+			filter.state.setQuaternion(itBegin->quat.template cast<double>());
+		}
+		else
+		{ // Skip to first IMU sample as reference to correct from
+			flexkalman::predict(filter.state, filter.model, dtS(curTime, itBegin->timestamp));
+		}
+		lastQuat = itBegin->quat;
+		curTime = itBegin->timestamp;
+		itBegin = std::next(itBegin);
+	}
+	else
+	{ // Use last IMU sample as reference
+		auto itLast = std::prev(itBegin);
+		// Account for time difference between last IMU record and last optical measurement (which is curTime / filter time)
+		float factor = dtMS(itLast->timestamp, curTime) / dtMS(itLast->timestamp, itBegin->timestamp);
+		lastQuat = itLast->quat.slerp(factor, itBegin->quat);
+	}
+
+	// Find last IMU sample before specified maximum time (e.g. current frame)
+	auto itEnd = itBegin;
+	while (itEnd != samples.end() && itEnd->timestamp < time) itEnd++;
+
+	// Integrate range of IMU samples
+	for (auto &sample = itBegin; sample < itEnd; sample++)
+	{
+		Eigen::Quaterniond quat = sample->quat.cast<double>();
+		if (filter.opticalMeasurements > 0)
+		{ // Determine new quat based on last reference (here basic difference, all absolute information is disregarded)
+			Eigen::Quaternionf dQuat = sample->quat * lastQuat.conjugate();
+			quat = dQuat.cast<double>() * filter.state.getCombinedQuaternion();
+			lastQuat = sample->quat;
+			// TODO: Use IMU quat around last optical measurement as measurement to smoothly switch between absolute and relative tracking
+		}
+		// Predict up until IMU sample timestamp
+		flexkalman::predict(filter.state, filter.model, dtS(curTime, sample->timestamp));
+		curTime = sample->timestamp;
+		// Correct with IMU sample
+		filter.inertialMeasurements++;
+		auto measurement = FusedIMUMeasurement{
+			quat,
+			Eigen::Vector3d::Constant(params.uncertaintyRot*params.uncertaintyRot)
+		};
+		flexkalman::SigmaPointParameters sigmaParams(params.sigmaAlpha, params.sigmaBeta, params.sigmaKappa);
+		if (!flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams))
+		{
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+		}
+	}
+
+	// Predict new state
+	flexkalman::predict(filter.state, filter.model, dtS(curTime, time));
+	filter.posePredicted = filter.poseObserved = filter.poseFiltered = filter.state.getIsometry().template cast<float>();
+	filter.stdDev = filter.state.errorCovariance().template block<3,3>(0,0).diagonal().cwiseSqrt().template cast<float>();
+	filter.time = time;
+
+	return true;
+}
+
+template bool integrateIMU<TrackedTargetFiltered>(TrackedTargetFiltered &target,
+	TimePoint_t time, const TargetTrackingParameters &params);
+template bool integrateIMU<TrackedIMUFiltered>(TrackedIMUFiltered &target,
+	TimePoint_t time, const TargetTrackingParameters &params);

@@ -48,6 +48,7 @@ void ResetTrackingPipeline(PipelineState &pipeline)
 	pipeline.tracking.trackedMarkers.clear();
 	pipeline.tracking.trackedTargets.clear();
 	pipeline.tracking.dormantTargets.clear();
+	pipeline.tracking.trackedIMUs.clear();
 }
 
 static TrackedTargetRecord& recordTracking(std::shared_ptr<FrameRecord> &frame, const TargetTemplate3D &target)
@@ -160,6 +161,9 @@ static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTargetFilter
 
 	// Enter into frame record
 	TrackedTargetRecord &target = recordTracking(frame, *trackedTarget.target);
+
+	if (trackedTarget.imu)
+		integrateIMU(trackedTarget, frame->time, pipeline.params.track);
 
 	// Track just like in a normal frame
 	if (!trackTarget(trackedTarget, calibs, points2D, properties, relevantPoints2D,
@@ -366,6 +370,18 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		}), triIndices.end());	
 	};
 
+	{ // Integrate orphaned IMU up until recent frame
+		int i = 0;
+		auto trackedIMU = track.trackedIMUs.begin();
+		while (trackedIMU != track.trackedIMUs.end())
+		{
+			LOG(LTracking, LDebug, "Integrating orphaned IMU %d!\n", i++);
+			integrateIMU(*trackedIMU, frame->time, pipeline.params.track);
+			trackedIMU++;
+		}
+		// TODO: Associate orphaned IMU with tracked target
+	}
+
 	{ // 6-DOF Target Tracking
 
 		trk0 = pclock::now();
@@ -378,6 +394,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			// Enter into frame record
 			TrackedTargetRecord &targetRecord = recordTracking(frame, *trackedTarget->target);
+
+			if (trackedTarget->imu)
+				integrateIMU(*trackedTarget, frame->time, pipeline.params.track);
 
 			if (trackTarget(*trackedTarget, calibs, points2D, properties, relevantPoints2D,
 				frame->time, camCount, pipeline.params.track))

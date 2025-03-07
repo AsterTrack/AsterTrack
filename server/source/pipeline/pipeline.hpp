@@ -149,6 +149,7 @@ struct PipelineState
 		// Currently tracked objects
 		std::list<TrackedTargetFiltered> trackedTargets;
 		std::list<TrackedMarker<float>> trackedMarkers;
+		std::list<TrackedIMUFiltered> trackedIMUs;
 		// Targets not currently tracked
 		std::list<std::pair<TargetTemplate3D const *,int>> dormantTargets;
 		// Asynchronous Detections

@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "target/target.hpp"
 #include "target/tracking2D.hpp"
+#include "imu/imu.hpp"
 
 #include "util/util.hpp" // TimePoint_t
 #include "util/eigendef.hpp"
@@ -45,7 +46,8 @@ struct FlexUKFFilter
 	using Model = flexkalman::PoseSeparatelyDampedConstantVelocityProcessModel<State>;
 
 	// State
-	int measurements = 0; // Optical measurements
+	unsigned int inertialMeasurements = 0;
+	unsigned int opticalMeasurements = 0;
 
 	// Filter
 	TimePoint_t time;
@@ -83,7 +85,11 @@ struct TrackedTarget
 	// Tracking results for visualisation purposes
 	TargetMatch2D match2D;
 
-	int lastTrackedFrame;
+	// Optional assigned IMU source
+	std::shared_ptr<IMUDevice> imu;
+	std::size_t lastIMUSample;
+
+	std::size_t lastTrackedFrame;
 
 	TrackedTarget() {}
 	TrackedTarget(TargetTemplate3D const *target, Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) : target(target)
@@ -96,10 +102,42 @@ struct TrackedTarget
 	Isometry3<Scalar> getPoseFiltered() const { return filter.poseFiltered; }
 	Isometry3<Scalar> getPosePredicted() const { return filter.posePredicted; }
 	Vector3<Scalar> getPredictionStdDev() const { return filter.stdDev; }
-	int getMeasurements() const { return filter.measurements; }
+	int getMeasurements() const { return filter.opticalMeasurements; }
+};
+
+template<typename FilterImpl>
+struct TrackedIMU
+{
+	using Filter = FilterImpl;
+	using Scalar = typename FilterImpl::Scalar;
+
+	// Filter providing filtering and smoothing
+	FilterImpl filter;
+
+	// Optional assigned IMU source
+	std::shared_ptr<IMUDevice> imu;
+	std::size_t lastIMUSample;
+
+	std::size_t lastTrackedFrame;
+
+	TrackedIMU() {}
+	TrackedIMU(std::shared_ptr<IMUDevice> &imu, const TargetTrackingParameters &params) : imu(imu)
+	{
+		Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+		pose.translation().z() = 1;
+		filter.init(pose, params);
+	}
+
+	Isometry3<Scalar> getPoseObserved() const { return filter.poseObserved; }
+	Isometry3<Scalar> getPoseFiltered() const { return filter.poseFiltered; }
+	Isometry3<Scalar> getPosePredicted() const { return filter.posePredicted; }
+	Vector3<Scalar> getPredictionStdDev() const { return filter.stdDev; }
+	int getMeasurements() const { return filter.inertialMeasurements; }
 };
 
 typedef TrackedTarget<FlexUKFFilter> TrackedTargetFiltered;
+
+typedef TrackedIMU<FlexUKFFilter> TrackedIMUFiltered;
 
 /* Functions */
 
@@ -109,5 +147,9 @@ bool trackTarget(TARGET &target, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
 	TimePoint_t time, int cameraCount, const TargetTrackingParameters &params);
+
+template<typename IMU = TrackedIMUFiltered>
+bool integrateIMU(IMU &target,
+	TimePoint_t time, const TargetTrackingParameters &params);
 
 #endif // TRACKING_3D_H

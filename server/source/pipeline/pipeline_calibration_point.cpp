@@ -39,16 +39,15 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 // Calibration
 // ----------------------------------------------------------------------------
 
-void InitPointCalibration(PipelineState &pipeline)
+void ResetPointCalibration(PipelineState &pipeline)
 {
-	auto &ptCalib = pipeline.pointCalib;
 	// Wait for all calibration threads to stop if they are still running
-	ptCalib.control.stop();
+	pipeline.pointCalib.control.stop();
 	// Init/Clean the rest
-	ptCalib.planned = false;
-	ptCalib.settings = {};
-	ptCalib.state = {};
-	ptCalib.room.floorPoints.clear();
+	pipeline.pointCalib.planned = false;
+	pipeline.pointCalib.settings = {};
+	pipeline.pointCalib.state = {};
+	pipeline.pointCalib.room.floorPoints.clear();
 }
 
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)

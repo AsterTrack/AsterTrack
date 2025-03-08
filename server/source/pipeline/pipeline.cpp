@@ -32,16 +32,26 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * Currently split in explicit phases, might be organically merged in the future
  */
 
-/**
- * Init/Reset pipeline subsystems
- */
-void ResetPipeline(PipelineState &pipeline)
+void InitPipelineStreaming(PipelineState &pipeline)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
-	// TODO: Rework when pipeline is reset to not accidentally loose data
-	// Currently, both Stop and Start streaming calls it
-	// And it resets recorded frames, target calibration, samples, etc., basically everything
+	// Init realtime subsystems
+	InitTrackingPipeline(pipeline);
+}
+
+void ResetPipelineStreaming(PipelineState &pipeline)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+
+	// Reset realtime subsystems
+	ResetTrackingPipeline(pipeline);
+}
+
+static void DeletePipelineData(PipelineState &pipeline)
+{
+	// TODO: Rework when pipeline data is reset to not accidentally loose data
+	// Currently, we resets recorded frames, target calibration, samples, etc., basically everything
 	// Preferrably those were managed separately, so they can be cleaned up, but independant of whether the cameras are on or not
 	// So e.g. target calibration is cleaned up after use by explicit action of user to close it
 	// Continuous calibration automatically keeps only X samples
@@ -49,15 +59,46 @@ void ResetPipeline(PipelineState &pipeline)
 	// frameRecords can be configured to automatically keep only X minutes except if data is still used for any of the above
 	// And internal frame indexing (frameNum) needs a rework anyway, so better to keep it running between streaming start/stops
 
-	// Init subsystems
-	InitTrackingPipeline(pipeline);
-	InitTargetCalibration(pipeline);
-	InitPointCalibration(pipeline);
+	// Delete data
+	pipeline.seqDatabase.contextualLock()->clear();
+	pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
+	pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
 
 	pipeline.frameNum = -1;
-	pipeline.record.frames.clear(); // Blocking
-	//pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
-	//pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
+}
+
+static void DeletePipelineSetup(PipelineState &pipeline)
+{
+	pipeline.cameras.clear();
+	pipeline.simulation.contextualLock()->resetState();
+
+}
+
+void ResetPipelineState(PipelineState &pipeline)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+
+	// Reset all subsystems
+	ResetTrackingPipeline(pipeline);
+	ResetTargetCalibration(pipeline);
+	ResetPointCalibration(pipeline);
+
+	// Delete setup and data
+	DeletePipelineSetup(pipeline);
+	DeletePipelineData(pipeline);
+}
+
+void ResetPipelineData(PipelineState &pipeline)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+
+	// Reset all subsystems
+	ResetTrackingPipeline(pipeline);
+	ResetTargetCalibration(pipeline);
+	ResetPointCalibration(pipeline);
+
+	// Delete data
+	DeletePipelineData(pipeline);
 }
 
 /**
@@ -179,7 +220,6 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 
 	// Adopt recorded tracking state
 	InitTrackingPipeline(pipeline);
-	pipeline.tracking.lastFrameTime = frameRecord.time;
 	for (auto &targetRecord : frameRecord.tracking.targets)
 	{
 		auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),

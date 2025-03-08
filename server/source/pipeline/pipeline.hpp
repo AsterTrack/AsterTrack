@@ -139,7 +139,6 @@ struct PipelineState
 	// Tracking pipeline state
 	struct
 	{
-		TimePoint_t lastFrameTime; // Time of last tracked frame for timestep calculation
 		// All stored target calibrations
 		// TODO: This is the actual store, though pipeline resets needs this, it might be better stored in the main server
 		std::vector<TargetTemplate3D> targetTemplates3D;
@@ -229,21 +228,25 @@ struct PipelineState
 
 /* Functions */
 
-/**
- * Init/Reset pipeline subsystems
- */
-void ResetPipeline(PipelineState &pipeline);
+// Init/Reset pipeline
+void InitPipelineStreaming(PipelineState &pipeline);
+void ResetPipelineStreaming(PipelineState &pipeline);
+void ResetPipelineState(PipelineState &pipeline);
+void ResetPipelineData(PipelineState &pipeline);
 
 // Calibration
 void InitPointCalibration(PipelineState &pipeline);
+void ResetPointCalibration(PipelineState &pipeline);
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame);
 
 // Target Calibration
 void InitTargetCalibration(PipelineState &pipeline);
+void ResetTargetCalibration(PipelineState &pipeline);
 void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, unsigned int frameNum);
 
 // General Tracking
 void InitTrackingPipeline(PipelineState &pipeline);
+void ResetTrackingPipeline(PipelineState &pipeline);
 void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets);
 
 /**

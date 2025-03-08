@@ -63,8 +63,6 @@ std::atomic<int> dbg_debugging;
 
 /* Functions */
 
-static void InitPipelineState(ServerState &state);
-
 static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *state);
 static void SimulationThread(std::stop_token stop_token, ServerState *state);
 
@@ -83,6 +81,20 @@ bool ServerInit(ServerState &state)
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
 	parseTargetCalibrations("store/target_calib.json", state.pipeline.tracking.targetTemplates3D);
+	
+	{
+		// Debug calibration
+		ScopedLogLevel scopedLogLevelInfo(LInfo);
+		LOG(LDefault, LInfo, "Loaded %d stored calibrations:\n", (int)state.cameraCalibrations.size());
+		std::vector<CameraMode> modes;
+		modes.reserve(state.cameraCalibrations.size());
+		for (auto &calib : state.cameraCalibrations)
+		{ // Real one not needed for debugging
+			modes.push_back(CameraMode(1280, 800));
+			//modes.push_back(getCameraMode(state, calib.id));
+		}
+		DebugSpecificCameraParameters(state.cameraCalibrations, modes);
+	}
 
 	//srand(1111110);
 	srand(time(0)); // Sufficient to get new random values for Eigen::Random every time
@@ -161,27 +173,6 @@ CameraMode getCameraMode(ServerState &state, CameraID id)
 	CameraConfig &config = state.cameraConfig.getCameraConfig(id);
 	// TODO:Rework CameraMode to properly support cropping/zooming, it is only surface level supported right now, and ugly
 	return CameraMode(config.width, config.height);
-}
-
-static void InitPipelineState(ServerState &state)
-{
-	// Clear state
-	state.pipeline.cameras.clear();
-	*state.pipeline.seqDatabase.contextualLock() = {};
-	state.pipeline.simulation.contextualLock()->resetState();
-	ResetPipeline(state.pipeline);
-
-	// Debug calibration
-	ScopedLogLevel scopedLogLevelInfo(LInfo);
-	LOG(LDefault, LInfo, "Loaded %d stored calibrations:\n", (int)state.cameraCalibrations.size());
-	std::vector<CameraMode> modes;
-	modes.reserve(state.cameraCalibrations.size());
-	for (auto &calib : state.cameraCalibrations)
-	{ // Real one not needed for debugging
-		modes.push_back(CameraMode(1280, 800));
-		//modes.push_back(getCameraMode(state, calib.id));
-	}
-	DebugSpecificCameraParameters(state.cameraCalibrations, modes);
 }
 
 static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, int id)
@@ -475,8 +466,6 @@ bool StartDeviceMode(ServerState &state)
 		return false;
 
 	// Initialise state
-	InitPipelineState(state);
-
 	state.mode = MODE_Device;
 	state.pipeline.isSimulationMode = false;
 
@@ -487,8 +476,6 @@ bool StartDeviceMode(ServerState &state)
 	// Start device supervisor thread
 	assert(state.coprocessingThread == NULL);
 	state.coprocessingThread = new std::jthread(DeviceSupervisorThread, &state);
-
-	//LOG(LDefault, LInfo, "Started device mode with %d controllers!\n", (int)state.controllers.size());
 
 	SignalServerEvent(EVT_MODE_DEVICE_START);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -517,10 +504,13 @@ void StopDeviceMode(ServerState &state)
 	// Stop server and disconnect from cameras
 	//StopDeviceServer(state);
 
+	// Reset state
+	state.mode = MODE_None;
+	assert(state.controllers.empty() && state.cameras.empty());
+	ResetPipelineState(state.pipeline);
+
 	SignalServerEvent(EVT_MODE_DEVICE_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
-
-	state.mode = MODE_None;
 }
 
 std::shared_ptr<TrackingCameraState> DeviceSetupCamera(ServerState &state, CameraID id)
@@ -867,9 +857,7 @@ void StartSimulation(ServerState &state)
 	assert(state.controllers.empty());
 	assert(state.cameras.empty());
 
-	InitPipelineState(state);
-
-	// Setup state
+	// Initialise state
 	state.mode = MODE_Simulation;
 	state.pipeline.isSimulationMode = true;
 
@@ -986,12 +974,12 @@ void StartSimulation(ServerState &state)
 	}
 	LOG(LDefault, LInfo, "=======================\n");
 
-	SignalServerEvent(EVT_MODE_SIMULATION_START);
-	SignalServerEvent(EVT_UPDATE_CAMERAS);
-
 	// Start simulation thread
 	assert(state.coprocessingThread == NULL);
 	state.coprocessingThread = new std::jthread(SimulationThread, &state);
+
+	SignalServerEvent(EVT_MODE_SIMULATION_START);
+	SignalServerEvent(EVT_UPDATE_CAMERAS);
 }
 
 void StopSimulation(ServerState &state)
@@ -1011,11 +999,9 @@ void StopSimulation(ServerState &state)
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 
 	// Reset state
-	ResetPipeline(state.pipeline);
 	state.mode = MODE_None;
-	state.controllers.clear();
 	state.cameras.clear();
-	state.pipeline.cameras.clear();
+	ResetPipelineState(state.pipeline);
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1197,12 +1183,6 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	if (state.mode != MODE_None)
 		return;
 
-	InitPipelineState(state);
-
-	// Clear cameras (e.g. from device mode)
-	state.controllers.clear();
-	state.cameras.clear();
-
 	// Initialise state
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
@@ -1232,12 +1212,12 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 		DebugSpecificCameraParameters(testingCalibrations, modes);
 	}
 
-	SignalServerEvent(EVT_MODE_SIMULATION_START);
-	SignalServerEvent(EVT_UPDATE_CAMERAS);
-
 	// Start replay thread
 	assert(state.coprocessingThread == NULL);
 	state.coprocessingThread = new std::jthread(SimulationThread, &state);
+
+	SignalServerEvent(EVT_MODE_SIMULATION_START);
+	SignalServerEvent(EVT_UPDATE_CAMERAS);
 }
 
 void StopReplay(ServerState &state)
@@ -1258,13 +1238,12 @@ void StopReplay(ServerState &state)
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 
 	// Reset state
-	ResetPipeline(state.pipeline);
 	state.mode = MODE_None;
-	state.controllers.clear();
 	state.cameras.clear();
-	state.pipeline.cameras.clear();
+	ResetPipelineState(state.pipeline);
 	state.record.frames.cull_clear();
 	state.recordReplayFrame = 0;
+	state.recordFrameCount = 0;
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1482,7 +1461,7 @@ bool StartStreaming(ServerState &state)
 	} */
 
 	// Initialise state
-	ResetPipeline(state.pipeline);
+	InitPipelineStreaming(state.pipeline);
 	state.isStreaming = true;
 
 	if (state.mode == MODE_Device)
@@ -1576,7 +1555,7 @@ void StopStreaming(ServerState &state)
 	}
 
 	state.isStreaming = false;
-	ResetPipeline(state.pipeline);
+	ResetPipelineStreaming(state.pipeline);
 
 	SignalServerEvent(EVT_STOP_STREAMING);
 

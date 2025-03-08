@@ -175,9 +175,10 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					state.simAdvance = 0;
 					state.simWaiting.wait(false);
 					// Reset pipeline after the last frame has processed
-					state.pipeline.seqDatabase.contextualLock()->clear();
+					ResetPipelineStreaming(state.pipeline);
+					ResetPipelineData(state.pipeline);
 					UpdateSequences(true);
-					ResetPipeline(state.pipeline);
+					InitPipelineStreaming(state.pipeline);
 					state.recordReplayFrame = 0;
 					// Continue advancing
 					state.simAdvance = prevState;
@@ -197,19 +198,23 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simAdvance = 0;
 				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
-				if (frameJumpTarget <= pipeline.frameNum)
-				{
-					auto frames = pipeline.record.frames.getView();
-					if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
-						AdoptFrameRecordState(pipeline, *frames[frameJumpTarget]);
-				}
+				std::shared_ptr<FrameRecord> frame = nullptr;
+				auto frames = pipeline.record.frames.getView();
+				if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
+					frame = frames[frameJumpTarget];
 				else
-				{
-					auto frames = pipeline.record.frames.getView();
-					if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
-						AdoptFrameRecordState(pipeline, *frames[frameJumpTarget]);
+				{ // Try initialising with stored record
+					auto stored = state.record.frames.getView();
+					if (frameJumpTarget < stored.size())
+						frame = stored[frameJumpTarget];
 				}
-				state.recordReplayFrame = frameJumpTarget+1;
+				if (frame)
+				{
+					for (int f = frameJumpTarget; f < frames.endIndex(); f++)
+						if (frames[f]) frames[f]->finishedProcessing = false;
+					AdoptFrameRecordState(pipeline, *frame);
+					state.recordReplayFrame = frameJumpTarget+1;
+				}
 				// Continue advancing
 				state.simAdvance = prevState;
 				state.simAdvance.notify_all();
@@ -391,22 +396,23 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				// Ensure we have decent parameters
 				pipeline.params.detect.enable2DAsync = false;
 				// Instruct pipeline to process given frame range
-				int jumpTarget = range.begin-1;
-				if (jumpTarget <= pipeline.frameNum)
-				{
-					auto frames = pipeline.record.frames.getView();
-					for (int f = jumpTarget; f < frames.size(); f++)
-						if (frames[f]) frames[f]->finishedProcessing = false;
-					if (jumpTarget < frames.size() && frames[jumpTarget])
-						AdoptFrameRecordState(pipeline, *frames[jumpTarget]);
-				}
+				int frameJumpTarget = range.begin-1;
+				// Jump to frame after last frame has been processed
+				std::shared_ptr<FrameRecord> frame = nullptr;
+				auto frames = pipeline.record.frames.getView();
+				if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
+					frame = frames[frameJumpTarget];
 				else
-				{
-					auto frames = pipeline.record.frames.getView();
-					if (jumpTarget < frames.size() && frames[jumpTarget])
-						AdoptFrameRecordState(pipeline, *frames[jumpTarget]);
+				{ // Try initialising with stored record
+					auto stored = state.record.frames.getView();
+					if (frameJumpTarget < stored.size())
+						frame = stored[frameJumpTarget];
 				}
-				state.recordReplayFrame = jumpTarget+1;
+				if (!frame) continue;
+				for (int f = frameJumpTarget; f < range.end && f < frames.endIndex(); f++)
+					if (frames[f]) frames[f]->finishedProcessing = false;
+				AdoptFrameRecordState(pipeline, *frame);
+				state.recordReplayFrame = frameJumpTarget+1;
 				// Quickly advance through frame range
 				state.simAdvanceQuickly = true;
 				state.simAdvance = range.end-range.begin;
@@ -417,7 +423,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (stop_token.stop_requested()) break;
 				if (state.simAdvance.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
-				auto frames = pipeline.record.frames.getView();
+				frames = pipeline.record.frames.getView(); // New view
 				auto begin = frames.pos(range.begin), end = frames.pos(range.end);
 				FrameRange::Results results = {};
 				LOG(LGUI, LDebug, "Updating range from frame %d - %d", range.begin, range.end);

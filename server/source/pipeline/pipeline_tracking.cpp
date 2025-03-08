@@ -39,12 +39,15 @@ extern ctpl::thread_pool threadPool;
 
 void InitTrackingPipeline(PipelineState &pipeline)
 {
-	pipeline.tracking.lastFrameTime = sclock::now(); // Timestep should not be used for first measurement, but still
+	for (auto &targetTemplate : pipeline.tracking.targetTemplates3D)
+		pipeline.tracking.dormantTargets.emplace_back(&targetTemplate, 1);
+}
+
+void ResetTrackingPipeline(PipelineState &pipeline)
+{
 	pipeline.tracking.trackedMarkers.clear();
 	pipeline.tracking.trackedTargets.clear();
 	pipeline.tracking.dormantTargets.clear();
-	for (auto &targetTemplate : pipeline.tracking.targetTemplates3D)
-		pipeline.tracking.dormantTargets.emplace_back(&targetTemplate, 1);
 }
 
 static TrackedTargetRecord& recordTracking(std::shared_ptr<FrameRecord> &frame, const TargetTemplate3D &target)

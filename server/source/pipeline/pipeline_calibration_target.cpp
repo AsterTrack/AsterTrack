@@ -44,16 +44,14 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 // Target Calibration
 // ----------------------------------------------------------------------------
 
-void InitTargetCalibration(PipelineState &pipeline)
+void ResetTargetCalibration(PipelineState &pipeline)
 {
-	auto &tgtCalib = pipeline.targetCalib;
-
 	// Request all calibration threads to stop if they are still running
-	tgtCalib.assembly.control.stop_source.request_stop();
-	for (auto &view : *tgtCalib.views.contextualRLock())
+	pipeline.targetCalib.assembly.control.stop_source.request_stop();
+	for (auto &view : *pipeline.targetCalib.views.contextualRLock())
 		view->control.stop_source.request_stop();
 	// Wait for threads to stop - not entirely necessary, but else threads will never be deleted
-	tgtCalib.assembly.control.stop();
+	pipeline.targetCalib.assembly.control.stop();
 	// Destructor of views will join and thus block
 	// TODO: Make thread stopping async to prevent UI blocking while waiting for an optimisation to finish
 	// Threads should already be instructed to not write, but need to make extra sure if it will be async
@@ -61,37 +59,13 @@ void InitTargetCalibration(PipelineState &pipeline)
 	// which they do rn as optimisation step cannot be interrupted
 	// Same applies to point calibration of course
 
-	// Init/Clean the rest
-	tgtCalib.assembly.planned = false;
-	tgtCalib.assembly.settings = {};
-	tgtCalib.assembly.state = {};
-	tgtCalib.assemblyStages.contextualLock()->clear();
-	tgtCalib.views.contextualLock()->clear();
-	tgtCalib.aquisition.contextualLock()->reset();
-}
-
-void FinaliseTargetCalibration(PipelineState &pipeline)
-{
-	// TODO: Proper target transform calibration step (centering, alignment)
-	// Not super important for tracking but nice-to-have atleast a good default
-	// Related: Currently, optimisation may shift the transform without impacting calibration, a repeatable "normalisation" step would fix that
-
-	// Find max occupied marker id (excluding testing markers because they are negative)
-	/*int maxID = -1;
-	for (int i = 0; i < pipeline.tracking.targetTemplates3D.size(); i++)
-		maxID = std::max(maxID, pipeline.tracking.targetTemplates3D[i].id);
-
-	// Add marker with new ID to templates
-	pipeline.tracking.targetTemplates3D.push_back({});
-	TargetTemplate3D &marker = pipeline.tracking.targetTemplates3D[pipeline.tracking.targetTemplates3D.size()-1];
-	marker.id = maxID+1;
-	marker.label = std::string("Target ID ") + (char)((int)'0' + marker.id);
-	marker.points.reserve(cluster.targetMarkers.size());
-	for (int i = 0; i < cluster.targetMarkers.size(); i++)
-		marker.points.push_back(cluster.targetMarkers[i].calib.pos);
-	marker.updateLookupTables();
-	LOG(LTargetCalib, LDebug, "Saved marker with %d points as id %d!\n", (int)marker.points.size(), marker.id); */
-
+	// Clean the rest
+	pipeline.targetCalib.assembly.planned = false;
+	pipeline.targetCalib.assembly.settings = {};
+	pipeline.targetCalib.assembly.state = {};
+	pipeline.targetCalib.assemblyStages.contextualLock()->clear();
+	pipeline.targetCalib.views.contextualLock()->clear();
+	pipeline.targetCalib.aquisition.contextualLock()->reset();
 }
 
 void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, unsigned int frameNum)

@@ -696,32 +696,34 @@ public:
 	}
 
 	template<typename U = T>
-	void push_back(U&& x)
+	long long push_back(U&& x)
 	{
 		std::size_t index;
 		BlockIt<false> block;
 		{
 			std::unique_lock lock(m_mutex);
 			index = m_state.index++;
-			if (!ensure_block(index/N)) return; // In culled block - not an error per-se
+			if (!ensure_block(index/N)) return -1; // In culled block - not an error per-se
 			block = m_state.back;
 		}
 		(*block)[index%N] = std::forward<U>(x);
+		return index;
 	}
 
 	template<typename U = T>
-	void insert(std::size_t index, U&& x)
+	bool insert(std::size_t index, U&& x)
 	{
 		std::size_t b = index/N;
 		STATE state;
 		{
 			std::unique_lock lock(m_mutex);
-			if (!ensure_block(b)) return; // In culled block - not an error per-se
+			if (!ensure_block(b)) return false; // In culled block - not an error per-se
 			m_state.index = std::max(m_state.index, index+1);
 			state = m_state;
 		}
 		BlockIt<false> block = getBlock(state, b);
 		(*block)[index%N] = std::forward<U>(x);
+		return true;
 	}
 
 	/**

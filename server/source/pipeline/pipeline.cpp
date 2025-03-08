@@ -63,8 +63,6 @@ static void DeletePipelineData(PipelineState &pipeline)
 	pipeline.seqDatabase.contextualLock()->clear();
 	pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
 	pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
-
-	pipeline.frameNum = -1;
 }
 
 static void DeletePipelineSetup(PipelineState &pipeline)
@@ -178,6 +176,7 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	}
 
 	frame->finishedProcessing = true;
+	pipeline.frameNum = frame->num;
 }
 
 void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record)

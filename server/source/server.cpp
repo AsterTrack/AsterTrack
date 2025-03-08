@@ -1042,12 +1042,10 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
 
 		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/frameRecordReplayPos
-		std::shared_ptr<FrameRecord> frameRecord = nullptr;
-		pipeline.frameNum++;
+		std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();;
 		if (state->mode == MODE_Simulation)
 		{
-			frameRecord = std::make_shared<FrameRecord>();
-			frameRecord->num = frameRecord->ID = pipeline.frameNum;
+			frameRecord->num = frameRecord->ID = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
 			frameRecord->time = sclock::now();
 			GenerateSimulationData(pipeline, *frameRecord);
 			if (!pipeline.isSimulationMode)
@@ -1063,8 +1061,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		{
 			if (state->recordFrameCount <= state->recordReplayFrame)
 			{ // No frame records to replay (or only loaded observations and there were never any frame records)
-				frameRecord = std::make_shared<FrameRecord>();
-				frameRecord->num = frameRecord->ID = pipeline.frameNum;
+				frameRecord->num = frameRecord->ID = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
 				frameRecord->time = sclock::now();
 				frameRecord->cameras.resize(pipeline.cameras.size());
 			}
@@ -1072,7 +1069,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			{
 				auto stored = state->record.frames.getView();
 				auto &loadedRecord = stored[state->recordReplayFrame];
-				if (!loadedRecord || loadedRecord->num != state->recordReplayFrame)
+				if (!loadedRecord)
 				{
 					state->recordReplayFrame++;
 					std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
@@ -1080,15 +1077,14 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				}
 				if (state->recordReplayFrame == 0)
 					state->recordReplayTime = sclock::now();
-				frameRecord = std::make_shared<FrameRecord>();
+				if (!pipeline.record.frames.insert(state->recordReplayFrame, frameRecord)) // new shared_ptr
+					continue;
+				frameRecord->num = state->recordReplayFrame;
 				frameRecord->ID = loadedRecord->ID;
-				frameRecord->num = loadedRecord->num;
 				frameRecord->time = state->recordReplayTime + (loadedRecord->time - stored.front()->time);
 				frameRecord->cameras = loadedRecord->cameras;
-				//assert(frameRecord->num == pipeline.frameNum);
 				assert(frameRecord->cameras.size() == pipeline.cameras.size());
-				state->recordReplayFrame++;
-				if (state->recordFrameCount > state->recordReplayFrame)
+				if (state->recordReplayFrame++ < state->recordFrameCount)
 				{ // Replicate original frame pacing
 					auto &nextRecord = stored[state->recordReplayFrame];
 					if (nextRecord)
@@ -1124,9 +1120,6 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			break;
 
 		auto frameReceiveTime = sclock::now();
-
-		// Record frame even before processing
-		pipeline.record.frames.insert(frameRecord->num, frameRecord); // new shared_ptr
 
 		//threadPool.push([&](int, std::shared_ptr<FrameRecord> frameRecord)
 		{
@@ -1359,14 +1352,6 @@ void DevicesSetupSyncGroups(ServerState &state)
 		}
 	}
 
-	if (stream_lock->syncGroups.empty())
-	{
-		stream_lock->syncGroups.push_back(std::make_shared<Synchronised<SyncGroup>>()); // new shared_ptr
-		auto sync_lock = stream_lock->syncGroups.back()->contextualLock();
-		sync_lock->source = SYNC_VIRTUAL;
-		sync_lock->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
-	}
-
 	// Reset sync group states
 	ResetStreamState(*stream_lock);
 
@@ -1448,6 +1433,40 @@ bool DevicesAwaitModeChanges(int timeoutMS)
 	return modeChangesConfirmed.load() >= waiting;
 }
 
+static void SetupVirtualSyncGroup(ServerState &state)
+{
+	if (!state.controllers.empty()) return;
+	auto stream_lock = state.stream.contextualLock();
+	if (!stream_lock->syncGroups.empty()) return;
+	// Setup virtual sync group
+	stream_lock->syncGroups.push_back(std::make_shared<Synchronised<SyncGroup>>()); // new shared_ptr
+	auto sync_lock = stream_lock->syncGroups.back()->contextualLock();
+	ResetSyncGroup(*sync_lock);
+	sync_lock->source = SYNC_VIRTUAL;
+	sync_lock->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
+	// Start with a frame that will be continued
+	SyncedFrame frame = {};
+	frame.cameras.resize(sync_lock->cameras.size());
+	frame.ID = 0;
+	frame.approxSOF = false;
+	frame.SOF = sclock::now();
+	LOG(LStreaming, LInfo, "Started virtual frame generation!\n");
+	sync_lock->frames.push_back(std::move(frame));
+	sync_lock->frameCount++;
+}
+
+static void DeleteVirtualSyncGroup(ServerState &state)
+{
+	auto stream_lock = state.stream.contextualLock();
+	if (stream_lock->syncGroups.empty()) return;
+	for (auto it = stream_lock->syncGroups.begin(); it != stream_lock->syncGroups.end();)
+	{
+		if (it->get()->contextualRLock()->source == SYNC_VIRTUAL)
+			it = stream_lock->syncGroups.erase(it);
+		else it++;
+	}
+}
+
 bool StartStreaming(ServerState &state)
 {
 	if (state.mode == MODE_None || state.isStreaming)
@@ -1459,6 +1478,13 @@ bool StartStreaming(ServerState &state)
 		LOG(LDefault, LWarn, "Will not start streaming with 0 tracking cameras!\n");
 		return false;
 	} */
+
+	// Clean any prior streaming state
+	// TODO: Find a way to retain records and calibration state of last Streaming (without leaving current mode!)
+	// Currently after stop	ping stream, all data is retained, and only deleted after starting stream again or leaving mode
+	// Now instead of deleting it upon starting stream again, append to the records and keep calibration state intact
+	// Needs support for frame num generated by controller to be different from frameNum in pipeline
+	ResetPipelineData(state.pipeline);
 
 	// Initialise state
 	InitPipelineStreaming(state.pipeline);
@@ -1496,6 +1522,9 @@ bool StartStreaming(ServerState &state)
 		LOG(LGUI, LInfo, "Starting camera sync");
 
 		DevicesUpdateSyncMask(state);
+
+		// Incase no controller is connected, provide virtual sync group for e.g. IMUs
+		SetupVirtualSyncGroup(state);
 	}
 
 	SignalServerEvent(EVT_START_STREAMING);
@@ -1541,6 +1570,9 @@ void StopStreaming(ServerState &state)
 			for (auto &port : controller->ports)
 				ResetPacketPort(port);
 		}
+
+		// Sync Group not attached to any controller - remove
+		DeleteVirtualSyncGroup(state);
 
 		// Reset streaming states
 		ResetStreamState(*state.stream.contextualLock());
@@ -1708,18 +1740,8 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	// Accept for realtime processing, create FrameState
 
 	std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
+	frameRecord->num = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
 	frameRecord->ID = frame.ID;
-	frameRecord->num = frame.ID;
-	if (frame.ID != pipeline.frameNum)
-	{ // Some things do rely on this after all, since it's just so convenient to index into frameRecords with both num and ID
-		// TODO: Clearly work out frame ID and frame num and indexing
-		// Currently only parsing indexes into pipeline frameRecords with imageRecord->frameID, so this is only a realtime processing issue
-		// Happens when frame is dropped
-		LOG(LSOF, LWarn, "Frame num %ld lost track of frame ID %d!", pipeline.frameNum.load(), frame.ID);
-		pipeline.frameNum = frame.ID+1;
-	}
-	else
-		pipeline.frameNum++;
 	frameRecord->time = frame.SOF;
 	frameRecord->cameras.resize(pipeline.cameras.size());
 	for (auto &camera : sync.cameras)
@@ -1763,9 +1785,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 				SignalCameraRefresh(camera->id);
 		}
 	}, frameRecord); // new shared_ptr
-
-	// Record frame even before processing
-	pipeline.record.frames.insert(frameRecord->num, std::move(frameRecord));
 }
 
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data,

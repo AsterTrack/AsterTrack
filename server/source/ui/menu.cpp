@@ -223,6 +223,8 @@ void InterfaceState::UpdateMainMenuBar()
 
 					LOG(LGUI, LInfo, "Loading observations for %d cameras with %d markers!\n",
 						(int)observations.temporary.size(), (int)observations.markers.size());
+
+					std::unique_lock dev_lock(state.deviceAccessMutex);
 					if (state.mode != MODE_None)
 					{
 						LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
@@ -237,7 +239,7 @@ void InterfaceState::UpdateMainMenuBar()
 					StartReplay(state, cameras);
 
 					// Load in observations
-					state.pipeline.frameNum = observations.lastRecordedFrame;
+					state.record.frames.insert(observations.lastRecordedFrame, nullptr);
 					*state.pipeline.seqDatabase.contextualLock() = std::move(observations);
 
 					UpdateErrorFromObservations(state.pipeline);

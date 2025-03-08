@@ -755,32 +755,13 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 			if (GetState().pipeline.keepFrameImages)
 			{ // Store compressed image record in frameRecord for later use
 				auto frames = GetState().pipeline.record.frames.getView<false>();
-				// TODO: Create frame record anyway even if it doesn't exist yet just to store images?
 				if (frames.empty()) return;
-				if (frames.size() <= imageRecord->frameID)
+				// Search for frame with correct ID in recently recorded frames. Cannot assume ID == num, but can assume image is recent
+				auto frameRec = std::prev(frames.end());
+				while (frameRec != frames.begin() && (!*frameRec || frameRec->get()->ID > imageRecord->frameID)) frameRec--;
+				if (!*frameRec || frameRec->get()->ID != imageRecord->frameID)
 				{
-					LOG(LParsing, LWarn, "Cannot record received camera image since frame ID %d is not yet recorded, latest frame number %d with ID %d!",
-						imageRecord->frameID, frames.back()->num, frames.back()->ID);
-					return;
-				}
-				auto frameRec = frames.pos(imageRecord->frameID);
-				if (!frameRec->get())
-				{
-					LOG(LParsing, LWarn, "Cannot record received camera image since frame ID %d was seemingly dropped by all cameras, latest frame number %d with ID %d!",
-						imageRecord->frameID, frames.back()->num, frames.back()->ID);
-					return;
-				}
-				if (frameRec->get()->ID != imageRecord->frameID)
-				{ // TODO: Need a proper mapping from frameID to frame number
-					// Afaik this is the only place relying on frameID == frameNum still
-					// See FrameRecord for further thoughts on this
-					LOG(LParsing, LWarn, "Cannot record received camera image since frame ID %d was not recorded under the same frame number! Frame number %d had ID %d!",
-						imageRecord->frameID, frameRec->get()->num, frameRec->get()->ID);
-					return;
-				}
-				if (frameRec->get()->cameras.size() <= camera->pipeline->index)
-				{ // Should never happen
-					LOG(LParsing, LError, "Cannot record received camera image since frame ID %d did not have any record for that camera!",
+					LOG(LParsing, LWarn, "Failed to record received camera image for unknown frame ID %d!",
 						imageRecord->frameID);
 					return;
 				}

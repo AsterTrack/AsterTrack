@@ -475,6 +475,8 @@ void MaintainStreamState(StreamState &state)
 			float frameMS = dtMS(frame->SOF, now);
 			float packetLastMS = frame->receiving? dtMS(frame->lastBlock, now) : 0;
 
+			// TODO: Ensure frames are processed/appended to frame record in chronological order even between sync groups
+
 			auto processFrame = [&](bool premature)
 			{
 				assert(!frame->finallyProcessed);
@@ -598,20 +600,13 @@ void MaintainStreamState(StreamState &state)
 			frame++;
 		}
 
-		// Check if new "empty" frame should be added
-		if (sync->frames.empty() && sync->source == SYNC_VIRTUAL)
-		{
-			SyncedFrame frame = {};
-			frame.cameras.resize(sync->cameras.size());
-			frame.ID = 0;
-			frame.approxSOF = false;
-			frame.SOF = sclock::now();
-			LOG(LStreaming, LInfo, "Started virtual frame generation!\n");
-			sync->frames.push_back(std::move(frame));
-			sync->frameCount++;
-		}
-		else if (dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS*1.5f)
-		{
+		//if (!sync->frames.empty() && sync->source != SYNC_EXTERNAL &&
+		//	dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS*1.5f)
+		//{ // Either intentionally virtual, or haven't even received a SOF - bridge with empty frame
+		// TODO: Disabled for now, would only be useful to update with IMU samples as there are no new optical samples
+		if (!sync->frames.empty() && sync->source == SYNC_VIRTUAL &&
+			dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS)
+		{ // Continue virtual frames
 			SyncedFrame frame = {};
 			frame.cameras.resize(sync->cameras.size());
 			frame.ID = sync->frames.back().ID + 1;
@@ -619,6 +614,8 @@ void MaintainStreamState(StreamState &state)
 			frame.SOF = EstimateSOF(*sync, frame.ID);
 			sync->frames.push_back(std::move(frame));
 			sync->frameCount++;
+			if (sync->source != SYNC_VIRTUAL)
+				LOG(LStreaming, LDarn, "Replacing completely dropped frame with virtual frame!");
 		}
 	}
 }

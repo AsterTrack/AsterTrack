@@ -232,13 +232,13 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		if (ImGui::Button(recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
 		{
 			if (recordSectionStart < 0)
-			{
-				recordSectionStart = pipeline.frameNum;
+			{ // TODO: Hold reference to view to prevent frame range from being deleted once garbage collect is implemented? 
+				recordSectionStart = pipeline.record.frames.getView().endIndex();
 				pipeline.keepFrameRecords = true;
 			}
 			else
 			{
-				recordSections.emplace_back(recordSectionStart, pipeline.frameNum);
+				recordSections.emplace_back(recordSectionStart, pipeline.record.frames.getView().endIndex());
 				recordSectionStart = -1;
 				pipeline.keepFrameRecords = pipeline.keepFrameRecordsDefault;
 			}
@@ -247,7 +247,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		ImGui::BeginDisabled(pipeline.record.frames.getView().empty());
 		if (ImGui::Button("Save All Frames", SizeWidthDiv2()))
 		{
-			recordSections.emplace_back(0, pipeline.frameNum, true);
+			auto frames = pipeline.record.frames.getView();
+			recordSections.emplace_back(frames.beginIndex(), frames.endIndex(), true);
 		}
 		ImGui::EndDisabled();
 		ImGui::BeginDisabled(true);

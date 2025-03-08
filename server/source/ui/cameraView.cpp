@@ -906,6 +906,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 	}
 	// Gather further frame data
+	assert(visFrame.hasFrame && visFrame.frameIt.accessible() && *visFrame.frameIt);
 	std::shared_ptr<const FrameRecord> frame = *visFrame.frameIt; // new shared_ptr
 	auto &camFrame = frame->cameras[camera.pipeline->index];
 	PipelinePhase phase = pipeline.phase.load();

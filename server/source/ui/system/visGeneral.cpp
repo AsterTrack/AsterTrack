@@ -30,8 +30,9 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 	snapshot.frames = pipeline.record.frames.getView();
 	if (snapshot.frames.empty())
 		return snapshot;
-	snapshot.frameIt = snapshot.frames.pos(std::max((long)0, std::min((long)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
-	if (!snapshot.frameIt.accessible()) snapshot.frameIt = std::prev(snapshot.frames.end());
+	snapshot.frameIt = snapshot.frames.pos(std::max((long)snapshot.frames.beginIndex(),
+		std::min((long)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
+	assert(snapshot.frameIt.accessible()); // Just checked that frames is not empty
 	if (snapshot.target.hasObs() && !forceRealtime)
 	{ // Visualise selected past frame
 		auto frame = snapshot.target.targetObs->frames[snapshot.target.frameIdx].frame;
@@ -52,7 +53,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 			snapshot.frameIt--;
 		}
 	}
-	snapshot.hasFrame = snapshot.frameIt.accessible() && *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
+	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
 	return snapshot;
 }
 

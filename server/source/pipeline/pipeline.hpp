@@ -116,7 +116,6 @@ struct PipelineState
 	SynchronisedS<CameraSystemCalibration> calibration;
 
 	// Frames
-	std::atomic<long> frameNum = -1;
 	TrackingRecord record = {};
 	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true;
 	// TODO: Periodically cull_front+delete_culled to free old frame records
@@ -124,6 +123,7 @@ struct PipelineState
 	// So targetViews and all of TargetAssembly needs to be respected and/or similarly managed
 	// Same for obsDatabase if there is any expectation of e.g. being able to access the blob value of any one sample
 	// Recent ones might still be referenced for rendering and detection
+	std::atomic<long> frameNum = -1; // The latest fully processed frame
 
 	// Recorded 2D sequences, used for both point calib and target calib
 	bool recordSequences = true;

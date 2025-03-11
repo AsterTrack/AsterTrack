@@ -39,8 +39,21 @@ extern ctpl::thread_pool threadPool;
 
 void InitTrackingPipeline(PipelineState &pipeline)
 {
+	pipeline.tracking.dormantTargets.clear();
 	for (auto &targetTemplate : pipeline.tracking.targetTemplates3D)
 		pipeline.tracking.dormantTargets.emplace_back(&targetTemplate, 1);
+	pipeline.tracking.trackedIMUs.clear();
+	for (auto &imu : pipeline.record.imus)
+	{
+		if (imu->trackerID == 0)
+		{
+			pipeline.tracking.trackedIMUs.emplace_back(imu, pipeline.params.track);
+		}
+		else
+		{ // TODO: Redesign so dormant targets can be associated with IMUs
+			// And then use IMU data to detect dormant targets
+		}
+	}
 }
 
 void ResetTrackingPipeline(PipelineState &pipeline)

@@ -86,7 +86,7 @@ struct TrackedTarget
 	TargetMatch2D match2D;
 
 	// Optional assigned IMU source
-	std::shared_ptr<IMUDevice> imu;
+	std::shared_ptr<IMU> imu;
 	std::size_t lastIMUSample;
 
 	std::size_t lastTrackedFrame;
@@ -115,13 +115,21 @@ struct TrackedIMU
 	FilterImpl filter;
 
 	// Optional assigned IMU source
-	std::shared_ptr<IMUDevice> imu;
-	std::size_t lastIMUSample;
+	std::shared_ptr<IMU> imu;
+	std::size_t lastIMUSample = 0;
 
-	std::size_t lastTrackedFrame;
+	std::size_t lastTrackedFrame = 0;
 
 	TrackedIMU() {}
-	TrackedIMU(std::shared_ptr<IMUDevice> &imu, const TargetTrackingParameters &params) : imu(imu)
+
+	TrackedIMU(std::shared_ptr<IMU> &&imu, const TargetTrackingParameters &params) : imu(std::move(imu))
+	{
+		Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+		pose.translation().z() = 1;
+		filter.init(pose, params);
+	}
+
+	TrackedIMU(std::shared_ptr<IMU> &imu, const TargetTrackingParameters &params) : imu(imu)
 	{
 		Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
 		pose.translation().z() = 1;

@@ -289,7 +289,7 @@ void InterfaceState::UpdateMainMenuBar()
 					ServerState &state = GetState();
 					std::vector<CameraConfigRecord> cameras;
 					state.recordPath = file;
-					state.recordFrameOffset = parseFrameRecords(state.recordPath, cameras, state.record);
+					state.recordFrameOffset = parseRecording(state.recordPath, cameras, state.record);
 					parseTrackingResults(state.recordPath, state.record, state.recordFrameOffset);
 					state.recordReplayFrame = 0;
 					state.recordFrameCount = state.record.frames.getView().size();

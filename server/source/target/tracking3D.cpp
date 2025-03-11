@@ -136,8 +136,8 @@ bool integrateIMU(Target &target, TimePoint_t time,
 
 	// Find first IMU sample after last filter time (e.g. last frame)
 	auto samples = target.imu->samples.template getView<true>();
-	BlockedQueue<IMUSample>::const_iterator itBegin;
-	if (target.lastIMUSample > samples.beginIndex() && target.lastIMUSample < samples.endIndex())
+	auto itBegin = samples.begin();
+	if (target.lastIMUSample >= samples.beginIndex() && target.lastIMUSample < samples.endIndex())
 	{ // Start search from last sample used
 		itBegin = samples.pos(target.lastIMUSample);
 		while (itBegin != samples.end() && itBegin->timestamp < curTime) itBegin++;
@@ -175,9 +175,9 @@ bool integrateIMU(Target &target, TimePoint_t time,
 	while (itEnd != samples.end() && itEnd->timestamp < time) itEnd++;
 
 	// Integrate range of IMU samples
-	for (auto &sample = itBegin; sample < itEnd; sample++)
+	for (auto sample = itBegin; sample < itEnd; sample++)
 	{
-		Eigen::Quaterniond quat = sample->quat.cast<double>();
+		Eigen::Quaterniond quat = sample->quat.template cast<double>();
 		if (filter.opticalMeasurements > 0)
 		{ // Determine new quat based on last reference (here basic difference, all absolute information is disregarded)
 			Eigen::Quaternionf dQuat = sample->quat * lastQuat.conjugate();

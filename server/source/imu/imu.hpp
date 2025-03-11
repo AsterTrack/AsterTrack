@@ -7,86 +7,51 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 */
 
-#ifndef IMU_DEVICE_H
-#define IMU_DEVICE_H
-
-#include "comm/timesync.hpp"
+#ifndef IMU_H
+#define IMU_H
 
 #include "util/util.hpp"
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
-#include <deque>
-
-enum IMUDeviceDriver
-{
-	IMU_DRIVER_ASTERTRACK = 1,
-	IMU_DRIVER_SLIMEVR
-};
-
-enum IMUDeviceProviderStatus
-{
-	IMU_STATUS_NORMAL = 0,
-	IMU_STATUS_DISCONNECTED,
-};
+enum IMUDriver : uint32_t;
 
 struct IMUSample
 {
 	TimePoint_t timestamp;
 	Eigen::Quaternionf quat;
 	Eigen::Vector3f accel;
-
-	bool operator<(const TimePoint_t& ts) const { return timestamp < ts; }
 };
 
-class IMUDevice
+bool inline operator<(const IMUSample& imu, const TimePoint_t& ts) { return imu.timestamp < ts; }
+bool inline operator<(const TimePoint_t& ts, const IMUSample& imu) { return ts < imu.timestamp; }
+
+class IMU
 {
 public:
-	IMUDeviceDriver driver;
-	int provider;
-	int device;
+	int trackerID, index;
 
-	// State
-	bool hasBattery, isPlugged;
-	float batteryLevel;
-	float batteryVolts;
-	float temperature;
-	float signalStrength;
+	// Identification
+	IMUDriver driver;
+	int provider, device; // Driver defined
 
-	// IMU samples
-	BlockedQueue<IMUSample> samples;
+	BlockedQueue<IMUSample, 16384> samples;
 
-    virtual ~IMUDevice() = default;
+	IMU() :
+		driver((IMUDriver)0), provider(0), device(0),
+		trackerID(0), index(-1) {}
+	IMU(IMUDriver driver, int provider, int device) :
+		driver(driver), provider(provider), device(device),
+		trackerID(0), index(-1) {}
 
-	// TODO: Methods to setup passthrough to IO, e.g. buttons to VRPN
-
-protected:
-	IMUDevice(IMUDeviceDriver driver, int provider, int device) : driver(driver), provider(provider), device(device) {}
+	virtual ~IMU() = default;
 };
 
-class IMUDeviceProvider
+class IMURecord : public IMU
 {
 public:
-	IMUDeviceDriver driver;
-
-	std::vector<std::shared_ptr<IMUDevice>> devices;
-
-	// Can be optionally used to provide debug data about timing
-	bool recordTimeSyncMeasurements = false;
-	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
-	bool recordLatencyMeasurements = false;
-	LatencyDescriptor latencyDescriptions;
-	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
-
-    virtual ~IMUDeviceProvider() = default;
-
-	virtual IMUDeviceProviderStatus poll(int &updatedDevices, int &changedDevices) = 0;
-
-protected:
-	IMUDeviceProvider(IMUDeviceDriver driver) : driver(driver) {}
+	~IMURecord() = default;
+	IMURecord() : IMU() {}
 };
 
-bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
-bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
-
-#endif
+#endif // IMU_H

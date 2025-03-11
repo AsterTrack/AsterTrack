@@ -1,5 +1,5 @@
 
-#include "imu/imu.hpp"
+#include "imu/device.hpp"
 
 #include "util/log.hpp"
 

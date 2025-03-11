@@ -96,6 +96,11 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 		return trackers.front().poseFiltered.translation();
 	}
 
+	if (!GetState().pipeline.record.imus.empty())
+	{
+		return Eigen::Vector3f(0,0,1);
+	}
+
 	return Eigen::Vector3f::Constant(NAN);
 }
 

@@ -228,7 +228,7 @@ void storeCameraConfigFile(const std::string &path, const CameraConfigMap &confi
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -378,7 +378,7 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -495,11 +495,11 @@ void storeTargetCalibrations(const std::string &path, const std::vector<TargetTe
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
-std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record)
+std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 
@@ -639,6 +639,32 @@ std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigR
 
 			record.frames.insert(num-frameOffset, std::move(frame));
 		}
+
+		if (!file.contains("imuRecords")) return frameOffset;
+		if (!file["imuRecords"].is_array()) return frameOffset;
+		auto &jsIMUs = file["imuRecords"];
+		record.imus.reserve(jsIMUs.size());
+		for (auto &jsIMU : jsIMUs)
+		{
+			auto imu = std::make_shared<IMURecord>();
+			imu->driver = (IMUDriver)jsIMU["driver"].get<int>();
+			imu->provider = jsIMU["provider"].get<int>();
+			imu->device = jsIMU["device"].get<int>();
+			imu->trackerID = jsIMU["trackerID"].get<int>();
+
+			auto &jsSamples = jsIMU["samples"];
+			for (auto &jsSample : jsSamples)
+			{
+				auto quat = jsSample["quat"];
+				auto accel = jsSample["accel"];
+				imu->samples.push_back({ 
+					startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
+					Eigen::Quaternionf(quat[3].get<float>(), quat[0].get<float>(), quat[1].get<float>(), quat[2].get<float>()),
+					Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>())
+				});
+			}
+			record.imus.push_back(std::move(imu));
+		}
 	}
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
@@ -651,16 +677,19 @@ std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigR
 	return frameOffset;
 }
 
-void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
+void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 
 	begin = std::max(begin, frames.beginIndex());
 	end = std::min(end, frames.endIndex());
-	if (begin >= end)
-		return;
+	if (begin >= end) return;
 	auto frameBegin = frames.pos(begin);
-	auto frameEnd = frames.pos(end);
+	while (frameBegin < frames.end() && !*frameBegin) frameBegin++;
+	auto frameBack = frames.pos(end-1);
+	while (frameBack > frames.begin() && !*frameBack) frameBack--;
+	auto frameEnd = std::next(frameBack);
+	if (frameBegin >= frameEnd) return;
 
 	// Open file
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
@@ -683,24 +712,21 @@ void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRec
 		jsCameras.push_back(std::move(jsCamera));
 	}
 
+	// Time range
+	TimePoint_t timeFirst = frameBegin->get()->time;
+	TimePoint_t timeLast = frameBack->get()->time;
+
 	// Write observations
 	file["frameRecords"]["frames"] = json::array();
 	auto &jsFrames = file["frameRecords"]["frames"];
-	TimePoint_t start = sclock::now();
-	bool foundFirst = false;
 	for (auto frameIt = frameBegin; frameIt != frameEnd; frameIt++)
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
-		if (!foundFirst)
-		{
-			start = frame.time;
-			foundFirst = true;
-		}
 		json jsFrame;
 		jsFrame["id"] = frame.ID;
 		jsFrame["num"] = frame.num;
-		jsFrame["dt"] = dtUS(start, frame.time);
+		jsFrame["dt"] = dtUS(timeFirst, frame.time);
 		jsFrame["cameras"] = json::array();
 		int camIndex = 0;
 		for (auto &camera : frame.cameras)
@@ -755,8 +781,40 @@ void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRec
 		jsFrames.push_back(std::move(jsFrame));
 	}
 
+	// Write imu records
+	file["imuRecords"] = json::array();
+	auto &jsIMUs = file["imuRecords"];
+	for (auto &imu : record.imus)
+	{
+		auto samples = imu->samples.getView();
+		auto itBegin = std::lower_bound(samples.begin(), samples.end(), timeFirst);
+		// Include some samples before start
+		for (int i = 0; i < 10 && itBegin != samples.begin(); i++, itBegin--);
+		auto itEnd = std::upper_bound(samples.begin(), samples.end(), timeLast);
+		if (itBegin > itEnd) continue; // Had no sample in frame range
+
+		json jsIMU;
+		jsIMU["trackerID"] = imu->trackerID;
+		jsIMU["driver"] = imu->driver;
+		jsIMU["provider"] = imu->provider;
+		jsIMU["device"] = imu->device;
+
+		jsIMU["samples"] = json::array();
+		auto &jsSamples = jsIMU["samples"];
+		for (auto it = itBegin; it != itEnd; it++)
+		{
+			json jsSample;
+			jsSample["dt"] = dtUS(timeFirst, it->timestamp); // May be negative at beginning
+			jsSample["quat"] = json::array({ it->quat.x(), it->quat.y(), it->quat.z(), it->quat.w() });
+			jsSample["accel"] = json::array({ it->accel.x(), it->accel.y(), it->accel.z() });
+			jsSamples.push_back(std::move(jsSample));
+		}
+
+		jsIMUs.push_back(std::move(jsIMU));
+	}
+
 	// Write JSON calib file
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -935,7 +993,7 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 		jsRecords["trackers"].push_back(tgtID);
 
 	// Write JSON calib file
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -1093,7 +1151,7 @@ void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences
 	}
 
 	// Write JSON calib file
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -1255,7 +1313,7 @@ void dumpTargetViewRecords(const std::string &path, const std::vector<std::share
 	}
 
 	// Write JSON calib file
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 
@@ -1315,7 +1373,7 @@ void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &
 	storeOptTarget(file["target"], base.target);
 
 	// Write JSON calib file
-	fs << std::setw(4) << file;
+	fs << std::setfill('\t') << std::setw(1) << file;
 	fs.close();
 }
 

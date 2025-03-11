@@ -23,7 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp" // Main processing pipeline
 #include "comm/streaming.hpp" // Streaming blob data in
 #include "comm/server.hpp"
-#include "imu/imu.hpp"
+#include "imu/device.hpp"
 
 #include "util/memory.hpp"
 

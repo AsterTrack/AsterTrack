@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef RECORD_H
 #define RECORD_H
 
+#include "imu/imu.hpp"
+
 #include "util/eigendef.hpp"
 #include "util/util.hpp" // TimePoint_t
 #include "util/blocked_vector.hpp"
@@ -153,6 +155,7 @@ struct FrameRecord
 struct TrackingRecord
 {
 	BlockedQueue<std::shared_ptr<FrameRecord>> frames;
+	std::vector<std::shared_ptr<IMU>> imus;
 };
 
 #endif // RECORD_H

@@ -877,15 +877,27 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					imuProvider = imuLock->erase(imuProvider);
 					continue;
 				}
-				if (changedDevices > 0) imusChanged = true;
 				if (updatedDevices > 0) imusUpdated = true;
-				if (changedDevices > 0 && state->isStreaming)
+				if (changedDevices > 0)
 				{
+					imusChanged = true;
+					std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
 					for (auto &imu : imuProvider->get()->devices)
 					{
-						if (imu.use_count() == 1)
-						{ // New
-							state->pipeline.tracking.trackedIMUs.emplace_back(imu, state->pipeline.params.track);
+						if (imu->index >= 0) continue;
+						// TODO: Handle receiver replugging, should probably detect IMU as the same
+						// Either replace existing (Probably move old samples in to new IMU?)
+						// Or just add new and replace any tracking references
+						//auto ex = std::find_if(state->pipeline.record.imus.begin(), state->pipeline.record.imus.end(),
+						//	[&](auto &i){ return i->driver == imu->driver && i->device == imu->device; });
+						//if (ex != state->pipeline.record.imus.end())
+						// Else just add to imu record
+						imu->index = state->pipeline.record.imus.size();
+						state->pipeline.record.imus.push_back(std::static_pointer_cast<IMU>(imu));
+						if (state->isStreaming)
+						{
+							// Add as individual tracker first until assigned to a tracker
+							state->pipeline.tracking.trackedIMUs.emplace_back(std::static_pointer_cast<IMU>(imu), state->pipeline.params.track);
 							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
 						}
 					}
@@ -895,6 +907,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		}
 		if (imusUpdated)
 			SignalPipelineUpdate();
+		if (imusChanged)
+		{ // TODO: Handle disconnected IMUs?
+		}
 
 		// Frame consistency supervision and processing stream frames once deemed complete
 		TimePoint_t s0 = sclock::now();
@@ -1087,7 +1102,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 	while (!stop_token.stop_requested())
 	{
-		if (!state->isStreaming || pipeline.cameras.empty())
+		if (!state->isStreaming)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
@@ -1150,7 +1165,14 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					continue;
 				}
 				if (state->recordReplayFrame == 0)
+				{ // Reset time
 					state->recordReplayTime = sclock::now();
+					// Ensure timestamp is set properly
+					for (auto &imu : pipeline.record.imus)
+						imu->samples.cull_clear();
+					for (auto &imu : pipeline.record.imus)
+						imu->samples.delete_culled();
+				}
 				if (!pipeline.record.frames.insert(state->recordReplayFrame, frameRecord)) // new shared_ptr
 					continue;
 				frameRecord->num = state->recordReplayFrame;
@@ -1158,13 +1180,28 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				frameRecord->time = state->recordReplayTime + (loadedRecord->time - stored.front()->time);
 				frameRecord->cameras = loadedRecord->cameras;
 				assert(frameRecord->cameras.size() == pipeline.cameras.size());
-				if (state->recordReplayFrame++ < state->recordFrameCount)
+				if (++state->recordReplayFrame < state->recordFrameCount)
 				{ // Replicate original frame pacing
 					auto &nextRecord = stored[state->recordReplayFrame];
 					if (nextRecord)
 						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
+
+				// Copy imu samples up until current frame into record
+				for (int i = 0; i < state->record.imus.size(); i++)
+				{
+					auto &imu = pipeline.record.imus[i];
+					auto samples = state->record.imus[i]->samples.getView();
+					auto it = samples.pos(imu->samples.getView().endIndex());
+					for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
+					{ // Copy sample, re-mapping timestamp to current replay time
+						IMUSample sample = *it;
+						sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
+						imu->samples.insert(it.index(), sample);
+					}
+				}
+
 				for (auto &cam : state->cameras)
 				{ // Set camera image in cameras
 					if (!frameRecord->cameras[cam->pipeline->index].image)
@@ -1262,6 +1299,22 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 		// TODO: Ensure replay camera has the same mode (from image frameX/frameY)? Or not important?
 	}
 
+	// Setup IMUs
+	state.pipeline.record.imus.clear();
+	state.pipeline.record.imus.reserve(state.record.imus.size());
+	for (auto &storedIMU : state.record.imus)
+	{
+		auto imu = std::make_shared<IMURecord>();
+		imu->driver = storedIMU->driver;
+		imu->provider = storedIMU->provider;
+		imu->device = storedIMU->device;
+		imu->trackerID = storedIMU->trackerID;
+		imu->index = state.pipeline.record.imus.size();
+		state.pipeline.record.imus.push_back(std::move(imu));
+		// Don't setup samples, Start Streaming deletes prior frame and imu records
+		// Instead enter samples during replay for relevant frames
+	}
+
 	{ // Log testing calibrations
 		ScopedLogLevel scopedLogLevelInfo(LInfo);
 		std::vector<CameraCalib> testingCalibrations;
@@ -1309,6 +1362,7 @@ void StopReplay(ServerState &state)
 	state.cameras.clear();
 	ResetPipelineState(state.pipeline);
 	state.record.frames.cull_clear();
+	state.record.imus.clear();
 	state.recordReplayFrame = 0;
 	state.recordFrameCount = 0;
 
@@ -1599,18 +1653,6 @@ bool StartStreaming(ServerState &state)
 
 		// Incase no controller is connected, provide virtual sync group for e.g. IMUs
 		SetupVirtualSyncGroup(state);
-
-		for (auto &imuProvider : *state.imuProviders.contextualRLock())
-		{
-			for (auto &imu : imuProvider->devices)
-			{
-				if (imu.use_count() == 1)
-				{ // New
-					state.pipeline.tracking.trackedIMUs.emplace_back(imu, state.pipeline.params.track);
-					LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
-				}
-			}
-		}
 	}
 
 	SignalServerEvent(EVT_START_STREAMING);

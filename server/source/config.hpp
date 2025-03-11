@@ -141,8 +141,8 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate3D> &targetTemplates);
 void storeTargetCalibrations(const std::string &path, const std::vector<TargetTemplate3D> &targetTemplates);
 
-std::size_t parseFrameRecords(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
-void dumpFrameRecords(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
+std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
+void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
 void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset);
 void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);

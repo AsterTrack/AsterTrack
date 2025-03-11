@@ -200,6 +200,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simAdvance = 0;
 				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
+				ResetPipelineStreaming(state.pipeline);
 				std::shared_ptr<FrameRecord> frame = nullptr;
 				auto frames = pipeline.record.frames.getView();
 				if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
@@ -217,6 +218,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					AdoptFrameRecordState(pipeline, *frame);
 					state.recordReplayFrame = frameJumpTarget+1;
 				}
+				InitPipelineStreaming(state.pipeline);
 				// Continue advancing
 				state.simAdvance = prevState;
 				state.simAdvance.notify_all();
@@ -305,7 +307,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 									return;
 								}
 							}
-							dumpFrameRecords(section.path, cameras, pipeline.record, section.begin, section.end);
+							dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
 							dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);
 							for (auto &s : GetUI().recordSections)
 								if (s.begin == section.begin && s.end == section.end)

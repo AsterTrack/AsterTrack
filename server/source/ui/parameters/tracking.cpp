@@ -238,6 +238,10 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.dampeningRot, &standard.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
 		EndSection();
 
+		BeginSection("Tracking Loss");
+		modified |= ScalarProperty<float>("Coast Time", "ms", &params.lostTargetCoastMS, &standard.lostTargetCoastMS, 0, 10000, 0.1f, 1, "%.0f");
+		EndSection();
+
 		if (modified)
 			frameRelevantParametersDirty = true;
 		if (modified && visState.tracking.debug.frameNum == state.pipeline.frameNum)

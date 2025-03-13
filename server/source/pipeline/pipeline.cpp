@@ -211,6 +211,8 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record)
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord)
 {
+	ResetPipelineStreaming(pipeline);
+
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	{
 		auto frames = pipeline.record.frames.getView();
@@ -219,19 +221,20 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	}
 	pipeline.frameNum = frameRecord.num;
 
+	InitPipelineStreaming(pipeline);
+
 	// Point and Target calibration pipeline can just stay as is, as long as frame records stays
 	// We will be overwriting frame records, so technically leaving them as-is is not thread-safe
 
 	// Adopt recorded tracking state
-	InitTrackingPipeline(pipeline);
 	for (auto &targetRecord : frameRecord.tracking.targets)
 	{
 		auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
 			[&](auto &t){ return t.id == targetRecord.id; });
 		if (track == pipeline.tracking.targetTemplates3D.end()) continue;
-		pipeline.tracking.trackedTargets.emplace_back(&*track, targetRecord.poseObserved, frameRecord.time, pipeline.params.track);
+		pipeline.tracking.trackedTargets.emplace_back(&*track, targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
 		auto targetIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
-			[&](auto &e){ return e.first == &*track; });
+			[&](auto &e){ return e.target.calib == &*track; });
 		if (targetIt != pipeline.tracking.dormantTargets.end())
 			pipeline.tracking.dormantTargets.erase(targetIt);
 	}

@@ -1084,15 +1084,15 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 				int trackerID = visState.tracking.debug.trackerID;
 				auto tracker = std::find_if(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(),
-					[&](auto &t){ return t.target->id == trackerID; });
+					[&](auto &t){ return t.target.calib->id == trackerID; });
 				if (tracker == pipeline.tracking.trackedTargets.end()) return;
 
-				visualiseTarget2DMatchingStages(visState, calib, camFrame, *tracker->target,
-					tracker->tracking2DData.matching[calib.index], pipeline.params.track.expandMarkerFoV);
+				visualiseTarget2DMatchingStages(visState, calib, camFrame, *tracker->target.calib,
+					tracker->target.data.matching[calib.index], pipeline.params.track.expandMarkerFoV);
 
 				if (visState.tracking.showUncertaintyAxis)
 				{ // Visualise uncertainty axis of dominant camera from internal tracking debug data
-					visualiseTarget2DUncertaintyAxis(tracker->tracking2DData.uncertaintyAxis.at(camera.pipeline->index));
+					visualiseTarget2DUncertaintyAxis(tracker->target.data.uncertaintyAxis.at(camera.pipeline->index));
 				}
 
 				return;

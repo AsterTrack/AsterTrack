@@ -187,4 +187,70 @@ private:
 	MeasurementSquareMatrix m_covariance;
 };
 
+/**
+ * AbsolutePositionMeasurement for use with flexkalman UKF
+ */
+
+class AbsolutePositionMeasurement :
+	public flexkalman::MeasurementBase<AbsolutePositionMeasurement>
+{
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	static constexpr size_t Dimension = 3;
+	using MeasurementVector = flexkalman::types::Vector<Dimension>;
+	using MeasurementSquareMatrix = flexkalman::types::SquareMatrix<Dimension>;
+
+	AbsolutePositionMeasurement(Eigen::Vector3d const &pos,
+								Eigen::Vector3d const &variance)
+		: m_pos(pos)
+	{
+		m_covariance.setIdentity();
+		m_covariance.diagonal() = variance;
+	}
+
+	AbsolutePositionMeasurement(Eigen::Vector3d const &pos,
+								MeasurementSquareMatrix const &covariance)
+		: m_pos(pos), m_covariance(covariance) {}
+
+	template <typename State>
+	MeasurementSquareMatrix const &getCovariance(State const &)
+	{
+		return m_covariance;
+	}
+
+	template <typename State>
+	MeasurementVector predictMeasurement(State const &state) const
+	{
+		return state.position();
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(MeasurementVector const &prediction,
+								  State const &state) const
+	{
+		return m_pos - prediction.head<3>();
+	}
+
+	/*!
+	 * Gets the measurement residual, also known as innovation: predicts
+	 * the measurement from the predicted state, and returns the
+	 * difference.
+	 */
+	template <typename State>
+	MeasurementVector getResidual(State const &state) const
+	{
+		return m_pos - state.position();
+	}
+
+	//! Convenience method to be able to store and re-use measurements.
+	void setMeasurement(Eigen::Vector3d const &pos)
+	{
+		m_pos = pos;
+	}
+
+private:
+	Eigen::Vector3d m_pos;
+	MeasurementSquareMatrix m_covariance;
+};
+
 #endif // TARGET_KALMAN_H

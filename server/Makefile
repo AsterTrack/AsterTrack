@@ -146,10 +146,9 @@ SERVER_CPP = \
 	calib/obs_data.cpp calib/optimisation.cpp \
 	calib_point/reconstruction.cpp calib_point/calibration_room.cpp \
 	calib_target/reconstruction.cpp calib_target/aquisition.cpp calib_target/assembly.cpp \
-	point/sequence_data.cpp \
-	point/sequences2D.cpp point/triangulation.cpp point/tracking3D.cpp \
-	target/target.cpp target/detection2D.cpp target/detection3D.cpp \
-	target/tracking2D.cpp target/tracking3D.cpp
+	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp \
+	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp \
+	tracking/tracking.cpp
 #comm/server.cpp
 
 SERVER_SHARED_CPP = \

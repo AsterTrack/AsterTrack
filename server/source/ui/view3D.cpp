@@ -486,9 +486,9 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		}
 	}
 	{
-		for (auto &trackedIMU : pipeline.tracking.trackedIMUs)
+		for (auto &imu : pipeline.tracking.orphanedIMUs)
 		{
-			visualisePose(trackedIMU.getPoseFiltered(), Color{ 0.1f, 0.1f, 1.0f, 1.0f }, 0.2f, 4.0f);
+			visualisePose(imu.pose.filtered, Color{ 0.1f, 0.1f, 1.0f, 1.0f }, 0.2f, 4.0f);
 		}
 	}
 

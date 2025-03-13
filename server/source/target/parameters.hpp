@@ -142,6 +142,7 @@ struct TargetTrackingParameters
 	float initialUncertaintyState = 5, initialUncertaintyChange = 1000;
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
+	float lostTargetCoastMS = 100.0f;
 };
 
 // Two more used statically, no easy access to TargetDetectionParameters::triDetection, but recorded here nonetheless

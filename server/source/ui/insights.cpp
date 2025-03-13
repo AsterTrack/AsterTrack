@@ -531,7 +531,7 @@ static bool ShowTrackingPanel()
 	}
 	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.targetTemplates3D.empty()))
 	{
-		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target : &pipeline.tracking.targetTemplates3D.front();
+		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target.calib : &pipeline.tracking.targetTemplates3D.front();
 		curTargetID = target->id;
 		curTargetLabel = target->label;
 	}

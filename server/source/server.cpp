@@ -897,7 +897,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 						if (state->isStreaming)
 						{
 							// Add as individual tracker first until assigned to a tracker
-							state->pipeline.tracking.trackedIMUs.emplace_back(std::static_pointer_cast<IMU>(imu), state->pipeline.params.track);
+							state->pipeline.tracking.orphanedIMUs.emplace_back(std::static_pointer_cast<IMU>(imu), state->pipeline.params.track);
 							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
 						}
 					}

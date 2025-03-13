@@ -28,11 +28,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "point/parameters.hpp" // SequenceParameters
 #include "point/sequence_data.hpp" // SequenceData
-#include "point/tracking3D.hpp" // TrackedMarker
 #include "point/triangulation.hpp" // TriangulatedPoint
 
 #include "target/target.hpp" // TargetTemplate3D
-#include "target/tracking3D.hpp" // TrackedTargetFiltered
+
+#include "tracking/tracking.hpp" // TrackedTarget, TrackedMarker, DormantTarget, OrphanedIMU
 
 #include "calib_point/parameters.hpp" // PointCalibParameters
 #include "calib_point/calibration_room.hpp" // StaticPointSamples
@@ -147,11 +147,11 @@ struct PipelineState
 		std::vector<TriangulatedPoint> triangulations3D; // Likely to be real markers
 		std::vector<TriangulatedPoint> discarded3D; // Unlikely to be real markers
 		// Currently tracked objects
-		std::list<TrackedTargetFiltered> trackedTargets;
-		std::list<TrackedMarker<float>> trackedMarkers;
-		std::list<TrackedIMUFiltered> trackedIMUs;
-		// Targets not currently tracked
-		std::list<std::pair<TargetTemplate3D const *,int>> dormantTargets;
+		std::list<TrackedTarget> trackedTargets;
+		std::list<TrackedMarker> trackedMarkers;
+		// Objects not currently tracked
+		std::list<DormantTarget> dormantTargets;
+		std::list<OrphanedIMU> orphanedIMUs;
 		// Asynchronous Detections
 		bool asyncDetection;
 		int asyncDetectTargetID = 0;

@@ -705,7 +705,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * First re-acquires the previously visible markers, finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit the observations
  */
-TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
+TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -716,7 +716,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pr
 
 	// Find candidate for 2D point matches
 	TargetMatch2D targetMatch2D = {};
-	targetMatch2D.targetTemplate = &target;
+	targetMatch2D.calib = &target;
 	targetMatch2D.pose = prediction;
 	targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 	int relevantCams = points2D.size();
@@ -780,7 +780,7 @@ TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f pr
 			projected2D[c].clear();
 			relevantProjected2D[c].clear();
 			if (closePoints2D[c].empty()) continue;
-			projectTargetTemplate(projected2D[c], relevantProjected2D[c],
+			projectTarget(projected2D[c], relevantProjected2D[c],
 				target, calibs[c], targetMatch2D.pose, params.expandMarkerFoV);
 			LOGC(LDebug, "        Camera %d: Projected %d target markers, matching them to %d closeby observations!\n",
 				c, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());

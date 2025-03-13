@@ -231,7 +231,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 
 		if (visTarget.hasObs())
 		{
-			auto &frame = visTarget.targetObs->frames[visState.targetCalib.frameIdx % visTarget.targetObs->frames.size()];
+			auto &frame = visTarget.obs->frames[visState.targetCalib.frameIdx % visTarget.obs->frames.size()];
 			viewLabel = asprintf_s("Frame %d", frame.frame);
 			if (visTarget.hasPose)
 			{
@@ -498,9 +498,9 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 	for (auto &trackedTarget : frame.tracking.targets)
 	{
-		auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+		auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 			[&](auto &t){ return t.id == trackedTarget.id; });
-		if (target == pipeline.tracking.targetTemplates3D.end()) continue;
+		if (target == pipeline.tracking.targetCalibrations.end()) continue;
 
 		Color colPredicted = Color{ 0.2f, 0.2f, 0.7f, 1.0f };
 		Color colObserved = Color{ 0.4f, 0.8f, 0.2f, 0.6f };

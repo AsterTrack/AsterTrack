@@ -55,7 +55,7 @@ struct TargetCandidate3D
 /**
  * Calculate MSE of candidate marker in given point cloud in mm^2
  */
-float calculateCandidateMSE(const TargetTemplate3D &target3D,
+float calculateCandidateMSE(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D,
 	const TargetCandidate3D &candidate);
 
@@ -63,7 +63,7 @@ float calculateCandidateMSE(const TargetTemplate3D &target3D,
  * Picks the best candidate by point count and internal MSE.
  * Returns the index, MSE in mm^2 and count of other candidates with the same maximum point count
  */
-std::tuple<int,int> getBestTargetCandidate(const TargetTemplate3D &target3D, 
+std::tuple<int,int> getBestTargetCandidate(const TargetCalibration3D &target3D, 
 	const std::vector<TriangulatedPoint> &points3D,
 	std::vector<TargetCandidate3D> &candidates);
 
@@ -71,7 +71,7 @@ std::tuple<int,int> getBestTargetCandidate(const TargetTemplate3D &target3D,
  * Detect a marker in the triangulated 3D Point cloud
  * Returns all candidates
  */
-void detectTarget3D(const TargetTemplate3D &target3D,
+void detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
 	std::vector<TargetCandidate3D> &candidates,
 	float sigmaError = 3, float poseSigmaError = 6, bool quickAssign = true);
@@ -80,7 +80,7 @@ void detectTarget3D(const TargetTemplate3D &target3D,
  * Detect a marker in the triangulated 3D Point cloud
  * Returns the best candidate
  */
-TargetCandidate3D detectTarget3D(const TargetTemplate3D &target3D,
+TargetCandidate3D detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
 	float sigmaError = 3, float poseSigmaError = 6, bool quickAssign = true);
 
@@ -88,7 +88,7 @@ TargetCandidate3D detectTarget3D(const TargetTemplate3D &target3D,
  * Detect a marker in the triangulated 3D Point cloud
  * Returns all candidate poses with respective MSE in mm^2 and point count
  */
-void detectTarget3D(const TargetTemplate3D &target3D,
+void detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
 	std::vector<Eigen::Isometry3f> &poses3D, std::vector<std::pair<float,int>> &posesMSE,
 	float sigmaError = 3, float poseSigmaError = 6, bool quickAssign = true);

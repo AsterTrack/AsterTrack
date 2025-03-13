@@ -36,7 +36,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct PipelineState; // pipeline/pipeline.hpp
 struct FrameRecord; // pipeline/pipeline.hpp
 
-extern TargetTemplate3D PointCalibMarker;
+extern TargetCalibration3D PointCalibMarker;
 
 
 /* Structures */
@@ -56,7 +56,7 @@ const extern std::array<MotionParameters, MotionCustom> motionPresets;
 struct SimulatedObject
 {
 	bool enabled, logPose;
-	const TargetTemplate3D *target;
+	const TargetCalibration3D *target;
 	int motionPreset;
 	MotionParameters motion;
 	struct {
@@ -100,7 +100,7 @@ struct SimulationState
 		return objects[primaryObject];
 	}
 
-	inline const SimulatedObject *getGT(const TargetTemplate3D &target) const
+	inline const SimulatedObject *getGT(const TargetCalibration3D &target) const
 	{
 		for (const auto &object : objects)
 		{
@@ -110,7 +110,7 @@ struct SimulationState
 		return nullptr;
 	}
 
-	inline Eigen::Isometry3f getGTPose(const TargetTemplate3D &target) const
+	inline Eigen::Isometry3f getGTPose(const TargetCalibration3D &target) const
 	{ // Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
 		Eigen::Isometry3f gtPose;
 		auto gt = getGT(target);

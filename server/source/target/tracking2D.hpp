@@ -35,7 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct TargetMatch2D
 {
-	TargetTemplate3D const *targetTemplate;
+	TargetCalibration3D const *calib;
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
 	TargetMatchError error;
@@ -154,7 +154,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * First re-acquires the previously visible markers and finds a better pose with them,
  * then finds newly appearing markers and optimises the pose to fit all matched observations
  */
-TargetMatch2D trackTarget2D(const TargetTemplate3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
+TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

@@ -894,13 +894,13 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 			if (visFrame.target.hasObs())
 			{ // Make sure it is in the target view, else pick next
-				if (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame != visFrame.frameIt.index())
+				if (visFrame.target.obs->frames[visFrame.target.frameIdx].frame != visFrame.frameIt.index())
 				{ // Backtrack to frame with image (if possible, not when at beginning)
-					while (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame > visFrame.frameIt.index() && visFrame.target.frameIdx > 0)
+					while (visFrame.target.obs->frames[visFrame.target.frameIdx].frame > visFrame.frameIt.index() && visFrame.target.frameIdx > 0)
 						visFrame.target.frameIdx--;
-					if (visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && visFrame.target.frameIdx < visFrame.target.targetObs->frames.size())
+					if (visFrame.target.obs->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && visFrame.target.frameIdx < visFrame.target.obs->frames.size())
 						visFrame.target.frameIdx++; // Pick next if there's no exact match
-					visFrame.frameIt = visFrame.frames.pos(visFrame.target.targetObs->frames[visFrame.target.frameIdx].frame);
+					visFrame.frameIt = visFrame.frames.pos(visFrame.target.obs->frames[visFrame.target.frameIdx].frame);
 				}
 			}
 		}
@@ -1109,9 +1109,9 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			thread_local std::vector<Eigen::Vector2f> projected2D;
 			for (auto &trackedTarget : frame->tracking.targets)
 			{
-				auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+				auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 					[&](auto &t){ return t.id == trackedTarget.id; });
-				if (target == pipeline.tracking.targetTemplates3D.end()) continue;
+				if (target == pipeline.tracking.targetCalibrations.end()) continue;
 
 				if (visState.tracking.showSearchBounds)
 				{ // Visualise search bounds
@@ -1129,26 +1129,26 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				if (visState.tracking.showTargetObserved && trackedTarget.tracked)
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-					projectTargetTemplate(projected2D, *target, calib,
+					projectTarget(projected2D, *target, calib,
 						trackedTarget.poseObserved, pipeline.params.track.expandMarkerFoV);
 					visualisePoints2D(projected2D, colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					projectTargetTemplate(projected2D,
+					projectTarget(projected2D,
 						*target, trackedTarget.visibleMarkers[camera.pipeline->index], calib, trackedTarget.poseObserved, 1.0f);
 					visualisePoints2D(projected2D, colMatched, 2.0f);
 				}
 
 				if (visState.tracking.showTargetPredicted)
 				{
-					projectTargetTemplate(projected2D, *target, calib,
+					projectTarget(projected2D, *target, calib,
 						trackedTarget.posePredicted, pipeline.params.track.expandMarkerFoV);
 					visualisePoints2D(projected2D, colPredicted, 2.0f);
 				}
 
 				if (visState.tracking.showTargetFilteredCamera && trackedTarget.tracked)
 				{
-					projectTargetTemplate(projected2D, *target, calib,
+					projectTarget(projected2D, *target, calib,
 						trackedTarget.poseFiltered, pipeline.params.track.expandMarkerFoV);
 					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}

@@ -39,7 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Forward-declared opaque structs
 struct FrameRecord; // pipeline/record.hpp
-struct TargetTemplate3D; // target/target.hpp
+struct TargetCalibration3D; // target/target.hpp
 struct TargetView; // calib_target/assembly.hpp
 struct TargetAssemblyBase; // calib_target/assembly.hpp
 struct SequenceData; // point/sequence_data.hpp
@@ -78,7 +78,7 @@ struct GeneralConfig
 		float blobPxStdDev = 0.5f;
 		// TODO: WARNING: These simulated targets in config are pointed to!
 		// Relevant should we ever want to re-load the config at runtime - make sure to handle all users of this first
-		std::vector<TargetTemplate3D> trackingTargets;
+		std::vector<TargetCalibration3D> trackingTargets;
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;
 	} simulation;
@@ -138,8 +138,8 @@ void storeCameraConfigFile(const std::string &path, const CameraConfigMap &confi
 void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
 void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
 
-void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate3D> &targetTemplates);
-void storeTargetCalibrations(const std::string &path, const std::vector<TargetTemplate3D> &targetTemplates);
+void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibration3D> &targetCalibs);
+void storeTargetCalibrations(const std::string &path, const std::vector<TargetCalibration3D> &targetCalibs);
 
 std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
 void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
@@ -157,7 +157,7 @@ void dumpTargetViewRecords(const std::string &path, const std::vector<std::share
 bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base);
 void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
 
-bool parseTargetObjFile(const std::string &path, std::vector<TargetTemplate3D> &targets, float fov, float size);
-void writeTargetObjFile(const std::string &path, const TargetTemplate3D &targetTemplate);
+bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D> &targets, float fov, float size);
+void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target);
 
 #endif // CONFIG_H

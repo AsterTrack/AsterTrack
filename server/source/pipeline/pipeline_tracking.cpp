@@ -40,8 +40,8 @@ extern ctpl::thread_pool threadPool;
 void InitTrackingPipeline(PipelineState &pipeline)
 {
 	pipeline.tracking.dormantTargets.clear();
-	for (auto &targetTemplate : pipeline.tracking.targetTemplates3D)
-		pipeline.tracking.dormantTargets.emplace_back(&targetTemplate);
+	for (auto &target : pipeline.tracking.targetCalibrations)
+		pipeline.tracking.dormantTargets.emplace_back(&target);
 	pipeline.tracking.orphanedIMUs.clear();
 	for (auto &imu : pipeline.record.imus)
 	{
@@ -64,7 +64,7 @@ void ResetTrackingPipeline(PipelineState &pipeline)
 	pipeline.tracking.orphanedIMUs.clear();
 }
 
-static TrackedTargetRecord& recordTracking(std::shared_ptr<FrameRecord> &frame, const TargetTemplate3D &target)
+static TrackedTargetRecord& recordTracking(std::shared_ptr<FrameRecord> &frame, const TargetCalibration3D &target)
 {
 	auto tgtRec = std::find_if(frame->tracking.targets.begin(), frame->tracking.targets.end(),
 		[&](auto &t){ return t.id == target.id; });
@@ -400,7 +400,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		auto tracker = track.trackedTargets.begin();
 		while (tracker != track.trackedTargets.end())
 		{
-			const TargetTemplate3D &target = *tracker->target.calib;
+			const TargetCalibration3D &target = *tracker->target.calib;
 			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!\n", target.id, target.label.c_str(), (int)target.markers.size());
 
 			// Enter into frame record
@@ -596,7 +596,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		while (dormantIt != pipeline.tracking.dormantTargets.end())
 		{
 			DormantTarget &dormant = *dormantIt;
-			const TargetTemplate3D &target = *dormant.target.calib;
+			const TargetCalibration3D &target = *dormant.target.calib;
 			LOG(LTracking, LDebug, "Trying to detect target %d (name %s) with %d markers in 3D point cloud!\n",
 				target.id, target.label.c_str(), (int)target.markers.size());
 
@@ -698,7 +698,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// Select target to detect
 		DormantTarget dormant = std::move(pipeline.tracking.dormantTargets.front());
 		pipeline.tracking.dormantTargets.pop_front();
-		const TargetTemplate3D &target = *dormant.target.calib;
+		const TargetCalibration3D &target = *dormant.target.calib;
 
 		LOG(LDetection2D, LInfo, "Trying target %d (name %s) with %d markers!\n",
 			target.id, target.label.c_str(), (int)target.markers.size());

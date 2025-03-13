@@ -266,7 +266,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			writeTargetObjFile(tgtPath, TargetTemplate3D(view.target.contextualRLock()->markers));
+			writeTargetObjFile(tgtPath, TargetCalibration3D(view.target.contextualRLock()->markers));
 		}
 
 		ImGui::BeginDisabled(view.control.stopping());
@@ -309,7 +309,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				reevaluateMarkerSequences<false>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 3 });
 				updateTargetObservations(*target_lock, obs_lock->markers);
 				view.state.errors = getTargetErrorDist(calibs, *target_lock);
-				view.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
+				view.targetCalib = TargetCalibration3D(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
 				// Plan optimisation
 				view.settings.outlierSigma = 10.0f;
 				view.settings.typeFlags = 0b10; // Assembly phases
@@ -323,12 +323,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				std::vector<CameraCalib> calibs = pipeline.getCalibs();
 				auto obs_lock = pipeline.seqDatabase.contextualRLock();
 				auto target_lock = visState.targetCalib.view->target.contextualLock();
-				TargetTemplate3D trkTarget(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
+				TargetCalibration3D trkTarget(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
 				expandFrameObservations(calibs, pipeline.record.frames, *target_lock, trkTarget, pipeline.targetCalib.params.assembly.trackFrame);
 				reevaluateMarkerSequences<true>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 10 });
 				updateTargetObservations(*target_lock, obs_lock->markers);
 				view.state.errors = getTargetErrorDist(calibs, *target_lock);
-				view.targetTemplate = trkTarget;
+				view.targetCalib = trkTarget;
 				// Plan optimisation
 				view.settings.outlierSigma = 10.0f;
 				view.settings.typeFlags = 0b10; // Assembly phases
@@ -536,7 +536,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				mkA = (mkA * weightA + mkB * weightB) / (weightA+weightB);
 				// Erase old marker
 				eraseMarker(markerB, markerA);
-				editTarget->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+				editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
@@ -546,7 +546,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				assert(markerA < markers.size());
 				markerB = markers.size();
 				markers.push_back(markers[markerA] + Eigen::Vector3f(0.01f, 0, 0));
-				editTarget->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+				editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 				// Update selection
 				selection.push_back(true);
 				selectCnt++;
@@ -587,7 +587,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 							{ // Erase marker completely if it has no other sequence
 								eraseMarker(oldMarker);
 							}
-							editTarget->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+							editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 						}
 					}
 
@@ -630,7 +630,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 						// Clean sequences
 						if (visState.targetCalib.highlightedSequence == map->first) visState.targetCalib.highlightedSequence = -1;
 						if (selSeq == map->first) visState.targetCalib.selectedSequence = selSeq = -1;
-						editTarget->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+						editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 					}
 					else
 						map++;
@@ -729,7 +729,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto obs_lock = pipeline.seqDatabase.contextualRLock();
 				base.target = subsampleTargetObservations(pipeline.record.frames, obs_lock->markers, base.target, pipeline.targetCalib.params.assembly.subsampling);
 				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-				base.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+				base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));
 			}
 			ImGui::SetItemTooltip("Subsample current target data for all followup stages to reduce computation times.");
@@ -745,7 +745,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				base.errors = getTargetErrorDist(calibs, base.target);
 				determineTargetOutliers(calibs, base.target, SigmaToErrors(pipeline.targetCalib.params.assembly.outlierSigmas, base.errors), pipeline.targetCalib.params.aquisition);
 				base.errors = getTargetErrorDist(calibs, base.target);
-				base.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+				base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Added outliers"));
 			}
 			ImGui::SetItemTooltip("Determine new outlier samples and remove them from the current target data.");
@@ -792,7 +792,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					auto obs_lock = pipeline.seqDatabase.contextualRLock();
 					updateTargetObservations(base.target, obs_lock->markers);
 					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-					base.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+					base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
 					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
 				}
 			}
@@ -814,15 +814,15 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			{
 				// Find max occupied target id (excluding testing markers because they are negative)
 				int id = -1;
-				for (int i = 0; i < pipeline.tracking.targetTemplates3D.size(); i++)
-					id = std::max(id, pipeline.tracking.targetTemplates3D[i].id);
+				for (int i = 0; i < pipeline.tracking.targetCalibrations.size(); i++)
+					id = std::max(id, pipeline.tracking.targetCalibrations[i].id);
 				id++;
 				// Register latest assembly stage as tracking target
 				auto stage = getSelectedStage();
-				TargetTemplate3D targetTemplate(id, std::string("Target ID ") + (char)((int)'0' + id), 
+				TargetCalibration3D targetCalib(id, std::string("Target ID ") + (char)((int)'0' + id), 
 					finaliseTargetMarkers(pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
-				pipeline.tracking.targetTemplates3D.push_back(std::move(targetTemplate));
-				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)targetTemplate.markers.size(), id);
+				pipeline.tracking.targetCalibrations.push_back(std::move(targetCalib));
+				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)targetCalib.markers.size(), id);
 				ServerStoreTargetCalib(state);
 			}
 

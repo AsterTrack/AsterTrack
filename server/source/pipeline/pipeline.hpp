@@ -30,7 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "point/sequence_data.hpp" // SequenceData
 #include "point/triangulation.hpp" // TriangulatedPoint
 
-#include "target/target.hpp" // TargetTemplate3D
+#include "target/target.hpp" // TargetCalibration3D
 
 #include "tracking/tracking.hpp" // TrackedTarget, TrackedMarker, DormantTarget, OrphanedIMU
 
@@ -141,7 +141,7 @@ struct PipelineState
 	{
 		// All stored target calibrations
 		// TODO: This is the actual store, though pipeline resets needs this, it might be better stored in the main server
-		std::vector<TargetTemplate3D> targetTemplates3D;
+		std::vector<TargetCalibration3D> targetCalibrations;
 		// Currently triangulated points
 		std::vector<Eigen::Vector3f> points3D; // points of triangulations3D
 		std::vector<TriangulatedPoint> triangulations3D; // Likely to be real markers

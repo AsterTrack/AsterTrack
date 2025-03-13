@@ -834,7 +834,7 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 }
 
 static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const std::shared_ptr<FrameRecord> &frameRecord,
-	const TargetTemplate3D &trkTarget, const ObsTarget &target, const ObsTargetFrame &reference, const TargetTrackingParameters &params)
+	const TargetCalibration3D &trkTarget, const ObsTarget &target, const ObsTargetFrame &reference, const TargetTrackingParameters &params)
 {
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(frameRecord->cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(frameRecord->cameras.size());
@@ -861,7 +861,7 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 }
 
 void expandFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
-	ObsTarget &target, const TargetTemplate3D &trkTarget, TrackFrameParameters params)
+	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params)
 {
 	LOG(LTargetCalib, LDebug, "Expand frame observations for target:");
 	// Try filling in previously discarded frames
@@ -957,7 +957,7 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 }
 
 template<bool APPLY>
-OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetTemplate3D &trkTarget, TrackFrameParameters params)
+OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params)
 {
 	// target.frames contains all frames with a best-estimate of the pose
 	// target.markers contains all current 3D markers
@@ -1040,9 +1040,9 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 	return error;
 }
 
-template OptErrorRes reevaluateFrameObservations<true>(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetTemplate3D &trkTarget, TrackFrameParameters params);
+template OptErrorRes reevaluateFrameObservations<true>(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
 
-void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, const TargetTemplate3D &trkTarget)
+void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, const TargetCalibration3D &trkTarget)
 {
 	int sampleCnt = 0;
 	float prevError = 0, newError = 0;
@@ -1054,7 +1054,7 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 
 		std::vector<std::vector<Eigen::Vector2f>> points2DRecStore(frameRecord->cameras.size());
 		TargetMatch2D targetMatch2D = {};
-		targetMatch2D.targetTemplate = &trkTarget;
+		targetMatch2D.calib = &trkTarget;
 		targetMatch2D.pose = frame.pose;
 		targetMatch2D.points2D.resize(frameRecord->cameras.size());
 		for (auto &sample : frame.samples)

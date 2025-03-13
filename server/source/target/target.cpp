@@ -28,7 +28,7 @@ float triTargetMinDistance = 0.1f;
 /**
  * Updates properties reliant on marker positions
  */
-void TargetTemplate3D::updateMarkers()
+void TargetCalibration3D::updateMarkers()
 {
 	// Update bounds
 	bounds = Bounds3f();
@@ -94,8 +94,8 @@ static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker 
  * Writes those points into their position in points2D corresponding to the marker point index
  * Writes indices of points projected into projected
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected, 
-	const TargetTemplate3D &target,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected, 
+	const TargetCalibration3D &target,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
@@ -119,8 +119,8 @@ void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<i
  * Writes those points into their position in points2D corresponding to the marker point index
  * Writes indices of points projected into projected
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
-	const TargetTemplate3D &target, const std::vector<int> &relevant,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
+	const TargetCalibration3D &target, const std::vector<int> &relevant,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
@@ -143,8 +143,8 @@ void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<i
  * Projects target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, 
-	const TargetTemplate3D &target,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, 
+	const TargetCalibration3D &target,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
@@ -166,8 +166,8 @@ void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D,
  * Projects relevant target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, 
-	const TargetTemplate3D &target, const std::vector<int> &relevant,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, 
+	const TargetCalibration3D &target, const std::vector<int> &relevant,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;

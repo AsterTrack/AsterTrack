@@ -49,7 +49,7 @@ const std::array<MotionParameters, MotionCustom> motionPresets = {
 static std::mt19937 gen = std::mt19937(std::random_device{}());
 
 
-TargetTemplate3D PointCalibMarker(0, "Single Marker", {
+TargetCalibration3D PointCalibMarker(0, "Single Marker", {
 	{
 		Eigen::Vector3f::Zero(),
 		Eigen::Vector3f::UnitZ(),
@@ -59,7 +59,7 @@ TargetTemplate3D PointCalibMarker(0, "Single Marker", {
 });
 
 #ifdef USE_LINE_LENGTH
-TargetTemplate3D LineCalibMarker(1, "Line", {
+TargetCalibration3D LineCalibMarker(1, "Line", {
 	{
 		Eigen::Vector3f(-30,0,0),
 		Eigen::Vector3f(-1,0,0),
@@ -79,7 +79,7 @@ TargetTemplate3D LineCalibMarker(1, "Line", {
 /* Functions */
 
 static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetTemplate3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation);
+	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation);
 
 static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline> &cameras);
 
@@ -323,7 +323,7 @@ static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline
  * Projects target into camera view, clipping out-of-view points, merging closeby points, and applying noise
  */
 static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetTemplate3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation)
+	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation)
 {
 	// Create MVP in camera space
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;

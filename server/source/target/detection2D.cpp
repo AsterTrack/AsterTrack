@@ -46,7 +46,7 @@ static std::vector<std::array<int,3>> generateTriplets(int n);
 static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D, float maxError);
 
 static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token stopToken,
-	const TargetTemplate3D &target3D, const CameraCalib &calib,
+	const TargetCalibration3D &target3D, const CameraCalib &calib,
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
 	const TargetDetectionParameters &params)
 {
@@ -97,7 +97,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 
 			// Reproject target points and estimate 2D error
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			projectTargetTemplate(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], 0.1f);
+			projectTarget(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], 0.1f);
 			auto res = getMatchErrorApprox(points2D, projected2D, params.search.errorMax);
 			if (res.first >= itResults[i].first && res.second < itResults[i].second)
 			{
@@ -135,7 +135,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 	return poseCandidates;
 }
 
-TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
@@ -173,12 +173,12 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &
 			return {};
 
 		TargetMatch2D targetMatch2D = {};
-		targetMatch2D.targetTemplate = &target3D;
+		targetMatch2D.calib = &target3D;
 		targetMatch2D.pose = pose;
 		targetMatch2D.points2D.resize(cameraCount);
 
 		// Project using initial pose estimate using only focus camera
-		projectTargetTemplate(projected2D, relevantProjected2D, target3D, calibs[focusCamera], pose, params.expandMarkerFoV);
+		projectTarget(projected2D, relevantProjected2D, target3D, calibs[focusCamera], pose, params.expandMarkerFoV);
 		if (relevantProjected2D.size() < params.minObservations.focus)
 			continue;
 

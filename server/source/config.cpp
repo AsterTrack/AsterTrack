@@ -382,7 +382,7 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 	fs.close();
 }
 
-void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate3D> &targetTemplates)
+void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibration3D> &targetCalibs)
 {
 	// Read JSON config file
 	std::ifstream fs(path);
@@ -401,10 +401,10 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate
 			auto &jsTargets = file["targets"];
 			if (jsTargets.is_array())
 			{
-				targetTemplates.reserve(targetTemplates.size() + jsTargets.size());
+				targetCalibs.reserve(targetCalibs.size() + jsTargets.size());
 				for (auto &jsTarget : jsTargets)
 				{
-					TargetTemplate3D target;
+					TargetCalibration3D target;
 					if (!jsTarget.contains("id")) continue;
 					target.id = jsTarget["id"].get<int>();
 					target.label = jsTarget["label"].get<std::string>();
@@ -443,7 +443,7 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate
 						target.markers.push_back(std::move(marker));
 					}
 					target.updateMarkers();
-					targetTemplates.push_back(std::move(target));
+					targetCalibs.push_back(std::move(target));
 				}
 			}
 		}
@@ -457,13 +457,13 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetTemplate
 #endif
 }
 
-void storeTargetCalibrations(const std::string &path, const std::vector<TargetTemplate3D> &targetTemplates)
+void storeTargetCalibrations(const std::string &path, const std::vector<TargetCalibration3D> &targetCalibs)
 {
 	json file;
 
 	// Write target calibration
 	file["targets"] = json::array();
-	for (auto &target : targetTemplates)
+	for (auto &target : targetCalibs)
 	{
 		json jsTarget;
 		jsTarget["id"] = target.id;
@@ -1274,7 +1274,7 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 			tgtView->beginFrame = target.frames.front().frame;
 			tgtView->endFrame = target.frames.back().frame;
 			if (tgtView->endFrame >= recordCount) continue;
-			tgtView->targetTemplate.initialise(target.markers);
+			tgtView->targetCalib.initialise(target.markers);
 			*tgtView->target.contextualLock() = std::move(target);
 			views.push_back(std::move(tgtView));
 		}
@@ -1377,7 +1377,7 @@ void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &
 	fs.close();
 }
 
-bool parseTargetObjFile(const std::string &path, std::vector<TargetTemplate3D> &targets, float fov, float size)
+bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D> &targets, float fov, float size)
 {
 	std::vector<Eigen::Vector3f> verts;
 	std::vector<Eigen::Vector3f> nrms;
@@ -1385,8 +1385,8 @@ bool parseTargetObjFile(const std::string &path, std::vector<TargetTemplate3D> &
 	std::ifstream fs(path);
 	if (!fs.is_open()) return false;
 
-	std::map<std::string, TargetTemplate3D> groups = { { path, TargetTemplate3D() } };
-	TargetTemplate3D *curGroup = &groups[path];
+	std::map<std::string, TargetCalibration3D> groups = { { path, TargetCalibration3D() } };
+	TargetCalibration3D *curGroup = &groups[path];
 
 	float limit = std::cos(fov/360*PI);
 
@@ -1476,10 +1476,10 @@ bool parseTargetObjFile(const std::string &path, std::vector<TargetTemplate3D> &
 	return true;
 }
 
-void writeTargetObjFile(const std::string &path, const TargetTemplate3D &targetTemplate)
+void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target)
 {
 	char filename[1000];
-	sprintf(filename, path.c_str(), targetTemplate.id); // path is from internal code only, so fine to use as format string
+	sprintf(filename, path.c_str(), target.id); // path is from internal code only, so fine to use as format string
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	FILE *out = fopen(filename, "w");
 
@@ -1493,12 +1493,12 @@ void writeTargetObjFile(const std::string &path, const TargetTemplate3D &targetT
 		fprintf(out, "f %d//%d %d//%d %d//%d\n", i+1, i+1, i+2, i+2, i+3, i+3);
 	};
 
-	fprintf(out, "g Target_%d\ns off\n", targetTemplate.id);
+	fprintf(out, "g Target_%d\ns off\n", target.id);
 
 	float s = 2.0f/1000;
-	for (int i = 0; i < targetTemplate.markers.size(); i++)
+	for (int i = 0; i < target.markers.size(); i++)
 	{
-		const TargetMarker &marker = targetTemplate.markers[i];
+		const TargetMarker &marker = target.markers[i];
 		Eigen::Vector3f x = marker.nrm.cross(Eigen::Vector3f::UnitX());
 		Eigen::Vector3f y = marker.nrm.cross(Eigen::Vector3f::UnitY());
 		writeVec("v", marker.pos + s*x + s*y);

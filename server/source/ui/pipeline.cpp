@@ -136,9 +136,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				auto &t = visState.tracking.targets[tracked.id];
 				if (!t.first)
 				{
-					auto target = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+					auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 						[&](auto &t){ return t.id == tracked.id; });
-					assert(target != pipeline.tracking.targetTemplates3D.end());
+					assert(target != pipeline.tracking.targetCalibrations.end());
 					t.first = &*target;
 				}
 				t.second = frameNum;
@@ -150,14 +150,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		{
 			ImGui::PushID(target.first);
 			long ago = frameNum - target.second.second;
-			TargetTemplate3D const *tgtTemplate = target.second.first;
+			TargetCalibration3D const *calib = target.second.first;
 			std::string label;
 			if (ago < 5)
-				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tgtTemplate->label.c_str(), target.first);
+				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", calib->label.c_str(), target.first);
 			else if (ago < 1000)
-				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tgtTemplate->label.c_str(), target.first, ago);
+				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", calib->label.c_str(), target.first, ago);
 			else
-				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tgtTemplate->label.c_str(), target.first);
+				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", calib->label.c_str(), target.first);
 			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == target.first, ImGuiSelectableFlags_SpanAllColumns))
 				visState.tracking.focusedTargetID = target.first;
 			ImGui::PopID();
@@ -276,12 +276,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					if (visState.target.selectedTargetID != tgt.targetID)
 					{
-						visState.target.selectedTargetTemplate = {};
-						auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+						visState.target.selectedTargetCalib = {};
+						auto track = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 							[&](auto &t){ return t.id == tgt.targetID; });
-						if (track == pipeline.tracking.targetTemplates3D.end())
+						if (track == pipeline.tracking.targetCalibrations.end())
 						{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-							visState.target.selectedTargetTemplate = TargetTemplate3D(tgt.targetID, "Temp",
+							visState.target.selectedTargetCalib = TargetCalibration3D(tgt.targetID, "Temp",
 								finaliseTargetMarkers(pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
 						}
 						visState.target.selectedTargetID = tgt.targetID;
@@ -369,7 +369,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						for (auto &tgtNew : data.targets)
 						{
 							bool found = false;
-							for (auto &tgt : pipeline.tracking.targetTemplates3D)
+							for (auto &tgt : pipeline.tracking.targetCalibrations)
 							{
 								if (std::abs(tgt.id) != std::abs(tgtNew.targetID)) continue;
 								updateMarkerOrientations(tgt.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
@@ -379,7 +379,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 							}
 							if (!found)
 							{
-								state.pipeline.tracking.targetTemplates3D.push_back(TargetTemplate3D(std::abs(tgtNew.targetID), "New Target",
+								state.pipeline.tracking.targetCalibrations.push_back(TargetCalibration3D(std::abs(tgtNew.targetID), "New Target",
 									finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post)));
 							}
 						}
@@ -426,7 +426,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
 						for (auto &tgtNew : data.targets)
 						{
-							for (auto &tgt : pipeline.tracking.targetTemplates3D)
+							for (auto &tgt : pipeline.tracking.targetCalibrations)
 							{
 								if (tgt.id != tgtNew.targetID) continue;
 								updateMarkerOrientations(tgt.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
@@ -580,7 +580,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						}
 					}
 				}
-				for (auto &tgt : state.pipeline.tracking.targetTemplates3D)
+				for (auto &tgt : state.pipeline.tracking.targetCalibrations)
 				{
 					auto it = targets.find(tgt.id);
 					if (it != targets.end())

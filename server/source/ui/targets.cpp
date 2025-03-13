@@ -44,7 +44,7 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::TableSetupColumn("Del", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		//ImGui::TableHeadersRow();
 
-		for (auto &target : state.pipeline.tracking.targetTemplates3D)
+		for (auto &target : state.pipeline.tracking.targetCalibrations)
 		{
 			ImGui::PushID(target.id);
 			ImGui::TableNextRow();
@@ -89,26 +89,26 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
-	TargetTemplate3D *target = nullptr, *targetSim = nullptr;
+	TargetCalibration3D *target = nullptr, *targetSim = nullptr;
 	if (visState.target.selectedTargetID > 0)
 	{
-		auto targetIt = std::find_if(state.pipeline.tracking.targetTemplates3D.begin(), state.pipeline.tracking.targetTemplates3D.end(),
+		auto targetIt = std::find_if(state.pipeline.tracking.targetCalibrations.begin(), state.pipeline.tracking.targetCalibrations.end(),
 			[&](auto &t){ return t.id == visState.target.selectedTargetID; });
-		if (targetIt != state.pipeline.tracking.targetTemplates3D.end())
+		if (targetIt != state.pipeline.tracking.targetCalibrations.end())
 			target = &*targetIt;
 	}
 	else if (visState.target.selectedTargetID < 0)
 	{
 		auto targetIt = std::find_if(state.config.simulation.trackingTargets.begin(), state.config.simulation.trackingTargets.end(),
 			[&](auto &t){ return t.id == visState.target.selectedTargetID; });
-		if (targetIt != state.pipeline.tracking.targetTemplates3D.end())
+		if (targetIt != state.pipeline.tracking.targetCalibrations.end())
 			target = &*targetIt;
 	}
 	// TODO: Improve handling of simulated and calibrated target IDs
 	// may have a simulated target that's calibrated, so exists as both simulated and calibrated variant
 	// Currently the former is < 0, latter > 0, what about calibrated simulated targets? Clarify
 
-	// TODO: Allow adoption of simulated target into pipeline.tracking.targetTemplates3D
+	// TODO: Allow adoption of simulated target into pipeline.tracking.targetCalibrations
 	// Would allow for kick-starting calibrations with a designed calibration
 
 	if (target)
@@ -138,7 +138,7 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			writeTargetObjFile(tgtPath, TargetTemplate3D(target->markers));
+			writeTargetObjFile(tgtPath, TargetCalibration3D(target->markers));
 		}
 	}
 	else if (targetSim)

@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * Detect a marker in 2D observations, returns all candidates
  */
-TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetTemplate3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,

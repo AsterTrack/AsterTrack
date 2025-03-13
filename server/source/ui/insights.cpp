@@ -54,22 +54,22 @@ public:
 
 	bool needsUpdate(const VisTargetLock &visTarget)
 	{
-		return tgtPtr != (intptr_t)visTarget.targetObs || sampleCount != visTarget.targetObs->totalSamples
-			|| frameCount != visTarget.targetObs->frames.size() || markerCount != visTarget.targetObs->markers.size();
+		return tgtPtr != (intptr_t)visTarget.obs || sampleCount != visTarget.obs->totalSamples
+			|| frameCount != visTarget.obs->frames.size() || markerCount != visTarget.obs->markers.size();
 		//	|| state != (m_view->calibrated? m_view->calibration->contextualRLock()->numSteps : -1);
 	}
 
 	TargetViewSequence(const VisTargetLock &visTarget, VisualisationState &visState, const std::vector<CameraCalib> &calibs)
 		: m_vis(&visState), m_start(0)
 	{
-		assert(visTarget.targetObs);
+		assert(visTarget.obs);
 		//if (m_view)
 		//	state = m_view->calibrated? m_view->calibration->contextualRLock()->numSteps : -1;
-		tgtPtr = (intptr_t)visTarget.targetObs;
-		sampleCount = visTarget.targetObs->totalSamples;
-		frameCount = visTarget.targetObs->frames.size();
-		markerCount = visTarget.targetObs->markers.size();
-		m_markers.resize(visTarget.targetObs->markers.size());
+		tgtPtr = (intptr_t)visTarget.obs;
+		sampleCount = visTarget.obs->totalSamples;
+		frameCount = visTarget.obs->frames.size();
+		markerCount = visTarget.obs->markers.size();
+		m_markers.resize(visTarget.obs->markers.size());
 		for (int i = 0; i < m_markers.size(); i++)
 		{
 			m_markers[i].index = i;
@@ -83,18 +83,18 @@ public:
 			m_markers[i].observations.reserve(frameCount);
 		}
 		int f = 0;
-		for (auto &frame : visTarget.targetObs->frames)
+		for (auto &frame : visTarget.obs->frames)
 		{
 			for (auto &sample : frame.samples)
 			{
-				int m = visTarget.targetObs->markerMap.at(sample.marker);
+				int m = visTarget.obs->markerMap.at(sample.marker);
 				auto &marker = m_markers[m];
 				if (marker.frameStart < 0 || marker.frameStart > f)
 					marker.frameStart = f;
 				if (marker.frameEnd < f)
 					marker.frameEnd = f;
 				// Evaluate observation error
-				Eigen::Vector3f markerPt = visTarget.targetObs->markers[m];
+				Eigen::Vector3f markerPt = visTarget.obs->markers[m];
 				Eigen::Vector2f proj = projectPoint2D(calibs[sample.camera].camera, frame.pose * markerPt);
 				Eigen::Vector2f point = undistortPoint<float>(calibs[sample.camera], sample.point);
 				float error = (point - proj).norm();
@@ -511,7 +511,7 @@ static bool ShowTrackingPanel()
 	if (ImGui::BeginCombo("Target", curTargetLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{
 		bool changed = false;
-		auto TargetSelect = [&changed](const TargetTemplate3D &target)
+		auto TargetSelect = [&changed](const TargetCalibration3D &target)
 		{
 			ImGui::PushID(target.id);
 			bool selected = curTargetID == target.id;
@@ -523,15 +523,15 @@ static bool ShowTrackingPanel()
 			}
 			ImGui::PopID();
 		};
-		for (auto &target : pipeline.tracking.targetTemplates3D)
+		for (auto &target : pipeline.tracking.targetCalibrations)
 			TargetSelect(target);
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
-	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.targetTemplates3D.empty()))
+	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.targetCalibrations.empty()))
 	{
-		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target.calib : &pipeline.tracking.targetTemplates3D.front();
+		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target.calib : &pipeline.tracking.targetCalibrations.front();
 		curTargetID = target->id;
 		curTargetLabel = target->label;
 	}

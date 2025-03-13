@@ -82,7 +82,7 @@ bool ServerInit(ServerState &state)
 
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-	parseTargetCalibrations("store/target_calib.json", state.pipeline.tracking.targetTemplates3D);
+	parseTargetCalibrations("store/target_calib.json", state.pipeline.tracking.targetCalibrations);
 	
 	{
 		// Debug calibration
@@ -148,17 +148,17 @@ void ServerStoreCameraCalib(ServerState &state)
 void ServerStoreTargetCalib(ServerState &state)
 {
 	// Collect current set of stored target templates
-	std::vector<TargetTemplate3D> targetTemplates;
-	targetTemplates.reserve(state.pipeline.tracking.targetTemplates3D.size());
-	for (int i = 0; i < state.pipeline.tracking.targetTemplates3D.size(); i++)
+	std::vector<TargetCalibration3D> targetCalibrations;
+	targetCalibrations.reserve(state.pipeline.tracking.targetCalibrations.size());
+	for (int i = 0; i < state.pipeline.tracking.targetCalibrations.size(); i++)
 	{ // TODO: Differentiate simulated targets some better way?
 		// Or just store them separately in server like is planned anyway, and only combine in pipeline?
-		if (state.pipeline.tracking.targetTemplates3D[i].id >= 0)
-			targetTemplates.push_back(state.pipeline.tracking.targetTemplates3D[i]);
+		if (state.pipeline.tracking.targetCalibrations[i].id >= 0)
+			targetCalibrations.push_back(state.pipeline.tracking.targetCalibrations[i]);
 	}
 
 	// Write both as current calibration
-	storeTargetCalibrations("store/target_calib.json", targetTemplates);
+	storeTargetCalibrations("store/target_calib.json", targetCalibrations);
 }
 
 void ServerStoreConfiguration(ServerState &state)
@@ -982,10 +982,10 @@ void StartSimulation(ServerState &state)
 	}
 
 	// Add testing targets for which there isn't already a calibration
-	auto &targets = state.pipeline.tracking.targetTemplates3D;
+	auto &targets = state.pipeline.tracking.targetCalibrations;
 	for (int i = 0; i < state.config.simulation.trackingTargets.size(); i++)
 	{
-		const TargetTemplate3D &targetDef = state.config.simulation.trackingTargets[i];
+		const TargetCalibration3D &targetDef = state.config.simulation.trackingTargets[i];
 
 		state.pipeline.simulation.contextualLock()->objects.push_back(
 			SimulatedObject { .target = &targetDef, .motionPreset = 2, .motion = motionPresets[2] }
@@ -1754,9 +1754,9 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		auto io_tracker = state.io.vrpn_trackers.find(trackedTarget.id);
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
-			auto target = std::find_if(state.pipeline.tracking.targetTemplates3D.begin(), state.pipeline.tracking.targetTemplates3D.end(),
+			auto target = std::find_if(state.pipeline.tracking.targetCalibrations.begin(), state.pipeline.tracking.targetCalibrations.end(),
 				[&](auto &t){ return t.id == trackedTarget.id; });
-			if (target == state.pipeline.tracking.targetTemplates3D.end()) continue;
+			if (target == state.pipeline.tracking.targetCalibrations.end()) continue;
 			std::string path = target->label;
 			//std::string path = asprintf_s("AsterTarget_%.4d", trackedTarget.id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());

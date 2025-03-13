@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * Calculate MSE of candidate marker in given point cloud in mm^2
  */
-float calculateCandidateMSE(const TargetTemplate3D &target3D, 
+float calculateCandidateMSE(const TargetCalibration3D &target3D, 
 	const std::vector<TriangulatedPoint> &points3D, const TargetCandidate3D &candidate)
 {
 	float meanSquaredError = 0.0f;
@@ -53,7 +53,7 @@ float calculateCandidateMSE(const TargetTemplate3D &target3D,
  * Returns the index 0f best and count of other candidates with the same maximum point count
  * Calculates MSE in mm^2 of those best candidates
  */
-std::tuple<int,int> getBestTargetCandidate(const TargetTemplate3D &target3D, 
+std::tuple<int,int> getBestTargetCandidate(const TargetCalibration3D &target3D, 
 	const std::vector<TriangulatedPoint> &points3D, std::vector<TargetCandidate3D> &candidates)
 {
 	// Find maximum point count and how many candidates have this point count
@@ -134,7 +134,7 @@ void createPointNetwork(const std::vector<TriangulatedPoint> &points3D, const st
  * Detect a marker in the triangulated 3D Point cloud
  * Returns all candidates
  */
-void detectTarget3D(const TargetTemplate3D &target3D,
+void detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
 	std::vector<TargetCandidate3D> &candidates,
 	float sigmaError, float poseSigmaError, bool quickAssign)
@@ -186,7 +186,7 @@ void detectTarget3D(const TargetTemplate3D &target3D,
 	trPtAssigned.resize(points3D.size());
 	
 	// Subroutine determining candidate pose using kabsch algorithm
-	auto determineCandidatePose = [&points3D](const TargetTemplate3D &target3D, TargetCandidate3D &candidate)
+	auto determineCandidatePose = [&points3D](const TargetCalibration3D &target3D, TargetCandidate3D &candidate)
 	{
 		int ptCount = candidate.points.size();
 		Eigen::MatrixX3f trMat(ptCount, 3);
@@ -203,7 +203,7 @@ void detectTarget3D(const TargetTemplate3D &target3D,
 	
 	// Subroutine checking the given triangulated point combination for a match in the marker, already given the possible base matches
 	auto check3PointCandidate = [&](
-		const TargetTemplate3D &target3D, const PointRelation &trRelBase, const PointRelation &trRelArm,
+		const TargetCalibration3D &target3D, const PointRelation &trRelBase, const PointRelation &trRelArm,
 		int trPtJ, int trPtB, int trPtA,
 		float baseError, float armError,
 		auto mkRelBaseRange)
@@ -479,7 +479,7 @@ void detectTarget3D(const TargetTemplate3D &target3D,
  * Detect a marker in the triangulated 3D Point cloud and sets the best candidate
  * Returns it's MSE in mm^2 (or none with point-count 0 if none found)
  */
-TargetCandidate3D detectTarget3D(const TargetTemplate3D &target3D,
+TargetCandidate3D detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
 	float sigmaError, float poseSigmaError, bool quickAssign)
 {
@@ -497,7 +497,7 @@ TargetCandidate3D detectTarget3D(const TargetTemplate3D &target3D,
  * Detect a marker in the triangulated 3D Point cloud
  * Rreturns all candidates with respective MSE in mm^2 and point count
  */
-void detectTarget3D(const TargetTemplate3D &target3D,
+void detectTarget3D(const TargetCalibration3D &target3D,
 	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices, 
 	std::vector<Eigen::Isometry3f> &poses3D, std::vector<std::pair<float,int>> &posesMSE,
 	float sigmaError, float poseSigmaError, bool quickAssign)

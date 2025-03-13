@@ -103,7 +103,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					view->beginFrame = newRange.beginFrame;
 					view->endFrame = newRange.endFrame;
 					view->stats = newRange.stats;
-					view->targetTemplate.initialise(newRange.target.markers);
+					view->targetCalib.initialise(newRange.target.markers);
 					*view->target.contextualLock() = std::move(newRange.target);
 					if (pipeline.isSimulationMode)
 					{
@@ -164,9 +164,9 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 }
 
 // Update data of tgtGT to newly projected GT data, used for debugging in simulation
-static void makeGTTarget(const SimulationState &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetTemplate3D *templateGT)
+static void makeGTTarget(const SimulationState &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetCalibration3D *calibGT)
 {
-	if (!templateGT) return;
+	if (!calibGT) return;
 	// Set marker positions to most likely GT candidate
 	for (auto m : targetGT.markerMap)
 	{
@@ -181,7 +181,7 @@ static void makeGTTarget(const SimulationState &simulation, const SequenceData &
 			LOGC(LDebug, "Marker %d had uncertain GT, best is %d with %f%% certainty!\n",
 				m.first, gtMarker.first, gtMarker.second*100);
 		}
-		targetGT.markers[m.second] = templateGT->markers[gtMarker.first].pos;
+		targetGT.markers[m.second] = calibGT->markers[gtMarker.first].pos;
 	}
 	// Take GT frame poses and overwrite observations with GT
 	for (auto &frame : targetGT.frames)
@@ -245,7 +245,7 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 			LOGC(LDebug, "=======================\n");
 			return false;
 		}
-		viewPtr->targetTemplate = TargetTemplate3D(finaliseTargetMarkers(calibs, target, params.post));
+		viewPtr->targetCalib = TargetCalibration3D(finaliseTargetMarkers(calibs, target, params.post));
 		*viewPtr->target.contextualLock() = target;
 		viewPtr->stats.frameCount = target.frames.size();
 		viewPtr->stats.markerCount = target.markers.size();
@@ -545,7 +545,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	return lastErrors;
 }
 
-static int findTargetAlignmentCandidates(const TargetTemplate3D &baseTemplate, const ObsTarget &target,
+static int findTargetAlignmentCandidates(const TargetCalibration3D &baseCalib, const ObsTarget &target,
 	const TargetAssemblyParameters &params, std::vector<TargetCandidate3D> &candidates)
 {
 	// Prepare interface for target detection
@@ -558,16 +558,16 @@ static int findTargetAlignmentCandidates(const TargetTemplate3D &baseTemplate, c
 
 	// Match markers between the two targets
 	candidates.clear();
-	detectTarget3D(baseTemplate, triPoints, triIndices, candidates, params.alignPointSigma, params.alignPoseSigma, false);
+	detectTarget3D(baseCalib, triPoints, triIndices, candidates, params.alignPointSigma, params.alignPoseSigma, false);
 
-	std::tuple<int,int> bestCand = getBestTargetCandidate(baseTemplate, triPoints, candidates);
+	std::tuple<int,int> bestCand = getBestTargetCandidate(baseCalib, triPoints, candidates);
 	return std::get<0>(bestCand);
 }
 
 static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::shared_ptr<TargetView>> &targetViews,
 	const std::vector<CameraCalib> &calibs, const TargetAssemblyParameters &params, std::vector<TargetAlignResults> &candidates)
 {
-	TargetTemplate3D trkTarget(base.target.markers);
+	TargetCalibration3D trkTarget(base.target.markers);
 	for (auto &targetView : targetViews)
 	{
 		if (!targetView->selected) continue;
@@ -817,11 +817,11 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 	{
 		auto &viewPtr = targetViews[i];
 
-		TargetTemplate3D targetTemplate = {};
+		TargetCalibration3D targetCalib = {};
 		OptErrorRes baseError;
 		{
 			auto tgt_lock = viewPtr->target.contextualRLock();
-			targetTemplate.initialise(tgt_lock->markers);
+			targetCalib.initialise(tgt_lock->markers);
 
 			baseError = getTargetErrorDist(calibs, *tgt_lock);
 			LOGC(LDebug, "    Testing view %d for new base with a reprojection RMSE of %fpx for %d samples (%d frames and %d markers)\n",
@@ -838,7 +838,7 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 			auto tgt_lock = testViewPtr->target.contextualRLock();
 
 			std::vector<TargetCandidate3D> alignCandidates;
-			int best = findTargetAlignmentCandidates(targetTemplate, *tgt_lock, params, alignCandidates);
+			int best = findTargetAlignmentCandidates(targetCalib, *tgt_lock, params, alignCandidates);
 			if (best < 0 || std::isnan(alignCandidates[best].MSE) || alignCandidates[best].points.size() <= 4 || alignCandidates[best].MSE > 4*4)
 				continue;
 
@@ -907,7 +907,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 	auto recordAssemblyStage = [&](TargetAssemblyBase &base, TargetAssemblyStageID stage, int step, std::string &&label) -> TargetAssemblyStage&
 	{
 		base.errors = getTargetErrorDist(calibs, base.target);
-		base.targetTemplate = TargetTemplate3D(finaliseTargetMarkers(pipeline->getCalibs(), base.target, pipeline->targetCalib.params.post));
+		base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline->getCalibs(), base.target, pipeline->targetCalib.params.post));
 		auto stages_lock = pipeline->targetCalib.assemblyStages.contextualLock();
 
 		// Log progress
@@ -1130,7 +1130,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			{
 				assembly.state.currentStage = "Expanding frames";
 
-				expandFrameObservations(calibs, pipeline->record.frames, base.target, base.targetTemplate, params.trackFrame);
+				expandFrameObservations(calibs, pipeline->record.frames, base.target, base.targetCalib, params.trackFrame);
 				ReevaluateSequenceParameters reevalParams = params.reevaluation;
 				reevalParams.sigmaMerge = 0; // Disable marker merging
 				reevaluateMarkerSequences<true>(calibs, observations, base.target, reevalParams);

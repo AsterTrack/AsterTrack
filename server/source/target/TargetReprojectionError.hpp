@@ -129,7 +129,7 @@ struct TargetReprojectionError
 			// Though points2D should be empty anyways if we didn't get a calibration
 			for (auto &pts : match.points2D[index])
 				m_observedPoints.push_back({ index,
-					match.targetTemplate->markers[pts.first].pos.template cast<Scalar>(),
+					match.calib->markers[pts.first].pos.template cast<Scalar>(),
 					points2D[c]->at(pts.second).template cast<Scalar>() // Already undistorted
 				});
 		}

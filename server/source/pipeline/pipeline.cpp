@@ -229,9 +229,9 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// Adopt recorded tracking state
 	for (auto &targetRecord : frameRecord.tracking.targets)
 	{
-		auto track = std::find_if(pipeline.tracking.targetTemplates3D.begin(), pipeline.tracking.targetTemplates3D.end(),
+		auto track = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 			[&](auto &t){ return t.id == targetRecord.id; });
-		if (track == pipeline.tracking.targetTemplates3D.end()) continue;
+		if (track == pipeline.tracking.targetCalibrations.end()) continue;
 		pipeline.tracking.trackedTargets.emplace_back(&*track, targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
 		auto targetIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 			[&](auto &e){ return e.target.calib == &*track; });

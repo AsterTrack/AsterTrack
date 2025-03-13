@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/record.hpp"
 
-#include "target/target.hpp" // TargetTemplate3D
+#include "target/target.hpp" // TargetCalibration3D
 #include "target/detection3D.hpp" // TargetCandidate3D, only for debug
 
 #include "util/synchronised.hpp"
@@ -48,7 +48,7 @@ struct TargetView
 	BlockStats stats = {};
 	// Data
 	SynchronisedS<ObsTarget> target = {};
-	TargetTemplate3D targetTemplate = {};
+	TargetCalibration3D targetCalib = {};
 	// TODO: Synchronise together with target for use in VisTargetLock. Currently unused
 	// Calibration
 	bool planned;
@@ -80,7 +80,7 @@ struct TargetView
 
 	struct
 	{
-		const TargetTemplate3D *targetGT = nullptr;
+		const TargetCalibration3D *targetGT = nullptr;
 	} simulation;
 };
 
@@ -96,11 +96,11 @@ struct TargetAssemblyBase
 	// Resulting assembled target
 	ObsTarget target; // Holds observation samples for further optimisation
 	OptErrorRes errors;
-	TargetTemplate3D targetTemplate;
+	TargetCalibration3D targetCalib;
 
 	struct
 	{
-		const TargetTemplate3D *targetGT = nullptr;
+		const TargetCalibration3D *targetGT = nullptr;
 	} simulation;
 };
 
@@ -175,12 +175,12 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 	const ObsTarget &target, SubsampleTargetParameters params);
 
 void expandFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
-	ObsTarget &target, const TargetTemplate3D &trkTarget, TrackFrameParameters params);
+	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
 
 template<bool APPLY = true>
-OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetTemplate3D &trkTarget, TrackFrameParameters params);
+OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
 
-void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, const TargetTemplate3D &trkTarget);
+void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, const TargetCalibration3D &trkTarget);
 
 Eigen::Vector3f analyzeMarkerOrientation(std::vector<Eigen::Vector3f> &markerRays, const TargetPostProcessingParameters &params);
 

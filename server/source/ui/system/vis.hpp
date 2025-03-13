@@ -27,20 +27,20 @@ struct VisTargetLock
 {
 	SynchronisedS<ObsTarget>::ConstLockedPtr target_lock;
 	Synchronised<ObsData>::ConstLockedPtr db_lock;
-	const ObsTarget *targetObs = nullptr;
-	const TargetTemplate3D *targetTemplate = nullptr;
+	const ObsTarget *obs = nullptr;
+	const TargetCalibration3D *calib = nullptr;
 	bool hasPose = false;
 	int frameIdx = -1;
-	const TargetTemplate3D *templateGT = nullptr;
+	const TargetCalibration3D *targetGT = nullptr;
 
-    operator bool() const { return targetTemplate != nullptr; }
-    bool hasObs() const { return targetObs != nullptr; }
+    operator bool() const { return calib != nullptr; }
+    bool hasObs() const { return obs != nullptr; }
 
 	Eigen::Isometry3f getPose() const
 	{
 		Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
-		if (targetObs)
-			pose = targetObs->frames[frameIdx].pose;
+		if (obs)
+			pose = obs->frames[frameIdx].pose;
 		else
 			pose.translation() = Eigen::Vector3f(0,0,1);
 		return pose;
@@ -76,7 +76,7 @@ void updateErrorPointsVBO(unsigned int &VBO, const std::vector<Eigen::Vector3f> 
 /**
  * Write target markers into given section of VisPoints using given pose
  */
-void updateTargetMarkerVis(const PipelineState &pipeline, const TargetTemplate3D &target,
+void updateTargetMarkerVis(const PipelineState &pipeline, const TargetCalibration3D &target,
 	const std::vector<std::vector<int>> &visibleMarker, Eigen::Isometry3f pose, Color8 color, float scale, VisPoint *points);
 
 /**
@@ -114,7 +114,7 @@ void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const V
  * Unternal TargetTracking2DData visualisation
  */
 void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraCalib &calib, const CameraFrameRecord &frame,
-	const TargetTemplate3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandMarkerFoV);
+	const TargetCalibration3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandMarkerFoV);
 void visualiseTarget2DUncertaintyAxis(UncertaintyAxisAlignment uncertaintyAxis);
 
 #endif // SYSTEM_VIS_H

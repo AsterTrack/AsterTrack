@@ -40,7 +40,7 @@ struct PointRelation
 };
 static bool operator<(const struct PointRelation& a, const struct PointRelation& b) { return a.distance < b.distance; }
 
-struct TargetTemplate3D
+struct TargetCalibration3D
 {
 	int id;
 	std::string label;
@@ -50,21 +50,21 @@ struct TargetTemplate3D
 	std::vector<PointRelation> relationDist; // Shortest neighbouring relations of all points, sorted by distance
 	std::vector<std::vector<int>> pointRelation; // Index of relations for each point
 
-	TargetTemplate3D() {}
+	TargetCalibration3D() {}
 
-	TargetTemplate3D(int ID, std::string Label, const std::vector<TargetMarker> &Markers)
+	TargetCalibration3D(int ID, std::string Label, const std::vector<TargetMarker> &Markers)
 		: id(ID), label(Label), markers(Markers)
 	{
 		updateMarkers();
 	}
 
-	TargetTemplate3D(const std::vector<TargetMarker> &Markers)
+	TargetCalibration3D(const std::vector<TargetMarker> &Markers)
 		: markers(Markers)
 	{
 		updateMarkers();
 	}
 
-	TargetTemplate3D(const std::vector<Eigen::Vector3f> &Points)
+	TargetCalibration3D(const std::vector<Eigen::Vector3f> &Points)
 	{
 		initialise(Points);
 	}
@@ -115,8 +115,8 @@ struct TargetTemplate3D
  * Writes those points into their position in points2D corresponding to the marker point index
  * Writes indices of points projected into projected
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
-	const TargetTemplate3D &target,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
+	const TargetCalibration3D &target,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
 
 /**
@@ -124,24 +124,24 @@ void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<i
  * Writes those points into their position in points2D corresponding to the marker point index
  * Writes indices of points projected into projected
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
-	const TargetTemplate3D &target, const std::vector<int> &relevant,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
+	const TargetCalibration3D &target, const std::vector<int> &relevant,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
 
 /**
  * Projects target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D,
-	const TargetTemplate3D &target,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D,
+	const TargetCalibration3D &target,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
 
 /**
  * Projects relevant target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
-void projectTargetTemplate(std::vector<Eigen::Vector2f> &points2D,
-	const TargetTemplate3D &target, const std::vector<int> &relevant,
+void projectTarget(std::vector<Eigen::Vector2f> &points2D,
+	const TargetCalibration3D &target, const std::vector<int> &relevant,
 	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
 
 #endif // TARGET_H

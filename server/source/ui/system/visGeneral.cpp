@@ -35,7 +35,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 	assert(snapshot.frameIt.accessible()); // Just checked that frames is not empty
 	if (snapshot.target.hasObs() && !forceRealtime)
 	{ // Visualise selected past frame
-		auto frame = snapshot.target.targetObs->frames[snapshot.target.frameIdx].frame;
+		auto frame = snapshot.target.obs->frames[snapshot.target.frameIdx].frame;
 		if (frame >= snapshot.frames.endIndex())
 		{
 			snapshot.hasFrame = snapshot.isRealtimeFrame = false;
@@ -66,10 +66,10 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 		{
 			Eigen::Vector3f target3D = Eigen::Vector3f::Zero();
 			int highlightCnt = 0;
-			for (int m = 0; m < visFrame.target.targetTemplate->markers.size() && m < target.markerSelect.size(); m++)
+			for (int m = 0; m < visFrame.target.calib->markers.size() && m < target.markerSelect.size(); m++)
 			{
 				if (!target.markerSelect[m]) continue;
-				target3D += visFrame.target.targetTemplate->markers[m].pos;
+				target3D += visFrame.target.calib->markers[m].pos;
 				highlightCnt++;
 			}
 			if (highlightCnt > 0)
@@ -176,7 +176,7 @@ void updateErrorPointsVBO(unsigned int &VBO, const std::vector<Eigen::Vector3f> 
 /**
  * Write target markers into given section of VisPoints using given pose
  */
-void updateTargetMarkerVis(const PipelineState &pipeline, const TargetTemplate3D &target,
+void updateTargetMarkerVis(const PipelineState &pipeline, const TargetCalibration3D &target,
 	const std::vector<std::vector<int>> &visibleMarker, Eigen::Isometry3f pose, Color8 color, float scale, VisPoint *points)
 {
 	for (int c = 0; c < pipeline.cameras.size(); ++c)

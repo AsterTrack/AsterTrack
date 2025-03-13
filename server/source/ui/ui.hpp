@@ -140,7 +140,7 @@ struct VisualisationState
 	{
 		// Tracking target to focus on		
 		int focusedTargetID = 0;
-		std::map<int, std::pair<TargetTemplate3D const *, long>> targets;
+		std::map<int, std::pair<TargetCalibration3D const *, long>> targets;
 		TargetTracking2DData retrackData;
 
 		// Tracking visualisations
@@ -182,7 +182,7 @@ struct VisualisationState
 	{
 		// Selection of target for inspection outside of target calib
 		int selectedTargetID = 0;
-		TargetTemplate3D selectedTargetTemplate;
+		TargetCalibration3D selectedTargetCalib;
 
 		// Visualisation
 		std::vector<bool> cameraRays;

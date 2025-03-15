@@ -336,6 +336,43 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	return true;
 }
 
+void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	auto frames = pipeline.record.frames.getView<false>();
+	frameStart = std::max<unsigned int>(frames.beginIndex(), frameStart-3);
+	frameEnd = std::min<unsigned int>(frames.endIndex(), frameEnd);
+	auto frameIt = frames.pos(frameStart);
+	while ((!*frameIt || !frameIt->get()->finishedProcessing) && frameIt.index() < frameEnd) frameIt++;
+	for (; frameIt.index() < frameEnd; frameIt++)
+	{
+		if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
+		FrameRecord &frame = *frameIt->get();
+		for (auto &target : frame.tracking.targets)
+		{
+			auto &targets = pipeline.tracking.trackedTargets;
+			auto targetIt = std::find_if(targets.begin(), targets.end(),
+				[&](auto &e){ return e.target.calib->id == target.id; });
+			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
+			if (targetIt->state.lastObsFrame > frame.num)
+			{ // Initialise filter as good as possible
+				targetIt->state = TrackerState(target.poseFiltered, frame.time, pipeline.params.track);
+				targetIt->state.lastObsFrame = frame.num;
+				targetIt->state.lastObservation = frame.time;
+				targetIt->state.lastIMUSample = -1;
+				continue;
+			}
+			if (targetIt->imu)
+				integrateIMU(targetIt->state, targetIt->imu, targetIt->pose, frame.time, pipeline.params.track);
+			if (simulateTrackTarget(targetIt->state, targetIt->pose, target.poseObserved,
+					target.covObserved, target.tracked, frame.time, frame.num, pipeline.params.track))
+				recordTrackingResults(*frameIt, target, *targetIt, pipeline);
+			else
+				recordTrackingFailure(*frameIt, target, *targetIt, false);
+		}
+	}
+}
+
 void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets)
 {
 	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, det0, det1, det2, tpt0, tpt1;

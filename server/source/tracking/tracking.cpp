@@ -24,6 +24,42 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
 
+bool simulateTrackTarget(TrackerState &state, TrackerObservation &observation,
+	Eigen::Isometry3f simulatedPose, CovarianceMatrix covariance, bool success,
+	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
+{
+	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+
+	// Predict new state
+	flexkalman::predict(state.state, model, dtS(state.time, time));
+	state.time = time;
+	observation.predicted = state.state.getIsometry().cast<float>();
+	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+
+	if (!success) return false;
+	observation.observed = simulatedPose;
+	//observation.covObserved = covariance;
+	observation.covObserved = params.filter.getCovariance<float>();
+
+	// Update state
+	auto measurement = AbsolutePoseMeasurement(
+		observation.observed.translation().cast<double>(),
+		Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
+		observation.covObserved.cast<double>()
+	);
+	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+	{
+		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+	}
+	state.lastObservation = time;
+	state.lastObsFrame = frame;
+
+	observation.filtered = state.state.getIsometry().cast<float>();
+	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+
+	return true;
+}
 
 bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,

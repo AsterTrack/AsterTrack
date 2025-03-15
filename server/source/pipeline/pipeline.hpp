@@ -262,6 +262,9 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record);
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord);
 
+/* For simulation/replay to update past filter behaviour with new settings for testing */
+void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
+
 /* General functions */
 
 /**

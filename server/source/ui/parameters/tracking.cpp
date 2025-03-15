@@ -32,6 +32,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		return;
 	}
 	ServerState &state = GetState();
+	PipelineState &pipeline = state.pipeline;
 
 	const static TrackingParameters defaultParams = {};
 
@@ -226,16 +227,18 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Filtering");
-		modified |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
-		modified |= ScalarProperty<float>("StdDev Rot", "dg", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
-		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
+		bool filterMod = false;
+		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev Rot", "dg", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
+		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
 		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
-		modified |= ScalarProperty<float>("Sigma Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Sigma Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Sigma Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
-		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Sigma Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Sigma Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Sigma Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		modified |= filterMod;
 		EndSection();
 
 		BeginSection("Tracking Loss");
@@ -244,8 +247,17 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		if (modified)
 			frameRelevantParametersDirty = true;
-		if (modified && visState.tracking.debug.frameNum == state.pipeline.frameNum)
-			visState.tracking.debug.needsUpdate = true;
+		if ((state.mode == MODE_Replay || state.mode == MODE_Simulation) && state.simAdvance == 0)
+		{ // Stopped in replay/simulation
+			if (modified && visState.tracking.debug.frameNum == pipeline.frameNum)
+			{ // Debugging tracking, automatically track frame again
+				visState.tracking.debug.needsUpdate = true;
+			}
+			if (filterMod && visState.tracking.trailLength > 0)
+			{ // Debugging filter, simulate new filter parameters on recent history
+				retroactivelySimulateFilter(pipeline, pipeline.frameNum-visState.tracking.trailLength, pipeline.frameNum);
+			}
+		}
 
 		ImGui::PopID();
 	}

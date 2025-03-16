@@ -567,7 +567,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			auto pastTrack = std::find_if(pastTracks.begin(), pastTracks.end(),
 				[&](auto &t){ return t.id == tracker.id; });
 			if (pastTrack == pastTracks.end()) continue;
-			if (visState.tracking.showCovariance)
+			if (visState.tracking.showCovariancePos)
 			{ // Show covariances, not just points
 				enterCovariances(*pastTrack);
 				continue;
@@ -580,8 +580,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 				trailPts[i*3+2] = { pastTrack->poseFiltered.translation(), colFiltered, 0.002f };
 		}
 
-		if (visState.tracking.showCovariance)
-		{ // Visualise covariance ellipsoids
+		if (visState.tracking.showCovariancePos)
+		{ // Visualise positional covariance ellipsoids
 			glDisable(GL_DEPTH_TEST);
 			glEnable(GL_CULL_FACE);
 			glCullFace(GL_BACK);
@@ -589,6 +589,12 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
 			glDisable(GL_CULL_FACE);
 			glEnable(GL_DEPTH_TEST);
+		}
+		if (visState.tracking.showCovarianceRot)
+		{ // Visualise rotational covariance rings around pose cross
+			// TODO: Show different rotational covariances somehow (predicted, observed, filtered)
+			visualiseRotationalCovariance(tracker.poseFiltered, tracker.covFiltered.bottomRightCorner<3,3>(),
+				visState.tracking.scaleCovariance, 0.2f);
 		}
 
 		visualisePointsSpheresDepthSorted(markers);

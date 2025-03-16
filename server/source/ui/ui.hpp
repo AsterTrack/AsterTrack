@@ -147,7 +147,7 @@ struct VisualisationState
 		bool showSearchBounds = false;
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
 		int trailLength = 0;
-		bool showCovariance = false;
+		bool showCovariancePos = false, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
 		// Debug visualisation settings & state
 		bool showUncertaintyAxis = false;

@@ -105,6 +105,11 @@ void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT,
 Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float scale);
 
 /**
+ * Visualise rotational covariance of a pose
+ */
+void visualiseRotationalCovariance(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float sigma, float scale);
+
+/**
  * VisTarget (target calibration visualisation)
  */
 std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT, const VisualisationState &visState, const VisTargetLock &visTarget);

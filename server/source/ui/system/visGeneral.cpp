@@ -20,6 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/ui.hpp"
 #include "ui/gl/visualisation.hpp"
 
+#include "tracking/rotation.hpp"
+
 #include "Eigen/Eigenvalues"
 
 /* Functions */
@@ -324,4 +326,56 @@ Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix
 	transform.linear() = axis;
 	transform = pose * transform * Eigen::Scaling(stdDev*scale);
 	return transform;
+}
+
+/**
+ * Visualise rotational covariance of a pose
+ */
+void visualiseRotationalCovariance(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float sigma, float scale)
+{
+	// TODO: Fix jacobians for rotation transformations (2/2)
+	// This does not seem to be correct yet, it scales weirdly based on attidue
+	// Probably due to incorrect jacobian calculation or application
+	Eigen::Quaternionf quat(pose.rotation());
+	auto jacQuat2Euler = jacobianQuat2Euler(quat);
+	auto jacLogMap = jacobianLogMap(quat);
+	Eigen::Matrix3f jacobian = jacQuat2Euler * jacLogMap.transpose();
+	//Eigen::Matrix3f jacobian = jacobianEXP2Euler(quat);
+
+	Eigen::Matrix3f covEuler = jacobian * covariance * jacobian.transpose();
+	Eigen::Matrix3f covLocal = pose.rotation().transpose() * covariance * pose.rotation();
+	Eigen::Vector3f x = pose.rotation().col(0), y = pose.rotation().col(1), z = pose.rotation().col(2);
+	float varX = x.dot(covEuler * x);
+	float varY = y.dot(covEuler * y);
+	float varZ = z.dot(covEuler * z);
+	float devX = std::sqrt(std::abs(varX)) * sigma;
+	float devY = std::sqrt(std::abs(varY)) * sigma;
+	float devZ = std::sqrt(std::abs(varZ)) * sigma;
+	float radX = std::tan(devX) * scale;
+	float radY = std::tan(devY) * scale;
+	float radZ = std::tan(devZ) * scale;
+
+	float detCov = covariance.determinant(), normCov = covariance.norm();
+	float detJac = jacobian.determinant(), normJac = jacobian.norm();
+	float detEul = covEuler.determinant(), normEul = covEuler.norm();
+	LOG(LTrackingFilter, LInfo, "Cov (%f, %f), Jac (%f, %f), Eul (%f, %f), devs (%f, %f, %f), rads (%f, %f, %f)",
+		detCov, normCov, detJac, normJac, detEul, normEul, devX, devY, devZ, radX, radY, radZ);
+
+	auto genEllipse = [](Eigen::Vector3f pos, Eigen::Vector3f dirA, Eigen::Vector3f dirB, Color8 col)
+	{
+		const int SEG = 100;
+		thread_local std::vector<VisPoint> circle;
+		circle.resize(SEG+1);
+		for (int i = 0; i < circle.size(); i++)
+		{
+			float p = 2*(float)PI*(float)i/SEG;
+			circle[i].pos = pos + std::cos(p)*dirA + std::sin(p)*dirB;
+			circle[i].color = col;
+		}
+		visualiseLines(circle, 2.0f);
+	};
+
+	genEllipse(pose.translation() + x*scale, y*radY, z*radZ, Color{1,0,0,1});
+	genEllipse(pose.translation() + y*scale, x*radX, z*radZ, Color{0,1,0,1});
+	genEllipse(pose.translation() + z*scale, x*radX, y*radY, Color{0,0,1,1});
 }

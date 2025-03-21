@@ -186,7 +186,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	auto itBegin = samples.begin();
 	if (state.lastIMUSample >= samples.beginIndex() && state.lastIMUSample < samples.endIndex())
 	{ // Start search from last sample used
-		itBegin = samples.pos(state.lastIMUSample);
+		itBegin = samples.pos(state.lastIMUSample+1);
 		while (itBegin != samples.end() && itBegin->timestamp < state.time) itBegin++;
 	}
 	else // Cold start
@@ -225,13 +225,17 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	for (auto sample = itBegin; sample < itEnd; sample++)
 	{
 		Eigen::Quaterniond quat = sample->quat.cast<double>();
-		if (state.lastObsFrame >= 0)
-		{ // Determine new quat based on last reference (here basic difference, all absolute information is disregarded)
-			Eigen::Quaternionf dQuat = sample->quat * lastQuat.conjugate();
-			quat = dQuat.cast<double>() * state.state.getCombinedQuaternion();
-			lastQuat = sample->quat;
-			// TODO: Use IMU quat around last optical measurement as measurement to smoothly switch between absolute and relative tracking
+		if (state.lastObsFrame >= 0 && !imu->hasMag)
+		{ // Make Z-axis change relative if there is no mag to compensate for drift
+			auto getZ = [](Eigen::Quaterniond q)
+			{ // Both are the same
+				//return q.toRotationMatrix().canonicalEulerAngles(2, 1, 0).x();
+				return std::atan2(2*q.x()*q.y() + 2*q.w()*q.z(), 1 - (2*q.y()*q.y() + 2*q.z()*q.z()));
+			};
+			double eZ = getZ(state.state.getCombinedQuaternion()) - getZ(lastQuat.cast<double>());
+			quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
 		}
+		lastQuat = sample->quat;
 		// Predict up until IMU sample timestamp
 		flexkalman::predict(state.state, model, dtS(state.time, sample->timestamp));
 		state.time = sample->timestamp;
@@ -255,6 +259,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	observation.predicted = observation.observed = observation.filtered = state.state.getIsometry().cast<float>();
 	observation.covPredicted = observation.covObserved = observation.covFiltered = 
 		state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	observation.observed.linear() = lastQuat.toRotationMatrix().cast<float>();
 
 	return true;
 }

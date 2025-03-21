@@ -157,6 +157,7 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updatedDevices, int &chang
 			{
 				// TODO: Use receiver and tracker serial numbers
 				devices[tracker_id] = std::make_shared<AsterTrackTracker>(-1, tracker_id);
+				devices[tracker_id]->hasMag = false;
 				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
 				changedDevices++;
 			}

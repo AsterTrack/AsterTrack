@@ -884,7 +884,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
 					for (auto &imu : imuProvider->get()->devices)
 					{
-						if (imu->index >= 0) continue;
+						if (!imu || imu->index >= 0) continue;
 						// TODO: Handle receiver replugging, should probably detect IMU as the same
 						// Either replace existing (Probably move old samples in to new IMU?)
 						// Or just add new and replace any tracking references

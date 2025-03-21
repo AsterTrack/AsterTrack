@@ -144,11 +144,13 @@ struct VisualisationState
 		TargetTracking2DData retrackData;
 
 		// Tracking visualisations
+		bool showOrphanedIMUs = true;
 		bool showSearchBounds = false;
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
 		int trailLength = 0;
 		bool showCovariancePos = false, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
+
 		// Debug visualisation settings & state
 		bool showUncertaintyAxis = false;
 		bool debugMatchingState = true;

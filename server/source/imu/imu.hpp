@@ -35,6 +35,8 @@ public:
 	IMUDriver driver;
 	int provider, device; // Driver defined
 
+	bool hasMag;
+
 	BlockedQueue<IMUSample, 16384> samples;
 
 	IMU() :

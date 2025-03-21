@@ -464,34 +464,44 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 		return;
 	}
-
+	
+	thread_local std::vector<std::pair<VisPoint, VisPoint>> imuAccelLines;
+	imuAccelLines.clear();
+	Color colIMUQuatRaw = Color{ 0.1f, 0.1f, 1.0f, 1.0f };
+	Color colIMUQuatFiltered = Color{ 1.0f, 0.1f, 0.1f, 1.0f };
+	Color colIMUAccel = Color{ 1.0f, 0.1f, 0.1f, 1.0f };
+	float accelScale = 0.1f;
+	if (!GetState().isStreaming)
 	{
-		auto &state = GetState();
-		auto imuLock = state.imuProviders.contextualRLock();
-		for (auto &provider : *imuLock)
+		for (auto &imu : pipeline.record.imus)
 		{
-			for (auto &device : provider->devices)
-			{
-				if (!device) continue;
-				Eigen::Quaternionf quat;
-				{
-					auto view = device->samples.getView();
-					if (view.empty()) continue;
-					quat = view.back().quat;
-				} 
-				Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
-				pose.linear() = quat.toRotationMatrix();
-				pose.translation() = Eigen::Vector3f(0,0,1);// + report.accel;
-				visualisePose(pose, Color{ 1.0f, 0.1f, 0.1f, 1.0f }, 0.2f, 4.0f);
-			}
+			if (!imu) continue;
+			auto view = imu->samples.getView();
+			if (view.empty()) continue;
+			Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+			pose.linear() = view.back().quat.toRotationMatrix();
+			pose.translation() = Eigen::Vector3f(0,0,1);
+			visualisePose(pose, colIMUQuatRaw, 0.2f, 4.0f);
+			imuAccelLines.emplace_back(
+				VisPoint{ pose.translation(), colIMUAccel },
+				VisPoint{ pose.translation()+view.back().accel*accelScale, colIMUAccel }
+		 	);
 		}
 	}
+	else if (visState.tracking.showOrphanedIMUs)
 	{
-		for (auto &imu : pipeline.tracking.orphanedIMUs)
+		for (auto &tracker : pipeline.tracking.orphanedIMUs)
 		{
-			visualisePose(imu.pose.filtered, Color{ 0.1f, 0.1f, 1.0f, 1.0f }, 0.2f, 4.0f);
+			visualisePose(tracker.pose.filtered, colIMUQuatFiltered, 0.2f, 4.0f);
+			auto view = tracker.imu->samples.getView();
+			if (view.empty()) continue;
+			imuAccelLines.emplace_back(
+				VisPoint{ tracker.pose.filtered.translation(), colIMUAccel },
+				VisPoint{ tracker.pose.filtered.translation()+view.back().accel*accelScale, colIMUAccel }
+		 	);
 		}
 	}
+	visualiseLines(imuAccelLines, 2.0f);
 
 	// Else, show real-time situation
 	if (!visFrame) return;

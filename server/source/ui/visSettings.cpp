@@ -56,13 +56,14 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 	if (pipeline.phase == PHASE_Tracking && (state.mode == MODE_Replay || state.mode == MODE_Simulation)
 		&& ImGui::TreeNode("Target Tracking"))
 	{
-		ImGui::Checkbox("Show Axis of Uncertainty", &visState.tracking.showUncertaintyAxis);
+		ImGui::Checkbox("Show Oprhaned IMUs", &visState.tracking.showOrphanedIMUs);
+		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
 		ImGui::Checkbox("Show Observed Target", &visState.tracking.showTargetObserved);
 		ImGui::Checkbox("Show Predicted Target", &visState.tracking.showTargetPredicted);
 		ImGui::Checkbox("Show Filtered Target", &visState.tracking.showTargetFiltered);
 		ImGui::Checkbox("Show Filtered Target in Camera", &visState.tracking.showTargetFilteredCamera);
-		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
 		ImGui::SliderInt("Trail Length", &visState.tracking.trailLength, 0, 100);
+
 
 		if (ImGui::TreeNode("Covariance"))
 		{
@@ -100,6 +101,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::InputInt("Focus on Point", &visState.tracking.debugFocusPoint);
 			ImGui::Checkbox("Only focus point", &visState.tracking.onlyFocusPoint);
 			ImGui::EndDisabled();
+			ImGui::Checkbox("Show Axis of Uncertainty", &visState.tracking.showUncertaintyAxis);
 		}
 
 		ImGui::TreePop();

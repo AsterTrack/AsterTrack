@@ -153,6 +153,7 @@ struct VisualisationState
 		bool showOrphanedIMUs = true;
 		bool showSearchBounds = false;
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
+		bool showPoseExtrapolated = false, showPoseIMU = false;
 		int trailLength = 0;
 		bool showCovariancePos = false, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;

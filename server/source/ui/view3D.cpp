@@ -529,6 +529,10 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 					tracker.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
 			visualisePose(tracker.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
+		if (visState.tracking.showPoseIMU)
+			visualisePose(tracker.poseIMU, colIMUQuatRaw, 0.2f, 2.0f);
+		if (visState.tracking.showPoseExtrapolated)
+			visualisePose(tracker.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 
 		if (visState.tracking.showTargetObserved && tracker.tracked)
 		{ // Show target markers in observed pose

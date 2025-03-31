@@ -46,6 +46,7 @@ struct TrackerState
 
 	// Information about state
 	long lastIMUSample = -1;
+	TimePoint_t lastIMUTime;
 	long lastObsFrame = -1;
 	TimePoint_t lastObservation;
 
@@ -94,7 +95,9 @@ typedef std::shared_ptr<IMU> TrackerIMU;
 struct TrackerObservation
 {
 	TimePoint_t time;
-	Eigen::Isometry3f predicted;
+	Eigen::Isometry3f predicted; // Predicted using extrapolation and/or IMU integration
+	Eigen::Isometry3f extrapolated; // Extrapolated using just the model from last observation
+	Eigen::Isometry3f imu; // Pose as integrated from new IMU samples
 	Eigen::Isometry3f observed; // Pose as observed by the cameras
 	Eigen::Isometry3f filtered; // Pose filtered from all observations
 	Eigen::Matrix<float,6,6> covPredicted, covFiltered, covObserved;

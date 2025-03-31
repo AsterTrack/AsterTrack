@@ -103,7 +103,7 @@ struct TrackedTargetRecord
 	int id;
 	bool tracked;
 	TargetMatchError error;
-	Eigen::Isometry3f posePredicted, poseObserved, poseFiltered;
+	Eigen::Isometry3f posePredicted, poseExtrapolated, poseIMU, poseObserved, poseFiltered;
 	CovarianceMatrix covPredicted, covObserved, covFiltered;
 
 	// For visualisation only (including predicted)

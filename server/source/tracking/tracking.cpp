@@ -33,7 +33,7 @@ bool simulateTrackTarget(TrackerState &state, TrackerObservation &observation,
 	// Predict new state
 	flexkalman::predict(state.state, model, dtS(state.time, time));
 	state.time = time;
-	observation.predicted = state.state.getIsometry().cast<float>();
+	observation.predicted = observation.extrapolated = state.state.getIsometry().cast<float>();
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	if (!success) return false;
@@ -74,7 +74,8 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	{ // Predict new state if not done already using IMU samples
 		flexkalman::predict(state.state, model, dtS(state.time, time));
 		state.time = time;
-		observation.predicted = state.state.getIsometry().cast<float>();
+
+		observation.predicted = observation.extrapolated = state.state.getIsometry().cast<float>();
 		observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	}
 	Eigen::Vector3f stdDev = observation.covPredicted.diagonal().head<3>().cwiseSqrt();
@@ -126,7 +127,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	flexkalman::predict(state.state, model, dtS(state.time, time));
 	state.time = time;
 
-	observation.predicted = state.state.getIsometry().cast<float>();
+	observation.predicted = observation.extrapolated = state.state.getIsometry().cast<float>();
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	Eigen::Vector3f predPos = observation.predicted.translation();
@@ -155,7 +156,8 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 		return -1;
 	}
 	observation.observed.translation() = points3D[matchedPoint];
-	observation.covObserved = params.filter.getCovariance<float>();
+	observation.covObserved.setIdentity();
+	observation.covObserved.diagonal().head<3>().setConstant(params.filter.stdDevPos);
 
 	// Update state
 	auto measurement = AbsolutePositionMeasurement(
@@ -194,6 +196,12 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		itBegin = std::lower_bound(samples.begin(), samples.end(), state.time);
 	if (itBegin == samples.end()) return false;
 
+	{ // Extrapolate without IMU samples for debug purposes
+		auto filterState = state.state;
+		flexkalman::predict(filterState, model, dtS(state.time, time));
+		observation.extrapolated = filterState.getIsometry().cast<float>();
+	}
+
 	// Pick reference sample (last or first)
 	Eigen::Quaternionf lastQuat;
 	if (itBegin == samples.begin() || dtMS(std::prev(itBegin)->timestamp, itBegin->timestamp) > 50)
@@ -220,6 +228,8 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		LOG(LTrackingFilter, LDebug, "Starting IMU integration with lerp from last sample of %f", factor);
 	}
 
+	Eigen::Quaterniond baseQuat = state.state.getCombinedQuaternion();
+
 	// Find last IMU sample before specified maximum time (e.g. current frame)
 	auto itEnd = itBegin;
 	while (itEnd != samples.end() && itEnd->timestamp < time) itEnd++;
@@ -235,7 +245,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 				//return q.toRotationMatrix().canonicalEulerAngles(2, 1, 0).x();
 				return std::atan2(2*q.x()*q.y() + 2*q.w()*q.z(), 1 - (2*q.y()*q.y() + 2*q.z()*q.z()));
 			};
-			double eZ = getZ(state.state.getCombinedQuaternion()) - getZ(lastQuat.cast<double>());
+			double eZ = getZ(baseQuat) - getZ(lastQuat.cast<double>());
 			quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
 			LOG(LTrackingFilter, LDebug, "    Adjusted Z axis to be relative!");
 		} */
@@ -243,17 +253,28 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		// else
 		if (state.lastObsFrame >= 0)
 		{ // Make all axis change relative to compensate for drift
-			quat = state.state.getCombinedQuaternion() * quat * lastQuat.cast<double>().conjugate();
+			quat = baseQuat * quat * lastQuat.cast<double>().conjugate();
 			LOG(LTrackingFilter, LDebug, "    Adjusted all axis to be relative!");
 		}
 		lastQuat = sample->quat;
-		LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, delta %fms!",
-			dtMS(state.lastObservation, sample->timestamp), dtMS(state.time, sample->timestamp));
+		baseQuat = quat;
+		if (state.lastObsFrame >= 0)
+		{
+			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, dT to last state update %fms, last IMU sample %fms!",
+				dtMS(state.lastObservation, sample->timestamp),
+				dtMS(state.time, sample->timestamp), dtMS(state.lastIMUTime, sample->timestamp));
+		}
+		else
+		{
+			LOG(LTrackingFilter, LDebug, "    Integrating sample with dT to last state update %fms, last IMU sample %fms!",
+				dtMS(state.time, sample->timestamp), dtMS(state.lastIMUTime, sample->timestamp));
+		}
 		// Predict up until IMU sample timestamp
 		flexkalman::predict(state.state, model, dtS(state.time, sample->timestamp));
 		state.time = sample->timestamp;
 		// Correct with IMU sample
 		state.lastIMUSample = sample.index();
+		state.lastIMUTime = sample->timestamp;
 		auto measurement = FusedIMUMeasurement{
 			quat,
 			Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
@@ -266,13 +287,21 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	}
 
 	// Predict new state
+	Eigen::Quaterniond preQuat = state.state.getCombinedQuaternion();
 	flexkalman::predict(state.state, model, dtS(state.time, time));
 	state.time = time;
+	Eigen::Quaterniond dQuat = state.state.getCombinedQuaternion() * preQuat.conjugate();
 
-	observation.predicted = observation.observed = observation.filtered = state.state.getIsometry().cast<float>();
-	observation.covPredicted = observation.covObserved = observation.covFiltered = 
-		state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.observed.linear() = lastQuat.toRotationMatrix().cast<float>();
+	observation.predicted = state.state.getIsometry().cast<float>();
+	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+
+	observation.imu.translation() = state.state.position().cast<float>();
+	observation.imu.linear() = (dQuat * baseQuat).toRotationMatrix().cast<float>();
+	//observation.covIMU = ;
+
+	observation.filtered = state.state.getIsometry().cast<float>();
+	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
+
 	return true;
 }

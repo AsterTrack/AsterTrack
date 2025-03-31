@@ -78,6 +78,8 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.id = tracker.target.calib->id;
 	target.tracked = true;
 	target.posePredicted = tracker.pose.predicted;
+	target.poseExtrapolated = tracker.pose.extrapolated;
+	target.poseIMU = tracker.pose.imu;
 	target.poseObserved = tracker.pose.observed;
 	target.poseFiltered = tracker.pose.filtered;
 	target.covPredicted = tracker.pose.covPredicted;
@@ -144,6 +146,8 @@ static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.id = tracker.target.calib->id;
 	target.tracked = false;
 	target.posePredicted = tracker.pose.predicted;
+	target.poseExtrapolated = tracker.pose.extrapolated;
+	target.poseIMU = tracker.pose.imu;
 	target.poseObserved.setIdentity();
 	target.poseFiltered = tracker.pose.filtered;
 	target.covPredicted = tracker.pose.covPredicted;

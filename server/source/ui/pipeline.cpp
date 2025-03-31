@@ -124,6 +124,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		BeginSection("Tracking (?)");
 		ImGui::SetItemTooltip("Any calibrated target will be detected and tracked automatically.\n");
 
+		auto getIMULabel = [](const IMU &imu)
+		{
+			return asprintf_s("IMU %d (%08x)", imu.index, imu.device);
+		};
+		std::string NoIMULabel = "No IMU";
+
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
 		long frameNum = pipeline.frameNum;
 		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
@@ -134,39 +140,97 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			for (auto &tracked : tracking.targets)
 			{
 				auto &t = visState.tracking.targets[tracked.id];
-				if (!t.first)
-				{
+				if (!t.calib)
+				{ // Setup tracked target for the first time
 					auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 						[&](auto &t){ return t.id == tracked.id; });
 					assert(target != pipeline.tracking.targetCalibrations.end());
-					t.first = &*target;
+					t.calib = &*target;
+					t.imu = "No IMU";
 				}
-				t.second = frameNum;
+				t.lastFrame = frameNum;
+			}
+
+			std::unique_lock pipeline_lock(pipeline.pipelineLock, std::try_to_lock);
+			if (pipeline_lock.owns_lock())
+			{
+				for (auto &tracker : pipeline.tracking.trackedTargets)
+				{
+					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
+					if (tracked == visState.tracking.targets.end()) continue;
+					if (tracker.imu)
+						tracked->second.imu = getIMULabel(*tracker.imu);
+					else if (tracked->second.imu.compare(NoIMULabel))
+					{
+						LOG(LGUI, LInfo, "Detected IMU removed!");
+						tracked->second.imu = NoIMULabel;
+					}
+				}
+				for (auto &tracker : pipeline.tracking.dormantTargets)
+				{
+					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
+					if (tracked == visState.tracking.targets.end()) continue;
+					//target->second.imu = tracker.imu? getIMULabel(*tracker.imu) : NoIMULabel;
+					if (tracker.imu)
+						tracked->second.imu = getIMULabel(*tracker.imu);
+					else if (tracked->second.imu.compare(NoIMULabel))
+					{
+						LOG(LGUI, LInfo, "Detected IMU removed!");
+						tracked->second.imu = NoIMULabel;
+					}
+				}
 			}
 		}
 
 		// Display list of trackable targets
-		for (auto &target : visState.tracking.targets)
+		for (auto &tracked : visState.tracking.targets)
 		{
-			ImGui::PushID(target.first);
-			long ago = frameNum - target.second.second;
-			TargetCalibration3D const *calib = target.second.first;
+			ImGui::PushID(tracked.first);
+			long ago = frameNum - tracked.second.lastFrame;
 			std::string label;
 			if (ago < 5)
-				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", calib->label.c_str(), target.first);
+				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracked.second.calib->label.c_str(), tracked.first);
 			else if (ago < 1000)
-				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", calib->label.c_str(), target.first, ago);
+				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracked.second.calib->label.c_str(), tracked.first, ago);
 			else
-				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", calib->label.c_str(), target.first);
-			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == target.first, ImGuiSelectableFlags_SpanAllColumns))
-				visState.tracking.focusedTargetID = target.first;
+				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tracked.second.calib->label.c_str(), tracked.first);
+			ImGui::AlignTextToFramePadding();
+			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == tracked.first, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+				visState.tracking.focusedTargetID = tracked.first;
+			SameLineTrailing(SizeWidthDiv3().x);
+			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
+			if (ImGui::BeginCombo("##IMU", tracked.second.imu.c_str()))
+			{
+				bool changed = false;
+				if (ImGui::Selectable(NoIMULabel.c_str(), tracked.second.imu.compare(NoIMULabel) == 0))
+				{
+					tracked.second.imu = NoIMULabel;
+					DisassociateIMU(pipeline, tracked.first);
+				}
+				for (auto &imu : pipeline.record.imus)
+				{
+					ImGui::PushID(imu->index);
+					if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->trackerID == tracked.first))
+					{
+						imu->trackerID = tracked.first;
+						tracked.second.imu = getIMULabel(*imu);
+						DisassociateIMU(pipeline, imu);
+						AssociateIMU(pipeline, imu, tracked.first);
+						changed = true;
+					}
+					ImGui::PopID();
+				}
+				ImGui::EndCombo();
+				if (changed)
+					ImGui::MarkItemEdited(ImGui::GetItemID());
+			}
 			ImGui::PopID();
 		}
 
 		EndSection();
 
 		if (displayInternalDebug && visFrame && visState.tracking.focusedTargetID != 0 &&
-			visState.tracking.targets[visState.tracking.focusedTargetID].second == frameNum)
+			visState.tracking.targets.at(visState.tracking.focusedTargetID).lastFrame == frameNum)
 		{
 			BeginSection("Tracking Debug");
 
@@ -176,7 +240,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			auto tracked = std::find_if(frame.tracking.targets.begin(), frame.tracking.targets.end(),
 						[&](auto &t){ return t.id == visState.tracking.focusedTargetID; });
 			assert(tracked != frame.tracking.targets.end());
-			auto &target = *visState.tracking.targets[visState.tracking.focusedTargetID].first;
+			auto &target = *visState.tracking.targets.at(visState.tracking.focusedTargetID).calib;
 			auto &debugVis = visState.tracking.debug;
 
 			std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
@@ -195,7 +259,6 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (ImGui::Button("Redo tracking for this frame", SizeWidthFull()) || debugVis.needsUpdate)
 			{
 				debugVis.needsUpdate = false;
-				visState.tracking.retrackData.init(pipeline.cameras.size());
 				debugVis.targetMatch2D = trackTarget2D(target,
 					tracked->posePredicted, tracked->covPredicted.diagonal().head<3>().cwiseSqrt(),
 					pipeline.getCalibs(), pipeline.cameras.size(),

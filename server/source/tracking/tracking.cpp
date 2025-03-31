@@ -70,15 +70,14 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
-	// Predict new state
-	flexkalman::predict(state.state, model, dtS(state.time, time));
-	state.time = time;
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	if (state.time != time)
+	{ // Predict new state if not done already using IMU samples
+		flexkalman::predict(state.state, model, dtS(state.time, time));
+		state.time = time;
+		observation.predicted = state.state.getIsometry().cast<float>();
+		observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	}
 	Eigen::Vector3f stdDev = observation.covPredicted.diagonal().head<3>().cwiseSqrt();
-
-	// Make sure to allocate memory for any newly added cameras and reset internal data
-	target.data.init(cameraCount);
 
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(*target.calib, observation.predicted, stdDev, calibs, cameraCount, 
@@ -102,13 +101,14 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
 	{
-		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+		LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
 	}
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 
 	observation.filtered = state.state.getIsometry().cast<float>();
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	observation.time = time;
 
 	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }
@@ -164,7 +164,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
 	{
-		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+		LOG(LTrackingFilter, LWarn, "Failed to correct pose in marker filter! Reset!");
 	}
 
 	state.lastObservation = time;
@@ -172,6 +172,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 
 	observation.filtered = state.state.getIsometry().cast<float>() ;
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	observation.time = time;
 
 	return matchedPoint;
 }
@@ -208,6 +209,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		lastQuat = itBegin->quat;
 		state.time = itBegin->timestamp;
 		itBegin = std::next(itBegin);
+		LOG(LTrackingFilter, LDebug, "Starting IMU integration with raw initialisation!");
 	}
 	else
 	{ // Use last IMU sample as reference
@@ -215,6 +217,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		// Account for time difference between last IMU record and last optical measurement (which is state.time)
 		float factor = dtMS(itLast->timestamp, state.time) / dtMS(itLast->timestamp, itBegin->timestamp);
 		lastQuat = itLast->quat.slerp(factor, itBegin->quat);
+		LOG(LTrackingFilter, LDebug, "Starting IMU integration with lerp from last sample of %f", factor);
 	}
 
 	// Find last IMU sample before specified maximum time (e.g. current frame)
@@ -225,7 +228,7 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	for (auto sample = itBegin; sample < itEnd; sample++)
 	{
 		Eigen::Quaterniond quat = sample->quat.cast<double>();
-		if (state.lastObsFrame >= 0 && !imu->hasMag)
+		/* if (state.lastObsFrame >= 0 && !imu->hasMag)
 		{ // Make Z-axis change relative if there is no mag to compensate for drift
 			auto getZ = [](Eigen::Quaterniond q)
 			{ // Both are the same
@@ -234,8 +237,18 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 			};
 			double eZ = getZ(state.state.getCombinedQuaternion()) - getZ(lastQuat.cast<double>());
 			quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
+			LOG(LTrackingFilter, LDebug, "    Adjusted Z axis to be relative!");
+		} */
+		// TODO: Absolute rotation requires calibration of IMU in relation to target
+		// else
+		if (state.lastObsFrame >= 0)
+		{ // Make all axis change relative to compensate for drift
+			quat = state.state.getCombinedQuaternion() * quat * lastQuat.cast<double>().conjugate();
+			LOG(LTrackingFilter, LDebug, "    Adjusted all axis to be relative!");
 		}
 		lastQuat = sample->quat;
+		LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, delta %fms!",
+			dtMS(state.lastObservation, sample->timestamp), dtMS(state.time, sample->timestamp));
 		// Predict up until IMU sample timestamp
 		flexkalman::predict(state.state, model, dtS(state.time, sample->timestamp));
 		state.time = sample->timestamp;
@@ -243,12 +256,12 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 		state.lastIMUSample = sample.index();
 		auto measurement = FusedIMUMeasurement{
 			quat,
-			Eigen::Vector3d::Constant(params.filter.stdDevEXP*params.filter.stdDevEXP)
+			Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
 		};
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
 		{
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in IMU filter! Reset!");
 		}
 	}
 
@@ -260,6 +273,6 @@ bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation
 	observation.covPredicted = observation.covObserved = observation.covFiltered = 
 		state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.observed.linear() = lastQuat.toRotationMatrix().cast<float>();
-
+	observation.time = time;
 	return true;
 }

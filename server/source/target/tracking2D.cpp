@@ -739,6 +739,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	int matchingStage = 0;
 
 	// Clear internal data for visualisation purposes (low overhead)
+	internalData.init(cameraCount);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		auto &matchingData = internalData.matching.at(calibs[c].index);

@@ -140,7 +140,13 @@ struct VisualisationState
 	{
 		// Tracking target to focus on		
 		int focusedTargetID = 0;
-		std::map<int, std::pair<TargetCalibration3D const *, long>> targets;
+		struct TrackingTargets
+		{
+			const TargetCalibration3D * calib = nullptr;
+			long lastFrame;
+			std::string imu;
+		};
+		std::map<int, TrackingTargets> targets;
 		TargetTracking2DData retrackData;
 
 		// Tracking visualisations

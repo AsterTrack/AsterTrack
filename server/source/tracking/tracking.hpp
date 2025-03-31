@@ -67,7 +67,7 @@ struct TrackerState
 struct TrackerTarget
 {
 	// Calibrated target template
-	TargetCalibration3D const * calib;
+	const TargetCalibration3D * calib;
 
 	// Store internal data for visualisation purposes (low overhead)
 	TargetTracking2DData data;
@@ -76,7 +76,7 @@ struct TrackerTarget
 	TargetMatch2D match2D;
 
 	TrackerTarget() {}
-	TrackerTarget(TargetCalibration3D const * target) : calib(target) {}
+	TrackerTarget(const TargetCalibration3D * target) : calib(target) {}
 };
 
 
@@ -125,7 +125,7 @@ struct TrackedTarget
 	TrackerObservation pose;
 
 	TrackedTarget() {}
-	TrackedTarget(TargetCalibration3D const *target, Eigen::Isometry3f pose, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
+	TrackedTarget(const TargetCalibration3D *target, Eigen::Isometry3f pose, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
 		: target(target), state(pose, time, params), pose(pose, time, params)
 	{
 		state.lastObsFrame = frame;
@@ -160,8 +160,10 @@ struct DormantTarget
 	TrackerTarget target;
 
 	DormantTarget() {}
-	DormantTarget(TargetCalibration3D const *target)
+	DormantTarget(const TargetCalibration3D *target)
 		: target(target) {}
+	DormantTarget(TrackedTarget &&tracker)
+		: imu(std::move(tracker.imu)), target(std::move(tracker.target)) {}
 };
 
 const static Eigen::Isometry3f orphanedIMUPose = Eigen::Isometry3f(Eigen::Translation3f(0, 0, 1));

@@ -82,6 +82,7 @@ struct TargetOptimisationParameters
 struct TargetFilteringParameters
 {
 	float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
+	float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
 	float sigmaInitState = 5, sigmaInitChange = 1000;
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;

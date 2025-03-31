@@ -229,7 +229,9 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		BeginSection("Filtering");
 		bool filterMod = false;
 		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev Rot", "dg", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.stdDevIMU, &standard.filter.stdDevIMU, 0, 1, 0.002f, 180, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.stdDevAccel, &standard.filter.stdDevAccel, 0, 1, 0.002f, 180, "%.4f");
 		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
 		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever

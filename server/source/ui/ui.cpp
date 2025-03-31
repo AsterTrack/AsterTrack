@@ -713,6 +713,7 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 		case EVT_STOP_STREAMING:
 			// TODO: Might need UI drawing lock, not in UI thread right now
 			GetUI().visState.tracking.targets.clear();
+			GetUI().visState.tracking.focusedTargetID = 0;
 			GetUI().recordSections.clear();
 			GetUI().recordSectionStart = -1;
 			break;

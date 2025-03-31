@@ -35,7 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct TargetMatch2D
 {
-	TargetCalibration3D const *calib;
+	const TargetCalibration3D *calib;
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
 	TargetMatchError error;

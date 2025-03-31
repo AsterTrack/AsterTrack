@@ -46,13 +46,9 @@ void InitTrackingPipeline(PipelineState &pipeline)
 	for (auto &imu : pipeline.record.imus)
 	{
 		if (imu->trackerID == 0)
-		{
 			pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
-		}
 		else
-		{ // TODO: Redesign so dormant targets can be associated with IMUs
-			// And then use IMU data to detect dormant targets
-		}
+			AssociateIMU(pipeline, imu, imu->trackerID);
 	}
 }
 
@@ -228,7 +224,7 @@ static bool detectTarget(std::stop_token stopToken, PipelineState &pipeline, std
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<int>> &detectionPoints2D,
-	int focus, DormantTarget &dormant)
+	int focus, DormantTarget &&dormant)
 {
 	{ // Detect in the first frame
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
@@ -247,8 +243,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		return false;
 
 	TrackedTarget tracker(dormant.target.calib, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
-	tracker.imu = std::move(dormant.imu);
 	tracker.target = std::move(dormant.target);
+	tracker.imu = std::move(dormant.imu);
 
 	// Then continue on tracking to catch up with the latest realtime frame
 	// TODO: Skip some frames to catch up faster, should handle some skips as long as prediction is accurate
@@ -333,6 +329,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	// Finally, no more frames to catch up on, register as new tracked target
 	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
+	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.target.calib == tracker.target.calib; });
+	assert(erased == 1);
 	return true;
 }
 
@@ -500,7 +498,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				}
 
 				// Push to dormant targets for re-detection
-				track.dormantTargets.emplace_back(tracker->target.calib);
+				track.dormantTargets.emplace_back(std::move(*tracker));
 				tracker = track.trackedTargets.erase(tracker);
 				continue;
 			}
@@ -652,23 +650,22 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (acceptCandidate)
 			{
 				// Use pose candidate to track target with 2D points
-				TargetTracking2DData tracking2DData(camCount);
-				auto targetMatch2D = trackTarget2D(target, candidate.pose, Eigen::Vector3f::Constant(detect.initialStdDev),
-					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.track, tracking2DData);
+				dormant.target.match2D = trackTarget2D(target, candidate.pose, Eigen::Vector3f::Constant(detect.initialStdDev),
+					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.track, dormant.target.data);
 
-				acceptCandidate = targetMatch2D.error.samples >= pipeline.params.track.minTotalObs && targetMatch2D.error.mean < pipeline.params.track.maxTotalError;
+				acceptCandidate = dormant.target.match2D.error.samples >= pipeline.params.track.minTotalObs && dormant.target.match2D.error.mean < pipeline.params.track.maxTotalError;
 				if (acceptCandidate)
 				{ // Register as tracked target
-					TrackedTarget trackedTarget(&target, targetMatch2D.pose, frame->time, frame->num, pipeline.params.track);
-					trackedTarget.target.data = std::move(tracking2DData);
-					trackedTarget.target.match2D = std::move(targetMatch2D);
-					occupyTargetMatches(trackedTarget.target.match2D);
-					TrackedTargetRecord &targetRecord = recordTracking(frame, target);
-					recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);
 					{ // Make sure no async detection of this target is ongoing
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
 							pipeline.tracking.asyncDetectionStop.request_stop();
 					}
+					TrackedTarget trackedTarget(&target, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
+					trackedTarget.target = std::move(dormant.target);
+					trackedTarget.imu = std::move(dormant.imu);
+					occupyTargetMatches(trackedTarget.target.match2D);
+					TrackedTargetRecord &targetRecord = recordTracking(frame, target);
+					recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);
 					frame->tracking.detections3D++;
 
 					LOG(LTracking, LInfo, "    Added lost tracked target back with %d points and %fmm RMSE"
@@ -739,12 +736,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		assert(cluster.size() > detect.minObservations.focus);
 
 		// Select target to detect
-		DormantTarget dormant = std::move(pipeline.tracking.dormantTargets.front());
-		pipeline.tracking.dormantTargets.pop_front();
+		DormantTarget &dormant = pipeline.tracking.dormantTargets.front();
 		const TargetCalibration3D &target = *dormant.target.calib;
-
 		LOG(LDetection2D, LInfo, "Trying target %d (name %s) with %d markers!\n",
 			target.id, target.label.c_str(), (int)target.markers.size());
+
+		// Move to back in queue
+		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
 
 		if (detect.enable2DSync)
 		{
@@ -756,16 +754,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				points2D, properties, detectionPoints2D, clusterCamera, dormant.target))
 			{
 				TrackedTarget tracker(&target, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
-				tracker.imu = std::move(dormant.imu);
 				tracker.target = std::move(dormant.target);
+				tracker.imu = std::move(dormant.imu);
 				occupyTargetMatches(tracker.target.match2D);
 				TrackedTargetRecord &targetRecord = recordTracking(frame, target);
 				recordTrackingResults(frame, targetRecord, tracker, pipeline);
 				pipeline.tracking.trackedTargets.push_back(std::move(tracker));
-			}
-			else
-			{ // Requeue for detection
-				pipeline.tracking.dormantTargets.push_back(std::move(dormant));
+				pipeline.tracking.dormantTargets.pop_back();
 			}
 		}
 		else if (detect.enable2DAsync)
@@ -779,13 +774,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
 				std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
 				DormantTarget dormant, int focus)
-			{
-				bool success = detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, focus, dormant);
-				if (!success)
-				{ // Requeue for detection
-					std::unique_lock pipeline_lock(pipeline.pipelineLock);
-					pipeline.tracking.dormantTargets.emplace_back(dormant);
-				}
+			{ // Working with copy of dormant tracker
+				detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, focus, std::move(dormant));
 				pipeline.tracking.asyncDetection = false;
 			}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2D, dormant, clusterCamera);
 		}
@@ -852,5 +842,80 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			dtMS(trk0, trk1), dtMS(tri0, tri3), dtMS(det0, det1), dtMS(det1, det2), dtMS(tpt0, tpt1));
 		LOG(LPipeline, LDebug, "Triangulation split up: Ray Intersection %.3fms; Filtering %.3fms; Refinement %.3fms\n",
 			dtMS(tri0, tri1), dtMS(tri1, tri2), dtMS(tri2, tri3));
+	}
+}
+
+void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	for (auto &tracker : pipeline.tracking.trackedTargets)
+	{
+		if (tracker.target.calib->id != trackerID) continue;
+		if (tracker.imu) tracker.imu->trackerID = 0;
+		imu->trackerID = trackerID;
+		tracker.imu = imu; // new shared_ptr
+		tracker.state.lastIMUSample = -1;
+		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &e){ return e.imu == imu; });
+		return;
+	}
+	for (auto &tracker : pipeline.tracking.dormantTargets)
+	{
+		if (tracker.target.calib->id != trackerID) continue;
+		if (tracker.imu) tracker.imu->trackerID = 0;
+		imu->trackerID = trackerID;
+		tracker.imu = imu; // new shared_ptr
+		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &e){ return e.imu == imu; });
+		return;
+	}
+}
+
+void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	if (tracker.imu) tracker.imu->trackerID = 0;
+	// TODO: Properly mark IMU as being associated to a marker
+	//imu->trackerID = tracker.marker.ID;
+	imu->trackerID = -1;
+	tracker.imu = imu; // new shared_ptr
+	tracker.state.lastIMUSample = -1;
+	std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &e){ return e.imu == imu; });
+}
+
+void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	for (auto &tracker : pipeline.tracking.trackedTargets)
+		if (tracker.imu == imu) tracker.imu = nullptr;
+	for (auto &tracker : pipeline.tracking.dormantTargets)
+		if (tracker.imu == imu) tracker.imu = nullptr;
+	for (auto &tracker : pipeline.tracking.trackedMarkers)
+		if (tracker.imu == imu) tracker.imu = nullptr;
+	imu->trackerID = 0;
+	if (std::find_if(pipeline.tracking.orphanedIMUs.begin(), pipeline.tracking.orphanedIMUs.end(),
+		[&](const auto &e){ return e.imu == imu; }) != pipeline.tracking.orphanedIMUs.end())
+		return;
+	pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
+}
+
+void DisassociateIMU(PipelineState &pipeline, int trackerID)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	for (auto &tracker : pipeline.tracking.trackedTargets)
+	{
+		if (tracker.target.calib->id != trackerID) continue;
+		if (!tracker.imu) return;
+		tracker.imu->trackerID = 0;
+		pipeline.tracking.orphanedIMUs.emplace_back(tracker.imu, pipeline.params.track);
+		tracker.imu = nullptr;
+		return;
+	}
+	for (auto &tracker : pipeline.tracking.dormantTargets)
+	{
+		if (tracker.target.calib->id != trackerID) continue;
+		if (!tracker.imu) return;
+		tracker.imu->trackerID = 0;
+		pipeline.tracking.orphanedIMUs.emplace_back(tracker.imu, pipeline.params.track);
+		tracker.imu = nullptr;
+		return;
 	}
 }

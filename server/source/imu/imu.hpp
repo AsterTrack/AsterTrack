@@ -40,11 +40,13 @@ public:
 	BlockedQueue<IMUSample, 16384> samples;
 
 	IMU() :
+		trackerID(0), index(-1),
 		driver((IMUDriver)0), provider(0), device(0),
-		trackerID(0), index(-1) {}
+		hasMag(false) {}
 	IMU(IMUDriver driver, int provider, int device) :
+		trackerID(0), index(-1),
 		driver(driver), provider(provider), device(device),
-		trackerID(0), index(-1) {}
+		hasMag(false) {}
 
 	virtual ~IMU() = default;
 };

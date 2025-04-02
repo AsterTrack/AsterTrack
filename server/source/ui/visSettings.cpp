@@ -61,7 +61,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Checkbox("Show Observed Target", &visState.tracking.showTargetObserved);
 		ImGui::Checkbox("Show Predicted Target", &visState.tracking.showTargetPredicted);
 		ImGui::Checkbox("Shoe Extrapolated Pose", &visState.tracking.showPoseExtrapolated);
-		ImGui::Checkbox("Show IMU Integrated Pose", &visState.tracking.showPoseIMU);
+		ImGui::Checkbox("Show Inertial Pose", &visState.tracking.showPoseInertial);
 		ImGui::Checkbox("Show Filtered Target", &visState.tracking.showTargetFiltered);
 		ImGui::Checkbox("Show Filtered Target in Camera", &visState.tracking.showTargetFilteredCamera);
 		ImGui::SliderInt("Trail Length", &visState.tracking.trailLength, 0, 100);

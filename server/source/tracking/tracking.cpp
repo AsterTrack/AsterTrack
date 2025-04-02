@@ -179,13 +179,13 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	return matchedPoint;
 }
 
-bool integrateIMU(TrackerState &state, const TrackerIMU &imu, TrackerObservation &observation,
+bool integrateIMU(TrackerState &state, const TrackerInertial &intertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	typename TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
 	// Find first IMU sample after last state time (e.g. last frame)
-	auto samples = imu->samples.getView<true>();
+	auto samples = intertial.imu->samples.getView<true>();
 	auto itBegin = samples.begin();
 	if (state.lastIMUSample >= samples.beginIndex() && state.lastIMUSample < samples.endIndex())
 	{ // Start search from last sample used

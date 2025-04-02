@@ -493,7 +493,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		for (auto &tracker : pipeline.tracking.orphanedIMUs)
 		{
 			visualisePose(tracker.pose.filtered, colIMUQuatFiltered, 0.2f, 4.0f);
-			auto view = tracker.imu->samples.getView();
+			auto view = tracker.inertial.imu->samples.getView();
 			if (view.empty()) continue;
 			imuAccelLines.emplace_back(
 				VisPoint{ tracker.pose.filtered.translation(), colIMUAccel },
@@ -529,8 +529,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 					tracker.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
 			visualisePose(tracker.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
-		if (visState.tracking.showPoseIMU)
-			visualisePose(tracker.poseIMU, colIMUQuatRaw, 0.2f, 2.0f);
+		if (visState.tracking.showPoseInertial)
+			visualisePose(tracker.poseInertial, colIMUQuatRaw, 0.2f, 2.0f);
 		if (visState.tracking.showPoseExtrapolated)
 			visualisePose(tracker.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 

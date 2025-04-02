@@ -158,8 +158,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
 					if (tracked == visState.tracking.targets.end()) continue;
-					if (tracker.imu)
-						tracked->second.imu = getIMULabel(*tracker.imu);
+					if (tracker.inertial)
+						tracked->second.imu = getIMULabel(*tracker.inertial.imu);
 					else if (tracked->second.imu.compare(NoIMULabel))
 					{
 						LOG(LGUI, LInfo, "Detected IMU removed!");
@@ -171,8 +171,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
 					if (tracked == visState.tracking.targets.end()) continue;
 					//target->second.imu = tracker.imu? getIMULabel(*tracker.imu) : NoIMULabel;
-					if (tracker.imu)
-						tracked->second.imu = getIMULabel(*tracker.imu);
+					if (tracker.inertial)
+						tracked->second.imu = getIMULabel(*tracker.inertial.imu);
 					else if (tracked->second.imu.compare(NoIMULabel))
 					{
 						LOG(LGUI, LInfo, "Detected IMU removed!");

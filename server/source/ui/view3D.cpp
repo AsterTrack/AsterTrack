@@ -464,7 +464,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 		return;
 	}
-	
+
 	thread_local std::vector<std::pair<VisPoint, VisPoint>> imuAccelLines;
 	imuAccelLines.clear();
 	Color colIMUQuatRaw = Color{ 0.1f, 0.1f, 1.0f, 1.0f };
@@ -475,8 +475,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 	{
 		for (auto &imu : pipeline.record.imus)
 		{
-			if (!imu) continue;
-			auto view = imu->samples.getView();
+			if (!imu || !imu->isFused) continue;
+			auto view = imu->samplesFused.getView();
 			if (view.empty()) continue;
 			Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
 			pose.linear() = view.back().quat.toRotationMatrix();
@@ -493,11 +493,10 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		for (auto &tracker : pipeline.tracking.orphanedIMUs)
 		{
 			visualisePose(tracker.pose.filtered, colIMUQuatFiltered, 0.2f, 4.0f);
-			auto view = tracker.inertial.imu->samples.getView();
-			if (view.empty()) continue;
+			Eigen::Vector3f accel = tracker.inertial.fusion.accel.cast<float>();
 			imuAccelLines.emplace_back(
 				VisPoint{ tracker.pose.filtered.translation(), colIMUAccel },
-				VisPoint{ tracker.pose.filtered.translation()+view.back().accel*accelScale, colIMUAccel }
+				VisPoint{ tracker.pose.filtered.translation()+accel*accelScale, colIMUAccel }
 		 	);
 		}
 	}

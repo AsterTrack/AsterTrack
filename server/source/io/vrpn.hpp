@@ -27,9 +27,12 @@ SOFTWARE.
 #define VRPN_H
 
 #include "util/eigendef.hpp"
-
 #include "util/util.hpp" // TimePoint_t
 #include "util/memory.hpp" // unique_ptr, opaque_ptr
+
+#include "imu/imu.hpp"
+
+#include "vrpn_imu.hpp"
 
 #define VRPN_USE_WINSOCK2
 
@@ -41,16 +44,21 @@ SOFTWARE.
  * VRPN (Virtual Reality Private Network) interface to exchange tracking data between programs (locally or on the network)
  */
 
-class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker
+class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 {
 	public:
 		vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index = 0);
 
 		void updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose);
 
+		std::shared_ptr<IMU> remoteIMU;
+
 		virtual void mainloop ();
 
 		int id;
+		const std::string path;
+
+	protected:
 };
 
 struct vrpn_Tracker_Wrapper

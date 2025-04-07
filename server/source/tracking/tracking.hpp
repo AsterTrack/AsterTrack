@@ -45,16 +45,14 @@ struct TrackerState
 	TimePoint_t time;
 
 	// Information about state
-	long lastIMUSample = -1;
+	long lastIMUSample;
 	TimePoint_t lastIMUTime;
-	long lastObsFrame = -1;
+	long lastObsFrame;
 	TimePoint_t lastObservation;
 
-	TrackerState() {}
-	TrackerState(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params)
-		: time(time)
+	TrackerState(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
+		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time) 
 	{
-		state = {};
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
 		auto &errorCov = state.errorCovariance();
@@ -76,8 +74,8 @@ struct TrackerTarget
 	// 2D Tracking result
 	TargetMatch2D match2D;
 
-	TrackerTarget() {}
-	TrackerTarget(const TargetCalibration3D * target) : calib(target) {}
+	TrackerTarget(const TargetCalibration3D * target) :
+		calib(target), data{}, match2D{} {}
 };
 
 
@@ -86,13 +84,16 @@ struct TrackerMarker
 	// For matching of markers, either single marker size or target radius
 	float size;
 
-	TrackerMarker() {}
 	TrackerMarker(float size) : size(size) {}
 };
 
 struct TrackerInertial
 {
 	std::shared_ptr<IMU> imu;
+	struct {
+		Eigen::Quaterniond quat;
+		Eigen::Vector3d accel;
+	} fusion;
 
 	TrackerInertial() : imu() {}
 	TrackerInertial(std::shared_ptr<IMU> &imu) : imu(imu) {}
@@ -111,9 +112,8 @@ struct TrackerObservation
 	Eigen::Isometry3f filtered; // Pose filtered from all observations
 	Eigen::Matrix<float,6,6> covPredicted, covFiltered, covObserved;
 
-	TrackerObservation() {}
-	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params)
-		: predicted(pose), extrapolated(pose), inertial(pose), observed(pose), filtered(pose), time(time)
+	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
+		predicted(pose), extrapolated(pose), inertial(pose), observed(pose), filtered(pose), time(time)
 	{
 		covObserved.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
 		covObserved.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
@@ -136,10 +136,11 @@ struct TrackedTarget
 	// Latest observation
 	TrackerObservation pose;
 
-	TrackedTarget() {}
-	TrackedTarget(const TargetCalibration3D *target, Eigen::Isometry3f pose, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
-		: target(target), state(pose, time, params), pose(pose, time, params)
+	TrackedTarget(const TargetCalibration3D *target, Eigen::Isometry3f pose,
+		TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
+		target(target), state(pose, time, params), pose(pose, time, params)
 	{
+		state.lastObservation = time;
 		state.lastObsFrame = frame;
 	}
 };
@@ -157,10 +158,10 @@ struct TrackedMarker
 	// Latest observation
 	TrackerObservation pose;
 
-	TrackedMarker(Eigen::Vector3f pos, float size, TimePoint_t time, const TargetTrackingParameters &params)
-		: state(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params),
-		  pose(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params),
-		  marker(size) {}
+	TrackedMarker(Eigen::Vector3f pos, float size, TimePoint_t time, const TargetTrackingParameters &params) :
+		state(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params),
+		inertial(), marker(size),
+		pose(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params) {}
 };
 
 struct DormantTarget
@@ -171,11 +172,11 @@ struct DormantTarget
 	// Target tracking source
 	TrackerTarget target;
 
-	DormantTarget() {}
-	DormantTarget(const TargetCalibration3D *target)
-		: target(target) {}
-	DormantTarget(TrackedTarget &&tracker)
-		: inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) {}
+	DormantTarget(const TargetCalibration3D *target) :
+		inertial(), target(target) {}
+
+	DormantTarget(TrackedTarget &&tracker) :
+		inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) {}
 };
 
 const static Eigen::Isometry3f orphanedIMUPose = Eigen::Isometry3f(Eigen::Translation3f(0, 0, 1));
@@ -190,15 +191,15 @@ struct OrphanedIMU
 	// Latest observation
 	TrackerObservation pose;
 
-	OrphanedIMU(TrackerInertial &imu, const TargetTrackingParameters &params)
-		: state(orphanedIMUPose, TimePoint_t::min(), params),
-		  pose(orphanedIMUPose, TimePoint_t::min(), params),
-		  inertial(imu) {}
+	OrphanedIMU(TrackerInertial &imu, const TargetTrackingParameters &params) :
+		state(orphanedIMUPose, sclock::now(), params),
+		inertial(imu),
+		pose(orphanedIMUPose, sclock::now(), params) {}
 	
-	OrphanedIMU(TrackerInertial &&imu, const TargetTrackingParameters &params)
-		: state(orphanedIMUPose, TimePoint_t::min(), params),
-		pose(orphanedIMUPose, TimePoint_t::min(), params),
-		inertial(std::move(imu)) {}
+	OrphanedIMU(TrackerInertial &&imu, const TargetTrackingParameters &params) :
+		state(orphanedIMUPose, sclock::now(), params),
+		inertial(std::move(imu)),
+		pose(orphanedIMUPose, sclock::now(), params) {}
 };
 
 
@@ -219,7 +220,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
 	TimePoint_t time, float sigma);
 
-bool integrateIMU(TrackerState &state, const TrackerInertial &inertial, TrackerObservation &observation,
+bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);
 
 #endif // TRACKING_3D_H

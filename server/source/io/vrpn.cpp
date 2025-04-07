@@ -25,6 +25,10 @@ SOFTWARE.
 
 #include "vrpn.hpp"
 
+#include "vrpn/quat.h"
+
+#include "imu/device.hpp"
+
 #include "util/log.hpp"
 
 
@@ -73,16 +77,87 @@ static inline TimePoint_t getTimestamp(struct timeval time_msg)
 }
 /* Wrapper for a VRPN tracker output */
 
+static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
+{ // Currently not sent by AsterTrack
+	vrpn_Tracker_AsterTrack *tracker = (vrpn_Tracker_AsterTrack*)data;
+
+	if (!tracker->remoteIMU)
+		tracker->remoteIMU = registerRemoteIMU(tracker->id);
+	if (!tracker->remoteIMU)
+	{
+		LOG(LIO, LWarn, "Tracker %s (%d) is dropping a raw IMU sample!", tracker->path.c_str(), tracker->id);
+		return;
+	}
+
+	IMUSampleRaw sample;
+	sample.timestamp = getTimestamp(t.msg_time);
+	sample.accel = Eigen::Vector3d(t.accel[0], t.accel[1], t.accel[2]).cast<float>();
+	sample.gyro = Eigen::Vector3d(t.gyro[0], t.gyro[1], t.gyro[2]).cast<float>();
+	sample.mag = Eigen::Vector3d(t.mag[0], t.mag[1], t.mag[2]).cast<float>();
+
+	tracker->remoteIMU->isFused = false;
+	if (sample.mag.squaredNorm() > 0.001f)
+		tracker->remoteIMU->hasMag = true;
+	tracker->remoteIMU->samplesRaw.push_back(sample);
+
+	auto provider = getRemoteIMUProvider();
+	if (provider->recordLatencyMeasurements)
+	{ // TODO: Move latency measurement up after fusion
+		// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
+		provider->latencyMeasurements.push_back({ sample.timestamp, { 
+			(uint16_t)dtUS(sample.timestamp, sclock::now()) } } );
+	}
+
+	LOG(LIO, LTrace, "Tracker %s (%d) got raw IMU sample with %fms latency!",
+		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));
+}
+
+static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
+{ // Currently not sent by AsterTrack
+	vrpn_Tracker_AsterTrack *tracker = (vrpn_Tracker_AsterTrack*)data;
+
+	if (!tracker->remoteIMU)
+		tracker->remoteIMU = registerRemoteIMU(tracker->id);
+	if (!tracker->remoteIMU)
+	{
+		LOG(LIO, LWarn, "Tracker %s (%d) is dropping a fused IMU sample!", tracker->path.c_str(), tracker->id);
+		return;
+	}
+
+	IMUSampleFused sample;
+	sample.timestamp = getTimestamp(t.msg_time);
+	sample.accel = Eigen::Vector3d(t.accel[0], t.accel[1], t.accel[2]).cast<float>();
+	sample.quat = Eigen::Quaterniond(t.quat[Q_W], t.quat[Q_X], t.quat[Q_Y], t.quat[Q_Z]).cast<float>();
+
+	tracker->remoteIMU->isFused = true;
+	tracker->remoteIMU->hasMag = false; // TODO: Technically unknown. Should IMU side advertise capabilities?
+	tracker->remoteIMU->samplesFused.push_back(sample);
+
+	auto provider = getRemoteIMUProvider();
+	if (provider->recordLatencyMeasurements)
+	{ // TODO: Move latency measurement up after fusion
+		// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
+		provider->latencyMeasurements.push_back({ sample.timestamp, { 
+			(uint16_t)dtUS(sample.timestamp, sclock::now()) } } );
+	}
+
+	LOG(LIO, LTrace, "Tracker %s (%d) got fused IMU sample with %fms latency!",
+		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));
+}
+
 vrpn_Tracker_AsterTrack::vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index)
-	: vrpn_Tracker(path, connection), id(ID)
+	: vrpn_Tracker(path, connection),
+	vrpn_IMU_Remote(path, vrpn_Tracker::d_connection),
+	id(ID), path(path)
 {
+	vrpn_IMU_Remote::register_change_handler(this, handleIMURaw);
+	vrpn_IMU_Remote::register_change_handler(this, handleIMUFused);
 }
 
 void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose)
 {
-	// Just used for local logging
 	vrpn_Tracker::timestamp = createTimestamp(time);
-	vrpn_Tracker::frame_count = 0;
+	vrpn_Tracker::frame_count = 0; // Unused
 
 	// We're using a left-handed coordinate system (same as Unreal, or a rotated Unity one)
 	// VRPN (along with OpenCV, Blender, etc.) use right-handed coordinate systems
@@ -100,10 +175,10 @@ void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Is
 	// Set packet data
 	d_sensor = sensor;
 	Eigen::Quaternionf rotQ(pose.rotation());
-	d_quat[0] = rotQ.x();
-	d_quat[1] = rotQ.y();
-	d_quat[2] = rotQ.z();
-	d_quat[3] = rotQ.w();
+	d_quat[Q_X] = rotQ.x();
+	d_quat[Q_Y] = rotQ.y();
+	d_quat[Q_Z] = rotQ.z();
+	d_quat[Q_W] = rotQ.w();
 	pos[0] = pose.translation().x();
 	pos[1] = pose.translation().y();
 	pos[2] = pose.translation().z();
@@ -118,6 +193,10 @@ void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Is
 void vrpn_Tracker_AsterTrack::mainloop()
 {
 	vrpn_Tracker::server_mainloop();
+
+	// While this is a remote object (receiving), we operate it in server mode
+	// So the client may send us (the tracking server) IMU samples
+	vrpn_IMU_Remote::mainloop_server();
 }
 
 
@@ -138,7 +217,7 @@ static void handleTrackerPosRot(void *data, const vrpn_TRACKERCB t)
 	}
 
 	Eigen::Vector3d pos = Eigen::Vector3d(t.pos[0], t.pos[1], t.pos[2]);
-	Eigen::Matrix3d rot = Eigen::Quaterniond(t.quat[3], t.quat[0], t.quat[1], t.quat[2]).toRotationMatrix();
+	Eigen::Matrix3d rot = Eigen::Quaterniond(t.quat[Q_W], t.quat[Q_X], t.quat[Q_Y], t.quat[Q_Z]).toRotationMatrix();
 	Eigen::Isometry3f pose;
 	pose.linear() = rot.cast<float>();
 	pose.translation() = pos.cast<float>();

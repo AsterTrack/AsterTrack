@@ -64,9 +64,15 @@ static void DeletePipelineData(PipelineState &pipeline)
 	pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
 	pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
 	for (auto &imu : pipeline.record.imus)
-		imu->samples.cull_clear();
+	{
+		imu->samplesRaw.cull_clear();
+		imu->samplesFused.cull_clear();
+	}
 	for (auto &imu : pipeline.record.imus)
-		imu->samples.delete_culled();
+	{
+		imu->samplesRaw.delete_culled();
+		imu->samplesFused.delete_culled();
+	}
 }
 
 static void DeletePipelineSetup(PipelineState &pipeline)

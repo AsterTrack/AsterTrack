@@ -126,7 +126,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		auto getIMULabel = [](const IMU &imu)
 		{
-			return asprintf_s("IMU %d (%08x)", imu.index, imu.device);
+			if (imu.device > 1000)
+				return asprintf_s("IMU %08x (%d) - %s", imu.device, imu.index, imu.isFused? "fused" : "raw");
+			else
+				return asprintf_s("IMU %d (%d) - %s", imu.device, imu.index, imu.isFused? "fused" : "raw");
 		};
 		std::string NoIMULabel = "No IMU";
 

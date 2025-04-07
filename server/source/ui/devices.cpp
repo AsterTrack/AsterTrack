@@ -316,5 +316,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
+	// TODO: List IMU providers and their IMU Devices
+	// Including indication of connection stability, rssi, battery, etc.
+
 	ImGui::End();
 }

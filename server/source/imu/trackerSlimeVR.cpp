@@ -65,7 +65,8 @@ public:
 
 	~SlimeVRTracker() = default;
 
-	SlimeVRTracker(int provider, int device) : IMUDevice(IMU_DRIVER_SLIMEVR, provider, device)
+	SlimeVRTracker(int provider, int device)
+		: IMUDevice(false, true, IMU_DRIVER_SLIMEVR, provider, device)
 	{}
 };
 
@@ -77,7 +78,9 @@ public:
 	std::string path;
 	hid_device *handle;
 
-	SlimeVRReceiver(const char *path, hid_device *handle) : path(path), handle(handle), IMUDeviceProvider(IMU_DRIVER_SLIMEVR) {}
+	SlimeVRReceiver(const char *path, hid_device *handle)
+		: path(path), handle(handle),
+		IMUDeviceProvider(IMU_DRIVER_SLIMEVR) {}
 
 	~SlimeVRReceiver()
 	{
@@ -177,7 +180,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 		case TYPE_IMU:
 		{
 			LOG(LIO, LTrace, "    Received packet with id %d from tracker %d", type, tracker_id);
-			IMUSample report = {};
+			IMUSampleFused report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			report.quat = Eigen::Quaternionf(
 				*(int16_t*)(data+8) * quatScale,
@@ -189,7 +192,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 				*(int16_t*)(data+12) * vecScale,
 				*(int16_t*)(data+14) * vecScale);
 			report.timestamp = timestamp;
-			tracker.samples.push_back(report);
+			tracker.samplesFused.push_back(report);
 			return true;
 		}
 		case TYPE_IMU_STATUS:
@@ -203,7 +206,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 			tracker.signalStrength = data[15];
 			LOG(LIO, LInfo, "    Temperature is %f", tracker.temperature);
 
-			IMUSample report = {};
+			IMUSampleFused report = {};
 			constexpr float scale10 = 1.0f / (1<<10), scale11 = 1.0f / (1<<11), vecScale = 1.0f / (1<<7);
 			uint32_t qData = *(uint32_t*)(data+5);
 			Eigen::Vector3f quatEnc(
@@ -222,7 +225,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 			report.timestamp = timestamp;
 			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
 				tracker_id, dtMS(report.timestamp, sclock::now()));
-			tracker.samples.push_back(report);
+			tracker.samplesFused.push_back(report);
 			return true;
 		}
 		case TYPE_INVALID:
@@ -256,7 +259,7 @@ bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &pro
 			continue;
 		}
 		hid_set_nonblocking(handle, true);
-		providers.emplace_back(new SlimeVRReceiver(dev->path, handle));
+		providers.push_back(std::make_shared<SlimeVRReceiver>(dev->path, handle));
 		LOG(LIO, LInfo, "Adding SlimeVR Receiver %s", dev->path);
 		added = true;
 	}

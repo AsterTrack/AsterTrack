@@ -179,22 +179,14 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	return matchedPoint;
 }
 
-bool integrateIMU(TrackerState &state, const TrackerInertial &intertial, TrackerObservation &observation,
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &sample, const IMUSampleFused &lastSample, TimePoint_t filterTime, bool isOptical);
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, TimePoint_t filterTime, bool isOptical);
+
+template<typename Sample>
+static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	typename TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
-
-	// Find first IMU sample after last state time (e.g. last frame)
-	auto samples = intertial.imu->samples.getView<true>();
-	auto itBegin = samples.begin();
-	if (state.lastIMUSample >= samples.beginIndex() && state.lastIMUSample < samples.endIndex())
-	{ // Start search from last sample used
-		itBegin = samples.pos(state.lastIMUSample+1);
-		while (itBegin != samples.end() && itBegin->timestamp < state.time) itBegin++;
-	}
-	else // Cold start
-		itBegin = std::lower_bound(samples.begin(), samples.end(), state.time);
-	if (itBegin == samples.end()) return false;
 
 	{ // Extrapolate without IMU samples for debug purposes
 		auto filterState = state.state;
@@ -202,33 +194,52 @@ bool integrateIMU(TrackerState &state, const TrackerInertial &intertial, Tracker
 		observation.extrapolated = filterState.getIsometry().cast<float>();
 	}
 
+	auto filterState = state.state;
+	auto filterTime = state.time;
+	bool updateFilter = true;
+
+	// Find first IMU sample after last state time (e.g. last frame)
+	typename BlockedQueue<Sample, 16384>::template View<true> samples;
+	if constexpr (std::is_same_v<Sample, IMUSampleFused>)
+		samples = inertial.imu->samplesFused.getView<true>();
+	else
+		samples = inertial.imu->samplesRaw.getView<true>();
+	auto itBegin = samples.begin();
+	if (state.lastIMUSample >= samples.beginIndex() && state.lastIMUSample < samples.endIndex())
+	{ // Start search from last sample used
+		itBegin = samples.pos(state.lastIMUSample+1);
+		while (itBegin != samples.end() && itBegin->timestamp < filterTime) itBegin++;
+	}
+	else if (!samples.empty())
+	{ // Cold start
+		itBegin = std::lower_bound(samples.begin(), samples.end(), filterTime);
+		LOG(LTrackingFilter, LDebug, "Cold start of IMU %d with sample %lu!", inertial.imu->index, itBegin.index());
+	}
+	if (itBegin == samples.end())
+	{
+		state.lastIMUSample = itBegin.index()-1;
+		return false;
+	}
+
 	// Pick reference sample (last or first)
-	Eigen::Quaternionf lastQuat;
-	if (itBegin == samples.begin() || dtMS(std::prev(itBegin)->timestamp, itBegin->timestamp) > 50)
+	Sample lastSample;
+	if (itBegin == samples.begin() || dtMS(std::prev(itBegin)->timestamp, itBegin->timestamp) > 20)
 	{ // No prior reference, use first IMU sample as reference
-		if (state.lastObsFrame < 0 && state.lastIMUSample < 0)
-		{ // Initialise with first IMU orientation
-			state.state.setQuaternion(itBegin->quat.cast<double>());
+		if ((state.lastObsFrame >= 0 || state.lastIMUSample >= 0) && filterTime < itBegin->timestamp)
+		{ // Have prior filter state to update
+			flexkalman::predict(filterState, model, dtS(filterTime, itBegin->timestamp));
 		}
-		else
-		{ // Skip to first IMU sample as reference to correct from
-			flexkalman::predict(state.state, model, dtS(state.time, itBegin->timestamp));
-		}
-		lastQuat = itBegin->quat;
-		state.time = itBegin->timestamp;
+		filterTime = itBegin->timestamp;
+		lastSample = *itBegin;
 		itBegin = std::next(itBegin);
-		LOG(LTrackingFilter, LDebug, "Starting IMU integration with raw initialisation!");
+		LOG(LTrackingFilter, LDarn, "Initialising IMU %d integration!", inertial.imu->index);
 	}
 	else
 	{ // Use last IMU sample as reference
-		auto itLast = std::prev(itBegin);
-		// Account for time difference between last IMU record and last optical measurement (which is state.time)
-		float factor = dtMS(itLast->timestamp, state.time) / dtMS(itLast->timestamp, itBegin->timestamp);
-		lastQuat = itLast->quat.slerp(factor, itBegin->quat);
-		LOG(LTrackingFilter, LDebug, "Starting IMU integration with lerp from last sample of %f", factor);
+		lastSample = *std::prev(itBegin);
 	}
 
-	Eigen::Quaterniond baseQuat = state.state.getCombinedQuaternion();
+	inertial.fusion.quat = state.state.getCombinedQuaternion();
 
 	// Find last IMU sample before specified maximum time (e.g. current frame)
 	auto itEnd = itBegin;
@@ -237,71 +248,137 @@ bool integrateIMU(TrackerState &state, const TrackerInertial &intertial, Tracker
 	// Integrate range of IMU samples
 	for (auto sample = itBegin; sample < itEnd; sample++)
 	{
-		Eigen::Quaterniond quat = sample->quat.cast<double>();
-		/* if (state.lastObsFrame >= 0 && !imu->hasMag)
-		{ // Make Z-axis change relative if there is no mag to compensate for drift
-			auto getZ = [](Eigen::Quaterniond q)
-			{ // Both are the same
-				//return q.toRotationMatrix().canonicalEulerAngles(2, 1, 0).x();
-				return std::atan2(2*q.x()*q.y() + 2*q.w()*q.z(), 1 - (2*q.y()*q.y() + 2*q.z()*q.z()));
-			};
-			double eZ = getZ(baseQuat) - getZ(lastQuat.cast<double>());
-			quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
-			LOG(LTrackingFilter, LDebug, "    Adjusted Z axis to be relative!");
-		} */
-		// TODO: Absolute rotation requires calibration of IMU in relation to target
-		// else
-		if (state.lastObsFrame >= 0)
-		{ // Make all axis change relative to compensate for drift
-			quat = baseQuat * quat * lastQuat.cast<double>().conjugate();
-			LOG(LTrackingFilter, LDebug, "    Adjusted all axis to be relative!");
-		}
-		lastQuat = sample->quat;
-		baseQuat = quat;
 		if (state.lastObsFrame >= 0)
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, dT to last state update %fms, last IMU sample %fms!",
+			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, %fms ahead of last IMU sample, %fms of state!",
 				dtMS(state.lastObservation, sample->timestamp),
-				dtMS(state.time, sample->timestamp), dtMS(state.lastIMUTime, sample->timestamp));
+				dtMS(lastSample.timestamp, sample->timestamp),
+				dtMS(filterTime, sample->timestamp));
 		}
 		else
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample with dT to last state update %fms, last IMU sample %fms!",
-				dtMS(state.time, sample->timestamp), dtMS(state.lastIMUTime, sample->timestamp));
+			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state!",
+				dtMS(lastSample.timestamp, sample->timestamp),
+				dtMS(filterTime, sample->timestamp));
 		}
-		// Predict up until IMU sample timestamp
-		flexkalman::predict(state.state, model, dtS(state.time, sample->timestamp));
-		state.time = sample->timestamp;
-		// Correct with IMU sample
+		// Integrate on current IMU filter state
+		integrateIMUSample(inertial, *sample, lastSample, filterTime, state.lastObsFrame >= 0);
+		lastSample = *sample;
+		// Update IMU sample state
 		state.lastIMUSample = sample.index();
 		state.lastIMUTime = sample->timestamp;
-		auto measurement = FusedIMUMeasurement{
-			quat,
-			Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
-		};
-		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
-		{
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in IMU filter! Reset!");
+
+		if (!updateFilter) continue;
+
+		// Predict up until new IMU filter time
+		flexkalman::predict(filterState, model, dtS(filterTime, sample->timestamp));
+		filterTime = sample->timestamp;
+		{ // Correct with updated IMU filter quat
+			auto measurement = FusedIMUMeasurement{
+				inertial.fusion.quat,
+				Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
+			};
+			flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+			if (!flexkalman::correctUnscented(filterState, measurement, true, sigmaParams))
+			{
+				LOG(LTrackingFilter, LWarn, "Failed to correct pose in IMU filter! Reset!");
+			}
+		}
+		{ // TODO: Correct with updated IMU filter accel
 		}
 	}
 
 	// Predict new state
-	Eigen::Quaterniond preQuat = state.state.getCombinedQuaternion();
-	flexkalman::predict(state.state, model, dtS(state.time, time));
-	state.time = time;
-	Eigen::Quaterniond dQuat = state.state.getCombinedQuaternion() * preQuat.conjugate();
+	Eigen::Quaterniond preQuat = filterState.getCombinedQuaternion();
+	flexkalman::predict(filterState, model, dtS(filterTime, time));
+	filterTime = time;
+	Eigen::Quaterniond dQuat = filterState.getCombinedQuaternion() * preQuat.conjugate();
 
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-
-	observation.imu.translation() = state.state.position().cast<float>();
-	observation.imu.linear() = (dQuat * baseQuat).toRotationMatrix().cast<float>();
+	observation.inertial.translation() = filterState.position().cast<float>();
+	observation.inertial.linear() = (dQuat * inertial.fusion.quat).toRotationMatrix().cast<float>();
 	//observation.covIMU = ;
 
-	observation.filtered = state.state.getIsometry().cast<float>();
-	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.time = time;
+	{ // Actually apply IMU integrations to prediction
+		state.state = filterState;
+		state.time = filterTime;
+
+		observation.predicted = state.state.getIsometry().cast<float>();
+		observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+
+		observation.filtered = state.state.getIsometry().cast<float>();
+		observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+		observation.time = time;
+	}
 
 	return true;
+}
+
+bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+	TimePoint_t time, const TargetTrackingParameters &params)
+{
+	if (inertial.imu->isFused)
+		return integrateIMU<IMUSampleFused>(state, inertial, observation, time, params);
+	else
+		return integrateIMU<IMUSampleRaw>(state, inertial, observation, time, params);
+	return true;
+}
+
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &sample, const IMUSampleFused &lastSample, TimePoint_t filterTime, bool isOptical)
+{
+	float factor = 0;
+	if (lastSample.timestamp < filterTime)
+	{ // Account for time difference between last IMU sample and last filter time (e.g. optical measurement)
+		factor = dtMS(lastSample.timestamp, filterTime) / dtMS(lastSample.timestamp, sample.timestamp);
+		LOG(LTrackingFilter, LTrace, "        Lerping last sample to current with a factor of %f", factor);
+	}
+	Eigen::Quaterniond lastQuat = lastSample.quat.slerp(factor, sample.quat).cast<double>();
+	Eigen::Quaterniond quat = sample.quat.cast<double>();
+
+	float dt = dtS(filterTime, sample.timestamp);
+
+	if (!isOptical)
+	{ // Take as absolute
+		inertial.fusion.quat = quat;
+	}
+	/* else if (!inertial.imu->hasMag)
+	{ // Make Z-axis change relative if there is no mag to compensate for drift
+		auto getZ = [](Eigen::Quaterniond q)
+		{ // Both are the same
+			//return q.toRotationMatrix().canonicalEulerAngles(2, 1, 0).x();
+			return std::atan2(2*q.x()*q.y() + 2*q.w()*q.z(), 1 - (2*q.y()*q.y() + 2*q.z()*q.z()));
+		};
+		double eZ = getZ(inertial.fusion.quat) - getZ(lastQuat);
+		inertial.fusion.quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
+	}
+	else if (inertial.imu->hasMag)
+	{ // Take as absolute
+		inertial.fusion.quat = quat;
+	} */
+	else // TODO: Force relative only if last optical sample is recent, and ensure proper transition to absolute
+	{ // Make all axis change relative to compensate for drift
+		inertial.fusion.quat = inertial.fusion.quat * (quat * lastQuat.conjugate());
+	}
+
+	// Add gravity back in
+	Eigen::Vector3d accelRaw = sample.accel.cast<double>();
+	accelRaw.z() -= 9.81f;
+	// Reorient to corrected quat
+	Eigen::Vector3d accelCor = (inertial.fusion.quat * quat.conjugate()) * accelRaw;
+	// Remove gravity again
+	inertial.fusion.accel = accelCor;
+	inertial.fusion.accel.z() += 9.81f;
+}
+
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, TimePoint_t filterTime, bool isOptical)
+{
+	float dt = dtS(filterTime, sample.timestamp);
+
+	Eigen::Quaterniond dQuat = flexkalman::util::quat_exp(sample.gyro.cast<double>()*dt/2); // Local
+	// Apply local change to global fused quat
+	inertial.fusion.quat = inertial.fusion.quat * dQuat;
+
+	// Reorient from local to world space
+	inertial.fusion.accel = inertial.fusion.quat * sample.accel.cast<double>();
+	// Remove gravity
+	inertial.fusion.accel.z() += 9.81f;
 }

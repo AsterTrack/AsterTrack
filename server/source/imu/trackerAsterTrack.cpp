@@ -68,10 +68,11 @@ public:
 	SLIMEVR_MCU_TYPE MCU;
 	SLIMEVR_TRACKER_STATUS status;
 
-	~AsterTrackTracker() = default;
-
-	AsterTrackTracker(int provider, int device) : IMUDevice(IMU_DRIVER_ASTERTRACK, provider, device)
+	AsterTrackTracker(int provider, int device)
+		: IMUDevice(false, true, IMU_DRIVER_ASTERTRACK, provider, device)
 	{}
+
+	~AsterTrackTracker() = default;
 };
 
 #define TRACKER_INFO_SIZE 11 // 1B Header + 10B Info
@@ -85,7 +86,9 @@ public:
 	hid_device *handle;
 	TimeSync timeSync;
 
-	AsterTrackReceiver(const char *path, hid_device *handle) : path(path), handle(handle), IMUDeviceProvider(IMU_DRIVER_ASTERTRACK)
+	AsterTrackReceiver(const char *path, hid_device *handle)
+		: path(path), handle(handle),
+		IMUDeviceProvider(IMU_DRIVER_ASTERTRACK)
 	{
 		ResetTimeSync(timeSync);
 		// Unknown latencies of fusion and radio transmission, only the sample timestamp is sent
@@ -226,7 +229,7 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 	{
 		case TYPE_IMU_CAYLEY:
 		{
-			IMUSample report = {};
+			IMUSampleFused report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			Eigen::Vector3f quatEnc(
 				*(int16_t*)(data+1) * quatScale,
@@ -255,7 +258,7 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 			timestamp = report.timestamp;
 			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
 				tracker_id, dtMS(report.timestamp, sclock::now()));
-			tracker.samples.push_back(report);
+			tracker.samplesFused.push_back(report);
 			return true;
 		}
 		case TYPE_REGISTER:
@@ -287,7 +290,7 @@ bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &
 			continue;
 		}
 		hid_set_nonblocking(handle, true);
-		providers.emplace_back(new AsterTrackReceiver(dev->path, handle));
+		providers.push_back(std::make_shared<AsterTrackReceiver>(dev->path, handle));
 		LOG(LIO, LInfo, "Adding SlimeVR Receiver %s", dev->path);
 		added = true;
 	}

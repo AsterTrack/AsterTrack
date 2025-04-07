@@ -16,15 +16,25 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 enum IMUDriver : uint32_t;
 
-struct IMUSample
+struct IMUSampleFused
 {
 	TimePoint_t timestamp;
 	Eigen::Quaternionf quat;
 	Eigen::Vector3f accel;
 };
 
-bool inline operator<(const IMUSample& imu, const TimePoint_t& ts) { return imu.timestamp < ts; }
-bool inline operator<(const TimePoint_t& ts, const IMUSample& imu) { return ts < imu.timestamp; }
+struct IMUSampleRaw
+{
+	TimePoint_t timestamp;
+	Eigen::Vector3f gyro;
+	Eigen::Vector3f accel;
+	Eigen::Vector3f mag;
+};
+
+bool inline operator<(const IMUSampleFused& imu, const TimePoint_t& ts) { return imu.timestamp < ts; }
+bool inline operator<(const TimePoint_t& ts, const IMUSampleFused& imu) { return ts < imu.timestamp; }
+bool inline operator<(const IMUSampleRaw& imu, const TimePoint_t& ts) { return imu.timestamp < ts; }
+bool inline operator<(const TimePoint_t& ts, const IMUSampleRaw& imu) { return ts < imu.timestamp; }
 
 class IMU
 {
@@ -36,17 +46,19 @@ public:
 	int provider, device; // Driver defined
 
 	bool hasMag;
+	bool isFused;
 
-	BlockedQueue<IMUSample, 16384> samples;
+	BlockedQueue<IMUSampleFused, 16384> samplesFused;
+	BlockedQueue<IMUSampleRaw, 16384> samplesRaw;
 
-	IMU() :
+	IMU(bool hasMag, bool isFused) :
 		trackerID(0), index(-1),
 		driver((IMUDriver)0), provider(0), device(0),
-		hasMag(false) {}
-	IMU(IMUDriver driver, int provider, int device) :
+		hasMag(hasMag), isFused(isFused) {}
+	IMU(bool hasMag, bool isFused, IMUDriver driver, int provider, int device) :
 		trackerID(0), index(-1),
 		driver(driver), provider(provider), device(device),
-		hasMag(false) {}
+		hasMag(hasMag), isFused(isFused) {}
 
 	virtual ~IMU() = default;
 };
@@ -55,7 +67,13 @@ class IMURecord : public IMU
 {
 public:
 	~IMURecord() = default;
-	IMURecord() : IMU() {}
+	IMURecord() : IMU(false, false) {}
+	IMURecord(const IMU &other) :
+		IMU(other.hasMag, other.isFused,
+			other.driver, other.provider, other.device)
+	{
+		trackerID = other.trackerID;
+	}
 };
 
 #endif // IMU_H

@@ -18,7 +18,8 @@ enum IMUDriver : uint32_t
 {
 	IMU_DRIVER_RECORD = 0,
 	IMU_DRIVER_ASTERTRACK,
-	IMU_DRIVER_SLIMEVR
+	IMU_DRIVER_SLIMEVR,
+	IMU_DRIVER_REMOTE
 };
 
 enum IMUDeviceProviderStatus
@@ -42,7 +43,10 @@ public:
 	// TODO: Methods to setup passthrough to IO, e.g. buttons to VRPN
 
 protected:
-	IMUDevice(IMUDriver driver, int provider, int device) : IMU(driver, provider, device) {}
+	IMUDevice(bool hasMag, bool isFused)
+		: IMU(hasMag, isFused) {}
+	IMUDevice(bool hasMag, bool isFused, IMUDriver driver, int provider, int device)
+		: IMU(hasMag, isFused, driver, provider, device) {}
 };
 
 class IMUDeviceProvider
@@ -69,5 +73,9 @@ protected:
 
 bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
 bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+
+std::shared_ptr<IMUDevice> registerRemoteIMU(int deviceID);
+IMUDeviceProvider *getRemoteIMUProvider();
 
 #endif // IMU_DEVICE_H

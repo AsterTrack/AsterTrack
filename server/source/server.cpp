@@ -478,6 +478,7 @@ bool StartDeviceMode(ServerState &state)
 		std::unique_lock hid_lock(state.hid_access);
 		detectAsterTrackReceivers(*imu_lock);
 		detectSlimeVRReceivers(*imu_lock);
+		initialiseRemoteIMUs(*imu_lock);
 		// TODO: Add more IMU integrations here
 	}
 
@@ -857,6 +858,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					std::unique_lock hid_lock(state.hid_access);
 					detectAsterTrackReceivers(providers);
 					detectSlimeVRReceivers(providers);
+					initialiseRemoteIMUs(providers);
 					// TODO: Add more IMU integrations here
 				}
 				*state.imuProviders.contextualLock() = providers;
@@ -870,7 +872,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			imusRegistered = !imuLock->empty();
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
-				int updatedDevices, changedDevices;
+				int updatedDevices = 0, changedDevices = 0;
 				if (imuProvider->get()->poll(updatedDevices, changedDevices) == IMU_STATUS_DISCONNECTED)
 				{
 					imusChanged = true;
@@ -1169,9 +1171,15 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					state->recordReplayTime = sclock::now();
 					// Ensure timestamp is set properly
 					for (auto &imu : pipeline.record.imus)
-						imu->samples.cull_clear();
+					{
+						imu->samplesRaw.cull_clear();
+						imu->samplesFused.cull_clear();
+					}
 					for (auto &imu : pipeline.record.imus)
-						imu->samples.delete_culled();
+					{
+						imu->samplesRaw.delete_culled();
+						imu->samplesFused.delete_culled();
+					}
 				}
 				if (!pipeline.record.frames.insert(state->recordReplayFrame, frameRecord)) // new shared_ptr
 					continue;
@@ -1192,13 +1200,25 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				for (int i = 0; i < state->record.imus.size(); i++)
 				{
 					auto &imu = pipeline.record.imus[i];
-					auto samples = state->record.imus[i]->samples.getView();
-					auto it = samples.pos(imu->samples.getView().endIndex());
-					for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
-					{ // Copy sample, re-mapping timestamp to current replay time
-						IMUSample sample = *it;
-						sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
-						imu->samples.insert(it.index(), sample);
+					{
+						auto samples = state->record.imus[i]->samplesFused.getView();
+						auto it = samples.pos(imu->samplesFused.getView().endIndex());
+						for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
+						{ // Copy sample, re-mapping timestamp to current replay time
+							auto sample = *it;
+							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
+							imu->samplesFused.insert(it.index(), sample);
+						}
+					}
+					{
+						auto samples = state->record.imus[i]->samplesRaw.getView();
+						auto it = samples.pos(imu->samplesRaw.getView().endIndex());
+						for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
+						{ // Copy sample, re-mapping timestamp to current replay time
+							auto sample = *it;
+							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
+							imu->samplesRaw.insert(it.index(), sample);
+						}
 					}
 				}
 
@@ -1304,11 +1324,7 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	state.pipeline.record.imus.reserve(state.record.imus.size());
 	for (auto &storedIMU : state.record.imus)
 	{
-		auto imu = std::make_shared<IMURecord>();
-		imu->driver = storedIMU->driver;
-		imu->provider = storedIMU->provider;
-		imu->device = storedIMU->device;
-		imu->trackerID = storedIMU->trackerID;
+		auto imu = std::make_shared<IMURecord>(*storedIMU);
 		imu->index = state.pipeline.record.imus.size();
 		state.pipeline.record.imus.push_back(std::move(imu));
 		// Don't setup samples, Start Streaming deletes prior frame and imu records

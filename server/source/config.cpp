@@ -643,25 +643,46 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 		if (!file.contains("imuRecords")) return frameOffset;
 		if (!file["imuRecords"].is_array()) return frameOffset;
 		auto &jsIMUs = file["imuRecords"];
+		auto noMag = nlohmann::json::array({ 0.0f, 0.0f, 0.0f });
 		record.imus.reserve(jsIMUs.size());
 		for (auto &jsIMU : jsIMUs)
 		{
 			auto imu = std::make_shared<IMURecord>();
+			imu->trackerID = jsIMU["trackerID"].get<int>();
+			imu->hasMag = jsIMU.contains("hasMag")? jsIMU["hasMag"].get<bool>() : false;
+			imu->isFused = jsIMU.contains("isFused")? jsIMU["isFused"].get<bool>() : true;
 			imu->driver = (IMUDriver)jsIMU["driver"].get<int>();
 			imu->provider = jsIMU["provider"].get<int>();
 			imu->device = jsIMU["device"].get<int>();
-			imu->trackerID = jsIMU["trackerID"].get<int>();
 
 			auto &jsSamples = jsIMU["samples"];
-			for (auto &jsSample : jsSamples)
+			if (imu->isFused)
 			{
-				auto quat = jsSample["quat"];
-				auto accel = jsSample["accel"];
-				imu->samples.push_back({ 
-					startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
-					Eigen::Quaternionf(quat[3].get<float>(), quat[0].get<float>(), quat[1].get<float>(), quat[2].get<float>()),
-					Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>())
-				});
+				for (auto &jsSample : jsSamples)
+				{
+					auto quat = jsSample["quat"];
+					auto accel = jsSample["accel"];
+					imu->samplesFused.push_back({ 
+						startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
+						Eigen::Quaternionf(quat[3].get<float>(), quat[0].get<float>(), quat[1].get<float>(), quat[2].get<float>()),
+						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>())
+					});
+				}
+			}
+			else
+			{
+				for (auto &jsSample : jsSamples)
+				{
+					auto gyro = jsSample["gyro"];
+					auto accel = jsSample["accel"];
+					auto mag = imu->hasMag? jsSample["mag"] : noMag;
+					imu->samplesRaw.push_back({ 
+						startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
+						Eigen::Vector3f(gyro[0].get<float>(), gyro[1].get<float>(), gyro[2].get<float>()),
+						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>()),
+						Eigen::Vector3f(mag[0].get<float>(), mag[1].get<float>(), mag[2].get<float>())
+					});
+				}
 			}
 			record.imus.push_back(std::move(imu));
 		}
@@ -786,29 +807,57 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 	auto &jsIMUs = file["imuRecords"];
 	for (auto &imu : record.imus)
 	{
-		auto samples = imu->samples.getView();
-		auto itBegin = std::lower_bound(samples.begin(), samples.end(), timeFirst);
-		// Include some samples before start
-		for (int i = 0; i < 10 && itBegin != samples.begin(); i++, itBegin--);
-		auto itEnd = std::upper_bound(samples.begin(), samples.end(), timeLast);
-		if (itBegin > itEnd) continue; // Had no sample in frame range
-
 		json jsIMU;
+
+		if (imu->isFused)
+		{
+			auto samples = imu->samplesFused.getView();
+			auto itBegin = std::lower_bound(samples.begin(), samples.end(), timeFirst);
+			// Include some samples before start
+			for (int i = 0; i < 10 && itBegin != samples.begin(); i++, itBegin--);
+			auto itEnd = std::upper_bound(samples.begin(), samples.end(), timeLast);
+			if (itBegin > itEnd) continue; // Had no sample in frame range
+
+			jsIMU["samples"] = json::array();
+			auto &jsSamples = jsIMU["samples"];
+			for (auto it = itBegin; it != itEnd; it++)
+			{
+				json jsSample;
+				jsSample["dt"] = dtUS(timeFirst, it->timestamp); // May be negative at beginning
+				jsSample["quat"] = json::array({ it->quat.x(), it->quat.y(), it->quat.z(), it->quat.w() });
+				jsSample["accel"] = json::array({ it->accel.x(), it->accel.y(), it->accel.z() });
+				jsSamples.push_back(std::move(jsSample));
+			}
+		}
+		else
+		{
+			auto samples = imu->samplesRaw.getView();
+			auto itBegin = std::lower_bound(samples.begin(), samples.end(), timeFirst);
+			// Include some samples before start
+			for (int i = 0; i < 10 && itBegin != samples.begin(); i++, itBegin--);
+			auto itEnd = std::upper_bound(samples.begin(), samples.end(), timeLast);
+			if (itBegin > itEnd) continue; // Had no sample in frame range
+
+			jsIMU["samples"] = json::array();
+			auto &jsSamples = jsIMU["samples"];
+			for (auto it = itBegin; it != itEnd; it++)
+			{
+				json jsSample;
+				jsSample["dt"] = dtUS(timeFirst, it->timestamp); // May be negative at beginning
+				jsSample["gyro"] = json::array({ it->gyro.x(), it->gyro.y(), it->gyro.z() });
+				jsSample["accel"] = json::array({ it->accel.x(), it->accel.y(), it->accel.z() });
+				if (imu->hasMag)
+					jsSample["mag"] = json::array({ it->mag.x(), it->mag.y(), it->mag.z() });					
+				jsSamples.push_back(std::move(jsSample));
+			}
+		}
+
 		jsIMU["trackerID"] = imu->trackerID;
+		jsIMU["hasMag"] = imu->hasMag;
+		jsIMU["isFused"] = imu->isFused;
 		jsIMU["driver"] = imu->driver;
 		jsIMU["provider"] = imu->provider;
 		jsIMU["device"] = imu->device;
-
-		jsIMU["samples"] = json::array();
-		auto &jsSamples = jsIMU["samples"];
-		for (auto it = itBegin; it != itEnd; it++)
-		{
-			json jsSample;
-			jsSample["dt"] = dtUS(timeFirst, it->timestamp); // May be negative at beginning
-			jsSample["quat"] = json::array({ it->quat.x(), it->quat.y(), it->quat.z(), it->quat.w() });
-			jsSample["accel"] = json::array({ it->accel.x(), it->accel.y(), it->accel.z() });
-			jsSamples.push_back(std::move(jsSample));
-		}
 
 		jsIMUs.push_back(std::move(jsIMU));
 	}

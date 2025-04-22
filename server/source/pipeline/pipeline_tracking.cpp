@@ -197,6 +197,8 @@ static bool retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &trac
 	}
 	LOG(LDetection2D, LDebug, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
 		frame->num, tracker.target.match2D.error.mean*PixelFactor, tracker.target.match2D.error.samples);
+	if (tracker.inertial)
+		postCorrectIMU(tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
 	recordTrackingResults(frame, target, tracker, pipeline);
 	return true;
 }
@@ -368,7 +370,11 @@ void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 				integrateIMU(targetIt->state, targetIt->inertial, targetIt->pose, frame.time, pipeline.params.track);
 			if (simulateTrackTarget(targetIt->state, targetIt->pose, target.poseObserved,
 					target.covObserved, target.tracked, frame.time, frame.num, pipeline.params.track))
+			{
 				recordTrackingResults(*frameIt, target, *targetIt, pipeline);
+				if (targetIt->inertial)
+					postCorrectIMU(targetIt->state, targetIt->inertial, targetIt->pose, frame.time, pipeline.params.track);
+			}
 			else
 				recordTrackingFailure(*frameIt, target, *targetIt, false);
 		}
@@ -460,6 +466,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				LOG(LTracking, LDebug, "    Found continuation of target %d (name %s) with %d observations and %.3fpx mean error!\n",
 					target.id, target.label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+
+				if (tracker->inertial)
+					postCorrectIMU(tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
 
 				// Occupy all 2D points of tracked target
 				occupyTargetMatches(tracker->target.match2D);
@@ -858,6 +867,8 @@ void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int tracke
 		if (tracker.inertial) tracker.inertial.imu->trackerID = 0;
 		imu->trackerID = trackerID;
 		tracker.inertial = TrackerInertial(imu); // new shared_ptr
+		// TODO: Load calibration
+		tracker.inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
 		tracker.state.lastIMUSample = -1;
 		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
 		return;
@@ -868,6 +879,8 @@ void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int tracke
 		if (tracker.inertial) tracker.inertial.imu->trackerID = 0;
 		imu->trackerID = trackerID;
 		tracker.inertial = TrackerInertial(imu); // new shared_ptr
+		// TODO: Load calibration
+		tracker.inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
 		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
 		return;
 	}
@@ -881,6 +894,8 @@ void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMar
 	//imu->trackerID = tracker.marker.ID;
 	imu->trackerID = -1;
 	tracker.inertial = TrackerInertial(imu); // new shared_ptr
+	// TODO: Load calibration
+	tracker.inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
 	tracker.state.lastIMUSample = -1;
 	std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
 }

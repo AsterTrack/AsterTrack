@@ -179,8 +179,8 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	return matchedPoint;
 }
 
-static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &sample, const IMUSampleFused &lastSample, TimePoint_t filterTime, bool isOptical);
-static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, TimePoint_t filterTime, bool isOptical);
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &sample, const IMUSampleFused &lastSample, const TargetTrackingParameters &params, bool isOptical);
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, const TargetTrackingParameters &params, bool isOptical);
 
 template<typename Sample>
 static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
@@ -196,7 +196,7 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 
 	auto filterState = state.state;
 	auto filterTime = state.time;
-	bool updateFilter = true;
+	bool updateFilter = inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION;
 
 	// Find first IMU sample after last state time (e.g. last frame)
 	typename BlockedQueue<Sample, 16384>::template View<true> samples;
@@ -237,9 +237,8 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 	else
 	{ // Use last IMU sample as reference
 		lastSample = *std::prev(itBegin);
+		LOG(LTrackingFilter, LDebug, "Continuing IMU %d integration!", inertial.imu->index);
 	}
-
-	inertial.fusion.quat = state.state.getCombinedQuaternion();
 
 	// Find last IMU sample before specified maximum time (e.g. current frame)
 	auto itEnd = itBegin;
@@ -250,19 +249,21 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 	{
 		if (state.lastObsFrame >= 0)
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, %fms ahead of last IMU sample, %fms of state!",
+			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
 				dtMS(state.lastObservation, sample->timestamp),
 				dtMS(lastSample.timestamp, sample->timestamp),
-				dtMS(filterTime, sample->timestamp));
+				dtMS(filterTime, sample->timestamp),
+				dtMS(inertial.fusion.time, sample->timestamp));
 		}
 		else
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state!",
+			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
 				dtMS(lastSample.timestamp, sample->timestamp),
-				dtMS(filterTime, sample->timestamp));
+				dtMS(filterTime, sample->timestamp),
+				dtMS(inertial.fusion.time, sample->timestamp));
 		}
 		// Integrate on current IMU filter state
-		integrateIMUSample(inertial, *sample, lastSample, filterTime, state.lastObsFrame >= 0);
+		integrateIMUSample(inertial, *sample, lastSample, params, state.lastObsFrame >= 0);
 		lastSample = *sample;
 		// Update IMU sample state
 		state.lastIMUSample = sample.index();
@@ -273,9 +274,10 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 		// Predict up until new IMU filter time
 		flexkalman::predict(filterState, model, dtS(filterTime, sample->timestamp));
 		filterTime = sample->timestamp;
+		if (inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION)
 		{ // Correct with updated IMU filter quat
 			auto measurement = FusedIMUMeasurement{
-				inertial.fusion.quat,
+				inertial.calibration.quat * inertial.fusion.quat,
 				Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
 			};
 			flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
@@ -284,18 +286,27 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 				LOG(LTrackingFilter, LWarn, "Failed to correct pose in IMU filter! Reset!");
 			}
 		}
+		if (inertial.calibration.phase > IMU_CALIB_EXT_OFFSET)
 		{ // TODO: Correct with updated IMU filter accel
 		}
 	}
 
 	// Predict new state
-	Eigen::Quaterniond preQuat = filterState.getCombinedQuaternion();
-	flexkalman::predict(filterState, model, dtS(filterTime, time));
-	filterTime = time;
-	Eigen::Quaterniond dQuat = filterState.getCombinedQuaternion() * preQuat.conjugate();
-
-	observation.inertial.translation() = filterState.position().cast<float>();
-	observation.inertial.linear() = (dQuat * inertial.fusion.quat).toRotationMatrix().cast<float>();
+	if (updateFilter)
+	{
+		Eigen::Quaterniond preQuat = filterState.getCombinedQuaternion();
+		flexkalman::predict(filterState, model, dtS(filterTime, time));
+		filterTime = time;
+		Eigen::Quaterniond dQuat = filterState.getCombinedQuaternion() * preQuat.conjugate();
+	
+		observation.inertial.translation() = filterState.position().cast<float>();
+		observation.inertial.linear() = (dQuat * inertial.fusion.quat).toRotationMatrix().cast<float>();
+	}
+	else
+	{
+		observation.inertial.translation() = filterState.position().cast<float>();
+		observation.inertial.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
+	}
 	//observation.covIMU = ;
 
 	{ // Actually apply IMU integrations to prediction
@@ -326,21 +337,23 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &sample, const IMUSampleFused &lastSample, TimePoint_t filterTime, bool isOptical)
 {
 	float factor = 0;
-	if (lastSample.timestamp < filterTime)
+	if (lastSample.timestamp < inertial.fusion.time)
 	{ // Account for time difference between last IMU sample and last filter time (e.g. optical measurement)
-		factor = dtMS(lastSample.timestamp, filterTime) / dtMS(lastSample.timestamp, sample.timestamp);
+		factor = dtMS(lastSample.timestamp, inertial.fusion.time) / dtMS(lastSample.timestamp, sample.timestamp);
 		LOG(LTrackingFilter, LTrace, "        Lerping last sample to current with a factor of %f", factor);
 	}
 	Eigen::Quaterniond lastQuat = lastSample.quat.slerp(factor, sample.quat).cast<double>();
 	Eigen::Quaterniond quat = sample.quat.cast<double>();
 
-	float dt = dtS(filterTime, sample.timestamp);
+	float dt = dtS(inertial.fusion.time, sample.timestamp);
+	inertial.fusion.time = sample.timestamp;
 
+	Eigen::Quaterniond dQuat = quat * lastQuat.conjugate();
 	if (!isOptical)
 	{ // Take as absolute
 		inertial.fusion.quat = quat;
 	}
-	/* else if (!inertial.imu->hasMag)
+	/* else if (inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION && !inertial.imu->hasMag)
 	{ // Make Z-axis change relative if there is no mag to compensate for drift
 		auto getZ = [](Eigen::Quaterniond q)
 		{ // Both are the same
@@ -350,35 +363,69 @@ static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFused &
 		double eZ = getZ(inertial.fusion.quat) - getZ(lastQuat);
 		inertial.fusion.quat = Eigen::AngleAxisd(eZ, Eigen::Vector3d::UnitZ()) * quat;
 	}
-	else if (inertial.imu->hasMag)
+	else if (inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION && inertial.imu->hasMag)
 	{ // Take as absolute
 		inertial.fusion.quat = quat;
 	} */
 	else // TODO: Force relative only if last optical sample is recent, and ensure proper transition to absolute
 	{ // Make all axis change relative to compensate for drift
-		inertial.fusion.quat = inertial.fusion.quat * (quat * lastQuat.conjugate());
+		inertial.fusion.quat = inertial.fusion.quat * dQuat;
 	}
 
+	inertial.fusion.accelRaw = sample.accel.cast<double>();
 	// Add gravity back in
-	Eigen::Vector3d accelRaw = sample.accel.cast<double>();
-	accelRaw.z() -= 9.81f;
+	inertial.fusion.accelRaw.z() -= 9.81f;
 	// Reorient to corrected quat
-	Eigen::Vector3d accelCor = (inertial.fusion.quat * quat.conjugate()) * accelRaw;
+	inertial.fusion.accel = (inertial.fusion.quat * quat.conjugate()) * inertial.fusion.accelRaw;
 	// Remove gravity again
-	inertial.fusion.accel = accelCor;
 	inertial.fusion.accel.z() += 9.81f;
+	// Integrate velocity
+	inertial.fusion.imuVelocity += inertial.fusion.accel * dt;
 }
 
-static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, TimePoint_t filterTime, bool isOptical)
+static void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw &sample, const IMUSampleRaw &lastSample, const TargetTrackingParameters &params, bool isOptical)
 {
-	float dt = dtS(filterTime, sample.timestamp);
+	float dt = dtS(inertial.fusion.time, sample.timestamp);
+	inertial.fusion.time = sample.timestamp;
 
-	Eigen::Quaterniond dQuat = flexkalman::util::quat_exp(sample.gyro.cast<double>()*dt/2); // Local
+	Eigen::Vector3d gyro = sample.gyro.cast<double>();
+	double angle = gyro.norm(); // In rad/s
+	Eigen::Vector3d axis = gyro/angle;
+
+	// TODO: Apply calibration / coordinate system change
+
+	Eigen::Quaterniond dQuat(Eigen::AngleAxisd(angle*dt, axis));
+
 	// Apply local change to global fused quat
 	inertial.fusion.quat = inertial.fusion.quat * dQuat;
+	//inertial.fusion.dQuat = inertial.fusion.dQuat * dQuat;
+	//inertial.fusion.angularVelocity = gyro;
 
+	inertial.fusion.accelRaw = sample.accel.cast<double>();
 	// Reorient from local to world space
 	inertial.fusion.accel = inertial.fusion.quat * sample.accel.cast<double>();
 	// Remove gravity
 	inertial.fusion.accel.z() += 9.81f;
+	// Integrate velocity
+	inertial.fusion.imuVelocity += inertial.fusion.accel * dt;
+}
+
+void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+	TimePoint_t time, const TargetTrackingParameters &params)
+{
+	if (inertial.calibration.phase < IMU_CALIB_EXT_DONE)
+	{ // In calibration phase
+
+		// Update last state based on observation for calibration
+		inertial.calibration.lastState = state.state;
+		inertial.calibration.lastTime = state.time;
+	}
+
+	// Re-base/correct integration/fusion of fused/raw samples
+	inertial.fusion.time = time;
+	inertial.fusion.quat = state.state.getCombinedQuaternion();
+	inertial.fusion.positionalVelocity = state.state.velocity();
+	inertial.fusion.angularVelocity = state.state.angularVelocity();
+	inertial.fusion.tangentialVelocity = inertial.fusion.angularVelocity.cross(inertial.calibration.offset);
+	inertial.fusion.imuVelocity = state.state.velocity() + inertial.fusion.tangentialVelocity;
 }

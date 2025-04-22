@@ -87,17 +87,43 @@ struct TrackerMarker
 	TrackerMarker(float size) : size(size) {}
 };
 
+enum IMUCalibrationPhase
+{
+	// Internal calibration
+	// TODO: Calibrate from raw samples
+	// External calibration
+	IMU_CALIB_EXT_ORIENTATION = 0,
+	IMU_CALIB_EXT_OFFSET = 3,
+	IMU_CALIB_EXT_DONE = 4
+};
+
 struct TrackerInertial
 {
+	using State = flexkalman::pose_externalized_rotation::State;
 	std::shared_ptr<IMU> imu;
 	struct {
-		Eigen::Quaterniond quat;
+		IMUCalibrationPhase phase = IMU_CALIB_EXT_DONE;
+		// Data
+		State lastState;
+		TimePoint_t lastTime;
+		// Results
+		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
+		Eigen::Vector3d offset = Eigen::Vector3d::Zero();
+	} calibration;
+	struct {
+		TimePoint_t time;
+		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
+		Eigen::Vector3d imuVelocity = Eigen::Vector3d::Zero(); // Positional velocity of IMU (due to tracker positional velocity AND rotation)
+		Eigen::Vector3d angularVelocity; // Angular velocity of tracker rotation
+		Eigen::Vector3d tangentialVelocity; // Positional velocity of IMU relative to tracker due to rotation
+		Eigen::Vector3d positionalVelocity; // Positional velocity of tracker
 		Eigen::Vector3d accel;
+		Eigen::Vector3d accelRaw;
 	} fusion;
 
-	TrackerInertial() : imu() {}
-	TrackerInertial(std::shared_ptr<IMU> &imu) : imu(imu) {}
-	TrackerInertial(std::shared_ptr<IMU> &&imu) : imu(std::move(imu)) {}
+	TrackerInertial() : imu(), calibration{}, fusion{} {}
+	TrackerInertial(std::shared_ptr<IMU> &imu) : imu(imu), calibration{}, fusion{} {}
+	TrackerInertial(std::shared_ptr<IMU> &&imu) : imu(std::move(imu)), calibration{}, fusion{} {}
 
 	operator bool() const { return imu != nullptr; }
 };
@@ -241,6 +267,8 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	TimePoint_t time, float sigma);
 
 bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+	TimePoint_t time, const TargetTrackingParameters &params);
+void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);
 
 #endif // TRACKING_3D_H

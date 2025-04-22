@@ -1229,6 +1229,7 @@ static bool ShowLatencyPanel()
 			return false;
 		}
 		latencyMeasurements = &state.controllers[sourceIndex]->latencyMeasurements;
+		//descriptor = &state.controllers[sourceIndex]->des;
 		if (state.controllers[sourceIndex]->comm->commStreaming)
 			ui.RequestUpdates();
 	}
@@ -1244,7 +1245,7 @@ static bool ShowLatencyPanel()
 		latencyMeasurements = &imuProviders->at(sourceIndex)->latencyMeasurements;
 		descriptor = &imuProviders->at(sourceIndex)->latencyDescriptions;
 	}
-	if (!latencyMeasurements)
+	if (!latencyMeasurements || !descriptor)
 		return false;
 	latencyMeasurements->delete_culled();
 	auto samples = latencyMeasurements->getView();

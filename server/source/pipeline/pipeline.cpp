@@ -235,14 +235,11 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// Adopt recorded tracking state
 	for (auto &targetRecord : frameRecord.tracking.targets)
 	{
-		auto track = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
-			[&](auto &t){ return t.id == targetRecord.id; });
-		if (track == pipeline.tracking.targetCalibrations.end()) continue;
-		pipeline.tracking.trackedTargets.emplace_back(&*track, targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
-		auto targetIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
-			[&](auto &e){ return e.target.calib == &*track; });
-		if (targetIt != pipeline.tracking.dormantTargets.end())
-			pipeline.tracking.dormantTargets.erase(targetIt);
+		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
+			[&](auto &e){ return e.target.calib->id == targetRecord.id; });
+		if (dormantIt == pipeline.tracking.dormantTargets.end()) continue;
+		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
+		pipeline.tracking.dormantTargets.erase(dormantIt);
 	}
 }
 

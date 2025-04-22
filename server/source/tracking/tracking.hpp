@@ -123,6 +123,11 @@ struct TrackerObservation
 
 /* Tracked Object Representations */
 
+struct TrackedTarget;
+struct DormantTarget;
+struct TrackedMarker;
+struct OrphanedIMU;
+
 struct TrackedTarget
 {
 	TrackerState state;
@@ -143,6 +148,9 @@ struct TrackedTarget
 		state.lastObservation = time;
 		state.lastObsFrame = frame;
 	}
+
+	inline TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
+		TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
 };
 
 struct TrackedMarker
@@ -175,8 +183,7 @@ struct DormantTarget
 	DormantTarget(const TargetCalibration3D *target) :
 		inertial(), target(target) {}
 
-	DormantTarget(TrackedTarget &&tracker) :
-		inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) {}
+	inline DormantTarget(TrackedTarget &&tracker);
 };
 
 const static Eigen::Isometry3f orphanedIMUPose = Eigen::Isometry3f(Eigen::Translation3f(0, 0, 1));
@@ -201,6 +208,19 @@ struct OrphanedIMU
 		inertial(std::move(imu)),
 		pose(orphanedIMUPose, sclock::now(), params) {}
 };
+
+inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
+	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
+	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
+	state(pose, time, params), pose(pose, time, params)
+{
+	state.lastObservation = time;
+	state.lastObsFrame = frame;
+}
+
+inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
+	inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) {}
+
 
 
 /* Functions */

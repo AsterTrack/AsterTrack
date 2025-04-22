@@ -570,13 +570,14 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 					visState.tracking.scaleCovariance), colPredicted);
 		};
 
-		auto frameIt = visFrame.frameIt;
-		auto trailPts = &markers[target->markers.size()*3];
+		auto trailIt = visFrame.frameIt;
 		for (int i = 0; i < visState.tracking.trailLength; i++)
 		{
-			if (frameIt == visFrame.frames.begin()) break;
-			if (!(--frameIt)->get()->finishedProcessing) continue;
-			auto &pastTracks = frameIt->get()->tracking.targets;
+			if (trailIt == visFrame.frames.begin()) break;
+			trailIt--;
+			if (!trailIt->get() || !trailIt->get()->finishedProcessing) continue;
+			auto trailPt = &markers[target->markers.size()*3+i*3];
+			auto &pastTracks = trailIt->get()->tracking.targets;
 			auto pastTrack = std::find_if(pastTracks.begin(), pastTracks.end(),
 				[&](auto &t){ return t.id == tracker.id; });
 			if (pastTrack == pastTracks.end()) continue;
@@ -586,11 +587,11 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 				continue;
 			}
 			if (visState.tracking.showTargetPredicted)
-				trailPts[i*3+0] = { pastTrack->posePredicted.translation(), colPredicted, 0.001f };
+				trailPt[0] = { pastTrack->posePredicted.translation(), colPredicted, 0.001f };
 			if (visState.tracking.showTargetObserved)
-				trailPts[i*3+1] = { pastTrack->poseObserved.translation(), colObserved, 0.001f };
+				trailPt[1] = { pastTrack->poseObserved.translation(), colObserved, 0.001f };
 			if (visState.tracking.showTargetFiltered)
-				trailPts[i*3+2] = { pastTrack->poseFiltered.translation(), colFiltered, 0.002f };
+				trailPt[2] = { pastTrack->poseFiltered.translation(), colFiltered, 0.002f };
 		}
 
 		if (visState.tracking.showCovariancePos)

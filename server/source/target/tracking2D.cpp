@@ -803,8 +803,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 	reprojectTargetMarkers();
 
-	bool noGood = true, cameraGood = false;
+	int camerasGood = 0;
 	int matchedSamples = 0;
+	const int minCamerasGood = 2;
 
 	// Try first with simple matching algorithm
 	for (int c = 0; c < calibs.size(); c++)
@@ -836,19 +837,19 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
 			matchedSamples += cameraMatches.size();
 			if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
-				cameraGood = true;
-			noGood = false;
+				camerasGood++;
 		}
 	}
 	matchingStage++;
 	LOGC(LDebug, "        Matched a total of %d samples in initial fast-path!", matchedSamples);
 
-	if (!cameraGood || matchedSamples < params.minTotalObs)
+	if (camerasGood < minCamerasGood || matchedSamples < params.minTotalObs)
 	{
-		LOGC(LDebug, "        Not one camaera had a good amount of samples, entering slow-path!");
+		LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
 		for (int i = 0; i < maxComplexStages; i++)
 		{ // Try again with complex matching algorithm
 
+			camerasGood = 0;
 			matchedSamples = 0;
 			bool nothingNew = true;
 
@@ -889,7 +890,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 					LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
 					matchedSamples += cameraMatches.size();
 					if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
-						cameraGood = true;
+						camerasGood++;
 					if (prevPointCount < cameraMatches.size())
 						nothingNew = false;
 				}
@@ -899,12 +900,12 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			LOGC(LDebug, "        Matched a total of %d samples in matching slow-path %d!",
 				matchedSamples, i);
 
-			if (cameraGood) break; // Continue normally
+			if (camerasGood >= minCamerasGood) break; // Continue normally
 			if (nothingNew) return targetMatch2D; // No hope improving
 			if (i+1 >= maxComplexStages)
 			{ // Last iterations, don't optimise again
 				if (matchedSamples >= params.minTotalObs)
-					break; // Some new data after second try, continue normally
+					break; // Some new data after last try, continue normally
 				return targetMatch2D; // Else, not enough data still
 			}
 			// Else, with some new data, try again after quick optimisation
@@ -915,9 +916,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 		LOGC(LDebug, "        Continuing normally after slow-path finished!");
 	}
-	assert(cameraGood || matchedSamples >= params.minTotalObs);
+	assert(camerasGood >= minCamerasGood || matchedSamples >= params.minTotalObs);
 
-	if (cameraGood)
+	if (camerasGood >= minCamerasGood)
 	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
 		DualExtremum<int> camPoints(0);
 		for (int c = 0; c < calibs.size(); c++)

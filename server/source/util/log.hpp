@@ -151,6 +151,37 @@ extern uint32_t LogLevelHexColors[LMaxLevel];
 		PrintLogCont(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
 }
 
+
+/* #define LOG(CATEGORY, LEVEL, ...) do { \
+	if (SHOULD_LOG(CATEGORY, LEVEL)) \
+		PrintLog(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
+} while(false)
+
+#define LOGC(LEVEL, ...) do { \
+	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
+		PrintLog(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
+} while(false)
+
+#define LOGL(CATEGORY, ...) do { \
+	if (SHOULD_LOG(CATEGORY, CurrentLogLevel)) \
+		PrintLog(CATEGORY, CurrentLogLevel, CurrentLogContext, __VA_ARGS__); \
+} while(false)
+
+#define LOGCL(...) do { \
+	if (SHOULD_LOG(CurrentLogCategory, CurrentLogLevel)) \
+		PrintLog(CurrentLogCategory, CurrentLogLevel, CurrentLogContext, __VA_ARGS__); \
+} while(false)
+
+#define LOGCONTC(LEVEL, ...) do { \
+	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
+		PrintLog(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
+} while(false)
+
+#define LOGCONT(CATEGORY, LEVEL, ...) do { \
+	if (SHOULD_LOG(CATEGORY, LEVEL)) \
+		PrintLogCont(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
+} while(false) */
+
 struct ScopedLogCategory
 {
 	LogCategory prev;

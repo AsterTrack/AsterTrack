@@ -419,7 +419,12 @@ private:
 	{
 		BlockIt<Const> it;
 		assert(block >= state.start && block <= state.start+state.count);
-		if (block-state.start < state.count/2)
+		if (state.count == 0)
+		{
+			if constexpr (Const) it = state.const_back;
+			else it = state.back;
+		}
+		else if (block-state.start < state.count/2)
 		{ // Start from begin
 			if constexpr (Const) it = state.const_begin;
 			else it = state.begin;

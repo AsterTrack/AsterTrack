@@ -751,7 +751,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				for (int x = 0; x < width; x++)
 				{
 					Eigen::Vector2f pos(((x+0.5f)*2.0f-width)/tgtSize, ((y+0.5f)*2.0f-height)/tgtSize);
-					undistortionTex[y*width + x] = distortPointUnstable(calib, pos, 1000, 0.01f*PixelSize);
+					undistortionTex[y*width + x] = distortPointUnstable(calib, pos, 100, 0.05f*PixelSize);
 				}
 			loadVectorField(visCamera.calibration.undistortionTexID, undistortionTex, width, height);
 			visCamera.calibration.undistortMapScale = Eigen::Vector2f((float)width/tgtSize, (float)height/tgtSize);

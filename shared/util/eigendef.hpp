@@ -90,7 +90,7 @@ struct CameraCalib_t
 	/**
 	 * Update the view and camera matrix when transform or intrinsiv parameters of cameras changed
 	 */
-	inline void UpdateDerived();
+	void UpdateDerived();
 
 	inline bool valid() const { return id != CAMERA_ID_NONE; }
 	inline bool invalid() const { return id == CAMERA_ID_NONE; }

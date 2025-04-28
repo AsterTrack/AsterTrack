@@ -39,7 +39,7 @@ lmode = $(lto)
 mode = release
 
 else ifeq ($(BUILD_TYPE), release-native)
-# Very fast, but slow to iterate on, used for final deployment
+# Very fast, but slow to iterate on, only used to check for any modern optimisation we missed to take advantage of
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
 cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -march=native -mtune=native
@@ -64,7 +64,7 @@ lmode = -fsanitize=thread
 mode = sanitize-thread
 
 else ifeq ($(BUILD_TYPE), sanitize-memory)
-# Super slow (?), can verify no data races exist
+# Super slow (?), can verify no memory is used uninitialised
 cmode = -O1 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=memory
 lmode = -fsanitize=memory
 mode = sanitize-memory

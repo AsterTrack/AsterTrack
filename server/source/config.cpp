@@ -796,7 +796,7 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 
 			unsigned int num = jsFrame["num"].get<unsigned int>();
 			if (num < frameOffset) continue;
-			if (num > frameOffset+frames.size()) break;
+			if (num >= frameOffset+frames.size()) break;
 
 			auto &framePtr = frames[num-frameOffset];
 			if (!framePtr) continue;

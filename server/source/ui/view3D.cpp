@@ -108,35 +108,36 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		}
 		else
 		{
+			float wasd = 2.0f, ud = 1.0f;
 			if (ImGui::IsKeyDown(ImGuiKey_A))
 			{
 				RequestUpdates();
-				transform.translation() += transform.rotation() * Eigen::Vector3f(-5.0f*dT, 0, 0);
+				transform.translation() += transform.rotation() * Eigen::Vector3f(-wasd*dT, 0, 0);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_D))
 			{
 				RequestUpdates();
-				transform.translation() += transform.rotation() * Eigen::Vector3f(+5.0f*dT, 0, 0);
+				transform.translation() += transform.rotation() * Eigen::Vector3f(+wasd*dT, 0, 0);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_S))
 			{
 				RequestUpdates();
-				transform.translation() += transform.rotation() * Eigen::Vector3f(0, 0, -5.0f*dT);
+				transform.translation() += transform.rotation() * Eigen::Vector3f(0, 0, -wasd*dT);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_W))
 			{
 				RequestUpdates();
-				transform.translation() += transform.rotation() * Eigen::Vector3f(0, 0, +5.0f*dT);
+				transform.translation() += transform.rotation() * Eigen::Vector3f(0, 0, +wasd*dT);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_PageDown) || ImGui::IsKeyDown(ImGuiKey_Q))
 			{
 				RequestUpdates();
-				transform.translation() += /*transform.rotation() **/ Eigen::Vector3f(0, 0, -3.0f*dT);
+				transform.translation() += /*transform.rotation() **/ Eigen::Vector3f(0, 0, -ud*dT);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_PageUp) || ImGui::IsKeyDown(ImGuiKey_E))
 			{
 				RequestUpdates();
-				transform.translation() += /*transform.rotation() **/ Eigen::Vector3f(0, 0, +3.0f*dT);
+				transform.translation() += /*transform.rotation() **/ Eigen::Vector3f(0, 0, +ud*dT);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_Z))
 			{

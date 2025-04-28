@@ -43,7 +43,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	}
 	else if (state.mode == MODE_Simulation || state.mode == MODE_Replay)
 	{
+		bool debug = dbg_debugging.load(), breaking = dbg_isBreaking.load();
 		BeginSection(state.mode == MODE_Simulation? "Simulation" : "Replay");
+		ImGui::BeginDisabled(breaking);
 		{ // Show controls for simulation frame advancing
 			bool advancing = state.simAdvance.load() != 0;
 			ImGui::AlignTextToFramePadding();
@@ -95,9 +97,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			state.simAdvance.notify_all();
 		}
 
+		ImGui::EndDisabled();
 
 		{ // Show controls for interactive debugging
-			bool debug = dbg_debugging.load(), breaking = dbg_isBreaking.load();
 			ImGui::AlignTextToFramePadding();
 			if (breaking)
 			{

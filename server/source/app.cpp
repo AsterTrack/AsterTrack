@@ -292,6 +292,7 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LTrackingMatch]			= "tM2D";
 	LogCategoryIdentifiers[LTrackingOpt]			= "tOpt";
 	LogCategoryIdentifiers[LTrackingFilter]			= "tFlt";
+	LogCategoryIdentifiers[LTrackingIMU]			= "tIMU";
 
 	LogCategoryIdentifiers[LStreaming]				= "Strm";
 	LogCategoryIdentifiers[LTimesync]				= "Sync";
@@ -321,6 +322,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LTrackingMatch]			= "Target Matching";
 	LogCategoryDescriptions[LTrackingOpt]			= "Target Optimisation";
 	LogCategoryDescriptions[LTrackingFilter]		= "Filtering";
+	LogCategoryDescriptions[LTrackingIMU]			= "IMU";
 
 	LogCategoryDescriptions[LStreaming]				= "Streaming";
 	LogCategoryDescriptions[LTimesync]				= "TimeSync";

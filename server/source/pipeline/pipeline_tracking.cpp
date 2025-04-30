@@ -681,9 +681,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);
 					frame->tracking.detections3D++;
 
-					LOG(LTracking, LInfo, "    Added lost tracked target back with %d points and %fmm RMSE"
+					LOG(LTracking, LInfo, "    Added dormant tracked target %s back with %d points and %fmm RMSE"
 						", now with %d 2D points and %fpx mean error!\n",
-						(int)candidate.points.size(), std::sqrt(candidate.MSE),
+						target.label.c_str(), (int)candidate.points.size(), std::sqrt(candidate.MSE),
 						trackedTarget.target.match2D.error.samples, trackedTarget.target.match2D.error.mean*PixelFactor);
 
 					pipeline.tracking.trackedTargets.push_back(std::move(trackedTarget));
@@ -751,7 +751,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// Select target to detect
 		DormantTarget &dormant = pipeline.tracking.dormantTargets.front();
 		const TargetCalibration3D &target = *dormant.target.calib;
-		LOG(LDetection2D, LInfo, "Trying target %d (name %s) with %d markers!\n",
+		LOG(LDetection2D, LDarn, "Trying target %d (name %s) with %d markers!\n",
 			target.id, target.label.c_str(), (int)target.markers.size());
 
 		// Move to back in queue

@@ -125,7 +125,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 	{
 		if (itResults[it].first < params.minObservations.focus || itResults[it].second > bestResult.second*params.search.errorSigma || itResults[it].second > params.search.errorMax)
 			break;
-		LOGC(LDebug, "    Considering pose candidate %d from iteration %d with %d matches and %fpx RMSE!",
+		LOGC(LTrace, "    Considering pose candidate %d from iteration %d with %d matches and %fpx RMSE!",
 			(int)poseCandidates.size(), it, itResults[it].first, itResults[it].second*PixelFactor);
 		// Record pose transformed from camera-space into world-space
 		poseCandidates.push_back(calib.transform.cast<float>() * itPoses[it]);
@@ -193,7 +193,7 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3
 	
 		{ // For debug only
 			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D);
-			LOGC(LDebug, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
+			LOGC(LTrace, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
 				i++, errors.samples, focus, errors.mean*PixelFactor);
 		}
 		if (cameraMatches.size() < params.minObservations.focus)

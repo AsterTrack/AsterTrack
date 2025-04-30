@@ -213,7 +213,7 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 	else if (!samples.empty())
 	{ // Cold start
 		itBegin = std::lower_bound(samples.begin(), samples.end(), filterTime);
-		LOG(LTrackingFilter, LDebug, "Cold start of IMU %d with sample %lu!", inertial.imu->index, itBegin.index());
+		LOG(LTrackingIMU, LDebug, "Cold start of IMU %d with sample %lu!", inertial.imu->index, itBegin.index());
 	}
 	if (itBegin == samples.end())
 	{
@@ -232,12 +232,12 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 		filterTime = itBegin->timestamp;
 		lastSample = *itBegin;
 		itBegin = std::next(itBegin);
-		LOG(LTrackingFilter, LDarn, "Initialising IMU %d integration!", inertial.imu->index);
+		LOG(LTrackingFilter, LTrace, "Initialising IMU %d integration!", inertial.imu->index);
 	}
 	else
 	{ // Use last IMU sample as reference
 		lastSample = *std::prev(itBegin);
-		LOG(LTrackingFilter, LDebug, "Continuing IMU %d integration!", inertial.imu->index);
+		LOG(LTrackingFilter, LTrace, "Continuing IMU %d integration!", inertial.imu->index);
 	}
 
 	// Find last IMU sample before specified maximum time (e.g. current frame)
@@ -249,7 +249,7 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 	{
 		if (state.lastObsFrame >= 0)
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last observation, %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
+			LOG(LTrackingFilter, LTrace, "    Integrating sample %fms ahead of last observation, %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
 				dtMS(state.lastObservation, sample->timestamp),
 				dtMS(lastSample.timestamp, sample->timestamp),
 				dtMS(filterTime, sample->timestamp),
@@ -257,7 +257,7 @@ static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, Tracker
 		}
 		else
 		{
-			LOG(LTrackingFilter, LDebug, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
+			LOG(LTrackingFilter, LTrace, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion!",
 				dtMS(lastSample.timestamp, sample->timestamp),
 				dtMS(filterTime, sample->timestamp),
 				dtMS(inertial.fusion.time, sample->timestamp));
@@ -422,6 +422,7 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 	}
 
 	// Re-base/correct integration/fusion of fused/raw samples
+	LOG(LTrackingIMU, LDebug, "Re-basing IMU Integration!");
 	inertial.fusion.time = time;
 	inertial.fusion.quat = state.state.getCombinedQuaternion();
 	inertial.fusion.positionalVelocity = state.state.velocity();

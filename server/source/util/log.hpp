@@ -55,6 +55,7 @@ enum LogCategory {
 			LTrackingMatch,
 			LTrackingOpt,
 			LTrackingFilter,
+			LTrackingIMU,
 	// Realtime communications, mostly for debugging:
 	LStreaming,
 		LTimesync,

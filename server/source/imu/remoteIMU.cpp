@@ -8,8 +8,8 @@
 class RemoteIMU : public IMUDevice
 {
 public:
-	RemoteIMU(int device, bool hasMag = false, bool isFused = false)
-		: IMUDevice(hasMag, isFused, IMU_DRIVER_REMOTE, 0, device), sampleCount(0)
+	RemoteIMU(std::string path, bool hasMag = false, bool isFused = false)
+		: IMUDevice(IMUIdent{ IMU_DRIVER_REMOTE, path }, hasMag, isFused), sampleCount(0)
 	{}
 
 	~RemoteIMU() = default;
@@ -75,17 +75,18 @@ bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &provi
 	return true;
 }
 
-std::shared_ptr<IMUDevice> registerRemoteIMU(int deviceID)
+std::shared_ptr<IMUDevice> registerRemoteIMU(std::string path)
 {
 	auto remote = remoteIMUSingleton;
 	if (!remote) return nullptr;
 	auto remoteIMUIt = std::find_if(remote->devices.begin(), remote->devices.end(),
-		[&](const auto &imu) { return imu->device == deviceID; });
+		[&](const auto &imu) { return imu->id.path().compare(path) == 0; });
 	if (remoteIMUIt != remote->devices.end())
 		return std::static_pointer_cast<IMUDevice>(*remoteIMUIt);
-	auto remoteIMU = std::make_shared<RemoteIMU>(deviceID);
-	remote->devices.push_back(remoteIMU);
-	return remoteIMU;
+	auto imu = std::make_shared<RemoteIMU>(path);
+	imu->tracker = getIMUTracker(imu->id);
+	remote->devices.push_back(imu);
+	return imu;
 }
 
 IMUDeviceProvider *getRemoteIMUProvider()

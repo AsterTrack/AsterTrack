@@ -68,8 +68,8 @@ public:
 	SLIMEVR_MCU_TYPE MCU;
 	SLIMEVR_TRACKER_STATUS status;
 
-	AsterTrackTracker(int provider, int device)
-		: IMUDevice(false, true, IMU_DRIVER_ASTERTRACK, provider, device)
+	AsterTrackTracker(std::string serial)
+		: IMUDevice(IMUIdent{ IMU_DRIVER_ASTERTRACK, serial }, false, true)
 	{}
 
 	~AsterTrackTracker() = default;
@@ -158,10 +158,12 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updatedDevices, int &chang
 				devices.resize(tracker_id+1);
 			if (!devices[tracker_id])
 			{
-				// TODO: Use receiver and tracker serial numbers
-				devices[tracker_id] = std::make_shared<AsterTrackTracker>(-1, tracker_id);
-				devices[tracker_id]->hasMag = false;
-				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
+				// TODO: Use tracker serial number
+				std::string serial = asprintf_s("IMU %d", tracker_id);
+				auto imu = std::make_shared<AsterTrackTracker>(serial);
+				imu->tracker = getIMUTracker(imu->id);
+				LOG(LIO, LInfo, "    Registered new tracker %d (%s)!", tracker_id, imu->id.serial().c_str());
+				devices[tracker_id] = std::move(imu);
 				changedDevices++;
 			}
 			AsterTrackTracker &tracker = *static_cast<AsterTrackTracker*>(devices[tracker_id].get());

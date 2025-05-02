@@ -120,6 +120,7 @@ bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
 void ServerStoreCameraCalib(ServerState &state);
 void ServerStoreTargetCalib(ServerState &state);
+void ServerStoreIMUConfig(ServerState &state);
 void ServerStoreConfiguration(ServerState &state);
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);

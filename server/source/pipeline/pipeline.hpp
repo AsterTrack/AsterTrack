@@ -266,15 +266,19 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
 
 /**
- * Handle IMU Association to a tracker
+ * Handle association of IMU and tracked markers/targets
  */
 
-void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID);
+/* Connect the IMU to a tracked target using an existing target association */
+bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 
-void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker);
+/* Connect the IMU to a tracked marker IF the marker matches an existing marker association */
+bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker);
 
+/* Clear all associations of the given IMU */
 void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 
+/* Clear all associations of the given tracker */
 void DisassociateIMU(PipelineState &pipeline, int trackerID);
 
 

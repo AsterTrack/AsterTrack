@@ -82,7 +82,9 @@ static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
 	vrpn_Tracker_AsterTrack *tracker = (vrpn_Tracker_AsterTrack*)data;
 
 	if (!tracker->remoteIMU)
-		tracker->remoteIMU = registerRemoteIMU(tracker->id);
+		tracker->remoteIMU = registerRemoteIMU(tracker->path);
+	if (tracker->remoteIMU && tracker->remoteIMU->tracker.id != tracker->id)
+		tracker->remoteIMU->tracker = IMUTracker(tracker->id);
 	if (!tracker->remoteIMU)
 	{
 		LOG(LIO, LWarn, "Tracker %s (%d) is dropping a raw IMU sample!", tracker->path.c_str(), tracker->id);
@@ -117,7 +119,9 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 	vrpn_Tracker_AsterTrack *tracker = (vrpn_Tracker_AsterTrack*)data;
 
 	if (!tracker->remoteIMU)
-		tracker->remoteIMU = registerRemoteIMU(tracker->id);
+		tracker->remoteIMU = registerRemoteIMU(tracker->path);
+	if (tracker->remoteIMU && tracker->remoteIMU->tracker.id != tracker->id)
+		tracker->remoteIMU->tracker = IMUTracker(tracker->id);
 	if (!tracker->remoteIMU)
 	{
 		LOG(LIO, LWarn, "Tracker %s (%d) is dropping a fused IMU sample!", tracker->path.c_str(), tracker->id);

@@ -65,8 +65,8 @@ public:
 
 	~SlimeVRTracker() = default;
 
-	SlimeVRTracker(int provider, int device)
-		: IMUDevice(false, true, IMU_DRIVER_SLIMEVR, provider, device)
+	SlimeVRTracker(std::string serial)
+		: IMUDevice(IMUIdent{ IMU_DRIVER_SLIMEVR, serial }, false, true)
 	{}
 };
 
@@ -131,10 +131,12 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 				devices.resize(tracker_id+1);
 			if (!devices[tracker_id])
 			{
-				// TODO: Use receiver and tracker serial numbers
-				devices[tracker_id] = std::make_shared<SlimeVRTracker>(-1, tracker_id);
-				devices[tracker_id]->hasMag = false;
-				LOG(LIO, LInfo, "    Registered new tracker %d!", tracker_id);
+				// TODO: Use tracker serial number
+				std::string serial = asprintf_s("IMU %d", tracker_id);
+				auto imu = std::make_shared<SlimeVRTracker>(serial);
+				imu->tracker = getIMUTracker(imu->id);
+				LOG(LIO, LInfo, "    Registered new tracker %d (%s)!", tracker_id, imu->id.serial().c_str());
+				devices[tracker_id] = std::move(imu);
 				changedDevices++;
 			}
 			SlimeVRTracker &tracker = *static_cast<SlimeVRTracker*>(devices[tracker_id].get());

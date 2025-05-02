@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/record.hpp"
 #include "blob/parameters.hpp"
+#include "imu/imu.hpp"
 
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
@@ -140,6 +141,9 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 
 void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibration3D> &targetCalibs);
 void storeTargetCalibrations(const std::string &path, const std::vector<TargetCalibration3D> &targetCalibs);
+
+void parseIMUConfigs(const std::string &path, std::vector<IMUConfig> &configs);
+void storeIMUConfigs(const std::string &path, const std::vector<IMUConfig> &configs);
 
 std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
 void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);

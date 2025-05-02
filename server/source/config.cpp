@@ -499,6 +499,118 @@ void storeTargetCalibrations(const std::string &path, const std::vector<TargetCa
 	fs.close();
 }
 
+static IMUTracker readIMUTracker(json &jsIMU)
+{
+	IMUTracker tracker = {};
+	tracker.id = jsIMU.contains("trackerID")? jsIMU["trackerID"].get<int>() : 0;
+	tracker.size = jsIMU.contains("markerSize")? jsIMU["markerSize"].get<float>() : NAN;
+	if (jsIMU.contains("conversion"))
+	{
+		int i = 0;
+		auto arr = tracker.conversion.array();
+		for (auto &val : jsIMU["conversion"])
+			arr(i++) = val.is_number_integer()? val.get<uint8_t>() : 0;
+	}
+	if (jsIMU.contains("orientation"))
+	{
+		int i = 0;
+		auto arr = tracker.orientation.coeffs().array();
+		for (auto &val : jsIMU["orientation"])
+			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
+	}
+	if (jsIMU.contains("offset"))
+	{
+		int i = 0;
+		auto arr = tracker.offset.array();
+		for (auto &val : jsIMU["offset"])
+			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
+	}
+	return tracker;
+}
+
+static void writeIMUTracker(const IMUTracker &tracker, json &jsIMU)
+{
+	if (tracker.id != 0) jsIMU["trackerID"] = tracker.id;
+	else if (tracker.isMarker()) jsIMU["markerSize"] = tracker.size;
+	{
+		auto arr = tracker.conversion.matrix().array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["conversion"].push_back(arr(i));
+	}
+	if (!tracker.orientation.coeffs().hasNaN())
+	{
+		auto arr = tracker.orientation.coeffs().array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["orientation"].push_back(arr(i));
+	}
+	if (!tracker.offset.hasNaN())
+	{
+		auto arr = tracker.offset.array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["offset"].push_back(arr(i));
+	}
+}
+
+void parseIMUConfigs(const std::string &path, std::vector<IMUConfig> &configs)
+{
+	// Read JSON file
+	std::ifstream fs(path);
+	if (!fs.is_open()) return;
+	json file;
+	fs >> file;
+	fs.close();
+
+	unsigned int frameOffset;
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{
+		if (!file.contains("imuConfigs")) return;
+		if (!file["imuConfigs"].is_array()) return;
+		auto &jsIMUs = file["imuConfigs"];
+
+		for (auto &jsIMU : jsIMUs)
+		{
+			IMUConfig config;
+			config.id.driver = (IMUDriver)jsIMU["driver"].get<int>();
+			config.id.string = jsIMU["id"].get<std::string>();
+			config.tracker = readIMUTracker(jsIMU);
+			configs.push_back(std::move(config));
+		}
+	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		return;
+	}
+#endif
+}
+
+void storeIMUConfigs(const std::string &path, const std::vector<IMUConfig> &configs)
+{
+	json file;
+
+	file["imuConfigs"] = json::array();
+	auto &jsIMUs = file["imuConfigs"];
+
+	for (const IMUConfig &imu : configs)
+	{
+		json jsIMU;
+		jsIMU["driver"] = imu.id.driver;
+		jsIMU["id"] = imu.id.string;
+		writeIMUTracker(imu.tracker, jsIMU);
+		jsIMUs.push_back(std::move(jsIMU));
+	}
+
+	// Write JSON file
+	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
+	std::ofstream fs(path);
+	if (!fs.is_open()) return;
+	fs << std::setfill('\t') << std::setw(1) << file;
+	fs.close();
+}
+
 std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
@@ -648,12 +760,12 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 		for (auto &jsIMU : jsIMUs)
 		{
 			auto imu = std::make_shared<IMURecord>();
-			imu->trackerID = jsIMU["trackerID"].get<int>();
-			imu->hasMag = jsIMU.contains("hasMag")? jsIMU["hasMag"].get<bool>() : false;
-			imu->isFused = jsIMU.contains("isFused")? jsIMU["isFused"].get<bool>() : true;
-			imu->driver = (IMUDriver)jsIMU["driver"].get<int>();
-			imu->provider = jsIMU["provider"].get<int>();
-			imu->device = jsIMU["device"].get<int>();
+			imu->id.driver = (IMUDriver)jsIMU["driver"].get<int>();
+			imu->id.string = jsIMU.contains("id")? jsIMU["id"].get<std::string>()
+				: (jsIMU.contains("device")? asprintf_s("IMU %d", jsIMU["device"].get<int>()) : "Unknown IMU");
+			imu->tracker = readIMUTracker(jsIMU);
+			imu->hasMag = jsIMU["hasMag"].get<bool>();
+			imu->isFused = jsIMU["isFused"].get<bool>();
 
 			auto &jsSamples = jsIMU["samples"];
 			if (imu->isFused)
@@ -852,12 +964,11 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 			}
 		}
 
-		jsIMU["trackerID"] = imu->trackerID;
+		jsIMU["driver"] = imu->id.driver;
+		jsIMU["id"] = imu->id.string;
+		writeIMUTracker(imu->tracker, jsIMU);
 		jsIMU["hasMag"] = imu->hasMag;
 		jsIMU["isFused"] = imu->isFused;
-		jsIMU["driver"] = imu->driver;
-		jsIMU["provider"] = imu->provider;
-		jsIMU["device"] = imu->device;
 
 		jsIMUs.push_back(std::move(jsIMU));
 	}

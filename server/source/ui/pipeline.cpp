@@ -126,10 +126,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		auto getIMULabel = [](const IMU &imu)
 		{
-			if (imu.device > 1000)
-				return asprintf_s("IMU %08x (%d) - %s", imu.device, imu.index, imu.isFused? "fused" : "raw");
-			else
-				return asprintf_s("IMU %d (%d) - %s", imu.device, imu.index, imu.isFused? "fused" : "raw");
+			return asprintf_s("IMU %d (%s) - %s", imu.index, imu.id.string.c_str(), imu.isFused? "fused" : "raw");
 		};
 		std::string NoIMULabel = "No IMU";
 
@@ -139,6 +136,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		if (visFrame)
 		{
 			frameNum = visFrame.frameIt.index();
+			int imuUpdateWait = 0;
 			auto &tracking = visFrame.frameIt->get()->tracking;
 			for (auto &tracked : tracking.targets)
 			{
@@ -150,11 +148,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					assert(target != pipeline.tracking.targetCalibrations.end());
 					t.calib = &*target;
 					t.imu = "No IMU";
+					imuUpdateWait = 10;
 				}
 				t.lastFrame = frameNum;
 			}
 
-			std::unique_lock pipeline_lock(pipeline.pipelineLock, std::try_to_lock);
+			std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(imuUpdateWait));
 			if (pipeline_lock.owns_lock())
 			{
 				for (auto &tracker : pipeline.tracking.trackedTargets)
@@ -213,12 +212,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				for (auto &imu : pipeline.record.imus)
 				{
 					ImGui::PushID(imu->index);
-					if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->trackerID == tracked.first))
+					if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->tracker.id == tracked.first))
 					{
-						imu->trackerID = tracked.first;
+						if (imu->tracker.id != tracked.first)
+						{ // Initialise new association
+							DisassociateIMU(pipeline, imu);
+							imu->tracker = IMUTracker(tracked.first);
+						}
 						tracked.second.imu = getIMULabel(*imu);
-						DisassociateIMU(pipeline, imu);
-						AssociateIMU(pipeline, imu, tracked.first);
+						ConnectIMU(pipeline, imu);
 						changed = true;
 					}
 					ImGui::PopID();

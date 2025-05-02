@@ -14,12 +14,15 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "comm/timesync.hpp"
 
+#include "util/synchronised.hpp"
+
+
 enum IMUDriver : uint32_t
-{
+{ // NOTE: These values should not changed as they are written to store/imu_config.json
 	IMU_DRIVER_RECORD = 0,
-	IMU_DRIVER_ASTERTRACK,
-	IMU_DRIVER_SLIMEVR,
-	IMU_DRIVER_REMOTE
+	IMU_DRIVER_ASTERTRACK = 1,
+	IMU_DRIVER_SLIMEVR = 2,
+	IMU_DRIVER_REMOTE = 3
 };
 
 enum IMUDeviceProviderStatus
@@ -28,6 +31,9 @@ enum IMUDeviceProviderStatus
 	IMU_STATUS_DISCONNECTED,
 };
 
+/**
+ * An abstract IMU device class that driver-specific IMU devices derive from
+ */
 class IMUDevice : public IMU
 {
 public:
@@ -40,15 +46,19 @@ public:
 
 	virtual ~IMUDevice() = default;
 
-	// TODO: Methods to setup passthrough to IO, e.g. buttons to VRPN
-
 protected:
-	IMUDevice(bool hasMag, bool isFused)
-		: IMU(hasMag, isFused) {}
-	IMUDevice(bool hasMag, bool isFused, IMUDriver driver, int provider, int device)
-		: IMU(hasMag, isFused, driver, provider, device) {}
+	IMUDevice(IMUIdent id, bool hasMag, bool isFused)
+		: IMU(id, hasMag, isFused) {}
+	IMUDevice(IMUIdent id, bool hasMag, bool isFused, IMUTracker tracker)
+		: IMU(id, hasMag, isFused, tracker) {}
 };
 
+// TODO: Add separate class to derive from to passthrough IO, e.g. buttons
+
+/**
+ * An abstract IMU device provider class that driver-specific IMU providers derive from
+ * May represent a static driver singleton or a concrete hardware device providing access to one or more IMU devices
+ */
 class IMUDeviceProvider
 {
 public:
@@ -71,11 +81,29 @@ protected:
 	IMUDeviceProvider(IMUDriver driver) : driver(driver) {}
 };
 
-bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
-bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
-bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+static Synchronised<std::vector<IMUConfig>> imuConfigs;
 
-std::shared_ptr<IMUDevice> registerRemoteIMU(int deviceID);
-IMUDeviceProvider *getRemoteIMUProvider();
+static IMUTracker getIMUTracker(const IMUIdent &id)
+{
+	for (const IMUConfig &config : *imuConfigs.contextualRLock())
+		if (id == config.id) return config.tracker;
+	return IMUTracker();
+}
+
+/* Driver-specific implementations to detect/initialise drivers and their IMU device providers */
+
+/* Driver for AsterTrack IMU Hardware - essentially SlimeVR Firmware modified to support timesync and as such timestamps. */
+bool detectAsterTrackReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+
+/* Driver for standard SlimeVR IMU Hardware. Of little practical use as they do not support accurate timestamps. */
+bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+
+/**
+ * Remote IMU Driver for IMUs provided by any IO subsystem that does NOT require proactively connecting to
+ * E.g. An IMU that gets connected automatically while outputting the tracking stream of a tracker
+ */
+bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
+std::shared_ptr<IMUDevice> registerRemoteIMU(std::string path);
+IMUDeviceProvider *getRemoteIMUProvider(); // Remote IMU Driver Singleton
 
 #endif // IMU_DEVICE_H

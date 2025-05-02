@@ -45,10 +45,8 @@ void InitTrackingPipeline(PipelineState &pipeline)
 	pipeline.tracking.orphanedIMUs.clear();
 	for (auto &imu : pipeline.record.imus)
 	{
-		if (imu->trackerID == 0)
+		if (!imu->tracker || !ConnectIMU(pipeline, imu))
 			pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
-		else
-			AssociateIMU(pipeline, imu, imu->trackerID);
 	}
 }
 
@@ -858,58 +856,63 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 }
 
-void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID)
+bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 {
+	if (imu->tracker.id == 0) return false;
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
-		if (tracker.target.calib->id != trackerID) continue;
-		if (tracker.inertial) tracker.inertial.imu->trackerID = 0;
-		imu->trackerID = trackerID;
+		if (tracker.target.calib->id != imu->tracker.id) continue;
 		tracker.inertial = TrackerInertial(imu); // new shared_ptr
-		// TODO: Load calibration
-		tracker.inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
-		tracker.state.lastIMUSample = -1;
 		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
-		return;
+		tracker.state.lastIMUSample = -1;
+		return true;
 	}
 	for (auto &tracker : pipeline.tracking.dormantTargets)
 	{
-		if (tracker.target.calib->id != trackerID) continue;
-		if (tracker.inertial) tracker.inertial.imu->trackerID = 0;
-		imu->trackerID = trackerID;
+		if (tracker.target.calib->id != imu->tracker.id) continue;
 		tracker.inertial = TrackerInertial(imu); // new shared_ptr
-		// TODO: Load calibration
-		tracker.inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
 		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
-		return;
+		return true;
 	}
+	return false;
 }
 
-void AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker)
+bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker)
 {
+	if (!imu->tracker.isMarker()) return false;
+
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-	if (tracker.inertial) tracker.inertial.imu->trackerID = 0;
-	// TODO: Properly mark IMU as being associated to a marker
-	//imu->trackerID = tracker.marker.ID;
-	imu->trackerID = -1;
+	// TODO: Properly implement automatic association of IMUs to markers 
+
+	// Check marker against existing association
+	if (tracker.inertial.imu)
+		return false; // Don't handle here
+	if (std::abs(tracker.marker.size/imu->tracker.size - 1) < 0.1f)
+		return false; // Don't handle here
+
 	tracker.inertial = TrackerInertial(imu); // new shared_ptr
-	// TODO: Load calibration
-	tracker.inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
 	tracker.state.lastIMUSample = -1;
 	std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
+	return true;
 }
 
 void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	
+	// Disconnect
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};
 	for (auto &tracker : pipeline.tracking.dormantTargets)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};
 	for (auto &tracker : pipeline.tracking.trackedMarkers)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};
-	imu->trackerID = 0;
+
+	// Clear association
+	imu->tracker = IMUTracker();
+
+	// Ensure it's orphaned
 	if (std::find_if(pipeline.tracking.orphanedIMUs.begin(), pipeline.tracking.orphanedIMUs.end(),
 		[&](const auto &t){ return t.inertial.imu == imu; }) != pipeline.tracking.orphanedIMUs.end())
 		return;
@@ -919,22 +922,29 @@ void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 void DisassociateIMU(PipelineState &pipeline, int trackerID)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::shared_ptr<IMU> imu = nullptr;
+	// Disconnect
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
 		if (tracker.target.calib->id != trackerID) continue;
-		if (!tracker.inertial) return;
-		tracker.inertial.imu->trackerID = 0;
-		pipeline.tracking.orphanedIMUs.emplace_back(tracker.inertial.imu, pipeline.params.track);
+		imu = std::move(tracker.inertial.imu);
 		tracker.inertial = {};
-		return;
+		tracker.state.lastIMUSample = -1;
+		break;
 	}
 	for (auto &tracker : pipeline.tracking.dormantTargets)
 	{
 		if (tracker.target.calib->id != trackerID) continue;
-		if (!tracker.inertial) return;
-		tracker.inertial.imu->trackerID = 0;
-		pipeline.tracking.orphanedIMUs.emplace_back(tracker.inertial, pipeline.params.track);
+		imu = std::move(tracker.inertial.imu);
 		tracker.inertial = {};
-		return;
+		break;
 	}
+	if (imu)
+	{
+		// Clear association
+		imu->tracker = IMUTracker();
+		// Ensure it's orphaned
+		pipeline.tracking.orphanedIMUs.emplace_back(std::move(imu), pipeline.params.track);
+	}
+
 }

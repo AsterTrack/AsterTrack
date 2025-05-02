@@ -83,7 +83,10 @@ bool ServerInit(ServerState &state)
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
 	parseTargetCalibrations("store/target_calib.json", state.pipeline.tracking.targetCalibrations);
-	
+
+	// Load IMU configs & calibrations
+	parseIMUConfigs("store/imu_config.json", *imuConfigs.contextualLock());
+
 	{
 		// Debug calibration
 		ScopedLogLevel scopedLogLevelInfo(LInfo);
@@ -159,6 +162,32 @@ void ServerStoreTargetCalib(ServerState &state)
 
 	// Write both as current calibration
 	storeTargetCalibrations("store/target_calib.json", targetCalibrations);
+}
+
+void ServerStoreIMUConfig(ServerState &state)
+{
+	// Update list of IMU configs with current set of IMUs
+	auto configs_lock = imuConfigs.contextualLock();
+	auto &configs = *configs_lock;
+	for (auto &imu : state.pipeline.record.imus)
+	{
+		int i;
+		for (i = 0; i < configs.size(); i++)
+		{
+			if (configs[i].id == imu->id)
+			{ // Found calibration entry, update calibration data
+				configs[i].tracker = imu->tracker;
+				break;
+			}
+		}
+		if (i >= configs.size())
+		{ // Add as new IMU
+			configs.emplace_back(imu->id, imu->tracker);
+		}
+	}
+
+	// Write both as current calibration
+	storeIMUConfigs("store/imu_config.json", configs);
 }
 
 void ServerStoreConfiguration(ServerState &state)
@@ -1325,6 +1354,9 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	for (auto &storedIMU : state.record.imus)
 	{
 		auto imu = std::make_shared<IMURecord>(*storedIMU);
+		auto tracker = getIMUTracker(imu->id);
+		if (!imu->tracker || imu->tracker.id == tracker.id)
+			imu->tracker = tracker;
 		imu->index = state.pipeline.record.imus.size();
 		state.pipeline.record.imus.push_back(std::move(imu));
 		// Don't setup samples, Start Streaming deletes prior frame and imu records
@@ -1736,6 +1768,9 @@ void StopStreaming(ServerState &state)
 	SignalServerEvent(EVT_STOP_STREAMING);
 
 	LOG(LDefault, LInfo, "Stopped stream!\n");
+
+	// TODO: Move IMU Config storage to on-demand callback?
+	ServerStoreIMUConfig(state);
 }
 
 // ----------------------------------------------------------------------------

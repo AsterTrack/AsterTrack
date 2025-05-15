@@ -84,7 +84,8 @@ struct TargetFilteringParameters
 	float stdDevError = 1.0f * PixelSize;
 	float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
 	float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
-	float sigmaInitState = 5, sigmaInitChange = 1000;
+	float sigmaInitState = 50000, sigmaInitChange = 10000000;
+	float detectSigma = 1000000, trackSigma = 1;
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 
@@ -127,15 +128,13 @@ struct TargetDetectionParameters
 		int sec = 3;
 		int total = 10;
 	} minObservations;
-	// For trackTarget2D
-	float initialStdDev = 0.01f;
 };
 
 struct TargetTrackingParameters
 {
 	// Prediction
 	float minUncertainty3D = 0.01f;
-	float addUncertaintyPx = 30.0f*PixelSize;
+	bool useIMUPrediction = true;
 	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
 	float uncertaintySigma = 3;
 	// Marker Matching

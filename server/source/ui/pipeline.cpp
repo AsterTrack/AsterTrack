@@ -265,7 +265,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			{
 				debugVis.needsUpdate = false;
 				debugVis.targetMatch2D = trackTarget2D(target,
-					tracked->posePredicted, tracked->covPredicted.diagonal().head<3>().cwiseSqrt(),
+					tracked->posePredicted, tracked->covPredicted,
 					pipeline.getCalibs(), pipeline.cameras.size(),
 					points2D, properties, relevantPoints2D, pipeline.params.track, visState.tracking.retrackData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;

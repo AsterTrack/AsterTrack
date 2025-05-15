@@ -34,6 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "device/parsing.hpp" // decompressCameraImageRecord
 #include "device/tracking_camera.hpp"
 #include "device/tracking_controller.hpp"
+#include "calib/opt/covariance.hpp"
 
 #include "util/eigenalg.hpp"
 #include "util/debugging.hpp" // For checking debugging state
@@ -1115,10 +1116,12 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 				if (visState.tracking.showSearchBounds)
 				{ // Visualise search bounds
-					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackedTarget.poseObserved;
-					Bounds2f bounds = projectBounds(mvp, target->bounds);
-					bounds.extendBy({ pipeline.params.track.addUncertaintyPx, pipeline.params.track.addUncertaintyPx });
-					visualiseBounds2D(bounds);
+					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackedTarget.covPredicted.topLeftCorner<3,3>(),
+						pipeline.params.track.uncertaintySigma, trackedTarget.posePredicted.rotation());
+					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
+					auto bounds = target->bounds.extendedBy(uncertainty);
+					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackedTarget.posePredicted;
+					visualiseBounds2D(projectBounds(mvp, bounds));
 				}
 
 				Color colVisible = Color{ 0.0, 0.8, 0.2, 0.3f };

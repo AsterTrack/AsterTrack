@@ -204,8 +204,18 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 
+		// Potentially overwrite numeric covariance with default initial covariance
+		targetMatch2D.covariance = track.filter.getCovariance<float>() * track.filter.detectSigma;
+
+		{
+			auto stdDev = targetMatch2D.covariance.diagonal().cwiseSqrt();
+			Eigen::Vector3f devPos = stdDev.head<3>()*1000, devRot = stdDev.tail<3>()*1000;
+			LOGC(LDebug, "            Has stdDev of (%.2f,%.2f,%.2f)mm (%.2f,%.2f,%.2f) rotation!",
+				devPos.x(), devPos.y(), devPos.z(), devRot.x(), devRot.y(), devRot.z());
+		}
+
 		// Properly track to expand to other cameras to acquire more certainty
-		targetMatch2D = trackTarget2D(target3D, targetMatch2D.pose, Eigen::Vector3f::Constant(params.initialStdDev),
+		targetMatch2D = trackTarget2D(target3D, targetMatch2D.pose, targetMatch2D.covariance,
 			calibs, cameraCount, points2D, properties, relevantPoints2D, track, trackData);
 
 		if (bestMatch.error.mean/bestMatch.error.samples > targetMatch2D.error.mean/targetMatch2D.error.samples)

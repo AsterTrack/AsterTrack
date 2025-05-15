@@ -175,8 +175,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Prediction");
 		modified |= ScalarProperty<float>("Min 3D Uncertainty", "mm", &params.minUncertainty3D, &standard.minUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");
-		modified |= ScalarProperty<float>("Add. 2D Uncertainty", "px", &params.addUncertaintyPx, &standard.addUncertaintyPx, 0, 200, 1.0f, PixelFactor, "%.1f");
-		modified |= ScalarProperty<float>("Uncertainty Sigma", "o", &params.uncertaintySigma, &standard.uncertaintySigma, 0, 10, 0.1f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Uncertainty Sigma", "o", &params.uncertaintySigma, &standard.uncertaintySigma, 0, 100, 0.1f, 1, "%.1f");
 		EndSection();
 
 		BeginSection("2D Point Matching");
@@ -235,6 +234,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.stdDevAccel, &standard.filter.stdDevAccel, 0, 1, 0.002f, 180, "%.4f");
 		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Sigma Detect", "x", &params.filter.detectSigma, &standard.filter.detectSigma, 0, 10000000, 1.0f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
 		filterMod |= ScalarProperty<float>("Sigma Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
 		filterMod |= ScalarProperty<float>("Sigma Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");

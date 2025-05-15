@@ -41,16 +41,40 @@ SOFTWARE.
  * General algorithms using Eigen
  */
 
+template<typename Scalar, int Transform>
+std::array<Eigen::Matrix<Scalar,3,1>, 8> transformBounds(const Eigen::Transform<Scalar,3,Transform> &mvp, Bounds3<Scalar> const &bounds)
+{
+	// Optimized bound transformation, based around the fact that each bound side has four same coordinates (AABB in target-space)
+
+	// Project all needed coordinates separately
+	std::array<Eigen::Matrix<Scalar,4,1>, 7> cols;
+	cols[0] = mvp.matrix().col(0) * bounds.minX;
+	cols[1] = mvp.matrix().col(1) * bounds.minY;
+	cols[2] = mvp.matrix().col(2) * bounds.minZ;
+	cols[3] = mvp.matrix().col(0) * bounds.maxX;
+	cols[4] = mvp.matrix().col(1) * bounds.maxY;
+	cols[5] = mvp.matrix().col(2) * bounds.maxZ;
+	cols[6] = mvp.matrix().col(3);
+
+	std::array<Eigen::Matrix<Scalar,3,1>, 8> corners;
+	corners[0] = (cols[6]+cols[0]+cols[1]+cols[2]).hnormalized();
+	corners[1] = (cols[6]+cols[0]+cols[1]+cols[5]).hnormalized();
+	corners[2] = (cols[6]+cols[0]+cols[4]+cols[5]).hnormalized();
+	corners[3] = (cols[6]+cols[0]+cols[4]+cols[2]).hnormalized();
+	corners[4] = (cols[6]+cols[3]+cols[1]+cols[2]).hnormalized();
+	corners[5] = (cols[6]+cols[3]+cols[1]+cols[5]).hnormalized();
+	corners[6] = (cols[6]+cols[3]+cols[4]+cols[5]).hnormalized();
+	corners[7] = (cols[6]+cols[3]+cols[4]+cols[2]).hnormalized();
+
+	return corners;
+}
 
 /**
  * Project 3D target bounds into 2D bounds within a camera view using its MVP matrix
  */
-template<typename Scalar>
-Bounds2<Scalar> projectBounds(const Eigen::Transform<Scalar,3,Eigen::Projective> &mvp, Bounds3<Scalar> const &bounds)
+template<typename Scalar, int Transform>
+Bounds2<Scalar> projectBounds(const Eigen::Transform<Scalar,3,Transform> &mvp, Bounds3<Scalar> const &bounds)
 {
-	// Optimized bound projection, based around the fact that each bound side has four same coordinates (AABB in target-space)
-	// Doesn't account for edges crossing the camera-plane!
-	// So if bounding box is partly behind, partly in front of camera, results might be smaller than expected
 	Bounds2<Scalar> bounds2D;
 
 	if (bounds.includes((mvp * Eigen::Matrix<Scalar,4,1>(0,0,0,1)).hnormalized()))
@@ -60,37 +84,14 @@ Bounds2<Scalar> projectBounds(const Eigen::Transform<Scalar,3,Eigen::Projective>
 		return bounds2D;
 	}
 
-	// Extract relevant rows
-	Eigen::Matrix<Scalar,3,4> m;
-	m.row(0) = mvp.matrix().row(0);
-	m.row(1) = mvp.matrix().row(1);
-	m.row(2) = mvp.matrix().row(3);
-
-	// Project all needed coordinates separately
-	std::array<Eigen::Matrix<Scalar,3,1>, 7> cols;
-	cols[0] = m.col(0) * bounds.minX;
-	cols[1] = m.col(1) * bounds.minY;
-	cols[2] = m.col(2) * bounds.minZ;
-	cols[3] = m.col(0) * bounds.maxX;
-	cols[4] = m.col(1) * bounds.maxY;
-	cols[5] = m.col(2) * bounds.maxZ;
-	cols[6] = m.col(3);
-
-	std::array<Eigen::Matrix<Scalar,3,1>, 8> corners;
-	corners[0] = cols[6]+cols[0]+cols[1]+cols[2];
-	corners[1] = cols[6]+cols[3]+cols[1]+cols[2];
-	corners[2] = cols[6]+cols[0]+cols[4]+cols[2];
-	corners[3] = cols[6]+cols[0]+cols[1]+cols[5];
-	corners[4] = cols[6]+cols[0]+cols[4]+cols[5];
-	corners[5] = cols[6]+cols[3]+cols[4]+cols[2];
-	corners[6] = cols[6]+cols[3]+cols[1]+cols[5];
-	corners[7] = cols[6]+cols[3]+cols[4]+cols[5];
-
-	// Assemble projected corners and find bound
+	// Project as corners and merge into 2D bound
+	auto corners = transformBounds(mvp, bounds);
 	for (int i = 0; i < 8; i++)
 	{
+		// Doesn't account for edges crossing the camera-plane!
+		// So if bounding box is partly behind, partly in front of camera, results might be smaller than expected
 		if (corners[i].z() > 0)
-			bounds2D.include(corners[i].hnormalized());
+			bounds2D.include(corners[i].template head<2>());
 	}
 	return bounds2D;
 }

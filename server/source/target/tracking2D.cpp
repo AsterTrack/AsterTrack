@@ -729,7 +729,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * Redetect the target in the observed 2D points using a predicted pose
  * Iteratively matches fast, then slow if needed, optimises, matches more, and optimises
  */
-TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, Eigen::Vector3f stdDev,
+TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -746,9 +746,10 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	int relevantCams = points2D.size();
 
 	// Determine 3D bounds to look in
-	Bounds3f targetBounds = target.bounds;
-	Eigen::Vector3f uncertainty = Eigen::Vector3f::Constant(params.minUncertainty3D).cwiseMax(stdDev*params.uncertaintySigma);
-	targetBounds.extendBy(targetMatch2D.pose.rotation().transpose().cwiseAbs() * uncertainty);
+	Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(covariance.topLeftCorner<3,3>(),
+		params.uncertaintySigma, prediction.rotation());
+	uncertainty += Eigen::Vector3f::Constant(params.minUncertainty3D);
+	Bounds3f targetBounds = target.bounds.extendedBy(uncertainty);
 
 	// Reused allocation of target point reprojections
 	thread_local std::vector<std::vector<Eigen::Vector2f>> projected2D;
@@ -782,7 +783,6 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		// Project target bounds and relevant target points into camera view
 		Eigen::Projective3f mvp = calib.camera.cast<float>() * targetMatch2D.pose;
 		Bounds2f projectedBounds = projectBounds(mvp, targetBounds);
-		projectedBounds.extendBy({ params.addUncertaintyPx, params.addUncertaintyPx });
 
 		// Filter observed points by target bounds
 		for (int p : *relevantPoints2D[c])

@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imgui/imgui_onDemand.hpp"
 
 #include "calib/opt/covariance.hpp"
+#include "util/eigenalg.hpp"
 
 struct wl_display;
 struct wl_resource;
@@ -635,6 +636,35 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			visualisePose(tracker.poseFiltered, colFiltered, 0.2f, 4.0f);
 		}
 
+		if (visState.tracking.showSearchBounds)
+		{
+			Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(tracker.covPredicted.topLeftCorner<3,3>(),
+				pipeline.params.track.uncertaintySigma, tracker.posePredicted.rotation());
+			uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
+			auto bounds = target->bounds.extendedBy(uncertainty);
+			auto corners = transformBounds(tracker.posePredicted, bounds);
+
+			Color8 col = Color{ 1.0, 0.1, 0.1, 1.0 };
+			std::vector<std::pair<VisPoint,VisPoint>> edges = {
+				// Face cols[0]
+				{ { corners[0], col }, { corners[1], col } },
+				{ { corners[1], col }, { corners[2], col } },
+				{ { corners[2], col }, { corners[3], col } },
+				{ { corners[3], col }, { corners[0], col } },
+				// Face cols[3]
+				{ { corners[4], col }, { corners[5], col } },
+				{ { corners[5], col }, { corners[6], col } },
+				{ { corners[6], col }, { corners[7], col } },
+				{ { corners[7], col }, { corners[4], col } },
+				// "Struts"
+				{ { corners[0], col }, { corners[4], col } },
+				{ { corners[1], col }, { corners[5], col } },
+				{ { corners[2], col }, { corners[6], col } },
+				{ { corners[3], col }, { corners[7], col } }
+			};
+			visualiseLines(edges, 2);
+		}
+
 		// For covariances and trails
 		colPredicted.a = 0.4f;
 		colObserved.a = 0.4f;
@@ -706,7 +736,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
-				Eigen::Matrix3f covariance = pipeline.params.track.filter.getCovariance<float>().topLeftCorner<3,3>();
+				Eigen::Matrix3f covariance = pipeline.params.track.filter.getCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
 					tracker.poseObserved, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });

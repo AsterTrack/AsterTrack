@@ -55,11 +55,9 @@ struct TrackerState
 	{
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
-		auto &errorCov = state.errorCovariance();
-		errorCov.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
-		errorCov.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
-		errorCov.diagonal().segment<3>(6).setConstant(params.filter.stdDevPos*params.filter.sigmaInitChange);
-		errorCov.diagonal().segment<3>(9).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitChange);
+		Eigen::Matrix<double,6,6> covariance = params.filter.getCovariance<double>();
+		state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
+		state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
 	}
 };
 
@@ -200,8 +198,7 @@ struct TrackerObservation
 	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
 		predicted(pose), observed(pose), filtered(pose), time(time)
 	{
-		covObserved.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
-		covObserved.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
+		covObserved = params.filter.getCovariance<float>() * params.filter.sigmaInitState;
 		covPredicted = covFiltered = covObserved;
 	}
 };

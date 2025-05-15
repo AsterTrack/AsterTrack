@@ -83,20 +83,22 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	}
 	observation.predicted = state.state.getIsometry().cast<float>();
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	Eigen::Vector3f stdDev = observation.covPredicted.diagonal().head<3>().cwiseSqrt();
 
 	// Match target with points and optimise pose
-	target.match2D = trackTarget2D(*target.calib, observation.predicted, stdDev, calibs, cameraCount, 
-		points2D, properties, relevantPoints2D, params, target.data);
-	if (target.match2D.error.samples < params.quality.minTotalObs) return false;
+	target.match2D = trackTarget2D(*target.calib, observation.predicted, observation.covPredicted,
+		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
+	if (target.match2D.error.samples < params.minTotalObs) return false;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 	observation.observed = target.match2D.pose;
-	observation.covObserved = params.filter.getCovariance<float>();
 
-	// TODO: Get variance/covariance from optimisation via jacobian
-	// Essentially, any parameter that barely influences output error has a high variance
-	// Neatly encapsulates the degrees of freedom (and their strength) left by varying distribution of blobs
+	// Option 1: Initial values
+	observation.covObserved = params.filter.getCovariance<float>() * params.filter.trackSigma;
+	// Option 2: Full covariance numerically estimated
+	//observation.covObserved = target.match2D.covariance;
+	// But yields a bit odd results, distorts the positional covariance when I don't see why it should
+	// Option 3: Numerical covariance for position only
+	//observation.covObserved.topLeftCorner<3,3>() = fitCovarianceToSamples<3,float>(target.match2D.deviations);
 
 	// Update state
 	auto measurement = AbsolutePoseMeasurement(
@@ -116,7 +118,7 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return target.match2D.error.samples >= params.quality.minTotalObs && target.match2D.error.mean < params.quality.maxTotalError;
+	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
 }
 
 int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,

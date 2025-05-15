@@ -515,6 +515,69 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 						VisPoint{ pos+dir*accelScale, colIMUDir }
 					);
 				}
+				if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.inertial.fusion.imuVelocity.cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 0.5f, 0.1f, 0.1f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 0.5f, 0.1f, 0.1f, 1.0f } }
+					);
+				}
+				/* if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.inertial.fusion.accel.cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 0.1f, 0.5f, 0.1f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 0.1f, 0.5f, 0.1f, 1.0f } }
+					);
+				} */
+				/* if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.state.state.getCombinedQuaternion().cast<float>().conjugate() * -Eigen::Vector3f::UnitZ();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 0.1f, 0.1f, 1.0f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 0.1f, 0.1f, 1.0f, 1.0f } }
+					);
+				}
+				if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.inertial.fusion.accelLocal.cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 0.1f, 0.1f, 0.5f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 0.1f, 0.1f, 0.5f, 1.0f } }
+					);
+				} */
+				/* if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.inertial.fusion.tangentialVelocity.cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered * tracker.inertial.calibration.offset.cast<float>();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 1.0f, 1.0f, 0.1f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 1.0f, 1.0f, 0.1f, 1.0f } }
+					);
+				} */
+				/* if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.state.state.angularVelocity().cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 0.1f, 0.5f, 0.1f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 0.1f, 0.5f, 0.1f, 1.0f } }
+					);
+				}
+				if (tracker.inertial)
+				{
+					Eigen::Vector3f dir = tracker.inertial.fusion.angularVelocity.cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, Color{ 1.0f, 0.1f, 1.0f, 1.0f } },
+						VisPoint{ pos+dir*accelScale, Color{ 1.0f, 0.1f, 1.0f, 1.0f } }
+					);
+				} */
 			}
 		}
 	}

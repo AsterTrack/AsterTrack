@@ -415,7 +415,11 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFus
 		inertial.fusion.quat = inertial.fusion.quat * dQuat;
 	}
 
+	// Fused Alignment
 	// TODO: Implement automatic calibration for fused IMU
+	inertial.calibration.fused.current.quatAlt1 = inertial.calibration.fused.current.quatAlt1 * dQuat;
+	inertial.calibration.fused.current.quatAlt2 = dQuat * inertial.calibration.fused.current.quatAlt2;
+	inertial.calibration.fused.current.dQuat = inertial.calibration.fused.current.dQuat * dQuat;
 
 	inertial.fusion.accelRaw = sample.accel.cast<double>();
 	// Add gravity back in
@@ -554,7 +558,18 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 		if (calib.phase == IMU_CALIB_EXT_ALIGNMENT && !inertial.imu->isFused)
 			newSamples |= collectGyroSamples(inertial, state);
 
-		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size();
+		float dtLast = dtMS(calib.lastTime, time);
+		if (dtLast > 400)
+		{
+			if (calib.phase == IMU_CALIB_EXT_ALIGNMENT && inertial.imu->isFused)
+					newSamples |= collectFusedSamples(inertial, state.state);
+
+			// Update last state based on observation for calibration
+			calib.lastState = state.state;
+			calib.lastTime = state.time;
+		}
+
+		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size() + calib.fused.samples.size();
 		if (newSamples && calib.accel.samples.size() >= 3 && (countSamples % 5) == 0)
 			alignIMUOrientation(inertial);
 	}
@@ -562,6 +577,7 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 	{
 		calib.accel.sampling = false;
 		calib.gyro.sampling = false;
+		calib.fused.sampling = false;
 	}
 
 	// Update IMU positions
@@ -600,6 +616,7 @@ void interruptIMU(TrackerInertial &inertial)
 	inertial.calibration.accel.sampling = false;
 	inertial.calibration.gyro.sampling = false;
 	inertial.calibration.gyro.aborted = false;
+	inertial.calibration.fused.sampling = false;
 	inertial.fusion = {};
 }
 
@@ -735,6 +752,37 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 	return false;
 }
 
+static bool collectFusedSamples(TrackerInertial &inertial, const TrackerInertial::State &state)
+{
+	auto &calib = inertial.calibration.fused;
+	calib.sampling = true;
+	calib.current.observed = state.getCombinedQuaternion();
+
+	const double MinAng = 20, MaxAng = 60;
+	float diff = Eigen::AngleAxisd(calib.current.reference.conjugate() * calib.current.observed).angle()*180/PI;
+
+	// TODO: Implement automatic calibration for fused IMU
+
+	bool accept = false;
+	if (!calib.current.reference.isApprox(Eigen::Quaterniond::Identity())
+		&& diff > MinAng && diff < MaxAng)
+	{ // Accept
+		calib.samples.push_back(calib.current);
+		accept = true;
+	}
+
+	// Reset
+	calib.current = {};
+	calib.current.reference = state.getCombinedQuaternion();
+	calib.current.observed = state.getCombinedQuaternion();
+
+	calib.current.quatAlt1 = state.getCombinedQuaternion();
+	calib.current.quatAlt2 = state.getCombinedQuaternion();
+	calib.current.dQuat.setIdentity();
+
+	return accept;
+}
+
 template<typename M> 
 constexpr auto Mat = [](auto m, auto... ms) {
 return ((M()<<m),...,ms).finished();
@@ -771,8 +819,12 @@ struct AlignementErrorTerm
 
 	std::vector<TrackerInertial::AccelAlignSample> accelSamples;
 	std::vector<TrackerInertial::GyroAlignSample> gyroSamples;
+	std::vector<TrackerInertial::FusedAlignSample> fusedSamples;
 
 	static int conversions() { return convAxisSwizzle.size()*convAxisFlip.size(); }
+	static int fusedOpts() { return 12; }
+
+	int optFused = 0;
 
 	int conv = 0;
 
@@ -814,6 +866,27 @@ struct AlignementErrorTerm
 		return dQuat.conjugate() * gyroIntegration;
 	}
 
+	Eigen::Quaterniond getQuatDiff(TrackerInertial::FusedAlignSample sample, Eigen::Matrix3d conversion, Eigen::Quaterniond orientation) const
+	{
+		// TODO: Implement automatic calibration for fused IMU - current attempts don't work
+		switch (optFused)
+		{
+			case 0: return sample.observed.conjugate() * sample.reference * orientation * convert(conversion, sample.quatAlt1);
+			case 1: return sample.observed.conjugate() * orientation * convert(conversion, sample.quatAlt1) * sample.reference;
+			case 2: return orientation * convert(conversion, sample.quatAlt1) * sample.reference * sample.observed.conjugate();
+			case 3: return convert(conversion, sample.observed.conjugate() * sample.reference * sample.quatAlt1) * orientation;
+			case 4: return convert(conversion, sample.quatAlt1 * sample.reference * sample.observed.conjugate()) * orientation;
+			case 5: return sample.observed.conjugate() * sample.reference * orientation * convert(conversion, sample.quatAlt2);
+			case 6: return sample.observed.conjugate() * orientation * convert(conversion, sample.quatAlt2) * sample.reference;
+			case 7: return orientation * convert(conversion, sample.quatAlt2) * sample.reference * sample.observed.conjugate();
+			case 8: return convert(conversion, sample.observed.conjugate() * sample.reference * sample.quatAlt2) * orientation;
+			case 9: return convert(conversion, sample.quatAlt2 * sample.reference * sample.observed.conjugate()) * orientation;
+			case 10: return sample.observed.conjugate() * sample.reference * orientation * convert(conversion, sample.quatAlt1) * orientation.conjugate();
+			case 11: return sample.observed.conjugate() * sample.reference * orientation * convert(conversion, sample.quatAlt2) * orientation.conjugate();
+			default: assert(false); return Eigen::Quaterniond(NAN, NAN, NAN, NAN);
+		}
+	}
+
 	int operator()(const Eigen::VectorXd &coeffs, Eigen::VectorXd &errors) const
 	{
 		Eigen::Quaterniond orientation = flexkalman::util::quat_exp(coeffs.head<3>());
@@ -823,11 +896,13 @@ struct AlignementErrorTerm
 			errors(index) = Eigen::AngleAxisd(getQuatDiff(accelSamples[i], conversion, orientation)).angle();
 		for (int i = 0; i < gyroSamples.size(); i++, index++)
 			errors(index) = Eigen::AngleAxisd(getQuatDiff(gyroSamples[i], conversion, orientation)).angle();
+		for (int i = 0; i < fusedSamples.size(); i++, index++)
+			errors(index) = Eigen::AngleAxisd(getQuatDiff(fusedSamples[i], conversion, orientation)).angle();
 		return 0;
 	}
 
 	int inputs() const { return 3; }
-	int values() const { return accelSamples.size() + gyroSamples.size(); }
+	int values() const { return accelSamples.size() + gyroSamples.size() + fusedSamples.size(); }
 };
 
 static void alignIMUOrientation(TrackerInertial &inertial)
@@ -837,6 +912,12 @@ static void alignIMUOrientation(TrackerInertial &inertial)
 	for (auto &sample : inertial.calibration.gyro.samples)
 		gyroDiffAvg += Eigen::AngleAxisd(sample.quatEnd * sample.quatStart.conjugate()).angle();
 	gyroDiffAvg = gyroDiffAvg/inertial.calibration.gyro.samples.size();
+
+	// Precalculation for fused alignment
+	float fusedDiffAvg = 0;
+	for (auto &sample : inertial.calibration.fused.samples)
+		fusedDiffAvg += Eigen::AngleAxisd(sample.observed * sample.reference.conjugate()).angle();
+	fusedDiffAvg = fusedDiffAvg/inertial.calibration.fused.samples.size();
 
 	// Start off with gravity alignment, sufficient but requires user action
 
@@ -853,6 +934,7 @@ static void alignIMUOrientation(TrackerInertial &inertial)
 	for (int c = 0; c < AlignementErrorTerm::conversions(); c++)
 	{
 		errorTerm.gyroSamples.clear();
+		errorTerm.fusedSamples.clear();
 		errorTerm.conv = c;
 		Eigen::VectorXd quatCoeff = Eigen::VectorXd::Random(errorTerm.inputs());
 
@@ -924,6 +1006,36 @@ static void alignIMUOrientation(TrackerInertial &inertial)
 			LOG(LTrackingIMU, LDebug, "            Max Gyro (rad/s):  %s", printMatrix(maxGyro.transpose()).c_str());
 			LOG(LTrackingIMU, LDebug, "            Max dGyro (dg):  %s", printMatrix(maxDGyro.transpose()).c_str());
 			LOG(LTrackingIMU, LDebug, "            Max dT (ms):  %s", printMatrix(maxDT.transpose()).c_str());
+		}
+
+		if (!inertial.calibration.fused.samples.empty())
+		{ // IF IMU is providing IMUSampleFused
+
+			// TODO: Implement automatic calibration for fused IMU
+
+			LOG(LTrackingIMU, LInfo, "    Aligning with %d gravity samples and %d fused quat samples assuming conversion %d:",
+				(int)inertial.calibration.accel.samples.size(), (int)inertial.calibration.fused.samples.size(), c);
+
+			errorTerm.fusedSamples = inertial.calibration.fused.samples;
+
+			for (int f = 0; f < AlignementErrorTerm::fusedOpts(); f++)
+			{
+				errorTerm.optFused = f;
+				if (errorTerm.fusedSamples.size() == 0) continue;
+
+				Eigen::VectorXd errorsPre(errorTerm.values());
+				errorTerm(quatCoeff, errorsPre);
+
+				Eigen::NumericalDiff<AlignementErrorTerm> errorGradient(errorTerm);
+				Eigen::LevenbergMarquardt<Eigen::NumericalDiff<AlignementErrorTerm>, double> lm(errorGradient);
+				auto status = lm.minimize(quatCoeff);
+				auto &errorsOpt = lm.fvec;
+
+				LOG(LTrackingIMU, LInfo,
+					"        Formula %d optimised error of %fdg to %fdg with max %fdg - fused quat relative error %f%%",
+					f, errorsPre.mean()*180/PI, errorsOpt.mean()*180/PI, errorsOpt.maxCoeff()*180/PI,
+					errorsOpt.tail(inertial.calibration.fused.samples.size()).mean()/fusedDiffAvg*100);
+			}
 		}
 
 		Eigen::VectorXd errors(errorTerm.values());

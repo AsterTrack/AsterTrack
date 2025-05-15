@@ -113,10 +113,20 @@ struct TrackerInertial
 		Eigen::Quaterniond quatStart, quatEnd;
 		std::vector<std::pair<TimePoint_t,Eigen::Vector3d>> gyroSamples;
 	};
+	struct FusedAlignSample
+	{
+		Eigen::Quaterniond reference;
+		Eigen::Quaterniond observed;
+		Eigen::Quaterniond quatAlt1;
+		Eigen::Quaterniond quatAlt2;
+		Eigen::Quaterniond dQuat;
+	};
 	std::shared_ptr<IMU> imu;
 	struct {
 		IMUCalibrationPhase phase = IMU_CALIB_UNKNOWN;
 		// Data
+		State lastState;
+		TimePoint_t lastTime;
 		struct
 		{
 			std::vector<AccelAlignSample> samples;
@@ -132,6 +142,12 @@ struct TrackerInertial
 			IMUSampleRaw opticalInterpolated;
 			bool aborted = false;
 		} gyro = {};
+		struct
+		{
+			std::vector<FusedAlignSample> samples;
+			FusedAlignSample current;
+			bool sampling = true;
+		} fused = {};
 		// Results
 		Eigen::Matrix<int8_t,3,3> conversion = Eigen::Matrix<int8_t,3,3>::Identity();
 		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();

@@ -1225,14 +1225,16 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
 
-				// Copy imu samples up until current frame into record
+				// Copy imu samples a bit ahead of the frame into record
+				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);
+				assert(pipeline.record.imus.size() == state->record.imus.size());
 				for (int i = 0; i < state->record.imus.size(); i++)
 				{
 					auto &imu = pipeline.record.imus[i];
 					{
 						auto samples = state->record.imus[i]->samplesFused.getView();
 						auto it = samples.pos(imu->samplesFused.getView().endIndex());
-						for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
+						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
 							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
@@ -1242,7 +1244,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					{
 						auto samples = state->record.imus[i]->samplesRaw.getView();
 						auto it = samples.pos(imu->samplesRaw.getView().endIndex());
-						for (; it != samples.end() && it->timestamp < loadedRecord->time; it++)
+						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
 							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);

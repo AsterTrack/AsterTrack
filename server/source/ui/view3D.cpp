@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "gl/sharedGL.hpp"
 #include "system/vis.hpp"
 
+#include "util/debugging.hpp"
+
 #include "imgui/imgui_onDemand.hpp"
 
 struct wl_display;
@@ -164,7 +166,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	{
 		if (view3D.orbit)
 		{
-			view3D.distance = std::max(0.0f, view3D.distance/(1.0f+io.MouseWheel*0.05f) - io.MouseWheel*0.01f);
+			view3D.distance = std::max(0.001f, view3D.distance/(1.0f+io.MouseWheel*0.05f) - io.MouseWheel*0.0001f);
 		}
 	}
 
@@ -469,7 +471,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 	imuAccelLines.clear();
 	Color colIMUQuatRaw = Color{ 0.1f, 0.1f, 1.0f, 1.0f };
 	Color colIMUQuatFiltered = Color{ 1.0f, 0.1f, 0.1f, 1.0f };
-	Color colIMUAccel = Color{ 1.0f, 0.1f, 0.1f, 1.0f };
+	Color colIMUDir = Color{ 1.0f, 0.1f, 0.1f, 1.0f };
 	float accelScale = 0.1f;
 	if (!GetState().isStreaming)
 	{
@@ -483,23 +485,40 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			pose.translation() = Eigen::Vector3f(0,0,1);
 			visualisePose(pose, colIMUQuatRaw, 0.2f, 4.0f);
 			imuAccelLines.emplace_back(
-				VisPoint{ pose.translation(), colIMUAccel },
-				VisPoint{ pose.translation()+view.back().accel*accelScale, colIMUAccel }
+				VisPoint{ pose.translation(), colIMUDir },
+				VisPoint{ pose.translation()+view.back().accel*accelScale, colIMUDir }
 		 	);
 		}
 	}
 	else if (visState.tracking.showOrphanedIMUs)
 	{
-		for (auto &tracker : pipeline.tracking.orphanedIMUs)
+		std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		if (pipeline_lock.owns_lock())
 		{
-			visualisePose(tracker.pose.filtered, colIMUQuatFiltered, 0.2f, 4.0f);
-			Eigen::Vector3f accel = tracker.inertial.fusion.accel.cast<float>();
-			imuAccelLines.emplace_back(
-				VisPoint{ tracker.pose.filtered.translation(), colIMUAccel },
-				VisPoint{ tracker.pose.filtered.translation()+accel*accelScale, colIMUAccel }
-		 	);
+			for (auto &tracker : pipeline.tracking.orphanedIMUs)
+			{
+				visualisePose(tracker.pose.filtered, colIMUQuatFiltered, 0.2f, 4.0f);
+				Eigen::Vector3f dir = tracker.inertial.fusion.accel.cast<float>();
+				imuAccelLines.emplace_back(
+					VisPoint{ tracker.pose.filtered.translation(), colIMUDir },
+					VisPoint{ tracker.pose.filtered.translation()+dir*accelScale, colIMUDir }
+				);
+			}
+			
+			for (auto &tracker : pipeline.tracking.trackedTargets)
+			{
+				{
+					Eigen::Vector3f dir = tracker.state.state.velocity().cast<float>();
+					Eigen::Vector3f pos = tracker.pose.filtered.translation();
+					imuAccelLines.emplace_back(
+						VisPoint{ pos, colIMUDir },
+						VisPoint{ pos+dir*accelScale, colIMUDir }
+					);
+				}
+			}
 		}
 	}
+
 	visualiseLines(imuAccelLines, 2.0f);
 
 	// Else, show real-time situation
@@ -528,8 +547,12 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 					tracker.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
 			visualisePose(tracker.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
-		if (visState.tracking.showPoseInertial)
-			visualisePose(tracker.poseInertial, colIMUQuatRaw, 0.2f, 2.0f);
+		if (visState.tracking.showInertialIntegrated)
+			visualisePose(tracker.poseInertialIntegrated, Color{ 0.5f, 0.1f, 1.0f, 1.0f }, 0.2f, 2.0f);
+		if (visState.tracking.showInertialFused)
+			visualisePose(tracker.poseInertialFused, Color{ 0.1f, 0.6f, 1.0f, 1.0f }, 0.2f, 2.0f);
+		if (visState.tracking.showInertialFiltered)
+			visualisePose(tracker.poseInertialFiltered, Color{ 0.1f, 1.0f, 0.6f, 1.0f }, 0.2f, 2.0f);
 		if (visState.tracking.showPoseExtrapolated)
 			visualisePose(tracker.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 

@@ -77,7 +77,9 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.tracked = true;
 	target.posePredicted = tracker.pose.predicted;
 	target.poseExtrapolated = tracker.pose.extrapolated;
-	target.poseInertial = tracker.pose.inertial;
+	target.poseInertialIntegrated = tracker.pose.inertialIntegrated;
+	target.poseInertialFused = tracker.pose.inertialFused;
+	target.poseInertialFiltered = tracker.pose.inertialFiltered;
 	target.poseObserved = tracker.pose.observed;
 	target.poseFiltered = tracker.pose.filtered;
 	target.covPredicted = tracker.pose.covPredicted;
@@ -145,7 +147,9 @@ static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.tracked = false;
 	target.posePredicted = tracker.pose.predicted;
 	target.poseExtrapolated = tracker.pose.extrapolated;
-	target.poseInertial = tracker.pose.inertial;
+	target.poseInertialIntegrated = tracker.pose.inertialIntegrated;
+	target.poseInertialFused = tracker.pose.inertialFused;
+	target.poseInertialFiltered = tracker.pose.inertialFiltered;
 	target.poseObserved.setIdentity();
 	target.poseFiltered = tracker.pose.filtered;
 	target.covPredicted = tracker.pose.covPredicted;
@@ -671,9 +675,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
 							pipeline.tracking.asyncDetectionStop.request_stop();
 					}
-					TrackedTarget trackedTarget(&target, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
-					trackedTarget.target = std::move(dormant.target);
-					trackedTarget.inertial = std::move(dormant.inertial);
+					TrackedTarget trackedTarget(std::move(dormant), dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
 					occupyTargetMatches(trackedTarget.target.match2D);
 					TrackedTargetRecord &targetRecord = recordTracking(frame, target);
 					recordTrackingResults(frame, targetRecord, trackedTarget, pipeline);

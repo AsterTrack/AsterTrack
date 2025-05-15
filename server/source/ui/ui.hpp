@@ -153,7 +153,7 @@ struct VisualisationState
 		bool showOrphanedIMUs = true;
 		bool showSearchBounds = false;
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
-		bool showPoseExtrapolated = false, showPoseInertial = false;
+		bool showPoseExtrapolated = false, showInertialIntegrated = false, showInertialFused = false, showInertialFiltered = false;
 		int trailLength = 0;
 		bool showCovariancePos = false, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
@@ -264,7 +264,7 @@ struct View3D
 	inline Eigen::Projective3f getProj(float aspect) const
 	{
 		Eigen::Projective3f proj;
-		const float zNear = 0.01f/2, zFar = 100; // 1cm-100m
+		const float zNear = 0.0001f/2, zFar = 100; // 0.1mm-100m
 		const float a = -(zFar+zNear)/(zFar-zNear), b = (2*zNear*zFar)/(zFar-zNear);
 		float sY = 1.0f / fInvFromFoV(fov);
 		float sX = sY*aspect;

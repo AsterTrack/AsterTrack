@@ -57,12 +57,13 @@ struct IMUIdent
 
 /**
  * Association of an IMU to a tracker (tracked Target or Marker)
- * Includes tracker indentification and spacial calibration of tracker to IMU
+ * Includes tracker indentification and spacial calibration of IMU to tracker
  */
 struct IMUTracker
 {
 	int id; // Associated Tracker ID - 0 is None
 	float size; // Associated Marker Size - NAN is None
+	// Calibrated offset from IMU to tracker
 	Eigen::Matrix<int8_t,3,3> conversion; // Technically this is not specific to the tracker
 	Eigen::Quaternionf orientation;
 	Eigen::Vector3f offset;
@@ -98,6 +99,7 @@ public:
 	bool hasMag;
 	bool isFused;
 
+	// Samples queue used depends on isFused
 	BlockedQueue<IMUSampleFused, 16384> samplesFused;
 	BlockedQueue<IMUSampleRaw, 16384> samplesRaw;
 

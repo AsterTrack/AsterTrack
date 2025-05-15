@@ -89,37 +89,78 @@ struct TrackerMarker
 
 enum IMUCalibrationPhase
 {
+	IMU_CALIB_UNKNOWN = 0,
 	// Internal calibration
-	// TODO: Calibrate from raw samples
+	// TODO: Proper bias calibration for raw samples
 	// External calibration
-	IMU_CALIB_EXT_ORIENTATION = 0,
-	IMU_CALIB_EXT_OFFSET = 3,
-	IMU_CALIB_EXT_DONE = 4
+	IMU_CALIB_EXT_GRAVITY = 1,
+	IMU_CALIB_EXT_ALIGNMENT = 2,
+	IMU_CALIB_EXT_ORIENTATION = IMU_CALIB_EXT_GRAVITY | IMU_CALIB_EXT_ALIGNMENT,
+	IMU_CALIB_EXT_OFFSET = 4,
+	IMU_CALIB_DONE = 5
 };
 
 struct TrackerInertial
 {
 	using State = flexkalman::pose_externalized_rotation::State;
+	struct AccelAlignSample
+	{
+		Eigen::Vector3d optical = Eigen::Vector3d::Zero();
+		Eigen::Vector3d inertial = Eigen::Vector3d::Zero();
+	};
+	struct GyroAlignSample
+	{
+		Eigen::Quaterniond quatStart, quatEnd;
+		std::vector<std::pair<TimePoint_t,Eigen::Vector3d>> gyroSamples;
+	};
 	std::shared_ptr<IMU> imu;
 	struct {
-		IMUCalibrationPhase phase = IMU_CALIB_EXT_DONE;
+		IMUCalibrationPhase phase = IMU_CALIB_UNKNOWN;
 		// Data
-		State lastState;
-		TimePoint_t lastTime;
+		struct
+		{
+			std::vector<AccelAlignSample> samples;
+			AccelAlignSample current;
+			int numCurrent = 0;
+			bool sampling = false;
+		} accel = {};
+		struct
+		{
+			std::vector<GyroAlignSample> samples;
+			GyroAlignSample current;
+			bool sampling = false;
+			IMUSampleRaw opticalInterpolated;
+			bool aborted = false;
+		} gyro = {};
 		// Results
+		Eigen::Matrix<int8_t,3,3> conversion = Eigen::Matrix<int8_t,3,3>::Identity();
 		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
+		Eigen::Matrix3d mat = Eigen::Matrix3d::Identity(); // quat * conversion
 		Eigen::Vector3d offset = Eigen::Vector3d::Zero();
-	} calibration;
+	} calibration = {};
 	struct {
 		TimePoint_t time;
+		Eigen::Quaterniond integrated = Eigen::Quaterniond::Identity();
 		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
+		int corrections = 0;
+
 		Eigen::Vector3d imuVelocity = Eigen::Vector3d::Zero(); // Positional velocity of IMU (due to tracker positional velocity AND rotation)
 		Eigen::Vector3d angularVelocity; // Angular velocity of tracker rotation
 		Eigen::Vector3d tangentialVelocity; // Positional velocity of IMU relative to tracker due to rotation
 		Eigen::Vector3d positionalVelocity; // Positional velocity of tracker
-		Eigen::Vector3d accel;
-		Eigen::Vector3d accelRaw;
-	} fusion;
+		Eigen::Vector3d accel, accelLocal, accelRaw;
+		Eigen::Vector3d gravityDir;
+	} fusion = {};
+
+	/**
+	 * Interpolated samples at the current time in case they're needed for prediction/calibration
+	 * E.g. if all IMU samples before an optical measurement are integrated, but a newer one does exist
+	 * this is interpolated between them at the time of optical measurement to be used for better prediction
+	 */
+	struct {
+		IMUSampleFused fused;
+		IMUSampleRaw raw;
+	} interpolatedSample;
 
 	TrackerInertial() : imu(), calibration{}, fusion{} {}
 	TrackerInertial(std::shared_ptr<IMU> &imu) : imu(imu), calibration{}, fusion{} {}
@@ -133,13 +174,15 @@ struct TrackerObservation
 	TimePoint_t time;
 	Eigen::Isometry3f predicted; // Predicted using extrapolation and/or IMU integration
 	Eigen::Isometry3f extrapolated; // Extrapolated using just the model from last observation
-	Eigen::Isometry3f inertial; // Pose as integrated from new IMU samples
+	Eigen::Isometry3f inertialIntegrated; // Pose as integrated from new IMU samples
+	Eigen::Isometry3f inertialFused; // Pose as integrated and fused with optical samples
+	Eigen::Isometry3f inertialFiltered; // Pose as integrated and filtered with kalman filter
 	Eigen::Isometry3f observed; // Pose as observed by the cameras
 	Eigen::Isometry3f filtered; // Pose filtered from all observations
 	Eigen::Matrix<float,6,6> covPredicted, covFiltered, covObserved;
 
 	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
-		predicted(pose), extrapolated(pose), inertial(pose), observed(pose), filtered(pose), time(time)
+		predicted(pose), observed(pose), filtered(pose), time(time)
 	{
 		covObserved.diagonal().segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.sigmaInitState);
 		covObserved.diagonal().segment<3>(3).setConstant(params.filter.stdDevEXP*params.filter.sigmaInitState);
@@ -235,19 +278,6 @@ struct OrphanedIMU
 		pose(orphanedIMUPose, sclock::now(), params) {}
 };
 
-inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
-	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
-	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
-	state(pose, time, params), pose(pose, time, params)
-{
-	state.lastObservation = time;
-	state.lastObsFrame = frame;
-}
-
-inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
-	inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) {}
-
-
 
 /* Functions */
 
@@ -270,5 +300,24 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	TimePoint_t time, const TargetTrackingParameters &params);
 void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);
+void interruptIMU(TrackerInertial &inertial);
+
+
+inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
+	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
+	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
+	state(pose, time, params), pose(pose, time, params)
+{
+	state.lastObservation = time;
+	state.lastObsFrame = frame;
+	if (inertial)
+		postCorrectIMU(state, inertial, this->pose, time, params);
+}
+
+inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
+	inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) 
+{
+	interruptIMU(inertial);
+}
 
 #endif // TRACKING_3D_H

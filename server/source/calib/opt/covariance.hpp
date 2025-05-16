@@ -33,7 +33,7 @@ SOFTWARE.
 #include "Eigen/Eigenvalues"
 
 template<int DIM, typename Scalar>
-static Eigen::Matrix<Scalar,DIM,DIM> fitEllipsoidToSamples(std::vector<VectorX<Scalar>> &samples)
+static Eigen::Matrix<Scalar,DIM,DIM> fitEllipsoidToSamples(const std::vector<VectorX<Scalar>> &samples)
 {
 	Eigen::Matrix<Scalar,DIM,DIM> ellipsoidMat;
 	ellipsoidMat.setZero();
@@ -69,7 +69,7 @@ static Eigen::Matrix<Scalar,DIM,DIM> fitEllipsoidToSamples(std::vector<VectorX<S
 }
 
 template<int DIM, typename Scalar>
-static Eigen::Matrix<Scalar,DIM,DIM> fitCovarianceToSamples(std::vector<VectorX<Scalar>> &samples)
+static Eigen::Matrix<Scalar,DIM,DIM> fitCovarianceToSamples(const std::vector<VectorX<Scalar>> &samples)
 {
 	Eigen::Matrix<Scalar,DIM,DIM> ellipsoidMat = fitEllipsoidToSamples<DIM, Scalar>(samples);
 

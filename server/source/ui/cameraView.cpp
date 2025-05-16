@@ -1115,7 +1115,8 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				if (target == pipeline.tracking.targetCalibrations.end()) continue;
 
 				if (visState.tracking.showSearchBounds)
-				{ // Visualise search bounds
+				{ // Show search bounds
+					// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackedTarget.covPredicted.topLeftCorner<3,3>(),
 						pipeline.params.track.uncertaintySigma, trackedTarget.posePredicted.rotation());
 					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);

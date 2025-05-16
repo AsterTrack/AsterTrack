@@ -200,12 +200,12 @@ TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3
 			continue;
 
 		// Optimise and remove outliers
-		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt, track.filter.stdDevError, true);
+		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt, track.filter.point.stdDev, true);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 
 		// Potentially overwrite numeric covariance with default initial covariance
-		targetMatch2D.covariance = track.filter.getCovariance<float>() * track.filter.detectSigma;
+		targetMatch2D.covariance = track.filter.getSyntheticCovariance<float>() * track.filter.detectSigma;
 
 		{
 			auto stdDev = targetMatch2D.covariance.diagonal().cwiseSqrt();

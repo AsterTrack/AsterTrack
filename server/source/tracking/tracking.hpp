@@ -55,7 +55,7 @@ struct TrackerState
 	{
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
-		Eigen::Matrix<double,6,6> covariance = params.filter.getCovariance<double>();
+		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
 		state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
 		state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
 	}
@@ -198,7 +198,7 @@ struct TrackerObservation
 	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
 		predicted(pose), observed(pose), filtered(pose), time(time)
 	{
-		covObserved = params.filter.getCovariance<float>() * params.filter.sigmaInitState;
+		covObserved = params.filter.getSyntheticCovariance<float>() * params.filter.sigmaInitState;
 		covPredicted = covFiltered = covObserved;
 	}
 };

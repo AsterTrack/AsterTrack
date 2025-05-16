@@ -855,7 +855,7 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 	}
 
 	TargetTracking2DData internalData(frameRecord->cameras.size());
-	CovarianceMatrix covariance = params.filter.getCovariance<float>() * params.filter.trackSigma;
+	CovarianceMatrix covariance = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
 	return trackTarget2D(trkTarget, reference.pose, covariance,
 		calibs, frameRecord->cameras.size(),
 		points2D, properties, relevantPoints2D, params, internalData);

@@ -27,6 +27,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "unsupported/Eigen/NonLinearOptimization"
 
+static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2D, const TargetTrackingParameters &params)
+{
+	// Option 1: Synthetic values
+	Eigen::Matrix<float,6,6> covObserved = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
+	// Option 2: Full covariance numerically estimated
+	if (params.filter.pose.useNumericCov)
+		covObserved = match2D.covariance;
+	// But yields a bit odd results, distorts the positional covariance when I don't see why it should
+	// Option 3: Numerical covariance for position only
+	if (params.filter.pose.useNumericCovPos)
+		covObserved.topLeftCorner<3,3>() = fitCovarianceToSamples<3,float>(match2D.deviations);
+	return covObserved;
+}
+
 bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
@@ -43,13 +57,14 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	if (!record.tracked) return false;
-	//target.match2D.error = record.error;
-	target.match2D = record.match2D;
+	target.match2D = record.match2D; // May be uninitialised outside of replay/simulation
+	target.match2D.error = record.error;
 	observation.observed = record.poseObserved;
-	//observation.covObserved = record.covObserved;
-	observation.covObserved = params.filter.getCovariance<float>() * params.filter.trackSigma;
+	observation.covObserved = selectPoseCovariance(record.match2D, params);
+	if (observation.covObserved.hasNaN()) // Missing match2D in recording
+		observation.covObserved = record.covObserved;
 
-	if (target.match2D.error.samples <= params.filter.PointObsLimit)
+	if (target.match2D.error.samples <= params.filter.point.obsLimit)
 	{
 		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
@@ -57,17 +72,17 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
 		errorTerm.setData(points2D, target.match2D);
 
-		TargetMatchMeasurement measurement(errorTerm, params.filter.stdDevError*params.filter.stdDevError);
-		measurement.useNumerical(params.filter.PointUseNumerical);
+		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
+		measurement.useNumerical(params.filter.point.useNumericJac);
 
 		bool success = true;
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		if (params.filter.PointUseSeparate)
+		if (params.filter.point.separateCorrections)
 		{
 			for (int i = 0; i < errorTerm.values(); i++)
 			{
 				measurement.setSample(i);
-				if (params.filter.PointUseUnscented)
+				if (params.filter.point.useUnscented)
 					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
 			}
@@ -75,7 +90,7 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 		}
 		else
 		{
-			if (params.filter.PointUseUnscented)
+			if (params.filter.point.useUnscented)
 				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 			else success = flexkalman::correctExtended(state.state, model, measurement, true);
 		}
@@ -131,21 +146,14 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(*target.calib, observation.predicted, observation.covPredicted,
 		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
-	if (target.match2D.error.samples < params.minTotalObs) return false;
+	if (target.match2D.error.samples < params.quality.minTotalObs) return false;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 	observation.observed = target.match2D.pose;
-
-	// Option 1: Initial values
-	observation.covObserved = params.filter.getCovariance<float>() * params.filter.trackSigma;
-	// Option 2: Full covariance numerically estimated
-	//observation.covObserved = target.match2D.covariance;
-	// But yields a bit odd results, distorts the positional covariance when I don't see why it should
-	// Option 3: Numerical covariance for position only
-	//observation.covObserved.topLeftCorner<3,3>() = fitCovarianceToSamples<3,float>(target.match2D.deviations);
+	observation.covObserved = selectPoseCovariance(target.match2D, params);
 
 	// Update state
-	if (target.match2D.error.samples <= params.filter.PointObsLimit)
+	if (target.match2D.error.samples <= params.filter.point.obsLimit)
 	{
 		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
@@ -153,17 +161,17 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
 		errorTerm.setData(points2D, target.match2D);
 
-		TargetMatchMeasurement measurement(errorTerm, params.filter.stdDevError*params.filter.stdDevError);
-		measurement.useNumerical(params.filter.PointUseNumerical);
+		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
+		measurement.useNumerical(params.filter.point.useNumericJac);
 
 		bool success = true;
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		if (params.filter.PointUseSeparate)
+		if (params.filter.point.separateCorrections)
 		{
 			for (int i = 0; i < errorTerm.values(); i++)
 			{
 				measurement.setSample(i);
-				if (params.filter.PointUseUnscented)
+				if (params.filter.point.useUnscented)
 					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
 			}
@@ -171,7 +179,7 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 		}
 		else
 		{
-			if (params.filter.PointUseUnscented)
+			if (params.filter.point.useUnscented)
 				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 			else success = flexkalman::correctExtended(state.state, model, measurement, true);
 		}
@@ -203,7 +211,7 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return target.match2D.error.samples >= params.minTotalObs && target.match2D.error.mean < params.maxTotalError;
+	return target.match2D.error.samples >= params.quality.minTotalObs && target.match2D.error.mean < params.quality.maxTotalError;
 }
 
 int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
@@ -251,7 +259,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	}
 	observation.observed.translation() = points3D[matchedPoint];
 	observation.covObserved.setIdentity();
-	observation.covObserved.diagonal().head<3>().setConstant(params.filter.stdDevPos);
+	observation.covObserved.diagonal().head<3>().setConstant(params.filter.pose.stdDevPos);
 
 	// Update state
 	auto measurement = AbsolutePositionMeasurement(
@@ -452,7 +460,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 
 	//observation.covIMU = ;
 
-	if (updateFilter)
+	if (updateFilter && params.filter.imu.useForPrediction)
 	{ // Actually apply IMU integrations to state
 		state.state = filterState;
 		state.time = filterTime;
@@ -528,7 +536,7 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFus
 	{ // Correct with updated IMU filter quat
 		auto measurement = FusedIMUMeasurement{
 			inertial.fusion.quat,
-			Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
+			Eigen::Vector3d::Constant(params.filter.imu.stdDevIMU*params.filter.imu.stdDevIMU)
 		};
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		if (!flexkalman::correctUnscented(filterState, measurement, true, sigmaParams))
@@ -610,7 +618,7 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw
 	{ // Correct with updated IMU filter quat
 		auto measurement = FusedIMUMeasurement{
 			inertial.fusion.quat,
-			Eigen::Vector3d::Constant(params.filter.stdDevIMU*params.filter.stdDevIMU)
+			Eigen::Vector3d::Constant(params.filter.imu.stdDevIMU*params.filter.imu.stdDevIMU)
 		};
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		if (!flexkalman::correctUnscented(filterState, measurement, true, sigmaParams))

@@ -166,17 +166,37 @@ bool CircularButton(const char* str_id, float size, ImVec4 color, ImGuiButtonFla
 	return pressed;
 }
 
-bool CheckboxInput(const char *label, bool *value)
+bool BooleanProperty(const char *label, bool *value, const bool *compare)
 {
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window->SkipItems)
+		return false;
 	ImGui::BeginGroup();
 	ImGui::PushID(label);
 	ImGui::AlignTextToFramePadding(); // Align text vertically in line with controls
 	ImGui::TextUnformatted(label);
 	SameLineTrailing(ImGui::GetFrameHeight());
+	bool modified = compare && *value != *compare;
+	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
 	bool updated = ImGui::Checkbox("##Check", value);
+	if (modified) ImGui::PopStyleColor();
+	if (modified && ImGui::BeginPopupContextItem("C"))
+	{
+		if (ImGui::Selectable("Reset to Default"))
+		{
+			*value = *compare;
+			updated = true;
+		}
+		ImGui::EndPopup();
+	}
 	ImGui::PopID();
 	ImGui::EndGroup();
 	return updated;
+}
+
+bool CheckboxInput(const char *label, bool *value)
+{
+	return BooleanProperty(label, value, nullptr);
 }
 
 template<typename Scalar>

@@ -637,7 +637,8 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		}
 
 		if (visState.tracking.showSearchBounds)
-		{
+		{ // Show search bounds
+			// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 			Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(tracker.covPredicted.topLeftCorner<3,3>(),
 				pipeline.params.track.uncertaintySigma, tracker.posePredicted.rotation());
 			uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
@@ -736,7 +737,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
-				Eigen::Matrix3f covariance = pipeline.params.track.filter.getCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
+				Eigen::Matrix3f covariance = pipeline.params.track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
 					tracker.poseObserved, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });

@@ -40,6 +40,8 @@ bool CircularButton(const char* str_id, float size, ImVec4 color = ImVec4(1,1,1,
 
 bool CheckboxInput(const char *label, bool *value);
 
+bool BooleanProperty(const char *label, bool *value, const bool *compare);
+
 template<typename Scalar>
 bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *value2, const Scalar *compare, Scalar min, Scalar max, Scalar step = 1, Scalar editFactor = 1, const char *fmt = nullptr);
 

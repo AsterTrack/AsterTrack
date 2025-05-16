@@ -815,7 +815,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	{ // Optimise pose to observations
 		// TODO: Provide a quick option
 		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
-		TargetMatchError newErrors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.stdDevError, !quick);
+		TargetMatchError newErrors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, !quick);
 		if (newErrors.samples == 0)
 		{
 			LOGC(LDarn, "        Failed to optimise pose of %d points!\n", prevErrors.samples);
@@ -851,7 +851,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			projected2D[c], relevantProjected2D[c], cameraMatches, matchData,
 			params.matchFast, distFactor);
 
-		if (cameraMatches.size() < params.minCameraObs)
+		if (cameraMatches.size() < params.quality.minCameraObs)
 		{
 			LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
 			cameraMatches.clear();
@@ -860,14 +860,14 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
 			matchedSamples += cameraMatches.size();
-			if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
+			if (cameraMatches.size() >= params.quality.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
 	}
 	matchingStage++;
 	LOGC(LDebug, "        Matched a total of %d samples in initial fast-path!", matchedSamples);
 
-	if (camerasGood < minCamerasGood || matchedSamples < params.minTotalObs)
+	if (camerasGood < minCamerasGood || matchedSamples < params.quality.minTotalObs)
 	{
 		LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
 		for (int i = 0; i < maxComplexStages; i++)
@@ -904,7 +904,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 					projected2D[c], relevantProjected2D[c], cameraMatches, matchData,
 					params.matchSlow, distFactor);
 
-				if (cameraMatches.size() < params.minCameraObs)
+				if (cameraMatches.size() < params.quality.minCameraObs)
 				{
 					LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
 					cameraMatches.clear();
@@ -913,7 +913,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				{
 					LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
 					matchedSamples += cameraMatches.size();
-					if (cameraMatches.size() >= params.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.cameraGoodRatio)
+					if (cameraMatches.size() >= params.quality.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.quality.cameraGoodRatio)
 						camerasGood++;
 					if (prevPointCount < cameraMatches.size())
 						nothingNew = false;
@@ -928,7 +928,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			if (nothingNew) return targetMatch2D; // No hope improving
 			if (i+1 >= maxComplexStages)
 			{ // Last iterations, don't optimise again
-				if (matchedSamples >= params.minTotalObs)
+				if (matchedSamples >= params.quality.minTotalObs)
 					break; // Some new data after last try, continue normally
 				return targetMatch2D; // Else, not enough data still
 			}
@@ -940,7 +940,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 		LOGC(LDebug, "        Continuing normally after slow-path finished!");
 	}
-	assert(camerasGood >= minCamerasGood || matchedSamples >= params.minTotalObs);
+	assert(camerasGood >= minCamerasGood || matchedSamples >= params.quality.minTotalObs);
 
 	if (camerasGood >= minCamerasGood)
 	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
@@ -1011,7 +1011,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 					params.matchUncertain, distFactor,
 					internalData.uncertaintyAxis[calib.index]);
 
-				if (cameraMatches.size() < params.minCameraObs)
+				if (cameraMatches.size() < params.quality.minCameraObs)
 				{
 					LOGC(LDebug, "            Camera %d: Found %d matches along uncertainty axis, discarded all!\n", c, (int)cameraMatches.size());
 					cameraMatches.clear();
@@ -1067,7 +1067,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		matchData.pose = targetMatch2D.pose;
 
 		// Match relevant points (observation and projected target)
-		if (prevPointCount < params.cameraGoodObs)
+		if (prevPointCount < params.quality.cameraGoodObs)
 		{
 			matchTargetPointsSlow(*points2D[c], *properties[c], closePoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches, matchData,
@@ -1080,7 +1080,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				params.matchFast, distFactor);
 		}
 
-		if (cameraMatches.size() < params.minCameraObs)
+		if (cameraMatches.size() < params.quality.minCameraObs)
 		{
 			LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
 			cameraMatches.clear();
@@ -1098,8 +1098,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	{ // Final optimisation
 		optimiseTargetMatch(false);
 	}
-	// Update covariance (done in optimiseTargetMatch)
-	//evaluateTargetPoseCovariance(calibs, points2D, targetMatch2D, params.filter.errorStdDev);
+	// Update covariance (done in optimiseTargetMatch with !quick)
+	//evaluateTargetPoseCovariance(calibs, points2D, targetMatch2D, params.filter.point.stdDev);
 	{
 		auto stdDev = targetMatch2D.covariance.diagonal().cwiseSqrt();
 		Eigen::Vector3f devPos = stdDev.head<3>()*1000, devRot = stdDev.tail<3>()*1000;

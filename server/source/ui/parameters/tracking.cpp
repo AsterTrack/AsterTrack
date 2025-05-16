@@ -210,11 +210,10 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Quality");
-		modified |= ScalarProperty<int>("Good Camera Sample Count", "", &params.cameraGoodObs, &standard.cameraGoodObs, 0, 50);
-		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "px", &params.cameraGoodRatio, &standard.cameraGoodRatio, 0, 1, 0.05f);
-		modified |= ScalarProperty<int>("Min total Observations", "", &params.minTotalObs, &standard.minTotalObs, 1, 50); // 6 needed to optimise 6 parameters
-		modified |= ScalarProperty<int>("Min camera Observations", "", &params.minCameraObs, &standard.minCameraObs, 0, 50);
-		modified |= ScalarProperty<float>("Max total Error", "px", &params.maxTotalError, &standard.maxTotalError, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "px", &params.quality.cameraGoodRatio, &standard.quality.cameraGoodRatio, 0, 1, 0.05f);
+		modified |= ScalarProperty<int>("Min total Observations", "", &params.quality.minTotalObs, &standard.quality.minTotalObs, 1, 50); // 6 needed to optimise 6 parameters
+		modified |= ScalarProperty<int>("Min camera Observations", "", &params.quality.minCameraObs, &standard.quality.minCameraObs, 0, 50);
+		modified |= ScalarProperty<float>("Max total Error", "px", &params.quality.maxTotalError, &standard.quality.maxTotalError, 0, 10, 0.1f, PixelFactor, "%.2f");
 		EndSection();
 
 		BeginSection("Optimisation");
@@ -225,25 +224,49 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
 		EndSection();
 
-		BeginSection("Filtering");
 		bool filterMod = false;
-		filterMod |= ScalarProperty<float>("StdDev Error", "px", &params.filter.stdDevError, &standard.filter.stdDevError, 0, 10, 0.01f, PixelFactor, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 1, 0.002f, 180, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.stdDevIMU, &standard.filter.stdDevIMU, 0, 1, 0.002f, 180, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.stdDevAccel, &standard.filter.stdDevAccel, 0, 1, 0.002f, 180, "%.4f");
+		BeginSection("Filtering");
+
 		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Detect", "x", &params.filter.detectSigma, &standard.filter.detectSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
-		// Don't actually know if uncertainty is in degrees, but it's approximately right and allows for easier editing, so whatever
-		filterMod |= ScalarProperty<float>("Sigma Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
-		filterMod |= ScalarProperty<float>("Sigma Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
-		filterMod |= ScalarProperty<float>("Sigma Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
 		filterMod |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
 		filterMod |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
-		modified |= filterMod;
+
+		ImGui::Separator();
+
+		filterMod |= ScalarProperty<float>("Unscented Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Unscented Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Unscented Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+
+		ImGui::SeparatorText("Full Target Pose Update");
+		ImGui::BeginDisabled(true);
+		filterMod |= BooleanProperty("Use Unscented (UKF)##Pose", &params.filter.pose.useUnscented, &standard.filter.pose.useUnscented);
+		ImGui::EndDisabled();
+		filterMod |= BooleanProperty("Use Numerical Covariance", &params.filter.pose.useNumericCov, &standard.filter.pose.useNumericCov);
+		ImGui::BeginDisabled(params.filter.pose.useNumericCov);
+		filterMod |= BooleanProperty("Pos Numerical Covariance", &params.filter.pose.useNumericCovPos, &standard.filter.pose.useNumericCovPos);
+		ImGui::BeginDisabled(params.filter.pose.useNumericCovPos);
+		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.pose.stdDevPos, &standard.filter.pose.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
+		ImGui::EndDisabled();
+		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.pose.stdDevEXP, &standard.filter.pose.stdDevEXP, 0, 1, 0.002f, 1000, "%.4f");
+		ImGui::EndDisabled();
+
+		ImGui::SeparatorText("Partial Target Point Update");
+		filterMod |= ScalarProperty<int>("Max Observations", "", &params.filter.point.obsLimit, &standard.filter.point.obsLimit, 1, 50);
+		filterMod |= BooleanProperty("Use Unscented (UKF)##Point", &params.filter.point.useUnscented, &standard.filter.point.useUnscented);
+		filterMod |= BooleanProperty("Use Numerical Jacobian", &params.filter.point.useNumericJac, &standard.filter.point.useNumericJac);
+		filterMod |= BooleanProperty("Use Separate Corrections", &params.filter.point.separateCorrections, &standard.filter.point.separateCorrections);
+		filterMod |= ScalarProperty<float>("StdDev Error", "px", &params.filter.point.stdDev, &standard.filter.point.stdDev, 0, 10, 0.01f, PixelFactor, "%.4f");
+
+		ImGui::SeparatorText("IMU Integration");
+		filterMod |= BooleanProperty("Use IMU Prediction", &params.filter.imu.useForPrediction, &standard.filter.imu.useForPrediction);
+		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.imu.stdDevIMU, &standard.filter.imu.stdDevIMU, 0, 1, 0.002f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.imu.stdDevAccel, &standard.filter.imu.stdDevAccel, 0, 1, 0.002f, 1000, "%.4f");
+
 		EndSection();
+		modified |= filterMod;
 
 		BeginSection("Tracking Loss");
 		modified |= ScalarProperty<float>("Coast Time", "ms", &params.lostTargetCoastMS, &standard.lostTargetCoastMS, 0, 10000, 0.1f, 1, "%.0f");

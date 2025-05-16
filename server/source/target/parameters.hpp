@@ -81,25 +81,43 @@ struct TargetOptimisationParameters
 
 struct TargetFilteringParameters
 {
-	float stdDevError = 1.0f * PixelSize;
-	float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
-	float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
+	// General behaviour for all filters
 	float sigmaInitState = 50000, sigmaInitChange = 10000000;
 	float detectSigma = 1000000, trackSigma = 1;
-	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 
-	int PointObsLimit = 6; // Effectively disabled
-	bool PointUseUnscented = false;
-	bool PointUseNumerical = true;
-	bool PointUseSeparate = false;
+	// UKR settings for all filters
+	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
+
+	// Full Target Pose Filter Update
+	struct {
+		bool useUnscented = true;
+		bool useNumericCov = false;
+		bool useNumericCovPos = false;
+		float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
+	} pose;
+
+	// Partial Target Points Filter Update
+	struct {
+		float stdDev = 1.0f * PixelSize;
+		int obsLimit = 6; // Effectively disabled
+		bool useUnscented = false;
+		bool useNumericJac = true;
+		bool separateCorrections = false;
+	} point;
+
+	// IMU Filter Update
+	struct {
+		float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
+		bool useForPrediction = false;
+	} imu;
 
 	template<typename Scalar>
-	Eigen::Matrix<Scalar,6,6> getCovariance() const
+	Eigen::Matrix<Scalar,6,6> getSyntheticCovariance() const
 	{
 		Eigen::Matrix<Scalar,6,6> covariance = Eigen::Matrix<Scalar,6,6>::Identity();
-		covariance.diagonal().template head<3>().setConstant(stdDevPos*stdDevPos);
-		covariance.diagonal().template tail<3>().setConstant(stdDevEXP*stdDevEXP);
+		covariance.diagonal().template head<3>().setConstant(pose.stdDevPos*pose.stdDevPos);
+		covariance.diagonal().template tail<3>().setConstant(pose.stdDevEXP*pose.stdDevEXP);
 		return covariance;
 	}
 };
@@ -139,7 +157,6 @@ struct TargetTrackingParameters
 {
 	// Prediction
 	float minUncertainty3D = 0.01f;
-	bool useIMUPrediction = true;
 	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
 	float uncertaintySigma = 3;
 	// Marker Matching
@@ -153,11 +170,13 @@ struct TargetTrackingParameters
 		3, 5.0f*PixelSize, 5.0f*PixelSize
 	};
 	// Quality
-	int cameraGoodObs = 5;
-	float cameraGoodRatio = 0.5f;
-	int minTotalObs = 6;
-	int minCameraObs = 1;
-	float maxTotalError = 5.0f*PixelSize;
+	struct {
+		int cameraGoodObs = 5;
+		float cameraGoodRatio = 0.5f;
+		int minTotalObs = 6;
+		int minCameraObs = 1;
+		float maxTotalError = 5.0f*PixelSize;
+	} quality = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};
 	// Filtering

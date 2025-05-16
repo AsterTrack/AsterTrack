@@ -677,11 +677,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (acceptCandidate)
 			{
 				// Use pose candidate to track target with 2D points
-				CovarianceMatrix covariance = pipeline.params.track.filter.getCovariance<float>() * pipeline.params.track.filter.detectSigma;
+				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * pipeline.params.track.filter.detectSigma;
 				dormant.target.match2D = trackTarget2D(target, candidate.pose, covariance,
 					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.track, dormant.target.data);
 
-				acceptCandidate = dormant.target.match2D.error.samples >= pipeline.params.track.minTotalObs && dormant.target.match2D.error.mean < pipeline.params.track.maxTotalError;
+				acceptCandidate = dormant.target.match2D.error.samples >= pipeline.params.track.quality.minTotalObs
+								&& dormant.target.match2D.error.mean < pipeline.params.track.quality.maxTotalError;
 				if (acceptCandidate)
 				{ // Register as tracked target
 					{ // Make sure no async detection of this target is ongoing

@@ -7,5 +7,9 @@
 			"path": "shared"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"codechecker.backend.compilationDatabasePath": "${workspaceFolder}/build/compile_commands.json",
+		"codechecker.analyze.arguments": "--config ${workspaceFolder}/.vscode/codechecker.json",
+		"codechecker.analyze.runOnSave": false
+	}
 }

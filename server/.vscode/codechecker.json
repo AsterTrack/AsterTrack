@@ -1,8 +1,6 @@
 {
     "analyze": [
       "--disable=clang-diagnostic-sign-compare",
-      "--disable=clang-diagnostic-double-promotion",
-      "--checker-config",
-      "clang-tidy:misc-unused-parameters:IgnoreVirtual=True"
+      "--disable=clang-diagnostic-double-promotion"
     ]
   }

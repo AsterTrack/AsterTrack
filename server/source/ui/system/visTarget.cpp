@@ -619,10 +619,10 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		}
 		visualiseLines(matchLines, 4.0f);
 	}
-	else if (trkVis.debugFocusStage > 0 && trkVis.debugFocusStage-1 < matchingData.size()
-		&& matchingData[trkVis.debugFocusStage-1].identifier >= 0)
+	else if (trkVis.debugFocusStage > 0 && trkVis.debugFocusStage-1 < matchingData.numStages
+		&& matchingData.stages[trkVis.debugFocusStage-1].identifier >= 0)
 	{
-		auto &targetMatch = matchingData[trkVis.debugFocusStage-1];
+		auto &targetMatch = matchingData.stages[trkVis.debugFocusStage-1];
 	
 		// Copy projected of that state
 		projected2D.clear();

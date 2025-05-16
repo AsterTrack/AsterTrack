@@ -73,18 +73,28 @@ struct TargetMatchingData
 	int markerCount = 0;
 	std::vector<MarkerMatchingData> markers;
 	Eigen::Isometry3f pose;
-
-	void clear()
-	{ // Keep allocations of points and points->matches
-		markerCount = 0;
-		identifier = -1;
-	}
 };
 struct TargetTracking2DData
 {
-	std::vector<UncertaintyAxisAlignment> uncertaintyAxis;
-	using CameraMatchingStages = std::vector<TargetMatchingData>;
+	struct CameraMatchingStages
+	{
+		static constexpr int MaxStages = 8;
+		std::array<TargetMatchingData, MaxStages> stages;
+		int numStages = 0;
+
+		void clear()
+		{ // Keep allocations of each stage
+			for (auto &stage : stages)
+			{ // Keep allocations of markers and markers->matches
+				stage.markerCount = 0;
+				stage.identifier = -1;
+			}
+			numStages = 0;
+		}
+	};
 	std::vector<CameraMatchingStages> matching;
+
+	std::vector<UncertaintyAxisAlignment> uncertaintyAxis;
 
 	TargetTracking2DData() {}
 	TargetTracking2DData(int cameraCount) : uncertaintyAxis(cameraCount), matching(cameraCount) {}
@@ -95,9 +105,16 @@ struct TargetTracking2DData
 		uncertaintyAxis.clear();
 		uncertaintyAxis.resize(cameraCount);
 		matching.resize(cameraCount);
-		for (auto &camera : matching)
-			for (auto &stage : camera)
-				stage.clear();
+	}
+
+	TargetMatchingData &nextMatchingStage(int camera, Eigen::Isometry3f pose)
+	{
+		assert(camera < matching.size());
+		CameraMatchingStages &cam = matching[camera];
+		assert(cam.numStages < CameraMatchingStages::MaxStages);
+		TargetMatchingData &data = cam.stages[cam.numStages++];
+		data.pose = pose;
+		return data;
 	}
 };
 

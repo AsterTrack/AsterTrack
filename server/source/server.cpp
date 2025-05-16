@@ -499,6 +499,7 @@ bool StartDeviceMode(ServerState &state)
 	// Initialise state
 	state.mode = MODE_Device;
 	state.pipeline.isSimulationMode = false;
+	state.pipeline.keepInternalData = false;
 
 	// Connect to IMU providers
 	hid_init();
@@ -980,6 +981,7 @@ void StartSimulation(ServerState &state)
 	// Initialise state
 	state.mode = MODE_Simulation;
 	state.pipeline.isSimulationMode = true;
+	state.pipeline.keepInternalData = true;
 
 	// Setup cameras
 	for (int c = 0; c < state.config.simulation.cameraDefinitions.size(); c++)
@@ -1341,6 +1343,7 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	// Initialise state
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
+	state.pipeline.keepInternalData = true;
 	state.recordReplayFrame = 0;
 
 	// Setup cameras

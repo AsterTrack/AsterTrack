@@ -160,6 +160,10 @@ struct TargetReprojectionError
 	}
 #endif
 
+	/*
+	 * For Optimisation
+	 */
+
 	template<typename DiffScalar = Scalar>
 	void calculateSampleErrors(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &errors) const
 	{
@@ -209,6 +213,10 @@ struct TargetReprojectionError
 		return 0; // <0 : abort, =0 : success, >0 : num function evaluation
 	}
 
+	/*
+	 * Filter Covariance
+	 */
+
 	template<typename DiffScalar = Scalar>
 	Eigen::Matrix<DiffScalar,6,6> covarianceEXP(const Isometry3<DiffScalar> &pose, DiffScalar errorStdDev, std::vector<VectorX<DiffScalar>> &deviations) const
 	{
@@ -227,6 +235,56 @@ struct TargetReprojectionError
 			return std::sqrt(errors.mean());
 		}, poseVec, covariance, errorStdDev, 0.01f*PixelSize, 0.001f, deviations);
 		return covariance;
+	}
+
+	/*
+	 * Filter Measurement
+	 */
+
+	template<typename DiffScalar = Scalar>
+	void calculatePointErrors(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &errors) const
+	{
+		assert(errors.size() == m_observedPoints.size()*2);
+		for (int p = 0; p < m_observedPoints.size(); p++)
+		{
+			auto &pt = m_observedPoints[p];
+			int c = std::get<0>(pt);
+			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
+			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
+			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+			if constexpr (!(Options&OptUndistorted))
+				measurement = undistortPoint(m_calibs[c], measurement);
+			errors.template segment<2>(p*2) = proj - measurement;
+		}
+	}
+
+	template<typename DiffScalar = Scalar>
+	void calculatePointProjections(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &projections) const
+	{
+		assert(projections.size() == m_observedPoints.size()*2);
+		for (int p = 0; p < m_observedPoints.size(); p++)
+		{
+			auto &pt = m_observedPoints[p];
+			int c = std::get<0>(pt);
+			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
+			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
+			projections.template segment<2>(p*2) = proj;
+		}
+	}
+
+	template<typename DiffScalar = Scalar>
+	void getPointMeasurements(VectorX<DiffScalar> &measurements) const
+	{
+		assert(measurements.size() == m_observedPoints.size()*2);
+		for (int p = 0; p < m_observedPoints.size(); p++)
+		{
+			auto &pt = m_observedPoints[p];
+			int c = std::get<0>(pt);
+			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+			if constexpr (!(Options&OptUndistorted))
+				measurement = undistortPoint(m_calibs[c], measurement);
+			measurements.template segment<2>(p*2) = measurement;
+		}
 	}
 
 	int inputs() const { return 6; }

@@ -85,8 +85,11 @@ static void recordTrackingResults(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.covPredicted = tracker.pose.covPredicted;
 	target.covObserved = tracker.pose.covObserved;
 	target.covFiltered = tracker.pose.covFiltered;
-	target.deviations = tracker.target.match2D.deviations;
 	target.error = tracker.target.match2D.error;
+	if (pipeline.keepInternalData)
+	{
+		target.match2D = tracker.target.match2D;
+	}
 	updateVisibleMarkers(target.visibleMarkers, tracker.target.match2D);
 
 	// Consider recording target in optimisation database
@@ -156,7 +159,6 @@ static void recordTrackingFailure(std::shared_ptr<FrameRecord> &frame, TrackedTa
 	target.covPredicted = tracker.pose.covPredicted;
 	target.covObserved.setZero();
 	target.covFiltered = tracker.pose.covFiltered;
-	target.deviations.clear();
 	target.error = { 0, 0, 0, 0};
 	// TODO: Properly record as loss
 	if (loss)
@@ -347,6 +349,12 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+
+	std::vector<CameraCalib> calibs(pipeline.cameras.size());
+	std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
+	for (int c = 0; c < pipeline.cameras.size(); c++)
+		calibs[c]= pipeline.cameras[c]->calib;
+
 	auto frames = pipeline.record.frames.getView<false>();
 	frameStart = std::max<unsigned int>(frames.beginIndex(), frameStart-3);
 	frameEnd = std::min<unsigned int>(frames.endIndex(), frameEnd);
@@ -356,6 +364,8 @@ void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 	{
 		if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
 		FrameRecord &frame = *frameIt->get();
+		for (int c = 0; c < pipeline.cameras.size(); c++)
+			points2D[c] = &frame.cameras[calibs[c].index].points2D;
 		for (auto &target : frame.tracking.targets)
 		{
 			auto &targets = pipeline.tracking.trackedTargets;
@@ -372,8 +382,8 @@ void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 			}
 			if (targetIt->inertial)
 				integrateIMU(targetIt->state, targetIt->inertial, targetIt->pose, frame.time, pipeline.params.track);
-			if (simulateTrackTarget(targetIt->state, targetIt->pose, target.poseObserved,
-					target.covObserved, target.tracked, frame.time, frame.num, pipeline.params.track))
+			if (simulateTrackTarget(targetIt->state, targetIt->target, targetIt->pose,
+				calibs, points2D, target, frame.time, frame.num, pipeline.params.track))
 			{
 				recordTrackingResults(*frameIt, target, *targetIt, pipeline);
 				if (targetIt->inertial)

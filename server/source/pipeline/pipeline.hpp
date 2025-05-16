@@ -117,7 +117,7 @@ struct PipelineState
 
 	// Frames
 	TrackingRecord record = {};
-	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true;
+	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true, keepInternalData = true;
 	// TODO: Periodically cull_front+delete_culled to free old frame records
 	// Various calibration routines might need access to older frame records in the queue
 	// So targetViews and all of TargetAssembly needs to be respected and/or similarly managed

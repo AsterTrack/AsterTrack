@@ -89,6 +89,11 @@ struct TargetFilteringParameters
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 
+	int PointObsLimit = 6; // Effectively disabled
+	bool PointUseUnscented = false;
+	bool PointUseNumerical = true;
+	bool PointUseSeparate = false;
+
 	template<typename Scalar>
 	Eigen::Matrix<Scalar,6,6> getCovariance() const
 	{

@@ -49,6 +49,7 @@ template <typename Derived> class StateBase {
     Derived const &derived() const noexcept {
         return *static_cast<Derived const *>(this);
     }
+    virtual int size() const { assert(Derived::Dimension > 0); return Derived::Dimension; }
 };
 
 /*!
@@ -63,6 +64,7 @@ template <typename Derived> class MeasurementBase {
     Derived const &derived() const noexcept {
         return *static_cast<Derived const *>(this);
     }
+    virtual int size() const { assert(Derived::Dimension > 0); return Derived::Dimension; }
 };
 
 /*!

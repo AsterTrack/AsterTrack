@@ -49,9 +49,9 @@ template <typename Derived> class ProcessModelBase;
 template <typename StateType, typename MeasurementType>
 struct CorrectionInProgress {
     //! Dimension of measurement
-    static constexpr size_t m = getDimension<MeasurementType>();
+    static constexpr int m = getDimension<MeasurementType>();
     //! Dimension of state
-    static constexpr size_t n = getDimension<StateType>();
+    static constexpr int n = getDimension<StateType>();
 
     CorrectionInProgress(StateType &state, MeasurementType &meas,
                          types::SquareMatrix<n> const &P_,
@@ -149,9 +149,9 @@ beginExtendedCorrection(StateBase<State> &state,
                         MeasurementBase<Measurement> &meas) {
 
     //! Dimension of measurement
-    static constexpr size_t m = getDimension<Measurement>();
+    static constexpr int m = getDimension<Measurement>();
     //! Dimension of state
-    static constexpr size_t n = getDimension<State>();
+    static constexpr int n = getDimension<State>();
 
     //! Measurement Jacobian
     types::Matrix<m, n> H = meas.derived().getJacobian(state.derived());

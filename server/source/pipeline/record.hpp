@@ -98,6 +98,18 @@ struct TargetMatchError
 
 using CovarianceMatrix = Eigen::Matrix<float,6,6>;
 
+struct TargetCalibration3D;
+
+struct TargetMatch2D
+{
+	const TargetCalibration3D *calib;
+	std::vector<std::vector<std::pair<int,int>>> points2D;
+	Eigen::Isometry3f pose;
+	TargetMatchError error;
+	CovarianceMatrix covariance;
+	std::vector<VectorX<float>> deviations;
+};
+
 struct TrackedTargetRecord
 {
 	int id;
@@ -113,7 +125,7 @@ struct TrackedTargetRecord
 	// However, we may visualise a past frame, usually just because the current frame is different and still processing
 	// Maybe retroactively garbage-collect frame record if neither visualisation, async detection, etc. needs it
 	std::vector<std::vector<int>> visibleMarkers;
-	std::vector<VectorX<float>> deviations;
+	TargetMatch2D match2D;
 };
 
 struct FrameRecord

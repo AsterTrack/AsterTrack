@@ -57,11 +57,11 @@ namespace types {
  * Convenience base class for things (like states and measurements) that
  * have a dimension.
  */
-template <size_t DIM> struct HasDimension {
-    static constexpr size_t Dimension = DIM;
+template <int DIM> struct HasDimension {
+    static constexpr int Dimension = DIM;
 };
 
-template <typename T> static constexpr size_t getDimension() {
+template <typename T> static constexpr int getDimension() {
     return T::Dimension;
 }
 
@@ -74,16 +74,16 @@ namespace types {
     using ProcessModelType = typename FilterType::ProcessModel;
 
     //! A vector of length n
-    template <size_t n> using Vector = Eigen::Matrix<Scalar, n, 1>;
+    template <int n> using Vector = Eigen::Matrix<Scalar, n, 1>;
 
     //! A square matrix, n x n
-    template <size_t n> using SquareMatrix = Eigen::Matrix<Scalar, n, n>;
+    template <int n> using SquareMatrix = Eigen::Matrix<Scalar, n, n>;
 
     //! A square diagonal matrix, n x n
-    template <size_t n> using DiagonalMatrix = Eigen::DiagonalMatrix<Scalar, n>;
+    template <int n> using DiagonalMatrix = Eigen::DiagonalMatrix<Scalar, n>;
 
     //! A matrix with rows = m,  cols = n
-    template <size_t m, size_t n> using Matrix = Eigen::Matrix<Scalar, m, n>;
+    template <int m, int n> using Matrix = Eigen::Matrix<Scalar, m, n>;
 
     //! A matrix with rows = dimension of T, cols = dimension of U
     template <typename T, typename U>

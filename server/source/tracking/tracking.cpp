@@ -23,12 +23,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
+#include "flexkalman/FlexibleKalmanCorrect.h"
 
 #include "unsupported/Eigen/NonLinearOptimization"
 
-bool simulateTrackTarget(TrackerState &state, TrackerObservation &observation,
-	Eigen::Isometry3f simulatedPose, CovarianceMatrix covariance, bool success,
-	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
+bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
@@ -41,27 +42,70 @@ bool simulateTrackTarget(TrackerState &state, TrackerObservation &observation,
 	observation.predicted = state.state.getIsometry().cast<float>();
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
-	if (!success) return false;
-	observation.observed = simulatedPose;
-	//observation.covObserved = covariance;
-	observation.covObserved = params.filter.getCovariance<float>();
+	if (!record.tracked) return false;
+	//target.match2D.error = record.error;
+	target.match2D = record.match2D;
+	observation.observed = record.poseObserved;
+	//observation.covObserved = record.covObserved;
+	observation.covObserved = params.filter.getCovariance<float>() * params.filter.trackSigma;
 
-	// Update state
-	auto measurement = AbsolutePoseMeasurement(
-		observation.observed.translation().cast<double>(),
-		Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
-		observation.covObserved.cast<double>()
-	);
-	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+	if (target.match2D.error.samples <= params.filter.PointObsLimit)
 	{
-		LOG(LTrackingFilter, LWarn, "Failed to correct pose in filter! Reset!");
+		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
+			target.match2D.error.samples);
+
+		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
+		errorTerm.setData(points2D, target.match2D);
+
+		TargetMatchMeasurement measurement(errorTerm, params.filter.stdDevError*params.filter.stdDevError);
+		measurement.useNumerical(params.filter.PointUseNumerical);
+
+		bool success = true;
+		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+		if (params.filter.PointUseSeparate)
+		{
+			for (int i = 0; i < errorTerm.values(); i++)
+			{
+				measurement.setSample(i);
+				if (params.filter.PointUseUnscented)
+					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
+			}
+			measurement.setSample(-1);
+		}
+		else
+		{
+			if (params.filter.PointUseUnscented)
+				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+			else success = flexkalman::correctExtended(state.state, model, measurement, true);
+		}
+		Eigen::VectorXd error(errorTerm.values()*2);
+		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
+		auto residual = measurement.getResidual(state.state);
+		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
+		if (!success)
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+	}
+	else
+	{
+		LOG(LTrackingFilter, LWarn, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		AbsolutePoseMeasurement measurement(
+			observation.observed.translation().cast<double>(),
+			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
+			observation.covObserved.cast<double>()
+		);
+		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+		{
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		}
 	}
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 
 	observation.filtered = state.state.getIsometry().cast<float>();
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	observation.time = time;
 
 	return true;
 }
@@ -101,15 +145,56 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	//observation.covObserved.topLeftCorner<3,3>() = fitCovarianceToSamples<3,float>(target.match2D.deviations);
 
 	// Update state
-	auto measurement = AbsolutePoseMeasurement(
-		observation.observed.translation().cast<double>(),
-		Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
-		observation.covObserved.cast<double>()
-	);
-	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+	if (target.match2D.error.samples <= params.filter.PointObsLimit)
 	{
-		LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
+			target.match2D.error.samples);
+
+		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
+		errorTerm.setData(points2D, target.match2D);
+
+		TargetMatchMeasurement measurement(errorTerm, params.filter.stdDevError*params.filter.stdDevError);
+		measurement.useNumerical(params.filter.PointUseNumerical);
+
+		bool success = true;
+		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+		if (params.filter.PointUseSeparate)
+		{
+			for (int i = 0; i < errorTerm.values(); i++)
+			{
+				measurement.setSample(i);
+				if (params.filter.PointUseUnscented)
+					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
+			}
+			measurement.setSample(-1);
+		}
+		else
+		{
+			if (params.filter.PointUseUnscented)
+				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+			else success = flexkalman::correctExtended(state.state, model, measurement, true);
+		}
+		Eigen::VectorXd error(errorTerm.values()*2);
+		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
+		auto residual = measurement.getResidual(state.state);
+		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
+		if (!success)
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+	}
+	else
+	{
+		LOG(LTrackingFilter, LWarn, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		AbsolutePoseMeasurement measurement(
+			observation.observed.translation().cast<double>(),
+			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
+			observation.covObserved.cast<double>()
+		);
+		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+		{
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		}
 	}
 	state.lastObservation = time;
 	state.lastObsFrame = frame;

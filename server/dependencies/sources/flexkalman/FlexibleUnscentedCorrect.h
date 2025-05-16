@@ -65,8 +65,8 @@ template <typename Derived> class ProcessModelBase;
 template <typename State, typename Measurement>
 class SigmaPointCorrectionApplication {
   public:
-    static constexpr size_t n = getDimension<State>();
-    static constexpr size_t m = getDimension<Measurement>();
+    static constexpr int n = getDimension<State>();
+    static constexpr int m = getDimension<Measurement>();
 
     using StateVec = types::Vector<n>;
     using StateSquareMatrix = types::SquareMatrix<n>;
@@ -74,12 +74,13 @@ class SigmaPointCorrectionApplication {
     using MeasurementSquareMatrix = types::SquareMatrix<m>;
 
     //! state augmented with measurement noise mean
-    static constexpr size_t AugmentedStateDim = n + m;
+    static constexpr int AugmentedStateDim = 
+        (n == Eigen::Dynamic || m == Eigen::Dynamic)? Eigen::Dynamic : (n + m);
     using AugmentedStateVec = types::Vector<AugmentedStateDim>;
     using AugmentedStateCovMatrix = types::SquareMatrix<AugmentedStateDim>;
     using SigmaPointsGen = AugmentedSigmaPointGenerator<AugmentedStateDim, n>;
 
-    static constexpr size_t NumSigmaPoints = SigmaPointsGen::NumSigmaPoints;
+    static constexpr int NumSigmaPoints = SigmaPointsGen::NumSigmaPoints;
 
     using Reconstruction =
         ReconstructedDistributionFromSigmaPoints<m, SigmaPointsGen>;
@@ -93,7 +94,7 @@ class SigmaPointCorrectionApplication {
         SigmaPointParameters const &params = SigmaPointParameters())
         : state(s), measurement(meas),
           sigmaPoints(getAugmentedStateVec(s),
-                      getAugmentedStateCov(s, measurement), params),
+                      getAugmentedStateCov(s, measurement), params, s.size()),
           transformedPoints(
               transformSigmaPoints(state, measurement, sigmaPoints)),
           reconstruction(sigmaPoints, transformedPoints),
@@ -105,18 +106,19 @@ class SigmaPointCorrectionApplication {
               computeStateCorrection(reconstruction, deltaz, PvvDecomp)),
           stateCorrectionFinite(stateCorrection.array().allFinite()) {}
 
-    static AugmentedStateVec getAugmentedStateVec(State const &s) {
-        AugmentedStateVec ret;
+    AugmentedStateVec getAugmentedStateVec(State const &s) {
+        AugmentedStateVec ret(s.size() + measurement.size());
         //! assuming measurement noise is zero mean
-        ret << s.stateVector(), MeasurementVec::Zero();
+        ret << s.stateVector(), MeasurementVec::Zero(measurement.size());
         return ret;
     }
 
     static AugmentedStateCovMatrix getAugmentedStateCov(State const &s,
                                                         Measurement &meas) {
-        AugmentedStateCovMatrix ret;
-        ret << s.errorCovariance(), types::Matrix<n, m>::Zero(),
-            types::Matrix<m, n>::Zero(), meas.getCovariance(s);
+        int ns = s.size(), ms = meas.size();
+        AugmentedStateCovMatrix ret(ns+ms, ns+ms);
+        ret << s.errorCovariance(), types::Matrix<n, m>::Zero(ns, ms),
+            types::Matrix<m, n>::Zero(ms, ns), meas.getCovariance(s);
         return ret;
     }
 
@@ -128,9 +130,9 @@ class SigmaPointCorrectionApplication {
     static TransformedSigmaPointsMat
     transformSigmaPoints(State const &s, Measurement &meas,
                          SigmaPointsGen const &sigmaPoints) {
-        TransformedSigmaPointsMat ret;
+        TransformedSigmaPointsMat ret(meas.size(), sigmaPoints.getNumSigmaPoints());
         State tempS = s;
-        for (std::size_t i = 0; i < NumSigmaPoints; ++i) {
+        for (std::size_t i = 0; i < sigmaPoints.getNumSigmaPoints(); ++i) {
             tempS.setStateVector(sigmaPoints.getSigmaPoint(i));
             ret.col(i) = meas.predictMeasurement(tempS);
         }
@@ -192,7 +194,7 @@ class SigmaPointCorrectionApplication {
         StateSquareMatrix newP =
             state.errorCovariance() -
             reconstruction.getCrossCov() *
-                PvvDecomp.solve(MeasurementSquareMatrix::Identity()) *
+                PvvDecomp.solve(MeasurementSquareMatrix::Identity(measurement.size(), measurement.size())) *
                 reconstruction.getCrossCov().transpose();
         bool finite = newP.array().allFinite();
         if (cancelIfNotFinite && !finite) {

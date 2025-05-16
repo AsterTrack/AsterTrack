@@ -715,13 +715,13 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		if (visState.tracking.showCovarianceSamples)
 		{ // Visualise samples on covariance ellipsoid shell
 			thread_local std::vector<VisPoint> samples;
-			samples.resize(tracker.deviations.size());
+			samples.resize(tracker.match2D.deviations.size());
 			Color devCol = { 1.0f, 1.0f, 1.0f, 1.0f };
 			Color hypCol = { 0.5f, 1.0f, 1.0f, 0.4f };
-			for (int i = 0; i < tracker.deviations.size(); i++)
+			for (int i = 0; i < tracker.match2D.deviations.size(); i++)
 			{
-				bool hyperdimensional = tracker.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
-				samples[i].pos = tracker.poseObserved * (tracker.deviations[i].head<3>() * visState.tracking.scaleCovariance);
+				bool hyperdimensional = tracker.match2D.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
+				samples[i].pos = tracker.poseObserved * (tracker.match2D.deviations[i].head<3>() * visState.tracking.scaleCovariance);
 				samples[i].size = 0.00001f*visState.tracking.scaleCovariance;
 				samples[i].color = hyperdimensional? hypCol : devCol;
 			}
@@ -729,7 +729,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 			if (visState.tracking.showCovariancePos)
 			{ // This should be the same, but it is not
-				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(tracker.deviations);
+				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(tracker.match2D.deviations);
 				covariances.emplace_back(composeCovarianceTransform(
 					tracker.poseObserved, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.8f, 0.2f, 0.4f });

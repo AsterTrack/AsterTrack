@@ -294,9 +294,9 @@ struct OrphanedIMU
 
 /* Functions */
 
-bool simulateTrackTarget(TrackerState &state, TrackerObservation &observation,
-	Eigen::Isometry3f simulatedPose, CovarianceMatrix covariance, bool success,
-	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
+bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
 
 bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,

@@ -33,16 +33,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
-struct TargetMatch2D
-{
-	const TargetCalibration3D *calib;
-	std::vector<std::vector<std::pair<int,int>>> points2D;
-	Eigen::Isometry3f pose;
-	TargetMatchError error;
-	CovarianceMatrix covariance;
-	std::vector<VectorX<float>> deviations;
-};
-
 // Expose internal data for visualisation purposes (low overhead)
 struct UncertaintyAxisAlignment
 {

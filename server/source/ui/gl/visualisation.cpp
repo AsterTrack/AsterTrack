@@ -70,7 +70,7 @@ std::array<float,2> getPointSizeRange()
 	return pointSizeRange;
 }
 
-void visSetupView(const Eigen::Projective3f &projection, const Eigen::Isometry3f &view, Eigen::Vector2i viewport)
+void visSetupView(const Eigen::Projective3f &projection, const Eigen::Isometry3f &view)
 {
 	projectionMat = projection;
 	viewMat = view;
@@ -79,7 +79,7 @@ void visSetupView(const Eigen::Projective3f &projection, const Eigen::Isometry3f
 	viewportZoom = 1.0f;
 }
 
-void visSetupCamera(const Eigen::Isometry3f &postProjection, const CameraCalib &calib, const CameraMode &mode, Eigen::Vector2i viewport)
+void visSetupCamera(const Eigen::Isometry3f &postProjection, const CameraCalib &calib)
 {
 	projectionMat = calib.projection.cast<float>();
 	viewMat = calib.view.cast<float>();
@@ -88,7 +88,7 @@ void visSetupCamera(const Eigen::Isometry3f &postProjection, const CameraCalib &
 	viewportZoom = std::abs(postProjection(0,0));
 }
 
-void visSetupProjection(const Eigen::Isometry3f &projection, Eigen::Vector2i viewport)
+void visSetupProjection(const Eigen::Isometry3f &projection)
 {
 	projectionMat.setIdentity();
 	viewMat.setIdentity();

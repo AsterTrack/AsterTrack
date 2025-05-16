@@ -251,6 +251,7 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 		if (libusb->ctrlOUTPending[i])
 		{
 			expectedCancelled++;
+			ret = libusb_cancel_transfer(libusb->controlOUT[i]);
 			if (ret == LIBUSB_ERROR_NOT_FOUND)
 			{ // Still pending
 				LOG(LUSB, LWarn, "Control OUT transfer %p has been blocked and is considered cancelled!\n", libusb->controlOUT[i]);

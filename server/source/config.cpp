@@ -622,7 +622,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 	fs >> file;
 	fs.close();
 
-	unsigned int frameOffset;
+	unsigned int frameOffset = 0;
 #ifndef JSON_NOEXCEPTION
 	try
 #endif

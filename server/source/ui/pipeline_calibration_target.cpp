@@ -821,8 +821,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto stage = getSelectedStage();
 				TargetCalibration3D targetCalib(id, std::string("Target ID ") + (char)((int)'0' + id), 
 					finaliseTargetMarkers(pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
-				pipeline.tracking.targetCalibrations.push_back(std::move(targetCalib));
 				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)targetCalib.markers.size(), id);
+				pipeline.tracking.targetCalibrations.push_back(std::move(targetCalib));
 				ServerStoreTargetCalib(state);
 			}
 

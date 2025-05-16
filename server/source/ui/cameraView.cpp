@@ -847,7 +847,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	};
 	auto drawWithoutFrame = [&]()
 	{
-		visSetupProjection(generateProjectionMatrix(visCamera, mode), viewSize);
+		visSetupProjection(generateProjectionMatrix(visCamera, mode));
 		drawCalibrationGuides();
 	};
 
@@ -952,7 +952,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 	 */
 	Eigen::Isometry3f postProjMat = generateProjectionMatrix(visCamera, mode);
 	//setupCamera(postProjMat, calib, mode, viewSize);
-	visSetupProjection(postProjMat, viewSize);
+	visSetupProjection(postProjMat);
 
 	/**
 	 * Visualise camera image in background
@@ -1061,7 +1061,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 		if (phase == PHASE_Automatic)
 		{
-			visSetupCamera(postProjMat, calib, mode, viewSize);
+			visSetupCamera(postProjMat, calib);
 			for (auto &targetRecord : frame->tracking.targets)
 			{
 				visualisePose(targetRecord.poseFiltered, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
@@ -1071,7 +1071,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			{
 				visualisePointsSpheres({ VisPoint{ markerRecord.position, Color{ 0.8, 0.8, 0, 1.0f }, 10.0f } });
 			} */
-			visSetupProjection(postProjMat, viewSize);
+			visSetupProjection(postProjMat);
 		}
 		else if (phase == PHASE_Tracking)
 		{
@@ -1099,12 +1099,12 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 			}
 
 			// Display poses in 3D
-			visSetupCamera(postProjMat, calib, mode, viewSize);
+			visSetupCamera(postProjMat, calib);
 			for (auto &targetRecord : frame->tracking.targets)
 				visualisePose(targetRecord.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
 			if (visState.room.showOrigin)
 				visualiseOrigin(visState.room.origin, 1, 5);
-			visSetupProjection(postProjMat, viewSize);
+			visSetupProjection(postProjMat);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
 			for (auto &trackedTarget : frame->tracking.targets)
@@ -1168,14 +1168,14 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		{
 			if (visFrame.target.hasObs())
 			{
-				visSetupCamera(postProjMat, calib, mode, viewSize);
+				visSetupCamera(postProjMat, calib);
 
 				// Visualise all markers at once to z-sort them appropriately
 				auto &markerPoints = visualiseVisTargetMarkers(pipeline, visState, visFrame.target);
 				visualisePointsSpheresDepthSorted(markerPoints);
 
 				// Reinstate projection after 3D
-				visSetupProjection(postProjMat, viewSize);
+				visSetupProjection(postProjMat);
 			}
 		}
 		else if (phase == PHASE_Calibration_Point)
@@ -1204,7 +1204,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 
 			if (!pipeline.pointCalib.room.floorPoints.empty())
 			{ // TODO: Accessing pipeline in vis without lock
-				visSetupCamera(postProjMat, calib, mode, viewSize);
+				visSetupCamera(postProjMat, calib);
 				thread_local std::vector<VisPoint> markerPoints;
 				markerPoints.clear();
 				Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
@@ -1214,7 +1214,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 						markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
 				}
 				visualisePointsSpheres(markerPoints);
-				visSetupProjection(postProjMat, viewSize);
+				visSetupProjection(postProjMat);
 			}
 		}
 	}

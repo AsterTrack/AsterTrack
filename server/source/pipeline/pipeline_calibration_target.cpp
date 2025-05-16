@@ -432,7 +432,8 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	ObsData obsData = {};
 	OptErrorRes startErrors = getTargetErrorDist(calibs, target);
 	determineTargetOutliers(calibs, target, SigmaToErrors(outliers, startErrors), aquisition);
-	if (params.resampleInterval > 0)
+	const bool enableResampling = params.resampleInterval > 0;
+	if (enableResampling)
 	{
 		ObsTarget subsampled = subsampleTargetObservations(frameRecords, observations, target, params);
 		LOGC(LDebug, "    Starting optimisation with %fpx for %d total samples, subsampled to %fpx for %d samples",
@@ -441,7 +442,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 		obsData.targets.push_back(std::move(subsampled));
 	}
 	else
-	{
+	{ // NOTE: target IS used before it's moved back, but only IFF enableResampling
 		obsData.targets.push_back(std::move(target));
 	}
 
@@ -500,7 +501,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 			}
 		}
 
-		bool resampled = params.resampleInterval > 0 && steps % params.resampleInterval == 0;
+		bool resampled = enableResampling && steps % params.resampleInterval == 0;
 		if (resampled)
 		{
 			applySubsampledChanges(obsData.targets.front(), target);
@@ -524,7 +525,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	}
 	while (continueOptimisation && lastStopCode < 0);
 
-	if (params.resampleInterval > 0 && steps % params.resampleInterval == 0)
+	if (enableResampling && steps % params.resampleInterval == 0)
 	{
 		applySubsampledChanges(obsData.targets.front(), target);
 		OptErrorRes subError = lastErrors;

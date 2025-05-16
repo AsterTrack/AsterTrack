@@ -112,9 +112,9 @@ void cleanVisualisation();
 std::array<float,2> getPointSizeRange();
 
 // Setup projection space
-void visSetupView(const Eigen::Projective3f &projection, const Eigen::Isometry3f &view, Eigen::Vector2i viewport);
-void visSetupCamera(const Eigen::Isometry3f &postProjection, const CameraCalib &calib, const CameraMode &mode, Eigen::Vector2i viewport);
-void visSetupProjection(const Eigen::Isometry3f &projection, Eigen::Vector2i viewport);
+void visSetupView(const Eigen::Projective3f &projection, const Eigen::Isometry3f &view);
+void visSetupCamera(const Eigen::Isometry3f &postProjection, const CameraCalib &calib);
+void visSetupProjection(const Eigen::Isometry3f &projection);
 
 /*
  * Visualisation functions for both 2D and 3D views

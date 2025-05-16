@@ -384,7 +384,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		if (!view3D.target.hasNaN())
 			view3D.viewTransform.translation() = view3D.target + view3D.viewTransform.linear() * Eigen::Vector3f(0, 0, -view3D.distance); 
 	}
-	visSetupView(view3D.getProj(visAspect), view3D.viewTransform.inverse(), viewSize);
+	visSetupView(view3D.getProj(visAspect), view3D.viewTransform.inverse());
 
 	static float time = 15.0f;
 	time += dT/6;

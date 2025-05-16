@@ -202,7 +202,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 		const Eigen::MatrixXd &structure = tucker.factor<2>();
 
 		double lastDiff = 0, diffStable = 1;
-		double lastStableDiff, diffTransition;
+		double lastStableDiff, diffTransition = 0;
 		int inTransition = 0;
 		double prevStableError = 0;
 		int prevStableLength = 0;

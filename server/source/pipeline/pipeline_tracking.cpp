@@ -336,9 +336,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex-1);
 
 	// Finally, no more frames to catch up on, register as new tracked target
-	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.target.calib == tracker.target.calib; });
 	assert(erased == 1);
+	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	return true;
 }
 

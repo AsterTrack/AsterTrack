@@ -196,9 +196,9 @@ void InterfaceState::UpdateMainMenuBar()
 					}
 				}
 				std::sort(pointCalibPaths.begin(), pointCalibPaths.end(), [&](auto &a, auto &b){
-					int aNum, bNum;
+					int aNum = 0, bNum = 0;
 					if (sscanf(a.string().data()+prefix.length(), "%d", &aNum) == 1
-					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum))
+					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum) == 1)
 					 	return aNum > bNum;
 					return a.string().compare(b.string()) > 0;
 				});

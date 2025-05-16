@@ -502,8 +502,9 @@ float matchTargetPointsAlongAxis(
 	float bestShift = NAN;
 	std::vector<std::pair<int,int>> tempMatches;
 	TargetMatchingData tempMatchData;
-	float shiftStep = std::min(params.stepLength, (shiftMax-shiftMin) / params.maxSteps);
-	for (float shift = shiftMin; shift < shiftMax; shift += shiftStep)
+	int steps = std::min(params.maxSteps, (int)std::floor((shiftMax-shiftMin) / params.stepLength));
+	float shift = shiftMin, shiftStep = (shiftMax-shiftMin) / (steps-1);
+	for (int i = 0; i < steps; i++)
 	{
 		// Using first match parameters for now since we expect an offset still
 		matchTargetPointsFast(points2D, properties, relevantPoints2D, projected2D, relevantProjected2D,
@@ -515,6 +516,7 @@ float matchTargetPointsAlongAxis(
 			matchData.markerCount = tempMatchData.markerCount;
 			bestShift = shift;
 		}
+		shift += shiftStep;
 	}
 	matchData.identifier = 2;
 	matchData.lower = params.subMatch.matchRadius*distFactor;

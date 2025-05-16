@@ -634,7 +634,7 @@ static bool ShowTrackingPanel()
 		frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
 		// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
 
-		double frameShift, frameShiftRec;
+		double frameShift = 0.0f, frameShiftRec = 0.0f;
 		bool drawCur = false, drawRec = false;
 
 		if (showCur && !frames.empty())
@@ -1220,7 +1220,7 @@ static bool ShowLatencyPanel()
 	ServerState &state = GetState();
 
 	BlockedQueue<LatencyMeasurement, 4096> *latencyMeasurements = nullptr;
-	LatencyDescriptor *descriptor;
+	LatencyDescriptor *descriptor = nullptr;
 	if (sourceType == 0)
 	{
 		if (sourceIndex >= state.controllers.size())

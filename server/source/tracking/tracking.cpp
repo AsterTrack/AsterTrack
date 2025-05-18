@@ -41,7 +41,7 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 	return covObserved;
 }
 
-bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
 {
@@ -56,7 +56,7 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 	observation.predicted = state.state.getIsometry().cast<float>();
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
-	if (!record.tracked) return false;
+	if (!record.result.isTracked()) return record.result;
 	target.match2D = record.match2D; // May be uninitialised outside of replay/simulation
 	target.match2D.error = record.error;
 	observation.observed = record.poseObserved;
@@ -64,7 +64,8 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 	if (observation.covObserved.hasNaN()) // Missing match2D in recording
 		observation.covObserved = record.covObserved;
 
-	if (target.match2D.error.samples <= params.filter.point.obsLimit)
+	TrackingResult trackResult = target.match2D.error.samples <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	if (trackResult == TrackingResult::TRACKED_SPARSE)
 	{
 		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
@@ -99,7 +100,10 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 		auto residual = measurement.getResidual(state.state);
 		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		{ // TODO: Actually reset
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose using sparse filter! Reset!");
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
+		}
 	}
 	else
 	{
@@ -110,9 +114,11 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 			observation.covObserved.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
-		{
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+		if (!success)
+		{ // TODO: Actually reset
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose using pose filter! Reset!");
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 	}
 	state.lastObservation = time;
@@ -122,10 +128,10 @@ bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObse
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return true;
+	return trackResult;
 }
 
-bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -146,14 +152,17 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(*target.calib, observation.predicted, observation.covPredicted,
 		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
-	if (target.match2D.error.samples < params.quality.minTotalObs) return false;
+	if (target.match2D.error.samples < params.quality.minTotalObs)
+		return TrackingResult::NO_TRACK;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 	observation.observed = target.match2D.pose;
 	observation.covObserved = selectPoseCovariance(target.match2D, params);
 
 	// Update state
-	if (target.match2D.error.samples <= params.filter.point.obsLimit)
+
+	TrackingResult trackResult = target.match2D.error.samples <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	if (trackResult == TrackingResult::TRACKED_SPARSE)
 	{
 		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
@@ -188,7 +197,10 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 		auto residual = measurement.getResidual(state.state);
 		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		{ // TODO: Actually reset
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose using sparse filter! Reset!");
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
+		}
 	}
 	else
 	{
@@ -199,9 +211,11 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 			observation.covObserved.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
-		{
-			LOG(LTrackingFilter, LWarn, "Failed to correct pose in optical filter! Reset!");
+		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+		if (!success)
+		{ // TODO: Actually reset
+			LOG(LTrackingFilter, LWarn, "Failed to correct pose using pose filter! Reset!");
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 	}
 	state.lastObservation = time;
@@ -211,11 +225,11 @@ bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation 
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return target.match2D.error.samples >= params.quality.minTotalObs && target.match2D.error.mean < params.quality.maxTotalError;
+	return trackResult;
 }
 
-int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
-	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
+TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
+	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma)
 {
 	// TODO: Track individual large markers - expose parameters
@@ -255,7 +269,7 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	if (matchedPoint < 0 || matchedErrorProbability > 1000)
 	{
 		LOG(LTracking, LWarn, "Best point %d of %d points had %f error probability\n", matchedPoint, (int)points3D.size(), matchedErrorProbability);
-		return -1;
+		return TrackingResult::NO_TRACK;
 	}
 	observation.observed.translation() = points3D[matchedPoint];
 	observation.covObserved.setIdentity();
@@ -279,7 +293,8 @@ int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return matchedPoint;
+	*bestPoint = matchedPoint;
+	return TrackingResult::TRACKED_MARKER;
 }
 
 static Eigen::Quaterniond GyroToQuat(Eigen::Vector3d gyro)

@@ -608,7 +608,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 		if (visState.tracking.showTargetPredicted)
 		{ // Show target markers in predicted pose
-			if (tracker.tracked)
+			if (tracker.result.isTracked())
 				updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
 					tracker.posePredicted, colPredicted, 0.5f, &markers[target->markers.size()*1]);
 			visualisePose(tracker.posePredicted, colPredicted, 0.2f, 2.0f);
@@ -622,14 +622,14 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		if (visState.tracking.showPoseExtrapolated)
 			visualisePose(tracker.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 
-		if (visState.tracking.showTargetObserved && tracker.tracked)
+		if (visState.tracking.showTargetObserved && tracker.result.isTracked())
 		{ // Show target markers in observed pose
 			updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
 				tracker.poseObserved, colObserved, 0.7f, &markers[target->markers.size()*0]);
 			visualisePose(tracker.poseObserved, colObserved, 0.2f, 2.0f);
 		}
 
-		if (visState.tracking.showTargetFiltered && tracker.tracked)
+		if (visState.tracking.showTargetFiltered && tracker.result.isTracked())
 		{ // Show target markers in filtered pose
 			updateTargetMarkerVis(pipeline, *target, tracker.visibleMarkers,
 				tracker.poseFiltered, colFiltered, 1.0f, &markers[target->markers.size()*2]);

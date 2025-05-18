@@ -1,2 +1,10 @@
 https://github.com/epezent/implot
 commit: f156599faefe316f7dd20fe6c783bf87c8bb6fd9
+Changes:
+- Made use of custom expanded set of cursors (implemented in custom GLFW and modified GLFW backend for ImGui)
+- (PlotDigital) Added x-axis shift support
+- (PlotDigital) Fixed last item in a block of same digital value not showing (e.g. 1 and 2 items would both be of length 1)
+- (PlotDigital) Fixed last item in buffer not showing at all
+- (PlotDigital) Changed digital value modifying digital bar height to switching between bar colors as specified by ColorMap
+    - BREAKING: Where you could previously specify the FillColor, now you have to set the value to an index into the ColorMap
+    - BREAKING: Where 0 would previously show no bar, this is now delegated to NAN, and 0 shows a bar of ColorMap index 0

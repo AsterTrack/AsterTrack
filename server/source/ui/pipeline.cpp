@@ -572,6 +572,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			static long coveredFrames;
 			if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 			{
+				auto countEvents = [](const std::vector<TrackedTargetRecord> &targets, TrackingResult result)
+				{
+					return std::count_if(targets.begin(), targets.end(), [&](auto &t){ return t.result == result; });
+				};
 				auto updateEventChange = [](EventChange &event, int loaded, int current)
 				{
 					event.loaded += loaded;
@@ -596,10 +600,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					auto &loaded = stored[record->num]->tracking;
 					auto &current = record->tracking;
 					// Update changes to all tracking events
-					updateEventChange(losses, loaded.trackingLosses, current.trackingLosses);
-					updateEventChange(search2D, loaded.searches2D, current.searches2D);
-					updateEventChange(detect2D, loaded.detections2D, current.detections2D);
-					updateEventChange(detect3D, loaded.detections3D, current.detections3D);
+					updateEventChange(losses, countEvents(loaded.targets, TrackingResult::NO_TRACK), countEvents(current.targets, TrackingResult::NO_TRACK));
+					updateEventChange(search2D, countEvents(loaded.targets, TrackingResult::SEARCHED_2D), countEvents(current.targets, TrackingResult::SEARCHED_2D));
+					updateEventChange(detect2D, countEvents(loaded.targets, TrackingResult::DETECTED_2D), countEvents(current.targets, TrackingResult::DETECTED_2D));
+					updateEventChange(detect3D, countEvents(loaded.targets, TrackingResult::DETECTED_3D), countEvents(current.targets, TrackingResult::DETECTED_3D));
 					updateEventChange(tracked, loaded.targets.size(), current.targets.size());
 					// Accumulate results for each target for this frame from loaded and current results
 					struct TargetTrackingFrame {

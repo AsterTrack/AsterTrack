@@ -294,19 +294,19 @@ struct OrphanedIMU
 
 /* Functions */
 
-bool simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
 
-bool trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
 	TimePoint_t time, unsigned int frame, int cameraCount, const TargetTrackingParameters &params);
 
-int trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
-	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices,
+TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
+	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma);
 
 bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,

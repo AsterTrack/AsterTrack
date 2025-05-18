@@ -1027,7 +1027,12 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 				frame.tracking.targets.push_back({});
 				auto &target = frame.tracking.targets.back();
 				target.id = jsTarget["id"].get<int>();
-				target.tracked = jsTarget.contains("trk")? jsTarget["trk"].get<bool>() : true;
+				if (jsTarget.contains("trk"))
+					target.result = jsTarget["trk"].get<bool>()? TrackingResult::IS_TRACKED : TrackingResult::IS_FAILURE;
+				else if (jsTarget.contains("res"))
+					target.result = jsTarget["res"].get<int>();
+				else
+					target.result = TrackingResult::NONE;
 				int i = 0;
 				auto poseArr = target.poseObserved.matrix().array();
 				for (auto &val : jsTarget["pose"])
@@ -1036,32 +1041,6 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 				target.error.mean = jsTarget["avg"].get<float>();
 				target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
 				target.error.max = jsTarget["max"].get<float>();
-			}
-
-			if (!jsFrame.contains("events")) continue;
-			if (!jsFrame["events"].is_array()) continue;
-			for (auto &evt : jsFrame["events"])
-			{
-				switch (evt.get<int>())
-				{
-					case 1:
-						frame.tracking.trackingLosses++;
-						break;
-					case 2:
-						frame.tracking.searches2D++;
-						break;
-					case 3:
-						frame.tracking.detections2D++;
-						break;
-					case 4:
-						frame.tracking.detections3D++;
-						break;
-					case 5:
-						frame.tracking.trackingCatchups++;
-						break;
-					default:
-						break;
-				}
 			}
 		}
 	}
@@ -1107,8 +1086,7 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
-		int eventCnt = frame.tracking.trackingLosses + frame.tracking.searches2D + frame.tracking.detections2D + frame.tracking.detections3D + frame.tracking.trackingCatchups;
-		if (frame.tracking.targets.empty() && eventCnt == 0)
+		if (frame.tracking.targets.empty())
 			continue;
 		json jsFrame;
 		jsFrame["id"] = frame.ID;
@@ -1118,7 +1096,7 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 		{
 			json jsTarget;
 			jsTarget["id"] = target.id;
-			jsTarget["trk"]	= target.tracked;
+			jsTarget["res"]	= (int)target.result;
 			jsTarget["pose"] = json::array();
 			auto poseArr = target.poseObserved.matrix().array();
 			for (int i = 0; i < 16; i++)
@@ -1129,20 +1107,6 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 			jsTarget["max"] = target.error.max;
 			jsFrame["targets"].push_back(std::move(jsTarget));
 			targetIDs.insert(target.id);
-		}
-		if (eventCnt > 0)
-		{
-			jsFrame["events"] = json::array();
-			for (int i = 0; i < frame.tracking.trackingLosses; i++)
-				jsFrame["events"].push_back(1);
-			for (int i = 0; i < frame.tracking.searches2D; i++)
-				jsFrame["events"].push_back(2);
-			for (int i = 0; i < frame.tracking.detections2D; i++)
-				jsFrame["events"].push_back(3);
-			for (int i = 0; i < frame.tracking.detections3D; i++)
-				jsFrame["events"].push_back(4);
-			for (int i = 0; i < frame.tracking.trackingCatchups; i++)
-				jsFrame["events"].push_back(5);
 		}
 		jsFrames.push_back(std::move(jsFrame));
 	}

@@ -110,10 +110,61 @@ struct TargetMatch2D
 	std::vector<VectorX<float>> deviations;
 };
 
+class TrackingResult
+{
+public:
+	enum Value
+	{
+		NONE				= 0,
+		// Base
+		_BASE				= 0xFF << 8,
+		IS_PROBE			= 1 << 8,
+		IS_DETECTED			= 2 << 8,
+		IS_TRACKED			= 3 << 8,
+		IS_FAILURE			= 4 << 8,
+		// State
+		_STATE				= 0xFF,
+		SEARCHED_2D			= IS_PROBE | 1,
+		TESTED_3D			= IS_PROBE | 2,
+		DETECTED_2D			= IS_DETECTED | 1,
+		DETECTED_3D			= IS_DETECTED | 2,
+		TRACKED_MARKER		= IS_TRACKED | 1,
+		TRACKED_POSE		= IS_TRACKED | 2,
+		TRACKED_SPARSE		= IS_TRACKED | 3,
+		NO_TRACK			= IS_FAILURE | 1,
+		// Flags
+		_FLAG				= 0xFF << 16,
+		FILTER_FAILED		= (1 << 16),
+		CATCHING_UP			= (1 << 17),
+		REMOVED				= (1 << 18),
+	};
+
+	TrackingResult() : value(TrackingResult::NONE) {}
+	TrackingResult(TrackingResult::Value val) : value(val) {}
+	TrackingResult(int val) : value((Value)val) {}
+
+	constexpr operator TrackingResult::Value() const { return value; }
+	constexpr operator TrackingResult::Value&() { return value; }
+
+	bool operator==(TrackingResult::Value val) const { return value == val; }
+	bool operator!=(TrackingResult::Value val) const { return value != val; }
+
+	bool isProbe() const { return (value&_BASE) == IS_PROBE; }
+	bool isDetected() const { return (value&_BASE) == IS_DETECTED; }
+	bool isTracked() const { return (value&_BASE) == IS_TRACKED; }
+	bool isFailure() const { return (value&_BASE) == IS_FAILURE; }
+	bool isState(TrackingResult::Value state) const { return (value & (_BASE|_STATE)) == state; }
+	bool hasFlag(TrackingResult::Value flag) const { return (value & flag & _FLAG) != 0; }
+	bool setFlag(TrackingResult::Value flag){ return value = (Value)((int)value | (flag & _FLAG)); }
+
+private:
+	Value value;
+};
+
 struct TrackedTargetRecord
 {
 	int id;
-	bool tracked;
+	TrackingResult result;
 	TargetMatchError error;
 	Eigen::Isometry3f posePredicted, poseExtrapolated, poseObserved, poseFiltered;
 	Eigen::Isometry3f poseInertialIntegrated, poseInertialFused, poseInertialFiltered;
@@ -154,7 +205,6 @@ struct FrameRecord
 	// Tracking results
 	struct 
 	{
-		int trackingLosses, searches2D, detections2D, detections3D, trackingCatchups;
 		std::vector<TrackedTargetRecord> targets;
 		//std::vector<TrackedMarkerRecord> markers;
 		std::vector<Eigen::Vector3f> triangulations;

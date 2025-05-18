@@ -1130,7 +1130,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 				Color colFiltered = Color{ 0.4f, 0.1f, 0.5f, 0.8f };
 				Color colPredicted = Color{ 0.2, 0.5, 0.7, 0.4f };
 
-				if (visState.tracking.showTargetObserved && trackedTarget.tracked)
+				if (visState.tracking.showTargetObserved && trackedTarget.result.isTracked())
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
 					projectTarget(projected2D, *target, calib,
@@ -1150,7 +1150,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 					visualisePoints2D(projected2D, colPredicted, 2.0f);
 				}
 
-				if (visState.tracking.showTargetFilteredCamera && trackedTarget.tracked)
+				if (visState.tracking.showTargetFilteredCamera && trackedTarget.result.isTracked())
 				{
 					projectTarget(projected2D, *target, calib,
 						trackedTarget.poseFiltered, pipeline.params.track.expandMarkerFoV);

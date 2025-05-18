@@ -554,55 +554,42 @@ static bool ShowTrackingPanel()
 		&& ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
 	{
 		static struct {
-			bool isTracking;
 			std::vector<int> sampleCount;
 			std::vector<float> errors2D;
 			std::vector<float> tracking;
-			std::vector<float> targetLost, targetAttempts, targetDetected, targetCatchup;
 
 			void setup(int size)
 			{
-				isTracking = false;
 				sampleCount.clear();
 				errors2D.clear();
 				tracking.clear();
 				sampleCount.resize(size, 0);
 				errors2D.resize(size, NAN);
 				tracking.resize(size, NAN);
-				targetLost.clear();
-				targetDetected.clear();
-				targetAttempts.clear();
-				targetCatchup.clear();
 			}
 		} tracking, recording;
 
 		auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame, float evtOffset = 0.0f)
 		{
 			auto tracked = std::find_if(frame.tracking.targets.begin(), frame.tracking.targets.end(), [&](auto &t){ return t.id == curTargetID; });
-			{ // Events
-				int maxEvents = frame.tracking.trackingLosses + frame.tracking.searches2D + frame.tracking.detections3D + frame.tracking.trackingCatchups;
-				float step = std::min(0.4f, 1.0f/maxEvents), pos = -step * (maxEvents-1)/2 - step + evtOffset*step;
-				for (int i = 0; i < frame.tracking.trackingLosses; i++)
-					stats.targetLost.push_back(frame.num + (pos += step));
-				for (int i = 0; i < frame.tracking.searches2D-frame.tracking.detections2D; i++)
-					stats.targetAttempts.push_back(frame.num + (pos += step));
-				for (int i = 0; i < frame.tracking.detections2D; i++)
-					stats.targetDetected.push_back(frame.num + (pos += step));
-				for (int i = 0; i < frame.tracking.detections3D; i++)
-					stats.targetDetected.push_back(frame.num + (pos += step));
-				for (int i = 0; i < frame.tracking.trackingCatchups; i++)
-					stats.targetCatchup.push_back(frame.num + (pos += step));
-			}
 			if (tracked == frame.tracking.targets.end())
-			{
-				stats.isTracking = false;
 				return;
-			}
-			if (!stats.isTracking)
-				stats.isTracking = true;
-			stats.tracking[index] = true;
 			stats.sampleCount[index] = tracked->error.samples;
 			stats.errors2D[index] = tracked->error.mean * PixelFactor;
+
+			// Indices into ImPlotColormap_Dark:
+			if (tracked->result.isFailure() && !tracked->result.hasFlag(TrackingResult::REMOVED))
+				stats.tracking[index] = 0;
+			else if (tracked->result.isTracked() && tracked->result.hasFlag(TrackingResult::CATCHING_UP))
+				stats.tracking[index] = 1;
+			else if (tracked->result.isTracked() && !tracked->result.hasFlag(TrackingResult::CATCHING_UP))
+				stats.tracking[index] = 2;
+			else if (tracked->result.isProbe())
+				stats.tracking[index] = 3;
+			else if (tracked->result.isFailure() && tracked->result.hasFlag(TrackingResult::REMOVED))
+				stats.tracking[index] = 4;
+			else if (tracked->result.isDetected())
+				stats.tracking[index] = 7;
 		};
 
 		// Update frameRange
@@ -676,6 +663,8 @@ static bool ShowTrackingPanel()
 			}
 		}
 
+		ImPlot::PushColormap(ImPlotColormap_Deep);
+
 		// Sample count bars
 		ImPlot::SetAxis(ImAxis_Y1);
 		if (drawCur)
@@ -704,41 +693,13 @@ static bool ShowTrackingPanel()
 			ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
 		}
 
-		// Events
-		if (drawRec)
-		{ // Draw recorded
-			ImPlot::SetNextLineStyle(ImVec4(1, 0, 0, 0.7), 1.0);
-			ImPlot::PlotInfLines("##LossRec", recording.targetLost.data(), recording.targetLost.size());
-			ImPlot::SetNextLineStyle(ImVec4(0, 1, 0, 0.7), 1.0);
-			ImPlot::PlotInfLines("##DetectRec", recording.targetDetected.data(), recording.targetDetected.size());
-			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.8, 0, 0.7), 1.0);
-			ImPlot::PlotInfLines("##AttemptsRec", recording.targetAttempts.data(), recording.targetAttempts.size());
-			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.8, 0.2, 1), 1.0);
-			ImPlot::PlotInfLines("##CatchupRec", recording.targetCatchup.data(), recording.targetCatchup.size());
-		}
-		if (drawCur)
-		{ // Draw current
-			ImPlot::SetNextLineStyle(ImVec4(1, 0, 0, 1), 1.0);
-			ImPlot::PlotInfLines("##Loss", tracking.targetLost.data(), tracking.targetLost.size());
-			ImPlot::SetNextLineStyle(ImVec4(0, 1, 0, 1), 1.0);
-			ImPlot::PlotInfLines("##Detect", tracking.targetDetected.data(), tracking.targetDetected.size());
-			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.8, 0, 1), 1.0);
-			ImPlot::PlotInfLines("##Attempts", tracking.targetAttempts.data(), tracking.targetAttempts.size());
-			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.8, 0.2, 1), 1.0);
-			ImPlot::PlotInfLines("##Catchup", tracking.targetCatchup.data(), tracking.targetCatchup.size());
-		}
-
 		// Tracking state
+		ImPlot::PushColormap(ImPlotColormap_Dark);
 		if (drawRec)
-		{ // Draw recorded
-			ImPlot::SetNextFillStyle(ImVec4(0.33*0.6, 0.66*0.6, 0.4*0.6, 0.8));
-			ImPlot::PlotDigital("##TrackingRec", recording.tracking.data(), recording.tracking.size(), frameShiftRec);
-		}
+			ImPlot::PlotDigital("##TrackingRec", recording.tracking.data(), recording.tracking.size(), frameShiftRec-0.5f);
 		if (drawCur)
-		{ // Draw current
-			ImPlot::SetNextFillStyle(ImVec4(0.33, 0.66, 0.4, 1.0));
-			ImPlot::PlotDigital("##Tracking", tracking.tracking.data(), tracking.tracking.size(), frameShift);
-		}
+			ImPlot::PlotDigital("##Tracking", tracking.tracking.data(), tracking.tracking.size(), frameShift-0.5f);
+		ImPlot::PopColormap();
 
 		// Current and selected frames
 		double curFrame = frameNum + 0.5;
@@ -748,6 +709,7 @@ static bool ShowTrackingPanel()
 		if (ImPlot::DragLineX(2, &jumpFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
 			ui.frameJumpTarget = (unsigned int)jumpFrame;
 
+		ImPlot::PopColormap();
 		ImPlot::EndPlot();
 	}
 

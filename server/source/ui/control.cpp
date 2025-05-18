@@ -364,7 +364,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			PipelineState &pipeline = state.pipeline;
 
 			// Assume control over pipeline processing
-			int prevState = state.simAdvance;
 			state.simAdvance = 0;
 			state.simWaiting.wait(false);
 
@@ -438,10 +437,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 						for (int i = 0; i < target.error.samples; i++)
 							results.samples.update(target.error.mean);
 						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, target.error.mean*PixelFactor);
+						if (target.result.isFailure())
+							results.losses++;
+						else if (target.result.isDetected())
+							results.detections++;
+
 					}
-					results.losses += frame->get()->tracking.trackingLosses;
-					results.detections += frame->get()->tracking.detections2D;
-					results.detections += frame->get()->tracking.detections3D;
 				}
 				LOG(LGUI, LDebug, "Final error %.2fpx, %d samples, %d frames, %d losses", results.samples.avg*PixelFactor, results.samples.num, results.frames.num, results.losses);
 				// Update range
@@ -505,7 +506,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			addFrameRange[1] = 0;
 			auto handleFrame = [&](const FrameRecord &frame)
 			{
-				if (!frame.tracking.trackingLosses) return;
+				bool hasFailure = std::any_of(frame.tracking.targets.begin(), frame.tracking.targets.end(),
+					[](const auto &tracker){ return tracker.result.isFailure(); });
+				if (!hasFailure) return;
 				if (inRange && frame.num - addFrameRange[1] > reach*2)
 				{ // Separate from last range
 					frameRanges.push_back({ (unsigned int)std::max<long>(0, (long)addFrameRange[0]-reach), addFrameRange[1]+reach, true, false });
@@ -580,7 +583,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					ImGui::TextUnformatted("Updating...");
 				else
 				{
-					auto &res = range.results, &base = range.baseline;
 					// Update total errors across all ranges
 					results.frames.merge(range.results.frames);
 					results.samples.merge(range.results.samples);

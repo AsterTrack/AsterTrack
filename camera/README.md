@@ -52,7 +52,8 @@ Each line stores one known network: `<SSID> <Password> WPA` where SSID is space-
 Note: This is not required if you pass the wifi credentials on-demand using the AsterTrack Application Interface. <br>
 
 ## License
-The AsterTrack Camera firmware is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header.
+The AsterTrack Camera firmware is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header. <br>
+Additionally, any modifications to the dependencies are licensed under the license of the respective dependency as found in the licenses folder, with express permission to incorporate these modifications upstream.
 
 The following merely describes the intent behind this seggregation: <br>
 **MIT:**

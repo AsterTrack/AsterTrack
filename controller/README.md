@@ -63,7 +63,8 @@ If not, make sure such a group exists and join it:
 
 ## License
 The AsterTrack Controller Firmware is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header. <br>
-Notably, the usb_driver is licensed under MPL 2.0, as it is a full reimplementation of the USB stack for the CH32V307 with much more robust and fully-featured control transfers than the vendor-provided implementation.
+Notably, the usb_driver is licensed under MPL 2.0, as it is a full reimplementation of the USB stack for the CH32V307 with much more robust and fully-featured control transfers than the vendor-provided implementation. <br>
+Additionally, any modifications to the dependencies are licensed under the license of the respective dependency as found in the licenses folder, with express permission to incorporate these modifications upstream.
 
 The following merely describes the intent behind this seggregation: <br>
 **MIT:**

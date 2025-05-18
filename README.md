@@ -31,7 +31,8 @@ In addition to addressing these fundamental problems, the custom hardware also a
 It is highly recommended to make use of the custom PCBs, either the official dev kit or the DIY version.
 
 ## License
-Most of the software and firmware in this repository is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header.
+Most of the software and firmware in this repository is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header. <br>
+Additionally, any modifications to the dependencies are licensed under the license of the respective dependency as found in the licenses folder, with express permission to incorporate these modifications upstream.
 
 The following merely describes the intent behind this seggregation: <br>
 **MIT:**

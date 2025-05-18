@@ -591,7 +591,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();
 
-	for (auto &tracker : frame.tracking.targets)
+	for (auto &tracker : frame.trackers)
 	{
 		auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
 			[&](auto &t){ return t.id == tracker.id; });
@@ -673,7 +673,7 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 
 		thread_local std::vector<VisModel> covariances;
 		covariances.clear();
-		auto enterCovariances = [&](TrackedTargetRecord &trk)
+		auto enterCovariances = [&](TrackerRecord &trk)
 		{
 			if (visState.tracking.showTargetFiltered)
 				covariances.emplace_back(composeCovarianceTransform(
@@ -696,10 +696,9 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 			trailIt--;
 			if (!trailIt->get() || !trailIt->get()->finishedProcessing) continue;
 			auto trailPt = &markers[target->markers.size()*3+i*3];
-			auto &pastTracks = trailIt->get()->tracking.targets;
-			auto pastTrack = std::find_if(pastTracks.begin(), pastTracks.end(),
+			auto pastTrack = std::find_if(trailIt->get()->trackers.begin(), trailIt->get()->trackers.end(),
 				[&](auto &t){ return t.id == tracker.id; });
-			if (pastTrack == pastTracks.end()) continue;
+			if (pastTrack == trailIt->get()->trackers.end()) continue;
 			if (visState.tracking.showCovariancePos)
 			{ // Show covariances, not just points
 				enterCovariances(*pastTrack);
@@ -779,9 +778,9 @@ static void visualiseState3D(const PipelineState &pipeline, VisualisationState &
 		}
 
 		Color col = { 0.1f, 0.6f, 1.0f, 1.0f };
-		for (auto &pt : frame.tracking.triangulations)
+		for (auto &tri : frame.triangulations)
 		{
-			markerPoints.emplace_back(pt.cast<float>(), (Color8)col, 0.01f);
+			markerPoints.emplace_back(tri.cast<float>(), (Color8)col, 0.01f);
 		}
 
 		visualisePointsSpheres(markerPoints);

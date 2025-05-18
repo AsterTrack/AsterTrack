@@ -547,10 +547,10 @@ static bool ShowTrackingPanel()
 		ImGui::Checkbox("Recorded", &showRec);
 	}
 
-	auto frames = pipeline.record.frames.getView();
-	auto stored = state.record.frames.getView();
+	auto framesRecord = pipeline.record.frames.getView();
+	auto framesStored = state.stored.frames.getView();
 	unsigned int frameNum = pipeline.frameNum.load();
-	if (curTargetID != 0 && (!frames.empty() || !stored.empty())
+	if (curTargetID != 0 && (!framesRecord.empty() || !framesStored.empty())
 		&& ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
 	{
 		static struct {
@@ -565,30 +565,30 @@ static bool ShowTrackingPanel()
 				tracking.clear();
 				sampleCount.resize(size, 0);
 				errors2D.resize(size, NAN);
-				tracking.resize(size, NAN);
+				tracking.resize(size, NAN); // ImPlot needs one last entry to render the most recent state
 			}
 		} tracking, recording;
 
-		auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame, float evtOffset = 0.0f)
+		auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
 		{
-			auto tracked = std::find_if(frame.tracking.targets.begin(), frame.tracking.targets.end(), [&](auto &t){ return t.id == curTargetID; });
-			if (tracked == frame.tracking.targets.end())
+			auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTargetID; });
+			if (trackRecord == frame.trackers.end())
 				return;
-			stats.sampleCount[index] = tracked->error.samples;
-			stats.errors2D[index] = tracked->error.mean * PixelFactor;
+			stats.sampleCount[index] = trackRecord->error.samples;
+			stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
 
 			// Indices into ImPlotColormap_Dark:
-			if (tracked->result.isFailure() && !tracked->result.hasFlag(TrackingResult::REMOVED))
+			if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
 				stats.tracking[index] = 0;
-			else if (tracked->result.isTracked() && tracked->result.hasFlag(TrackingResult::CATCHING_UP))
+			else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
 				stats.tracking[index] = 1;
-			else if (tracked->result.isTracked() && !tracked->result.hasFlag(TrackingResult::CATCHING_UP))
+			else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
 				stats.tracking[index] = 2;
-			else if (tracked->result.isProbe())
+			else if (trackRecord->result.isProbe())
 				stats.tracking[index] = 3;
-			else if (tracked->result.isFailure() && tracked->result.hasFlag(TrackingResult::REMOVED))
+			else if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
 				stats.tracking[index] = 4;
-			else if (tracked->result.isDetected())
+			else if (trackRecord->result.isDetected())
 				stats.tracking[index] = 7;
 		};
 
@@ -605,7 +605,7 @@ static bool ShowTrackingPanel()
 			frameRange.Min += offset;
 			frameRange.Max += offset;
 		}
-		double framesAxisMax = std::max((double)std::max(frames.endIndex(), stored.size()), frameRange.Max);
+		double framesAxisMax = std::max((double)std::max(framesRecord.endIndex(), framesStored.size()), frameRange.Max);
 
 		// Setup plots
 		ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
@@ -624,19 +624,19 @@ static bool ShowTrackingPanel()
 		double frameShift = 0.0f, frameShiftRec = 0.0f;
 		bool drawCur = false, drawRec = false;
 
-		if (showCur && !frames.empty())
+		if (showCur && !framesRecord.empty())
 		{ // Gather stats for realtime tracking data
-			long long min = std::max<long long>(frameRange.Min-1, frames.beginIndex());
-			long long max = std::min<long long>(frameRange.Max+1, frames.endIndex()-1);
+			long long min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
+			long long max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
 			if (max >= min)
 			{
 				std::size_t frameCnt = max-min+1;
 				tracking.setup(frameCnt);
-				auto frameIt = frames.pos(max);
+				auto frameIt = framesRecord.pos(max);
 				for (int i = 0; i < frameCnt; i++, frameIt--)
 				{
 					if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
-					updateFrameStats(tracking, frameCnt-i-1, *frameIt->get(), 0.0f);
+					updateFrameStats(tracking, frameCnt-i-1, *frameIt->get());
 				}
 				frameShift = (double)min;
 				drawCur = frameCnt > 0;
@@ -644,19 +644,19 @@ static bool ShowTrackingPanel()
 			GetUI().RequestUpdates();
 		}
 
-		if (showRec && state.mode == MODE_Replay && !stored.empty())
+		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
 		{ // Gather stats for recorded tracking data
-			long long min = std::max<long long>(frameRange.Min-1, 0);
-			long long max = std::min<long long>(frameRange.Max+1, stored.size()-1);
+			long long min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
+			long long max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
 			if (max >= min)
 			{
 				std::size_t frameCnt = max-min+1;
 				recording.setup(frameCnt);
-				auto frameIt = stored.begin() + max;
+				auto frameIt = framesStored.pos(max);
 				for (int i = 0; i < frameCnt; i++, frameIt--)
 				{
-					if (*frameIt)
-						updateFrameStats(recording, frameCnt-i-1, *frameIt->get(), 0.4f);
+					if (!*frameIt) continue;
+					updateFrameStats(recording, frameCnt-i-1, *frameIt->get());
 				}
 				frameShiftRec = (double)min;
 				drawRec = frameCnt > 0;

@@ -110,6 +110,9 @@ struct TargetMatch2D
 	std::vector<VectorX<float>> deviations;
 };
 
+/**
+ * Decimal value encoding tracking results including specific internal states
+ */
 class TrackingResult
 {
 public:
@@ -161,22 +164,26 @@ private:
 	Value value;
 };
 
-struct TrackedTargetRecord
+struct TrackerRecord
 {
 	int id;
 	TrackingResult result;
 	TargetMatchError error;
-	Eigen::Isometry3f posePredicted, poseExtrapolated, poseObserved, poseFiltered;
-	Eigen::Isometry3f poseInertialIntegrated, poseInertialFused, poseInertialFiltered;
-	CovarianceMatrix covPredicted, covObserved, covFiltered;
+	Eigen::Isometry3f poseObserved, poseFiltered;
+	CovarianceMatrix covObserved, covFiltered;
 
-	// For visualisation only (including predicted)
-	// TODO: Consider garbage-collecting intermediate results from frameRecords
-	// Storing this for all frames, forever, is not great
-	// However, we may visualise a past frame, usually just because the current frame is different and still processing
-	// Maybe retroactively garbage-collect frame record if neither visualisation, async detection, etc. needs it
-	std::vector<std::vector<int>> visibleMarkers;
+	// Following is mostly for debug
+	// TODO: Consider reducing memory-footprint of frameRecords in release builds
+	// Extended filter output for visualisation (e.g. in trail)
+	Eigen::Isometry3f posePredicted, poseExtrapolated;
+	Eigen::Isometry3f poseInertialIntegrated, poseInertialFused, poseInertialFiltered;
+	CovarianceMatrix covPredicted;
+	// Intermediary tracking results for simulating filter again after modifying parameters
 	TargetMatch2D match2D;
+
+	// Following is for more general visualisation beyond debugging
+	// TODO: Consider garbage-collecting visualisation data in frameRecords or storing it separately
+	std::vector<std::vector<int>> visibleMarkers;
 };
 
 struct FrameRecord
@@ -203,12 +210,12 @@ struct FrameRecord
 	std::vector<CameraFrameRecord> cameras; // indexed like pipeline.cameras
 
 	// Tracking results
-	struct 
-	{
-		std::vector<TrackedTargetRecord> targets;
-		//std::vector<TrackedMarkerRecord> markers;
-		std::vector<Eigen::Vector3f> triangulations;
-	} tracking;
+	std::vector<TrackerRecord> trackers;
+	// TODO: Track individual large markers (4/4)
+	// Either store in tracker record with negative ID
+	// Or here in separate records
+	std::vector<Eigen::Vector3f> triangulations;
+	// TODO: Properly integrate triangulation records (1/3)
 
 	// TODO: Put remainingPoints2D and other intermediate results in here?
 	// Both target calibration (tryTrackFrame) and async detection2D (retroactivelyTrackFrame) would benefit

@@ -221,8 +221,8 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	{
-		auto frames = pipeline.record.frames.getView();
-		if (frames.size() <= frameRecord.num || !frames[frameRecord.num] || frames[frameRecord.num].get() != &frameRecord)
+		auto framesRecord = pipeline.record.frames.getView();
+		if (framesRecord.size() <= frameRecord.num || !framesRecord[frameRecord.num] || framesRecord[frameRecord.num].get() != &frameRecord)
 			pipeline.record.frames.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
 	}
 	pipeline.frameNum = frameRecord.num;
@@ -233,7 +233,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// We will be overwriting frame records, so technically leaving them as-is is not thread-safe
 
 	// Adopt recorded tracking state
-	for (auto &targetRecord : frameRecord.tracking.targets)
+	for (auto &targetRecord : frameRecord.trackers)
 	{
 		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 			[&](auto &e){ return e.target.calib->id == targetRecord.id; });

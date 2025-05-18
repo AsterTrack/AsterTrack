@@ -754,19 +754,19 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 			if (GetState().pipeline.keepFrameImages)
 			{ // Store compressed image record in frameRecord for later use
-				auto frames = GetState().pipeline.record.frames.getView<false>();
-				if (frames.empty()) return;
+				auto framesRecord = GetState().pipeline.record.frames.getView<false>();
+				if (framesRecord.empty()) return;
 				// Search for frame with correct ID in recently recorded frames. Cannot assume ID == num, but can assume image is recent
-				auto frameRec = std::prev(frames.end());
-				while (frameRec != frames.begin() && (!*frameRec || frameRec->get()->ID > imageRecord->frameID)) frameRec--;
-				if (!*frameRec || frameRec->get()->ID != imageRecord->frameID)
+				auto frameRecord = std::prev(framesRecord.end());
+				while (frameRecord != framesRecord.begin() && (!*frameRecord || frameRecord->get()->ID > imageRecord->frameID)) frameRecord--;
+				if (!*frameRecord || frameRecord->get()->ID != imageRecord->frameID)
 				{
 					LOG(LParsing, LWarn, "Failed to record received camera image for unknown frame ID %d!",
 						imageRecord->frameID);
 					return;
 				}
-				auto &cameraRec = frameRec->get()->cameras[camera->pipeline->index];
-				cameraRec.image = imageRecord; // new shared_ptr
+				auto &cameraRecord = frameRecord->get()->cameras[camera->pipeline->index];
+				cameraRecord.image = imageRecord; // new shared_ptr
 			}
 
 			// Store as most recent decompressed image

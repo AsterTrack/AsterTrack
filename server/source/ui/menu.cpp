@@ -239,7 +239,7 @@ void InterfaceState::UpdateMainMenuBar()
 					StartReplay(state, cameras);
 
 					// Load in observations
-					state.record.frames.insert(observations.lastRecordedFrame, nullptr);
+					state.stored.frames.insert(observations.lastRecordedFrame, nullptr);
 					*state.pipeline.seqDatabase.contextualLock() = std::move(observations);
 
 					UpdateErrorFromObservations(state.pipeline);
@@ -289,10 +289,10 @@ void InterfaceState::UpdateMainMenuBar()
 					ServerState &state = GetState();
 					std::vector<CameraConfigRecord> cameras;
 					state.recordPath = file;
-					state.recordFrameOffset = parseRecording(state.recordPath, cameras, state.record);
-					parseTrackingResults(state.recordPath, state.record, state.recordFrameOffset);
+					state.recordFrameOffset = parseRecording(state.recordPath, cameras, state.stored);
+					parseTrackingResults(state.recordPath, state.stored, state.recordFrameOffset);
 					state.recordReplayFrame = 0;
-					state.recordFrameCount = state.record.frames.getView().size();
+					state.recordFrameCount = state.stored.frames.getView().size();
 
 					LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", state.recordFrameCount);
 					if (state.mode != MODE_None)

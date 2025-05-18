@@ -137,14 +137,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		{
 			frameNum = visFrame.frameIt.index();
 			int imuUpdateWait = 0;
-			auto &tracking = visFrame.frameIt->get()->tracking;
-			for (auto &tracked : tracking.targets)
+			auto &frameRecord = *visFrame.frameIt->get();
+			for (auto &trackRecord : frameRecord.trackers)
 			{
-				auto &t = visState.tracking.targets[tracked.id];
+				auto &t = visState.tracking.targets[trackRecord.id];
 				if (!t.calib)
 				{ // Setup tracked target for the first time
 					auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
-						[&](auto &t){ return t.id == tracked.id; });
+						[&](auto &t){ return t.id == trackRecord.id; });
 					assert(target != pipeline.tracking.targetCalibrations.end());
 					t.calib = &*target;
 					t.imu = "No IMU";
@@ -241,10 +241,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 			// Temporary debug tools, data, etc.
 
-			auto &frame = *visFrame.frameIt->get();
-			auto tracked = std::find_if(frame.tracking.targets.begin(), frame.tracking.targets.end(),
+			auto &frameRecord = *visFrame.frameIt->get();
+			auto trackRecord = std::find_if(frameRecord.trackers.begin(), frameRecord.trackers.end(),
 						[&](auto &t){ return t.id == visState.tracking.focusedTargetID; });
-			assert(tracked != frame.tracking.targets.end());
+			assert(trackRecord != frameRecord.trackers.end());
 			auto &target = *visState.tracking.targets.at(visState.tracking.focusedTargetID).calib;
 			auto &debugVis = visState.tracking.debug;
 
@@ -254,8 +254,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			std::vector<std::vector<int> const *> relevantPoints2D(pipeline.cameras.size());
 			for (int c = 0; c < pipeline.cameras.size(); c++)
 			{
-				points2D[c] = &frame.cameras[c].points2D;
-				properties[c] = &frame.cameras[c].properties;
+				points2D[c] = &frameRecord.cameras[c].points2D;
+				properties[c] = &frameRecord.cameras[c].properties;
 				remainingPoints2D[c].resize(points2D[c]->size());
 				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
 				relevantPoints2D[c] = &remainingPoints2D[c];
@@ -265,7 +265,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			{
 				debugVis.needsUpdate = false;
 				debugVis.targetMatch2D = trackTarget2D(target,
-					tracked->posePredicted, tracked->covPredicted,
+					trackRecord->posePredicted, trackRecord->covPredicted,
 					pipeline.getCalibs(), pipeline.cameras.size(),
 					points2D, properties, relevantPoints2D, pipeline.params.track, visState.tracking.retrackData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
@@ -276,7 +276,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (debugVis.frameNum == frameNum)
 			{
 				ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-					tracked->error.mean*PixelFactor, tracked->error.stdDev*PixelFactor, tracked->error.max*PixelFactor);
+					trackRecord->error.mean*PixelFactor, trackRecord->error.stdDev*PixelFactor, trackRecord->error.max*PixelFactor);
 				ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max",
 					debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor);
 				ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max",
@@ -297,7 +297,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				if (ImGui::Button("Optimise", SizeWidthDiv4()))
 				{
 					debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
-						debugVis.editedMatch2D, tracked->posePredicted, pipeline.params.track.opt);
+						debugVis.editedMatch2D, trackRecord->posePredicted, pipeline.params.track.opt);
 				}
 				ImGui::SameLine();
 				if (ImGui::Button("Reset", SizeWidthDiv4()))
@@ -536,22 +536,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::SameLine();
 			if (ImGui::Button("Load from disk", SizeWidthDiv3()))
 			{
-				for (auto &record : state.record.frames.getView())
-					if (record) record->tracking = {};
-				parseTrackingResults(state.recordPath, state.record, state.recordFrameOffset);
+				parseTrackingResults(state.recordPath, state.stored, state.recordFrameOffset);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Set temporarily", SizeWidthDiv3()))
 			{
-				auto frames = pipeline.record.frames.getView();
-				auto stored = state.record.frames.getView();
-				for (auto &record : stored)
-					if (record) record->tracking = {};
-				for (const auto &record : frames)
+				auto framesRecord = pipeline.record.frames.getView();
+				auto framesStored = state.stored.frames.getView();
+				for (auto &frameStored : framesStored)
 				{
-					if (!record) continue;
-					if (stored.size() <= record->num) break;
-					stored[record->num]->tracking = record->tracking;
+					if (!frameStored) continue;
+					frameStored->trackers.clear();
+					frameStored->triangulations.clear();
+				}
+				for (const auto &frameRecord : framesRecord)
+				{
+					if (!frameRecord) continue;
+					if (framesStored.size() <= frameRecord->num) break;
+					framesStored[frameRecord->num]->trackers = frameRecord->trackers;
+					framesStored[frameRecord->num]->triangulations = frameRecord->triangulations;
 				}
 			}
 
@@ -561,20 +564,20 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				int loaded, current, added, removed;
 			};
 			static EventChange losses, search2D, detect2D, detect3D, tracked;
-			struct TargetTracking
+			struct TrackingSamples
 			{
 				std::string label;
 				EventChange tracked;
 				StatValue<float,StatExtremas|StatDistribution> samplesLoaded, samplesCurrent, samplesAdded, samplesRemoved;
 				StatValue<float,StatExtremas|StatDistribution> errorLoaded, errorCurrent, errorAdded, errorRemoved;
 			};
-			static std::map<int, TargetTracking> targets;
+			static std::map<int, TrackingSamples> trackers;
 			static long coveredFrames;
 			if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 			{
-				auto countEvents = [](const std::vector<TrackedTargetRecord> &targets, TrackingResult result)
+				auto countEvents = [](const FrameRecord &record, TrackingResult result)
 				{
-					return std::count_if(targets.begin(), targets.end(), [&](auto &t){ return t.result == result; });
+					return std::count_if(record.trackers.begin(), record.trackers.end(), [&](auto &t){ return t.result == result; });
 				};
 				auto updateEventChange = [](EventChange &event, int loaded, int current)
 				{
@@ -588,78 +591,78 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				detect2D = {};
 				detect3D = {};
 				tracked = {};
-				targets.clear();
+				trackers.clear();
 				coveredFrames = 0;
-				auto frames = pipeline.record.frames.getView();
-				auto stored = state.record.frames.getView();
-				for (const auto &record : frames)
+				auto framesRecord = pipeline.record.frames.getView<true>();
+				auto framesStored = state.stored.frames.getView<true>();
+				for (const auto &frameRecord : framesRecord)
 				{
-					if (!record) continue;
-					if (stored.size() <= record->num) break;
+					if (!frameRecord) continue;
+					if (framesStored.size() <= frameRecord->num) break;
 					coveredFrames++;
-					auto &loaded = stored[record->num]->tracking;
-					auto &current = record->tracking;
+					auto &stored = *framesStored[frameRecord->num];
+					auto &record = *frameRecord;
 					// Update changes to all tracking events
-					updateEventChange(losses, countEvents(loaded.targets, TrackingResult::NO_TRACK), countEvents(current.targets, TrackingResult::NO_TRACK));
-					updateEventChange(search2D, countEvents(loaded.targets, TrackingResult::SEARCHED_2D), countEvents(current.targets, TrackingResult::SEARCHED_2D));
-					updateEventChange(detect2D, countEvents(loaded.targets, TrackingResult::DETECTED_2D), countEvents(current.targets, TrackingResult::DETECTED_2D));
-					updateEventChange(detect3D, countEvents(loaded.targets, TrackingResult::DETECTED_3D), countEvents(current.targets, TrackingResult::DETECTED_3D));
-					updateEventChange(tracked, loaded.targets.size(), current.targets.size());
+					updateEventChange(losses, countEvents(stored, TrackingResult::NO_TRACK), countEvents(record, TrackingResult::NO_TRACK));
+					updateEventChange(search2D, countEvents(stored, TrackingResult::SEARCHED_2D), countEvents(record, TrackingResult::SEARCHED_2D));
+					updateEventChange(detect2D, countEvents(stored, TrackingResult::DETECTED_2D), countEvents(record, TrackingResult::DETECTED_2D));
+					updateEventChange(detect3D, countEvents(stored, TrackingResult::DETECTED_3D), countEvents(record, TrackingResult::DETECTED_3D));
+					updateEventChange(tracked, stored.trackers.size(), record.trackers.size());
 					// Accumulate results for each target for this frame from loaded and current results
-					struct TargetTrackingFrame {
+					struct FrameTrackers {
 						int samplesLoaded = 0, samplesCurrent = 0;
 						float errorLoaded = 0, errorCurrent = 0;
 					};
-					std::map<int, TargetTrackingFrame> targetsFrame;
-					for (auto &tracker : current.targets)
+					std::map<int, FrameTrackers> frameTrackers;
+					for (auto &trackRecord : record.trackers)
 					{
-						auto &tgt = targetsFrame[tracker.id];
-						tgt.samplesCurrent = tracker.error.samples;
-						tgt.errorCurrent = tracker.error.mean;
+						auto &trkFrame = frameTrackers[trackRecord.id];
+						trkFrame.samplesCurrent = trackRecord.error.samples;
+						trkFrame.errorCurrent = trackRecord.error.mean;
 					}
-					for (auto &tracker : loaded.targets)
+					for (auto &trackStored : stored.trackers)
 					{
-						auto &tgt = targetsFrame[tracker.id];
-						tgt.samplesLoaded = tracker.error.samples;
-						tgt.errorLoaded = tracker.error.mean;
+						auto &trkFrame = frameTrackers[trackStored.id];
+						trkFrame.samplesLoaded = trackStored.error.samples;
+						trkFrame.errorLoaded = trackStored.error.mean;
 					}
 					// Update changes to each targets tracking results
-					for (auto &tgt : targetsFrame)
+					for (auto &trk : frameTrackers)
 					{
-						auto &tgtRec = targets[tgt.first];
-						auto &tgtFrame = tgt.second;
-						updateEventChange(tgtRec.tracked, std::min(1, tgtFrame.samplesLoaded), std::min(1, tgtFrame.samplesCurrent));
-						if (tgtFrame.samplesLoaded)
+						auto &tracker = trackers[trk.first];
+						auto &trkFrame = trk.second;
+						updateEventChange(tracker.tracked, std::min(1, trkFrame.samplesLoaded), std::min(1, trkFrame.samplesCurrent));
+						if (trkFrame.samplesLoaded)
 						{
-							tgtRec.samplesLoaded.update(tgtFrame.samplesLoaded);
-							tgtRec.errorLoaded.update(tgtFrame.errorLoaded);
+							tracker.samplesLoaded.update(trkFrame.samplesLoaded);
+							tracker.errorLoaded.update(trkFrame.errorLoaded);
 						}
-						if (tgtFrame.samplesCurrent)
+						if (trkFrame.samplesCurrent)
 						{
-							tgtRec.samplesCurrent.update(tgtFrame.samplesCurrent);
-							tgtRec.errorCurrent.update(tgtFrame.errorCurrent);
+							tracker.samplesCurrent.update(trkFrame.samplesCurrent);
+							tracker.errorCurrent.update(trkFrame.errorCurrent);
 						}
-						if (tgtFrame.samplesCurrent > tgtFrame.samplesLoaded)
-							tgtRec.samplesAdded.update(tgtFrame.samplesCurrent-tgtFrame.samplesLoaded);
-						if (tgtFrame.samplesCurrent < tgtFrame.samplesLoaded)
-							tgtRec.samplesRemoved.update(tgtFrame.samplesLoaded-tgtFrame.samplesCurrent);
-						if (tgtFrame.samplesLoaded && tgtFrame.samplesCurrent)
+						if (trkFrame.samplesCurrent > trkFrame.samplesLoaded)
+							tracker.samplesAdded.update(trkFrame.samplesCurrent-trkFrame.samplesLoaded);
+						if (trkFrame.samplesCurrent < trkFrame.samplesLoaded)
+							tracker.samplesRemoved.update(trkFrame.samplesLoaded-trkFrame.samplesCurrent);
+						if (trkFrame.samplesLoaded && trkFrame.samplesCurrent)
 						{
-							if (tgtFrame.errorCurrent > tgtFrame.errorLoaded)
-								tgtRec.errorAdded.update(tgtFrame.errorCurrent-tgtFrame.errorLoaded);
-							if (tgtFrame.errorCurrent < tgtFrame.errorLoaded)
-								tgtRec.errorRemoved.update(tgtFrame.errorLoaded-tgtFrame.errorCurrent);
+							if (trkFrame.errorCurrent > trkFrame.errorLoaded)
+								tracker.errorAdded.update(trkFrame.errorCurrent-trkFrame.errorLoaded);
+							if (trkFrame.errorCurrent < trkFrame.errorLoaded)
+								tracker.errorRemoved.update(trkFrame.errorLoaded-trkFrame.errorCurrent);
 						}
 					}
 				}
 				for (auto &tgt : state.pipeline.tracking.targetCalibrations)
 				{
-					auto it = targets.find(tgt.id);
-					if (it != targets.end())
+					auto it = trackers.find(tgt.id);
+					if (it != trackers.end())
 						it->second.label = tgt.label;
 				}
 			}
-			if (!targets.empty() && ImGui::TreeNode("Target Results"))
+			if (!trackers.empty() && ImGui::TreeNode("Target Results"))
 			{
 				ImGui::Text("Tracking Losses: %d  [%d]  +%d -%d", losses.current, losses.loaded, losses.added, losses.removed);
 				ImGui::Text("2D Searches: %d  [%d]  +%d -%d", search2D.current, search2D.loaded, search2D.added, search2D.removed);
@@ -667,7 +670,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::Text("3D Detections: %d  [%d]  +%d -%d", detect3D.current, detect3D.loaded, detect3D.added, detect3D.removed);
 				ImGui::Text("Tracked Tgt/Frame: %d  [%d]  +%d -%d", tracked.current, tracked.loaded, tracked.added, tracked.removed);
 
-				for (auto &trackedTarget : targets)
+				for (auto &trackedTarget : trackers)
 				{
 					ImGui::PushID(trackedTarget.first);
 					if (ImGui::TreeNode(trackedTarget.second.label.c_str()))

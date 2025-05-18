@@ -93,7 +93,7 @@ struct ServerState
 	// Loaded record for replay
 	std::string recordPath;
 	unsigned int recordFrameOffset;
-	TrackingRecord record;
+	TrackingRecord stored;
 	long recordReplayFrame, recordFrameCount;
 	TimePoint_t recordReplayTime;
 

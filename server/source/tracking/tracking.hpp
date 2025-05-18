@@ -296,7 +296,7 @@ struct OrphanedIMU
 
 TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
-	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
+	const TrackerRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
 
 TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,

@@ -1189,8 +1189,8 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			}
 			else
 			{
-				auto stored = state->record.frames.getView();
-				auto &loadedRecord = stored[state->recordReplayFrame];
+				auto framesStored = state->stored.frames.getView();
+				auto &loadedRecord = framesStored[state->recordReplayFrame];
 				if (!loadedRecord)
 				{
 					state->recordReplayFrame++;
@@ -1216,12 +1216,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 					continue;
 				frameRecord->num = state->recordReplayFrame;
 				frameRecord->ID = loadedRecord->ID;
-				frameRecord->time = state->recordReplayTime + (loadedRecord->time - stored.front()->time);
+				frameRecord->time = state->recordReplayTime + (loadedRecord->time - framesStored.front()->time);
 				frameRecord->cameras = loadedRecord->cameras;
 				assert(frameRecord->cameras.size() == pipeline.cameras.size());
 				if (++state->recordReplayFrame < state->recordFrameCount)
 				{ // Replicate original frame pacing
-					auto &nextRecord = stored[state->recordReplayFrame];
+					auto &nextRecord = framesStored[state->recordReplayFrame];
 					if (nextRecord)
 						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
@@ -1229,27 +1229,27 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 				// Copy imu samples a bit ahead of the frame into record
 				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);
-				assert(pipeline.record.imus.size() == state->record.imus.size());
-				for (int i = 0; i < state->record.imus.size(); i++)
+				assert(pipeline.record.imus.size() == state->stored.imus.size());
+				for (int i = 0; i < state->stored.imus.size(); i++)
 				{
 					auto &imu = pipeline.record.imus[i];
 					{
-						auto samples = state->record.imus[i]->samplesFused.getView();
+						auto samples = state->stored.imus[i]->samplesFused.getView();
 						auto it = samples.pos(imu->samplesFused.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
+							sample.timestamp = state->recordReplayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesFused.insert(it.index(), sample);
 						}
 					}
 					{
-						auto samples = state->record.imus[i]->samplesRaw.getView();
+						auto samples = state->stored.imus[i]->samplesRaw.getView();
 						auto it = samples.pos(imu->samplesRaw.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recordReplayTime + (sample.timestamp - stored.front()->time);
+							sample.timestamp = state->recordReplayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesRaw.insert(it.index(), sample);
 						}
 					}
@@ -1355,8 +1355,8 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 
 	// Setup IMUs
 	state.pipeline.record.imus.clear();
-	state.pipeline.record.imus.reserve(state.record.imus.size());
-	for (auto &storedIMU : state.record.imus)
+	state.pipeline.record.imus.reserve(state.stored.imus.size());
+	for (auto &storedIMU : state.stored.imus)
 	{
 		auto imu = std::make_shared<IMURecord>(*storedIMU);
 		auto tracker = getIMUTracker(imu->id);
@@ -1414,8 +1414,8 @@ void StopReplay(ServerState &state)
 	state.mode = MODE_None;
 	state.cameras.clear();
 	ResetPipelineState(state.pipeline);
-	state.record.frames.cull_clear();
-	state.record.imus.clear();
+	state.stored.frames.cull_clear();
+	state.stored.imus.clear();
 	state.recordReplayFrame = 0;
 	state.recordFrameCount = 0;
 
@@ -1805,23 +1805,23 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 	auto io_lock = std::unique_lock(state.io.mutex);
 	if (!state.io.vrpn_server) return;
 
-	for (auto &trackedTarget : frame->tracking.targets)
+	for (auto &trackRecord : frame->trackers)
 	{
-		auto io_tracker = state.io.vrpn_trackers.find(trackedTarget.id);
+		auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
 			auto target = std::find_if(state.pipeline.tracking.targetCalibrations.begin(), state.pipeline.tracking.targetCalibrations.end(),
-				[&](auto &t){ return t.id == trackedTarget.id; });
+				[&](auto &t){ return t.id == trackRecord.id; });
 			if (target == state.pipeline.tracking.targetCalibrations.end()) continue;
 			std::string path = target->label;
 			//std::string path = asprintf_s("AsterTarget_%.4d", trackedTarget.id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());
-			auto vrpn_tracker = make_opaque<vrpn_Tracker_AsterTrack>(trackedTarget.id, path.c_str(), state.io.vrpn_server.get());
-			io_tracker = state.io.vrpn_trackers.insert({ trackedTarget.id, std::move(vrpn_tracker) }).first;
+			auto vrpn_tracker = make_opaque<vrpn_Tracker_AsterTrack>(trackRecord.id, path.c_str(), state.io.vrpn_server.get());
+			io_tracker = state.io.vrpn_trackers.insert({ trackRecord.id, std::move(vrpn_tracker) }).first;
 		}
 
 		// TODO: Send both poseObserved and poseFiltered?
-		io_tracker->second->updatePose(0, frame->time, trackedTarget.poseFiltered);
+		io_tracker->second->updatePose(0, frame->time, trackRecord.poseFiltered);
 		io_tracker->second->mainloop();
 	}
 

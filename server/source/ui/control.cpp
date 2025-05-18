@@ -201,19 +201,19 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
 				std::shared_ptr<FrameRecord> frame = nullptr;
-				auto frames = pipeline.record.frames.getView();
-				if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
-					frame = frames[frameJumpTarget];
+				auto framesRecord = pipeline.record.frames.getView();
+				if (frameJumpTarget < framesRecord.size() && framesRecord[frameJumpTarget])
+					frame = framesRecord[frameJumpTarget];
 				else
 				{ // Try initialising with stored record
-					auto stored = state.record.frames.getView();
-					if (frameJumpTarget < stored.size())
-						frame = stored[frameJumpTarget];
+					auto framesStored = state.stored.frames.getView();
+					if (frameJumpTarget < framesStored.size())
+						frame = framesStored[frameJumpTarget];
 				}
 				if (frame)
 				{
-					for (int f = frameJumpTarget; f < frames.endIndex(); f++)
-						if (frames[f]) frames[f]->finishedProcessing = false;
+					for (int f = frameJumpTarget; f < framesRecord.endIndex(); f++)
+						if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 					AdoptFrameRecordState(pipeline, *frame);
 					state.recordReplayFrame = frameJumpTarget+1;
 				}
@@ -249,8 +249,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		ImGui::BeginDisabled(pipeline.record.frames.getView().empty());
 		if (ImGui::Button("Save All Frames", SizeWidthDiv2()))
 		{
-			auto frames = pipeline.record.frames.getView();
-			recordSections.emplace_back(frames.beginIndex(), frames.endIndex(), true);
+			auto framesRecord = pipeline.record.frames.getView();
+			recordSections.emplace_back(framesRecord.beginIndex(), framesRecord.endIndex(), true);
 		}
 		ImGui::EndDisabled();
 		ImGui::BeginDisabled(true);
@@ -298,8 +298,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
 							// Write to path
 							{
-								auto records = pipeline.record.frames.getView();
-								if (records.endIndex() < section.end)
+								auto framesRecord = pipeline.record.frames.getView();
+								if (framesRecord.endIndex() < section.end)
 								{ // Already deleted
 									LOG(LGUI, LWarn, "The section to be saved has already been deleted internally!");
 									return;
@@ -401,18 +401,18 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				int frameJumpTarget = range.begin-1;
 				// Jump to frame after last frame has been processed
 				std::shared_ptr<FrameRecord> frame = nullptr;
-				auto frames = pipeline.record.frames.getView();
-				if (frameJumpTarget < frames.size() && frames[frameJumpTarget])
-					frame = frames[frameJumpTarget];
+				auto framesRecord = pipeline.record.frames.getView();
+				if (frameJumpTarget < framesRecord.size() && framesRecord[frameJumpTarget])
+					frame = framesRecord[frameJumpTarget];
 				else
 				{ // Try initialising with stored record
-					auto stored = state.record.frames.getView();
-					if (frameJumpTarget < stored.size())
-						frame = stored[frameJumpTarget];
+					auto framesStored = state.stored.frames.getView();
+					if (frameJumpTarget < framesStored.size())
+						frame = framesStored[frameJumpTarget];
 				}
 				if (!frame) continue;
-				for (int f = frameJumpTarget; f < range.end && f < frames.endIndex(); f++)
-					if (frames[f]) frames[f]->finishedProcessing = false;
+				for (int f = frameJumpTarget; f < range.end && f < framesRecord.endIndex(); f++)
+					if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 				AdoptFrameRecordState(pipeline, *frame);
 				state.recordReplayFrame = frameJumpTarget+1;
 				// Quickly advance through frame range
@@ -425,21 +425,21 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (stop_token.stop_requested()) break;
 				if (state.simAdvance.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
-				frames = pipeline.record.frames.getView(); // New view
-				auto begin = frames.pos(range.begin), end = frames.pos(range.end);
+				framesRecord = pipeline.record.frames.getView(); // New view
+				auto begin = framesRecord.pos(range.begin), end = framesRecord.pos(range.end);
 				FrameRange::Results results = {};
 				LOG(LGUI, LDebug, "Updating range from frame %d - %d", range.begin, range.end);
 				for (auto frame = begin; frame != end; frame++)
 				{
-					for (auto &target : frame->get()->tracking.targets)
+					for (auto &trackRecord : frame->get()->trackers)
 					{
-						results.frames.update(target.error.mean);
-						for (int i = 0; i < target.error.samples; i++)
-							results.samples.update(target.error.mean);
-						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, target.error.mean*PixelFactor);
-						if (target.result.isFailure())
+						results.frames.update(trackRecord.error.mean);
+						for (int i = 0; i < trackRecord.error.samples; i++)
+							results.samples.update(trackRecord.error.mean);
+						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, trackRecord.error.mean*PixelFactor);
+						if (trackRecord.result.isFailure())
 							results.losses++;
-						else if (target.result.isDetected())
+						else if (trackRecord.result.isDetected())
 							results.detections++;
 
 					}
@@ -506,7 +506,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			addFrameRange[1] = 0;
 			auto handleFrame = [&](const FrameRecord &frame)
 			{
-				bool hasFailure = std::any_of(frame.tracking.targets.begin(), frame.tracking.targets.end(),
+				bool hasFailure = std::any_of(frame.trackers.begin(), frame.trackers.end(),
 					[](const auto &tracker){ return tracker.result.isFailure(); });
 				if (!hasFailure) return;
 				if (inRange && frame.num - addFrameRange[1] > reach*2)
@@ -519,12 +519,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				addFrameRange[1] = frame.num;
 				inRange = true;
 			};
-			auto frames = pipeline.record.frames.getView();
-			for (auto &frame : frames)
+			auto framesRecord = pipeline.record.frames.getView();
+			for (auto &frame : framesRecord)
 				if (frame) handleFrame(*frame);
-			auto stored = state.record.frames.getView();
-			for (int f = addFrameRange[1]+1; f < stored.endIndex(); f++)
-				if (stored[f]) handleFrame(*stored[f]);
+			auto framesStored = state.stored.frames.getView();
+			for (int f = addFrameRange[1]+1; f < framesStored.endIndex(); f++)
+				if (framesStored[f]) handleFrame(*framesStored[f]);
 			if (inRange)
 				frameRanges.push_back({ (unsigned int)std::max<long>(0, (long)addFrameRange[0]-reach), addFrameRange[1]+reach, true, false });
 		}

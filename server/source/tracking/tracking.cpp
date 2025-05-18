@@ -43,7 +43,7 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 
 TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
-	const TrackedTargetRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
+	const TrackerRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
@@ -232,7 +232,7 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma)
 {
-	// TODO: Track individual large markers - expose parameters
+	// TODO: Track individual large markers (1/4) - expose parameters
 	TargetTrackingParameters params = {};
 
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
@@ -287,7 +287,7 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 
 	state.lastObservation = time;
 	state.lastObsFrame++;
-	// TODO: Track individual large markers - switch to frame number
+	// TODO: Track individual large markers (2/4) - switch to frame number
 
 	observation.filtered = state.state.getIsometry().cast<float>() ;
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();

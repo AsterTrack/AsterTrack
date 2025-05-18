@@ -1019,28 +1019,30 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 			auto &framePtr = frames[num-frameOffset];
 			if (!framePtr) continue;
 			FrameRecord &frame = *framePtr;
-			frame.tracking = {};
-			frame.tracking.targets.reserve(jsTargets.size());
+			frame.triangulations.clear();
+			// TODO: Properly integrate triangulation records (3/3)
+			frame.trackers.clear();
+			frame.trackers.reserve(jsTargets.size());
 			for (auto &jsTarget : jsTargets)
 			{
 				if (!jsTarget.is_object() || !jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
-				frame.tracking.targets.push_back({});
-				auto &target = frame.tracking.targets.back();
-				target.id = jsTarget["id"].get<int>();
+				frame.trackers.push_back({});
+				auto &tracker = frame.trackers.back();
+				tracker.id = jsTarget["id"].get<int>();
 				if (jsTarget.contains("trk"))
-					target.result = jsTarget["trk"].get<bool>()? TrackingResult::IS_TRACKED : TrackingResult::IS_FAILURE;
+					tracker.result = jsTarget["trk"].get<bool>()? TrackingResult::IS_TRACKED : TrackingResult::IS_FAILURE;
 				else if (jsTarget.contains("res"))
-					target.result = jsTarget["res"].get<int>();
+					tracker.result = jsTarget["res"].get<int>();
 				else
-					target.result = TrackingResult::NONE;
+					tracker.result = TrackingResult::NONE;
 				int i = 0;
-				auto poseArr = target.poseObserved.matrix().array();
+				auto poseArr = tracker.poseObserved.matrix().array();
 				for (auto &val : jsTarget["pose"])
 					poseArr(i++) = val.is_number_float()? val.get<float>() : NAN;
-				target.error.samples = jsTarget["num"].get<int>();
-				target.error.mean = jsTarget["avg"].get<float>();
-				target.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
-				target.error.max = jsTarget["max"].get<float>();
+				tracker.error.samples = jsTarget["num"].get<int>();
+				tracker.error.mean = jsTarget["avg"].get<float>();
+				tracker.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
+				tracker.error.max = jsTarget["max"].get<float>();
 			}
 		}
 	}
@@ -1086,13 +1088,13 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
-		if (frame.tracking.targets.empty())
+		if (frame.trackers.empty())
 			continue;
 		json jsFrame;
 		jsFrame["id"] = frame.ID;
 		jsFrame["num"] = frameOffset + frame.num;
 		jsFrame["targets"] = json::array();
-		for (const auto &target : frame.tracking.targets)
+		for (const auto &target : frame.trackers)
 		{
 			json jsTarget;
 			jsTarget["id"] = target.id;

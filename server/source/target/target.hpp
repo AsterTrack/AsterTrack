@@ -116,8 +116,8 @@ struct TargetCalibration3D
  * Writes indices of points projected into projected
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
-	const TargetCalibration3D &target,
-	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
+	const TargetCalibration3D &target, const CameraCalib &calib,
+	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
 
 /**
  * Projects relevant target markers into camera view, clipping out-of-view points
@@ -125,23 +125,25 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
  * Writes indices of points projected into projected
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
-	const TargetCalibration3D &target, const std::vector<int> &relevant,
-	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
+	const TargetCalibration3D &target, const CameraCalib &calib,
+	const std::vector<int> &relevant,
+	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
 
 /**
  * Projects target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D,
-	const TargetCalibration3D &target,
-	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
+	const TargetCalibration3D &target, const CameraCalib &calib,
+	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
 
 /**
  * Projects relevant target markers into camera view, clipping out-of-view points
  * Writes only those points to points2D
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D,
-	const TargetCalibration3D &target, const std::vector<int> &relevant,
-	const CameraCalib &calib, const Eigen::Isometry3f &pose, float expandFoV = 0.0f);
+	const TargetCalibration3D &target, const CameraCalib &calib,
+	const std::vector<int> &relevant,
+	const Eigen::Isometry3f &pose);
 
 #endif // TARGET_H

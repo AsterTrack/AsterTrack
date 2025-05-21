@@ -30,7 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct TargetMatchingParametersFast
 {
-	float matchRadius = 10.0f*PixelSize;
+	float matchRadius = 2.0f*PixelSize;
 	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
 };
 
@@ -58,7 +58,7 @@ struct TargetMatchingParametersSlow
 	// Mismatch is roughly 1 / (similarity*influence)
 	float mismatchPower = 2.5f;
 
-	MatchingParameters match = { 0.05f, 2, 2, 2, 1 };
+	MatchingParameters match = { 0.02f, 2, 2, 2, 1 };
 };
 
 struct TargetMatchingParametersUncertain
@@ -94,13 +94,13 @@ struct TargetFilteringParameters
 		bool useUnscented = true;
 		bool useNumericCov = false;
 		bool useNumericCovPos = false;
-		float stdDevPos = 0.00001f, stdDevEXP = 0.0005f;
+		float stdDevPos = 0.0001f, stdDevEXP = 0.002f;
 	} pose;
 
 	// Partial Target Points Filter Update
 	struct {
-		float stdDev = 1.0f * PixelSize;
-		int obsLimit = 6; // Effectively disabled
+		float stdDev = 3.0f * PixelSize;
+		int obsLimit = 8;
 		bool useUnscented = false;
 		bool useNumericJac = true;
 		bool separateCorrections = false;
@@ -108,8 +108,8 @@ struct TargetFilteringParameters
 
 	// IMU Filter Update
 	struct {
-		float stdDevAccel = 0.00001f, stdDevIMU = 0.0005f;
-		bool useForPrediction = false;
+		float stdDevAccel = 0.00001f, stdDevIMU = 0.004f;
+		bool useForPrediction = true;
 	} imu;
 
 	template<typename Scalar>
@@ -160,7 +160,7 @@ struct TargetTrackingParameters
 	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
 	float uncertaintySigma = 3;
 	// Marker Matching
-	float expandMarkerFoV = 0.0f;
+	float expandMarkerFoV = 0.1f;
 	float normaliseDistance = 5.0f;
 	TargetMatchingParametersFast matchFast = {};
 	TargetMatchingParametersSlow matchSlow = {};
@@ -173,9 +173,9 @@ struct TargetTrackingParameters
 	struct {
 		int cameraGoodObs = 5;
 		float cameraGoodRatio = 0.5f;
-		int minTotalObs = 6;
+		int minTotalObs = 3;
 		int minCameraObs = 1;
-		float maxTotalError = 5.0f*PixelSize;
+		float maxTotalError = 0.8f*PixelSize;
 	} quality = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};
@@ -183,6 +183,7 @@ struct TargetTrackingParameters
 	TargetFilteringParameters filter = {};
 	// Tracking Loss
 	float lostTargetCoastMS = 100.0f;
+	float coastMinTrackTime = 50.0f;
 };
 
 // Two more used statically, no easy access to TargetDetectionParameters::triDetection, but recorded here nonetheless

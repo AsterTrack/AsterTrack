@@ -508,9 +508,9 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		SceneButton button;
 		button.position.head<2>() = pos;
 		button.radius = 1.0f*PixelSize;
-		button.context = (void*)(intptr_t)(mkIdx*1452+ptIdx*3+pos.x()*1223);
+		button.context = (intptr_t)(mkIdx*0x35D0C2+ptIdx*0x44A7F3+pos.x()*0x854EF7);
 		int cam = calib.index;
-		button.callback = [cam, mkIdx, ptIdx](void*){
+		button.callback = [cam, mkIdx, ptIdx](intptr_t){
 			auto &edit = GetUI().visState.tracking.debug.editedMatch2D;
 			auto &pts = edit.points2D[cam];
 			for (auto m = pts.begin(); m != pts.end(); m++)
@@ -587,8 +587,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		const auto &matches = tgtMatch.points2D[calib.index];
 
 		// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-		projectTarget(projected2D,
-			target, calib, tgtMatch.pose, expandMarkerFoV);
+		projectTarget(projected2D, target, calib, tgtMatch.pose, expandMarkerFoV);
 		visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
 
 		// Gather relevant points that were tracked
@@ -598,13 +597,11 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 			relevantProjected2D.push_back(match.first);
 
 		// Visualise target points that were tracked this frame
-		projectTarget(projected2D,
-			target, relevantProjected2D, calib, tgtMatch.pose, 2.0f);
+		projectTarget(projected2D, target, calib, relevantProjected2D, tgtMatch.pose);
 		visualisePoints2D(projected2D, Color{ 0.8, 0.0, 0.2, 0.6f }, 2.0f);
 
 		// Show final accepted matches
-		projectTarget(projected2D,
-			target, calib, tgtMatch.pose, 2.0f);
+		projectTarget(projected2D, target, calib, tgtMatch.pose);
 		assert(projected2D.size() == target.markers.size());
 		matchLines.clear();
 		matchLines.reserve(matches.size());

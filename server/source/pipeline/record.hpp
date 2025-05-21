@@ -108,6 +108,14 @@ struct TargetMatch2D
 	TargetMatchError error;
 	CovarianceMatrix covariance;
 	std::vector<VectorX<float>> deviations;
+
+	inline int count() const 
+	{
+		int count = 0;
+		for (auto &camera : points2D)
+			count += camera.size();
+		return count;
+	}
 };
 
 /**

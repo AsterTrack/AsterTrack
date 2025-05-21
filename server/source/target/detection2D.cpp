@@ -97,7 +97,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 
 			// Reproject target points and estimate 2D error
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			projectTarget(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], 0.1f);
+			projectTarget(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], params.expandMarkerFoV);
 			auto res = getMatchErrorApprox(points2D, projected2D, params.search.errorMax);
 			if (res.first >= itResults[i].first && res.second < itResults[i].second)
 			{

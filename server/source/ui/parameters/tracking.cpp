@@ -248,9 +248,9 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ImGui::BeginDisabled(params.filter.pose.useNumericCov);
 		filterMod |= BooleanProperty("Pos Numerical Covariance", &params.filter.pose.useNumericCovPos, &standard.filter.pose.useNumericCovPos);
 		ImGui::BeginDisabled(params.filter.pose.useNumericCovPos);
-		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.pose.stdDevPos, &standard.filter.pose.stdDevPos, 0, 1, 0.002f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.pose.stdDevPos, &standard.filter.pose.stdDevPos, 0, 10, 0.01f, 1000, "%.4f");
 		ImGui::EndDisabled();
-		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.pose.stdDevEXP, &standard.filter.pose.stdDevEXP, 0, 1, 0.002f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.pose.stdDevEXP, &standard.filter.pose.stdDevEXP, 0, 10, 0.05f, 1000, "%.4f");
 		ImGui::EndDisabled();
 
 		ImGui::SeparatorText("Partial Target Point Update");
@@ -262,14 +262,15 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		ImGui::SeparatorText("IMU Integration");
 		filterMod |= BooleanProperty("Use IMU Prediction", &params.filter.imu.useForPrediction, &standard.filter.imu.useForPrediction);
-		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.imu.stdDevIMU, &standard.filter.imu.stdDevIMU, 0, 1, 0.002f, 1000, "%.4f");
-		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.imu.stdDevAccel, &standard.filter.imu.stdDevAccel, 0, 1, 0.002f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.imu.stdDevIMU, &standard.filter.imu.stdDevIMU, 0, 10, 0.05f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.imu.stdDevAccel, &standard.filter.imu.stdDevAccel, 0, 10, 0.01f, 1000, "%.4f");
 
 		EndSection();
 		modified |= filterMod;
 
 		BeginSection("Tracking Loss");
 		modified |= ScalarProperty<float>("Coast Time", "ms", &params.lostTargetCoastMS, &standard.lostTargetCoastMS, 0, 10000, 0.1f, 1, "%.0f");
+		modified |= ScalarProperty<float>("Min Track Time", "ms", &params.coastMinTrackTime, &standard.coastMinTrackTime, 0, 10000, 0.1f, 1, "%.0f");
 		EndSection();
 
 		if (modified)

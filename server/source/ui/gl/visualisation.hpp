@@ -99,8 +99,8 @@ struct SceneButton
 	Eigen::Vector3f position;
 	float radius;
 	Color color;
-	void* context;
-	std::function<void(void*)> callback;
+	intptr_t context;
+	std::function<void(intptr_t)> callback;
 };
 
 

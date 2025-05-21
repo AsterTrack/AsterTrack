@@ -261,15 +261,21 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				relevantPoints2D[c] = &remainingPoints2D[c];
 			}
 
-			if (ImGui::Button("Redo tracking for this frame", SizeWidthFull()) || debugVis.needsUpdate)
+			if (ImGui::Button("Debug target matching", SizeWidthFull()))
+			{ // Manually trigger update - might also be automatic
+				debugVis.needsUpdate = true;
+			}
+			if (debugVis.needsUpdate)
 			{
 				debugVis.needsUpdate = false;
+				debugVis.internalData.init(pipeline.cameras.size());
 				debugVis.targetMatch2D = trackTarget2D(target,
 					trackRecord->posePredicted, trackRecord->covPredicted,
 					pipeline.getCalibs(), pipeline.cameras.size(),
-					points2D, properties, relevantPoints2D, pipeline.params.track, visState.tracking.retrackData);
+					points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
 				debugVis.trackerID = visState.tracking.focusedTargetID;
+				debugVis.calib = &target;
 				debugVis.frameNum = frameNum;
 			}
 
@@ -577,7 +583,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			{
 				auto countEvents = [](const FrameRecord &record, TrackingResult result)
 				{
-					return std::count_if(record.trackers.begin(), record.trackers.end(), [&](auto &t){ return t.result == result; });
+					return std::count_if(record.trackers.begin(), record.trackers.end(),
+						[&](auto &t){ return t.result.isState(result); });
 				};
 				auto updateEventChange = [](EventChange &event, int loaded, int current)
 				{

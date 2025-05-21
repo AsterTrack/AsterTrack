@@ -49,9 +49,10 @@ struct TrackerState
 	TimePoint_t lastIMUTime;
 	long lastObsFrame;
 	TimePoint_t lastObservation;
+	TimePoint_t firstObservation;
 
 	TrackerState(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
-		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time) 
+		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObservation(time)
 	{
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
@@ -95,7 +96,7 @@ enum IMUCalibrationPhase
 	IMU_CALIB_EXT_ALIGNMENT = 2,
 	IMU_CALIB_EXT_ORIENTATION = IMU_CALIB_EXT_GRAVITY | IMU_CALIB_EXT_ALIGNMENT,
 	IMU_CALIB_EXT_OFFSET = 4,
-	IMU_CALIB_DONE = 5
+	IMU_CALIB_DONE = 8
 };
 
 struct TrackerInertial

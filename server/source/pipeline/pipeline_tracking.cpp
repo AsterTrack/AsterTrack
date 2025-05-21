@@ -521,7 +521,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					pipeline.pipelineLock.lock();
 				} */
 			}
-			else if (dtMS(tracker->state.lastObservation, frame->time) < pipeline.params.track.lostTargetCoastMS)
+			else if (dtMS(tracker->state.lastObservation, frame->time) < pipeline.params.track.lostTargetCoastMS &&
+					dtMS(tracker->state.firstObservation, frame->time) > pipeline.params.track.coastMinTrackTime)
 			{
 				LOG(LTracking, LDarn, "Failed to find continuation of target %d (name %s), got %d observations and %.3fpx mean error!\n",
 					target.id, target.label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);

@@ -64,10 +64,11 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 	if (observation.covObserved.hasNaN()) // Missing match2D in recording
 		observation.covObserved = record.covObserved;
 
-	TrackingResult trackResult = target.match2D.error.samples <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	int pointCount = target.match2D.count();
+	TrackingResult trackResult = pointCount <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
 	if (trackResult == TrackingResult::TRACKED_SPARSE)
 	{
-		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
+		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
@@ -80,7 +81,7 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		if (params.filter.point.separateCorrections)
 		{
-			for (int i = 0; i < errorTerm.values(); i++)
+			for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 			{
 				measurement.setSample(i);
 				if (params.filter.point.useUnscented)
@@ -95,10 +96,10 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 			else success = flexkalman::correctExtended(state.state, model, measurement, true);
 		}
-		Eigen::VectorXd error(errorTerm.values()*2);
+		Eigen::VectorXd error(errorTerm.m_observedPoints.size()*2);
 		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
 		auto residual = measurement.getResidual(state.state);
-		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
+		LOG(LTrackingFilter, LDarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct pose using sparse filter! Reset!");
@@ -107,7 +108,7 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 	}
 	else
 	{
-		LOG(LTrackingFilter, LWarn, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
 			observation.observed.translation().cast<double>(),
 			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
@@ -152,7 +153,13 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(*target.calib, observation.predicted, observation.covPredicted,
 		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
-	if (target.match2D.error.samples < params.quality.minTotalObs)
+	int pointCount = target.match2D.count();
+	if (pointCount != target.match2D.error.samples)
+	{
+		LOG(LTracking, LDarn, "Target Match has %d / %d points with %fpx mean error!",
+			pointCount, target.match2D.error.samples, target.match2D.error.mean*PixelFactor);
+	}
+	if (pointCount < params.quality.minTotalObs || target.match2D.error.mean > params.quality.maxTotalError)
 		return TrackingResult::NO_TRACK;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
@@ -161,10 +168,10 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 
 	// Update state
 
-	TrackingResult trackResult = target.match2D.error.samples <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	TrackingResult trackResult = pointCount <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
 	if (trackResult == TrackingResult::TRACKED_SPARSE)
 	{
-		LOG(LTrackingFilter, LWarn, "Using Point Filter Update with %d points!",
+		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
@@ -177,7 +184,7 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		if (params.filter.point.separateCorrections)
 		{
-			for (int i = 0; i < errorTerm.values(); i++)
+			for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 			{
 				measurement.setSample(i);
 				if (params.filter.point.useUnscented)
@@ -192,10 +199,10 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
 			else success = flexkalman::correctExtended(state.state, model, measurement, true);
 		}
-		Eigen::VectorXd error(errorTerm.values()*2);
+		Eigen::VectorXd error(errorTerm.m_observedPoints.size()*2);
 		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
 		auto residual = measurement.getResidual(state.state);
-		LOG(LTrackingFilter, LWarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
+		LOG(LTrackingFilter, LDarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct pose using sparse filter! Reset!");
@@ -204,7 +211,7 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	}
 	else
 	{
-		LOG(LTrackingFilter, LWarn, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
 			observation.observed.translation().cast<double>(),
 			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
@@ -350,25 +357,6 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	typename TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
-
-	if (inertial.calibration.phase == IMU_CALIB_UNKNOWN)
-	{ // Initialise calibration
-		if (inertial.imu->tracker.orientation.coeffs().hasNaN())
-			inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
-		else
-		{
-			inertial.calibration.conversion = inertial.imu->tracker.conversion;
-			inertial.calibration.quat = inertial.imu->tracker.orientation.cast<double>();
-			inertial.calibration.mat = inertial.calibration.quat.toRotationMatrix() * inertial.calibration.conversion.cast<double>();
-			if (inertial.imu->tracker.offset.hasNaN())
-				inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
-			else
-			{
-				inertial.calibration.offset = inertial.imu->tracker.offset.cast<double>();
-				inertial.calibration.phase = IMU_CALIB_DONE;
-			}
-		}
-	}
 
 	{ // Extrapolate without IMU samples for debug purposes
 		auto filterState = state.state;
@@ -658,21 +646,45 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 {
 	auto &calib = inertial.calibration;
 
-	if (calib.phase < IMU_CALIB_DONE)
+	if (inertial.calibration.phase == IMU_CALIB_UNKNOWN)
+	{ // Initialise calibration
+		if (inertial.imu->tracker.orientation.coeffs().hasNaN())
+		{
+			LOG(LTrackingIMU, LInfo, "IMU %d is entering Orientation Calibration!", inertial.imu->index);
+			inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
+		}
+		else
+		{
+			inertial.calibration.conversion = inertial.imu->tracker.conversion;
+			inertial.calibration.quat = inertial.imu->tracker.orientation.cast<double>();
+			inertial.calibration.mat = inertial.calibration.quat.toRotationMatrix() * inertial.calibration.conversion.cast<double>();
+			if (inertial.imu->tracker.offset.hasNaN())
+			{
+				LOG(LTrackingIMU, LInfo, "IMU %d is entering Offset Calibration!", inertial.imu->index);
+				inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
+			}
+			else
+			{
+				inertial.calibration.offset = inertial.imu->tracker.offset.cast<double>();
+				inertial.calibration.phase = IMU_CALIB_DONE;
+			}
+		}
+	}
+	else if (calib.phase < IMU_CALIB_DONE && std::abs(dtMS(state.time, inertial.fusion.time)) < 0.001)
 	{ // In calibration phase
 		bool newSamples = false;
 
-		if (calib.phase == IMU_CALIB_EXT_GRAVITY)
+		if (calib.phase & IMU_CALIB_EXT_GRAVITY)
 			newSamples |= collectGravitySamples(inertial, state.state);
 
-		if (calib.phase == IMU_CALIB_EXT_ALIGNMENT && !inertial.imu->isFused)
+		if (calib.phase & IMU_CALIB_EXT_ALIGNMENT && !inertial.imu->isFused)
 			newSamples |= collectGyroSamples(inertial, state);
 
 		float dtLast = dtMS(calib.lastTime, time);
 		if (dtLast > 400)
 		{
-			if (calib.phase == IMU_CALIB_EXT_ALIGNMENT && inertial.imu->isFused)
-					newSamples |= collectFusedSamples(inertial, state.state);
+			if (calib.phase & IMU_CALIB_EXT_ALIGNMENT && inertial.imu->isFused)
+				newSamples |= collectFusedSamples(inertial, state.state);
 
 			// Update last state based on observation for calibration
 			calib.lastState = state.state;

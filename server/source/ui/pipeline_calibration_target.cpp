@@ -946,6 +946,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 	if (sectionTargetAssembly && visState.targetCalib.stage && !visState.targetCalib.stage->alignResults.empty()
 		&& ImGui::CollapsingHeader("Align Tests"))
 	{ // Details of selected stage alignments
+		ImGui::PushID("AT");
 		if (ImGui::BeginTable("TargetBase Align Tests Table", 4,
 			ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{
@@ -1022,12 +1023,13 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::EndTable();
 			}
 		}
-		ImGui::TreePop();
+		ImGui::PopID();
 	}
 
 	if (sectionTargetAssembly && visState.targetCalib.stage && !visState.targetCalib.stage->mergeTests.empty()
 		&& ImGui::CollapsingHeader("Merge Tests"))
 	{ // Details of selected stage merge attempts
+		ImGui::PushID("MT");
 		if (ImGui::BeginTable("TargetBase Merge Targets Table", 5,
 			ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{
@@ -1068,7 +1070,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 			ImGui::EndTable();
 		}
-		ImGui::TreePop();
+		ImGui::PopID();
 	}
 
 	ImGui::PopID();

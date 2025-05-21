@@ -101,11 +101,6 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 
 	// Initialise optimisation error term, preparing the data (minus existing outliers)
 	ReprojectionError<Scalar> errorTerm(camerasInternal, data);
-	if (errorTerm.values() < errorTerm.inputs())
-	{
-		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
-		return {};
-	}
 	errorTerm.m_options.ignoreOutliers = false;
 
 	// Create error stats
@@ -212,11 +207,6 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 
 	// Calculate error values
 	ReprojectionError<Scalar> errorTerm(camerasInternal, data);
-	if (errorTerm.values() < errorTerm.inputs())
-	{
-		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
-		return {};
-	}
 	errorTerm.m_options.ignoreOutliers = false;
 
 	// Create error stats
@@ -330,7 +320,10 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 	ReprojectionError<ScalarInternal, Options> errorTerm(camerasInternal, data);
 	errorTerm.setOptimisationOptions(options);
 	if (errorTerm.values() < errorTerm.inputs())
+	{
+		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
+	}
 
 	// Create initial parameter vector
 	VectorX<ScalarInternal> calibParams(errorTerm.m_paramCount);

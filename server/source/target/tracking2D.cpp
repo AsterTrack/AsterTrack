@@ -154,8 +154,8 @@ bool matchTargetPointsFast(
 	matchCandidates.clear();
 	matchCandidates.resize(relevantProjected2D.size());
 
-	float matchRadiusSq = params.matchRadius*params.matchRadius*distFactor*distFactor;
-	float includeRadiusSq = matchRadiusSq*params.match.primAdvantage*params.match.primAdvantage;
+	float matchRadius = params.matchRadius*distFactor;
+	float includeRadiusSq = matchRadius*matchRadius*params.match.primAdvantage*params.match.primAdvantage;
 	LOGC(LDebug, "           Attempting to find matches between %d and %d points\n", (int)relevantProjected2D.size(), (int)relevantPoints2D.size());
 
 	int matchCnt = 0;
@@ -195,8 +195,9 @@ bool matchTargetPointsFast(
 
 	// Resolve match candidates tentatively
 	int numMatches = resolveMatchCandidates(matchCandidates, points2D.size(), params.match);
-	if (numMatches <= 1)
+	if (numMatches <= 0)
 	{ // No hope if even relaxed constraints resulted in 0
+		// 1 match for fast algorithm means something, do not discard like for slow algorithm
 		LOGC(LTrace, "               Got %d candidates but only %d valid matches!\n",
 			(int)matchCandidates.size(), numMatches);
 		return false;
@@ -209,10 +210,10 @@ bool matchTargetPointsFast(
 	{
 		if (cand.matches.empty()) continue;
 		auto &match = cand.matches.front();
-		if (match.valid() && match.value < matchRadiusSq)
+		if (match.valid() && match.value < matchRadius)
 		{ // TODO: Technically match.value also accounts for size, so not entirely accurate, but fine
-			LOGC(LTrace, "                   Accepted match mk%d / pt%d with distance %.4f\n",
-				relevantProjected2D[cand.context], match.index, match.value*PixelFactor);
+			LOGC(LTrace, "                   Accepted match mk%d / pt%d with distance %.4fpx (max %fpx)\n",
+				relevantProjected2D[cand.context], match.index, match.value*PixelFactor, matchRadius*PixelFactor);
 			matches.push_back({ relevantProjected2D[cand.context], match.index });
 
 			// Update internal data for visualisation purposes (low overhead)
@@ -226,10 +227,10 @@ bool matchTargetPointsFast(
 				}
 			}
 		}
-		else
+		else if (match.index >= 0)
 		{
-			LOGC(LTrace, "                   Discarded match mk%d with distance %.4f\n",
-				relevantProjected2D[cand.context], match.value*PixelFactor);
+			LOGC(LTrace, "                   Discarded match mk%d / pt%d with distance %.4fpx (max %fpx)\n",
+				relevantProjected2D[cand.context], match.index, match.value*PixelFactor, matchRadius*PixelFactor);
 		}
 	}
 	LOGC(LDebug, "               Matched %d points!\n", (int)matches.size());
@@ -427,7 +428,8 @@ void matchTargetPointsSlow(
 	// Resolve match candidates tentatively
 	int numMatches = resolveMatchCandidates(matchCandidates, points2D.size(), params.match);
 	if (numMatches <= 1)
-	{ // No hope if even relaxed constraints resulted in 0
+	{ // No hope if even relaxed constraints resulted in only 1
+		// 1 match for slow algorithm means nothing, discard
 		LOGC(LTrace, "               Got %d candidates but only %d valid matches!\n",
 			(int)matchCandidates.size(), numMatches);
 		return;
@@ -499,14 +501,14 @@ float matchTargetPointsAlongAxis(
 
 	float shiftMin = std::min(axis.obsMin-axis.projMin, axis.obsMax-axis.projMax);
 	float shiftMax = std::max(axis.obsMin-axis.projMin, axis.obsMax-axis.projMax);
-	LOG(LTrackingMatch, LDebug, "                Offset along ncertainty axis from %.1fpx to %.1fpx!",
+	LOG(LTrackingMatch, LDebug, "                Offset along uncertainty axis from %.1fpx to %.1fpx!",
 		shiftMin*PixelFactor, shiftMax*PixelFactor);
 
 	// Try multiple shift candidates along uncertainty axis
 	float bestShift = NAN;
 	std::vector<std::pair<int,int>> tempMatches;
 	TargetMatchingData tempMatchData;
-	int steps = std::min(params.maxSteps, (int)std::floor((shiftMax-shiftMin) / params.stepLength));
+	int steps = std::max(1, std::min(params.maxSteps, (int)std::floor((shiftMax-shiftMin) / params.stepLength)));
 	float shift = shiftMin, shiftStep = (shiftMax-shiftMin) / (steps-1);
 	for (int i = 0; i < steps; i++)
 	{
@@ -547,7 +549,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	errorTerm.setData(points2D, match);
 	if (errorTerm.values() < errorTerm.inputs() || errorTerm.m_observedPoints.empty())
 	{
-		LOGC(LError, "Got only %d points to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
+		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
 	LOGC(LDebug, "        Optimising target pose using %d point matches!\n", (int)errorTerm.m_observedPoints.size());
@@ -637,7 +639,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	if (updateCovariance)
 		match.covariance = errorTerm.covarianceEXP(match.pose, errorStdDev, match.deviations);
 
-	if constexpr (OUTLIER)
+	if constexpr (OUTLIER) if (outlierCount > 0)
 	{ // Remove detected outliers from target match
 		int errorIndex = 0;
 		for (int c = 0; c < calibs.size(); c++)
@@ -683,13 +685,13 @@ TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
 {
 	TargetReprojectionError<float, OptUndistorted> errorTerm(calibs);
 	errorTerm.setData(points2D, match);
-	if (errorTerm.values() == 0)
-		return { 0, 0, 0, 0 };
-	Eigen::VectorXf errors(errorTerm.values());
+	if (errorTerm.m_observedPoints.size() == 0)
+		return match.error = { 0, 0, 0, 0 };
+	Eigen::VectorXf errors(errorTerm.m_observedPoints.size());
 	errorTerm.calculateSampleErrors(match.pose, errors);
-	match.error.samples = errorTerm.values();
-	match.error.mean = errors.sum() / errorTerm.values();
-	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / errorTerm.values());
+	match.error.samples = errorTerm.m_observedPoints.size();
+	match.error.mean = errors.sum() / match.error.samples;
+	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
 	match.error.max = errors.maxCoeff();
 	return match.error;
 }
@@ -702,13 +704,13 @@ TargetMatchError evaluateTargetPoseCovariance(const std::vector<CameraCalib> &ca
 {
 	TargetReprojectionError<float, OptUndistorted> errorTerm(calibs);
 	errorTerm.setData(points2D, match);
-	if (errorTerm.values() == 0)
+	if (errorTerm.m_observedPoints.size() == 0)
 		return { 0, 0, 0, 0 };
-	Eigen::VectorXf errors(errorTerm.values());
+	Eigen::VectorXf errors(errorTerm.m_observedPoints.size());
 	errorTerm.calculateSampleErrors(match.pose, errors);
-	match.error.samples = errorTerm.values();
-	match.error.mean = errors.sum() / errorTerm.values();
-	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / errorTerm.values());
+	match.error.samples = errorTerm.m_observedPoints.size();
+	match.error.mean = errors.sum() / match.error.samples;
+	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
 	match.error.max = errors.maxCoeff();
 	match.covariance = errorTerm.covarianceEXP(match.pose, errorStdDev, match.deviations);
 	return match.error;
@@ -807,6 +809,11 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	};
 	auto optimiseTargetMatch =  [&](bool quick)
 	{ // Optimise pose to observations
+		if (targetMatch2D.count() == 0)
+		{
+			LOGC(LDebug, "        Cannot optimise pose without any points!\n");
+			return;
+		}
 		// TODO: Provide a quick option
 		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
 		TargetMatchError newErrors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, !quick);
@@ -909,7 +916,11 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				matchedSamples, i);
 
 			if (camerasGood >= minCamerasGood) break; // Continue normally
-			if (nothingNew) return targetMatch2D; // No hope improving
+			if (nothingNew)
+			{ // No hope improving
+				optimiseTargetMatch(false);
+				return targetMatch2D;
+			}
 			if (i+1 >= maxComplexStages)
 			{ // Last iterations, don't optimise again
 				if (matchedSamples >= params.quality.minTotalObs)

@@ -1077,24 +1077,18 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		}
 		else if (phase == PHASE_Tracking)
 		{
-			if (visState.tracking.debug.frameNum > 0 && visState.tracking.debug.frameNum < frame->num)
-				visState.tracking.debug = {}; // Any one camera can reset
-			if (displayInternalDebug && visState.tracking.debug.frameNum == frame->num && visState.tracking.debugMatchingState)
+			auto &debugVis = visState.tracking.debug;
+			if (debugVis.frameNum > 0 && debugVis.frameNum < frame->num)
+				debugVis = {}; // Any one camera can reset
+			if (displayInternalDebug && debugVis.frameNum == frame->num && visState.tracking.debugMatchingState)
 			{ // Visualise internal tracking debug instead of normal vis
-				std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
-				if (!pipeline_lock.owns_lock()) return;
 
-				int trackerID = visState.tracking.debug.trackerID;
-				auto tracker = std::find_if(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(),
-					[&](auto &t){ return t.target.calib->id == trackerID; });
-				if (tracker == pipeline.tracking.trackedTargets.end()) return;
-
-				visualiseTarget2DMatchingStages(visState, calib, camFrame, *tracker->target.calib,
-					tracker->target.data.matching[calib.index], pipeline.params.track.expandMarkerFoV);
+				visualiseTarget2DMatchingStages(visState, calib, camFrame, *debugVis.calib,
+					debugVis.internalData.matching.at(camera.pipeline->index), pipeline.params.track.expandMarkerFoV);
 
 				if (visState.tracking.showUncertaintyAxis)
 				{ // Visualise uncertainty axis of dominant camera from internal tracking debug data
-					visualiseTarget2DUncertaintyAxis(tracker->target.data.uncertaintyAxis.at(camera.pipeline->index));
+					visualiseTarget2DUncertaintyAxis(debugVis.internalData.uncertaintyAxis.at(camera.pipeline->index));
 				}
 
 				return;
@@ -1139,8 +1133,8 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 					visualisePoints2D(projected2D, colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					projectTarget(projected2D,
-						*target, record.visibleMarkers[camera.pipeline->index], calib, record.poseObserved, 1.0f);
+					projectTarget(projected2D, *target, calib,
+						record.visibleMarkers[camera.pipeline->index], record.poseObserved);
 					visualisePoints2D(projected2D, colMatched, 2.0f);
 				}
 

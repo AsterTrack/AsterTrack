@@ -255,8 +255,8 @@ class TargetMatchMeasurement :
 
 	// TODO: If we end up using individual point samples (e.g. setting m_sample)
 	// Then rewrite as static-sized measurement
-	int fullSize() const { return DIM == Eigen::Dynamic? (m_targetError.values()*2) : DIM; }
-	int size() const { return DIM == Eigen::Dynamic? (m_sample < 0? (m_targetError.values()*2) : 2) : DIM; }
+	int fullSize() const { return DIM == Eigen::Dynamic? (m_targetError.m_observedPoints.size()*2) : DIM; }
+	int size() const { return DIM == Eigen::Dynamic? (m_sample < 0? (m_targetError.m_observedPoints.size()*2) : 2) : DIM; }
 
 	TargetMatchMeasurement(TargetMatchError &error,
 							double const &pointVariance)

@@ -48,6 +48,7 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 {
 	public:
 		vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index = 0);
+		~vrpn_Tracker_AsterTrack();
 
 		void updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose);
 

@@ -104,6 +104,7 @@ bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &pro
  */
 bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers);
 std::shared_ptr<IMUDevice> registerRemoteIMU(std::string path);
+void removeRemoteIMU(std::shared_ptr<IMUDevice> remoteIMU);
 IMUDeviceProvider *getRemoteIMUProvider(); // Remote IMU Driver Singleton
 
 #endif // IMU_DEVICE_H

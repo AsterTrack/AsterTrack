@@ -39,9 +39,6 @@ SOFTWARE.
 
 /* Integrating VRPN into a more modern C++ style */
 
-template<> void OpaqueDeleter<vrpn_Tracker_AsterTrack>::operator()(vrpn_Tracker_AsterTrack* ptr) const
-{ delete ptr; }
-
 template<> void OpaqueDeleter<vrpn_Connection>::operator()(vrpn_Connection* ptr) const
 { ptr->removeReference(); }
 
@@ -158,8 +155,19 @@ vrpn_Tracker_AsterTrack::vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_
 	vrpn_IMU_Remote::register_change_handler(this, handleIMUFused);
 }
 
+vrpn_Tracker_AsterTrack::~vrpn_Tracker_AsterTrack()
+{
+	if (remoteIMU)
+		removeRemoteIMU(std::static_pointer_cast<IMUDevice>(remoteIMU));
+}
+
 void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose)
 {
+	if (!d_connection->doing_okay())
+	{
+		LOG(LIO, LDarn, "VRPN Connection for '%s' broken!\n", path.c_str());
+		return;
+	}
 	vrpn_Tracker::timestamp = createTimestamp(time);
 	vrpn_Tracker::frame_count = 0; // Unused
 

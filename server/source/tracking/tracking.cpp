@@ -670,8 +670,12 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 			}
 		}
 	}
-	else if (calib.phase < IMU_CALIB_DONE && std::abs(dtMS(state.time, inertial.fusion.time)) < 0.001)
+	else if (calib.phase < IMU_CALIB_DONE &&
+		std::abs(dtMS(state.time, inertial.fusion.time)) < 0.001 && 
+		std::abs(dtMS(state.time, inertial.interpolatedSample.raw.timestamp)) < 0.001)
 	{ // In calibration phase
+		// TODO: More explicitly require a) a postCorrectIMU of the previous frame and b) an IMU sample since then
+		// And for collectGyroSamples perhaps that the interpolatedSample is truly interpolated and not extrapolated
 		bool newSamples = false;
 
 		if (calib.phase & IMU_CALIB_EXT_GRAVITY)
@@ -810,8 +814,6 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 {
 	const int MIN = 50, MAX = 300;
 	const double MinAng = 20, MaxAng = 60;
-
-	assert(std::abs(dtMS(state.time, inertial.interpolatedSample.raw.timestamp)) < 0.001);
 
 	auto &calib = inertial.calibration.gyro;
 	float diff = Eigen::AngleAxisd(calib.current.quatStart.conjugate() * state.state.getCombinedQuaternion()).angle()*180/PI;

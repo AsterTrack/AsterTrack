@@ -82,11 +82,21 @@ std::shared_ptr<IMUDevice> registerRemoteIMU(std::string path)
 	auto remoteIMUIt = std::find_if(remote->devices.begin(), remote->devices.end(),
 		[&](const auto &imu) { return imu->id.path().compare(path) == 0; });
 	if (remoteIMUIt != remote->devices.end())
-		return std::static_pointer_cast<IMUDevice>(*remoteIMUIt);
+		return *remoteIMUIt;
 	auto imu = std::make_shared<RemoteIMU>(path);
 	imu->tracker = getIMUTracker(imu->id);
 	remote->devices.push_back(imu);
 	return imu;
+}
+
+void removeRemoteIMU(std::shared_ptr<IMUDevice> remoteIMU)
+{
+	auto remote = remoteIMUSingleton;
+	if (!remote) return;
+	auto remoteIMUIt = std::find_if(remote->devices.begin(), remote->devices.end(),
+		[&](const auto &imu) { return imu == remoteIMU; });
+	if (remoteIMUIt != remote->devices.end())
+		remote->devices.erase(remoteIMUIt);
 }
 
 IMUDeviceProvider *getRemoteIMUProvider()

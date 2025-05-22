@@ -902,6 +902,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			imusRegistered = !imuLock->empty();
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
+				assert(*imuProvider);
+				// TODO: Fix seg fault here after re-entering device mode once
 				int updatedDevices = 0, changedDevices = 0;
 				if (imuProvider->get()->poll(updatedDevices, changedDevices) == IMU_STATUS_DISCONNECTED)
 				{
@@ -1816,7 +1818,7 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 			std::string path = target->label;
 			//std::string path = asprintf_s("AsterTarget_%.4d", trackedTarget.id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());
-			auto vrpn_tracker = make_opaque<vrpn_Tracker_AsterTrack>(trackRecord.id, path.c_str(), state.io.vrpn_server.get());
+			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(trackRecord.id, path.c_str(), state.io.vrpn_server.get());
 			io_tracker = state.io.vrpn_trackers.insert({ trackRecord.id, std::move(vrpn_tracker) }).first;
 		}
 
@@ -1833,7 +1835,7 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
 			std::string path = asprintf_s("AsterCamera_%d", camera->index);
-			auto vrpn_tracker = make_opaque<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.io.vrpn_server.get());
+			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.io.vrpn_server.get());
 			io_tracker = state.io.vrpn_trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
 		}
 

@@ -19,15 +19,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui.hpp"
 
 #include "app.hpp"
-#include "config.hpp"
+#include "recording.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include "GLFW/glfw3.h"
 
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
-
-#include <filesystem>
 
 
 void InterfaceState::UpdateMainMenuBar()
@@ -154,9 +152,10 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::EndMenu();
 	}
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+
 	bool cachePaths = false;
-	static bool cachingCalibPaths = false, cachingCapturePaths = false;
-	static std::vector<std::filesystem::path> pointCalibPaths, frameCapturePaths;
+	static bool cachingRecordEntries = false;
+	static std::map<int,Recording> recordEntries;
 	if (ImGui::BeginMenu("Simulation"))
 	{
 		if (state.mode == MODE_Simulation)
@@ -179,131 +178,32 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		ImGui::Separator();
 
-		if (ImGui::BeginMenu("Load Calibration Capture", state.mode == MODE_None))
+		bool append = state.mode == MODE_Replay;
+		if (ImGui::BeginMenu(append? "Append capture" : "Replay capture", state.mode == MODE_None || append))
 		{
 			cachePaths = true;
-			if (!cachingCalibPaths)
+			if (!cachingRecordEntries)
 			{
-				cachingCalibPaths = true;
-				pointCalibPaths.clear();
-				std::string prefix = "dump/point_observations_";
-				if (std::filesystem::exists(std::filesystem::path("dump")))
-				{
-					for (const auto &file : std::filesystem::directory_iterator("dump"))
-					{
-						if (file.path().string().compare(0, prefix.length(), prefix) == 0)
-							pointCalibPaths.push_back(file.path());
-					}
-				}
-				std::sort(pointCalibPaths.begin(), pointCalibPaths.end(), [&](auto &a, auto &b){
-					int aNum = 0, bNum = 0;
-					if (sscanf(a.string().data()+prefix.length(), "%d", &aNum) == 1
-					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum) == 1)
-					 	return aNum > bNum;
-					return a.string().compare(b.string()) > 0;
-				});
+				cachingRecordEntries = true;
+				recordEntries.clear();
+				parseRecordEntries(recordEntries);
 			}
-			if (pointCalibPaths.empty())
+			if (recordEntries.empty())
+				ImGui::MenuItem("No stored captures", nullptr, nullptr, false);
+
+			for (auto entryIt = recordEntries.rbegin(); entryIt != recordEntries.rend(); entryIt++)
 			{
-				ImGui::MenuItem("No stored observation data", nullptr, nullptr, false);
-			}
-			for (const auto &file : pointCalibPaths)
-			{
-				if (!ImGui::MenuItem(file.filename().string().c_str())) continue;
+				const auto &entry = entryIt->second;
+				std::string label = entry.label.empty()? asprintf_s("Capture %d", entry.number)
+					: asprintf_s("Capture %d: %s", entry.number, entry.label.c_str());
+				if (!ImGui::MenuItem(label.c_str())) continue;
 				// Perform read in a separate thread to prevent blocking UI
 				// TODO: Show indication that sample data is still loading - very bad without
 				// e.g. global popup (then OpenPopup)
-				// TODO: Memory Leak. Thread never joined
-				new std::thread([](auto file)
+				threadPool.push([](int, Recording entry, bool append)
 				{
-					ServerState &state = GetState();
-
-					std::vector<CameraID> cameraIDs;
-					SequenceData observations = parseSequenceDatabase(file.string(), cameraIDs);
-
-					LOG(LGUI, LInfo, "Loading observations for %d cameras with %d markers!\n",
-						(int)observations.temporary.size(), (int)observations.markers.size());
-
-					std::unique_lock dev_lock(state.deviceAccessMutex);
-					if (state.mode != MODE_None)
-					{
-						LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
-						return;
-					}
-
-					std::vector<CameraConfigRecord> cameras;
-					for (int id : cameraIDs)
-						cameras.emplace_back(id, 1280, 800);
-
-					// Setup replay mode with relevant cameras
-					StartReplay(state, cameras);
-
-					// Load in observations
-					state.stored.frames.insert(observations.lastRecordedFrame, nullptr);
-					*state.pipeline.seqDatabase.contextualLock() = std::move(observations);
-
-					UpdateErrorFromObservations(state.pipeline);
-					GetUI().UpdateSequences(true);
-				}, file);
-			}
-			ImGui::EndMenu();
-		}
-		if (ImGui::BeginMenu("Replay raw capture", state.mode == MODE_None))
-		{
-			cachePaths = true;
-			if (!cachingCapturePaths)
-			{
-				cachingCapturePaths = true;
-				frameCapturePaths.clear();
-				std::string prefix = "dump/frame_capture_";
-				if (std::filesystem::exists(std::filesystem::path("dump")))
-				{
-					for (const auto &file : std::filesystem::directory_iterator("dump"))
-					{
-						if (file.path().string().compare(0, prefix.length(), prefix) == 0
-							&& file.path().extension().compare(".json") == 0)
-							frameCapturePaths.push_back(file.path());
-					}
-				}
-				std::sort(frameCapturePaths.begin(), frameCapturePaths.end(), [&](auto &a, auto &b){
-					int aNum, bNum;
-					if (sscanf(a.string().data()+prefix.length(), "%d", &aNum) == 1
-					 && sscanf(b.string().data()+prefix.length(), "%d", &bNum))
-					 	return aNum > bNum;
-					return a.string().compare(b.string()) > 0;
-				});
-			}
-			if (frameCapturePaths.empty())
-			{
-				ImGui::MenuItem("No stored observation data", nullptr, nullptr, false);
-			}
-			for (const auto &file : frameCapturePaths)
-			{
-				if (!ImGui::MenuItem(file.filename().string().c_str())) continue;
-				// Perform read in a separate thread to prevent blocking UI
-				// TODO: Show indication that sample data is still loading - very bad without
-				// e.g. global popup (then OpenPopup)
-				// TODO: Memory Leak. Thread never joined
-				threadPool.push([](int, std::string file)
-				{
-					ServerState &state = GetState();
-					std::vector<CameraConfigRecord> cameras;
-					state.recordPath = file;
-					state.recordFrameOffset = parseRecording(state.recordPath, cameras, state.stored);
-					parseTrackingResults(state.recordPath, state.stored, state.recordFrameOffset);
-					state.recordReplayFrame = 0;
-					state.recordFrameCount = state.stored.frames.getView().size();
-
-					LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", state.recordFrameCount);
-					if (state.mode != MODE_None)
-					{
-						LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
-						return;
-					}
-
-					// Setup replay mode with relevant cameras
-					StartReplay(state, cameras);
-				}, file.string());
+					loadRecording(GetState(), std::move(entry), append);
+				}, entry, append);
 			}
 			ImGui::EndMenu();
 		}
@@ -312,10 +212,8 @@ void InterfaceState::UpdateMainMenuBar()
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 	if (!cachePaths)
 	{
-		pointCalibPaths.clear();
-		cachingCalibPaths = false;
-		frameCapturePaths.clear();
-		cachingCapturePaths = false;
+		recordEntries.clear();
+		cachingRecordEntries = false;
 	}
 
 	ImGui::Dummy(ImVec2(20, ImGui::GetFrameHeight()));

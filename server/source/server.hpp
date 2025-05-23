@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/streaming.hpp" // Streaming blob data in
 #include "comm/server.hpp"
 #include "imu/device.hpp"
+#include "recording.hpp"
 
 #include "util/memory.hpp"
 
@@ -90,12 +91,15 @@ struct ServerState
 	std::atomic<int> simAdvance = { -1 };
 	std::atomic<bool> simWaiting = { false };
 	bool simAdvanceQuickly;
-	// Loaded record for replay
-	std::string recordPath;
-	unsigned int recordFrameOffset;
+	// Loaded records for replay
+	struct {
+		std::vector<std::string> captures;
+		std::vector<std::string> tracking;
+		std::vector<RecordingSegment> segments;
+		std::size_t frames = 0;
+		TimePoint_t replayTime;
+	} recording = {};
 	TrackingRecord stored;
-	long recordReplayFrame, recordFrameCount;
-	TimePoint_t recordReplayTime;
 
 	// IMU Device integration
 	std::mutex hid_access;

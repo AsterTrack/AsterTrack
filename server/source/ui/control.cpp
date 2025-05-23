@@ -162,12 +162,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		else if (state.mode == MODE_Replay)
 		{
 			ImGui::BeginDisabled(!state.isStreaming);
-			if (state.recordFrameCount > 0)
+			if (state.recording.frames > 0)
 			{
 				ImGui::AlignTextToFramePadding();
-				AddOnDemandText("Replaying 00000000 / 00000000 frames", [](const ImDrawList* dl, const ImDrawCmd* dc)
+				AddOnDemandText("Replaying 00000000 frames", [](const ImDrawList* dl, const ImDrawCmd* dc)
 				{
-					RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Replaying %ld / %ld frames", GetState().recordReplayFrame, GetState().recordFrameCount);
+					RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Replaying %ld frames", GetState().recording.frames);
 				});
 				SameLineTrailing(SizeWidthDiv3().x);
 				if (ImGui::Button("Restart", SizeWidthDiv3()))
@@ -181,7 +181,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					ResetPipelineData(state.pipeline);
 					UpdateSequences(true);
 					InitPipelineStreaming(state.pipeline);
-					state.recordReplayFrame = 0;
 					// Continue advancing
 					state.simAdvance = prevState;
 					state.simAdvance.notify_all();
@@ -215,7 +214,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					for (int f = frameJumpTarget; f < framesRecord.endIndex(); f++)
 						if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 					AdoptFrameRecordState(pipeline, *frame);
-					state.recordReplayFrame = frameJumpTarget+1;
 				}
 				// Continue advancing
 				state.simAdvance = prevState;
@@ -284,9 +282,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					if (section.forceSave || ImGui::Button("Save", ImVec2(ImGui::GetColumnWidth(2), 0)))
 					{
 						// Find path
-						const char* capturePathFmt = "dump/frame_capture_%d.json";
-						int saveIndex = findLastFileEnumeration(capturePathFmt)+1;
-						section.path = asprintf_s(capturePathFmt, saveIndex);
+						int saveIndex = findHighestFileEnumeration("dump", "%d_capture", ".json")+1;
+						section.path = asprintf_s("dump/%d_capture.json", saveIndex);
 						// Perform write in a separate thread to prevent blocking UI
 						// TODO: Memory Leak. Thread never joined
 						new std::thread([](auto section)
@@ -414,7 +411,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				for (int f = frameJumpTarget; f < range.end && f < framesRecord.endIndex(); f++)
 					if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 				AdoptFrameRecordState(pipeline, *frame);
-				state.recordReplayFrame = frameJumpTarget+1;
 				// Quickly advance through frame range
 				state.simAdvanceQuickly = true;
 				state.simAdvance = range.end-range.begin;

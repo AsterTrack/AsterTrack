@@ -226,7 +226,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 		if (framesRecord.size() <= frameRecord.num || !framesRecord[frameRecord.num] || framesRecord[frameRecord.num].get() != &frameRecord)
 			pipeline.record.frames.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
 	}
-	pipeline.frameNum = frameRecord.num;
+	pipeline.frameNum = frameRecord.num; // Next frame will be processed
 
 	InitPipelineStreaming(pipeline);
 

@@ -124,11 +124,18 @@ struct CameraConfigRecord
 /* Functions */
 
 /**
- * Find the file with the highest continuous enumeration for a path format with %d (e.g. "path/to/file_%d.txt")
- * Returns -1 if 0 was not found.
- * For any other number, the next enumerated file (with index+1) does not exist yet.
+ * Find the highest continuous enumeration for a file matching the full path format with %d (e.g. "path/to/file_%d.txt")
+ * The next enumerated file (with index+1) does not exist yet.
+ * There may be enumerated files matching the pattern that have an index greater than index+1.
  */
 int findLastFileEnumeration(const char* pathFormat);
+
+/**
+ * Find the highest enumeration for a file matching the partial path format with %d (e.g. "path/to/file_%d")
+ * The next enumerated file (with index+1) does not exist yet.
+ * All enumerated files matching the pattern have an index lower than index+1.
+ */
+int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString = true);
 
 void parseGeneralConfigFile(const std::string &path, GeneralConfig &config);
 void storeGeneralConfigFile(const std::string &path, const GeneralConfig &config);

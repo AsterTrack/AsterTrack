@@ -1166,7 +1166,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
 
 		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/frameRecordReplayPos
-		std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();;
+		std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
 		if (state->mode == MODE_Simulation)
 		{
 			frameRecord->num = frameRecord->ID = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
@@ -1183,25 +1183,17 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 		else if (state->mode == MODE_Replay)
 		{
-			if (state->recordFrameCount <= state->recordReplayFrame)
-			{ // No frame records to replay (or only loaded observations and there were never any frame records)
-				frameRecord->num = frameRecord->ID = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
-				frameRecord->time = sclock::now();
-				frameRecord->cameras.resize(pipeline.cameras.size());
-			}
-			else
-			{
-				auto framesStored = state->stored.frames.getView();
-				auto &loadedRecord = framesStored[state->recordReplayFrame];
-				if (!loadedRecord)
-				{
-					state->recordReplayFrame++;
+			std::size_t frame = pipeline.frameNum+1;
+			if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
+			{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
+				pipeline.frameNum++;
 					std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
 					continue;
 				}
-				if (state->recordReplayFrame == 0)
+
+			if (frame == 0)
 				{ // Reset time
-					state->recordReplayTime = sclock::now();
+				state->recording.replayTime = sclock::now();
 					// Ensure timestamp is set properly
 					for (auto &imu : pipeline.record.imus)
 					{
@@ -1214,16 +1206,26 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 						imu->samplesFused.delete_culled();
 					}
 				}
-				if (!pipeline.record.frames.insert(state->recordReplayFrame, frameRecord)) // new shared_ptr
-					continue;
-				frameRecord->num = state->recordReplayFrame;
+
+			auto framesStored = state->stored.frames.getView();
+			if (frame >= framesStored.endIndex() || !framesStored[frame])
+			{ // No frame records to replay
+				frameRecord->num = frameRecord->ID = frame;
+				frameRecord->time = sclock::now();
+				frameRecord->cameras.resize(pipeline.cameras.size());
+			}
+			else
+			{
+				auto &loadedRecord = framesStored[frame];
+				assert(loadedRecord->num == frame);
+				assert(loadedRecord->cameras.size() == pipeline.cameras.size());
+				frameRecord->num = loadedRecord->num;
 				frameRecord->ID = loadedRecord->ID;
-				frameRecord->time = state->recordReplayTime + (loadedRecord->time - framesStored.front()->time);
+				frameRecord->time = state->recording.replayTime + (loadedRecord->time - framesStored.front()->time);
 				frameRecord->cameras = loadedRecord->cameras;
-				assert(frameRecord->cameras.size() == pipeline.cameras.size());
-				if (++state->recordReplayFrame < state->recordFrameCount)
+				if (frame+1 < framesStored.endIndex())
 				{ // Replicate original frame pacing
-					auto &nextRecord = framesStored[state->recordReplayFrame];
+					auto &nextRecord = framesStored[frame+1];
 					if (nextRecord)
 						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
@@ -1241,7 +1243,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recordReplayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state->recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesFused.insert(it.index(), sample);
 						}
 					}
@@ -1251,7 +1253,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recordReplayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state->recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesRaw.insert(it.index(), sample);
 						}
 					}
@@ -1287,7 +1289,6 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 		auto frameReceiveTime = sclock::now();
 
-		//threadPool.push([&](int, std::shared_ptr<FrameRecord> frameRecord)
 		{
 			auto start = sclock::now();
 			ProcessFrame(pipeline, frameRecord); // new shared_ptr
@@ -1297,7 +1298,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 			SignalCameraRefresh(0);
 			SignalPipelineUpdate();
-		}//, frameRecord); // new shared_ptr
+		}
 
 		{ // Special cases for advancing
 			int count = state->simAdvance;
@@ -1346,7 +1347,6 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
 	state.pipeline.keepInternalData = true;
-	state.recordReplayFrame = 0;
 
 	// Setup cameras
 	for (auto cam : cameras)
@@ -1418,8 +1418,8 @@ void StopReplay(ServerState &state)
 	ResetPipelineState(state.pipeline);
 	state.stored.frames.cull_clear();
 	state.stored.imus.clear();
-	state.recordReplayFrame = 0;
-	state.recordFrameCount = 0;
+	state.recording = {};
+	state.stored.frames.delete_culled();
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1763,10 +1763,6 @@ void StopStreaming(ServerState &state)
 		// Reset camera device state
 		for (auto &cam : state.cameras)
 			cam->state = {}; // TODO: This also clears camera error state, might not be desired
-	}
-	if (state.mode == MODE_Replay)
-	{
-		state.recordReplayFrame = 0;
 	}
 
 	state.isStreaming = false;

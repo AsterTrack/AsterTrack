@@ -537,12 +537,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			BeginSection("Tracking Results for this replay");
 			if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 			{
-				dumpTrackingResults(state.recordPath, pipeline.record, 0, -1, state.recordFrameOffset);
+				assert(state.recording.segments.size() == state.recording.tracking.size());
+				for (int i = 0; i < state.recording.segments.size(); i++)
+				{
+					auto &segment = state.recording.segments[i];
+					if (segment.frameCount == 0) continue; // Invalid or missing segment
+					dumpTrackingResults(state.recording.tracking[i], pipeline.record,
+						segment.frameStart, segment.frameStart+segment.frameCount, segment.frameOffset);
+				}
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Load from disk", SizeWidthDiv3()))
 			{
-				parseTrackingResults(state.recordPath, state.stored, state.recordFrameOffset);
+				assert(state.recording.segments.size() == state.recording.tracking.size());
+				for (int i = 0; i < state.recording.segments.size(); i++)
+				{
+					auto &segment = state.recording.segments[i];
+					if (segment.frameCount == 0) continue; // Invalid or missing segment
+					parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
+				}
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Set temporarily", SizeWidthDiv3()))
@@ -604,7 +617,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				auto framesStored = state.stored.frames.getView<true>();
 				for (const auto &frameRecord : framesRecord)
 				{
-					if (!frameRecord) continue;
+					if (!frameRecord || !frameRecord->finishedProcessing) continue;
 					if (framesStored.size() <= frameRecord->num) break;
 					coveredFrames++;
 					auto &stored = *framesStored[frameRecord->num];

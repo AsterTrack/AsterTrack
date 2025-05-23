@@ -135,7 +135,7 @@ lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode)
 
 # Define all source files to be compiled
 SERVER_CPP = \
-	app.cpp server.cpp config.cpp simulation.cpp \
+	app.cpp server.cpp config.cpp simulation.cpp recording.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp \
 	comm/streaming.cpp comm/timesync.cpp \
 	device/tracking_device.cpp device/parsing.cpp \

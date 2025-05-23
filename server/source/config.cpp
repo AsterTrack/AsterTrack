@@ -43,6 +43,33 @@ using json = nlohmann::json;
  */
 
 
+int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString)
+{
+	if (!std::filesystem::exists(std::filesystem::path(path))) return -1;
+	int maxNum = -1;
+	// Test both for exavt match of filename and only beginning
+	// Need %n at the end to check for full match even past %d
+	// And thus need two checks since %*s apparently doesn't match a zero-length string
+	std::string format_exact = std::string(nameFormat) + "%n";
+	std::string format_partial = std::string(nameFormat) + "%*s%n";
+	for (const auto &file : std::filesystem::directory_iterator(path))
+	{
+		if (file.path().extension().compare(extension) != 0) continue;
+		const std::string &str = file.path().stem().string();
+		int read, num, end;
+		read = std::sscanf(str.c_str(), format_exact.c_str(), &num, &end);
+		if (read != 1 || end != str.size())
+		{ // Check if there's just a string after the nameFormat
+			if (allowTrailingString)
+				read = std::sscanf(str.c_str(), format_partial.c_str(), &num, &end);
+			if (read != 1 || end != str.size())
+				continue;
+		}
+		maxNum = std::max(maxNum, num);
+	}
+	return maxNum;
+}
+
 int findLastFileEnumeration(const char* pathFormat)
 {
 	int i = -1;
@@ -635,38 +662,43 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 		if (!jsRecords["frames"].is_array()) return 0;
 		auto &jsFrames = jsRecords["frames"];
 
+		std::vector<CameraConfigRecord> parsedCameras;
 		if (jsRecords.contains("cameras") && jsRecords["cameras"].is_array())
 		{
 			auto &jsCameras = jsRecords["cameras"];
-			cameras.reserve(jsCameras.size());
+			parsedCameras.reserve(jsCameras.size());
 			for (auto &jsCamera : jsCameras)
 			{
 				if (jsCamera.is_object())
 				{
 					if (!jsCamera.contains("id")) return 0;
-					cameras.emplace_back(jsCamera["id"].get<CameraID>(),
+					parsedCameras.emplace_back(jsCamera["id"].get<CameraID>(),
 						jsCamera.contains("frameX")? jsCamera["frameX"].get<int>() : 1280,
 						jsCamera.contains("frameY")? jsCamera["frameY"].get<int>() : 800
 					);
 				}
 				else if (jsCamera.is_number_integer())
-					cameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
+					parsedCameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
 				else
 					return 0;
 			}
 		}
 		else if (jsRecords.contains("cameraCount") && jsRecords["cameraCount"].is_number_integer())
 		{
-			cameras.reserve(jsRecords["cameraCount"].get<int>());
+			parsedCameras.reserve(jsRecords["cameraCount"].get<int>());
 			for (int i = 0; i < jsRecords["cameraCount"].get<int>(); i++)
-				cameras.emplace_back(i+1, 1280, 800);
+				parsedCameras.emplace_back(i+1, 1280, 800);
 		}
 		else
 			return 0;
 
-		record.frames.cull_clear();
+		// Check match with any prior cameras (for segmented/appended recordings)
+		for (int c = 0; c < cameras.size(); c++)
+			if (cameras[c].ID != parsedCameras[c].ID) return 0;
+		cameras = std::move(parsedCameras);
+
 		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
-		TimePoint_t startT = sclock::now();
+		TimePoint_t startT;
 		bool foundFirst = false;
 		for (auto &jsFrame : jsFrames)
 		{
@@ -676,8 +708,10 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 
 			unsigned int num = jsFrame["num"].get<unsigned int>();
 			if (!foundFirst)
-			{
-				frameOffset = num;
+			{ // Map it to the next index
+				auto frames = record.frames.getView();
+				frameOffset = num - frames.endIndex();
+				startT = frames.empty()? sclock::now() : frames.back()->time;
 				foundFirst = true;
 			}
 			auto frame = std::make_shared<FrameRecord>();
@@ -749,7 +783,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 				image.imageY = jsImage.contains("imageY")? jsImage["imageY"].get<int>() : image.boundsPx.extends().y();
 			}
 
-			record.frames.insert(num-frameOffset, std::move(frame));
+			record.frames.insert(frame->num, std::move(frame));
 		}
 
 		if (!file.contains("imuRecords")) return frameOffset;
@@ -759,13 +793,23 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 		record.imus.reserve(jsIMUs.size());
 		for (auto &jsIMU : jsIMUs)
 		{
-			auto imu = std::make_shared<IMURecord>();
-			imu->id.driver = (IMUDriver)jsIMU["driver"].get<int>();
-			imu->id.string = jsIMU.contains("id")? jsIMU["id"].get<std::string>()
+			IMUIdent id;
+			id.driver = (IMUDriver)jsIMU["driver"].get<int>();
+			id.string = jsIMU.contains("id")? jsIMU["id"].get<std::string>()
 				: (jsIMU.contains("device")? asprintf_s("IMU %d", jsIMU["device"].get<int>()) : "Unknown IMU");
-			imu->tracker = readIMUTracker(jsIMU);
-			imu->hasMag = jsIMU["hasMag"].get<bool>();
-			imu->isFused = jsIMU["isFused"].get<bool>();
+			std::shared_ptr<IMURecord> imu = nullptr;
+			for (auto &imuRecord : record.imus)
+				if (imuRecord->id == id)
+					imu = std::static_pointer_cast<IMURecord>(imuRecord);
+			if (!imu)
+			{ // New IMU
+				imu = std::make_shared<IMURecord>();
+				imu->id = std::move(id);
+				record.imus.push_back(imu);
+				imu->tracker = readIMUTracker(jsIMU);
+				imu->hasMag = jsIMU["hasMag"].get<bool>();
+				imu->isFused = jsIMU["isFused"].get<bool>();
+			}
 
 			auto &jsSamples = jsIMU["samples"];
 			if (imu->isFused)
@@ -796,7 +840,6 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 					});
 				}
 			}
-			record.imus.push_back(std::move(imu));
 		}
 	}
 #ifndef JSON_NOEXCEPTION
@@ -846,7 +889,7 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 	}
 
 	// Time range
-	TimePoint_t timeFirst = frameBegin->get()->time;
+	TimePoint_t timeFirst = (frameBegin == frames.begin()? frameBegin : std::prev(frameBegin))->get()->time;
 	TimePoint_t timeLast = frameBack->get()->time;
 
 	// Write observations
@@ -980,10 +1023,10 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 
 void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset)
 {
-	// Modify path (expecting frame_capture_XX.json)
-	std::size_t index = path.rfind("/frame_capture_");
+	// Modify path (expecting XX_capture_XX.json)
+	std::size_t index = path.rfind("_capture_");
 	if (index != std::string::npos)
-		path.replace(index, 15, "/frame_tracking_");
+		path.replace(index, 9, "_tracking_");
 
 	// Read JSON file
 	std::ifstream fs(path);
@@ -1066,10 +1109,10 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 	auto frameBegin = frames.pos(begin);
 	auto frameEnd = frames.pos(end);
 
-	// Modify path (expecting frame_capture_XX.json)
-	std::size_t index = path.rfind("/frame_capture_");
+	// Modify path (expecting XX_capture_XX.json)
+	std::size_t index = path.rfind("_capture_");
 	if (index != std::string::npos)
-		path.replace(index, 15, "/frame_tracking_");
+		path.replace(index, 9, "_tracking_");
 	// Open file
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;

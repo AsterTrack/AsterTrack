@@ -5,28 +5,42 @@
 	"version": "0.2.0",
 	"configurations": [
 		{ // Uses Microsoft C/C++ extension, great debugging experience
-			"name": "Windows Debug AsterTrack",
+			"name": "Windows",
 			"type": "cppvsdbg",
 			"request": "launch",
 			"program": "${workspaceFolder}/build/astertrack.exe",
 			"cwd": "${workspaceFolder}"
 		},
 		{ // Uses Microsoft C/C++ extension, very slow debugging experience with GDB
-			"name": "Linux Debug AsterTrack GDB Slow",
+			"name": "Linux GDB MS CPP",
 			"type": "cppdbg",
 			"request": "launch",
 			"program": "${workspaceFolder}/build/astertrack-server",
 			"cwd": "${workspaceFolder}"
 		},
-		{ // Uses Native Debug extension, somewhat faster debugging experience with GDB
-			"name": "Linux Debug AsterTrack GDB Faster",
+		{ // Uses Native Debug extension with GDB, somewhat faster than cppdbg
+			"name": "Linux GDB NativeDebug",
 			"type": "gdb",
 			"request": "launch",
 			"target": "${workspaceFolder}/build/astertrack-server",
 			"cwd": "${workspaceFolder}"
 		},
+		{ // Uses Native Debug extension with LLDB
+			"name": "Linux LLDB NativeDebug",
+			"type": "lldb-mi",
+			"request": "launch",
+			"target": "${workspaceFolder}/build/astertrack-server",
+			"cwd": "${workspaceFolder}"
+		},
+		{ // Uses Native Debug extension with LLDB
+			"name": "Linux LLDB NativeDebug - STATIC",
+			"type": "lldb-mi",
+			"request": "launch",
+			"target": "${workspaceFolder}/build/astertrack-static",
+			"cwd": "${workspaceFolder}"
+		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
-			"name": "Linux Debug AsterTrack LLDB Fastest",
+			"name": "Linux CodeLLDB",
 			"type": "lldb",
 			"request": "launch",
 			"sourceLanguages": [ "C++" ],
@@ -34,7 +48,7 @@
 			"cwd": "${workspaceFolder}"
 		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
-			"name": "Linux Debug AsterTrack LLDB - VERIFY",
+			"name": "Linux CodeLLDB - VERIFY",
 			"type": "lldb",
 			"request": "launch",
 			"sourceLanguages": [ "C++" ],
@@ -47,7 +61,7 @@
 			},
 		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
-			"name": "Linux Debug AsterTrack LLDB - VERIFY - STATIC",
+			"name": "Linux CodeLLDB - VERIFY - STATIC",
 			"type": "lldb",
 			"request": "launch",
 			"sourceLanguages": [ "C++" ],
@@ -60,18 +74,11 @@
 			},
 		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
-			"name": "Linux Debug AsterTrack LLDB Fastest (Attach)",
+			"name": "Linux CodeLLDB - ATTACH",
 			"type": "lldb",
 			"request": "attach",
 			"sourceLanguages": [ "C++" ],
 			"program": "${workspaceFolder}/build/astertrack-server",
-		},
-		{
-			"name": "(gdb) Attach",
-			"type": "cppdbg",
-			"request": "attach",
-			"program": "${workspaceFolder}/build/astertrack-server",
-			"MIMode": "gdb"
 		}
 	]
 }

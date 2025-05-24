@@ -85,7 +85,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 					if (getProperty(camera->config.wireless) != toggle)
 					{
 						getProperty(camera->config.wireless) = toggle;
-						DeviceUpdateWireless(state, *camera);
+						CameraUpdateWireless(state, *camera);
 					}
 				}
 			};
@@ -157,7 +157,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 
 			if (changed)
 			{
-				DeviceUpdateWireless(state, *camera);
+				CameraUpdateWireless(state, *camera);
 			}
 		}
 		ImGui::EndTable();

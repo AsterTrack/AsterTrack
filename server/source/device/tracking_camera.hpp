@@ -31,11 +31,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <vector>
 
 // Forward-declared opaque structs
+struct ServerState; // server.hpp
 struct TrackingControllerState; // device/tracking_controller.hpp
 struct CameraPipeline; // pipeline/pipeline.hpp
 struct ClientCommState; // comm/server.hpp
-
-extern std::atomic<int> modeChangesWaiting, modeChangesConfirmed;
 
 struct ImageRequest
 {
@@ -64,12 +63,20 @@ struct TrackingCameraState
 	int syncIndex;
 
 	// Device mode
-	TrCamMode setMode = TRCAM_STANDBY, mode = TRCAM_STANDBY;
-	inline bool hasSetMode(TrCamMode Mode) const { return (setMode&TRCAM_MODE_MASK) == Mode; }
+	TrCamMode mode = TRCAM_STANDBY;
+	struct {
+		TrCamMode mode;
+		TimePoint_t time;
+		bool handleIndividually = true;
+	} modeSet = {};
+	inline bool hasSetMode(TrCamMode Mode) const { return (modeSet.mode&TRCAM_MODE_MASK) == Mode; }
 	inline bool isMode(TrCamMode Mode) const { return (mode&TRCAM_MODE_MASK) == Mode; }
+	inline bool hasSetStreaming() const { return (modeSet.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
+	inline bool isStreaming() const { return (mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 
-	void sendModeSet(uint8_t mode);
 	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length);
+	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
+	void recvModeSet(uint8_t mode);
 
 	/**
 	* Device configuration
@@ -167,5 +174,18 @@ struct TrackingCameraState
 		Synchronised<StatPacket> statistics = {};
 	} state = {};
 };
+
+std::shared_ptr<TrackingCameraState> CameraSetupDevice(ServerState &state, CameraID id);
+bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera);
+
+/**
+ * Attempt to re-start streaming after failure
+ */
+bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraState> &camera);
+
+void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
+bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device);
+void CameraUpdateStream(TrackingCameraState &device);
+void CameraUpdateVis(TrackingCameraState &device);
 
 #endif // TRACKING_CAMERA_H

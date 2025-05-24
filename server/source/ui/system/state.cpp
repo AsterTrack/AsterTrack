@@ -296,9 +296,7 @@ CameraConfig& InterfaceState::getCameraConfig(const TrackingCameraState &camera)
 std::string InterfaceState::getStatusText(const TrackingCameraState &camera)
 {
 	ServerState &state = GetState();
-	bool setStreaming = (camera.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool isStreaming = (camera.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool streamingMatch = (state.mode != MODE_Device) || (isStreaming == state.isStreaming);
+	bool streamingMatch = (state.mode != MODE_Device) || (camera.isStreaming() == state.isStreaming);
 	auto error = *camera.state.error.contextualRLock();
 	if (error.encountered)
 	{
@@ -327,9 +325,7 @@ std::string InterfaceState::getStatusText(const TrackingCameraState &camera)
 Color InterfaceState::getStatusColor(const TrackingCameraState &camera)
 {
 	ServerState &state = GetState();
-	bool setStreaming = (camera.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool isStreaming = (camera.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool streamingMatch = (state.mode != MODE_Device) || (isStreaming == state.isStreaming);
+	bool streamingMatch = (state.mode != MODE_Device) || (camera.isStreaming() == state.isStreaming);
 	Color statusColor = { 0, 1, 0, 1.0f };
 	auto error = *camera.state.error.contextualRLock();
 	if (error.encountered)

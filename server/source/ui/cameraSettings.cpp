@@ -208,7 +208,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 				if (cfgMap->second != configIndex && !(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
 					continue;
 				cam->pipeline->mode = getCameraMode(state, cam->id);
-				DeviceUpdateCameraSetup(state, *cam);
+				CameraUpdateSetup(state, *cam);
 			}
 			// TODO:: Implement UI for assigning controllers and their cameras to sync groups
 			// Currently, updating "synchronised" status also needs to re-setup sync groups

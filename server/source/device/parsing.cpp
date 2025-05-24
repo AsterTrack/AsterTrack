@@ -378,14 +378,14 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				camera.port = -1;
 				controller.cameras[rem.second] = NULL;
 				// state.camera still holds reference, so camera couldn't have been deleted yet
-				if (DeviceCheckCameraDisconnect(state, camera))
+				if (CameraCheckDisconnected(state, camera))
 					camsLost++;
 			}
 		}
 		for (auto add : addedCams)
 		{ // Genuinely newly connected, not moved
 			camsGained++;
-			std::shared_ptr<TrackingCameraState> camera = DeviceSetupCamera(state, add.first);
+			std::shared_ptr<TrackingCameraState> camera = CameraSetupDevice(state, add.first);
 			// Set up connection to controller
 			for (auto &cont : state.controllers)
 			{
@@ -483,8 +483,7 @@ bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	}
 
 	// Implicitly assume mode change
-	camera.setMode = TRCAM_STANDBY;
-	camera.mode = TRCAM_STANDBY;
+	camera.recvModeSet(TRCAM_STANDBY);
 
 	// Update error state
 	*camera.state.error.contextualLock() = error;
@@ -516,12 +515,7 @@ bool ReadModePacket(TrackingCameraState &camera, PacketBlocks &packet)
 {
 	if (packet.erroneous) return false;
 	if (packet.data.size() < 1) return false;
-	camera.mode = (TrCamMode)packet.data[0];
-	modeChangesConfirmed.fetch_add(1);
-	DevicesUpdateSyncMask(GetState());
-	// TODO: Sometimes, delayed mode packets cause the camera to not be set up properly
-	// May have to send setup and config packets again
-	LOG(LCameraDevice, LInfo, "Camera %d entered mode %x!", camera.id, camera.mode);
+	camera.recvModeSet(packet.data[0]);
 	return true;
 }
 

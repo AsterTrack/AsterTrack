@@ -31,6 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <queue>
 
 // Forward-declared opaque structs
+struct ServerState; // server.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
 struct USBCommState; // comm/usb.hpp
 struct SyncGroup; // comm/streaming.hpp
@@ -102,5 +103,13 @@ struct TrackingControllerState
 	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
 };
 static bool operator==(const TrackingControllerState& a, const TrackingControllerState& b) { return &a == &b; }
+
+int DetectNewControllers(ServerState &state);
+void DisconnectController(ServerState &state, TrackingControllerState &controller);
+void DevicesStartStreaming(ServerState &state);
+void DevicesStopStreaming(ServerState &state);
+void HandleController(ServerState &state, TrackingControllerState &controller);
+
+bool ControllerUpdateSyncMask(TrackingControllerState &controller);
 
 #endif // TRACKING_CONTROLLER_H

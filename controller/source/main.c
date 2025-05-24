@@ -1083,6 +1083,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		if (frameSignalSource == FrameSignal_Generating)
 			StopTimer(TIM3);
 		frameSignalSource = FrameSignal_None;
+		// Reset Sync Mask implicitly
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 			portStates[i].frameSyncEnabled = false;
 		enabledSyncPinsGPIOD = 0;
@@ -1095,9 +1096,6 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		if (frameSignalSource == FrameSignal_Generating)
 			StopTimer(TIM3);
 		SYNC_Input_Init();
-		for (int i = 0; i < UART_PORT_COUNT; i++)
-			portStates[i].frameSyncEnabled = false;
-		enabledSyncPinsGPIOD = 0;
 		frameSignalSource = FrameSignal_External;
 		return usbd_ack;
 	}
@@ -1115,14 +1113,11 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		SYNC_Reset();
 		SYNC_Output_Init();
 		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
-		for (int i = 0; i < UART_PORT_COUNT; i++)
-			portStates[i].frameSyncEnabled = false;
-		enabledSyncPinsGPIOD = 0;
 		frameSignalSource = FrameSignal_Generating;
 		return usbd_ack;
 	}
 	else if (req->bRequest == COMMAND_OUT_SYNC_MASK)
-	{ // Request to send a packet to cameras
+	{ // Request to set sync mask for cameras
 		CMDD_STR("+SyncMsk:");
 		CMDD_CHARR(UI8_TO_HEX_ARR(req->wIndex));
 		enabledSyncPinsGPIOD = 0;

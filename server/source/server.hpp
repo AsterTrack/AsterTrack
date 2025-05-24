@@ -130,20 +130,11 @@ void ServerStoreConfiguration(ServerState &state);
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);
 CameraMode getCameraMode(ServerState &state, CameraID id);
-std::shared_ptr<TrackingCameraState> DeviceSetupCamera(ServerState &state, CameraID id);
-bool DeviceCheckCameraDisconnect(ServerState &state, TrackingCameraState &camera);
-void DevicesUpdateSyncMask(ServerState &state);
 
 bool StartDeviceMode(ServerState &state);
 void StopDeviceMode(ServerState &state);
 
 void StartServer(ServerState &state);
-
-void DeviceUpdateCameraSetup(ServerState &state, TrackingCameraState &device);
-bool DeviceUpdateWireless(ServerState &state, TrackingCameraState &device);
-void DeviceUpdateStream(TrackingCameraState &state);
-void DeviceUpdateVis(TrackingCameraState &state);
-bool DevicesAwaitModeChanges(int timeoutMS);
 
 void StartSimulation(ServerState &state);
 void StopSimulation(ServerState &state);

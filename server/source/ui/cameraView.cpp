@@ -407,7 +407,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (ImGui::MenuItem("HDMI Visualisation", nullptr, 
 			&view.camera->config.hdmiVis.enabled, device))
 		{
-			DeviceUpdateVis(*view.camera);
+			CameraUpdateVis(*view.camera);
 		}
 
 		ImGui::EndCombo();
@@ -446,12 +446,12 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (ImGui::MenuItem("Enable Wireless", nullptr, 
 			&view.camera->config.wireless.enabled, device))
 		{
-			DeviceUpdateWireless(state, *view.camera);
+			CameraUpdateWireless(state, *view.camera);
 		}
 		if (ImGui::MenuItem("Enable Server", nullptr, 
 			&view.camera->config.wireless.Server, device && view.camera->config.wireless.enabled))
 		{
-			DeviceUpdateWireless(state, *view.camera);
+			CameraUpdateWireless(state, *view.camera);
 		}
 
 		ImGui::EndCombo();
@@ -714,7 +714,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 	if (updateImageStreaming)
 	{ // Update settings if desired
-		DeviceUpdateStream(*view.camera);
+		CameraUpdateStream(*view.camera);
 	}
 
 }
@@ -1559,9 +1559,8 @@ static void drawOverlayMessages(CameraView &view, ImRect rect)
 	auto error = *view.camera->state.error.contextualRLock();
 	bool drawErrorMsg = error.encountered || (error.recovered && dtMS(error.time, sclock::now()) < 3000);
 	// Check streaming button
-	bool setStreaming = (view.camera->mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool isStreaming = (view.camera->mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING;
-	bool drawStreamingBtn = (device && !isStreaming) && state.isStreaming && !error.encountered;
+	bool drawStreamingBtn = device && state.isStreaming && !error.encountered && !view.camera->isStreaming()
+		&& (!view.camera->hasSetStreaming() || (view.camera->hasSetStreaming() && dtMS(view.camera->modeSet.time, sclock::now()) > 1000));
 	int msgCount = drawErrorMsg + drawStreamingBtn;
 	if (msgCount == 0)
 		return;
@@ -1626,45 +1625,7 @@ static void drawOverlayMessages(CameraView &view, ImRect rect)
 	{
 		if (drawMessage(ImGui::GetID("streamBtn"), true, "Start Streaming"))
 		{
-			auto &cam = view.camera;
-			// TODO: Add method to server to integrate camera into streaming
-			// Currently, this doesn't fully work at all times
-			// Ontop of that, this would need to be updated alongside server code - easy to forget
-
-			// Send setup data incase it didn't already happen
-			DeviceUpdateCameraSetup(state, *cam);
-
-			// Make sure secondary features match expected state
-			DeviceUpdateStream(*cam);
-			DeviceUpdateVis(*cam);
-
-			// Communicate with camera to start streaming (startup time is high)
-			cam->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-
-			DevicesAwaitModeChanges(100);
-
-			if (state.cameraConfig.getCameraConfig(cam->id).synchronised && cam->controller && cam->controller->sync && cam->controller->sync->contextualRLock()->source != SYNC_NONE)
-			{ // TODO: Remove once sync group is setup in EnsureCamera (based on prior config, e.g. in UI)
-				SetCameraSync(*state.stream.contextualLock(), cam, cam->controller->sync);
-
-				if (cam->controller->comm->commStreaming)
-				{
-					// Select cameras that have been setup and chosen for streaming
-					uint16_t portMask = 0;
-					for (auto &camera : cam->controller->cameras)
-					{
-						if (camera && (camera->mode & TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING)
-							portMask |= 1 << camera->port;
-					}
-
-					// Allow setup cameras to receive sync, starting the frames
-					comm_submit_control_data(cam->controller->comm, COMMAND_OUT_SYNC_MASK, 0x00, portMask);
-				}
-				else
-				{
-					SetCameraSyncNone(*state.stream.contextualLock(), cam, 1000.0f / 144);
-				}
-			}
+			CameraRestartStreaming(state, view.camera);
 		}
 	}
 

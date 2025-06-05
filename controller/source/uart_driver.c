@@ -34,6 +34,34 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
+void uart_configure_baudrate(int port, uint32_t baudrate)
+{
+	struct UART_DMA_Setup u = UART[port];
+
+	bool enabled = u.uart->CTLR1 & USART_CTLR1_UE;
+	// Ensure it's disabled
+	u.uart->CTLR1 &= ~USART_CTLR1_UE;
+	DMA_CH(u.DMA, u.DMA_CH_RX)->CONTROL &= ~DMA_CFGR1_EN;
+	DMA_CH(u.DMA, u.DMA_CH_TX)->CONTROL &= ~DMA_CFGR1_EN;
+	// Read stat & data register to clear flags
+	uint8_t stat = u.uart->STATR;
+	uint32_t data = u.uart->DATAR;
+	(void) stat;
+	(void) data;
+
+	// Set Baud Rate
+	uint32_t intDiv = (25 * u.peripheral) / (4 * baudrate);
+	uint32_t tmp = (intDiv / 100) & 0xFFF;
+	uint32_t fracDiv = intDiv - (100 * tmp);
+	u.uart->BRR = (tmp << 4) | (((fracDiv * 16 + 50) / 100) & 0xF);
+
+	if (enabled)
+	{
+		u.uart->CTLR1 |= USART_CTLR1_UE;
+		DMA_CH(u.DMA, u.DMA_CH_RX)->CONTROL |=	DMA_CFGR1_EN;
+	}
+}
+
 void uart_driver_init()
 {
 	// GPIO Clocks are already active
@@ -57,11 +85,7 @@ void uart_driver_init()
 		u.uart->CTLR1 = USART_WordLength_8b | USART_Parity_No | USART_Mode_Tx | USART_Mode_Rx;
 		u.uart->CTLR2 = USART_StopBits_2;
 		u.uart->CTLR3 = USART_HardwareFlowControl_None;
-		// Set Baud Rate
-		uint32_t intDiv = (25 * u.peripheral) / (4 * UART_BAUD_RATE);
-		uint32_t tmp = (intDiv / 100) & 0xFFF;
-		uint32_t fracDiv = intDiv - (100 * tmp);
-		u.uart->BRR = (tmp << 4) | (((fracDiv * 16 + 50) / 100) & 0xF);
+		uart_configure_baudrate(i, UART_BAUD_RATE_SAFE);
 		// UART RX Interrupt (IDLE)
 		u.uart->CTLR1 |= USART_CTLR1_IDLEIE;
 		// UART RX Parity Error Interrupt (PEIE)
@@ -105,7 +129,7 @@ void uart_driver_init()
 		NVIC_EnableIRQ(u.dmaIRQ_TX);
 	
 		// Enable UART and DMA RX
-		DMA_CH(u.DMA, u.DMA_CH_RX)->CONTROL |=	DMA_CFGR1_EN;
+		DMA_CH(u.DMA, u.DMA_CH_RX)->CONTROL |= DMA_CFGR1_EN;
 		u.uart->CTLR1 |= USART_CTLR1_UE;
 	}
 }

@@ -1,0 +1,54 @@
+{
+	// See https://go.microsoft.com/fwlink/?LinkId=733558
+	// for the documentation about the tasks.json format
+	"version": "2.0.0",
+	"tasks": [
+        {
+            "label": "Build (clangd)",
+            "type": "shell",
+            "group": "build",
+            "command": "mkdir",
+            "args": [
+                "-p", "build", "&",
+                "bear", "--output", "build/compile_commands.json", "--append", "--",
+                "make", "DEVICE='${input:target}'", "-j", "$(nproc", "--ignore=2)",
+                // Sadly, "make --dry-run", does not work, it intercepts commands
+            ],
+            "runOptions": { "reevaluateOnRerun": false }
+        },
+		{
+			"label": "Upload ARM using OpenOCD",
+			"type": "shell",
+			"group": "test",
+			"command": "openocd -f targets/ARM/flash_${input:armTarget}.cfg",
+            "dependsOn": [ "Build (clangd)" ]
+		},
+		{
+			"label": "Upload ARM using STM32_Programmer_CLI",
+			"type": "shell",
+			"group": "test",
+			"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf",
+			"command_serial": "STM32_Programmer_CLI -c port=/dev/ttyUSB0 -d build/TrackingCameraMCU.elf", // For USB-To-Serial programmer (e.g. FTDI) using STM32_Programmer
+			"windows": {
+				"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf", // For ST-Link using programmer
+				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/TrackingCameraMCU.elf" // For serial programmer, pick correct COM port
+			}
+		},
+	],
+    "inputs": [
+        {
+            "id": "target",
+            "description": "Target:",
+            "type": "pickString",
+			"default": "STM32G030",
+            "options": [ "STM32G030" ]
+        },
+        {
+            "id": "armTarget",
+            "description": "Arm Upload Target:",
+            "type": "pickString",
+			"default": "STM32G0",
+            "options": [ "STM32G0" ]
+        },
+    ]
+}

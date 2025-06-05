@@ -57,8 +57,9 @@ struct CommState
 
 	void *port;
 	bool (*start)(void *port);
-	int (*wait)(void *port, uint32_t timeoutUS);
 	void (*stop)(void *port);
+	int (*wait)(void *port, uint32_t timeoutUS);
+	void (*configure)(void *port, uint32_t rate);
 	int (*read)(void *port, uint8_t *data, uint32_t length);
 	int (*write)(void *port, const uint8_t *data, uint32_t length);
 	void (*submit)(void *port);

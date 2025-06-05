@@ -420,7 +420,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_CFG_MODE)
 				{ // Mode set
-					if (proto_fetchCmd(proto))
+					if (proto_fetchCmd(proto) && proto.cmdSz >= 1)
 					{
 						uint8_t modePacket = proto.rcvBuf[proto.cmdPos];
 						TrackingCameraMode newMode = {};

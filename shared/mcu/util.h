@@ -24,7 +24,11 @@ extern "C"
 {
 #endif
 
+#if defined(CH32V307)
 #include "ch32v30x.h"
+#elif defined(STM32)
+#include "stm32.h"
+#endif
 
 #include "comm/packet.h"
 
@@ -34,15 +38,27 @@ extern "C"
 
 static const uint8_t hex[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
 
+#if defined(CH32V307)
+
 #define SYSCLKFRQ 144
 
 #define PCLK2 SYSCLKFRQ*1000000
 // Same max clock as system frequency
 #define PCLK1 SYSCLKFRQ*1000000
 
+#elif defined(STM32)
+
+#define SYSCLKFRQ 64
+
+#define PCLK SYSCLKFRQ*1000000
+
+#endif
+
 /* Mutex/Critical Zones */
 
 #define USE_LOCKS() bool ginten
+
+#if defined(CH32V307)
 
 static inline uint32_t __get_GINTENR()
 {
@@ -55,6 +71,12 @@ static inline uint32_t __get_GINTEN()
 {
 	return __get_GINTENR() != 0x6000;
 }
+
+#elif defined(STM32)
+
+#define __get_GINTEN __get_PRIMASK
+
+#endif
 
 #define LOCK() { \
 	ginten = __get_GINTEN(); \
@@ -380,14 +402,33 @@ static inline void stats_update(StatValue *stats, float val)
 typedef uint64_t TimePoint;
 typedef int32_t TimeSpan;
 
+#if defined(CH32V307)
+
 // CH32V307 has a nice 64bit SysTick that will count sub-us for 32 thousand years
 #define TICKS_PER_US	(SYSCLKFRQ / 8)
-#define TICKS_PER_MS	(1000*TICKS_PER_US)
 
 static inline __attribute__((always_inline)) TimePoint GetTimePoint()
 { // Unit: 1/18 us
 	return SysTick->CNT;
 }
+
+#elif defined(STM32)
+// Generally only has a 24bit SysTick, will not even last 2 seconds
+// So instead use TIM1 to get a us-Timer and use the interrupt to keep separate 64bit variable
+
+#define TICKS_PER_US	1
+
+// Global System Timer
+extern volatile uint64_t usCounter;
+
+static inline __attribute__((always_inline)) TimePoint GetTimePoint()
+{ // Unit: us
+	return usCounter + TIM1->CNT;
+}
+
+#endif
+
+#define TICKS_PER_MS	(1000*TICKS_PER_US)
 
 static inline __attribute__((always_inline)) TimePoint GetTimePointUS()
 {

@@ -28,6 +28,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdbool.h>
 #include <string.h> // memcpy
 
+#define UART_BAUD_RATE_SAFE		1000000
+#define UART_BAUD_RATE_MAX		8000000
+
 enum TrCamMode
 {
 	TRCAM_STANDBY					= 0b00000000,
@@ -61,6 +64,8 @@ enum PacketTag
 	PACKET_PING,			// NOP packet that must be returned
 	PACKET_SYNC,			// Timestamped packet for TimeSync
 	PACKET_SOF,				// Timestamped packet signaling SOF for frameID
+	PACKET_RATE_CONFIG,		// Request to switch baudrate
+	PACKET_RATE_VERIFY,		// Verification data with checksums to test baudrate
 
 	// All below are for (forwarded) Cam<->Host comm
 	PACKET_HOST_COMM = 24,
@@ -78,6 +83,8 @@ enum PacketTag
 	PACKET_VISUAL,			// Send visual debug data of frame
 	PACKET_IMAGE,			// Send camera frame image
 	PACKET_BGTILES,			// Send updated background tiles
+	PACKET_CFG_FILTER,		// Configure filter switcher state
+	PACKET_CFG_SIGNAL,		// Configure state for LED to signal
 	PACKET_MAX_ID_POSSIBLE = 63
 };
 
@@ -86,6 +93,7 @@ enum DeviceTag
 	DEVICE_SERVER					= 1<<2,
 	DEVICE_TRCAM					= 1<<4,
 	DEVICE_TRCONT					= 1<<6,
+	DEVICE_TRCAM_MCU				= 1<<8,
 };
 
 enum InterfaceTag
@@ -198,6 +206,12 @@ static const char *ErrorTag_String[ERROR_MAX] =
 	"Camera program exception (pipe)"
 };
 
+enum FilterSwitchCommand {
+	FILTER_KEEP = 0,
+	FILTER_SWITCH_VISIBLE = 1,
+	FILTER_SWITCH_INFRARED = 2,
+};
+
 enum CommInit {
 	CommNoCon = 0,
 	CommID = 1,
@@ -222,6 +236,9 @@ struct PacketHeader
 	inline bool isStreamPacket() const { return tag == PACKET_BLOB; }
 #endif
 };
+#ifndef __cplusplus
+static inline bool isStreamPacket(struct PacketHeader header) { return header.tag == PACKET_BLOB; }
+#endif
 #define PACKET_HEADER_SIZE 4
 
 static inline struct PacketHeader parsePacketHeader(uint8_t data[PACKET_HEADER_SIZE])

@@ -354,6 +354,7 @@ int main(int argc, char **argv)
 		state.uart.start = uart_start;
 		state.uart.stop = uart_stop;
 		state.uart.wait = uart_wait;
+		state.uart.configure = uart_configure;
 		state.uart.read = uart_read;
 		state.uart.write = uart_write;
 		state.uart.submit = uart_submit;
@@ -383,6 +384,7 @@ int main(int argc, char **argv)
 		state.server.start = server_start;
 		state.server.stop = server_stop;
 		state.server.wait = server_wait;
+		state.server.configure = nullptr;
 		state.server.read = server_read;
 		state.server.write = server_write;
 		state.server.submit = server_submit;
@@ -2033,7 +2035,7 @@ static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
 	int budget;
 	if (&comm == &state.uart)
 	{ // Account for bytes still in TX queue
-		budget = (int)(uart_getBitsPerUS() * commTimeUS);
+		budget = (int)(uart_getBitsPerUS(state.uart.port) * commTimeUS);
 		budget -= uart_getTXQueue(state.uart.port);
 	}
 	else

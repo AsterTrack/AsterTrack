@@ -60,7 +60,6 @@ BUILD_DIR = build
 
 C_SOURCES = \
 source/main.c \
-source/util.c \
 source/usbd.c \
 source/uartd.c \
 source/config.c \
@@ -72,16 +71,20 @@ dependencies/PDlib/src/policy_engine_states.c \
 dependencies/PDlib/src/policy_engine.c \
 ch32v307/src/system_ch32v30x.c
 
+C_SOURCES_SHARED = \
+mcu/util.c
+
 # ----- C includes -----
 
 C_INCLUDES = \
 -Isource \
+-I../shared \
+-I../shared/mcu \
 -Idependencies/libusb \
 -Idependencies/PDlib/include \
 -Idependencies/PDlib/src \
 -Ich32v307/drivers \
--Ich32v307/drivers/ch32v30x/inc \
--I../shared
+-Ich32v307/drivers/ch32v30x/inc
 
 # ----- C defines -----
 
@@ -165,7 +168,7 @@ LDFLAGS = $(COPTIONS) \
 # BUILD TARGETS
 #######################################
 
-all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
+all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 
 configure: $(BUILD_DIR)/configurator.bin
 
@@ -181,13 +184,16 @@ $(BUILD_DIR)/configurator.elf: tools/configure_ch32v307.c $(BUILD_DIR)/ch32v307/
 $(BUILD_DIR)/configurator.bin: $(BUILD_DIR)/configurator.elf | $(BUILD_DIR)
 	$(BIN) $< $@
 
-C_OBJECTS = $(addprefix $(BUILD_DIR)/,$(C_SOURCES:.c=.o))
+C_OBJECTS = $(addprefix $(BUILD_DIR)/,$(C_SOURCES:.c=.o)) $(addprefix $(BUILD_DIR)/shared/,$(C_SOURCES_SHARED:.c=.o))
 OBJECTS = $(addprefix $(BUILD_DIR)/,$(ASM_SOURCES:.s=.o)) $(C_OBJECTS)
 
 $(shell mkdir -p $(dir $(OBJECTS)) >/dev/null)
 
+$(BUILD_DIR)/shared/%.o: ../shared/%.c Makefile
+	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/shared/$(<:.c=.lst) $< -o $@
+
 $(BUILD_DIR)/%.o: %.c Makefile
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(<:.c=.lst) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile
 	$(AS) -c $(ASFLAGS) $< -o $@
@@ -201,6 +207,9 @@ $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf
 
 $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf
 	$(BIN) $< $@
+
+$(BUILD_DIR)/%.asm: $(BUILD_DIR)/%.elf
+	$(DP) -d $< > $@
 
 
 #######################################

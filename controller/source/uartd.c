@@ -275,7 +275,6 @@ void uartd_send_int(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, b
 
 inline void uartd_reset_port_int(uint_fast8_t port)
 {
-	#define DMA_CONTROL_ENABLE	0b1	// Same on all of them (DMA_CFGR1_EN, DMA_CCR_EN)
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL &= ~DMA_CONTROL_ENABLE;
 	while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL & DMA_CONTROL_ENABLE);
 	memset(&portStates[port], 0, sizeof(PortState));

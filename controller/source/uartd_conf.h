@@ -24,7 +24,7 @@ extern "C"
 {
 #endif
 
-#define UART_BAUD_RATE			9000000 // 9000000 // 4500000 // 3000000 // 2250000 // 1500000 // 115200 // 57600
+#include "comm/packet.h"
 
 // Amount of UART ports as implemented in uartd
 #define UART_PORT_COUNT			8       // Should match CAM_PORT_COUNT in config.h

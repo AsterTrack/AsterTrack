@@ -24,6 +24,7 @@ SOFTWARE.
 */
 
 #include "uart.hpp"
+#include "comm/packet.h"
 
 //#include <asm/termios.h> // Clashes with ioctl.h
 #include <asm/termbits.h>
@@ -33,16 +34,6 @@ SOFTWARE.
 #include <errno.h> // Error integer and strerror() function
 #include <unistd.h>
 #include <cstring>
-
-
-#define UART_BAUD_RATE 9000000 //9000000 //4500000 //3000000 //1500000 //115200 // 57600
-
-float uart_getBitsPerUS()
-{
-	// 1 Start, 8 Data, 2 Stop, 1 Parity
-	int bitsPerByte = 1+8+2;//+1;
-	return (float)UART_BAUD_RATE / 1000000 / bitsPerByte;
-}
 
 // Set the properties needed for the UART port
 static void configSerialPort(int uartFD, uint32_t baud)
@@ -88,12 +79,14 @@ struct UartPort
 {
 	int fd;
 	std::string port;
+	int baudrate;
 };
 
 void* uart_init(std::string serial)
 {
 	UartPort *port = new UartPort();
 	port->port = serial;
+	port->baudrate = UART_BAUD_RATE_SAFE;
 	return port;
 }
 
@@ -113,7 +106,7 @@ bool uart_start(void *port)
 		printf("Error: Can't open UART port %s! (%i: %s)\n", uart.port.c_str(), errno, strerror(errno));
 		return false;
 	}
-	configSerialPort(uart.fd, UART_BAUD_RATE);
+	configSerialPort(uart.fd, uart.baudrate);
 	return true;
 }
 
@@ -175,4 +168,18 @@ int uart_getTXQueue(void *port)
 	UartPort &uart = *((UartPort*)port);
 	ioctl(uart.fd, TIOCOUTQ, &txQueue);
 	return txQueue;
+}
+
+void uart_configure(void *port, uint32_t rate)
+{
+	UartPort &uart = *((UartPort*)port);
+	uart.baudrate = rate;
+}
+
+float uart_getBitsPerUS(void *port)
+{
+	UartPort &uart = *((UartPort*)port);
+	// 1 Start, 8 Data, 2 Stop, 1 Parity
+	int bitsPerByte = 1+8+2;//+1;
+	return (float)uart.baudrate / 1000000 / bitsPerByte;
 }

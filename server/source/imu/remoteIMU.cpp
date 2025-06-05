@@ -70,7 +70,8 @@ bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &provi
 			remoteIMUSingleton = std::static_pointer_cast<RemoteIMUSingleton>(*singletonIt);
 		return false;
 	}
-	remoteIMUSingleton = std::make_shared<RemoteIMUSingleton>();
+	if (!remoteIMUSingleton)
+		remoteIMUSingleton = std::make_shared<RemoteIMUSingleton>();
 	providers.push_back(remoteIMUSingleton);
 	return true;
 }

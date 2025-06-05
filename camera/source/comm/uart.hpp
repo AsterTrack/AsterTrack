@@ -49,6 +49,8 @@ void uart_flush(void *port);
 
 int uart_getTXQueue(void *port);
 
-float uart_getBitsPerUS();
+float uart_getBitsPerUS(void *port);
+
+void uart_configure(void *port, uint32_t rate);
 
 #endif // UART_H

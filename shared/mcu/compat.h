@@ -19,7 +19,16 @@ extern "C"
 
 // Definitions of GPIO Pins / DMA Channels and access so that some descriptive structures can be shared
 
-// Same as LL_config for STM32, used only in custom access for CH32V
+typedef struct
+{ // All chips use same/similar layout, but annoyingly different definitions
+	volatile uint32_t CONTROL;
+	volatile uint32_t COUNTER;
+	volatile uint32_t PER_ADDR;
+	volatile uint32_t MEM_ADDR;
+} DMA_Channel_Unified;
+
+#if defined(CH32V307)
+
 #define DMA_CHANNEL_1		1
 #define DMA_CHANNEL_2		2
 #define DMA_CHANNEL_3		3
@@ -31,16 +40,6 @@ extern "C"
 #define DMA_CHANNEL_9		9
 #define DMA_CHANNEL_10		10
 #define DMA_CHANNEL_11		11
-
-typedef struct
-{ // All chips use same/similar layout, but annoyingly different definitions
-	volatile uint32_t CONTROL;
-	volatile uint32_t COUNTER;
-	volatile uint32_t PER_ADDR;
-	volatile uint32_t MEM_ADDR;
-} DMA_Channel_Unified;
-
-#if defined(CH32V307)
 
 // Used only in custom access for CH32V
 #define GPIO_PIN_0			0x00000001U
@@ -96,7 +95,9 @@ static const uint8_t CHANNEL_OFFSET_TAB[] =
 	(uint8_t)(DMA2_Channel11_BASE - DMA2_BASE)
 };
 
-#define DMA_CH(DMAx, CH) ((DMA_Channel_Unified *)((uint32_t)DMAx + CHANNEL_OFFSET_TAB[CH-1]))
+#define DMA_CONTROL_ENABLE 0b1
+
+#define DMA_CH(DMAx, CH) ((DMA_Channel_Unified *)((uint32_t)DMAx + CHANNEL_OFFSET_TAB[CH-DMA_CHANNEL_1]))
 
 #endif
 
@@ -122,8 +123,8 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 	GPIO_CFGR(GPIOx, PIN) |= (CFG&0xF) << GPIO_CFGR_POS(PIN);
 }
 
-#define GPIO_SET(GPIO, PINS) GPIO->BSHR = (PINS)&0xFFFF;
-#define GPIO_RESET(GPIO, PINS) GPIO->BCR = (PINS)&0xFFFF;
+#define GPIO_SET(GPIO, PINS) GPIO->BSHR = (PINS)&0xFFFF
+#define GPIO_RESET(GPIO, PINS) GPIO->BCR = (PINS)&0xFFFF
 #define GPIO_READ(GPIO, PINS) (GPIO->INDR&(PINS))
 
 #endif
@@ -135,7 +136,7 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 
 #else
 
-#if defined(STM32F1xx_LL_GPIO_H) | defined(__STM32F3xx_LL_GPIO_H)
+#if defined(STM32F1xx_LL_GPIO_H) | defined(__STM32F3xx_LL_GPIO_H) | defined(STM32G0xx_LL_GPIO_H)
 
 // Used only in LL_ functions for STM32
 #define GPIO_PIN_0			LL_GPIO_PIN_0
@@ -155,15 +156,30 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 #define GPIO_PIN_14			LL_GPIO_PIN_14
 #define GPIO_PIN_15			LL_GPIO_PIN_15
 
-#define GPIO_SET(GPIO, PINS) LL_GPIO_SetOutputPin(GPIO, PINS);
-#define GPIO_RESET(GPIO, PINS) LL_GPIO_ResetOutputPin(GPIO, PINS);
+#define GPIO_SET(GPIO, PINS) LL_GPIO_SetOutputPin(GPIO, PINS)
+#define GPIO_RESET(GPIO, PINS) LL_GPIO_ResetOutputPin(GPIO, PINS)
 #define GPIO_READ(GPIO, PINS) (LL_GPIO_ReadInputPort(GPIO)&(PINS))
 
 #endif
 
-#if defined(STM32F1xx_LL_DMA_H) | defined(__STM32F3xx_LL_DMA_H)
+#if defined(STM32F1xx_LL_DMA_H) | defined(__STM32F3xx_LL_DMA_H) | defined(STM32G0xx_LL_DMA_H)
 
-#define DMA_CH(DMAx, CH) ((DMA_Channel_Unified *)((uint32_t)DMAx + CHANNEL_OFFSET_TAB[CH-1]))
+// Same as LL_config for STM32, used only in custom access for CH32V
+#define DMA_CHANNEL_1		LL_DMA_CHANNEL_1
+#define DMA_CHANNEL_2		LL_DMA_CHANNEL_2
+#define DMA_CHANNEL_3		LL_DMA_CHANNEL_3
+#define DMA_CHANNEL_4		LL_DMA_CHANNEL_4
+#define DMA_CHANNEL_5		LL_DMA_CHANNEL_5
+#define DMA_CHANNEL_6		LL_DMA_CHANNEL_6
+#define DMA_CHANNEL_7		LL_DMA_CHANNEL_7
+#define DMA_CHANNEL_8		LL_DMA_CHANNEL_8
+#define DMA_CHANNEL_9		LL_DMA_CHANNEL_9
+#define DMA_CHANNEL_10		LL_DMA_CHANNEL_10
+#define DMA_CHANNEL_11		LL_DMA_CHANNEL_11
+
+#define DMA_CONTROL_ENABLE 0b1	// Same on all of them (DMA_CFGR1_EN, DMA_CCR_EN)
+
+#define DMA_CH(DMAx, CH) ((DMA_Channel_Unified *)((uint32_t)DMAx + CHANNEL_OFFSET_TAB[CH-DMA_CHANNEL_1]))
 
 #endif
 

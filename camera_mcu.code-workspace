@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "camera_mcu"
+		},
+		{
+			"path": "shared"
+		}
+	],
+	"settings": {}
+}

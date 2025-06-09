@@ -505,7 +505,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 {
 	int it = 0;
 
-	bool checkingIMU = false;
+	static bool checkingIMU = false;
 	TimePoint_t lastIMUCheck = sclock::now();
 
 	while (!stop_token.stop_requested())
@@ -541,7 +541,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		{ // Regularly check for new IMU providers
 			checkingIMU = true;
 			lastIMUCheck = sclock::now();
-			threadPool.push([&checkingIMU](int){
+			threadPool.push([](int){
 				auto &state = GetState();
 				auto providers = *state.imuProviders.contextualLock();
 				{ // Fetch new IMU providers
@@ -1218,12 +1218,9 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	// Accept for realtime processing, create FrameState
 
 	std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
-	frameRecord->num = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
-	frameRecord->ID = frame.ID;
-	frameRecord->time = frame.SOF;
 	frameRecord->cameras.resize(pipeline.cameras.size());
 	for (auto &camera : sync.cameras)
-	{
+	{ // Setup camera data
 		if (!camera) continue; // Removed while streaming - have to ignore even if data was valid
 		if (frame.cameras.size() <= camera->syncIndex) continue; // Newly added after frame
 		// - Non-exclusive, might have been a vacant spot, but not an issue
@@ -1245,6 +1242,17 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		}
 		// Packet was properly received
 		frameRecord->cameras[camera->pipeline->index] = std::move(camRecv.record);
+	}
+	frameRecord->time = frame.SOF;
+	frameRecord->ID = frame.ID;
+	frameRecord->num = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
+	for (auto &camera : sync.cameras)
+	{ // Copy over image data received before processing started
+		if (!camera) continue; // Removed while streaming - have to ignore even if data was valid
+		if (camera->state.latestFrameImageRecord && camera->state.latestFrameImageRecord->frameID == frame.ID)
+		{ // May happen if frame processing was unreasonably delayed
+			frameRecord->cameras[camera->pipeline->index].image = camera->state.latestFrameImageRecord;
+		}
 	}
 
 	// Queue for processing in a separate thread

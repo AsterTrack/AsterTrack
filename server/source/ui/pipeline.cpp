@@ -542,6 +542,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					auto &segment = state.recording.segments[i];
 					if (segment.frameCount == 0) continue; // Invalid or missing segment
+					if (state.recording.tracking[i].empty())
+						state.recording.tracking[i] = state.recording.captures[i];
 					dumpTrackingResults(state.recording.tracking[i], pipeline.record,
 						segment.frameStart, segment.frameStart+segment.frameCount, segment.frameOffset);
 				}
@@ -554,6 +556,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					auto &segment = state.recording.segments[i];
 					if (segment.frameCount == 0) continue; // Invalid or missing segment
+					if (state.recording.tracking[i].empty())
+						state.recording.tracking[i] = state.recording.captures[i];
 					parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
 				}
 			}
@@ -594,7 +598,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			static long coveredFrames;
 			if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 			{
-				auto countEvents = [](const FrameRecord &record, TrackingResult result)
+				auto countEvents = [](const FrameRecord &record, TrackingResult::State result)
 				{
 					return std::count_if(record.trackers.begin(), record.trackers.end(),
 						[&](auto &t){ return t.result.isState(result); });

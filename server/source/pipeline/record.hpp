@@ -124,16 +124,16 @@ struct TargetMatch2D
 class TrackingResult
 {
 public:
-	enum Value
+	enum Base
 	{
-		NONE				= 0,
-		// Base
 		_BASE				= 0xFF << 8,
 		IS_PROBE			= 1 << 8,
 		IS_DETECTED			= 2 << 8,
 		IS_TRACKED			= 3 << 8,
 		IS_FAILURE			= 4 << 8,
-		// State
+	};
+	enum State
+	{
 		_STATE				= 0xFF,
 		SEARCHED_2D			= IS_PROBE | 1,
 		TESTED_3D			= IS_PROBE | 2,
@@ -143,16 +143,24 @@ public:
 		TRACKED_POSE		= IS_TRACKED | 2,
 		TRACKED_SPARSE		= IS_TRACKED | 3,
 		NO_TRACK			= IS_FAILURE | 1,
-		// Flags
+	};
+	enum Flag
+	{
 		_FLAG				= 0xFF << 16,
+		NO_FLAG				= 0,
 		FILTER_FAILED		= (1 << 16),
 		CATCHING_UP			= (1 << 17),
 		REMOVED				= (1 << 18),
 	};
+	enum Value : int
+	{
+		NONE = 0
+	};
 
-	TrackingResult() : value(TrackingResult::NONE) {}
-	TrackingResult(TrackingResult::Value val) : value(val) {}
-	TrackingResult(int val) : value((Value)val) {}
+	TrackingResult(int value = TrackingResult::NONE) : value((Value)value) {}
+	TrackingResult(TrackingResult::Base value) : value((Value)value) {}
+	TrackingResult(TrackingResult::State state, TrackingResult::Flag flag = TrackingResult::NO_FLAG)
+		: value((Value)((Value)state | (Value)flag)) {}
 
 	constexpr operator TrackingResult::Value() const { return value; }
 	constexpr operator TrackingResult::Value&() { return value; }
@@ -164,9 +172,10 @@ public:
 	bool isDetected() const { return (value&_BASE) == IS_DETECTED; }
 	bool isTracked() const { return (value&_BASE) == IS_TRACKED; }
 	bool isFailure() const { return (value&_BASE) == IS_FAILURE; }
-	bool isState(TrackingResult::Value state) const { return (value & (_BASE|_STATE)) == state; }
-	bool hasFlag(TrackingResult::Value flag) const { return (value & flag & _FLAG) != 0; }
-	bool setFlag(TrackingResult::Value flag){ return value = (Value)((int)value | (flag & _FLAG)); }
+	bool isState(TrackingResult::State state) const { return (value & (_BASE|_STATE)) == state; }
+	TrackingResult::State getState() const { return (TrackingResult::State)(value & (_BASE|_STATE)); }
+	bool hasFlag(TrackingResult::Flag flag) const { return (value & flag) == flag; }
+	bool setFlag(TrackingResult::Flag flag){ return value = (Value)(value | (flag & _FLAG)); }
 
 private:
 	Value value;

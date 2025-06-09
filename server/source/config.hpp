@@ -155,8 +155,8 @@ void storeIMUConfigs(const std::string &path, const std::vector<IMUConfig> &conf
 std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
 void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
-void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset);
-void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
+void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);
+void dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
 
 SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs);
 void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs);

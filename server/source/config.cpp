@@ -1021,7 +1021,7 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 	fs.close();
 }
 
-void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t frameOffset)
+void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset)
 {
 	// Modify path (expecting XX_capture_XX.json)
 	std::size_t index = path.rfind("_capture_");
@@ -1098,7 +1098,7 @@ void parseTrackingResults(std::string path, TrackingRecord &record, std::size_t 
 #endif
 }
 
-void dumpTrackingResults(std::string path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
+void dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 
@@ -1109,10 +1109,10 @@ void dumpTrackingResults(std::string path, const TrackingRecord &record, std::si
 	auto frameBegin = frames.pos(begin);
 	auto frameEnd = frames.pos(end);
 
-	// Modify path (expecting XX_capture_XX.json)
-	std::size_t index = path.rfind("_capture_");
+	// Modify path (expecting XX_capture***.json)
+	std::size_t index = path.rfind("_capture");
 	if (index != std::string::npos)
-		path.replace(index, 9, "_tracking_");
+		path.replace(index, 8, "_tracking");
 	// Open file
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;

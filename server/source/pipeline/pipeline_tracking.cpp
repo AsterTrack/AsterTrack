@@ -226,28 +226,6 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 	return recordTrackingResult(pipeline, frame, tracker, result);
 }
 
-static bool detectTarget(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
-	const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
-	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	int focus, TrackerTarget &tracker)
-{
-	auto &params = pipeline.params;
-
-	tracker.data.init(pipeline.cameras.size());
-
-	// Detect target first in this cameras 2D points, and then match with others
-	tracker.match2D = detectTarget2D(stopToken, *tracker.calib, calibs, points2D, properties, relevantPoints2D,
-		focus, pipeline.cameras.size(), params.detect, params.track, tracker.data);
-	if (tracker.match2D.error.samples < params.detect.minObservations.total)
-		return false;
-
-	LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
-		frame->num, (int)pipeline.frameNum.load(), tracker.match2D.error.samples, tracker.match2D.error.mean*PixelFactor);
-	return true;
-}
-
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<int>> &detectionPoints2D,
@@ -263,18 +241,25 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			properties[c] = &frame->cameras[calibs[c].index].properties;
 			relevantPoints2D[c] = &detectionPoints2D[c];
 		}
-		if (!detectTarget(stopToken, pipeline, frame, calibs, points2D, properties, relevantPoints2D, focus, dormant.target))
+
+		// Detect target first in this cameras 2D points, and then match with others
+		dormant.target.match2D = detectTarget2D(stopToken, *dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+			focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total)
 		{
 			createTrackerRecord(frame, dormant.target.calib->id, TrackingResult::SEARCHED_2D);
 			return false;
 		}
+
+		LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
+			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
+		return true;
 	}
 	if (stopToken.stop_requested())
 		return false;
 
-	TrackedTarget tracker(dormant.target.calib, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
-	tracker.target = std::move(dormant.target);
-	tracker.inertial = std::move(dormant.inertial);
+	Eigen::Isometry3f pose = dormant.target.match2D.pose;
+	TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 	recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_2D);
 
 	// Then continue on tracking to catch up with the latest realtime frame
@@ -688,7 +673,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	det0 = pclock::now();
 
 	if (trackTargets && detect.enable3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
-	{ // Target re-detection
+	{ // Target detection in 3D point cloud
 
 		auto dormantIt = pipeline.tracking.dormantTargets.begin();
 		while (dormantIt != pipeline.tracking.dormantTargets.end())
@@ -719,7 +704,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
 							pipeline.tracking.asyncDetectionStop.request_stop();
 					}
-					TrackedTarget tracker(std::move(dormant), dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
+					Eigen::Isometry3f pose = dormant.target.match2D.pose;
+					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 					occupyTargetMatches(tracker.target.match2D);
 					recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_3D);
 
@@ -784,12 +770,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	if (trackTargets && (detect.enable2DSync || (detect.enable2DAsync && !pipeline.tracking.asyncDetection))
-		&& clusterSelect > detect.minObservations.focus && !pipeline.tracking.dormantTargets.empty())
-	{ // 2D Target Detection
+		&& clusterSelect >= detect.minObservations.focus && !pipeline.tracking.dormantTargets.empty())
+	{ // Target detection using only 2D points
 
 		// Select cluster to detect in
 		auto &cluster = clusters[clusterCamera].front();
-		assert(cluster.size() > detect.minObservations.focus);
+		assert(cluster.size() >= detect.minObservations.focus);
 
 		// Select target to detect
 		DormantTarget &dormant = pipeline.tracking.dormantTargets.front();
@@ -806,12 +792,17 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			detectionPoints2D[clusterCamera] = &cluster;
 
 			pipeline.tracking.syncDetectionStop = {};
-			if (detectTarget(pipeline.tracking.syncDetectionStop.get_token(), pipeline, frame, calibs,
-				points2D, properties, detectionPoints2D, clusterCamera, dormant.target))
+
+			// Detect target first in this cameras 2D points, and then match with others
+			dormant.target.match2D = detectTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
+				*dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+				clusterCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+			if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
 			{
-				TrackedTarget tracker(&target, dormant.target.match2D.pose, frame->time, frame->num, pipeline.params.track);
-				tracker.target = std::move(dormant.target);
-				tracker.inertial = std::move(dormant.inertial);
+				LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
+					frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
+				Eigen::Isometry3f pose = dormant.target.match2D.pose;
+				TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 				occupyTargetMatches(tracker.target.match2D);
 				recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_2D);
 				pipeline.tracking.trackedTargets.push_back(std::move(tracker));

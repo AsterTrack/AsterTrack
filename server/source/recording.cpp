@@ -38,7 +38,7 @@ void parseRecordEntries(std::map<int, Recording> &recordEntries)
 		int num = -1, pos;
 		if (std::sscanf(str.data(), "%d_%n", &num, &pos) != 1) continue;
 		int type = 0;
-		static constexpr std::array<std::string,3> types = { "capture", "tracking", "calib" };
+		static const std::array<std::string,3> types = { "capture", "tracking", "calib" };
 		for (; type < types.size(); type++)
 			if (std::strncmp(str.data()+pos, types[type].data(), types[type].length()) == 0) break;
 		if (type == types.size()) continue;
@@ -104,6 +104,8 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	{
 		auto &segment = state.recording.segments[segmentOffset + i];
 		if (segment.frameCount == 0) continue; // Invalid or missing segment
+		if (recordEntries.tracking[i].empty())
+			recordEntries.tracking[i] = recordEntries.captures[i];
 		parseTrackingResults(recordEntries.tracking[i], state.stored, segment.frameOffset);
 	}
 	// Store paths of each numbered segment as well

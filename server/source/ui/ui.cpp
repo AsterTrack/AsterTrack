@@ -668,7 +668,7 @@ EXPORT void _SignalLogUpdate()
 	if (!GetUI().logsStickToNew)
 		return; // Don't need to update with new logs
 	ImGuiWindow* imguiWindow = ImGui::FindWindowByName(GetUI().windows[WIN_LOGGING].title.c_str());
-	if (!(imguiWindow && imguiWindow->Active && imguiWindow->DockTabIsVisible))
+	if (!(imguiWindow && !imguiWindow->Hidden && imguiWindow->DockTabIsVisible))
 		return; // Log is not visible
 	//GetUI().RequestUpdates(1);
 	// Not interactive, no need to wake UI thread to render now, especially if this gets spammed a lot

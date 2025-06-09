@@ -168,7 +168,7 @@ struct TrackingCameraState
 		Synchronised<Errors> error = {};
 		Synchronised<VisualDebug> visualDebug = {};
 		Synchronised<BackgroundCalib> background = {};
-		std::shared_ptr<const CameraImageRecord> latestFrameImageRecord = nullptr;
+		std::shared_ptr<CameraImageRecord> latestFrameImageRecord = nullptr;
 		std::shared_ptr<const CameraImage> latestFrameImage = nullptr;
 		ImageReceiving parsingFrameImage = {};
 		Synchronised<StatPacket> statistics = {};

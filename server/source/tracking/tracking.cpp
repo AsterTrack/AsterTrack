@@ -65,8 +65,9 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 		observation.covObserved = record.covObserved;
 
 	int pointCount = target.match2D.count();
-	TrackingResult trackResult = pointCount <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
-	if (trackResult == TrackingResult::TRACKED_SPARSE)
+	bool trackSparse = pointCount <= params.filter.point.obsLimit;
+	TrackingResult trackResult = trackSparse? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	if (trackSparse)
 	{
 		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);
@@ -168,8 +169,9 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 
 	// Update state
 
-	TrackingResult trackResult = pointCount <= params.filter.point.obsLimit? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
-	if (trackResult == TrackingResult::TRACKED_SPARSE)
+	bool trackSparse = pointCount <= params.filter.point.obsLimit;
+	TrackingResult trackResult = trackSparse? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
+	if (trackSparse)
 	{
 		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
 			target.match2D.error.samples);

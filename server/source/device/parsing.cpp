@@ -754,13 +754,21 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 				auto frameRecord = std::prev(framesRecord.end());
 				while (frameRecord != framesRecord.begin() && (!*frameRecord || frameRecord->get()->ID > imageRecord->frameID)) frameRecord--;
 				if (!*frameRecord || frameRecord->get()->ID != imageRecord->frameID)
-				{
-					LOG(LParsing, LWarn, "Failed to record received camera image for unknown frame ID %d!",
-						imageRecord->frameID);
-					return;
+				{ // TODO: Handle image recording when frame has not (yet) been recorded
+					if (framesRecord.back() && framesRecord.back()->ID < imageRecord->frameID)
+					{ // Can happen if image image was received before frame processing started (e.g. waiting for another camera)
+						LOG(LParsing, LDarn, "Failed to record received camera image, frame ID %d has not yet been recorded!", imageRecord->frameID);
+					}
+					else
+					{ // May rarely happen if a frame is dropped / stream packets are invalid so frame processing didn't (yet) happen
+						LOG(LParsing, LWarn, "Failed to record received camera image for unknown frame ID %d!", imageRecord->frameID);
+					}
 				}
-				auto &cameraRecord = frameRecord->get()->cameras[camera->pipeline->index];
-				cameraRecord.image = imageRecord; // new shared_ptr
+				else
+				{ // Frame processing already started, can record directly
+					auto &cameraRecord = frameRecord->get()->cameras[camera->pipeline->index];
+					cameraRecord.image = imageRecord; // new shared_ptr
+				}
 			}
 
 			// Store as most recent decompressed image

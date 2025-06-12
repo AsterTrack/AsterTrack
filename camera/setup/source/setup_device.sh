@@ -130,10 +130,10 @@ fi
 trap "umount -q -f $MOUNT_BOOT && umount -q -f $MOUNT_DATA && echo 'Unmounting TCE and Boot partition...' && exit 1" SIGINT RETURN
 
 # Extract default mydata (user files) here to edit
-if [[ -f $TCE_PATH$DATA_FILE_DEFAULT ]]; then
+if [[ -f $TCE_PATH/$DATA_FILE_DEFAULT ]]; then
 	rm -rf $DATA_PATH
 	mkdir $DATA_PATH
-	tar --numeric-owner -xzpf $TCE_PATH$DATA_FILE_DEFAULT -C $DATA_PATH
+	tar --numeric-owner -xzpf $TCE_PATH/$DATA_FILE_DEFAULT -C $DATA_PATH
 	USER=$(who am i | awk '{print $1}')
 	chown -R $USER $DATA_PATH
 	chmod -R 775 $DATA_PATH
@@ -370,9 +370,6 @@ cp "$SCRIPTS_PATH/run_log.sh" $BUILD_PATH
 # Autorun tracking camera program
 if [[ $AUTORUN = "True" ]]; then
 	echo "cd $DEV_BUILD_PATH" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_BUILD_PATH/run.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-elif [[ $AUTORUN = "Log" ]]; then
-	echo "cd $DEV_BUILD_PATH" >> "$DATA_PATH/opt/bootlocal.sh"
 	echo "$DEV_BUILD_PATH/run_log.sh" >> "$DATA_PATH/opt/bootlocal.sh"
 fi
 
@@ -386,7 +383,7 @@ chmod -R 777 $DATA_PATH
 chmod -R 600 $DATA_PATH/usr/local/etc/ssh
 
 pushd $DATA_PATH > /dev/null # because tar is a terribly inconsistent command
-tar -czpf $TCE_PATH$DATA_FILE --numeric-owner *
+tar -czpf $TCE_PATH/$DATA_FILE --numeric-owner *
 popd > /dev/null
 
 chown -R $USER $DATA_PATH
@@ -397,7 +394,7 @@ echo "Installing dependencies..."
 
 # Enter direct dependencies into onboot.lst
 for pkg in $DEPENDENCIES; do
-	echo $pkg >> $TCE_PATH"onboot.lst"
+	echo $pkg >> $TCE_PATH/onboot.lst
 done
 
 pushd $DOWNLOAD_PATH > /dev/null
@@ -417,13 +414,13 @@ install_package()
 {
 	pkg=$1
 	url=$2
-	if [[ -f $PKG_PATH$pkg ]]; then
+	if [[ -f $PKG_PATH/$pkg ]]; then
 		return 0
 	fi
 	if [[ "$pkg" = "" ]]; then
 		return 0
 	fi
-	echo "Installing package $pkg from $url"
+	echo "Installing package $pkg from $url to $PKG_PATH"
 
 	if [[ $REPO_UPDATE != "skip_updates" ]]; then
 
@@ -453,9 +450,9 @@ install_package()
 	fi
 
 	# Copy package to TCE folder
-	cp "$pkg" $PKG_PATH
-	cp "$pkg.md5.txt" $PKG_PATH
-	cp "$pkg.dep" $PKG_PATH
+	cp "$pkg" $PKG_PATH/
+	cp "$pkg.md5.txt" $PKG_PATH/
+	cp "$pkg.dep" $PKG_PATH/
 
 	# Record dependencies to be handled in the next iteration
 	DEPENDENCIES="$DEPENDENCIES $(cat "$pkg.dep")"
@@ -470,7 +467,7 @@ while [[ -n "$DEPENDENCIES" ]]; do
 	for pkg in $PACKAGES; do
 
 		# Check if already installed
-		if [[ -f $PKG_PATH$pkg ]]; then
+		if [[ -f $PKG_PATH/$pkg ]]; then
 			continue
 		fi
 

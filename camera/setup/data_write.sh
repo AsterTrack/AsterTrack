@@ -11,7 +11,7 @@ sudo chmod -R 777 $DATA_PATH
 sudo chmod -R 600 $DATA_PATH/usr/local/etc/ssh
 
 pushd $DATA_PATH > /dev/null # because tar is a terribly inconsistent command
-tar -czpf $TCE_PATH$DATA_FILE --numeric-owner *
+tar -czpf $TCE_PATH/$DATA_FILE --numeric-owner *
 popd > /dev/null
 
 # Make sure it's again readable by user, but also that SSH keys are protected

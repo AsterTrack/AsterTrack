@@ -29,8 +29,8 @@ STORAGE_PATH=storage 						# Permanent storage of saved user data like wifi.db a
 SCRIPTS_PATH=scripts 						# Storage of scripts to copy to device
 
 # Device path config
-TCE_PATH=$MOUNT_DATA/tce/					# Path where tinyCore extensions are located - piCore searches for tce
-PKG_PATH=$TCE_PATH/optional/				# Path where packages are found - default path for piCore
+TCE_PATH=$MOUNT_DATA/tce					# Path where tinyCore extensions are located - piCore searches for tce
+PKG_PATH=$TCE_PATH/optional				# Path where packages are found - default path for piCore
 DEV_HOME_PATH="/home/tc" 					# Home directory on device
 DEV_BUILD_PATH=$DEV_HOME_PATH 				# Path to put sources and build files on device
 HOME_PATH=$DATA_PATH$DEV_HOME_PATH 			# Home directory in local data folder

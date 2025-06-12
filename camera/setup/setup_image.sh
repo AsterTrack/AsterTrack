@@ -39,7 +39,7 @@ if [[ $MODE = "compile" ]]; then
 	DEPENDENCIES="$RUNTIME_DEP $COMPILE_DEP $DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_compile.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
-	GPU_MEM_SIZE=32M		# Need CPU memory for compiling
+	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=False
 elif [[ $MODE = "dev-single" ]]; then
 # Dev image without running TrackingCamera - just sets up wifi and SSH and waits
@@ -52,7 +52,7 @@ elif [[ $MODE = "dev-single" ]]; then
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP $ZEROCONF_DEP $COMPILE_DEP $DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_dev.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
-	GPU_MEM_SIZE=128M		# Need CPU memory for compiling
+	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=False
 elif [[ $MODE = "dev" ]]; then
 # Dev image that can be used as a normal camera, but allows compilation and dev work via SSH when desired, and logs to SD card for later analysis
@@ -65,8 +65,8 @@ elif [[ $MODE = "dev" ]]; then
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP $COMPILE_DEP $DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_dev.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
-	GPU_MEM_SIZE=128M		# Need CPU memory for compiling
-	AUTORUN=Log
+	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
+	AUTORUN=True
 elif [[ $MODE = "wifi" ]]; then
 # Normal camera image that has wifi and SSH support enabled when setup via host software - e.g. to read logs, for a future server, etc.
 	INSTALL_SOURCES=False
@@ -76,9 +76,9 @@ elif [[ $MODE = "wifi" ]]; then
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP"
 	DEFAULT_IMAGE_FILE="image_wifi.img"
 	TOTAL_IMAGE_SIZE=120M
-	GPU_MEM_SIZE=256M		# Need GPU memory for blob detection
+	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=True
-else
+elif [[ $MODE = "" ]]; then
 # Normal camera image, as small and quick as can be, no wifi support
 	INSTALL_SOURCES=False
 	AUTOCONNECT_WIFI=False
@@ -87,8 +87,11 @@ else
 	DEPENDENCIES="$RUNTIME_DEP"
 	DEFAULT_IMAGE_FILE="image_minimal.img"
 	TOTAL_IMAGE_SIZE=100M
-	GPU_MEM_SIZE=256M		# Need GPU memory for blob detection
+	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=True
+else
+	echo "Unknown mode $MODE!"
+	exit 1
 fi
 
 if [[ -z "$IMAGE_FILE" ]]; then

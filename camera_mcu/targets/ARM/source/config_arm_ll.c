@@ -206,6 +206,7 @@ void Setup_Peripherals()
 
 	// -- EXTI --
 
+#if defined(BOARD_OLD) && defined(USE_SYNC)
 	if (SYNC_PIN == GPIO_PIN_9 && SYNC_GPIO_X == GPIOB)
 	{
 		// Setup NVIC interrupt handler for EXTI line 9
@@ -219,6 +220,7 @@ void Setup_Peripherals()
 		EXTI->RTSR1 |= LL_EXTI_LINE_9; // Set to trigger on rising edge
 		EXTI->IMR1 |= LL_EXTI_LINE_9; // Enable interrupt generation
 	}
+#endif
 }
 
 void TIM1_BRK_UP_TRG_COM_IRQHandler(void) __IRQ;

@@ -26,6 +26,7 @@ extern "C"
 
 #include <stdbool.h>
 
+#include "util.h"
 #include "comm/packet.h"
 #include "uartd_conf.h"
 
@@ -33,7 +34,7 @@ extern "C"
 /* Structures */
 
 typedef struct {
-	enum CommInit commInit;
+	bool ready;
 	struct IdentPacket identity;
 
 	// Buffer state
@@ -52,6 +53,7 @@ typedef struct {
 
 	// Supervision
 	TimePoint lastComm;
+	TimePoint lastPacketTime;
 	TimePoint lastTimeSync;
 	uint8_t lastAnnounceID;
 	uint8_t lastStreamID;
@@ -89,17 +91,35 @@ extern uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg
 void EnterUARTZone();
 void LeaveUARTZone();
 
+/**
+ * Use within main loop without protections
+ */
 void uartd_send(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, bool isOwner);
+
+/**
+ * Use from within a UART interrupt or an zone/interrupt that can't be preempted by a UART interrupt
+ */
+void uartd_send_int(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, bool isOwner);
+
+/**
+ * Use within main loop without protections
+ */
 void uartd_reset_port(uint_fast8_t port);
+
+/**
+ * Use from within a UART interrupt or an zone/interrupt that can't be preempted by a UART interrupt
+ */
+void uartd_reset_port_int(uint_fast8_t port);
+
 void uartd_init(uartd_callbacks impl_callbacks);
 
-static inline void uartd_ack(uint_fast8_t port)
+static inline void uartd_ack_int(uint_fast8_t port)
 {
-	uartd_send(port, msg_ack, sizeof(msg_ack), true);
+	uartd_send_int(port, msg_ack, sizeof(msg_ack), true);
 }
-static inline void uartd_nak(uint_fast8_t port)
+static inline void uartd_nak_int(uint_fast8_t port)
 {
-	uartd_send(port, msg_nak, sizeof(msg_nak), true);
+	uartd_send_int(port, msg_nak, sizeof(msg_nak), true);
 }
 
 #ifdef __cplusplus

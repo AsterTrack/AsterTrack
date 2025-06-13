@@ -219,7 +219,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				uartd_respond resp = impl_callbacks.uartd_handle_data(port, state->bufferPtr+pos, blockSize);
 				if (resp == uartd_reset)
 				{
-					WARN_CHARR('/', '0'+port, 'D', 'P', 'B'); // Data Packet Bad
+					WARN_CHARR('/', 'D', 'P', 'B'); // Data Packet Bad
 					success = false;
 					break;
 				}
@@ -247,7 +247,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 			{ // Found header of data, handle data next
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				DEBUG_CHARR('<', '0'+port, 'R', 'C', 'V',
+				DEBUG_CHARR('<', 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
@@ -276,7 +276,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 					else if (!state->ignoreData && impl_callbacks.uartd_handle_data) // Handle empty packets
 						impl_callbacks.uartd_handle_data(port, state->bufferPtr+pos, 0);
 					if (resp == uartd_unknown)  // HeaDer Unknown
-						WARN_CHARR('/', '0'+port, 'H', 'D', 'U', INT99_TO_CHARR(state->header.tag));
+						WARN_CHARR('/', 'H', 'D', 'U', INT99_TO_CHARR(state->header.tag));
 				}
 			}
 			TimeSpan dT = GetTimeSinceUS(now);
@@ -289,6 +289,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 			state->headerPos = 0;
 			pos++;
 			state->headerPtr = state->bufferPtr+pos;
+			state->lastPacketTime = start; // For timesync purposes
 		}
 		else if (state->bufferPtr[pos] == UART_TRAILING_BYTE)
 		{ // Trailing bytes are added so that dropped bytes in the packet don't cause them to consume the start of the next packet

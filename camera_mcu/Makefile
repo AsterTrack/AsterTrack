@@ -80,6 +80,8 @@ C_DEFS_STM32G030 = \
 -DBOARD_OLD \
 -DUSE_UART
 
+#-DUSE_SYNC
+
 C_DEFS = $(C_DEFS_$(DEVICE))
 
 # ----- ASM sources -----

@@ -136,7 +136,7 @@ void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return frameOffset;
+		return;
 	}
 #endif
 }
@@ -211,7 +211,7 @@ void parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return frameOffset;
+		return;
 	}
 #endif
 }
@@ -364,7 +364,7 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return frameOffset;
+		return;
 	}
 #endif
 }
@@ -479,7 +479,7 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibrat
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return frameOffset;
+		return;
 	}
 #endif
 }
@@ -1260,7 +1260,7 @@ SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return;
+		return sequences;
 	}
 #endif
 
@@ -1452,7 +1452,7 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 	catch(json::exception e)
 	{
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return;
+		return views;
 	}
 #endif
 

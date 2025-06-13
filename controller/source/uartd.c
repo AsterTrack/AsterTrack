@@ -346,7 +346,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				UARTTR_STR("+H");
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				DEBUG_CHARR('<', '0'+port, 'R', 'C', 'V',
+				DEBUG_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
@@ -376,7 +376,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 					else if (!state->ignoreData && impl_callbacks.uartd_handle_data) // Handle empty packets
 						impl_callbacks.uartd_handle_data(port, state->bufferPtr+pos, 0);
 					if (resp == uartd_unknown)  // HeaDer Unknown
-						WARN_CHARR('/', '0'+port, 'H', 'D', 'U', INT99_TO_CHARR(state->header.tag));
+						WARN_CHARR('/', INT9_TO_CHARR(port), 'H', 'D', 'U', INT99_TO_CHARR(state->header.tag));
 				}
 			}
 			TimeSpan dT = GetTimeSinceUS(now);

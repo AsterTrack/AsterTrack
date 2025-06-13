@@ -49,8 +49,6 @@ struct CommState
 	bool enabled = false, started = false, ready = false, writing = false;
 	uint8_t checksum;
 	ProtocolState protocol = {};
-	bool rsp_id = false, rsp_ack = false;
-	int timeout = 0, timeout_send = 0;
 	IdentPacket ownIdent = {};
 	IdentPacket expIdent = {};
 	IdentPacket otherIdent = {};

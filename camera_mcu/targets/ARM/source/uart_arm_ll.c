@@ -16,19 +16,18 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "util.h"
-
-
 #if defined(STM32G0)
 #include "stm32g0xx_ll_bus.h"
 #include "stm32g0xx_ll_gpio.h"
 #include "stm32g0xx_ll_usart.h"
 #include "stm32g0xx_ll_dma.h"
 #include "stm32g0xx_ll_rcc.h"
+#include "stm32g0xx_ll_system.h"
 #endif
 
 #include "uart_driver.h"
 #include "config_impl.h"
+#include "util.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -87,7 +86,7 @@ void uart_driver_init()
 #elif defined(STM32G0) && !defined(BOARD_OLD)
 	// AFIO
 	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SYSCFG);
-	LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA11 | LL_SYSCFG_PIN_RMP_PA12)
+	LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA11 | LL_SYSCFG_PIN_RMP_PA12);
 	LL_GPIO_SetAFPin_8_15(GPIOA, GPIO_PIN_9, LL_GPIO_AF_1);
 	LL_GPIO_SetAFPin_8_15(GPIOA, GPIO_PIN_10, LL_GPIO_AF_1);
 
@@ -175,9 +174,9 @@ void uart_driver_init()
 	LL_DMA_EnableChannel(u.DMA, u.DMA_CH_RX);
 	LL_USART_Enable(u.uart);
 
-	while(!LL_USART_IsActiveFlag_REACK(USART2)
+	while(!LL_USART_IsActiveFlag_REACK(u.uart)
 #if !defined(BOARD_OLD)
-	|| !LL_USART_IsActiveFlag_TEACK(USART2)
+	|| !LL_USART_IsActiveFlag_TEACK(u.uart)
 #endif
 	){}
 }

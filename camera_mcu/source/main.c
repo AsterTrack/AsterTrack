@@ -35,12 +35,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* Defines */
 
 // UART
-#define UART_IDENT_INTERVAL		500		// Interval in which ports are probed for cameras with an ident packet
-#define UART_PING_INTERVAL		500		// Interval in which Tracking Cameras are pinged when idle
-#define UART_TIME_SYNC_INTERVAL	10		// Minimum interval used for time sync with Tracking Cameras (doesn't need to be super accurate)
-#define UART_COMM_TIMEOUT		5000	// Comm timeout at which a camera is considered disconnected
+#define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
+#define UART_IDENT_INTERVAL_MS		500		// Interval at which the ident packet is sent to the controller
 
 #define FSIN_PULSE_WIDTH_US		10
+#define FILTER_SWITCHER_COIL_PULSE_MS	100
 
 #define WWDG_TIMEOUT			0		// (Timeout+1)*113.77us
 
@@ -79,22 +78,19 @@ static uint8_t* getSendBuffer(uint8_t len)
 
 // Times for supervision
 TimePoint startup = 0;
-static TimePoint lastPing = 0;
-static TimePoint lastIdent = 0;
 
 // Fixed UART Messages
 static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 
-// Filter switcher state
-enum FilterSwitchCommand filterSwitcherState = FILTER_SWITCH_INFRARED;
-
-// Synced camera_pi state
-bool isStreaming = false;
-
 // camera_mcu state
 volatile TimePoint lastUARTActivity = 0;
+volatile TimePoint lastMarker = 0;
+volatile bool piIsBooted;
+volatile bool piHasUARTControl;
+volatile bool piIsStreaming = false;
+volatile enum FilterSwitchCommand filterSwitcherState;
 
 
 /* Functions */
@@ -127,12 +123,16 @@ int main(void)
 	GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 	lastUARTActivity = GetTimePoint();
 
-#if !defined(BOARD_OLD) && defined(USE_UART)
+#if !defined(BOARD_OLD)/*  && defined(USE_UART)
 	// Route UART to this STM32
-	//GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
-
+	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+	piHasUARTControl = false;
+#elif !defined(BOARD_OLD) && !defined(USE_UART) */
 	// Route UART to Pi
 	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+	piHasUARTControl = true;
+#else
+	piHasUARTControl = true;
 #endif
 
 	DEBUG_STR("/START");
@@ -146,10 +146,31 @@ int main(void)
 #if defined(USE_UART)
 	// Init UART device
 	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
+	// Prepare identification to be sent out over UART
+	uart_set_identification();
 #endif
 
-	while(1)
+	// Bring filter switcher into default position
+	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
+
+	// Start of main loop
+	TimePoint lastLoopIT = GetTimePoint();
+	while (1)
 	{
+		delayUS(10);
+
+		TimePoint now = GetTimePoint();
+		TimeSpan loopDiff = GetTimeSpanUS(lastLoopIT, now);
+		if (loopDiff > 120)
+		{
+			WARN_CHARR('/', 'L', 'A', 'G', INT99999_TO_CHARR(loopDiff));
+			if (loopDiff > 1000)
+			{
+				WARN_CHARR('+', 'P', INT9_TO_CHARR(GetMS(now)), ':', INT999_TO_CHARR(GetUS(now)), 'D', INT9999_TO_CHARR(GetTimeSpanUS(now, lastLoopIT)));
+			}
+		}
+		lastLoopIT = now;
+
 		/* // Automatic switching of filter switcher for testing
 		UpdateFilterSwitcher(FILTER_SWITCH_VISIBLE);
 		delayUS(2000000);
@@ -188,20 +209,22 @@ int main(void)
 			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		}
 
+		now = GetTimePoint();
+
 		/* Indicate UART activity on green LED */
-		if (GetTimeSinceMS(lastUARTActivity) < 20)
+		if (GetTimeSpanMS(lastMarker, now) < 20)
 			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		else
 			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 
 		// Simple blinking of green LED to indicate activity
-		static TimePoint lastOrangeLEDToggle = 0;
-		static bool orangeLEDToggle = false;
-		if (GetTimeSinceMS(lastOrangeLEDToggle) > 500)
+		static TimePoint lastPowerLEDToggle = 0;
+		static bool powerLEDToggle = false;
+		if (GetTimeSpanMS(lastPowerLEDToggle, now) > 500)
 		{
-			lastOrangeLEDToggle = GetTimePoint();
-			orangeLEDToggle = !orangeLEDToggle;
-			if (orangeLEDToggle)
+			lastPowerLEDToggle = GetTimePoint();
+			powerLEDToggle = !powerLEDToggle;
+			if (powerLEDToggle)
 			{
 				GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 			#if !defined(BOARD_OLD) && !defined(USE_UART)
@@ -214,6 +237,41 @@ int main(void)
 			#endif
 			}
 		}
+
+		// TODO: Inconsistent check once lastTimeCheck.ms lapses, will check every 100us within last 10ms, but will not happen normally
+		now = GetTimePoint();
+		static TimePoint lastTimeCheck = 0;
+		if (GetTimeSpanMS(lastTimeCheck, now) > 10)
+			continue;
+		lastTimeCheck = now;
+		// Check all kinds of timeouts >= 50 ms
+
+#if defined(USE_UART)
+#if !defined(BOARD_OLD)
+		// Check identification send timeout
+		static TimePoint lastIdent = 0;
+		if (!piHasUARTControl && GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS)
+		{ // Send identification packet occasionally 
+			uartd_send(0, ownIdentPacket, sizeof(ownIdentPacket), true);
+		}
+#endif
+
+		// Check UART timeouts
+		if (portStates[0].ready)
+		{
+			TimeSpan timeSinceLastComm = GetTimeSpanMS(portStates[0].lastComm, lastTimeCheck);
+			if (timeSinceLastComm > UART_COMM_TIMEOUT_MS || timeSinceLastComm < -1)
+			{ // Reset Comm after silence
+				EnterUARTZone(); // Mostly for the debug
+				if (!piHasUARTControl)
+					uartd_nak_int(0);
+				uartd_reset_port_int(0);
+				// Configurator is notified by its camera iteration check
+				WARN_CHARR('/', 'T', 'M', 'O'); // TiMeOut
+				LeaveUARTZone();
+			}
+		}
+#endif
 	}
 }
 
@@ -225,37 +283,71 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 	PortState *state = &portStates[port];
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
 		return uartd_unknown;
-	if (state->header.tag == PACKET_PING)
+
+	if (!state->ready)
 	{
+		if (state->header.tag == PACKET_IDENT)
+		{ // Redundant identification
+			if (state->header.length == IDENT_PACKET_SIZE)
+			{ // Correct size, receive and check fully
+				lastMarker = GetTimePoint();
+				return uartd_accept;
+			}
+			WARN_CHARR('/', 'I', 'N', 'K');
+			if (!piHasUARTControl)
+				uartd_nak_int(port);
+			return uartd_reset;
+		}
+		else if (!piHasUARTControl)
+		{ // Invalid packet before identification - only complain when we're in control - otherwise, just accept packets even without identification
+			WARN_CHARR('/', 'I', 'P', 'K', '+', UI8_TO_HEX_ARR(state->header.tag));
+			uartd_nak_int(port);
+			return uartd_reset;
+		}
+	}
+
+	if (state->header.tag == PACKET_SOF)
+	{ // Received sof packet
+		lastMarker = GetTimePoint();
+
+#if !defined(USE_SYNC)
+		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		delayUS(FSIN_PULSE_WIDTH_US);
+		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+#endif
+
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_SYNC)
+	{ // Received sync packet
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_PING)
+	{
+		if (!piHasUARTControl)
+		{ // Answer ping to notify of existence
+			uartd_send_int(0, msg_ping, sizeof(msg_ping), true);
+		}
+		lastMarker = GetTimePoint();
 		return uartd_ignore;
 	}
 	else if (state->header.tag == PACKET_NAK)
 	{
-		WARN_CHARR('/', '0'+port, 'N', 'A', 'K');
-		state->commInit = CommNoCon;
+		WARN_CHARR('/', 'N', 'A', 'K');
+		state->ready = false;
 		uartd_reset_port(port);
 		return uartd_reset;
 	}
 	else if (state->header.tag == PACKET_ACK)
-	{
-		if ((state->commInit & CommReady) != CommReady)
-		{ // Received acknowledgement of own identity
-			state->commInit |= CommACK;
-			COMM_CHARR('/', '0'+port, 'A', 'C', 'K');
-			// Check if comm setup is finished
-			if ((state->commInit & CommReady) == CommReady)
-				COMM_CHARR('/', '0'+port, 'R', 'D', 'Y');
-		}
-		else
-			COMM_CHARR('/', '0'+port, 'U', 'A', 'K');
+	{ // Redundant ACK
+		WARN_CHARR('/', 'A', 'C', 'K');
 		return uartd_ignore;
 	}
 	else if (state->header.tag == PACKET_IDENT)
-	{ // Identification
-		if (state->header.length == IDENT_PACKET_SIZE)
-			return uartd_accept;
-		WARN_CHARR('/', '0'+port, 'I', 'N', 'K');
-		uartd_nak(port);
+	{ // Redundant identification
+		WARN_CHARR('/', 'I', 'R', 'D');
+		if (!piHasUARTControl)
+			uartd_nak_int(port);
 		return uartd_reset;
 	}
 	else
@@ -270,20 +362,46 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 
 	if (state->header.tag == PACKET_SOF)
 	{
-		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
-		delayUS(FSIN_PULSE_WIDTH_US);
-		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		//state->lastPacketTime;
 	}
 	else if (state->header.tag == PACKET_SYNC)
 	{ // Received sync packet
+		//state->lastPacketTime;
 	}
 	else if (state->header.tag == PACKET_IDENT)
 	{ // Identification
 		memcpy(rcvIdentPacket+state->dataPos, ptr, size);
-		//if (!(state->commInit & CommID))
+		//assert(!state->ready);
 		if (state->dataPos+size == IDENT_PACKET_SIZE)
 		{ // Received identification, check
-			// TODO:
+			struct IdentPacket ident = parseIdentPacket(rcvIdentPacket);
+			if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
+			{ // Ident packet was plain wrong
+				WARN_STR("!IdentFail:");
+				WARN_CHARR(INT9_TO_CHARR(port));
+				WARN_CHARR('+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
+				if (!piHasUARTControl)
+					uartd_nak_int(port);
+				return uartd_reset;
+			}
+			if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
+			{ // TODO: Deal with versions
+				WARN_STR("!VersionMismatch:");
+				WARN_CHARR(INT9_TO_CHARR(port));
+				WARN_STR("+Cont:v");
+				WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
+				WARN_STR("+Cam:v");
+				WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
+				if (!piHasUARTControl)
+					uartd_nak_int(port);
+				return uartd_reset;
+			}
+			// Idenfication verified
+			state->ready = true;
+			COMM_CHARR('/', 'I', 'D', 'S');
+			// Send acknowledgement
+			if (!piHasUARTControl)
+				uartd_ack_int(port);
 		}
 		return uartd_accept;
 	}
@@ -293,7 +411,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 		{
 			uint8_t modePacket = ptr[0];
 			bool streaming = modePacket&TRCAM_FLAG_STREAMING;
-			if (!isStreaming && streaming)
+			if (!piIsStreaming && streaming)
 			{ // Requested to enter streaming mode
 				GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 				delayUS(100000);
@@ -304,7 +422,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 				delayUS(100000);
 			}
-			if (isStreaming && !streaming)
+			if (piIsStreaming && !streaming)
 			{ // Requested to leave streaming mode
 				GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 				delayUS(100000);
@@ -315,7 +433,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 				GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 				delayUS(100000);
 			}
-			isStreaming = streaming;
+			piIsStreaming = streaming;
 			// TODO: Get this update from camera_pi directly instead over I2C?
 			// E.g. Errors from camera_pi cannot be read here
 		}
@@ -341,21 +459,36 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 
 static void UpdateFilterSwitcher(enum FilterSwitchCommand state)
 {
-	if (state != FILTER_KEEP)
+	static TimePoint lastSwitch;
+	if (state != FILTER_KEEP && filterSwitcherState != state)
+	{ // Need to actuate the motor to switch
 		filterSwitcherState = state;
-	if (state == FILTER_SWITCH_VISIBLE)
-	{
-		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
-		GPIO_SET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
-		GPIO_SET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
+		lastSwitch = GetTimePoint();
 	}
-	else if (state == FILTER_SWITCH_INFRARED)
+	int timeSince = GetTimeSinceMS(lastSwitch);
+	bool actuateMotor = timeSince < FILTER_SWITCHER_COIL_PULSE_MS; // Need 10-50ms to switch
+	/* if (timeSince > 10000)
+	{ // Actuate motor regularly just in case a vibration knocked it out of place
+	 	// Sadly it's kind of audible so don't do for now
+		actuateMotor = true;
+		lastSwitch = GetTimePoint();
+	} */
+	if (actuateMotor)
 	{
-		GPIO_SET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
-		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
-		GPIO_SET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
+		if (filterSwitcherState == FILTER_SWITCH_VISIBLE)
+		{
+			GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
+			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
+			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
+		}
+		else if (filterSwitcherState == FILTER_SWITCH_INFRARED)
+		{
+			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
+			GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
+			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
+		}
 	}
-	else if (state == FILTER_KEEP)
+	else
 	{
 		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
 		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
@@ -428,7 +561,7 @@ void SetupUARTEXTI()
 void EXTI4_15_IRQHandler(void) __IRQ;
 void EXTI4_15_IRQHandler()
 {
-#if defined(BOARD_OLD)
+#if defined(BOARD_OLD) && defined(USE_SYNC)
 	if (EXTI->RPR1 & LL_EXTI_LINE_9)
 	{ // Interrupt pending
 

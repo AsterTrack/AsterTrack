@@ -32,8 +32,19 @@ extern "C"
 
 /* Structures */
 
+enum CommState {
+	CommNoCon = 0,
+	CommID = 1,
+	CommACK = 2,
+	CommMCU = 4,
+	CommPi = 8,
+	CommReady = CommID | CommACK,
+	CommMCUReady = CommMCU | CommReady,
+	CommPiReady = CommPi | CommReady,
+};
+
 typedef struct {
-	enum CommInit commInit;
+	enum CommState comm;
 	struct IdentPacket identity;
 
 	// Buffer state
@@ -126,7 +137,17 @@ void uartd_reset_port(uint_fast8_t port);
  * Use from within a UART interrupt or an zone/interrupt that can't be preempted by a UART interrupt
  */
 void uartd_reset_port_int(uint_fast8_t port);
+
 void uartd_init(uartd_callbacks impl_callbacks);
+
+static inline void uartd_ack_int(uint_fast8_t port)
+{
+	uartd_send_int(port, msg_ack, sizeof(msg_ack), true);
+}
+static inline void uartd_nak_int(uint_fast8_t port)
+{
+	uartd_send_int(port, msg_nak, sizeof(msg_nak), true);
+}
 
 #ifdef __cplusplus
 }

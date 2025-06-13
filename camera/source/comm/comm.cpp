@@ -35,11 +35,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 static uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg_ping[1+PACKET_HEADER_SIZE];
 
 // UART Identification and connection
-#define COMM_PING_TIMEOUT_MS		1100	// Controller sends one every 500ms when not already streaming
-#define COMM_RESET_TIMEOUT_MS		500		// Timeout beween comm loss and next try
-#define COMM_IDENT_INTERVAL_US		10000	// Identify ourselves every 10ms
-#define COMM_IDENT_CYCLES			5		// Ident timeout is COMM_IDENT_CYCLES*COMM_IDENT_INTERVAL_US - 50ms
-#define COMM_INTERVAL_US			500		
+#define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
+#define COMM_RESET_TIMEOUT_MS		100		// Timeout beween comm loss and next try
+#define COMM_IDENT_TIMEOUT_MS		10		// Timeout between sending identification and requiring a response - should be << 1ms
+#define COMM_IDENT_BACKOFF_MS		1000	// Additional backoff interval between failed identifications attempts to not spam log
+#define COMM_INTERVAL_US			500
 
 void comm_init()
 {
@@ -57,10 +57,6 @@ void comm_init()
 
 inline void comm_reset(CommState &comm)
 {
-	comm.timeout = 0;
-	comm.timeout_send = 0;
-	comm.rsp_ack = false;
-	comm.rsp_id = false;
 	comm.ready = false;
 	comm.writing = false;
 	proto_clear(comm.protocol);
@@ -178,8 +174,9 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	ProtocolState &proto = comm.protocol;
 	TrackingCameraState &state = *state_ptr;
 
-	TimePoint_t time_begin, time_read, time_start;
+	TimePoint_t time_begin, time_read, time_ident, time_start;
 	time_begin = sclock::now();
+	int ident_backoff = 0;
 
 	nice(-20); // Highest priority
 	while (comm.enabled)
@@ -196,9 +193,10 @@ phase_start:
 		{
 			comm.started = comm.start(comm.port);
 			comm_reset(comm);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 
-		if (comm.rsp_id && comm.rsp_ack)
+		if (comm.ready)
 			goto phase_comm;
 
 		/* Identification Step */
@@ -208,70 +206,50 @@ phase_identification:
 		if (!comm.enabled || !comm.started)
 			continue;
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		comm.timeout = 0;
-		comm.timeout_send = 0;
+		if (ident_backoff++ > 5)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(COMM_IDENT_BACKOFF_MS));
 
-		if (!comm.enabled || !comm.started)
-			continue;
+			if (!comm.enabled || !comm.started)
+				continue;
+		}
 
 		// Send own ID
+		printf("Sending identification!\n");
 		comm_identify(comm);
+		time_ident = sclock::now();
 
 		while (comm.enabled && comm.started)
 		{ // Identification loop to make sure communication works
 
 			fflush(stdout);
 
-			int num = comm_read_internal(comm, COMM_IDENT_INTERVAL_US);
-			if (num < 0) break;
+			int num = comm_read_internal(comm, COMM_INTERVAL_US);
+			if (num < 0)
+			{ // Error
+				printf("UART error during identification!\n");
+				comm_NAK(comm);
+				comm_close(comm);
+				goto phase_start;
+			}
 			bool prevInCmd = proto.isCmd;
 			bool newToParse = num > 0;
-			// Count timeout from first interaction
-			if (!newToParse)
-			{ // Timeout, waited full COMM_IDENT_INTERVAL_US
-				if ((comm.rsp_ack || comm.rsp_id)) comm.timeout++;
-				if (comm.timeout > COMM_IDENT_CYCLES)
-				{ // Identification timeout, send NAK
-					printf("Identification timeout exceeded, resetting comm!\n");
-					comm_abort(comm);
-					goto phase_identification;
-				}
-
-				if (!comm.rsp_ack && !comm.rsp_id)
-				{
-					comm.timeout_send++;
-					if (comm.timeout_send > 50)
-					{ // UART ID packet send timeout
-						comm_identify(comm);
-						comm.timeout_send = 0;
-					}
-				}
-				continue;
-			}
 			while (newToParse && proto_rcvCmd(proto))
 			{ // Got a new command to handle
-				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
+				if (proto.header.tag == PACKET_NAK)
 				{ // NAK received
-					printf("NAK Received, resetting comm!\n");
-					comm_reset(comm);
-					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
-					goto phase_identification;
-				}
-				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
-				{ // ACK received
-					if (!comm.rsp_ack)
-					{
-						printf("Acknowledged!\n");
-						comm.rsp_ack = true;
-					}
-					else
-						printf("Acknowledged again!\n");
-				}
-				else if (proto.header.tag == PACKET_IDENT)
-				{ // Received full id command
 					if (proto_fetchCmd(proto))
 					{
+						printf("Identification rejected (NAK) %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+						comm_reset(comm);
+						std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
+						goto phase_identification;
+					}
+				}
+				else if (proto.header.tag == PACKET_IDENT)
+				{
+					if (proto_fetchCmd(proto))
+					{ // Received full identification command (implicit acknowledgement of own identification)
 						bool correct = proto.cmdSz == IDENT_PACKET_SIZE;
 						if (correct)
 						{
@@ -280,24 +258,27 @@ phase_identification:
 								&& rcvIdent.type == comm.ownIdent.type
 								&& rcvIdent.version.major == comm.ownIdent.version.major
 								&& rcvIdent.version.minor >= comm.ownIdent.version.minor;
+							// TODO: Deal with versions
 							if (correct)
 							{ // Proper identity
-								printf("Identified communication partner!\n");
-								comm.rsp_id = true;
-								comm_ACK(comm);
-								if (!comm.rsp_ack) // Send own ID
-									comm_identify(comm);
+								printf("Valid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
 								if (!comm.started)
 									break;
+								comm.ready = true;
+								comm_ACK(comm);
 								comm.otherIdent = rcvIdent;
+								proto_clear(proto);
+								ident_backoff = 0;
+								goto phase_comm;
 							}
+							else
+								printf("Incorrect identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
 						}
-						if (!correct)
-						{ // Wrong identity
-							printf("Failed to identify communication partner!\n");
-							comm_abort(comm);
-							goto phase_identification;
-						}
+						else
+							printf("Invalid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+						// Wrong identity
+						comm_abort(comm);
+						goto phase_identification;
 					}
 				}
 				else
@@ -307,18 +288,17 @@ phase_identification:
 					goto phase_identification;
 				}
 
-				if (comm.rsp_id && comm.rsp_ack && comm.started)
-				{ // Comm is ready
-					printf("Comm is ready!\n");
-					comm.ready = true;
-					proto_clear(proto);
-					goto phase_comm;
-				}
-
 				// Continue parsing if the current command was handled fully
 				int rem = proto.tail-proto.head;
 				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
 				num = 0;
+			}
+
+			if (dtMS(time_ident, sclock::now()) > COMM_IDENT_TIMEOUT_MS)
+			{ // Identification timeout
+				printf("Identification timeout exceeded, trying again!\n");
+				std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
+				goto phase_identification;
 			}
 		}
 
@@ -342,7 +322,12 @@ phase_comm:
 		while (comm.enabled && comm.started)
 		{
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
-			if (num < 0) break; // Error
+			if (num < 0)
+			{ // Error
+				comm_NAK(comm);
+				comm_close(comm);
+				goto phase_start;
+			}
 			else if (num > 0) time_read = sclock::now();
 			bool prevInCmd = proto.isCmd;
 			bool newToParse = num > 0;
@@ -352,6 +337,7 @@ phase_comm:
 				{ // NAK received
 					printf("NAK Received, resetting comm!\n");
 					comm_reset(comm);
+					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 					goto phase_identification;
 				}
 				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
@@ -365,20 +351,8 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
-					if (proto_fetchCmd(proto))
-					{
-						int elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(sclock::now() - time_start).count();
-						if (elapsedMS > 200)
-						{ // Received ident package long after identification phase concluded
-							// This indicates that other side was silently reset/power-cycled
-							// In case we were streaming, also reset mode
-							printf("Other side was silently reset!\n");
-							state.newMode = { .streaming = false, .mode = TRCAM_MODE_IDLE, .opt = TRCAM_OPT_NONE };
-							state.updateMode = true;
-							comm_reset(comm);
-							goto phase_identification;
-						}
-					}
+					comm_abort(comm);
+					goto phase_identification;
 				}
 				else if (proto.header.tag == PACKET_SYNC)
 				{ // Received sync packet
@@ -404,6 +378,49 @@ phase_comm:
 						//printf("Corrected SOF read %lldus ago to be %.2fms in the past!\n", std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-time_read).count(), std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-SOF).count()/1000.0f);
 					}
 				}
+				/* else if (proto.header.tag == PACKET_RATE_CONFIG)
+				{ // Received request to change baud rate
+					// TODO: Read baudrate, verfication_blocks, and timeout
+					old_baudrate = old? UART_BAUD_RATE_SAFE? idk
+					if (comm.configure)
+						comm.configure(comm, baudrate);
+					else
+						comm_NAK(comm);
+					time_rate_timeout = sclock::now() + std::chrono::milliseconds(timeout);
+					in_rate_config = true;
+					required_verified = verfication_blocks
+					successful_verified = 0;
+					unsuccessful_verified = 0;
+				}
+				else if (proto.header.tag == PACKET_RATE_VERIFY)
+				{ // Received request to verify packet
+					bool correctChecksum = true;
+					if (correctChecksum)
+					{
+						comm_ACK(comm);
+						successful_verified++;
+					}
+					else
+					{
+						comm_NAK(comm);
+						unsuccessful_verified++;
+					}
+
+				}
+				else if (in_rate_config && sclock::now() > time_rate_timeout)
+				{
+					if (successful_verified == required_verified && unsuccessful_verified == 0)
+					{
+						// LOG Switch successful
+					}
+					else
+					{
+						if (comm.configure)
+							comm.configure(comm, old_baudrate);
+						comm_reset(comm);
+						// TODO: Initiate identification after a further timeout
+					}
+				} */
 				else if (proto.header.tag == PACKET_CFG_SETUP)
 				{ // Received setup packet
 					if (proto_fetchCmd(proto) && proto.cmdSz >= CONFIG_PACKET_SIZE)
@@ -551,7 +568,7 @@ phase_comm:
 			// Check timeout
 			// TODO: Add toggle for timeout, not needed for TCP, only for UART
 			int elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(sclock::now() - time_read).count();
-			if (elapsedMS > COMM_PING_TIMEOUT_MS)
+			if (elapsedMS > UART_COMM_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
 				printf("Ping dropped out, resetting comm!\n");
 				comm_abort(comm);

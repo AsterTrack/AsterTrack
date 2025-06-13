@@ -28,7 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdbool.h>
 #include <string.h> // memcpy
 
-#define UART_BAUD_RATE_SAFE		1000000
+#define UART_BAUD_RATE_SAFE		8000000
 #define UART_BAUD_RATE_MAX		8000000
 
 enum TrCamMode
@@ -212,13 +212,6 @@ enum FilterSwitchCommand {
 	FILTER_SWITCH_INFRARED = 2,
 };
 
-enum CommInit {
-	CommNoCon = 0,
-	CommID = 1,
-	CommACK = 2,
-	CommReady = CommID | CommACK
-};
-
 
 /**
  * Header for full packets (for controller-camera and server-camera communication)
@@ -384,11 +377,11 @@ static inline void storeUSBPacketHeader(struct USBPacketHeader header, uint8_t d
 /**
  * Simple hash utility
  */
-static const size_t val_const = 0x9ab4fb1e;
-static const size_t prime_const = 0x7e9a3c6d;
-static inline size_t HashStrConst(const char* const str, const size_t value)
+static const uint32_t val_const = 0x9ab4fb1e;
+static const uint32_t prime_const = 0x7e9a3c6d;
+static inline uint32_t HashStrConst(const char* const str, const uint32_t value)
 {
-	return !*str? value : HashStrConst(str+1, (value ^ (size_t)(*str)) * prime_const);
+	return !*str? value : HashStrConst(str+1, (value ^ (uint32_t)(*str)) * prime_const);
 }
 
 

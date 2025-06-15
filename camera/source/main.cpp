@@ -827,7 +827,7 @@ int main(int argc, char **argv)
 							break;
 						}
 						long waitTimeUS = dtUS(waitStart, sclock::now());
-						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 200 : 10))
+						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 50 : 10))
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
 								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));

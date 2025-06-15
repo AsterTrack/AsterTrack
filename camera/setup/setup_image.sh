@@ -75,7 +75,7 @@ elif [[ $MODE = "wifi" ]]; then
 	PRUNE_STARTUP=False
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP"
 	DEFAULT_IMAGE_FILE="image_wifi.img"
-	TOTAL_IMAGE_SIZE=120M
+	TOTAL_IMAGE_SIZE=150M
 	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=True
 elif [[ $MODE = "" || $MODE = "minimal" || $MODE = "normal" ]]; then
@@ -86,7 +86,7 @@ elif [[ $MODE = "" || $MODE = "minimal" || $MODE = "normal" ]]; then
 	PRUNE_STARTUP=True
 	DEPENDENCIES="$RUNTIME_DEP"
 	DEFAULT_IMAGE_FILE="image_minimal.img"
-	TOTAL_IMAGE_SIZE=100M
+	TOTAL_IMAGE_SIZE=130M
 	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=True
 else

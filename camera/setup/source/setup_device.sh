@@ -242,12 +242,15 @@ if [[ $INSTALL_SOURCES = "True" ]]; then
 	fi
 
 	# Copy TrackingCamera sources
-	cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera
-	cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera
-	cp -r $TRCAM_PATH/camera/qpu_programs $BUILD_PATH/sources/camera
-	cp  $TRCAM_PATH/camera/CMakeLists.txt $BUILD_PATH/sources/camera
+	cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera/
+	cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera/
 	cp -r $TRCAM_PATH/shared $BUILD_PATH/sources/
-	#chmod +x $BUILD_PATH/sources/camera/*.sh
+	cp -r $TRCAM_PATH/camera/libvcsm $BUILD_PATH/sources/
+	cp -r $TRCAM_PATH/camera/qpu_programs $BUILD_PATH/sources/camera/
+	cp -r $TRCAM_PATH/camera/licenses $BUILD_PATH/sources/camera/
+	cp $TRCAM_PATH/camera/LICENSE $BUILD_PATH/sources/camera/
+	cp $TRCAM_PATH/camera/README.md $BUILD_PATH/sources/camera/
+	cp $TRCAM_PATH/camera/CMakeLists.txt $BUILD_PATH/sources/camera/
 
 	# Download and copy vc4asm sources
 	if [[ ! -d "$DOWNLOAD_PATH/vc4asm" ]]; then
@@ -292,9 +295,6 @@ if [[ $INSTALL_SOURCES = "True" ]]; then
 			echo "" >> "$DATA_PATH/opt/bootlocal.sh"
 		fi
 	fi
-
-	# Make sure vc4asm build is saved
-	echo "usr/local/bin/vc4asm" >> "$DATA_PATH/opt/.filetool.lst"
 
 	# Copy vc4asm build if it exists
 	if [[ -f "$STORAGE_PATH/vc4asm" ]]; then
@@ -400,7 +400,7 @@ done
 pushd $DOWNLOAD_PATH > /dev/null
 
 # Update package list of all used repositories
-for arch in $ARCHS; do
+for arch in "${ARCHS[@]}"; do
 	if [[ $REPO_UPDATE != "skip_updates" || ! -f "repo-$arch.txt" ]]; then
 		wget -q $BASE_REPO_URL$arch"/tcz/" -O "repo-$arch.txt"
 		if [[ $REPO_UPDATE == "skip_updates" ]]; then
@@ -429,7 +429,7 @@ install_package()
 		wget -q "$url.md5.txt" -O "$pkg.md5.txt"
 		wget -q "$url.dep" -O "$pkg.dep"
 		if [[ ! -f $pkg || ! -f "$pkg.md5.txt" || ! -f "$pkg.dep" ]]; then
-			echo "Failed to download $pkg orits hash and dependency list!"
+			echo "Failed to download $pkg or its hash and dependency list!"
 			return 1
 		fi
 	else
@@ -464,20 +464,20 @@ while [[ -n "$DEPENDENCIES" ]]; do
 	PACKAGES=$DEPENDENCIES
 	DEPENDENCIES=
 
-	for pkg in $PACKAGES; do
+	for pkgname in $PACKAGES; do
 
 		# Check if already installed
-		if [[ -f $PKG_PATH/$pkg ]]; then
+		if [[ -f $PKG_PATH/$pkgname ]]; then
 			continue
 		fi
 
 		# If package name contains KERNEL keyword, replace with our kernel (or any other)
-		if [[ $(grep -c "^$pkg$" "repo-$MAIN_ARCH.txt") != 1 ]]; then
-			pkg_k=$(echo $pkg | sed s/KERNEL/$KERNEL.*/)
-			for arch in $ARCHS; do
-				pkg_r=$(grep "^$pkg_k$" "repo-$arch.txt")
+		if [[ $(grep -c "^$pkgname$" "repo-$MAIN_ARCH.txt") != 1 ]]; then
+			for arch in "${ARCHS[@]}"; do
+				pkg_k=$(echo $pkgname | sed s/KERNEL/$KERNEL.*/)
+				pkg_r=$(grep "$pkg_k$" "repo-$arch.txt")
 				if [[ "$pkg_r" = "" ]]; then
-					echo "WARNING: Found no $pkg_k packages in $arch repository!"
+					echo "WARNING: Found no $pkg_k package in $arch repository!"
 				else
 					install_package $pkg_r "$BASE_REPO_URL$arch/tcz/$pkg_r"
 					if [[ $? -ne 0 ]]; then
@@ -486,7 +486,7 @@ while [[ -n "$DEPENDENCIES" ]]; do
 				fi
 			done
 		else
-			install_package $pkg "$BASE_REPO_URL$MAIN_ARCH/tcz/$pkg"
+			install_package $pkgname "$BASE_REPO_URL$MAIN_ARCH/tcz/$pkgname"
 			if [[ $? -ne 0 ]]; then
 				return 1
 			fi
@@ -495,6 +495,12 @@ while [[ -n "$DEPENDENCIES" ]]; do
 done
 
 popd > /dev/null
+
+for pkgname in $OVERLAY_PACKAGES; do
+	echo "Installing overlay package $pkgname into $PKG_PATH!"
+	cp "$pkgname" $PKG_PATH/
+	echo $pkgname >> $TCE_PATH/onboot.lst
+done
 
 echo "Setup and configured piCore!"
 

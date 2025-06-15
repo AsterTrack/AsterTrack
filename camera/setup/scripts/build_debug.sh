@@ -2,7 +2,7 @@
 
 cd /home/tc
 
-vc4asm >> /dev/null 2>&1
+./vc4asm >> /dev/null 2>&1
 if [[ $? == 1 ]]; then
 	echo "Already built vc4asm!"
 else
@@ -11,8 +11,26 @@ else
 	cmake .
 	cd build-*
 	make vc4asm -j 4
-	sudo cp vc4asm /usr/local/bin/
+	sudo cp vc4asm ../../../
 	cd ../../..
+fi
+sudo rm -f /usr/local/bin/vc4asm
+sudo ln -s /home/tc/vc4asm /usr/local/bin/vc4asm
+
+if [[ ! -d TrackingCamera ]]; then
+	mkdir TrackingCamera
+fi
+
+if [[ -f TrackingCamera/libvcsm.so ]]; then
+	echo "Already built libvcsm!"
+else
+	echo "Building libvcsm!"
+	mkdir -p sources/libvcsm/build
+	cd sources/libvcsm/build
+	cmake -DCMAKE_BUILD_TYPE=Release ..
+	make
+	cd ../../..
+	cp sources/libvcsm/build/libvcsm.so TrackingCamera/
 fi
 
 echo "Building TrackingCamera!"
@@ -22,14 +40,10 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON ..
 make -j 1
 # Can't use more cores as main.cpp already uses more than 300MB of RAM
 # Together with the base usage, it already completely bogs down the system and requires swap to work
+cp TrackingCamera_armv6l ../../../TrackingCamera/
+cp TrackingCamera_armv7l ../../../TrackingCamera/
+cp qpu_blob_tiled_min.bin ../../../TrackingCamera/
+
 cd ../../..
-
-if [[ ! -d TrackingCamera ]]; then
-	mkdir TrackingCamera
-fi
-
-cp sources/camera/build-debug/TrackingCamera_armv6l TrackingCamera/
-cp sources/camera/build-debug/TrackingCamera_armv7l TrackingCamera/
-cp sources/camera/build-debug/qpu_blob_tiled_min.bin TrackingCamera/
 
 sudo filetool.sh -b

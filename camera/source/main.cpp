@@ -54,7 +54,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp"
 
 #include "bcm_host.h"
-#include "interface/vcsm/user-vcsm.h"
+#include "user-vcsm.h"
 
 #define RUN_CAMERA	// Have the camera supply frames (else: emulate camera buffers)
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers

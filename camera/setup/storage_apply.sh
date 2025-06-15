@@ -25,6 +25,5 @@ fi
 
 # Copy existing vc4asm binary if it exists
 if [[ -f "$STORAGE_PATH/vc4asm" ]]; then
-	mkdir -p "$DATA_PATH/usr/local/bin"
-	cp "$STORAGE_PATH/vc4asm" "$DATA_PATH/usr/local/bin"
+	cp "$STORAGE_PATH/vc4asm" "$BUILD_PATH"
 fi

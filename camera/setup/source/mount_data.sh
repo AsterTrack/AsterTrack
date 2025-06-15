@@ -28,10 +28,7 @@ if [[ ! -b "$DEVICE_PATH" ]]; then
 	exit 1
 fi
 
-if [[ ! -d $DATA_PATH ]]; then
-	echo "Invalid data path $DATA_PATH to write to $DATA_FILE!"
-	exit 1
-fi
+mkdir -p $DATA_PATH
 
 echo "Mounting TCE partition..."
 

@@ -220,8 +220,16 @@ END {
 	if ( mode == "auto" ) {
 		print("Attempting auto connection with " autoconnect)
 		for (i in sid) {
-			gsub(" ","\\ ",sid[i])
-			if (autoconnect == sid[i] ) {
+			gsub("\134\134","\134\134",sid[i])	# Backslash (must come first)
+			gsub(" ","\\ ",sid[i])			# Space
+			gsub("\047","\\\047",sid[i])		# Single quote
+			gsub("&","\\\\&",sid[i])		# Ampersand
+			gsub("!","\\!",sid[i])			# Exclamation mark
+			gsub("?","\\?",sid[i])			# Question mark
+			gsub("\\$","\\$",sid[i])		# Dollar sign
+			gsub("\\*","\\*",sid[i])		# Asterisk
+			gsub("\\=","\\=",sid[i])		# Equal sign
+			if ( autoconnect == sid[i] ) {
 				associate(type[i],wifi,sid[i],mypass,chan[i])
 				system( "udhcpc " lease "-i " wifi " -x hostname:" currenthostname " 2>/dev/null" )
 				exit
@@ -233,9 +241,17 @@ END {
 		rsort(qual,sid,enc,chan,type, NR)
 		for (j=1; j<15; j++) {
 			if ( j <= i ) {
-				gsub(" ","\\ ",sid[j])
+				gsub("\134\134","\134\134",sid[j])	# Backslash (must come first)
+				gsub(" ","\\ ",sid[j])			# Space
+				gsub("\047","\\\047",sid[j])		# Single quote
+				gsub("&","\\\\&",sid[j])		# Ampersand
+				gsub("!","\\!",sid[j])			# Exclamation mark
+				gsub("?","\\?",sid[j])			# Question mark
+				gsub("\\$","\\$",sid[j])		# Dollar sign
+				gsub("\\*","\\*",sid[j])		# Asterisk
+				gsub("\\=","\\=",sid[j])		# Equal sign
 				for (k in optid) {
-					if (optid[k] == sid[j] ) {
+					if ( optid[k] == sid[j] ) {
 						print("Found network " sid[j] " with strength " qual[j] " to connect to.")
 						associate(type[j],wifi,sid[j],optpw[k],chan[j])
 						system( "udhcpc " lease "-i " wifi " -x hostname:" currenthostname " 2>/dev/null" )
@@ -289,7 +305,15 @@ END {
 		sid_display = sid[selection]
 		password = ""
 		newitem=""
-		gsub(" ","\\ ",sid[selection])
+		gsub("\134\134","\134\134",sid[selection])	# Backslash (must come first)
+		gsub(" ","\\ ",sid[selection])			# Space
+		gsub("\047","\\\047",sid[selection])		# Single quote
+		gsub("&","\\\\&",sid[selection])		# Ampersand
+		gsub("!","\\!",sid[selection])			# Exclamation mark
+		gsub("?","\\?",sid[selection])			# Question mark
+		gsub("\\$","\\$",sid[selection])		# Dollar sign
+		gsub("\\*","\\*",sid[selection])		# Asterisk
+		gsub("\\=","\\=",sid[selection])		# Equal sign
 		if ( enc[selection] == "on" ) {
 			while ( getline dbitem < dbfile > 0 ) {
 				split(dbitem,field,"\t")

@@ -41,7 +41,7 @@ SOFTWARE.
 #include <linux/i2c-dev.h>
 
 #include <linux/videodev2.h>
-#include "interface/vcsm/user-vcsm.h"
+#include "user-vcsm.h"
 #include "interface/vcos/vcos_mutex.h"
 
 #define CHECK_STATUS(STATUS, MSG, ERRHANDLER) \
@@ -116,18 +116,31 @@ static int32_t Read16Bit(unsigned int fd, uint16_t reg)
 	uint16_t value;
 	uint8_t *val_msg = (uint8_t*)&value;
 
-	struct i2c_msg I2C_MSG[] = {
+	// Warning: BCM2835 I2C driver specifically does not support two reads merged in one ioctl
+
+	struct i2c_msg I2C_MSG_HIGH[] = {
 		{ 0x60, 0, sizeof(REG_HIGH), REG_HIGH },
 		{ 0x60, I2C_M_RD, 1, val_msg+1 },
+	};
+	struct i2c_rdwr_ioctl_data I2C_READ_HIGH = { I2C_MSG_HIGH, 2 };
+	if (ioctl(fd, I2C_RDWR, &I2C_READ_HIGH) < 0)
+	{
+		printf("Failed to read 16bit high register! %d: %s\n", errno, strerror(errno));
+		return -1;
+	}
+
+	struct i2c_msg I2C_MSG_LOW[] = {
 		{ 0x60, 0, sizeof(REG_LOW), REG_LOW },
 		{ 0x60, I2C_M_RD, 1, val_msg+0 },
 	};
-	struct i2c_rdwr_ioctl_data I2C_READ = { I2C_MSG, 4 };
-	if (ioctl(fd, I2C_RDWR, &I2C_READ) < 0)
-		printf("Failed to read register! %s\n", strerror(errno));
-	else
-		return value;
-	return -1;
+	struct i2c_rdwr_ioctl_data I2C_READ_LOW = { I2C_MSG_LOW, 2 };
+	if (ioctl(fd, I2C_RDWR, &I2C_READ_LOW) < 0)
+	{
+		printf("Failed to read 16bit low register! %d: %s\n", errno, strerror(errno));
+		return -1;
+	}
+
+	return value;
 }
 
 void gcs_init()
@@ -135,14 +148,14 @@ void gcs_init()
 	// Tell OV9281 camera to enable strobe (to force LEDs off as a temporary hardware fix)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 	if (i2c_fd < 0)
-		printf("Failed to adress camera over I2C! %s \n", strerror(errno));
+		printf("Failed to address camera over I2C! %s\n", strerror(errno));
 	else
 	{ // Now modify camera streaming behaviour
 
 		int32_t CHIP_ID = Read16Bit(i2c_fd, 0x300A);		
 		if (CHIP_ID != 0x9281)
-			printf("Read wrong chip ID! ID is %d (expected %d)", CHIP_ID, 0x9281);
-
+			printf("Read wrong chip ID! ID is %x (expected %x)\n", CHIP_ID, 0x9281);
+			
 		close(i2c_fd);
 	}
 }

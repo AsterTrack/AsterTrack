@@ -19,12 +19,12 @@ if [[ "$EUID" != 0 ]]; then
     exit 1
 fi
 
-RUNTIME_DEP="rpi-vc.tcz libv4l2.tcz libjpeg-turbo.tcz"
+RUNTIME_DEP="rpi-vc.tcz libv4l2.tcz libjpeg-turbo.tcz gcc_libs.tcz" # gcc_libs.tcz for libatomic
 COMPILE_DEP="rpi-vc-dev.tcz libjpeg-turbo-dev.tcz cmake.tcz compiletc.tcz "
 WIRELESS_DEP="firmware-brcmwifi.tcz firmware-rpi-wifi.tcz wifi.tcz openssh.tcz ntp.tcz"
 ZEROCONF_DEP="dbus.tcz avahi.tcz nss-mdns.tcz" # so that hostname is announced, else have to use IP
-DEV_DEP="bash.tcz gdb.tcz nano.tcz" # bash only for VS Code remote development
-TEST_DEP="i2c-tools.tcz v4l2-utils.tcz libv4l2-dev.tcz"
+DEV_DEP="bash.tcz gdb.tcz nano.tcz i2c-tools.tcz" # bash only for VS Code remote development
+TEST_DEP="v4l2-utils.tcz libv4l2-dev.tcz" # WARNING: Adds 250MB
 # ntp for accurate time, super annoying when cmake rebuilds everything because of different file times
 
 if [[ $MODE = "compile" ]]; then
@@ -41,7 +41,7 @@ if [[ $MODE = "compile" ]]; then
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
 	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=False
-elif [[ $MODE = "dev-single" ]]; then
+elif [[ $MODE = "dev-single" || $MODE = "dev_single" ]]; then
 # Dev image without running TrackingCamera - just sets up wifi and SSH and waits
 	CREATE_SWAP=True
 	INSTALL_SOURCES=True
@@ -50,10 +50,10 @@ elif [[ $MODE = "dev-single" ]]; then
 	SETUP_SSH=True
 	PRUNE_STARTUP=False
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP $ZEROCONF_DEP $COMPILE_DEP $DEV_DEP"
-	DEFAULT_IMAGE_FILE="image_dev.img"
+	DEFAULT_IMAGE_FILE="image_dev_single.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
 	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
-	AUTORUN=False
+	AUTORUN=True
 elif [[ $MODE = "dev" ]]; then
 # Dev image that can be used as a normal camera, but allows compilation and dev work via SSH when desired, and logs to SD card for later analysis
 	CREATE_SWAP=True
@@ -78,7 +78,7 @@ elif [[ $MODE = "wifi" ]]; then
 	TOTAL_IMAGE_SIZE=120M
 	GPU_MEM_SIZE=32M		# Need GPU memory for blob detection (~12MB)
 	AUTORUN=True
-elif [[ $MODE = "" ]]; then
+elif [[ $MODE = "" || $MODE = "minimal" || $MODE = "normal" ]]; then
 # Normal camera image, as small and quick as can be, no wifi support
 	INSTALL_SOURCES=False
 	AUTOCONNECT_WIFI=False

@@ -25,7 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <bitset>
 #include <unistd.h>
 
-#include <interface/vcsm/user-vcsm.h>
+#include "user-vcsm.h"
 
 //#define BLOB_DEBUG
 //#define BLOB_TRACE

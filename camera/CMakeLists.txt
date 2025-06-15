@@ -8,22 +8,25 @@ endif()
 
 # Set build flags for debug and release
 set(SYMBOLS_FLAGS "-g -rdynamic -fno-omit-frame-pointer -ffunction-sections")
+# Broken on piCore 14 and 15, ld can't find libasan_preinit.o but it's in /usr/local/lib
+#set(SAN "-fsanitize=address")
+set(SAN "")
 set(LINK_FLAGS "-rdynamic")
-set(LINK_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
+set(LINK_FLAGS_DEBUG "-fno-omit-frame-pointer ${SAN}")
 set(LINK_FLAGS_RELEASE "")
 set(CMAKE_C_FLAGS "${SYMBOLS_FLAGS} -Werror -Wall -std=gnu17")
-set(CMAKE_C_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_C_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer ${SAN}")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 string(CONCAT CMAKE_CXX_FLAGS "${SYMBOLS_FLAGS} -std=c++17"
 	" -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow"
 	" -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function")
-set(CMAKE_CXX_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_CXX_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer ${SAN}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 # Make sure all libraries are present
 find_library(LIB_BCMH NAMES bcm_host)
 find_library(LIB_VCOS NAMES vcos)
-find_library(LIB_VCSM NAMES vcsm)
+find_library(LIB_VCSM NAMES vcsm PATHS ~/TrackingCamera)
 
 # Set program resources
 set(INCLUDES
@@ -31,6 +34,7 @@ set(INCLUDES
 	dependencies
 	source
 	../shared
+	../libvcsm
 )
 set(SOURCES
 	source/camera/gcs_v4l2.cpp

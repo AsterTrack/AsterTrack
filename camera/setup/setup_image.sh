@@ -52,13 +52,13 @@ elif [[ $MODE = "wifi" ]]; then
 # Normal camera image that has wifi and SSH support enabled when setup via host software - e.g. to read logs, for a future server, etc.
 	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP"
 	DEFAULT_IMAGE_FILE="image_wifi.img"
-	TOTAL_IMAGE_SIZE=120M
+	TOTAL_IMAGE_SIZE=150M
 elif [[ $MODE = "" || $MODE = "minimal" || $MODE = "normal" ]]; then
 # Normal camera image, as small and quick as can be, no wifi support
 	PRUNE_STARTUP=True
 	DEPENDENCIES="$RUNTIME_DEP"
 	DEFAULT_IMAGE_FILE="image_minimal.img"
-	TOTAL_IMAGE_SIZE=100M
+	TOTAL_IMAGE_SIZE=130M
 else
 	echo "Unknown mode $MODE!"
 	exit 1

@@ -31,7 +31,7 @@ if [[ ! -f $IMAGE_PATH ]]; then
 	echo "Downloading OS image..."
 	# Download and unzip
 	IMAGE_ZIP_PATH="piCore-$VERSION_SPECIFIC.zip"
-	wget -N -q -P $DOWNLOAD_PATH --show-progress "$MAIN_REPO_URL/releases/RPi/$IMAGE_ZIP_PATH"
+	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/releases/RPi/$IMAGE_ZIP_PATH"
 	if [[ ! -f "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH" ]]; then
 		echo "Failed to download piCore image $IMAGE_ZIP_PATH!"
 		return 1
@@ -202,7 +202,7 @@ dtparam=i2c_arm=on,i2c_arm_baudrate=400000
 # Copy backup to package path
 cp $MOUNT_BOOT/config.txt $STORAGE_PATH/config.txt
 
-#echo "console=tty1 root=/dev/ram0 elevator=deadline rootwait quiet nortc loglevel=3 noembed nozswap" > $MOUNT_BOOT/cmdline.txt
+sed -i -e 1's/$/ brcmfmac.feature_disable=0x82000 &/' $MOUNT_BOOT/cmdline.txt
 
 # Copy startup scripts
 cp $STARTUP_PATH/* "$DATA_PATH/opt/"
@@ -315,16 +315,14 @@ done
 
 pushd $DOWNLOAD_PATH > /dev/null
 
-# Update package list of all used repositories
-for arch in "${ARCHS[@]}"; do
-	if [[ $REPO_UPDATE != "skip_updates" || ! -f "repo-$arch.txt" ]]; then
-		wget -q $BASE_REPO_URL$arch"/tcz/" -O "repo-$arch.txt"
-		if [[ $REPO_UPDATE == "skip_updates" ]]; then
-			echo "Repository for $arch missing, forcing online update!"
-			REPO_UPDATE=forced_update
-		fi
+# Update package list of repository
+if [[ $REPO_UPDATE != "skip_updates" || ! -f "repo.txt" ]]; then
+	wget -q $REPO_URL"/tcz/" -O "repo.txt"
+	if [[ $REPO_UPDATE == "skip_updates" ]]; then
+		echo "Repository missing, forcing online update!"
+		REPO_UPDATE=forced_update
 	fi
-done
+fi
 
 install_package()
 {
@@ -388,21 +386,21 @@ while [[ -n "$DEPENDENCIES" ]]; do
 		fi
 
 		# If package name contains KERNEL keyword, replace with our kernel (or any other)
-		if [[ $(grep -c "^$pkgname$" "repo-$MAIN_ARCH.txt") != 1 ]]; then
+		if [[ $(grep -c "^$pkgname$" "repo.txt") != 1 ]]; then
 			for arch in "${ARCHS[@]}"; do
-				pkg_k=$(echo $pkgname | sed s/KERNEL/$KERNEL.*/)
-				pkg_r=$(grep "$pkg_k$" "repo-$arch.txt")
+				pkg_k=$(echo $pkgname | sed s/KERNEL/$KERNEL$arch/)
+				pkg_r=$(grep "$pkg_k$" "repo.txt")
 				if [[ "$pkg_r" = "" ]]; then
-					echo "WARNING: Found no $pkg_k package in $arch repository!"
+					echo "WARNING: Found no $pkg_k package in repository!"
 				else
-					install_package $pkg_r "$BASE_REPO_URL$arch/tcz/$pkg_r"
+					install_package $pkg_r "$REPO_URL/tcz/$pkg_r"
 					if [[ $? -ne 0 ]]; then
 						return 1
 					fi
 				fi
 			done
 		else
-			install_package $pkgname "$BASE_REPO_URL$MAIN_ARCH/tcz/$pkgname"
+			install_package $pkgname "$REPO_URL/tcz/$pkgname"
 			if [[ $? -ne 0 ]]; then
 				return 1
 			fi

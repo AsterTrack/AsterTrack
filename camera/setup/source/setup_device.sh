@@ -28,20 +28,14 @@ if [[ ! -d $DOWNLOAD_PATH ]]; then
 	mkdir $DOWNLOAD_PATH
 fi
 
-IMAGE_PATH="$DOWNLOAD_PATH/piCore-$VERSION_SPECIFIC.img"
-if [[ ! -f $IMAGE_PATH ]]; then
+IMAGE_NAME="piCore-$VERSION_SPECIFIC.img.gz"
+IMAGE_PATH="$DOWNLOAD_PATH/$IMAGE_NAME"
+if [[ ! -f "$IMAGE_PATH" ]]; then
 	echo "Downloading OS image..."
-	# Download and unzip
-	IMAGE_ZIP_PATH="piCore-$VERSION_SPECIFIC.zip"
-	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/releases/RPi/$IMAGE_ZIP_PATH"
-	if [[ ! -f "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH" ]]; then
-		echo "Failed to download piCore image $IMAGE_ZIP_PATH!"
-		return 1
-	fi
-	unzip -q -o "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH" -d $DOWNLOAD_PATH
-	rm "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH"
-	if [[ ! -f $IMAGE_PATH ]]; then
-		echo "Failed to download or extract piCore-$VERSION_SPECIFIC.img!"
+	# Download
+	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/release/RPi/$IMAGE_NAME"
+	if [[ ! -f "$IMAGE_PATH" ]]; then
+		echo "Failed to download piCore image $REPO_URL/release/RPi/$IMAGE_NAME!"
 		return 1
 	fi
 fi
@@ -49,7 +43,7 @@ fi
 echo "Writing OS image..."
 
 # Write default piCore image
-dd bs=4M if=$IMAGE_PATH of=$DEVICE_PATH status=none
+zcat $IMAGE_PATH | dd bs=4M of=$DEVICE_PATH status=none
 if [[ $? == 1 ]]; then
 	echo "Failed to write to $DEVICE_PATH!"
 	return 1
@@ -201,7 +195,7 @@ init_uart_clock=144000000
 dtparam=i2c_arm=on,i2c_arm_baudrate=400000
 " >> $MOUNT_BOOT/config.txt
 
-sed -e 1's/$/ brcmfmac.feature_disable=0x82000 &/' $MOUNT_BOOT/cmdline.txt
+#sed -e 1's/$/ new_option &/' $MOUNT_BOOT/cmdline.txt
 
 # Copy bootsync with ID generation
 cat "$SCRIPTS_PATH/bootsync.sh" > "$DATA_PATH/opt/bootsync.sh"
@@ -308,31 +302,25 @@ if [[ -d "$STORAGE_PATH/TrackingCamera" ]]; then
 	cp -r $STORAGE_PATH/TrackingCamera $BUILD_PATH
 fi
 
+# Set hostname
+sed -i "s|#MARKER$|sethostname $HOSTNAME\n#MARKER|" "$DATA_PATH/opt/bootsync.sh"
+# TODO: Change password, etc.?
+
 if [[ $SETUP_SSH = "True" ]]; then
 	echo "Setting up SSH..."
-
-	# Set hostname
-	sed -i "s|#MARKER$|sethostname $HOSTNAME\n#MARKER|" "$DATA_PATH/opt/bootsync.sh"
 
 	# Copy ssh keygen & start script
 	cp "$SCRIPTS_PATH/ssh.sh" $HOME_PATH
 
-	# Generate / fetch SSH keys and start OpenSSH
+	# Generate / fetch SSH keys, but do not start OpenSSH
 	echo "# Generate / fetch SSH keys" >> "$DATA_PATH/opt/bootlocal.sh"
 	echo "$DEV_HOME_PATH/ssh.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-	#if [[ $AUTOCONNECT_WIFI = "True" ]]; then
-	#	echo "$DEV_HOME_PATH/ssh.sh start &" >> "$DATA_PATH/opt/bootlocal.sh"
-	#else
-	#	echo "$DEV_HOME_PATH/ssh.sh &" >> "$DATA_PATH/opt/bootlocal.sh"
-	#fi
+
 	echo "" >> "$DATA_PATH/opt/bootlocal.sh"
 fi
 
 if [[ $AUTOCONNECT_WIFI = "True" ]]; then
 	echo "Setting up wifi autoconnect..."
-
-	# Set hostname
-	sed -i "s|#MARKER$|sethostname $HOSTNAME\n#MARKER|" "$DATA_PATH/opt/bootsync.sh"
 
 	# Copy wifi credentials if exists
 	if [[ -f $WIFI_DB ]]; then

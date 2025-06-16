@@ -3,13 +3,12 @@
 
 # piCore version config
 MIRROR_URL=http://www.tinycorelinux.net
-VERSION="15.x"
-VERSION_SPECIFIC="15.0.0"
-KERNEL="6.6.47-piCore"
+VERSION="16.x"
+VERSION_SPECIFIC="16.0.0"
+KERNEL="6.12.25-piCore"
 ARCHS=("" "-v7") # blank is v6 for Pi Zero 1, v7 for Pi Zero 2
 REPO_URL="$MIRROR_URL/$VERSION/armhf"
-# overlay package of i2c kernel modules missing from base image, from the officially compiled set of kernel modules
-OVERLAY_PACKAGES="i2c-modules-6.6.47-piCore.tcz" # from http://www.tinycorelinux.net/15.x/armhf/releases/RPi/src/kernel/modules-6.6.47-piCore-v7.tar.xz
+OVERLAY_PACKAGES=""
 
 # Sources config
 VC4ASM_URL=https://github.com/maazl/vc4asm/archive/dfc77f020fd7eb050fc57b482a673c36c801d007.zip

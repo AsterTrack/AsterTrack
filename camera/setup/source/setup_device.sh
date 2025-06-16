@@ -26,20 +26,14 @@ fi
 # Ensure required folders exist
 mkdir -p $DOWNLOAD_PATH
 
-IMAGE_PATH="$DOWNLOAD_PATH/piCore-$VERSION_SPECIFIC.img"
-if [[ ! -f $IMAGE_PATH ]]; then
+IMAGE_NAME="piCore-$VERSION_SPECIFIC.img.gz"
+IMAGE_PATH="$DOWNLOAD_PATH/$IMAGE_NAME"
+if [[ ! -f "$IMAGE_PATH" ]]; then
 	echo "Downloading OS image..."
-	# Download and unzip
-	IMAGE_ZIP_PATH="piCore-$VERSION_SPECIFIC.zip"
-	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/releases/RPi/$IMAGE_ZIP_PATH"
-	if [[ ! -f "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH" ]]; then
-		echo "Failed to download piCore image $IMAGE_ZIP_PATH!"
-		return 1
-	fi
-	unzip -q -o "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH" -d $DOWNLOAD_PATH
-	rm "$DOWNLOAD_PATH/$IMAGE_ZIP_PATH"
-	if [[ ! -f $IMAGE_PATH ]]; then
-		echo "Failed to download or extract piCore-$VERSION_SPECIFIC.img!"
+	# Download
+	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/release/RPi/$IMAGE_NAME"
+	if [[ ! -f "$IMAGE_PATH" ]]; then
+		echo "Failed to download piCore image $REPO_URL/release/RPi/$IMAGE_NAME!"
 		return 1
 	fi
 fi
@@ -47,7 +41,7 @@ fi
 echo "Writing OS image..."
 
 # Write default piCore image
-dd bs=4M if=$IMAGE_PATH of=$DEVICE_PATH status=none
+zcat $IMAGE_PATH | dd bs=4M of=$DEVICE_PATH status=none
 if [[ $? == 1 ]]; then
 	echo "Failed to write to $DEVICE_PATH!"
 	return 1
@@ -202,7 +196,7 @@ dtparam=i2c_arm=on,i2c_arm_baudrate=400000
 # Copy backup to package path
 cp $MOUNT_BOOT/config.txt $STORAGE_PATH/config.txt
 
-sed -i -e 1's/$/ brcmfmac.feature_disable=0x82000 &/' $MOUNT_BOOT/cmdline.txt
+#sed -i -e 1's/$/ new_option &/' $MOUNT_BOOT/cmdline.txt
 
 # Copy startup scripts
 cp $STARTUP_PATH/* "$DATA_PATH/opt/"

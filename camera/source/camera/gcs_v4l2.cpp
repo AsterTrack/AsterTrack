@@ -400,64 +400,6 @@ uint8_t gcs_start(GCS *gcs)
 	status = ioctl(gcs->fd, VIDIOC_STREAMON, &type);
 	CHECK_STATUS(status, "Failed to start streaming!", error_streamon);
 
-
-	// Directly access camera I2C (i2c-vs)
-	if (gcs->cameraParams->extTrig)
-	{ // TODO: Make sure that OV9281 driver is loaded
-		unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
-		if (i2c_fd < 0)
-			printf("Failed to open camera I2C fd! %s \n", strerror(errno));
-		else
-		{ // Now modify camera streaming behaviour
-
-			// Switch to external trigger mode (max 120Hz)
-			unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x00 };	// Put camera in standby
-			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x0C };	// Shutoff SCLK to use FSIN to trigger
-			unsigned char AUTO_SLEEP_CTRL[3] = { 0x4f, 0x01, 0x00 };	// tc_sof_sync_en
-			unsigned char SC_LP_CTRL0_3[] = { 0x30, 0x2C, 0x00, 0x00, 0x00, 0x00 }; // r_sleep_period
-			unsigned char SC_LP_CTRL4[3] = { 0x30, 0x30, 0x04 };	// Enable FSIN to wake camera (already set)
-			unsigned char SC_CTRL_3F[3] = { 0x30, 0x3F, 0x01 };	// r_frame_on_num (already set)
-			unsigned char TIMING_REG23[3] = { 0x38, 0x23, 0x00 };	// ?? (already set)
-			unsigned char TIMING_VTS[] = { 0x38, 0x0E, 0x03, 0x8E };	// ext_vs_en
-
-			// Switch to freerunning FSIN mode (max 120Hz)
-			/* unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x01 };	// Put camera in streaming mode
-			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x09 };	// Shutoff SCLK to use FSIN to trigger
-			unsigned char AUTO_SLEEP_CTRL[3] = { 0x4f, 0x01, 0x08 };	// tc_sof_sync_en
-			unsigned char SC_LP_CTRL0_3[] = { 0x30, 0x2C, 0x00, 0x00, 0x00, 0x00 }; // r_sleep_period
-			unsigned char SC_LP_CTRL4[3] = { 0x30, 0x30, 0x00 };	// Enable FSIN to wake camera (already set)
-			unsigned char SC_CTRL_3F[3] = { 0x30, 0x3F, 0x01 };	// r_frame_on_num (already set)
-			unsigned char TIMING_REG23[3] = { 0x38, 0x23, 0x40 };	// ext_vs_en
-			uint16_t vts = 0x038E * gcs->cameraParams->fps/144; 
-			unsigned char TIMING_VTS[] = { 0x38, 0x0E, (uint8_t)(vts>>8), (uint8_t)(vts&0xFF) }; */
-
-			// Potentially set VSYNC_DELAY2 to lower delay and decrease transmission time?
-
-			// Switch to external Frame Sync IN mode
-			//unsigned char ANA_CORE_6[3] = { 0x36, 0x66, 0x00 };			// Enable FSIN
-
-			// TODO: Figure out if sync mode exists and how to use it instead of external trigger mode
-			// With external trigger, the sensor goes to sleep between each frame, which limits framerate to 120Hz
-			// But in free-running mode, 144Hz is possible for 1280x800 @ 8bit
-			// So if the "sync" mode, hinted at in documentation, exists so that it doesn't go to sleep every time, that'd be great
-
-			struct i2c_msg I2C_MSG[] = {
-				{ 0x60, 0, sizeof(PSV_CTRL), PSV_CTRL },
-				{ 0x60, 0, sizeof(SC_MODE_SELECT), SC_MODE_SELECT },
-				{ 0x60, 0, sizeof(AUTO_SLEEP_CTRL), AUTO_SLEEP_CTRL },
-				{ 0x60, 0, sizeof(SC_LP_CTRL0_3), SC_LP_CTRL0_3 },
-				{ 0x60, 0, sizeof(SC_LP_CTRL4), SC_LP_CTRL4 },
-				{ 0x60, 0, sizeof(SC_CTRL_3F), SC_CTRL_3F },
-				{ 0x60, 0, sizeof(TIMING_REG23), TIMING_REG23 },
-				{ 0x60, 0, sizeof(TIMING_VTS), TIMING_VTS }
-			};
-			struct i2c_rdwr_ioctl_data I2C_DATA_TRIG = { I2C_MSG+0, 8 };
-			if (gcs->cameraParams->extTrig && ioctl(i2c_fd, I2C_RDWR, &I2C_DATA_TRIG) < 0)
-				printf("Failed to write extTrig registers! %s\n", strerror(errno));
-			close(i2c_fd);
-		}
-	}
-
 	// Attempt to set parameters
 	gcs_updateParameters(gcs);
 
@@ -547,34 +489,104 @@ uint8_t gcs_readErrorFlag(GCS *gcs)
 void gcs_updateParameters(GCS *gcs)
 {
 	int status;
-	/* {
-		// Cannot set on OV9281, driver doesn't support it
-		// Need to manually set up if setting framerate without external sync is desired
-		struct v4l2_streamparm parm;
-		memset(&parm, 0, sizeof parm);
-		parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		status = ioctl(gcs->fd, VIDIOC_G_PARM, &parm);
-		if (status == 0)
-		{ // Camera can set parameters (not supported on some custom drivers)
-			parm.parm.capture.timeperframe.numerator = gcs->cameraParams->fps;
-			parm.parm.capture.timeperframe.denominator = 1;
-			status = ioctl(gcs->fd, VIDIOC_S_PARM, &parm);
-			printf("Successfully set framerate!\n");
-		}
-		else
-			printf("Failed to get/set framerate!\n");
-	} */
+	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
+	if (i2c_fd < 0)
+		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 
+	if (i2c_fd >= 0)
+	{
+		// Set vblank (time between last frame and new frame - used to set FPS)
+		// TODO: respect gcs->cameraParams->fps if NOT gcs->cameraParams->extTrig
+		// These are already set as constants in the OV9281 set as constant
+		#define MIN_VBLANK_1280x800 110 // VTS of 110+800
+		#define MIN_VBLANK_640x400 22 // VTS of 22+400
+		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
+			printf("Failed to set vblank to minimum!\n");
+	}
+
+
+	// Digital camera gain not supported by OV9281 camera / driver
+	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))
+	//	printf("Failed to set digital camera gain!\n");
+	if ((status = gcs_setParameter(gcs, V4L2_CID_ANALOGUE_GAIN, gcs->cameraParams->analogGain, 16)))
+		printf("Failed to set analog camera gain!\n");
+	if ((status = gcs_setParameter(gcs, V4L2_CID_EXPOSURE, gcs->cameraParams->shutterSpeed, 0)))
+		printf("Failed to set camera exposure / shutter speed!\n");
 
 	// Directly access camera I2C (i2c-vs)
-	if (gcs->cameraParams->strobe)
-	{ // TODO: Make sure that OV9281 driver is loaded
-		unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
-		if (i2c_fd < 0)
-			printf("Failed to open camera I2C fd! %s \n", strerror(errno));
-		else
-		{ // Now modify camera streaming behaviour
+	if (i2c_fd >= 0)
+	{ // Now modify camera streaming behaviour
 
+		if (gcs->cameraParams->extTrig)
+		{
+			// Switch to external trigger mode (max 120Hz) - FSIN as frame trigger
+			unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x00 };		// Put camera in standby
+			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x08 };			// Disable PSV - Power Saving in vblank - completely
+			unsigned char SC_CTRL_06[3] = { 0x30, 0x06, 0x04 };			// Disable strobe (set that later), ensure FSIN input (not VSYNC output)
+			unsigned char ANA_CORE_6[3] = { 0x36, 0x66, 0x00 };			// Use FSIN pin for frame sync/trigger (set by driver)
+			unsigned char SC_LP_CTRL4[3] = { 0x30, 0x30, 0x04 };		// Enable FSIN to wake camera and trigger frames
+			unsigned char SC_CTRL_3F[3] = { 0x30, 0x3F, 0x01 };			// Set number of frames to trigger on wakeup to one
+			unsigned char AUTO_SLEEP_CTRL[3] = { 0x4f, 0x01, 0x00 };	// Disable tc_sof_sync_en (default)
+
+			const int I2C_MSG_CNT = 7;
+			struct i2c_msg I2C_MSG[I2C_MSG_CNT] = {
+				{ 0x60, 0, sizeof(SC_MODE_SELECT), SC_MODE_SELECT },
+				{ 0x60, 0, sizeof(PSV_CTRL), PSV_CTRL },
+				{ 0x60, 0, sizeof(SC_CTRL_06), SC_CTRL_06 },
+				{ 0x60, 0, sizeof(ANA_CORE_6), ANA_CORE_6 },
+				{ 0x60, 0, sizeof(SC_LP_CTRL4), SC_LP_CTRL4 },
+				{ 0x60, 0, sizeof(SC_CTRL_3F), SC_CTRL_3F },
+				{ 0x60, 0, sizeof(AUTO_SLEEP_CTRL), AUTO_SLEEP_CTRL }
+			};
+			for (int i = 0; i < I2C_MSG_CNT; i++)
+			{
+				struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG+i, 1 };
+				if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+					printf("Failed to write extTrig register %d! %d: %s\n", i, errno, strerror(errno));
+			}
+		}
+		/* else
+		{
+			// Switch to frame sync mode (max 144Hz) - FSIN as frame sync
+			unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x01 };		// Keep camera in streaming mode
+			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x08 };			// Disable PSV - Power Saving in vblank - completely
+			unsigned char SC_CTRL_06[3] = { 0x30, 0x06, 0x04 };			// Disable strobe (set that later), ensure FSIN input (not VSYNC output)
+			unsigned char ANA_CORE_6[3] = { 0x36, 0x66, 0x00 };			// Use FSIN pin for frame sync/trigger (set by driver)
+			unsigned char SC_LP_CTRL4[3] = { 0x30, 0x30, 0x00 };		// Disable FSIN to wake camera from sleep (camera is not sleeping)
+			unsigned char SC_CTRL_3F[3] = { 0x30, 0x3F, 0x01 };			// Number of frames to trigger (irrelevant)
+			unsigned char AUTO_SLEEP_CTRL[3] = { 0x4f, 0x01, 0x08 };	// Enable tc_sof_sync_en
+
+			// Unsure what they do, but sound like something
+			//unsigned char TIMING_REG23[3] = { 0x38, 0x23, 0x40 };	// ext_vs_re
+			//unsigned char TIMING_REG23[3] = { 0x38, 0x23, 0x20 };	// ext_vs_en
+			//unsigned char FC_CTRL0[3] = { 0x42, 0x40, 0x04 };	// sof_sel
+			//unsigned char FC_CTRL3[3] = { 0x42, 0x43, 0x02 };	// sof_mask_dis
+
+			// TODO: Figure out if sync mode exists and how to use it instead of external trigger mode
+			// With external trigger, the sensor goes to sleep between each frame, which limits framerate to 120Hz
+			// But in free-running mode, 144Hz is possible for 1280x800 @ 8bit
+			// So if the "sync" mode, hinted at in documentation, exists so that it doesn't go to sleep every time, that'd be great
+
+			const int I2C_MSG_CNT = 7;
+			struct i2c_msg I2C_MSG[I2C_MSG_CNT] = {
+				{ 0x60, 0, sizeof(SC_MODE_SELECT), SC_MODE_SELECT },
+				{ 0x60, 0, sizeof(PSV_CTRL), PSV_CTRL },
+				{ 0x60, 0, sizeof(SC_CTRL_06), SC_CTRL_06 },
+				{ 0x60, 0, sizeof(ANA_CORE_6), ANA_CORE_6 },
+				{ 0x60, 0, sizeof(SC_LP_CTRL4), SC_LP_CTRL4 },
+				{ 0x60, 0, sizeof(SC_CTRL_3F), SC_CTRL_3F },
+				{ 0x60, 0, sizeof(AUTO_SLEEP_CTRL), AUTO_SLEEP_CTRL }
+			};
+			for (int i = 0; i < I2C_MSG_CNT; i++)
+			{
+				struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG+i, 1 };
+				if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+					printf("Failed to write extTrig register %d! %d: %s\n", i, errno, strerror(errno));
+			}
+		} */
+
+		if (gcs->cameraParams->strobe)
+		{
 			// Set strobe and ILPWM to output, leave FSIN as input
 			unsigned char SC_CTRL_06[3] = { 0x30, 0x06, 0b00001100 };
 			// Set strobe_frame_pattern - default 0xA5
@@ -601,28 +613,10 @@ void gcs_updateParameters(GCS *gcs)
 			struct i2c_rdwr_ioctl_data I2C_DATA_STROBE = { I2C_MSG, 2 };
 			if (gcs->cameraParams->strobe && ioctl(i2c_fd, I2C_RDWR, &I2C_DATA_STROBE) < 0)
 				printf("Failed to write strobe registers! %s\n", strerror(errno));
-			close(i2c_fd);
 		}
-	}
 
-	// Digital camera gain not supported by OV9281 camera / driver
-	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))
-	//	printf("Failed to set digital camera gain!\n");
-	if ((status = gcs_setParameter(gcs, V4L2_CID_ANALOGUE_GAIN, gcs->cameraParams->analogGain, 16)))
-		printf("Failed to set analog camera gain!\n");
-	if ((status = gcs_setParameter(gcs, V4L2_CID_EXPOSURE, gcs->cameraParams->shutterSpeed, 0)))
-		printf("Failed to set camera exposure / shutter speed!\n");
-	// Not used on OV9281
-	/* if (gcs->cameraParams->disableAWB)
-	{
-		if ((status = gcs_setParameter(gcs, V4L2_CID_AUTO_WHITE_BALANCE, !gcs->cameraParams->disableAWB, 1)))
-			printf("Failed to set auto white balance!\n");
+		close(i2c_fd);
 	}
-	if (gcs->cameraParams->disableEXP)
-	{
-		if ((status = gcs_setParameter(gcs, V4L2_CID_AUTOGAIN, !gcs->cameraParams->disableEXP, 1)))
-			printf("Failed to set auto exposure!\n");
-	} */
 }
 
 /* Returns once a new camera frame is available */

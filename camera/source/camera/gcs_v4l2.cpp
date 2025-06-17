@@ -138,6 +138,23 @@ static int32_t Read16Bit(unsigned int fd, uint16_t reg)
 	return value;
 }
 
+static int16_t Read8Bit(unsigned int fd, uint16_t reg)
+{
+	uint8_t value;
+	unsigned char REG[2] = { (uint8_t)(reg>>8), (uint8_t)(reg&0xFF) };
+	struct i2c_msg I2C_MSG[] = {
+		{ 0x60, 0, sizeof(REG), REG },
+		{ 0x60, I2C_M_RD, 1, &value },
+	};
+	struct i2c_rdwr_ioctl_data I2C_READ = { I2C_MSG, 2 };
+	if (ioctl(fd, I2C_RDWR, &I2C_READ) < 0)
+	{
+		printf("Failed to read 8bit register! %d: %s\n", errno, strerror(errno));
+		return -1;
+	}
+	return value;
+}
+
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 int gcs_findCamera()
 {
@@ -342,6 +359,50 @@ uint8_t gcs_start(GCS *gcs)
 		return 1;
 	}
 
+	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
+	if (i2c_fd < 0)
+		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
+	else
+	{ // Now modify camera startup behaviour
+
+		unsigned char SC_SOFTWARE_RESET[3] = { 0x01, 0x03, 0x01 };	// Software reset camera
+
+		const int I2C_MSG_CNT = 1;
+		struct i2c_msg I2C_MSG[I2C_MSG_CNT] = {
+			{ 0x60, 0, sizeof(SC_SOFTWARE_RESET), SC_SOFTWARE_RESET },
+		};
+		for (int i = 0; i < I2C_MSG_CNT; i++)
+		{
+			struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG+i, 1 };
+			if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+				printf("Failed to write init register %d! %d: %s\n", i, errno, strerror(errno));
+		}
+
+		// Read registers for control
+		{
+			int32_t GSReg2 = Read8Bit(i2c_fd, 0x38a8);
+			int32_t GSReg3 = Read8Bit(i2c_fd, 0x38a9);
+			int32_t GSReg5 = Read8Bit(i2c_fd, 0x38c4);
+			int32_t GSReg6 = Read8Bit(i2c_fd, 0x38c5);
+			int32_t GSReg7 = Read8Bit(i2c_fd, 0x38c6);
+			int32_t GSReg8 = Read8Bit(i2c_fd, 0x38c7);
+			printf("GSReg2 is %x (written %x)\n", GSReg2, 0x02);
+			printf("GSReg3 is %x (written %x)\n", GSReg3, 0x80);
+			printf("GSReg5 is %x (written %x)\n", GSReg5, 0x00);
+			printf("GSReg6 is %x (written %x)\n", GSReg6, 0xc0);
+			printf("GSReg7 is %x (written %x)\n", GSReg7, 0x04);
+			printf("GSReg8 is %x (written %x)\n", GSReg8, 0x80);
+			int32_t Unknown1 = Read8Bit(i2c_fd, 0x0101);
+			printf("Unknown1 is %x (written %x)\n", Unknown1, 0x01);
+			int32_t Unknown2 = Read8Bit(i2c_fd, 0x1000);
+			printf("Unknown2 is %x (written %x)\n", Unknown2, 0x03);
+			int32_t WINC_CTRL = Read8Bit(i2c_fd, 0x5a08);
+			printf("WINC_CTRL is %x (written %x, default %x)\n", WINC_CTRL, 0x84, 0x86);
+		}
+
+		close(i2c_fd);
+	}
+
 	// Start streaming
 	int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 //	printf("IOCTL %d: MSG: %d VIDIOC_STREAMON, CONTENT: x\n", gcs->fd, VIDIOC_STREAMON);
@@ -432,15 +493,31 @@ void gcs_updateParameters(GCS *gcs)
 
 	if (i2c_fd >= 0)
 	{
+		// Set hblank (extra time between lines)
+		// TODO: What does this even mean for a global shutter sensor?
+		// These are the minimums of the OV9282 driver, and what the OV9281 set as constant
+		#define MIN_HBLANK_1280x800 176 // HTS of (176+1280)/2
+		#define MIN_HBLANK_640x400 816 // HTS of (816+640)/2
+		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, 0, 0)))
+			printf("Failed to set hblank to minimum!\n");
+
 		// Set vblank (time between last frame and new frame - used to set FPS)
 		// TODO: respect gcs->cameraParams->fps if NOT gcs->cameraParams->extTrig
-		// These are already set as constants in the OV9281 set as constant
+		// These are the minimums of the OV9282 driver, and what the OV9281 set as constant
 		#define MIN_VBLANK_1280x800 110 // VTS of 110+800
 		#define MIN_VBLANK_640x400 22 // VTS of 22+400
 		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
 			printf("Failed to set vblank to minimum!\n");
 	}
 
+	// Read registers for control
+	if (i2c_fd >= 0)
+	{
+		int32_t TIMING_HTS = Read16Bit(i2c_fd, 0x380C);
+		printf("TIMING_HTS is %d (expected %d)\n", TIMING_HTS, 1456/2);
+		int32_t TIMING_VTS = Read16Bit(i2c_fd, 0x380E);
+		printf("TIMING_VTS is %d (expected %d)\n", TIMING_VTS, 910);
+	}
 
 	// Digital camera gain not supported by OV9281 camera / driver
 	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))
@@ -453,6 +530,106 @@ void gcs_updateParameters(GCS *gcs)
 	// Directly access camera I2C (i2c-vs)
 	if (i2c_fd >= 0)
 	{ // Now modify camera streaming behaviour
+
+
+		// Read registers for control
+		{
+			int32_t GSReg2 = Read8Bit(i2c_fd, 0x38a8);
+			int32_t GSReg3 = Read8Bit(i2c_fd, 0x38a9);
+			int32_t GSReg5 = Read8Bit(i2c_fd, 0x38c4);
+			int32_t GSReg6 = Read8Bit(i2c_fd, 0x38c5);
+			int32_t GSReg7 = Read8Bit(i2c_fd, 0x38c6);
+			int32_t GSReg8 = Read8Bit(i2c_fd, 0x38c7);
+			printf("GSReg2 is %x (written %x)\n", GSReg2, 0x02);
+			printf("GSReg3 is %x (written %x)\n", GSReg3, 0x80);
+			printf("GSReg5 is %x (written %x)\n", GSReg5, 0x00);
+			printf("GSReg6 is %x (written %x)\n", GSReg6, 0xc0);
+			printf("GSReg7 is %x (written %x)\n", GSReg7, 0x04);
+			printf("GSReg8 is %x (written %x)\n", GSReg8, 0x80);
+			int32_t Unknown1 = Read8Bit(i2c_fd, 0x0101);
+			printf("Unknown1 is %x (written %x)\n", Unknown1, 0x01);
+			int32_t Unknown2 = Read8Bit(i2c_fd, 0x1000);
+			printf("Unknown2 is %x (written %x)\n", Unknown2, 0x03);
+			int32_t WINC_CTRL = Read8Bit(i2c_fd, 0x5a08);
+			printf("WINC_CTRL is %x (written %x, default %x)\n", WINC_CTRL, 0x84, 0x86);
+		}
+
+		/* {
+			// Revert changes from original OV9281 driver to new OV9282 driver
+			// This did no harm, but also little to no good
+			unsigned char Analog_1[] = { 0x36, 0x20, 0x6f };		// written 0x6e, completely undocumented
+			unsigned char GSReg2[] = { 0x38, 0xa8, 0x00 };			// written 0x02, completely undocumented
+			unsigned char GSReg3[] = { 0x38, 0xa9, 0xF0 };			// written 0x80, completely undocumented
+			unsigned char GSReg5[] = { 0x38, 0xc4, 0x01 };			// written 0x00, completely undocumented
+			unsigned char GSReg6[] = { 0x38, 0xc5, 0x18 };			// written 0xc0, completely undocumented
+			unsigned char GSReg7[] = { 0x38, 0xc6, 0x02 };			// written 0x04, completely undocumented
+			unsigned char GSReg8[] = { 0x38, 0xc7, 0xA8 };			// written 0x80, completely undocumented
+			//unsigned char Unknown1[] = { 0x01, 0x01, 0x00 };		// written 0x01, but always reads 0x00, completely undocumented
+			//unsigned char Unknown2[] = { 0x10, 0x00, 0x00 };		// written 0x03, but always reads 0x00, completely undocumented
+			unsigned char WINC_CTRL[] = { 0x5A, 0x08, 0x86 };		// written 0x84, completely undocumented
+
+			const int I2C_MSG_CNT = 8;
+			struct i2c_msg I2C_MSG[I2C_MSG_CNT] = {
+				{ 0x60, 0, sizeof(WINC_CTRL), WINC_CTRL },
+				//{ 0x60, 0, sizeof(Unknown2), Unknown2 },
+				//{ 0x60, 0, sizeof(Unknown1), Unknown1 },
+				{ 0x60, 0, sizeof(GSReg8), GSReg8 },
+				{ 0x60, 0, sizeof(GSReg7), GSReg7 },
+				{ 0x60, 0, sizeof(GSReg6), GSReg6 },
+				{ 0x60, 0, sizeof(GSReg5), GSReg5 },
+				{ 0x60, 0, sizeof(GSReg3), GSReg3 },
+				{ 0x60, 0, sizeof(GSReg2), GSReg2 },
+				{ 0x60, 0, sizeof(Analog_1), Analog_1 },
+			};
+			for (int i = 0; i < I2C_MSG_CNT; i++)
+			{
+				struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG+i, 1 };
+				if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+					printf("Failed to write revert config register %d! %d: %s\n", i, errno, strerror(errno));
+			}
+		} */
+		
+
+		// Read registers for control
+		{
+			int32_t GSReg2 = Read8Bit(i2c_fd, 0x38a8);
+			int32_t GSReg3 = Read8Bit(i2c_fd, 0x38a9);
+			int32_t GSReg5 = Read8Bit(i2c_fd, 0x38c4);
+			int32_t GSReg6 = Read8Bit(i2c_fd, 0x38c5);
+			int32_t GSReg7 = Read8Bit(i2c_fd, 0x38c6);
+			int32_t GSReg8 = Read8Bit(i2c_fd, 0x38c7);
+			printf("GSReg2 is %x (written %x)\n", GSReg2, 0x02);
+			printf("GSReg3 is %x (written %x)\n", GSReg3, 0x80);
+			printf("GSReg5 is %x (written %x)\n", GSReg5, 0x00);
+			printf("GSReg6 is %x (written %x)\n", GSReg6, 0xc0);
+			printf("GSReg7 is %x (written %x)\n", GSReg7, 0x04);
+			printf("GSReg8 is %x (written %x)\n", GSReg8, 0x80);
+			int32_t Unknown1 = Read8Bit(i2c_fd, 0x0101);
+			printf("Unknown1 is %x (written %x)\n", Unknown1, 0x01);
+			int32_t Unknown2 = Read8Bit(i2c_fd, 0x1000);
+			printf("Unknown2 is %x (written %x)\n", Unknown2, 0x03);
+			int32_t WINC_CTRL = Read8Bit(i2c_fd, 0x5a08);
+			printf("WINC_CTRL is %x (written %x, default %x)\n", WINC_CTRL, 0x84, 0x86);
+		}
+
+		/* {
+			// Configure HTS manually - driver cannot set to minimum because it thinks we have a noncontinuous MIPI clock (V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK)
+			// This is configured by the device tree overlay, so we could modify and recompile the ov9281 one and load it, but that might break other things
+			// NOTE: Yes, it breaks things just the same as if we just forced it here, both result in no frames send by camera
+			uint16_t HTS = (176+gcs->cameraParams->width)/2;
+			unsigned char TIMING_HTS[] = { 0x38, 0x0C, (uint8_t)(HTS>>8), (uint8_t)(HTS&0xFF) };		// Put camera in standby
+
+			const int I2C_MSG_CNT = 1;
+			struct i2c_msg I2C_MSG[I2C_MSG_CNT] = {
+				{ 0x60, 0, sizeof(TIMING_HTS), TIMING_HTS },
+			};
+			for (int i = 0; i < I2C_MSG_CNT; i++)
+			{
+				struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG+i, 1 };
+				if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+					printf("Failed to write config register %d! %d: %s\n", i, errno, strerror(errno));
+			}
+		} */
 
 		if (gcs->cameraParams->extTrig)
 		{
@@ -550,6 +727,15 @@ void gcs_updateParameters(GCS *gcs)
 			struct i2c_rdwr_ioctl_data I2C_DATA_STROBE = { I2C_MSG, 2 };
 			if (gcs->cameraParams->strobe && ioctl(i2c_fd, I2C_RDWR, &I2C_DATA_STROBE) < 0)
 				printf("Failed to write strobe registers! %s\n", strerror(errno));
+		}
+
+
+		// Read registers for control
+		{
+			int32_t TIMING_HTS = Read16Bit(i2c_fd, 0x380C);
+			printf("TIMING_HTS is %d (expected %d)\n", TIMING_HTS, 1456/2);
+			int32_t TIMING_VTS = Read16Bit(i2c_fd, 0x380E);
+			printf("TIMING_VTS is %d (expected %d)\n", TIMING_VTS, 910);
 		}
 
 		close(i2c_fd);

@@ -183,6 +183,10 @@ gpu_mem=$GPU_MEM_SIZE
 dtparam=i2c_vc=on
 # Load built-in Kernel driver for OV9281 camera
 dtoverlay=ov9281,media-controller=0
+# TODO: Tried setting to clk-continuous so OV9282 driver allows setting HBLANK to 176 instead of 250 (HTS to 728 instead of 765 for 1280 width)
+# While this worked, it also resulte in no frames sent by camera, similar as if HBLANK was just FORCED down to 176
+# NOTE: With prior OV9281 driver in piCore 14, HBLANK of 176 was normal, and allowed for exposures beyond 270us (which now result in framedrops)
+#dtoverlay=ov9281,media-controller=0,clk-continuous=0
 # Alternatively switch bt to mini-uart and fix VC frequency to 300Mhz, but bt will be slow
 dtoverlay=disable-bt
 # Init PL011 clock to allow up to 3MBaud

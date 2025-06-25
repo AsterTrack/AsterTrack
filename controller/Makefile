@@ -66,10 +66,10 @@ source/config.c \
 source/usb_driver.c \
 source/uart_driver.c \
 source/pd_driver.c \
-dependencies/PDlib/src/fusb302b.c \
-dependencies/PDlib/src/policy_engine_states.c \
-dependencies/PDlib/src/policy_engine.c \
-ch32v307/src/system_ch32v30x.c
+dependencies/PDlib/source/fusb302b.c \
+dependencies/PDlib/source/policy_engine_states.c \
+dependencies/PDlib/source/policy_engine.c \
+ch32v307/source/system_ch32v30x.c
 
 C_SOURCES_SHARED = \
 mcu/util.c
@@ -82,7 +82,7 @@ C_INCLUDES = \
 -I../shared/mcu \
 -Idependencies/libusb \
 -Idependencies/PDlib/include \
--Idependencies/PDlib/src \
+-Idependencies/PDlib/source \
 -Ich32v307/drivers \
 -Ich32v307/drivers/ch32v30x/inc
 

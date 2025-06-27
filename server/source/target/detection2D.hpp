@@ -32,9 +32,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
- * Detect a marker in 2D observations, returns all candidates
+ * Probe for a target in 2D observations by testing a number of rotations at the approximate given position using matchTargetPointsSlow
  */
-TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	Eigen::Vector3f pos, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
+	TargetTracking2DData &internalData);
+
+/**
+ * Search for a target in 2D observations by trying to match target point combinations to a set of 3 blobs with p3p
+ */
+TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,

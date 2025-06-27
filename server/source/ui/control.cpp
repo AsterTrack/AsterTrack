@@ -383,7 +383,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					continue;
 				}
 				// Ensure we have decent parameters
-				pipeline.params.detect.enable2DAsync = false;
+				pipeline.params.detect.useAsyncDetection = false;
 				// Instruct pipeline to process given frame range
 				int frameJumpTarget = range.begin-1;
 				// Jump to frame after last frame has been processed
@@ -443,6 +443,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					}
 				}
 			}
+			pipeline.params.detect.useAsyncDetection = true;
 		};
 		if (!controlThread)
 			controlThread = std::make_unique<std::jthread>(controlFunction);

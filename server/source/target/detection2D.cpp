@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "detection2D.hpp"
 
 #include "target/parameters.hpp"
+#include "target/rotationGen.hpp"
 
 #include "util/matching.hpp"
 #include "util/eigenalg.hpp"
@@ -44,6 +45,109 @@ static std::mt19937 gen = std::mt19937(std::random_device{}());
 static std::vector<std::array<int,3>> generateTriplets(int n);
 
 static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D, float maxError);
+
+TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	Eigen::Vector3f pos, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
+	TargetTracking2DData &internalData)
+{
+	ScopedLogCategory scopedLogCategory(LDetection2D);
+
+	// Brute-force a few candidate poses based on 3 points only
+	
+	auto gen = params.rotGen;
+	std::vector<Eigen::Quaternionf> rotations(gen.rollAxisShells*gen.shellPoints);
+	for (int r = 0; r < gen.rollAxisShells; r++)
+	{
+		float rollAngle = 2*PI * ((float)r)/gen.rollAxisShells;
+		for (int i = 0; i < gen.shellPoints; i++)
+			rotations[r*gen.shellPoints + i] = generateRotation(gen, r % gen.shells.size(), i, rollAngle);
+	}
+
+	if (stopToken.stop_requested())
+		return {};
+
+	LOG(LDetection2D, LDebug, "Starting detection using %d rotations!", (int)rotations.size());
+
+	// Evaluate all possible combinations
+	std::vector<std::pair<int,float>> itResults(rotations.size(), { 0, std::numeric_limits<float>::max() });
+	std::vector<TargetMatch2D> itMatches(rotations.size());
+#pragma omp parallel for schedule(static, 100)
+	for (int i = 0; i < rotations.size(); i++)
+	{
+		const auto &quat = rotations[i];
+		if (stopToken.stop_requested())
+			continue;
+
+		thread_local TargetTracking2DData internalDataTemp;
+
+		Eigen::Isometry3f estimate;
+		estimate.linear() = quat.toRotationMatrix();
+		estimate.translation() = pos;
+
+		CovarianceMatrix cov = CovarianceMatrix::Identity() * 0.1f;
+
+		auto targetMatch2D = trackTarget2D(target3D, estimate, cov,
+			calibs, cameraCount, points2D, properties, relevantPoints2D, track, internalDataTemp);
+		LOG(LDetection2D, LTrace, "    Rotation %d resulted in %d matches, error %fpx!", i, targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
+
+		itResults[i] = { targetMatch2D.error.samples, targetMatch2D.error.mean };
+
+		bool accept = targetMatch2D.error.samples >= params.probe.minObs
+					&& targetMatch2D.error.mean < params.probe.errorMax;
+		if (accept)
+		{
+			itMatches[i] = targetMatch2D;
+		}
+	}
+	if (stopToken.stop_requested())
+		return {};
+
+	// Sort solutions by lowest error
+	std::vector<int> bestSolutions(rotations.size());
+	std::iota(bestSolutions.begin(), bestSolutions.end(), 0);
+	std::stable_sort(bestSolutions.begin(), bestSolutions.end(),
+		[&](const int &a, const int &b) {
+			if ((itResults[a].first < params.probe.minObs && itResults[b].first < params.probe.minObs)
+				|| (itResults[a].second > params.probe.errorMax && itResults[b].second > params.probe.errorMax))
+				return false;
+			return itResults[a].first < params.probe.minObs || itResults[b].first < params.probe.minObs? 
+				itResults[a].first > itResults[b].first : 
+				(itResults[a].second > params.probe.errorMax || itResults[b].second > params.probe.errorMax? 
+					itResults[a].second < itResults[b].second :
+					(itResults[a].first > itResults[b].first || 
+						(itResults[a].first == itResults[b].first && itResults[a].second < itResults[b].second))
+				);
+		});
+
+	int index = 0;
+	for (int it : bestSolutions)
+	{
+		auto &res = itResults[it];
+		if (res.first < params.probe.minObs) break;
+		if (res.second >= params.probe.errorMax)
+		{
+			LOG(LDetection2D, LDebug, "    Discarded: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
+			continue;
+		}
+		//if (res.first < params.probe.minObs) break;
+		LOG(LDetection2D, LDebug, "    Best: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
+
+		index++;
+		if (index >= params.probe.maxCandidates)
+			break;
+	}
+	if (index == 0)
+		return {};
+
+	auto bestResult = itResults[bestSolutions[0]];
+	if (bestResult.first < params.minObservations.total || bestResult.second > params.search.errorMax)
+		return {};
+
+	return itMatches[bestSolutions[0]];
+}
 
 static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token stopToken,
 	const TargetCalibration3D &target3D, const CameraCalib &calib,
@@ -135,7 +239,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 	return poseCandidates;
 }
 
-TargetMatch2D detectTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
+TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,

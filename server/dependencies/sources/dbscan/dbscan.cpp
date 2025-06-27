@@ -144,7 +144,7 @@ std::vector<std::vector<Index>> dbscanSubset(const std::vector<Eigen::Matrix<Sca
 		if (matches.size() < static_cast<Index>(min_pts)) continue;
 		visited[i] = true;
 
-		std::vector<Index> cluster = {i};
+		std::vector<Index> cluster = {indices[i]};
 
 		while (matches.empty() == false)
 		{

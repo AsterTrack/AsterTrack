@@ -286,6 +286,7 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LTargetCalib]			= "tCal";
 	LogCategoryIdentifiers[LTargetReconstruction]	= "tRec";
 	LogCategoryIdentifiers[LTracking]				= "Trk ";
+	LogCategoryIdentifiers[LCluster]				= "Clst";
 	LogCategoryIdentifiers[LTriangulation]			= "Tri ";
 	LogCategoryIdentifiers[LDetection2D]			= "tD2D";
 	LogCategoryIdentifiers[LDetection3D]			= "tD3D";
@@ -316,6 +317,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LTargetCalib]			= "Target Calibration";
 	LogCategoryDescriptions[LTargetReconstruction]	= "Target Reconstruction";
 	LogCategoryDescriptions[LTracking]				= "Tracking Pipeline";
+	LogCategoryDescriptions[LCluster]				= "Clustering";
 	LogCategoryDescriptions[LTriangulation]			= "Triangulation";
 	LogCategoryDescriptions[LDetection2D]			= "2D Detection";
 	LogCategoryDescriptions[LDetection3D]			= "3D Detection";

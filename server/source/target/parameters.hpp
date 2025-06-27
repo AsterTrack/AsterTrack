@@ -122,16 +122,42 @@ struct TargetFilteringParameters
 	}
 };
 
+struct RotationGenerationParameters
+{
+	int shellPoints = 100;
+
+	// Right parameter is increasingly sensitive with point counts > 1000, so precision here is required
+	std::vector<Eigen::Vector2f> shells = {
+		Eigen::Vector2f(0.0f, 0.0f),
+		Eigen::Vector2f(2.5f, 0.0728f),
+		Eigen::Vector2f(0.5f, 0.5f),
+		Eigen::Vector2f(1.25f, 0.191f)
+	};
+
+	float spreadFloor = 0.5f, spreadCeil = 0.1f;
+	float spreadVariance = 1.0f;
+
+	int rollAxisShells = 10;
+};
+
 struct TargetDetectionParameters
 {
 	// Detection algorithms (2D brute force, or quick based on 3D triangulations)
-	bool enable2DSync = false, enable2DAsync = true, enable3D = true;
+	bool probe2D = false, search2D = true, match3D = true;
+	bool useAsyncDetection = true;
 	struct
 	{
 		float errorMax = 5.0f*PixelSize;
 		float errorSigma = 3;
 		int maxCandidates = 10;
 	} search;
+	RotationGenerationParameters rotGen;
+	struct
+	{
+		int minObs = 6;
+		float errorMax = 2.0f*PixelSize;
+		int maxCandidates = 10;
+	} probe;
 	struct
 	{
 		bool quickAssignTargetMatches = false;

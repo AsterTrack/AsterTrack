@@ -288,9 +288,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		if (ImGui::TreeNode("Detection Method"))
 		{
-			CheckboxInput("3D Detection in Triangulations", &pipeline.params.detect.enable3D);
-			CheckboxInput("2D Brute-Force Searching Async", &pipeline.params.detect.enable2DAsync);
-			CheckboxInput("2D Brute-Force Searching Sync (!)", &pipeline.params.detect.enable2DSync);
+			CheckboxInput("3D Detection in Triangulations", &pipeline.params.detect.match3D);
+			CheckboxInput("2D Brute-Force Searching", &pipeline.params.detect.search2D);
+			CheckboxInput("2D Brute-Force Probing", &pipeline.params.detect.probe2D);
+			CheckboxInput("2D Brute-Force Async", &pipeline.params.detect.useAsyncDetection);
 			ImGui::TreePop();
 		}
 		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
@@ -591,8 +592,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					// Update changes to all tracking events
 					updateEventChange(losses, countEvents(stored, TrackingResult::NO_TRACK), countEvents(record, TrackingResult::NO_TRACK));
 					updateEventChange(search2D, countEvents(stored, TrackingResult::SEARCHED_2D), countEvents(record, TrackingResult::SEARCHED_2D));
-					updateEventChange(detect2D, countEvents(stored, TrackingResult::DETECTED_2D), countEvents(record, TrackingResult::DETECTED_2D));
-					updateEventChange(detect3D, countEvents(stored, TrackingResult::DETECTED_3D), countEvents(record, TrackingResult::DETECTED_3D));
+					updateEventChange(detect2D, countEvents(stored, TrackingResult::DETECTED_S2D), countEvents(record, TrackingResult::DETECTED_S2D));
+					updateEventChange(detect2D, countEvents(stored, TrackingResult::DETECTED_P2D), countEvents(record, TrackingResult::DETECTED_P2D));
+					updateEventChange(detect3D, countEvents(stored, TrackingResult::DETECTED_M3D), countEvents(record, TrackingResult::DETECTED_M3D));
 					updateEventChange(tracked, stored.trackers.size(), record.trackers.size());
 					// Accumulate results for each target for this frame from loaded and current results
 					struct FrameTrackers {

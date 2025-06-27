@@ -22,6 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/detection3D.hpp"
 #include "target/detection2D.hpp"
 
+#include "tracking/cluster.hpp"
+
 #include "util/debugging.hpp"
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"
@@ -251,7 +253,7 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<int>> &detectionPoints2D,
-	int focus, DormantTarget &&dormant)
+	bool useProbe, int focus, Eigen::Vector3f pos, DormantTarget &&dormant)
 {
 	{ // Detect in the first frame
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
@@ -264,16 +266,25 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			relevantPoints2D[c] = &detectionPoints2D[c];
 		}
 
-		// Detect target first in this cameras 2D points, and then match with others
-		dormant.target.match2D = detectTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
-			focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+		if (useProbe)
+		{ // Probe target against clusters points
+			dormant.target.match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+				pos, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+		}
+		else
+		{ // Detect target first in focusCameras 2D points, and then match with others
+			dormant.target.match2D = searchTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+				focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+		}
 		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total)
 		{
-			createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
+			createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D);
 			return false;
 		}
 
-		LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
+		LOG(LDetection2D, LInfo, useProbe?
+			"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
+			"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
 	}
 	if (stopToken.stop_requested())
@@ -281,7 +292,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	Eigen::Isometry3f pose = dormant.target.match2D.pose;
 	TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
-	recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_2D);
+	recordTrackingResult(pipeline, frame, tracker, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D);
 
 	// Then continue on tracking to catch up with the latest realtime frame
 	// TODO: Skip some frames to catch up faster, should handle some skips as long as prediction is accurate
@@ -609,7 +620,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tpt1 = pclock::now();
 	} */
 
-	std::vector<std::vector<int>> clusters3D;
+	std::vector<TriCluster3D> tri3DClusters;
 
 	const auto &detect = pipeline.params.detect;
 	const auto &clustering = pipeline.params.cluster;
@@ -704,11 +715,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tri3 = pclock::now();
 
 		// TODO: Split point cloud into groups of nearby points - currently unused
-		clusters3D = dbscan<3,float, int>(track.points3D, clustering.tri.maxDistance, clustering.tri.minPoints);
+		tri3DClusters = dbscan<3,float, int>(track.points3D, clustering.tri3DCluster.maxDistance, clustering.tri3DCluster.minPoints);
 		// May also want to consider doing it before resolving conflicts, incase a ray actually passes through two clusters
 		// - in which case, that ray would still be uncertain, I guess
-		LOG(LTracking, LDebug, "Clustered 3D points in %d groups in %d points!", (int)clusters3D.size(), (int)track.points3D.size());
-		for (auto &cluster : clusters3D)
+		LOG(LTracking, LDebug, "Clustered 3D points in %d groups in %d points!", (int)tri3DClusters.size(), (int)track.points3D.size());
+		for (auto &cluster : tri3DClusters)
 			LOG(LTracking, LDebug, "    Cluster has %d 3D points!", (int)cluster.size());
 
 		// Fill triangulated point list to pass to functions
@@ -718,7 +729,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det0 = pclock::now();
 
-	if (trackTargets && detect.enable3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
+	if (trackTargets && detect.match3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
 	{ // Target detection in 3D point cloud
 
 		auto dormantIt = pipeline.tracking.dormantTargets.begin();
@@ -752,7 +763,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					Eigen::Isometry3f pose = dormant.target.match2D.pose;
 					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 					occupyTargetMatches(tracker.target.match2D);
-					recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_3D);
+					recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_M3D);
 
 					LOG(LTracking, LInfo, "    Added dormant tracked target %s back with %d points and %fmm RMSE"
 						", now with %d 2D points and %fpx mean error!\n",
@@ -763,7 +774,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				}
 				else
 				{
-					createTrackerRecord(frame, dormant.id, TrackingResult::TESTED_3D);
+					createTrackerRecord(frame, dormant.id, TrackingResult::MATCHED_3D);
 					LOG(LTracking, LDebug, "    No good candidate, best has %d points and %fmm RMSE!\n",
 						(int)candidate.points.size(), std::sqrt(candidate.MSE));
 				}
@@ -813,57 +824,134 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det1 = pclock::now();
 
-	std::vector<std::vector<std::vector<int>>> clusters(calibs.size());
-	int clusterSelect = 0, clusterCamera = -1;
+	// Cluster 2D points and calculate stats of each
+	std::vector<std::vector<Cluster2D>> clusters2D(calibs.size());
+	std::vector<std::vector<Cluster2DStats>> cluster2DStats(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{ // 2D Point clustering
-		clusters[c] = dbscanSubset<2,float,int>(*points2D[c], remainingPoints2D[c], clustering.blobs.maxDistance, clustering.blobs.minPoints);
-		if (!clusters[c].empty() && clusterSelect < clusters[c].front().size())
-		{
-			clusterSelect = clusters[c].front().size();
-			clusterCamera = c;
-		}
+		clusters2D[c] = dbscanSubset<2,float,int>(*points2D[c], remainingPoints2D[c], clustering.blob2DCluster.maxDistance, clustering.blob2DCluster.minPoints);
+		cluster2DStats[c].resize(clusters2D[c].size());
+		for (int i = 0; i < clusters2D[c].size(); i++)
+			cluster2DStats[c][i] = calculateClusterStats2D(clusters2D[c][i], *points2D[c]);
 
-		LOG(LTracking, LDebug, "Camera %d: Clustered %d/%d relevant points into %d groups:", calibs[c].index, (int)remainingPoints2D[c].size(), (int)points2D[c]->size(), (int)clusters[c].size());
-		for (auto &cluster : clusters[c])
-			LOG(LTracking, LDebug, "    Cluster has %d 2D points!", (int)cluster.size());
+		LOG(LCluster, LDebug, "Camera %d: Clustered %d/%d relevant points into %d groups:", calibs[c].index, (int)remainingPoints2D[c].size(), (int)points2D[c]->size(), (int)clusters2D[c].size());
+		for (int i = 0; i < clusters2D[c].size(); i++)
+		{
+			LOG(LCluster, LDebug, "    Cluster has %d 2D points, variance of %fx%fpx!", (int)clusters2D[c][i].size(),
+				std::sqrt(cluster2DStats[c][i].covariance(0,0))*PixelFactor, std::sqrt(cluster2DStats[c][i].covariance(1,1))*PixelFactor);
+		}
 	}
 
-	if (trackTargets && (detect.enable2DSync || (detect.enable2DAsync && !pipeline.tracking.asyncDetection))
-		&& clusterSelect >= detect.minObservations.focus && !pipeline.tracking.dormantTargets.empty())
-	{ // Target detection using only 2D points
+	// Match those 2D clusters to potential 3D clusters using triangulation
+	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, clustering);
+	std::sort(clusters2DTri.begin(), clusters2DTri.end(), [](auto &a, auto &b){ return a.score > b.score; });
 
+	// TODO: Track clusters in 3D (1/2)
+	std::vector<Cluster3D> trackedClusters3D;
+	trackedClusters3D.reserve(clusters2DTri.size());
+	for (auto &clusterTri : clusters2DTri)
+	{
+		trackedClusters3D.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.1f);
+	}
+
+	if (trackTargets && (detect.search2D || detect.probe2D) && !clusters2DTri.empty() &&
+		!pipeline.tracking.dormantTargets.empty() && !pipeline.tracking.asyncDetection)
+	{
 		// Select cluster to detect in
-		auto &cluster = clusters[clusterCamera].front();
-		assert(cluster.size() >= detect.minObservations.focus);
+		Cluster2DTri3D &cluster = clusters2DTri.front();
 
 		// Select target to detect
-		DormantTarget &dormant = pipeline.tracking.dormantTargets.front();
-		LOG(LDetection2D, LDarn, "Trying target %d (name %s) with %d markers!\n",
+		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
+		DormantTarget &dormant = pipeline.tracking.dormantTargets.back();
+
+		// Select best camera from that cluster
+		int focusPoints = 0, focusCamera = -1;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			int cIndex = cluster.camClusters[c];
+			if (cIndex >= 0 && focusPoints < clusters2D[c][cIndex].size())
+			{
+				focusPoints = clusters2D[c][cIndex].size();
+				focusCamera = c;
+			}
+		}
+
+		// Cycle through methods to use (per target)
+		std::array<bool,2> options = {
+			detect.search2D && focusPoints >= detect.minObservations.focus,
+			detect.probe2D
+		};
+		static int cycle = 0;
+		int opt = -1;
+		for (int i = 0; i < options.size(); i++, cycle++)
+		{
+			if (!options[cycle%options.size()]) continue;
+			opt = cycle%options.size();
+			break;
+		}
+		cycle = (cycle+1)%options.size();
+		bool useProbe = opt == 1;
+
+		LOG(LDetection2D, LDarn, opt == 1?
+			"Probing for target %d (name %s) with %d markers!\n" :
+			"Searching for target %d (name %s) with %d markers!\n",
 			dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
 
-		// Move to back in queue
-		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
+		// TODO: Figure out why (async) search sucks now - did it always suck or just because of new clustering? Or a regression?
 
-		if (detect.enable2DSync)
+		// Prepare selection of points
+		std::vector<std::vector<int>> detectionPoints2DAsync(calibs.size());
+		std::vector<Cluster2D const *> detectionPoints2DSync(calibs.size());
+		for (int c = 0; c < calibs.size(); c++)
 		{
-			std::vector<std::vector<int> const *> detectionPoints2D = relevantPoints2D;
-			detectionPoints2D[clusterCamera] = &cluster;
+			int cIndex = cluster.camClusters[c];
+			if (cIndex < 0) continue;
+			// TODO: Track clusters in 3D (1/2) - would allow nearby points below cluster limit to be used here
+			detectionPoints2DAsync[c] = clusters2D[c][cIndex];
+			detectionPoints2DSync[c] = &clusters2D[c][cIndex];
+		}
 
+		if (detect.useAsyncDetection)
+		{
+			pipeline.tracking.asyncDetection = true;
+			pipeline.tracking.asyncDetectionStop = {};
+			pipeline.tracking.asyncDetectTargetID = dormant.id;
+			threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
+				std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
+				bool useProbe, int focus, Eigen::Vector3f pos, DormantTarget dormant)
+			{ // Working with copy of dormant tracker
+				detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
+					useProbe, focus, pos, std::move(dormant));
+				pipeline.tracking.asyncDetection = false;
+			}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2DAsync,
+				useProbe, focusCamera, cluster.center, dormant);
+		}
+		else
+		{
 			pipeline.tracking.syncDetectionStop = {};
-
-			// Detect target first in this cameras 2D points, and then match with others
-			dormant.target.match2D = detectTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
-				dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
-				clusterCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+			if (useProbe)
+			{ // Probe target against clusters points
+				dormant.target.match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
+					dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, cluster.center,
+					pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+			}
+			else
+			{ // Detect target first in focusCameras 2D points, and then match with others
+				dormant.target.match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
+					dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync,
+					focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				
+			}
 			if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
 			{
-				LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
+				LOG(LDetection2D, LInfo, useProbe?
+				"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
+				"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 					frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
 				Eigen::Isometry3f pose = dormant.target.match2D.pose;
 				TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 				occupyTargetMatches(tracker.target.match2D);
-				recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_2D);
+				recordTrackingResult(pipeline, frame, tracker, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D);
 				pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 				pipeline.tracking.dormantTargets.pop_back();
 			}
@@ -872,28 +960,18 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
 			}
 		}
-		else if (detect.enable2DAsync)
-		{
-			std::vector<std::vector<int>> detectionPoints2D = remainingPoints2D;
-			detectionPoints2D[clusterCamera] = cluster;
-
-			pipeline.tracking.asyncDetection = true;
-			pipeline.tracking.asyncDetectionStop = {};
-			pipeline.tracking.asyncDetectTargetID = dormant.id;
-			threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
-				std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
-				DormantTarget dormant, int focus)
-			{ // Working with copy of dormant tracker
-				detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, focus, std::move(dormant));
-				pipeline.tracking.asyncDetection = false;
-			}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2D, dormant, clusterCamera);
-		}
 	}
 
 	det2 = pclock::now();
 
 	// TODO: Properly integrate triangulation records (2/3)
 	frame->triangulations = track.points3D;
+	frame->cluster2DTri = std::move(trackedClusters3D);
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		int i = calibs[c].index;
+		frame->cameras[i].clusters2D = std::move(cluster2DStats[c]);
+	}
 
 	{ // Log timing
 		float frameTime = dtMS(start, pclock::now());

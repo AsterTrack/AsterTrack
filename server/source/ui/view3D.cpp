@@ -27,8 +27,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imgui/imgui_onDemand.hpp"
 
+#include "target/rotationGen.hpp"
 #include "calib/opt/covariance.hpp"
 #include "util/eigenalg.hpp"
+
+#include "implot/implot.h"
 
 struct wl_display;
 struct wl_resource;
@@ -38,6 +41,7 @@ struct wl_resource;
 //#define VIEW_RAW_MOUSE_MOVEMENT // Can't really adjust sensitivity, but allows simultaneous use of touchpad and keys on laptops that prevent that
 
 static void visualiseState3D(const ServerState &state, VisualisationState &vis, View3D &view3D, Eigen::Vector2i viewSize, float dT);
+static void visualRotationGenAnalysis(const VisualisationState &visState, const RotationGenerationParameters &gen);
 
 void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 {
@@ -360,6 +364,8 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		sidePanelWidth = ImGui::GetWindowWidth();
 
 		ImGui::Checkbox("Show Marker Rays", &visState.showMarkerRays);
+		ImGui::Checkbox("Show 3D Clusters", &visState.show3DClusters);
+		ImGui::Checkbox("Show 2D Clusters", &visState.show2DClusters);
 
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget && ImGui::TreeNode("Target Calibration"))
@@ -413,6 +419,31 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		for (auto &camera : pipeline.cameras)
 			visualiseRays(camera->calib, frame.cameras[camera->index].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
 	}
+
+	if (visState.show3DClusters && visFrame)
+	{
+		thread_local std::vector<VisModel> clusters;
+		clusters.clear();
+		for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
+		{
+			Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
+			clusters.emplace_back(
+				composeCovarianceTransform(pose, cluster.covariance, 1),
+				Color{ 0.4f, 0.8f, 0.2f, 0.6f });
+		}
+		if (!clusters.empty())
+		{
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			visualiseMeshesDepthSorted(clusters, smoothSphereMesh);
+			glDisable(GL_CULL_FACE);
+			glEnable(GL_DEPTH_TEST);
+		}
+	}
+
+	if (visState.rotationSphere.visualise)
+		visualRotationGenAnalysis(visState, pipeline.params.detect.rotGen);
 
 	if (visFrame.target)
 	{ // Only show target calibration data, not real-time state
@@ -809,4 +840,89 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 		visualisePointsSpheres(markerPoints);
 	}
+}
+
+static void visualRotationGenAnalysis(const VisualisationState &visState, const RotationGenerationParameters &gen)
+{
+	auto sphere = visState.rotationSphere;
+
+	std::vector<Eigen::Quaternionf> rotations(gen.rollAxisShells*gen.shellPoints);
+	for (int r = 0; r < gen.rollAxisShells; r++)
+	{
+		float rollAngle = 2*PI * ((float)r)/gen.rollAxisShells; // TODO: Affect with spread
+		for (int i = 0; i < gen.shellPoints; i++)
+			rotations[r*gen.shellPoints + i] = generateRotation(gen, r % gen.shells.size(), i, rollAngle);
+	}
+
+	StatDistf all = {};
+	StatDistf min1 = {}, min2 = {}, min3 = {};
+	StatDistf roll1 = {}, roll2 = {}, roll3 = {};
+	std::vector<MultipleExtremum<float, 3>> minXYAngles(rotations.size(), 10000);
+	std::vector<MultipleExtremum<float, 3>> minRollAngles(rotations.size(), 10000);
+	for (int i = 0; i < rotations.size(); i++)
+	{
+		for (int j = i+1; j < rotations.size(); j++)
+		{
+			float angle = Eigen::AngleAxisf(rotations[i] * rotations[j].conjugate()).angle() * 180/PI;
+			assert(!std::isnan(angle));
+			assert(angle > 0.001f);
+			if (i/gen.shellPoints == j/gen.shellPoints)
+			{
+				minXYAngles[i].min(angle);
+				minXYAngles[j].min(angle);
+			}
+			else
+			{
+				minRollAngles[i].min(angle);
+				minRollAngles[j].min(angle);
+			}
+			all.update(angle);
+		}
+		min1.update(minXYAngles[i].rank[0]);
+		min2.update(minXYAngles[i].rank[1]);
+		min3.update(minXYAngles[i].rank[2]);
+		roll1.update(minRollAngles[i].rank[0]);
+		roll2.update(minRollAngles[i].rank[1]);
+		roll3.update(minRollAngles[i].rank[2]);
+	}
+	LOG(LGUI, LInfo, "%d rotations, %d pairwise distances, minimums:",
+		(int)rotations.size(), all.num);
+	LOG(LGUI, LInfo, "XY  : 1: [%f - %f - %f]  2: [%f - %f - %f]  3: [%f - %f - %f]",
+		min1.min, min1.avg, min1.max, min2.min, min2.avg, min2.max, min3.min, min3.avg, min3.max);
+	LOG(LGUI, LInfo, "Roll: 1: [%f - %f - %f]  2: [%f - %f - %f]  3: [%f - %f - %f]",
+		roll1.min, roll1.avg, roll1.max, roll2.min, roll2.avg, roll2.max, roll3.min, roll3.avg, roll3.max);
+
+	std::vector<VisPoint> visPoints;
+	std::vector<VisPoint> visAngles;
+	std::vector<std::pair<VisPoint,VisPoint>> visLines;
+	visPoints.reserve((gen.rollAxisShells-sphere.hideRollShells) * (gen.shellPoints-sphere.hideShellPoints));
+	visAngles.reserve((gen.rollAxisShells-sphere.hideRollShells) * (gen.shellPoints-sphere.hideShellPoints));
+	for (int r = 0; r < gen.rollAxisShells-sphere.hideRollShells; r++)
+	{
+		float radius = std::pow(sphere.shellRadiusIncrease, r);
+
+		ImVec4 col = ImPlot::GetColormapColor(r);
+		for (int i = 0; i < gen.shellPoints-sphere.hideShellPoints; i++)
+		{
+			int index = r*gen.shellPoints + i;
+			auto point = generateSpherePoint(gen, r % gen.shells.size(), i);
+			auto quat = rotations[index];
+
+			Eigen::Vector3f tip = (quat * Eigen::Vector3f(0,0,1));
+			Eigen::Vector3f side = (quat * Eigen::Vector3f(0.05f,0,1));
+			visLines.emplace_back(
+				VisPoint { sphere.sphereOrigin + tip * radius, Color{col.x, col.y, col.z,1.0f} },
+				VisPoint { sphere.sphereOrigin + side * radius, Color{col.x, col.y, col.z,1.0f} }
+			);
+
+			float exc = minXYAngles[index].rank[0] > sphere.minNeighbourAngle? 0.3f : 0.0f;
+			visPoints.emplace_back(sphere.sphereOrigin + point * radius, Color{col.x, col.y-exc, col.z-exc,1.0f}, sphere.pointSize);
+
+			auto vector = flexkalman::util::quat_ln(quat);
+			visAngles.emplace_back(sphere.boxOrigin + vector * sphere.boxScale, Color{col.x, col.y, col.z,1.0f}, sphere.pointSize );
+		}
+	}
+	visualisePointsSprites(visPoints, true);
+	visualisePointsSprites(visAngles, true);
+	visualiseLines(visLines, 2);
 }

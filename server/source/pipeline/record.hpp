@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define RECORD_H
 
 #include "imu/imu.hpp"
+#include "tracking/cluster.hpp"
 
 #include "util/eigendef.hpp"
 #include "util/util.hpp" // TimePoint_t
@@ -82,6 +83,8 @@ struct CameraFrameRecord
 	// So it's a switch we COULD make, but it's a lot of effort, with minor benefits
 	// Consider doing this whenever CameraMode is reworked (which will change CameraCalib to some degree, too)
 
+	std::vector<Cluster2DStats> clusters2D;
+
 	struct {
 		std::vector<int> points2GTMarker;
 		std::vector<int> GTMarkers2Point;
@@ -127,7 +130,7 @@ public:
 	enum Base
 	{
 		_BASE				= 0xFF << 8,
-		IS_PROBE			= 1 << 8,
+		IS_TEST				= 1 << 8,
 		IS_DETECTED			= 2 << 8,
 		IS_TRACKED			= 3 << 8,
 		IS_FAILURE			= 4 << 8,
@@ -135,10 +138,12 @@ public:
 	enum State
 	{
 		_STATE				= 0xFF,
-		SEARCHED_2D			= IS_PROBE | 1,
-		TESTED_3D			= IS_PROBE | 2,
-		DETECTED_2D			= IS_DETECTED | 1,
-		DETECTED_3D			= IS_DETECTED | 2,
+		SEARCHED_2D			= IS_TEST | 1,
+		MATCHED_3D			= IS_TEST | 2,
+		PROBED_2D			= IS_TEST | 3,
+		DETECTED_S2D		= IS_DETECTED | 1,
+		DETECTED_M3D		= IS_DETECTED | 2,
+		DETECTED_P2D		= IS_DETECTED | 3,
 		TRACKED_MARKER		= IS_TRACKED | 1,
 		TRACKED_POSE		= IS_TRACKED | 2,
 		TRACKED_SPARSE		= IS_TRACKED | 3,
@@ -168,7 +173,7 @@ public:
 	bool operator==(TrackingResult::Value val) const { return value == val; }
 	bool operator!=(TrackingResult::Value val) const { return value != val; }
 
-	bool isProbe() const { return (value&_BASE) == IS_PROBE; }
+	bool isProbe() const { return (value&_BASE) == IS_TEST; }
 	bool isDetected() const { return (value&_BASE) == IS_DETECTED; }
 	bool isTracked() const { return (value&_BASE) == IS_TRACKED; }
 	bool isFailure() const { return (value&_BASE) == IS_FAILURE; }
@@ -247,6 +252,8 @@ struct FrameRecord
 	// Or here in separate records
 	std::vector<Eigen::Vector3f> triangulations;
 	// TODO: Properly integrate triangulation records (1/3)
+
+	std::vector<Cluster3D> cluster2DTri;
 
 	// TODO: Put remainingPoints2D and other intermediate results in here?
 	// Both target calibration (tryTrackFrame) and async detection2D (retroactivelyTrackFrame) would benefit

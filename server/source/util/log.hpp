@@ -49,6 +49,7 @@ enum LogCategory {
 		LTargetCalib,
 		LTargetReconstruction,
 		LTracking,
+			LCluster,
 			LTriangulation,
 			LDetection2D,
 			LDetection3D,

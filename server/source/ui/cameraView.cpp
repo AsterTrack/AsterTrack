@@ -1080,6 +1080,15 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 		else if (phase == PHASE_Tracking)
 		{
+			if (visState.show2DClusters)
+			{
+				for (auto &cluster : camFrame.clusters2D)
+				{
+					Eigen::Matrix2f axis = sampleCovarianceExtremes(cluster.covariance, 3);
+					visualiseEllipse<false>(cluster.center, axis.col(0), axis.col(1), Color{ 1.0f, 0.0f, 0.0f, 1.0f });
+				}
+			}
+
 			auto &debugVis = visState.tracking.debug;
 			if (debugVis.frameNum > 0 && debugVis.frameNum < frame->num)
 				debugVis = {}; // Any one camera can reset

@@ -42,14 +42,21 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		auto &params = state.pipeline.params.cluster;
 		const auto &standard = defaultParams.cluster;
 
-		BeginSection("2D Point Clustering");
-		ScalarProperty<int>("Min Points", "", &params.blobs.minPoints, &standard.blobs.minPoints, 1, 10);
-		ScalarProperty<float>("Max Distance", "px", &params.blobs.maxDistance, &standard.blobs.maxDistance, 0, 1000, 5.0f, PixelFactor, "%.1f");
+		BeginSection("2D Clustering of Blobs");
+		ScalarProperty<int>("Min Points", "", &params.blob2DCluster.minPoints, &standard.blob2DCluster.minPoints, 1, 10);
+		ScalarProperty<float>("Max Distance", "px", &params.blob2DCluster.maxDistance, &standard.blob2DCluster.maxDistance, 0, 1000, 5.0f, PixelFactor, "%.1f");
 		EndSection();
 
-		BeginSection("3D Point Clustering");
-		ScalarProperty<int>("Min Points", "", &params.tri.minPoints, &standard.tri.minPoints, 1, 10);
-		ScalarProperty<float>("Max Distance", "mm", &params.tri.maxDistance, &standard.tri.maxDistance, 0, 1000, 10.0f, 1000, "%.1f");
+		BeginSection("Triangulating of 2D Clusters");
+		ScalarProperty<int>("Min Focus Cluster Points", "", &params.clusterTri.minFocusClusterPoints, &standard.clusterTri.minFocusClusterPoints, 1, 10);
+		ScalarProperty<float>("Min 2D Cluster Overlap", "", &params.clusterTri.min2DClusterOverlap, &standard.clusterTri.min2DClusterOverlap, 0, 1, 0.02f);
+		ScalarProperty<float>("Min 3D Cluster Score", "px", &params.clusterTri.min3DClusterScore, &standard.clusterTri.min3DClusterScore, 0, 100, 1.0f, 1, "%.1f");
+		BooleanProperty("Allow Competing Triangulations", &params.clusterTri.allowCompeting, &standard.clusterTri.allowCompeting);
+		EndSection();
+
+		BeginSection("3D Clustering of Triangulations");
+		ScalarProperty<int>("Min Points", "", &params.tri3DCluster.minPoints, &standard.tri3DCluster.minPoints, 1, 10);
+		ScalarProperty<float>("Max Distance", "mm", &params.tri3DCluster.maxDistance, &standard.tri3DCluster.maxDistance, 0, 1000, 10.0f, 1000, "%.1f");
 		EndSection();
 
 		ImGui::PopID();
@@ -129,10 +136,46 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		const auto &standard = defaultParams.detect;
 		bool modified = false;
 
-		BeginSection("Brute Force");
+		BooleanProperty("Use Async Search/Probe", &params.useAsyncDetection, &standard.useAsyncDetection);
+
+		BeginSection("2D Search");
 		modified |= ScalarProperty<float>("Error Sigma over Best", "o", &params.search.errorSigma, &standard.search.errorSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Error Max", "px", &params.search.errorMax, &standard.search.errorMax, 0, 10, 0.5f, PixelFactor, "%.1f");
 		modified |= ScalarProperty<int>("Max Candidates", "", &params.search.maxCandidates, &standard.search.maxCandidates, 1, 100);
+		EndSection();
+
+		BeginSection("2D Probe");
+		modified |= ScalarProperty<int>("Min Observations", "", &params.probe.minObs, &standard.probe.minObs, 0, 20);
+		modified |= ScalarProperty<float>("Error Max", "px", &params.probe.errorMax, &standard.probe.errorMax, 0, 10, 0.5f, PixelFactor, "%.1f");
+		modified |= ScalarProperty<int>("Max Candidates", "", &params.probe.maxCandidates, &standard.probe.maxCandidates, 1, 100);
+		if (ImGui::TreeNode("Rotation Generation"))
+		{
+			auto &gen = pipeline.params.detect.rotGen;
+
+			ImGui::SliderInt("Shell Points", &gen.shellPoints, 0, 1000);
+			ImGui::SliderInt("Roll Axis Shells", &gen.rollAxisShells, 1, 100);
+
+			int shellCount = gen.shells.size();
+			if (ImGui::SliderInt("Repeating Shells", &shellCount, 1, 10))
+				gen.shells.resize(shellCount, Eigen::Vector2f::Zero());
+			for (int i = 0; i < gen.shells.size(); i++)
+			{
+				ImGui::PushID(i);
+				ImGui::InputFloat2("    Shell Offset", &gen.shells[i].x(), "%.5f");
+				ImGui::PopID();
+			}
+
+			if (ImGui::TreeNode("Rotational Spread (Debug)"))
+			{ // These are test parameters for future features (e.g. generating rotations according to a covariance)
+				ImGui::SliderFloat("Spread Floor", &gen.spreadFloor, 0, 1.0f);
+				ImGui::SliderFloat("Spread Ceil", &gen.spreadCeil, 0, 1.0f);
+				ImGui::SliderFloat("Spread Variance", &gen.spreadVariance, 0.0f, 10.0f);
+				gen.spreadVariance = std::max(gen.spreadVariance, 0.00001f);
+				ImGui::TreePop();
+			}
+
+			ImGui::TreePop();
+		}
 		EndSection();
 
 		BeginSection("2D Point Matching");

@@ -37,16 +37,26 @@ struct TriangulationParameters
 
 struct ClusteringParameters
 {
+	// 2D clusters of blobs
 	struct
 	{
-		int minPoints = 5;
-		float maxDistance = 20.0f*PixelSize;
-	} blobs;
+		int minPoints = 2;
+		float maxDistance = 40.0f*PixelSize;
+	} blob2DCluster;
+	// Triangulate 2D clusters to 3D clusters
+	struct
+	{
+		int minFocusClusterPoints = 6;
+		float min2DClusterOverlap = 0.7f;
+		float min3DClusterScore = 10.0f;
+		bool allowCompeting = false;
+	} clusterTri;
+	// 3D clusters of triangulated points
 	struct
 	{
 		int minPoints = 3;
 		float maxDistance = 0.1f;
-	} tri;
+	} tri3DCluster;
 };
 
 struct ContinuousOptimisationParameters

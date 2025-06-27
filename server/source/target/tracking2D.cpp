@@ -776,6 +776,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	std::vector<std::vector<int>> closePoints2D(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{
+		if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
+
 		// Project target bounds and relevant target points into camera view
 		Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
 		Bounds2f projectedBounds = projectBounds(mvp, targetBounds);

@@ -121,6 +121,8 @@ struct VisualisationState
 
 	bool showMarkerTrails = false;
 	bool showMarkerRays = false;
+	bool show3DClusters = true;
+	bool show2DClusters = true;
 
 	struct
 	{
@@ -247,6 +249,24 @@ struct VisualisationState
 		bool showOrigin = false;
 		Eigen::Vector3f origin = Eigen::Vector3f::Zero();
 	} room;
+
+	struct
+	{
+		bool visualise = false;
+
+		float pointSize = 10.0f;
+
+		float shellRadiusIncrease = 1.1f;
+
+		int hideShellPoints = 0;
+		int hideRollShells = 0;
+
+		float minNeighbourAngle = 20.0f;
+
+		Eigen::Vector3f sphereOrigin = Eigen::Vector3f(0, 0, 2);
+		Eigen::Vector3f boxOrigin = Eigen::Vector3f(2, 0, 1);
+		float boxScale = 0.4f;
+	} rotationSphere;
 };
 
 struct View3D

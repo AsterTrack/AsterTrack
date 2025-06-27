@@ -166,7 +166,7 @@ SERVER_CPP = \
 	calib_target/reconstruction.cpp calib_target/aquisition.cpp calib_target/assembly.cpp \
 	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp \
 	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp \
-	tracking/tracking.cpp
+	tracking/cluster.cpp tracking/tracking.cpp
 #comm/server.cpp
 
 SERVER_SHARED_CPP = \

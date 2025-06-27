@@ -122,5 +122,35 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::TreePop();
 	}
 
+	if (ImGui::TreeNode("Rotation Sphere"))
+	{
+		ImGui::Checkbox("Visualise", &visState.rotationSphere.visualise);
+
+		auto &gen = pipeline.params.detect.rotGen;
+
+
+		ImGui::SeparatorText("Visualisation");
+		auto &sphere = visState.rotationSphere;
+
+		ImGui::SliderFloat("Point Size", &sphere.pointSize, 0, 50.0f);
+
+		ImGui::SliderFloat("Shell Radius Increase", &sphere.shellRadiusIncrease, 1, 2);
+
+		sphere.hideRollShells = std::min(sphere.hideRollShells, gen.rollAxisShells);
+		ImGui::SliderInt("Hide Roll Shells", &sphere.hideRollShells, 0, gen.rollAxisShells);
+
+		sphere.hideShellPoints = std::min(sphere.hideShellPoints, gen.shellPoints);
+		ImGui::SliderInt("Hide Shell Points", &sphere.hideShellPoints, 0, gen.shellPoints);
+
+		ImGui::InputFloat3("Sphere Origin", sphere.sphereOrigin.data(), "%.3f");
+
+		ImGui::InputFloat3("Box Origin", sphere.boxOrigin.data(), "%.3f");
+		ImGui::SliderFloat("Box Size", &sphere.boxScale, 0, 100);
+
+		ImGui::SliderFloat("Min Neighbour Angle", &sphere.minNeighbourAngle, 0, 90.0f);
+
+		ImGui::TreePop();
+	}
+
 	ImGui::End();
 }

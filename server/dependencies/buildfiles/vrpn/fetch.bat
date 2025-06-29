@@ -1,12 +1,8 @@
 @echo off & SETLOCAL ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
-:: set FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/heads/master.zip
-:: Frozen 7.35
-::set FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/tags/version_07.35.zip
-::set FETCH_VERSION=7.35
-::Frozen 7.36 with regression fixes and support for python 3.13
-set FETCH_URL=https://github.com/vrpn/vrpn/archive/844c5873d71b70a51825f2a8b9928bfc9a84c717.zip
-set FETCH_VERSION=7.36-master
+:: Frozen v07.36
+set FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/tags/v07.36.zip
+set FETCH_VERSION=v07.36
 set FETCH_NAME=vrpn
 set FETCH_ARCHIVE=source.zip
 

@@ -1,7 +1,8 @@
 @echo off & SETLOCAL ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
-set FETCH_URL=https://github.com/Seneral/glfw/archive/9a1bc9b1bf422c1aa2b32e7821e382f796fa8f28.zip
-set FETCH_VERSION=3.4.0+WL
+:: GLFW + custom wayland additions
+set FETCH_URL=https://github.com/Seneral/glfw/archive/b01e6dac58b8a6611fd089b7e4ad9d1932a6f912.zip
+set FETCH_VERSION=3.4.0+WL+CMAKE
 set FETCH_NAME=glfw
 set FETCH_ARCHIVE=source.zip
 

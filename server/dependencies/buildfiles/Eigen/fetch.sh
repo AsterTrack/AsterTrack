@@ -3,8 +3,8 @@
 #FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
 # Need newer version than old 3.4.0, change to fixed version as soon as one is released
 #FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/master/eigen-master.zip
-FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/5e4f3475b5cb77414bca1f3dde7d6fd9cb4d2011/eigen-5e4f3475b5cb77414bca1f3dde7d6fd9cb4d2011.zip
-FETCH_VERSION=master-5e4f347
+FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/8ac2fb077dfcdf9a6fa78a871c494594dfa795b0/eigen-8ac2fb077dfcdf9a6fa78a871c494594dfa795b0.zip
+FETCH_VERSION=master-8ac2fb07
 FETCH_NAME=eigen
 FETCH_ARCHIVE=source.zip
 

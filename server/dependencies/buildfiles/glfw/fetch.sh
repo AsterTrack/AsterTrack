@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-FETCH_URL=https://github.com/Seneral/glfw/archive/9a1bc9b1bf422c1aa2b32e7821e382f796fa8f28.zip
-FETCH_VERSION=3.4.0+WL
+# GLFW + custom wayland additions
+FETCH_URL=https://github.com/Seneral/glfw/archive/b01e6dac58b8a6611fd089b7e4ad9d1932a6f912.zip
+FETCH_VERSION=3.4.0+WL+CMAKE
 FETCH_NAME=glfw
 FETCH_ARCHIVE=source.zip
 

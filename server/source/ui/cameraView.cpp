@@ -328,7 +328,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
 			Color color = GetUI().getStatusColor(*viewIt->second.camera);
-			showSolidEllipse(Eigen::Vector2f::Zero(), Eigen::Vector2f::Constant(0.8f), color);
+			visSetupProjection(Eigen::Isometry3f::Identity());
+			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)view.camera->id);
 		if (icon)
 			icon->renderOwn = false; // Part of full camera view render
@@ -1280,7 +1281,7 @@ static void visualiseCamera(const PipelineState &pipeline, VisualisationState &v
 		visualisePointsVBOSprites(maskPixelVBO, extendsPX.prod(), false);
 
 		// Visualise detected blob
-		showCircleWithCenter(visual.pos, visual.size*PixelStride, Color{ 1, 0, 0, 1 }, PixelStride);
+		visualiseBlobCircle(visual.pos, visual.size*PixelStride, Color{ 1, 0, 0, 1 }, PixelStride);
 
 		// Visualise refined edge
 		Eigen::Vector2f boundsOrigin = pix2cam<float>(mode, visual.bounds.min().cast<float>());

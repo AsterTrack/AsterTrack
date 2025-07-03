@@ -158,7 +158,7 @@ void visualisePointsSpheresDepthSorted(const std::vector<VisPoint> &points);
 /**
  * Render meshes while accounting for depth (solely based on position) for correct alpha blending
  */
- void visualiseMeshesDepthSorted(const std::vector<VisModel> &models, Mesh *mesh);
+void visualiseMeshesDepthSorted(const std::vector<VisModel> &models, Mesh *mesh);
 
 /**
  * Render segmented 3D lines
@@ -193,7 +193,7 @@ void visualisePose(const Eigen::Isometry3f &pose, Color color, float scale, floa
 /**
  * Render coordinate cross with axis-coloring in given pose
  */
- void visualisePoseAxisColored(const Eigen::Isometry3f &pose, float scale, float lineWidth);
+void visualisePoseAxisColored(const Eigen::Isometry3f &pose, float scale, float lineWidth);
 
 
 /*
@@ -237,16 +237,34 @@ void showGrayscaleFrameUndistorted(unsigned int frame,
 	Eigen::Vector2f viewportSize = Eigen::Vector2f(1.0f, 1.0f),
 	Color color = {1,1,1,0}, float alpha = 1.0f, float brightness = 0.0f, float contrast = 1.0f);
 
+/**
+ * Render an ellipse either in lines or solid
+ */
+template<bool SOLID>
+void visualiseEllipse(Eigen::Vector2f pos, Eigen::Vector2f axisA, Eigen::Vector2f axisB, Color color);
+
+/**
+ * Render an axis-aligned ellipse either in lines or solid
+ */
+template<bool SOLID>
+void visualiseEllipseAligned(Eigen::Vector2f pos, Eigen::Vector2f size, Color color)
+{
+	visualiseEllipse<SOLID>(pos, Eigen::Vector2f::UnitX() * size.x(), Eigen::Vector2f::UnitY() * size.y(), color);
+}
+
+/**
+ * Render an circle either in lines or solid
+ */
+template<bool SOLID>
+void visualiseCircle(Eigen::Vector2f pos, float size, Color color)
+{
+	visualiseEllipse<SOLID>(pos, Eigen::Vector2f::UnitX() * size, Eigen::Vector2f::UnitY() * size, color);
+}
 
 /**
  * Render blob circle with cross in the middle
  */
-void showCircleWithCenter(Eigen::Vector2f pos, float size, Color color, float crossSize = 1/100.0f);
-
-/**
- * Render a solid ellipse
- */
-void showSolidEllipse(Eigen::Vector2f pos, Eigen::Vector2f size, Color color);
+void visualiseBlobCircle(Eigen::Vector2f pos, float size, Color color, float crossSize = 1/100.0f);
 
 /**
  * Render 2D points

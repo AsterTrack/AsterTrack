@@ -67,7 +67,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
 			Color color = GetUI().getStatusColor(*viewIt->second.camera);
-			showSolidEllipse(Eigen::Vector2f::Zero(), Eigen::Vector2f::Constant(0.8f), color);
+			visSetupProjection(Eigen::Isometry3f::Identity());
+			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)camera.id);
 
 		// Detail text
@@ -180,7 +181,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 				ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
 				Color color = GetUI().getStatusColor(controller);
-				showSolidEllipse(Eigen::Vector2f::Zero(), Eigen::Vector2f::Constant(0.8f), color);
+				visSetupProjection(Eigen::Isometry3f::Identity());
+				visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 			}, (void*)(intptr_t)controller.id);
 			ImGui::SameLine(colX);
 			ImGui::Text("Status");

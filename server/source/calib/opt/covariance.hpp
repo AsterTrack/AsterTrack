@@ -183,13 +183,22 @@ static inline int NumericCovariance(Functor &&functor, const VectorX<Scalar> &in
 	return ret;
 }
 
+
+template<typename Scalar, int N>
+Eigen::Matrix<Scalar,N,N> sampleCovarianceExtremes(Eigen::Matrix<Scalar,N,N> covariance, float sigma)
+{
+	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
+	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,N,N>> evd(covariance, Eigen::ComputeEigenvectors);
+	Eigen::Matrix<Scalar,N,1> deviations = sigma * evd.eigenvalues().cwiseSqrt();
+	return evd.eigenvectors().array().rowwise() * deviations.transpose().array();
+}
+
+
 template<typename Scalar, int N>
 Eigen::Matrix<Scalar,N,1> sampleCovarianceUncertainty(Eigen::Matrix<Scalar,N,N> covariance, float sigma, Eigen::Matrix<Scalar,N,N> targetAxis)
 {
 	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
-	Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd(covariance, Eigen::ComputeEigenvectors);
-	Eigen::Vector3f deviations = sigma * evd.eigenvalues().cwiseSqrt();
-	Eigen::Matrix3f extremes = evd.eigenvectors().array().rowwise() * deviations.transpose().array();
+	Eigen::Matrix<Scalar,N,N> extremes = sampleCovarianceExtremes<Scalar,N>(covariance, sigma);
 	// Align extremes to desired axis before sampling the uncertainty
 	return (targetAxis * extremes).cwiseAbs().rowwise().norm();
 }

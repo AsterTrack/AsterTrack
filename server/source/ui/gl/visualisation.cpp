@@ -149,20 +149,11 @@ void visualisePointsVBOSprites(unsigned int VBO, unsigned int count, bool round,
 	if (VBO == 0)
 		return;
 
-	if (round)
-	{
-		flatRoundPointShader->use();
-		glUniformMatrix4fv(flatRoundPointShader->uProjAdr, 1, GL_FALSE, vpMat.data());
-		glUniformMatrix4fv(flatRoundPointShader->uModelAdr, 1, GL_FALSE, id.matrix().data());
-		glUniform1f(roundSizeAdr, sizeFactor*viewportZoom*pointSizeCorrection);
-	}
-	else
-	{
-	 	flatSquarePointShader->use();
-		glUniformMatrix4fv(flatSquarePointShader->uProjAdr, 1, GL_FALSE, vpMat.data());
-		glUniformMatrix4fv(flatSquarePointShader->uModelAdr, 1, GL_FALSE, id.matrix().data());
-		glUniform1f(squareSizeAdr, sizeFactor*viewportZoom*pointSizeCorrection);
-	}
+	ShaderProgram *shader = round? flatRoundPointShader : flatSquarePointShader;
+	shader->use();
+	glUniformMatrix4fv(shader->uProjAdr, 1, GL_FALSE, vpMat.data());
+	glUniformMatrix4fv(shader->uModelAdr, 1, GL_FALSE, id.matrix().data());
+	glUniform1f(round? roundSizeAdr : squareSizeAdr, sizeFactor*viewportZoom*pointSizeCorrection);
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VisPoint), (void *)offsetof(VisPoint, pos));
@@ -549,22 +540,22 @@ void showGrayscaleFrameUndistorted(unsigned int frame,
 	xyPlaneMesh->draw();
 }
 
-void showCircleWithCenter(Eigen::Vector2f pos, float size, Color color, float crossSize)
+template<bool SOLID>
+void visualiseEllipse(Eigen::Vector2f pos, Eigen::Vector2f axisA, Eigen::Vector2f axisB, Color color)
 {
 	const int SEG = 20;
-	std::array<Eigen::Vector2f, SEG> ellipse;
-	for (int i = 0; i < SEG; i++)
+	constexpr int OFF = SOLID? 1 : 0;
+	std::array<Eigen::Vector2f, SEG+OFF*2> ellipse;
+	if constexpr (SOLID) ellipse[0] = pos;
+	for (int i = 0; i < SEG+OFF; i++)
 	{
 		float p = 2*(float)PI*(float)i/SEG;
-		ellipse[i].x() = (std::cos(p)*size + pos.x());
-		ellipse[i].y() = (std::sin(p)*size + pos.y());
+		ellipse[i+OFF] = std::cos(p)*axisA + std::sin(p)*axisB + pos;
 	}
-
-	glLineWidth(2.0f);
 
 	flatUniformColorShader->use();
 	glUniformMatrix4fv(flatUniformColorShader->uProjAdr, 1, GL_FALSE, vpMat.data());
-	glUniformMatrix4fv(flatUniformColorShader->uModelAdr, 1, GL_FALSE, id.matrix().data());
+	glUniformMatrix4fv(flatUniformColorShader->uModelAdr, 1, GL_FALSE, id.data());
 
 	glUniform4f(flatUniformColorShader->uColorAdr, color.r, color.g, color.b, color.a);
 	glBindBuffer(GL_ARRAY_BUFFER, visTempVBO);
@@ -572,7 +563,15 @@ void showCircleWithCenter(Eigen::Vector2f pos, float size, Color color, float cr
 	glBufferData(GL_ARRAY_BUFFER, sizeof(Eigen::Vector2f) * ellipse.size(), &ellipse[0], GL_STREAM_DRAW);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Eigen::Vector2f), (void *)0);
 	glEnableVertexAttribArray(0);
-	glDrawArrays(GL_LINE_LOOP, 0, (int)ellipse.size());
+	glDrawArrays(SOLID? GL_TRIANGLE_FAN : GL_LINE_LOOP, 0, (int)ellipse.size());
+}
+
+template void visualiseEllipse<true>(Eigen::Vector2f pos, Eigen::Vector2f axisA, Eigen::Vector2f axisB, Color color);
+template void visualiseEllipse<false>(Eigen::Vector2f pos, Eigen::Vector2f axisA, Eigen::Vector2f axisB, Color color);
+
+void visualiseBlobCircle(Eigen::Vector2f pos, float size, Color color, float crossSize)
+{
+	visualiseCircle<false>(pos, size, color);
 
 	// Draw cross at center
 	if (crossSize > 0.0f)
@@ -585,31 +584,6 @@ void showCircleWithCenter(Eigen::Vector2f pos, float size, Color color, float cr
 		glEnableVertexAttribArray(0);
 		glDrawArrays(GL_LINES, 0, 4);
 	}
-}
-
-void showSolidEllipse(Eigen::Vector2f pos, Eigen::Vector2f size, Color color)
-{
-	const int SEG = 20;
-	std::array<Eigen::Vector2f, SEG+1> ellipse;
-	ellipse[0] = pos;
-	for (int i = 1; i <= SEG; i++)
-	{
-		float p = 2*(float)PI*(float)(i-1)/(SEG-1);
-		ellipse[i].x() = (std::cos(p)*size.x() + pos.x());
-		ellipse[i].y() = (std::sin(p)*size.y() + pos.y());
-	}
-
-	flatUniformColorShader->use();
-	glUniformMatrix4fv(flatUniformColorShader->uProjAdr, 1, GL_FALSE, id.data());
-	glUniformMatrix4fv(flatUniformColorShader->uModelAdr, 1, GL_FALSE, id.data());
-
-	glUniform4f(flatUniformColorShader->uColorAdr, color.r, color.g, color.b, color.a);
-	glBindBuffer(GL_ARRAY_BUFFER, visTempVBO);
-
-	glBufferData(GL_ARRAY_BUFFER, sizeof(Eigen::Vector2f) * ellipse.size(), &ellipse[0], GL_STREAM_DRAW);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Eigen::Vector2f), (void *)0);
-	glEnableVertexAttribArray(0);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, (int)ellipse.size());
 }
 
 void visualisePoints2D(const std::vector<Eigen::Vector2f> &points2D, Color color, float size, float depth, bool round)

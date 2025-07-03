@@ -208,32 +208,32 @@ static void updateEmulationVisualisation(const TrackingCameraState &camera, Came
 		if (emul.options.blobEmulated)
 		{ // Show emulated blobs using blob circle
 			for (const auto &blob : emul.result->emulatedBlobs)
-				showCircleWithCenter(blob.pos.head<2>(), blob.size * PixelStride/2, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size * PixelStride/2, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, PixelStride);
 			visualisePointsSprites(emul.result->emulatedBlobs, true);
 		}
 
 		if (emul.options.blobRefined)
 		{ // Show refined blobs using blob circle
 			for (const auto &blob : emul.result->refinedBlobs)
-				showCircleWithCenter(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
 		}
 
 		if (emul.options.blobResegmented)
 		{ // Show resegmented blobs using blob circle
 			for (const auto &blob : emul.result->resegmentedBlobs)
-				showCircleWithCenter(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
 		}
 
 		if (emul.options.maximaHints)
 		{ // Show emulated blobs using blob circle
 			for (const auto &blob : emul.result->maximaHints)
-				showCircleWithCenter(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, PixelStride);
+				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, PixelStride);
 		}
 
 		if (emul.options.peripheralCenters)
 		{ // Show debug peripheral centers blobs using blob circle
 			for (const auto &blob : emul.result->peripheralCenters)
-				showCircleWithCenter(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, 0);
+				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, 0);
 		}
 
 		emul.options.showBlobsMaximaStages.resize(emul.result->maximaHintStages.size());
@@ -241,7 +241,7 @@ static void updateEmulationVisualisation(const TrackingCameraState &camera, Came
 		{ // Show debug maximal hint stages using blob circle
 			if (!emul.options.showBlobsMaximaStages[i]) continue;
 			for (const auto &blob : emul.result->maximaHintStages[i])
-				showCircleWithCenter(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, 0);
+				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, 0);
 		}
 	}
 }

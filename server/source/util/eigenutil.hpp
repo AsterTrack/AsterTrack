@@ -390,7 +390,7 @@ static inline Ray3_t<Scalar> castRay(const Eigen::Matrix<PointScalar,2,1> &point
 {
 	Eigen::Matrix<Scalar,2,1> pt = applyReprojection2D(camera, point2D.template cast<Scalar>());
 	Eigen::Matrix<Scalar,3,1> dir = (camera.transform.linear().template cast<Scalar>() * pt.homogeneous()).normalized();
-	return { camera.transform.translation().template cast<Scalar>()+dir, dir };
+	return { camera.transform.translation().template cast<Scalar>(), dir };
 }
 
 template<typename Scalar>

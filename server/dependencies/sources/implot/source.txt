@@ -1,6 +1,7 @@
 https://github.com/epezent/implot
-commit: f156599faefe316f7dd20fe6c783bf87c8bb6fd9
-Changes:
+commit 3da8bd3
+
+Modifications:
 - Made use of custom expanded set of cursors (implemented in custom GLFW and modified GLFW backend for ImGui)
 - (PlotDigital) Added x-axis shift support
 - (PlotDigital) Fixed last item in a block of same digital value not showing (e.g. 1 and 2 items would both be of length 1)

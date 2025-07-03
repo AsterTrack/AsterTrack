@@ -119,6 +119,8 @@ OnDemandItem *AddOnDemandText(const char* maxText, ImDrawCallback RenderCallback
 	return state;
 }
 
+static ImDrawList *onDemandDrawList = nullptr;
+
 void RenderOnDemandText(const OnDemandItem &state, const char* fmt, ...)
 {
 	va_list args;
@@ -131,14 +133,23 @@ void RenderOnDemandTextV(const OnDemandItem &state, const char* fmt, va_list arg
 	const char* text, *text_end;
 	ImFormatStringToTempBufferV(&text, &text_end, fmt, args);
 
-	static ImDrawList onDemandDrawList(ImGui::GetDrawListSharedData());
-	onDemandDrawList._ResetForNewFrame();
+	if (!onDemandDrawList)
+		onDemandDrawList = new ImDrawList(ImGui::GetDrawListSharedData());
+	if (!onDemandDrawList)
+		return;
+	onDemandDrawList->_ResetForNewFrame();
 
-	onDemandDrawList.PushClipRect(state.bb.Min, state.bb.Max, false);
-	onDemandDrawList.PushTextureID(state.font->ContainerAtlas->TexID);
-	onDemandDrawList.AddText(state.font, state.fontSize, state.bb.Min, ImGui::GetColorU32(ImGuiCol_Text), text, text_end);
-	onDemandDrawList.PopTextureID();
-	onDemandDrawList.PopClipRect();
+	onDemandDrawList->PushClipRect(state.bb.Min, state.bb.Max, false);
+	onDemandDrawList->PushTextureID(state.font->ContainerAtlas->TexID);
+	onDemandDrawList->AddText(state.font, state.fontSize, state.bb.Min, ImGui::GetColorU32(ImGuiCol_Text), text, text_end);
+	onDemandDrawList->PopTextureID();
+	onDemandDrawList->PopClipRect();
 
-	ImGui_ImplOpenGL3_RenderDrawList(state.viewport, &onDemandDrawList);
+	ImGui_ImplOpenGL3_RenderDrawList(state.viewport, onDemandDrawList);
+}
+
+void CleanupOnDemand()
+{
+	delete onDemandDrawList;
+	onDemandDrawList = nullptr;
 }

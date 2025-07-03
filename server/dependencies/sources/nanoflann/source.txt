@@ -1,1 +1,2 @@
 https://github.com/jlblancoc/nanoflann
+version 1.7.1

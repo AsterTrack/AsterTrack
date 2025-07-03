@@ -1,32 +1,50 @@
 # To be used with GNU Make
 
-# Overwrite compiler used
-ifeq ($(COMPILER), clang)
+
+# Read implicit compiler defaults if not explicitly specified
+ifneq ($(COMPILER), clang-libc)
+ifneq ($(COMPILER), clang-gnu)
+ifneq ($(COMPILER), gcc)
+ifneq '' '$(findstring clang,$(CC))'
+COMPILER=clang-gnu
+else
+COMPILER=gcc
+endif
+endif
+endif
+endif
+
+# Set compiler and options used
+ifeq ($(COMPILER), clang-libc)
+# clang compiler
 CXX=clang++
 CC=clang
 LD=ld.lld
+# clang libraries (libc++ + libomp)
+cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
+lstd = -lc++ -fopenmp=libomp
+lto = -flto=thin
+ldstd =
+else ifeq ($(COMPILER), clang-gnu)
+# clang compiler
+CXX=clang++
+CC=clang
+LD=ld.lld
+# gnu libraries (libstdc++ + libgomp)
+cstd = -stdlib=libstdc++ -fopenmp=libgomp -Wno-gcc-compat
+lstd = -lstdc++ -fopenmp=libgomp
+lto = -flto=thin
+ldstd =
 else ifeq ($(COMPILER), gcc)
+# gcc compiler
 CXX=g++
 CC=gcc
 LD=gcc
-endif
-
-
-# Set compiler-specific options
-ifneq '' '$(findstring clang,$(CC))' # clang
-  cstd = -stdlib=libstdc++ -fopenmp=libgomp -Wno-gcc-compat
-  lstd = -lstdc++ -fopenmp=libgomp
-# Compile with clang standard library: -stdlib=libc++ and -lc++
-# Can also compile with gcc standard library: -stdlib=libstdc++ and -lstdc++
-# Can use gccs libgomp or clangs libomp for OpenMP runtime, but libgomp is more popular
-# e.g. ubuntu 23.10 has a libomp packaging error, so use libgomp just because of that
-  lto = -flto=thin
-  ldstd =
-else # gcc
-  cstd += -fopenmp -finline-limit=1000000
-  lstd += -lgomp
-  lto = -flto=auto
-  ldstd = -lstdc++exp
+# gnu libraries (libstdc++ + libgomp)
+cstd += -fopenmp -finline-limit=1000000
+lstd += -lgomp
+lto = -flto=auto
+ldstd = -lstdc++exp
 endif
 
 
@@ -122,7 +140,7 @@ src = source
 sh = ../shared
 dep = dependencies/sources
 b = build
-o = $(b)/$(CC)-$(mode)
+o = $(b)/$(COMPILER)-$(mode)
 cflags = -Idependencies/include -Idependencies/sources \
 	-DGLEW_STATIC $(cmode) -ffunction-sections -fpic -mshstk
 cxxflags = $(cstd) $(cflags) -I$(src) -I$(sh) -I$(dep)/imgui -DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
@@ -287,18 +305,24 @@ $(shell mkdir -p $(dir $(OBJECTS_INTERFACE)) >/dev/null)
 OBJECTS_STATIC = $(subst $(o)/app.obj,$(o)/app-static.obj,$(OBJECTS_SERVER)) $(OBJECTS_INTERFACE)
 $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
-$(b)/astertrack-static: $(OBJECTS_STATIC)
+$(o)/astertrack-static: $(OBJECTS_STATIC)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
+$(b)/astertrack-static: $(o)/astertrack-static
+	cp $(o)/astertrack-static $(b)/astertrack-static
 
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
-$(b)/astertrack-server: $(OBJECTS_SERVER)
+$(o)/astertrack-server: $(OBJECTS_SERVER)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
+$(b)/astertrack-server: $(o)/astertrack-server
+	cp $(o)/astertrack-server $(b)/astertrack-server
 
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
-$(b)/astertrack-interface.so: $(OBJECTS_INTERFACE)
+$(o)/astertrack-interface.so: $(OBJECTS_INTERFACE)
 	$(CXX) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
+$(b)/astertrack-interface.so: $(o)/astertrack-interface.so
+	cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so
 
 # Always force re-link at least, since different modes share the same target
 .PHONY: .FORCE

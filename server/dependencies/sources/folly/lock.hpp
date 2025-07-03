@@ -30,27 +30,17 @@
  * Since it is not used in this standalone version, it is dropped
 */
 
-template<typename ...Ts> struct make_void
-{
-    using type = void;
-};
-template<typename ...Ts> using void_t = typename make_void<Ts...>::type;
-
-
 // https://en.cppreference.com/w/cpp/experimental/is_detected
 namespace folly
 {
 namespace detail
 {
-struct nonesuch
+
+template<typename ...Ts> struct make_void
 {
-    nonesuch() = delete;
-    ~nonesuch() = delete;
-    nonesuch(nonesuch const&) = delete;
-    nonesuch(nonesuch const&&) = delete;
-    void operator=(nonesuch const&) = delete;
-    void operator=(nonesuch&&) = delete;
+    using type = void;
 };
+template<typename ...Ts> using void_t = typename make_void<Ts...>::type;
 
 template<class Default,
          class AlwaysVoid,
@@ -69,24 +59,12 @@ struct detector<Default, void_t<Op<Args...>>, Op, Args...>
     using type = Op<Args...>;
 };
 
-template<template<class...> class Op, class... Args>
-using is_detected = typename detector<nonesuch, void, Op, Args...>::value_t;
-
-template<template<class...> class Op, class... Args>
-using detected_t = typename detector<nonesuch, void, Op, Args...>::type;
-
 template<class Default, template<class...> class Op, class... Args>
 using detected_or = detector<Default, void, Op, Args...>;
 
 template<class Default, template<class...> class Op, class... Args>
 using detected_or_t = typename detected_or<Default, Op, Args...>::type;
 
-template<class Expected, template<class...> class Op, class... Args>
-using is_detected_exact = std::is_same<Expected, detected_t<Op, Args...>>;
-
-template<class To, template<class...> class Op, class... Args>
-using is_detected_convertible =
-    std::is_convertible<detected_t<Op, Args...>, To>;
 }  // namespace detail
 }  // namespace folly
 
@@ -146,6 +124,9 @@ FOLLY_CREATE_MEMBER_INVOKER_SUITE(unlock_upgrade_and_lock_shared);
 
 } // namespace access
 
+struct adopt_lock_state_t {};
+inline constexpr adopt_lock_state_t adopt_lock_state{};
+
 namespace detail {
 
 //  A lock base class with a mostly-complete implementation suitable for either
@@ -195,28 +176,30 @@ class lock_base {
       : mutex_{std::addressof(mutex)}, state_{state} {
     state_ || (check_fail_<true>(), 0);
   }
-  explicit lock_base(mutex_type& mutex) {
-    mutex_ = std::addressof(mutex);
+  template <typename M = mutex_type, if_<has_state_, M>* = nullptr>
+  lock_base(M& mutex, adopt_lock_state_t, owner_type const& state)
+      : lock_base{mutex, std::adopt_lock, state} {}
+  explicit lock_base(mutex_type& mutex)
+      : mutex_{std::addressof(mutex)} {
     lock();
   }
-  lock_base(mutex_type& mutex, std::defer_lock_t) noexcept {
-    mutex_ = std::addressof(mutex);
-  }
-  lock_base(mutex_type& mutex, std::try_to_lock_t) {
-    mutex_ = std::addressof(mutex);
+  lock_base(mutex_type& mutex, std::defer_lock_t) noexcept
+      : mutex_{std::addressof(mutex)} {}
+  lock_base(mutex_type& mutex, std::try_to_lock_t)
+      : mutex_{std::addressof(mutex)} {
     try_lock();
   }
   template <typename Rep, typename Period>
   lock_base(
-      mutex_type& mutex, std::chrono::duration<Rep, Period> const& timeout) {
-    mutex_ = std::addressof(mutex);
+      mutex_type& mutex, std::chrono::duration<Rep, Period> const& timeout)
+      : mutex_{std::addressof(mutex)} {
     try_lock_for(timeout);
   }
   template <typename Clock, typename Duration>
   lock_base(
       mutex_type& mutex,
-      std::chrono::time_point<Clock, Duration> const& deadline) {
-    mutex_ = std::addressof(mutex);
+      std::chrono::time_point<Clock, Duration> const& deadline)
+      : mutex_{std::addressof(mutex)} {
     try_lock_until(deadline);
   }
 
@@ -269,16 +252,16 @@ class lock_base {
   void unlock() {
     check<true>();
     if constexpr (has_state_) {
-      auto const& state = state_; // prohibit unlock to mutate state_
-      typename Policy::unlock_fn{}(*mutex_, state);
+      // prohibit unlock to mutate state_
+      typename Policy::unlock_fn{}(*mutex_, std::as_const(state_));
     } else {
       typename Policy::unlock_fn{}(*mutex_);
     }
-    state_ = decltype(state_){};
+    state_ = owner_type{};
   }
 
   mutex_type* release() noexcept {
-    state_ = {};
+    state_ = owner_type{};
     return std::exchange(mutex_, nullptr);
   }
 
@@ -340,7 +323,10 @@ class lock_guard_base {
   lock_guard_base(
       mutex_type& mutex, std::adopt_lock_t, state_type_ const& state)
       : lock_{mutex, std::adopt_lock, state} {}
-
+  template <bool C = has_state_, if_<C> = 0>
+  lock_guard_base(
+      mutex_type& mutex, adopt_lock_state_t, state_type_ const& state)
+      : lock_{mutex, std::adopt_lock, state} {}
   void operator=(lock_guard_base const&) = delete;
   void operator=(lock_guard_base&&) = delete;
 
@@ -597,74 +583,33 @@ class hybrid_lock_guard
   using base::base;
 };
 
-#if __cpp_deduction_guides >= 201611
-template <typename Mutex, typename... A>
-explicit hybrid_lock_guard(Mutex&, A const&...) -> hybrid_lock_guard<Mutex>;
+template <typename Mutex, typename S>
+hybrid_lock_guard(Mutex&, adopt_lock_state_t, S) -> hybrid_lock_guard<Mutex>;
+
+} // namespace folly
+
+#if defined(_LIBCPP_VERSION)
+_LIBCPP_BEGIN_NAMESPACE_STD
+#else
+namespace std {
 #endif
 
-//  make_unique_lock
-//
-//  Returns a unique_lock constructed with the given arguments. Deduces the
-//  mutex type.
-struct make_unique_lock_fn {
-  template <typename Mutex, typename... A>
-  unique_lock<Mutex> operator()(Mutex& mutex, A&&... a) const {
-    return unique_lock<Mutex>{mutex, static_cast<A&&>(a)...};
-  }
-};
-inline constexpr make_unique_lock_fn make_unique_lock{};
+template <typename Mutex, typename S>
+unique_lock(Mutex&, folly::adopt_lock_state_t, S) -> unique_lock<Mutex>;
 
-//  make_shared_lock
-//
-//  Returns a shared_lock constructed with the given arguments. Deduces the
-//  mutex type.
-struct make_shared_lock_fn {
-  template <typename Mutex, typename... A>
-  shared_lock<Mutex> operator()(Mutex& mutex, A&&... a) const {
-    return shared_lock<Mutex>{mutex, static_cast<A&&>(a)...};
-  }
-};
-inline constexpr make_shared_lock_fn make_shared_lock{};
+template <typename Mutex, typename S>
+shared_lock(Mutex&, folly::adopt_lock_state_t, S) -> shared_lock<Mutex>;
 
-//  make_upgrade_lock
-//
-//  Returns an upgrade_lock constructed with the given arguments. Deduces the
-//  mutex type.
-struct make_upgrade_lock_fn {
-  template <typename Mutex, typename... A>
-  upgrade_lock<Mutex> operator()(Mutex& mutex, A&&... a) const {
-    return upgrade_lock<Mutex>{mutex, static_cast<A&&>(a)...};
-  }
-};
-inline constexpr make_upgrade_lock_fn make_upgrade_lock{};
+template <typename Mutex, typename S>
+lock_guard(Mutex&, folly::adopt_lock_state_t, S) -> lock_guard<Mutex>;
 
-//  make_hybrid_lock
-//
-//  Returns a hybrid_lock constructed with the given arguments. Deduces the
-//  mutex type.
-struct make_hybrid_lock_fn {
-  template <typename Mutex, typename... A>
-  hybrid_lock<Mutex> operator()(Mutex& mutex, A&&... a) const {
-    return hybrid_lock<Mutex>{mutex, static_cast<A&&>(a)...};
-  }
-};
-inline constexpr make_hybrid_lock_fn make_hybrid_lock{};
+#if defined(_LIBCPP_VERSION)
+_LIBCPP_END_NAMESPACE_STD
+#else
+}
+#endif
 
-/* #if __cpp_deduction_guides >= 201611
-
-template <typename Mutex, typename LockFn = ::folly::access::lock_fn>
-std::unique_lock(Mutex&, std::adopt_lock_t, std::invoke_result_t<LockFn, Mutex&> const&)
-    -> std::unique_lock<Mutex>;
-
-template <typename Mutex, typename LockFn = ::folly::access::lock_shared_fn>
-std::shared_lock(Mutex&, std::adopt_lock_t, std::invoke_result_t<LockFn, Mutex&> const&)
-    -> std::shared_lock<Mutex>;
-
-template <typename Mutex, typename LockFn = ::folly::access::lock_upgrade_fn>
-std::lock_guard(Mutex&, std::adopt_lock_t, std::invoke_result_t<LockFn, Mutex&> const&)
-    -> std::lock_guard<Mutex>;
-
-#endif */
+namespace folly {
 
 namespace detail {
 
@@ -719,7 +664,7 @@ auto transition_lock_0_(From& lock, Transition transition, A const&... a) {
   if constexpr (std::is_void_v<ToState>) {
     return !s ? To{} : To{mutex, std::adopt_lock};
   } else {
-    return !s ? To{} : To{mutex, std::adopt_lock, s};
+    return !s ? To{} : To{mutex, folly::adopt_lock_state, s};
   }
 }
 template <

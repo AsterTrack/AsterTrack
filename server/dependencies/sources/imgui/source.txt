@@ -1,2 +1,7 @@
 Dear ImGui with customisations: https://github.com/Seneral/imgui
-Based on docking branch: https://github.com/ocornut/imgui/tree/docking
+commit 19f5e74
+
+Modified docking branch: https://github.com/ocornut/imgui/tree/docking
+- Custom fixes and improvements
+- Custom partial rendering (opengl3 only)
+- Custom resize cursors (requires glfw patch)

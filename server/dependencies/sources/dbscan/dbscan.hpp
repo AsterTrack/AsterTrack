@@ -2,7 +2,7 @@
 #define DBSCAN_H
 
 // MIT license, from https://github.com/Eleobert/dbscan/blob/master/dbscan.hpp
-// Modified by Seneral to use Eigen directly
+// Modified by Seneral (see source.txt)
 
 #include "util/eigendef.hpp"
 

@@ -84,8 +84,9 @@ template <typename Mutex>
 inline constexpr SynchronizedMutexLevel kSynchronizedMutexLevel =
     kSynchronizedMutexIsUpgrade<void, Mutex>  ? SynchronizedMutexLevel::Upgrade
     : kSynchronizedMutexIsShared<void, Mutex> ? SynchronizedMutexLevel::Shared
-    : kSynchronizedMutexIsUnique<void, Mutex> ? SynchronizedMutexLevel::Unique
-                                              : SynchronizedMutexLevel::Unknown;
+    : kSynchronizedMutexIsUnique<void, Mutex>
+    ? SynchronizedMutexLevel::Unique
+    : SynchronizedMutexLevel::Unknown;
 
 enum class SynchronizedMutexMethod { Lock, TryLock };
 
@@ -632,9 +633,10 @@ class SynchronizedBase<Subclass, detail::SynchronizedMutexLevel::Unique> {
  * @refcode folly/docs/examples/folly/Synchronized.cpp
  */
 template <class T, class Mutex = std::shared_mutex>
-struct Synchronized : public SynchronizedBase<
-                          Synchronized<T, Mutex>,
-                          detail::kSynchronizedMutexLevel<Mutex>> {
+struct Synchronized
+    : public SynchronizedBase<
+          Synchronized<T, Mutex>,
+          detail::kSynchronizedMutexLevel<Mutex>> {
  private:
   using Base = SynchronizedBase<
       Synchronized<T, Mutex>,
@@ -671,10 +673,11 @@ struct Synchronized : public SynchronizedBase<
    *
    * deprecated
    */
-  /* implicit */ Synchronized(typename std::conditional<
-                              std::is_copy_constructible<T>::value,
-                              const Synchronized&,
-                              NonImplementedType>::type rhs) /* may throw */
+  /* implicit */ Synchronized(
+      typename std::conditional<
+          std::is_copy_constructible<T>::value,
+          const Synchronized&,
+          NonImplementedType>::type rhs) /* may throw */
       : Synchronized(rhs.copy()) {}
 
   /**
@@ -742,11 +745,12 @@ struct Synchronized : public SynchronizedBase<
    *
    * deprecated
    */
-  Synchronized& operator=(typename std::conditional<
-                          std::is_copy_constructible<T>::value &&
-                              std::is_move_assignable<T>::value,
-                          const Synchronized&,
-                          NonImplementedType>::type rhs) {
+  Synchronized& operator=(
+      typename std::conditional<
+          std::is_copy_constructible<T>::value &&
+              std::is_move_assignable<T>::value,
+          const Synchronized&,
+          NonImplementedType>::type rhs) {
     return *this = rhs.copy();
   }
 
@@ -900,6 +904,17 @@ struct Synchronized : public SynchronizedBase<
    */
   T& unsafeGetUnlocked() { return datum_; }
   const T& unsafeGetUnlocked() const { return datum_; }
+
+  /**
+   * @brief Access underlying mutex_ directly.
+   *
+   * Provided as a backdoor for call-sites where the lock and unlock are paired
+   * in different calls. For example, in fork handlers. Use carefully as the
+   * caller is responsible to ensure it is paired with an unlock and there is
+   * nothing else in between that tries to implicitly or explicitly acquire the
+   * lock again.
+   */
+  Mutex& unsafeGetMutex() { return mutex_; }
 
  private:
   template <class LockedType, class MutexType, class LockPolicy>
@@ -1085,9 +1100,7 @@ auto lock(SynchronizedLocker... lockersIn)
         // 4. break out and set the index of the current mutex to indicate
         //    which mutex we have locked
 
-        // writing lockedPtrs = decltype(lockedPtrs){} does not compile on
-        // gcc, I believe this is a bug D7676798
-        lockedPtrs = {};
+        lockedPtrs = decltype(lockedPtrs){};
 
         std::this_thread::yield();
         std::get<I>(lockedPtrs) = std::get<I>(lockers).lock();
@@ -1232,7 +1245,11 @@ class LockedPtr {
   LockedPtr(
       SynchronizedType* parent,
       const std::chrono::duration<Rep, Period>& timeout)
-      : lock_{parent ? LockType{parent->mutex_, timeout} : LockType{}} {}
+      : lock_{parent ? LockType{parent->mutex_, timeout} : LockType{}} {
+    if (isNull()) {
+      lock_ = {};
+    }
+  }
 
   /**
    * Move constructor.

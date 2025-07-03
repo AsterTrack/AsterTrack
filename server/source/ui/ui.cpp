@@ -74,10 +74,10 @@ const long targetIntervalUS = 1000000/60; // glfwSwapBuffer will further limit i
 // GLFW Platform Window
 static GLFWwindow* setupPlatformWindow(bool &useHeader);
 static void closePlatformWindow(GLFWwindow *windowHandle);
-static void checkDPIUpdate(GLFWwindow *glfwWindow);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
 static bool setupImGuiTheme();
+static void loadFont();
 static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
 static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
 static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line);
@@ -210,8 +210,6 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 void InterfaceState::UpdateUI()
 {
 	std::shared_lock dev_lock(GetState().deviceAccessMutex);
-
-	checkDPIUpdate(glfwWindow);
 
 	// Start new UI frame
 	ImGui_ImplGlfw_NewFrame();
@@ -469,6 +467,8 @@ bool InterfaceState::Init()
 
 	setupImGuiTheme();
 
+	loadFont();
+
 	{ // Read/Write custom UI state settings
 		ImGuiSettingsHandler uiStateHandler;
 		uiStateHandler.TypeName = "UIState";
@@ -623,6 +623,9 @@ void InterfaceState::Exit()
 	// Cleanup GL
 	cleanVisualisation();
 	// TODO: Properly clean icon GL Textures (loaded above, never unloaded)
+
+	// Cleanup OnDemand drawing system
+	CleanupOnDemand();
 
 	// Exit ImGui
 	ImGui_ImplOpenGL3_Shutdown();
@@ -870,55 +873,6 @@ static void closePlatformWindow(GLFWwindow *windowHandle)
 	glfwTerminate();
 }
 
-static void checkDPIUpdate(GLFWwindow *glfwWindow)
-{
-	int winX, winY;
-	int fbX, fbY;
-	float csX, csY;
-	glfwGetWindowSize(glfwWindow, &winX, &winY);
-	glfwGetFramebufferSize(glfwWindow, &fbX, &fbY);
-	glfwGetWindowContentScale(glfwWindow, &csX, &csY);
-
-	static float renderPixelRatio;
-	static float hidpiScale;
-	float t_renderPixelRatio = std::max((float)fbX/winX, (float)fbY/winY);
-	float t_hidpiScale = std::max(csX, csY);
-	if (renderPixelRatio != t_renderPixelRatio || hidpiScale != t_hidpiScale)
-	{
-		renderPixelRatio = t_renderPixelRatio;
-		hidpiScale = t_hidpiScale;
-
-		LOG(LGUI, LDebug, "Window %dx%d, Framebuffer %dx%d, ContentScale %fx%f\n"
-			"So pixel Ratio of %f, hidpi scale of %f, imgui reports dpi scale of %f",
-			winX, winY, fbX, fbY, csX, csY,
-			renderPixelRatio, hidpiScale, ImGui::GetWindowDpiScale());
-
-		ImFontConfig config;
-		config.OversampleH = 2;
-		config.OversampleV = 2;
-		config.GlyphExtraSpacing.x = 1.0f;
-		if (std::filesystem::exists("resources/Karla-Regular.ttf"))
-		{
-			ImGui::GetIO().Fonts->Clear();
-			ImGui::GetIO().Fonts->AddFontFromFileTTF("resources/Karla-Regular.ttf", 17*renderPixelRatio, &config);
-		}
-		else if (std::filesystem::exists("../resources/Karla-Regular.ttf"))
-		{
-			printf("'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
-			LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
-		}
-		else
-		{
-			printf("'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
-			LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!");
-		}
-		ImGui::GetIO().FontGlobalScale = 1.0f / renderPixelRatio;
-
-		ImGui_ImplOpenGL3_DestroyFontsTexture();
-		ImGui_ImplOpenGL3_CreateFontsTexture();
-	}
-}
-
 
 /**
  * ImGui code
@@ -955,7 +909,8 @@ static bool setupImGuiTheme()
 	//style.LogSliderDeadzone;				// The size in pixels of the dead-zone around zero on logarithmic sliders that cross zero.
 	style.TabRounding = 4.0f;						// Radius of upper corners of a tab. Set to 0.0f to have rectangular tabs.
 	style.TabBorderSize = 0.0f;						// Thickness of border around tabs.
-	style.TabMinWidthForCloseButton = 0.0f;			// Minimum width for close button to appear on an unselected tab when hovered. Set to 0.0f to always show when hovering, set to FLT_MAX to never show close button unless selected.
+	style.TabCloseButtonMinWidthSelected = 0.0f;			// Minimum width for close button to appear on an unselected tab when hovered. Set to 0.0f to always show when hovering, set to FLT_MAX to never show close button unless selected.
+	style.TabCloseButtonMinWidthUnselected = 0.0f;			// Minimum width for close button to appear on an unselected tab when hovered. Set to 0.0f to always show when hovering, set to FLT_MAX to never show close button unless selected.
 	style.TabBarBorderSize = 1.0f;					// Thickness of tab-bar separator, which takes on the tab active color to denote focus.
 	//style.ColorButtonPosition;			// Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
 	//style.ButtonTextAlign;				// Alignment of button text when button is larger than text. Defaults to (0.5f, 0.5f) (centered).
@@ -1034,6 +989,27 @@ static bool setupImGuiTheme()
 	return true;
 }
 
+static void loadFont()
+{
+	ImFontConfig config;
+	config.OversampleH = 2;
+	config.OversampleV = 2;
+	if (std::filesystem::exists("resources/Karla-Regular.ttf"))
+	{
+		ImGui::GetIO().Fonts->Clear();
+		ImGui::GetIO().Fonts->AddFontFromFileTTF("resources/Karla-Regular.ttf", 17, &config);
+	}
+	else if (std::filesystem::exists("../resources/Karla-Regular.ttf"))
+	{
+		printf("'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
+		LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+	}
+	else
+	{
+		printf("'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
+		LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!");
+	}
+}
 
 /* ImGui Settings for UI-related persistency */
 

@@ -145,9 +145,9 @@
         { // On Linux, allow selection of compiler
             "id": "compiler",
             "description": "Compiler:",
-            "default": "clang",
+            "default": "clang-gnu",
             "type": "pickString",
-            "options": [ "clang", "gcc" ]
+            "options": [ "clang-libc", "clang-gnu", "gcc" ]
         },
         { // On Linux, allow dependencies to be build with sanitized option on. Release/Debug not needed, all "release"
             "id": "sanitizedOption",

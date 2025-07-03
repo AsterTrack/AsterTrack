@@ -1,8 +1,8 @@
 diff --git a/implot.cpp b/implot.cpp
-index 597b043..03628bb 100644
+index effc52f..0d72ffd 100644
 --- a/implot.cpp
 +++ b/implot.cpp
-@@ -3470,7 +3470,7 @@ bool BeginSubplots(const char* title, int rows, int cols, const ImVec2& size, Im
+@@ -3474,7 +3474,7 @@ bool BeginSubplots(const char* title, int rows, int cols, const ImVec2& size, Im
                  DrawList.AddLine(ImVec2(IM_ROUND(subplot.GridRect.Min.x),IM_ROUND(ypos)),
                                   ImVec2(IM_ROUND(subplot.GridRect.Max.x),IM_ROUND(ypos)),
                                   sep_hld ? act_col : hov_col, SUBPLOT_BORDER_SIZE);
@@ -11,7 +11,7 @@ index 597b043..03628bb 100644
              }
              separator++;
          }
-@@ -3500,7 +3500,7 @@ bool BeginSubplots(const char* title, int rows, int cols, const ImVec2& size, Im
+@@ -3504,7 +3504,7 @@ bool BeginSubplots(const char* title, int rows, int cols, const ImVec2& size, Im
                  DrawList.AddLine(ImVec2(IM_ROUND(xpos),IM_ROUND(subplot.GridRect.Min.y)),
                                   ImVec2(IM_ROUND(xpos),IM_ROUND(subplot.GridRect.Max.y)),
                                   sep_hld ? act_col : hov_col, SUBPLOT_BORDER_SIZE);
@@ -20,7 +20,7 @@ index 597b043..03628bb 100644
              }
              separator++;
          }
-@@ -3973,7 +3973,7 @@ bool DragLineX(int n_id, double* value, const ImVec4& col, float thickness, ImPl
+@@ -3981,7 +3981,7 @@ bool DragLineX(int n_id, double* value, const ImVec4& col, float thickness, ImPl
      }
  
      if ((hovered || held) && show_curs)
@@ -29,7 +29,7 @@ index 597b043..03628bb 100644
  
      float len = gp.Style.MajorTickLen.x;
      ImVec4 color = IsColorAuto(col) ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : col;
-@@ -4029,7 +4029,7 @@ bool DragLineY(int n_id, double* value, const ImVec4& col, float thickness, ImPl
+@@ -4037,7 +4037,7 @@ bool DragLineY(int n_id, double* value, const ImVec4& col, float thickness, ImPl
      }
  
      if ((hovered || held) && show_curs)
@@ -39,10 +39,10 @@ index 597b043..03628bb 100644
      float len = gp.Style.MajorTickLen.y;
      ImVec4 color = IsColorAuto(col) ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : col;
 diff --git a/implot.h b/implot.h
-index 3054331..a4f4d80 100644
+index ae1f600..1a2b7ae 100644
 --- a/implot.h
 +++ b/implot.h
-@@ -909,6 +909,7 @@ IMPLOT_TMP double PlotHistogram2D(const char* label_id, const T* xs, const T* ys
+@@ -911,6 +911,7 @@ IMPLOT_TMP double PlotHistogram2D(const char* label_id, const T* xs, const T* ys
  
  // Plots digital data. Digital plots do not respond to y drag or zoom, and are always referenced to the bottom of the plot.
  IMPLOT_TMP void PlotDigital(const char* label_id, const T* xs, const T* ys, int count, ImPlotDigitalFlags flags=0, int offset=0, int stride=sizeof(T));
@@ -51,10 +51,10 @@ index 3054331..a4f4d80 100644
  
  // Plots an axis-aligned image. #bounds_min/bounds_max are in plot coordinates (y-up) and #uv0/uv1 are in texture coordinates (y-down).
 diff --git a/implot_items.cpp b/implot_items.cpp
-index 1871d15..fbb7bf3 100644
+index f7de346..3357601 100644
 --- a/implot_items.cpp
 +++ b/implot_items.cpp
-@@ -2677,55 +2677,43 @@ void PlotDigitalEx(const char* label_id, Getter getter, ImPlotDigitalFlags flags
+@@ -2715,55 +2715,43 @@ void PlotDigitalEx(const char* label_id, Getter getter, ImPlotDigitalFlags flags
          ImPlotContext& gp = *GImPlot;
          ImDrawList& draw_list = *GetPlotDrawList();
          const ImPlotNextItemData& s = GetItemData();
@@ -145,7 +145,7 @@ index 1871d15..fbb7bf3 100644
          EndItem();
      }
  }
-@@ -2736,10 +2724,21 @@ void PlotDigital(const char* label_id, const T* xs, const T* ys, int count, ImPl
+@@ -2774,10 +2762,21 @@ void PlotDigital(const char* label_id, const T* xs, const T* ys, int count, ImPl
      GetterXY<IndexerIdx<T>,IndexerIdx<T>> getter(IndexerIdx<T>(xs,count,offset,stride),IndexerIdx<T>(ys,count,offset,stride),count);
      return PlotDigitalEx(label_id, getter, flags);
  }

@@ -57,7 +57,12 @@ static std::vector<float> discreteGaussianKernel(float sigma, int radius)
 	std::vector<float> kernel(2 * radius + 1);
 	for (int i = -radius; i <= radius; i++)
 	{
+#if defined(_LIBCPP_VERSION)
+		#warning Camera Blob Detection Emulation not supported when compiling for libcpp
+		kernel[radius + i] = i == 0? 1 : 0; // No blurring
+#else
 		kernel[radius + i] = std::exp(-t) * std::cyl_bessel_i(std::abs(i), t);
+#endif
 	}
 	return kernel;
 }
@@ -69,7 +74,12 @@ static std::vector<float> discreteGaussianKernelNormalised(float sigma, int radi
 	std::vector<float> kernel(2 * radius + 1);
 	for (int i = -radius; i <= radius; i++)
 	{
+#if defined(_LIBCPP_VERSION)
+		#warning Camera Blob Detection Emulation not supported when compiling for libcpp
+		float value = i == 0? 1 : 0;
+#else
 		float value = std::exp(-t) * std::cyl_bessel_i(std::abs(i), t);
+#endif
 		kernel[radius + i] = value;
 		correction += value;
 	}

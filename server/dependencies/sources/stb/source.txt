@@ -1,2 +1,4 @@
 https://github.com/nothings/stb
+version 2.30
+
 stb_image.c has been added to be able to separately compile it

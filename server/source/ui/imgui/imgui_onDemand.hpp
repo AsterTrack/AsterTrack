@@ -107,4 +107,9 @@ void RenderOnDemandText(const OnDemandItem &state, const char* fmt, ...);
  */
 void RenderOnDemandTextV(const OnDemandItem &state, const char* fmt, va_list args);
 
+/**
+ * Cleanup and free data used by OnDemand system. Call before calling ImGui::DestroyContext
+ */
+void CleanupOnDemand();
+
 #endif // IMGUI_ONDEMAND_H

@@ -1,0 +1,5 @@
+This has been extracted from monado at 960e723 and some files moved around:
+https://gitlab.freedesktop.org/monado/monado/-/tree/main/src/external/flexkalman/flexkalman
+
+There does exist a separate repository but it's not updated in years:
+https://github.com/rpavlik/FlexKalman

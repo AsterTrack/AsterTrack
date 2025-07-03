@@ -1,3 +1,5 @@
-These are files extracted from Facebook folly: https://github.com/facebook/folly
-They have been modified by Seneral to include/remove internal dependencies
-See files themselves for further details
+https://github.com/facebook/folly
+commit 2c73a7b
+
+Extracted folly/Synchronized.h and folly/synchronization/Lock.h
+Modified by Seneral to include/remove internal dependencies

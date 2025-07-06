@@ -221,7 +221,6 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 
 static inline void SetupProgramUniforms(ProgramLayout &layout, uint32_t *uniforms, uint32_t srcStride)
 {
-	//uint32_t tgtLineStride = layout.processingRect.extends().x()/8;
 	uint32_t tgtLineStride = layout.maskSize.x()/8;
 	uint32_t tgtBlockStride = tgtLineStride * blockLines;
 	for (int c = 0; c < layout.columns; c++)
@@ -257,7 +256,6 @@ static void SetupProgramSettings(ProgramLayout &layout, uint32_t *uniforms, uint
 
 static inline void SetupProgramBuffers(ProgramLayout &layout, uint32_t *uniforms, uint32_t srcStride, uint32_t sourcePtrVC, uint32_t targetPtrVC)
 {
-	//uint32_t tgtLineStride = layout.processingRect.extends().x()/8;
 	uint32_t tgtLineStride = layout.maskSize.x()/8;
 	
 	// Set up individual source pointer for each program instance

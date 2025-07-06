@@ -21,18 +21,6 @@ if [[ ! -d TrackingCamera ]]; then
 	mkdir TrackingCamera
 fi
 
-if [[ -f TrackingCamera/libvcsm.so ]]; then
-	echo "Already built libvcsm!"
-else
-	echo "Building libvcsm!"
-	mkdir -p sources/libvcsm/build
-	cd sources/libvcsm/build
-	cmake -DCMAKE_BUILD_TYPE=Release ..
-	make
-	cd ../../..
-	cp sources/libvcsm/build/libvcsm.so TrackingCamera/
-fi
-
 echo "Building TrackingCamera!"
 mkdir -p sources/camera/build
 cd sources/camera/build

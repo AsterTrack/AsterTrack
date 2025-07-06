@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <dlfcn.h>
+#include <stdio.h>
 
 #include "qpu_base.h"
 
@@ -119,13 +119,27 @@ void qpu_destroyBase (QPU_BASE *base)
     unmapmem((void*)base->peripherals, base->host.peri_size);
 }
 
+static unsigned get_dt_ranges(const char *filename, unsigned offset)
+{
+	unsigned address = ~0;
+	FILE *fp = fopen(filename, "rb");
+	if (fp)
+	{
+		unsigned char buf[4];
+		fseek(fp, offset, SEEK_SET);
+		if (fread(buf, 1, sizeof buf, fp) == sizeof buf)
+			address = buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3] << 0;
+		fclose(fp);
+	}
+	return address;
+}
 
 /* Get board-specific information about the QPU host integration */
 int qpu_getHostInformation(QPU_HOST *host)
 {
 	/*
-	BCM2835 "GPU_FFT" release 3.0
 	Copyright (c) 2015, Andrew Holme.
+	Copyright (c) 2012-2014, Broadcom Europe Ltd
 	All rights reserved.
 
 	Redistribution and use in source and binary forms, with or without
@@ -157,34 +171,22 @@ int qpu_getHostInformation(QPU_HOST *host)
 	host->mem_flg = QPU_USE_VC4_L2_CACHE? 0xC : 0x4;
 	host->mem_map = QPU_USE_VC4_L2_CACHE? 0x0 : 0x20000000; // Pi 1 only
 
-	// Load bcmhost lib at runtime to allow distributing compiled program on multiple pis
-	void *handle = dlopen("libbcm_host.so", RTLD_LAZY);
-	if (!handle) return -1;
-
-	// Load relevant function
-	unsigned (*bcm_host_get_sdram_address)     (void);
-	unsigned (*bcm_host_get_peripheral_address)(void);
-	unsigned (*bcm_host_get_peripheral_size)   (void);
-	*(void **) (&bcm_host_get_sdram_address)      = dlsym(handle, "bcm_host_get_sdram_address");
-	*(void **) (&bcm_host_get_peripheral_address) = dlsym(handle, "bcm_host_get_peripheral_address");
-	*(void **) (&bcm_host_get_peripheral_size)    = dlsym(handle, "bcm_host_get_peripheral_size");
-
-	if (bcm_host_get_sdram_address && bcm_host_get_sdram_address() != 0x40000000)
+	unsigned sdram_addr = get_dt_ranges("/proc/device-tree/axi/vc_mem/reg", 8);
+	if (sdram_addr == ~0)
+		sdram_addr = 0x40000000;
+	if (sdram_addr != 0x40000000)
 	{ // Pi 2?
 		host->mem_flg = 0x4; // ARM cannot see VC4 L2 on Pi 2
 		host->mem_map = 0x0;
 	}
 
-	// Fetch QPU host information
-	if (bcm_host_get_peripheral_address)
-	{
-		host->peri_addr = bcm_host_get_peripheral_address();
-	}
-	if (bcm_host_get_peripheral_size)
-	{
-		host->peri_size = bcm_host_get_peripheral_size();
-	}
-
-	dlclose(handle);
+	host->peri_addr = get_dt_ranges("/proc/device-tree/soc/ranges", 4);
+	host->peri_size = get_dt_ranges("/proc/device-tree/soc/ranges", host->peri_addr == 0? 12 : 8);
+	if (host->peri_addr == 0)
+		host->peri_addr = get_dt_ranges("/proc/device-tree/soc/ranges", 8);
+	if (host->peri_addr == ~0)
+		host->peri_addr = 0x20000000;
+	if (host->peri_size == ~0)
+		host->peri_size = 0x01000000;
 	return 0;
 }

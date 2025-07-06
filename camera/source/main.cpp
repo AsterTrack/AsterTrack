@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <chrono>
 #include <thread>
 #include <atomic>
-#include <functional>
 #include <string>
 #include <math.h>
 #include <sched.h>
@@ -53,8 +52,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp"
 
-#include "bcm_host.h"
-#include "user-vcsm.h"
+#include "vcsm/vcsm.hpp"
 
 #define RUN_CAMERA	// Have the camera supply frames (else: emulate camera buffers)
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers
@@ -145,15 +143,6 @@ inline static void printIncidents(StatPacket::Incidents::Stat &stat, const char 
 {
 	if (stat.occurences) printf("%dx %s %dus, max %dus; ", stat.occurences, label, stat.avg, stat.max);
 }
-
-#ifdef EMUL_VCSM
-struct VCSM_BUFFER
-{
-	int32_t DMAFD;
-	uint32_t vcsmHandle;
-	uint32_t vcsmVCHandle;
-};
-#endif
 
 static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream);
 
@@ -267,8 +256,12 @@ int main(int argc, char **argv)
 	if (state.id == 0)
 		state.id = rand();
 
-	// Init BCM Host
-	bcm_host_init();
+	if (!vcsm_init())
+	{
+		printf("Failed to init VCSM!\n");
+		return -1;
+	}
+	atexit(vcsm_exit);
 
 	// Init camera subsystem
 	gcs_init();
@@ -492,7 +485,6 @@ int main(int argc, char **argv)
 #else // Camera emulation buffers
 	#ifdef EMUL_VCSM
 		VCSM_BUFFER camEmulBuf[emulBufCnt];
-		vcsm_init();
 	#else
 		QPU_BUFFER camEmulBuf[emulBufCnt];
 	#endif
@@ -505,10 +497,6 @@ int main(int argc, char **argv)
 			gcs_destroy(gcs);
 			gcs = NULL;
 			printf("-- Camera Stream Cleaned --\n");
-#else // Camera emulation buffers
-		#ifdef EMUL_VCSM
-			vcsm_exit();
-		#endif
 #endif
 		};
 
@@ -526,7 +514,7 @@ int main(int argc, char **argv)
 #ifdef RUN_CAMERA
 		uint32_t srcStride = state.camera.stride;
 #else // Camera emulation buffers
-		uint32_t srcStride = ROUND_UP(processingRect.extends().x, 32);
+		uint32_t srcStride = ROUND_UP(state.camera.width, 32);
 #endif
 
 
@@ -665,22 +653,10 @@ int main(int argc, char **argv)
 	#ifdef EMUL_VCSM
 		for (int i = 0; i < emulBufCnt; i++)
 		{ // Allocate only grayscale buffer
-			camEmulBuf[i].vcsmHandle = vcsm_malloc(srcStride*state.camera.height, "EmulBuf");
-			if (camEmulBuf[i].vcsmHandle == 0)
+			camEmulBuf[i] = vcsm_malloc(srcStride*state.camera.height);
+			if (camEmulBuf[i].fd < 0)
 			{
 				printf("Failed to allocate vcsm buffer!\n");
-				return -1;
-			}
-			camEmulBuf[i].vcsmVCHandle = vcsm_vc_hdl_from_hdl(camEmulBuf[i].vcsmHandle);
-			if (camEmulBuf[i].vcsmVCHandle == 0)
-			{
-				printf("Failed to get vc handle from vcsm buffer!\n");
-				return -1;
-			}
-			camEmulBuf[i].DMAFD = vcsm_export_dmabuf(camEmulBuf[i].vcsmHandle);
-			if (camEmulBuf[i].DMAFD == 0)
-			{
-				printf("Failed to get DMABUF from vcsm buffer!\n");
 				return -1;
 			}
 		}
@@ -695,12 +671,12 @@ int main(int argc, char **argv)
 		for (int i = 0; i < emulBufCnt; i++)
 		{
 	#ifdef EMUL_VCSM
-			uint8_t *YUVFrameData = (uint8_t*)vcsm_lock(camEmulBuf[i].vcsmHandle);
-			if (!YUVFrameData)
+			if (!vcsm_lock(camEmulBuf[i]))
 			{
 				printf("Failed to lock vcsm buffer!");
 				return -1;
 			}
+			uint8_t *YUVFrameData = (uint8_t*)camEmulBuf[i].mem;
 	#else
 			qpu_lockBuffer(&camEmulBuf[i]);
 			uint8_t *YUVFrameData = (uint8_t*)camEmulBuf[i].ptr.arm.vptr;
@@ -734,7 +710,7 @@ int main(int argc, char **argv)
 				printf("Blob at %d, %d has %d dots!\n", posX, posY, dots);
 			}
 	#ifdef EMUL_VCSM
-			vcsm_unlock_hdl(camEmulBuf[i].vcsmHandle);
+			vcsm_unlock(camEmulBuf[i]);
 	#else
 			qpu_unlockBuffer(&camEmulBuf[i]);
 	#endif
@@ -1077,20 +1053,13 @@ int main(int argc, char **argv)
 
 				TimePoint_t t2 = sclock::now();
 
-				// Get ARM-space VCSM buffer pointer
-				uint8_t *framePtrARM = (uint8_t*)gcs_getFrameBufferData(frameHeader);
+				VCSM_BUFFER &frameBuffer = gcs_getFrameBufferData(frameHeader);
 
-				// Get VC-space VCSM buffer handle from opaque buffer handle
-				uint32_t frameVCSMHandle = gcs_getFrameBufferVCSMVCHandle(frameHeader);
-
-				// Lock VCSM buffer to get VC-space address
-				//vcsm_lock(gcs_getFrameBufferVCSMUserHandle(header));
-
-				// Lock VCSM buffer to get VC-space address
-				uint32_t framePtrVC = gcs_getFrameBufferVCPtr(frameHeader); // Not properly locking, but whatever
-				//uint32_t framePtrVC = mem_lock(base.mb, frameVCSMHandle);
-
-				if (framePtrVC == 0)
+				// Lock VCSM buffer (doesn't seem to be needed on a pi)
+				bool locked = true;
+				//locked = vcsm_lock(frameBuffer);
+				//locked = mem_lock(base.mb, frameBuffer.VCHandle) != 0;
+				if (!locked)
 				{
 					printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
 					error = ERROR_MEM_ACCESS;
@@ -1098,23 +1067,45 @@ int main(int argc, char **argv)
 					break;
 				}
 
-				TimePoint_t t3 = sclock::now();
+				uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
+				uint32_t framePtrVC = frameBuffer.VCMem; 
 
 #else
 				// Somewhat emulate framerate
 				usleep(std::max(0,(int)(1.0f/state.camera.fps*1000*1000)-4000));
 
+				TimePoint_t t1 = sclock::now();
+				TimePoint_t t2 = sclock::now();
+
+				void *frameHeader = NULL;
+
 				// Use prepared testing frames
 		#ifdef EMUL_VCSM
-				uint8_t *framePtrARM = (uint8_t*)vcsm_lock(camEmulBuf[qpu_it%emulBufCnt].vcsmHandle);
-				uint32_t frameVCSMHandle = camEmulBuf[qpu_it%emulBufCnt].vcsmVCHandle;
-				uint32_t framePtrVC = mem_lock(base.mb, frameVCSMHandle);
+				VCSM_BUFFER &frameBuffer = camEmulBuf[qpu_it%emulBufCnt];
+
+				// Lock VCSM buffer (doesn't seem to be needed on a pi)
+				bool locked = true;
+				//locked = vcsm_lock(frameBuffer);
+				//locked = mem_lock(base.mb, frameBuffer.VCHandle) != 0;
+				if (!locked)
+				{
+					printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
+					error = ERROR_MEM_ACCESS;
+					abortStreaming = true;
+					break;
+				}
+
+				uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
+				uint32_t framePtrVC = frameBuffer.VCMem; 
 		#else
-				qpu_lockBuffer(&camEmulBuf[qpu_it%emulBufCnt]);
-				uint8_t *framePtrARM = camEmulBuf[qpu_it%emulBufCnt].ptr.arm.cptr;
-				uint32_t framePtrVC = camEmulBuf[qpu_it%emulBufCnt].ptr.vc;
+				// Lock QPU buffer (needed?)
+				qpu_lockBuffer(&frameBuffer);
+				uint8_t *framePtrARM = frameBuffer.ptr.arm.cptr;
+				uint32_t framePtrVC = frameBuffer.ptr.vc;
 		#endif
 #endif
+
+				TimePoint_t t3 = sclock::now();
 
 				// ---- Uniform preparation ----
 
@@ -1152,12 +1143,13 @@ int main(int argc, char **argv)
 
 	#ifdef RUN_CAMERA
 				// Unlock VCSM buffer
-				//vcsm_unlock_hdl(gcs_getFrameBufferVCSMUserHandle(header));
-				mem_unlock(base.mb, frameVCSMHandle);
+				//vcsm_unlock(frameBuffer);
+				//mem_unlock(base.mb, frameBuffer.VCHandle);
 	#else
 		#ifdef EMUL_VCSM
-				vcsm_unlock_hdl(camEmulBuf[qpu_it%emulBufCnt].vcsmHandle);
-				mem_unlock(base.mb, frameVCSMHandle);
+				// Unlock VCSM buffer
+				//vcsm_unlock(frameBuffer);
+				//mem_unlock(base.mb, frameBuffer.VCHandle);
 		#else
 				qpu_unlockBuffer(&camEmulBuf[qpu_it%emulBufCnt]);
 		#endif
@@ -1893,7 +1885,7 @@ int main(int argc, char **argv)
 #else
 	#ifdef EMUL_VCSM
 		for (int i = 0; i < emulBufCnt; i++)
-			vcsm_free(camEmulBuf[i].vcsmHandle);
+			vcsm_free(camEmulBuf[i]);
 	#else
 		for (int i = 0; i < emulBufCnt; i++)
 			qpu_releaseBuffer(&camEmulBuf[i]);

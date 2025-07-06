@@ -12,12 +12,10 @@ BASE_REPO_URL="$MIRROR_URL/$VERSION/arm"
 MAIN_REPO_URL="$BASE_REPO_URL$MAIN_ARCH"
 
 # overlay packages supplied locally, applied "ontop" (loaded after)
-OVERLAY_PACKAGES="i2c-modules-6.1.68-piCore-v6-v7.tcz rpi-vc-14-patch.tcz"
-# 1. i2c-mux kernel modules are missing from the base image, but are compiled in official set of kernel modules
+OVERLAY_PACKAGES="i2c-modules-6.1.68-piCore-v6-v7.tcz"
+# i2c-mux kernel modules are missing from the base image, but are compiled in official set of kernel modules
 # v6 extracted from http://www.tinycorelinux.net/14.x/armv6/releases/RPi/src/kernel/modules-6.1.68-piCore.tar.xz
 # v7 extracted from http://www.tinycorelinux.net/14.x/armv7/releases/RPi/src/kernel/modules-6.1.68-piCore-v7.tar.xz
-# 2. rpi-vc was wrongfully compiled with armv8, so for Pi Zero 1 compatibility, used compiled packages from piCore 13.x
-# extracted from http://www.tinycorelinux.net/13.x/armv6/tcz/rpi-vc.tcz
 
 # Sources config
 VC4ASM_URL=https://github.com/maazl/vc4asm/archive/dfc77f020fd7eb050fc57b482a673c36c801d007.zip

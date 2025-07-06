@@ -28,6 +28,8 @@ SOFTWARE.
 
 #include <inttypes.h>
 
+#include "vcsm/vcsm.hpp"
+
 /* GPU Camera Stream
 	Simple camera stream interface
 	CameraParams covers all possible cameras, backends choose which parameters to support
@@ -102,17 +104,8 @@ void* gcs_requestFrameBuffer(GCS *gcs);
 /* Returns the most recent camera frame. Assumes gcs_waitForFrameBuffer or gcs_hasFrameBuffer has returned true (frameWaiting is true). */
 void* gcs_requestLatestFrameBuffer(GCS *gcs, unsigned int *num);
 
-/* Returns the user-space data of the given framebuffer. Use after gcs_requestFrameBuffer. */
-void* gcs_getFrameBufferData(void *framebuffer);
-
-/* Returns the user-space VCSM handle of the given framebuffer. Use after gcs_requestFrameBuffer. */
-uint32_t gcs_getFrameBufferVCSMUserHandle(void *framebuffer);
-
-/* Returns the VC-space VCSM handle of the given framebuffer. Use after gcs_requestFrameBuffer. */
-uint32_t gcs_getFrameBufferVCSMVCHandle(void *framebuffer);
-
-/* Returns the VC-space address of the given framebuffer. Use after gcs_requestFrameBuffer. */
-uint32_t gcs_getFrameBufferVCPtr(void *framebuffer);
+/* Returns the VCSM buffer data of the given framebuffer. */
+VCSM_BUFFER& gcs_getFrameBufferData(void *framebuffer);
 
 /* Return requested Frane Buffer after processing is done.
  * Has to be called before a new frame buffer can be requested. */

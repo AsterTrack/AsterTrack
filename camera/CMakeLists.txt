@@ -23,18 +23,12 @@ string(CONCAT CMAKE_CXX_FLAGS "${SYMBOLS_FLAGS} -std=c++17"
 set(CMAKE_CXX_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer ${SAN}")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-# Make sure all libraries are present
-find_library(LIB_BCMH NAMES bcm_host)
-find_library(LIB_VCOS NAMES vcos)
-find_library(LIB_VCSM NAMES vcsm PATHS ~/TrackingCamera)
-
 # Set program resources
 set(INCLUDES
 	/usr/local/include
 	dependencies
 	source
 	../shared
-	../libvcsm
 )
 set(SOURCES
 	source/camera/gcs_v4l2.cpp
@@ -43,6 +37,7 @@ set(SOURCES
 	source/qpu/qpu_program.c
 	source/qpu/qpu_info.c
 	source/util/fbUtil.c
+	source/vcsm/vcsm.cpp
 	source/comm/comm.cpp
 	source/comm/server.cpp
 	source/comm/uart.cpp
@@ -57,7 +52,6 @@ set(SOURCES
 )
 set(LIBRARIES
 	m dl pthread atomic
-	${LIB_BCMH} ${LIB_VCOS} ${LIB_VCSM}
 	turbojpeg
 )
 

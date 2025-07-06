@@ -138,21 +138,28 @@ static int32_t Read16Bit(unsigned int fd, uint16_t reg)
 	return value;
 }
 
-void gcs_init()
+/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+int gcs_findCamera()
 {
 	// Tell OV9281 camera to enable strobe (to force LEDs off as a temporary hardware fix)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 	if (i2c_fd < 0)
+	{
 		printf("Failed to address camera over I2C! %s\n", strerror(errno));
-	else
-	{ // Now modify camera streaming behaviour
-
-		int32_t CHIP_ID = Read16Bit(i2c_fd, 0x300A);		
-		if (CHIP_ID != 0x9281)
-			printf("Read wrong chip ID! ID is %x (expected %x)\n", CHIP_ID, 0x9281);
-			
-		close(i2c_fd);
+		return -1;
 	}
+	
+	bool validSensor = false;
+
+	// Identify OV9281
+	int32_t CHIP_ID = Read16Bit(i2c_fd, 0x300A);		
+	if (CHIP_ID == 0x9281)
+		validSensor = true;
+	else
+		printf("Read wrong chip ID! ID is %x (expected %x)\n", CHIP_ID, 0x9281);
+	
+	close(i2c_fd);
+	return validSensor? 1 : 0;
 }
 
 

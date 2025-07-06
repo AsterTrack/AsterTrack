@@ -165,6 +165,8 @@ enum ErrorTag
 {
 	ERROR_NONE = 0,
 	ERROR_UNKNOWN,
+	ERROR_GCS_NO_I2C,
+	ERROR_GCS_NO_SENSOR,
 	ERROR_GCS_CREATE,
 	ERROR_INIT_BD,
 	ERROR_QPU_ENABLE,
@@ -188,7 +190,9 @@ static const char *ErrorTag_String[ERROR_MAX] =
 {
 	"No Error",
 	"Unknown Error",
-	"Camera subsystem failed to restart",
+	"Failed to find camera I2C - system broken",
+	"Failed to find camera sensor - check connection",
+	"Camera subsystem failed to start",
 	"Error during Blob Detection initialisation",
 	"Failed to enable QPU",
 	"Failed to start GCS",

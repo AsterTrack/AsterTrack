@@ -263,9 +263,6 @@ int main(int argc, char **argv)
 	}
 	atexit(vcsm_exit);
 
-	// Init camera subsystem
-	gcs_init();
-
 	// Modify tty to allow for non-blocking input (for console & ssh, but not background execution)
 	if (isatty(STDIN_FILENO))
 		setConsoleRawMode();
@@ -474,6 +471,24 @@ int main(int argc, char **argv)
 		// ---- Setup camera stream ----
 
 #ifdef RUN_CAMERA
+
+		// Init camera subsystem
+		int gcsSensor = gcs_findCamera();
+		if (gcsSensor == -1)
+		{
+			printf("Failed to open camera I2C!\n");
+			error = ERROR_GCS_NO_I2C;
+			if (handleError())
+				break;
+		}
+		else if (gcsSensor == 0)
+		{
+			printf("Failed to identify camera sensor!\n");
+			error = ERROR_GCS_NO_SENSOR;
+			if (handleError())
+				break;
+		}
+
 		gcs = gcs_create(&state.camera);
 		if (gcs == NULL)
 		{

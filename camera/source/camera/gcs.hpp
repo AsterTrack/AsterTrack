@@ -72,7 +72,8 @@ struct GCS_CameraParams
 /* Opaque GPU Camera Stream structure */
 struct GCS;
 
-void gcs_init();
+/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+int gcs_findCamera();
 
 /* Creates a GCS (camera stream) instance. Requires cameraParams to stay allocated until gcs_destroy is called. It is used to update actual parameters, such as width, and stride, as well as update parameters for gcs_updateParameters */
 GCS *gcs_create(GCS_CameraParams *cameraParams);

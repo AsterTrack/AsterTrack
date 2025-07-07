@@ -410,7 +410,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	{
 		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
 		if (pipeline_lock.owns_lock())
-			calibrateFloor(pipeline);
+			CalibrateFloor(pipeline);
 	}
 	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
 

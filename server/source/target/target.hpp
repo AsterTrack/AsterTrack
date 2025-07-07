@@ -42,8 +42,6 @@ static bool operator<(const struct PointRelation& a, const struct PointRelation&
 
 struct TargetCalibration3D
 {
-	int id;
-	std::string label;
 	std::vector<TargetMarker> markers;
 
 	Bounds3f bounds;
@@ -51,12 +49,6 @@ struct TargetCalibration3D
 	std::vector<std::vector<int>> pointRelation; // Index of relations for each point
 
 	TargetCalibration3D() {}
-
-	TargetCalibration3D(int ID, std::string Label, const std::vector<TargetMarker> &Markers)
-		: id(ID), label(Label), markers(Markers)
-	{
-		updateMarkers();
-	}
 
 	TargetCalibration3D(const std::vector<TargetMarker> &Markers)
 		: markers(Markers)

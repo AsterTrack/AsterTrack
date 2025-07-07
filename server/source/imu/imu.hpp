@@ -53,36 +53,23 @@ struct IMUIdent
 	{
 		return driver == other.driver && string.compare(other.string) == 0;
 	}
+
+	operator bool() const { return driver != 0; }
 };
 
 /**
- * Association of an IMU to a tracker (tracked Target or Marker)
- * Includes tracker indentification and spacial calibration of IMU to tracker
+ * Spacial calibration of IMU to tracker
  */
-struct IMUTracker
+struct IMUCalib
 {
-	int id; // Associated Tracker ID - 0 is None
-	float size; // Associated Marker Size - NAN is None
+	// Conversion of coordinate axes from source to ours (e.g. to change handedness)
+	Eigen::Matrix<int8_t,3,3> conversion;
+
 	// Calibrated offset from IMU to tracker
-	Eigen::Matrix<int8_t,3,3> conversion; // Technically this is not specific to the tracker
 	Eigen::Quaternionf orientation;
 	Eigen::Vector3f offset;
 
-	IMUTracker() : id(0), size(NAN) { conversion.setIdentity(); orientation.coeffs().setConstant(NAN); }
-	IMUTracker(int id) : id(id), size(NAN) { conversion.setIdentity(); orientation.coeffs().setConstant(NAN); }
-	IMUTracker(float size) : id(0), size(size) { conversion.setIdentity(); orientation.setIdentity(); }
-
-	operator bool() const { return id != 0 || !std::isnan(size); }
-	bool isMarker() const { return !std::isnan(size); }
-};
-
-/**
- * IMU Identification and Tracker Association as saved between sessions
- */
-struct IMUConfig
-{
-	IMUIdent id;
-	IMUTracker tracker;
+	IMUCalib() { conversion.setIdentity(); orientation.coeffs().setConstant(NAN); offset.setConstant(NAN); }
 };
 
 /**
@@ -92,7 +79,6 @@ class IMU
 {
 public:
 	IMUIdent id;
-	IMUTracker tracker;
 
 	// Following is specific to the current session only:
 	int index; // Index in pipeline subsystem, does not change during session
@@ -103,15 +89,10 @@ public:
 	BlockedQueue<IMUSampleFused, 16384> samplesFused;
 	BlockedQueue<IMUSampleRaw, 16384> samplesRaw;
 
-	IMU() : id(), tracker(), index(-1) {}
+	IMU() : id(), index(-1) {}
 
 	IMU(IMUIdent id, bool hasMag, bool isFused) :
-		id(std::move(id)), tracker(),
-		index(-1), hasMag(hasMag), isFused(isFused) {}
-
-	IMU(IMUIdent id, bool hasMag, bool isFused, IMUTracker tracker) :
-		id(std::move(id)), tracker(tracker),
-		index(-1), hasMag(hasMag), isFused(isFused) {}
+		id(std::move(id)), index(-1), hasMag(hasMag), isFused(isFused) {}
 
 	virtual ~IMU() = default;
 };
@@ -126,7 +107,7 @@ public:
 
 	IMURecord() : IMU() {}
 	IMURecord(const IMU &other) :
-		IMU(other.id, other.hasMag, other.isFused, other.tracker) {}
+		IMU(other.id, other.hasMag, other.isFused) {}
 };
 
 #endif // IMU_H

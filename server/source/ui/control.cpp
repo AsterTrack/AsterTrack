@@ -146,8 +146,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::TextUnformatted("Simulated Objects");
 			for (auto &object : sim_lock->objects)
 			{
-				ImGui::PushID(object.target->id);
-				ImGui::Checkbox(object.target->label.c_str(), &object.enabled);
+				ImGui::PushID(object.id);
+				ImGui::Checkbox(object.label.c_str(), &object.enabled);
 				SameLineTrailing(SizeWidthDiv2().x);
 				ImGui::SetNextItemWidth(SizeWidthDiv2().x);
 				const char* motionPresetLabels[] = { "Room", "Wide", "Center", "Custom" };
@@ -181,6 +181,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					ResetPipelineData(state.pipeline);
 					UpdateSequences(true);
 					InitPipelineStreaming(state.pipeline);
+					for (auto &tracker : state.trackerConfigs)
+						ServerUpdatedTrackerConfig(state, tracker);
 					// Continue advancing
 					state.simAdvance = prevState;
 					state.simAdvance.notify_all();

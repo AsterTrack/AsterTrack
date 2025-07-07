@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/target.hpp"
 #include "point/sequence_data.hpp"
 #include "calib_target/assembly.hpp"
+#include "imu/device.hpp"
 
 #include "util/eigenutil.hpp"
 #include "util/blocked_vector.hpp"
@@ -409,7 +410,118 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 	fs.close();
 }
 
-void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibration3D> &targetCalibs)
+static IMUCalib readIMUCalib(json &jsIMU)
+{
+	IMUCalib calib = {};
+	if (jsIMU.contains("conversion"))
+	{
+		int i = 0;
+		auto arr = calib.conversion.array();
+		for (auto &val : jsIMU["conversion"])
+			arr(i++) = val.is_number_integer()? val.get<uint8_t>() : 0;
+	}
+	if (jsIMU.contains("orientation"))
+	{
+		int i = 0;
+		auto arr = calib.orientation.coeffs().array();
+		for (auto &val : jsIMU["orientation"])
+			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
+	}
+	if (jsIMU.contains("offset"))
+	{
+		int i = 0;
+		auto arr = calib.offset.array();
+		for (auto &val : jsIMU["offset"])
+			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
+	}
+	return calib;
+}
+
+static void writeIMUCalib(const IMUCalib &calib, json &jsIMU)
+{
+	{
+		auto arr = calib.conversion.matrix().array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["conversion"].push_back(arr(i));
+	}
+	if (!calib.orientation.coeffs().hasNaN())
+	{
+		auto arr = calib.orientation.coeffs().array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["orientation"].push_back(arr(i));
+	}
+	if (!calib.offset.hasNaN())
+	{
+		auto arr = calib.offset.array();
+		for (int i = 0; i < arr.size(); i++)
+			jsIMU["offset"].push_back(arr(i));
+	}
+}
+
+static bool readTargetCalib(json &jsTarget, TargetCalibration3D &target)
+{
+	float defaultAngle = jsTarget.contains("DefaultAngle")? jsTarget["DefaultAngle"].get<float>() : 180;
+	float defaultSize = (jsTarget.contains("DefaultSize")? jsTarget["DefaultSize"].get<float>() : 8) / 1000.0f;
+	float defaultLimit = std::cos(defaultAngle/360*PI);
+
+	if (!jsTarget.contains("markers")) return false;
+	auto &jsMarkers = jsTarget["markers"];
+	if (!jsMarkers.is_array()) return false;
+	target.markers.reserve(jsMarkers.size());
+	for (auto &jsMarker : jsMarkers)
+	{
+		TargetMarker marker = {};
+		if (!jsMarker.is_object()) return false;
+		// Read position
+		if (!jsMarker.contains("Position")) return false;
+		auto &pos = jsMarker["Position"];
+		if (!pos.is_array() || pos.size() < 3) return false;
+		marker.pos = Eigen::Vector3f(pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>());
+		// Read normals
+		if (!jsMarker.contains("Normal")) return false;
+		auto &nrm = jsMarker["Normal"];
+		if (!nrm.is_array() || nrm.size() < 3) return false;
+		marker.nrm = Eigen::Vector3f(nrm[0].get<float>(), nrm[1].get<float>(), nrm[2].get<float>());
+		// Read other values
+		if (jsMarker.contains("Angle")) // In degrees
+			marker.angleLimit = std::cos(jsMarker["Angle"].get<float>()/360*PI);
+		else
+			marker.angleLimit = defaultLimit;
+		if (jsMarker.contains("Size")) // In mm
+			marker.size = jsMarker["Size"].get<float>() / 1000.0f;
+		else
+			marker.size = defaultSize;
+		target.markers.push_back(std::move(marker));
+	}
+	target.updateMarkers();
+	return true;
+}
+
+static void writeTargetCalib(const TargetCalibration3D &target, json &jsTarget)
+{
+	// Write markers
+	jsTarget["markers"] = json::array();
+	auto &jsMarkers = jsTarget["markers"];
+	for (auto &marker : target.markers)
+	{
+		json jsMarker;
+		jsMarker["Position"] = json::array({
+			marker.pos.x(),
+			marker.pos.y(),
+			marker.pos.z()
+		});
+		jsMarker["Normal"] = json::array({
+			marker.nrm.x(),
+			marker.nrm.y(),
+			marker.nrm.z()
+		});
+		jsMarker["Angle"] = std::acos(marker.angleLimit)*360/PI;
+		jsMarker["Size"] = marker.size * 1000.0f;
+		jsMarkers.push_back(std::move(jsMarker));
+	}
+}
+
+void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig)
 {
 	// Read JSON config file
 	std::ifstream fs(path);
@@ -422,57 +534,53 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibrat
 	try
 #endif
 	{
-		// Parse target calibration
-		if (file.contains("targets"))
+		// Parse tracker configurations
+		if (!file.contains("trackers") || !file["trackers"].is_array()) return;
+		auto &jsTrackers = file["trackers"];
+		trackerConfig.reserve(trackerConfig.size() + jsTrackers.size());
+		for (auto &jsTracker : jsTrackers)
 		{
-			auto &jsTargets = file["targets"];
-			if (jsTargets.is_array())
+			if (!jsTracker.contains("id") || !jsTracker["id"].is_number_integer()) continue;
+			if (!jsTracker.contains("label") || !jsTracker["label"].is_string()) continue;
+			if (!jsTracker.contains("type") || !jsTracker["type"].is_number_unsigned()) continue;
+
+			TrackerConfig tracker(jsTracker["id"].get<int>(),
+				jsTracker["label"].get<std::string>(),
+				(TrackerConfig::TrackerType)jsTracker["type"].get<int>());
+
+			if (tracker.type == TrackerConfig::TRACKER_TARGET)
 			{
-				targetCalibs.reserve(targetCalibs.size() + jsTargets.size());
-				for (auto &jsTarget : jsTargets)
+				if (!jsTracker.contains("target") || !jsTracker["target"].is_object()) continue;
+				if (!readTargetCalib(jsTracker["target"], tracker.calib))
+					continue;
+			}
+			else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+			{
+				if (!jsTracker.contains("markerSize") ||  !jsTracker["markerSize"].is_number_float()) continue;
+				tracker.markerSize = jsTracker["markerSize"].get<float>();
+			}
+			else continue;
+
+			if (jsTracker.contains("imu") && jsTracker["imu"].is_object())
+			{
+				auto &jsIMU = jsTracker["imu"];
+				if (jsIMU.contains("driver") && jsIMU["driver"].is_number_unsigned()
+					&& jsIMU.contains("id") && jsIMU["id"].is_string())
 				{
-					TargetCalibration3D target;
-					if (!jsTarget.contains("id")) continue;
-					target.id = jsTarget["id"].get<int>();
-					target.label = jsTarget["label"].get<std::string>();
-
-					float defaultAngle = jsTarget.contains("DefaultAngle")? jsTarget["DefaultAngle"].get<float>() : 180;
-					float defaultSize = (jsTarget.contains("DefaultSize")? jsTarget["DefaultSize"].get<float>() : 8) / 1000.0f;
-					float defaultLimit = std::cos(defaultAngle/360*PI);
-
-					if (!jsTarget.contains("markers")) continue;
-					auto &jsMarkers = jsTarget["markers"];
-					if (!jsMarkers.is_array()) continue;
-					target.markers.reserve(jsMarkers.size());
-					for (auto &jsMarker : jsMarkers)
+					tracker.imuIdent.driver = (IMUDriver)jsIMU["driver"].get<int>();
+					if (tracker.imuIdent.driver <= IMU_DRIVER_NONE || tracker.imuIdent.driver >= IMU_DRIVER_MAX)
 					{
-						TargetMarker marker = {};
-						if (!jsMarker.is_object()) continue;
-						// Read position
-						if (!jsMarker.contains("Position")) continue;
-						auto &pos = jsMarker["Position"];
-						if (!pos.is_array() || pos.size() < 3) continue;
-						marker.pos = Eigen::Vector3f(pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>());
-						// Read normals
-						if (!jsMarker.contains("Normal")) continue;
-						auto &nrm = jsMarker["Normal"];
-						if (!nrm.is_array() || nrm.size() < 3) continue;
-						marker.nrm = Eigen::Vector3f(nrm[0].get<float>(), nrm[1].get<float>(), nrm[2].get<float>());
-						// Read other values
-						if (jsMarker.contains("Angle")) // In degrees
-							marker.angleLimit = std::cos(jsMarker["Angle"].get<float>()/360*PI);
-						else
-							marker.angleLimit = defaultLimit;
-						if (jsMarker.contains("Size")) // In mm
-							marker.size = jsMarker["Size"].get<float>() / 1000.0f;
-						else
-							marker.size = defaultSize;
-						target.markers.push_back(std::move(marker));
+						tracker.imuIdent.driver = IMU_DRIVER_NONE;
 					}
-					target.updateMarkers();
-					targetCalibs.push_back(std::move(target));
+					else
+					{
+						tracker.imuIdent.string = jsIMU["id"].get<std::string>();
+						tracker.imuCalib = readIMUCalib(jsIMU);
+					}
 				}
 			}
+
+			trackerConfig.push_back(std::move(tracker));
 		}
 	}
 #ifndef JSON_NOEXCEPTION
@@ -484,153 +592,43 @@ void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibrat
 #endif
 }
 
-void storeTargetCalibrations(const std::string &path, const std::vector<TargetCalibration3D> &targetCalibs)
+void storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig)
 {
 	json file;
 
 	// Write target calibration
-	file["targets"] = json::array();
-	for (auto &target : targetCalibs)
+	file["trackers"] = json::array();
+	for (auto &tracker : trackerConfig)
 	{
-		json jsTarget;
-		jsTarget["id"] = target.id;
-		jsTarget["label"] = target.label;
-		// Write markers
-		jsTarget["markers"] = json::array();
-		auto &jsMarkers = jsTarget["markers"];
-		for (auto &marker : target.markers)
+		if (tracker.isSimulated) continue;
+
+		json jsTracker;
+		jsTracker["id"] = tracker.id;
+		jsTracker["label"] = tracker.label;
+		jsTracker["type"] = tracker.type;
+
+		if (tracker.type == TrackerConfig::TRACKER_TARGET)
 		{
-			json jsMarker;
-			jsMarker["Position"] = json::array({
-				marker.pos.x(),
-				marker.pos.y(),
-				marker.pos.z()
-			});
-			jsMarker["Normal"] = json::array({
-				marker.nrm.x(),
-				marker.nrm.y(),
-				marker.nrm.z()
-			});
-			jsMarker["Angle"] = std::acos(marker.angleLimit)*360/PI;
-			jsMarker["Size"] = marker.size * 1000.0f;
-			jsMarkers.push_back(std::move(jsMarker));
+			writeTargetCalib(tracker.calib, jsTracker["target"]);
 		}
-		file["targets"].push_back(std::move(jsTarget));
+		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+		{
+			jsTracker["markerSize"] = tracker.markerSize;
+		}
+		else continue;
+
+		if (tracker.imuIdent)
+		{
+			auto &jsIMU = jsTracker["imu"];
+			jsIMU["driver"] = tracker.imuIdent.driver;
+			jsIMU["id"] = tracker.imuIdent.string;
+			writeIMUCalib(tracker.imuCalib, jsIMU);
+		}
+
+		file["trackers"].push_back(std::move(jsTracker));
 	}
 
 	// Write JSON calib file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
-}
-
-static IMUTracker readIMUTracker(json &jsIMU)
-{
-	IMUTracker tracker = {};
-	tracker.id = jsIMU.contains("trackerID")? jsIMU["trackerID"].get<int>() : 0;
-	tracker.size = jsIMU.contains("markerSize")? jsIMU["markerSize"].get<float>() : NAN;
-	if (jsIMU.contains("conversion"))
-	{
-		int i = 0;
-		auto arr = tracker.conversion.array();
-		for (auto &val : jsIMU["conversion"])
-			arr(i++) = val.is_number_integer()? val.get<uint8_t>() : 0;
-	}
-	if (jsIMU.contains("orientation"))
-	{
-		int i = 0;
-		auto arr = tracker.orientation.coeffs().array();
-		for (auto &val : jsIMU["orientation"])
-			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
-	}
-	if (jsIMU.contains("offset"))
-	{
-		int i = 0;
-		auto arr = tracker.offset.array();
-		for (auto &val : jsIMU["offset"])
-			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
-	}
-	return tracker;
-}
-
-static void writeIMUTracker(const IMUTracker &tracker, json &jsIMU)
-{
-	if (tracker.id != 0) jsIMU["trackerID"] = tracker.id;
-	else if (tracker.isMarker()) jsIMU["markerSize"] = tracker.size;
-	{
-		auto arr = tracker.conversion.matrix().array();
-		for (int i = 0; i < arr.size(); i++)
-			jsIMU["conversion"].push_back(arr(i));
-	}
-	if (!tracker.orientation.coeffs().hasNaN())
-	{
-		auto arr = tracker.orientation.coeffs().array();
-		for (int i = 0; i < arr.size(); i++)
-			jsIMU["orientation"].push_back(arr(i));
-	}
-	if (!tracker.offset.hasNaN())
-	{
-		auto arr = tracker.offset.array();
-		for (int i = 0; i < arr.size(); i++)
-			jsIMU["offset"].push_back(arr(i));
-	}
-}
-
-void parseIMUConfigs(const std::string &path, std::vector<IMUConfig> &configs)
-{
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
-	json file;
-	fs >> file;
-	fs.close();
-
-	unsigned int frameOffset;
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
-	{
-		if (!file.contains("imuConfigs")) return;
-		if (!file["imuConfigs"].is_array()) return;
-		auto &jsIMUs = file["imuConfigs"];
-
-		for (auto &jsIMU : jsIMUs)
-		{
-			IMUConfig config;
-			config.id.driver = (IMUDriver)jsIMU["driver"].get<int>();
-			config.id.string = jsIMU["id"].get<std::string>();
-			config.tracker = readIMUTracker(jsIMU);
-			configs.push_back(std::move(config));
-		}
-	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
-		return;
-	}
-#endif
-}
-
-void storeIMUConfigs(const std::string &path, const std::vector<IMUConfig> &configs)
-{
-	json file;
-
-	file["imuConfigs"] = json::array();
-	auto &jsIMUs = file["imuConfigs"];
-
-	for (const IMUConfig &imu : configs)
-	{
-		json jsIMU;
-		jsIMU["driver"] = imu.id.driver;
-		jsIMU["id"] = imu.id.string;
-		writeIMUTracker(imu.tracker, jsIMU);
-		jsIMUs.push_back(std::move(jsIMU));
-	}
-
-	// Write JSON file
 	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::ofstream fs(path);
 	if (!fs.is_open()) return;
@@ -805,10 +803,9 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			{ // New IMU
 				imu = std::make_shared<IMURecord>();
 				imu->id = std::move(id);
-				record.imus.push_back(imu);
-				imu->tracker = readIMUTracker(jsIMU);
 				imu->hasMag = jsIMU["hasMag"].get<bool>();
 				imu->isFused = jsIMU["isFused"].get<bool>();
+				record.imus.push_back(imu);
 			}
 
 			auto &jsSamples = jsIMU["samples"];
@@ -1009,7 +1006,6 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 
 		jsIMU["driver"] = imu->id.driver;
 		jsIMU["id"] = imu->id.string;
-		writeIMUTracker(imu->tracker, jsIMU);
 		jsIMU["hasMag"] = imu->hasMag;
 		jsIMU["isFused"] = imu->isFused;
 
@@ -1053,7 +1049,7 @@ void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t
 			if (!jsFrame.contains("num")) continue;
 			if (!jsFrame.contains("targets")) continue;
 			if (!jsFrame["targets"].is_array()) continue;
-			auto &jsTargets = jsFrame["targets"];
+			auto &jsTrackers = jsFrame["targets"];
 
 			unsigned int num = jsFrame["num"].get<unsigned int>();
 			if (num < frameOffset) continue;
@@ -1065,8 +1061,8 @@ void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t
 			frame.triangulations.clear();
 			// TODO: Properly integrate triangulation records (3/3)
 			frame.trackers.clear();
-			frame.trackers.reserve(jsTargets.size());
-			for (auto &jsTarget : jsTargets)
+			frame.trackers.reserve(jsTrackers.size());
+			for (auto &jsTarget : jsTrackers)
 			{
 				if (!jsTarget.is_object() || !jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
 				frame.trackers.push_back({});
@@ -1546,7 +1542,7 @@ void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &
 	fs.close();
 }
 
-bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D> &targets, float fov, float size)
+bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size)
 {
 	std::vector<Eigen::Vector3f> verts;
 	std::vector<Eigen::Vector3f> nrms;
@@ -1625,10 +1621,8 @@ bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D
 		{
 			if (group.first != "Base" && group.first != "(null)" && (groups.size() == 1 || group.first != path))
 			{ // Given vertex group (polygroup) is a set of markers
-				group.second.id = -(targets.size() + 1);
-				group.second.label = std::move(group.first);
 				group.second.updateMarkers();
-				targets.push_back(std::move(group.second));
+				targets.emplace(group.first, std::move(group.second));
 			}
 		}
 	}
@@ -1647,10 +1641,10 @@ bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D
 
 void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target)
 {
-	char filename[1000];
-	sprintf(filename, path.c_str(), target.id); // path is from internal code only, so fine to use as format string
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	FILE *out = fopen(filename, "w");
+	std::filesystem::path fsPath(path);
+	std::filesystem::create_directories(fsPath.remove_filename());
+
+	FILE *out = fopen(path.c_str(), "w");
 
 	auto writeVec = [out](std::string id, Eigen::Vector3f vec)
 	{
@@ -1662,7 +1656,7 @@ void writeTargetObjFile(const std::string &path, const TargetCalibration3D &targ
 		fprintf(out, "f %d//%d %d//%d %d//%d\n", i+1, i+1, i+2, i+2, i+3, i+3);
 	};
 
-	fprintf(out, "g Target_%d\ns off\n", target.id);
+	fprintf(out, "g %s\ns off\n", fsPath.stem().c_str());
 
 	float s = 2.0f/1000;
 	for (int i = 0; i < target.markers.size(); i++)

@@ -78,10 +78,7 @@ bool ServerInit(ServerState &state)
 
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-	parseTargetCalibrations("store/target_calib.json", state.pipeline.tracking.targetCalibrations);
-
-	// Load IMU configs & calibrations
-	parseIMUConfigs("store/imu_config.json", *imuConfigs.contextualLock());
+	parseTrackerConfigurations("store/trackers.json", state.trackerConfigs);
 
 	{
 		// Debug calibration
@@ -120,6 +117,11 @@ void ServerExit(ServerState &state)
 	ResetIO(state);
 }
 
+void ServerStoreConfiguration(ServerState &state)
+{
+	storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+}
+
 void ServerStoreCameraCalib(ServerState &state)
 {
 	// Update list of calibrations with current set of cameras
@@ -144,51 +146,56 @@ void ServerStoreCameraCalib(ServerState &state)
 	storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
 }
 
-void ServerStoreTargetCalib(ServerState &state)
+void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 {
-	// Collect current set of stored target templates
-	std::vector<TargetCalibration3D> targetCalibrations;
-	targetCalibrations.reserve(state.pipeline.tracking.targetCalibrations.size());
-	for (int i = 0; i < state.pipeline.tracking.targetCalibrations.size(); i++)
-	{ // TODO: Differentiate simulated targets some better way?
-		// Or just store them separately in server like is planned anyway, and only combine in pipeline?
-		if (state.pipeline.tracking.targetCalibrations[i].id >= 0)
-			targetCalibrations.push_back(state.pipeline.tracking.targetCalibrations[i]);
-	}
+	if (state.isStreaming)
+	{ // Trigger tracker to be considered for tracking
 
-	// Write both as current calibration
-	storeTargetCalibrations("store/target_calib.json", targetCalibrations);
-}
+		// Set (or update) tracked object with tracker config
+		if (tracker.type == TrackerConfig::TRACKER_TARGET)
+			SetTrackedTarget(state.pipeline, tracker.id, tracker.label, tracker.calib);
+		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+			SetTrackedMarker(state.pipeline, tracker.id, tracker.label, tracker.markerSize);
 
-void ServerStoreIMUConfig(ServerState &state)
-{
-	// Update list of IMU configs with current set of IMUs
-	auto configs_lock = imuConfigs.contextualLock();
-	auto &configs = *configs_lock;
-	for (auto &imu : state.pipeline.record.imus)
-	{
-		int i;
-		for (i = 0; i < configs.size(); i++)
-		{
-			if (configs[i].id == imu->id)
-			{ // Found calibration entry, update calibration data
-				configs[i].tracker = imu->tracker;
-				break;
+		if (tracker.imuIdent)
+		{ // Ensure IMU is associated (if it is connected)
+			for (auto &imu : state.pipeline.record.imus)
+			{
+				if (imu->id == tracker.imuIdent)
+					AssociateIMU(state.pipeline, imu, tracker.id, tracker.imuCalib);
 			}
 		}
-		if (i >= configs.size())
-		{ // Add as new IMU
-			configs.emplace_back(imu->id, imu->tracker);
-		}
+		else
+			DisassociateIMU(state.pipeline, tracker.id);
 	}
-
-	// Write both as current calibration
-	storeIMUConfigs("store/imu_config.json", configs);
 }
 
-void ServerStoreConfiguration(ServerState &state)
+void ServerStoreTargetConfigs(ServerState &state)
 {
-	storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+	storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+}
+
+void ServerUpdateTrackerTargetCalib(ServerState &state, int trackerID, TargetCalibration3D calib)
+{
+	for (auto &tracker : state.trackerConfigs)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.calib = std::move(calib);
+		// Assuming here that if this function was called, the calib was already updated in the TrackedTarget
+		return;
+	}
+}
+
+void ServerUpdateTrackerIMUCalib(ServerState &state, int trackerID, IMUIdent imu, IMUCalib calib)
+{
+	for (auto &tracker : state.trackerConfigs)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.imuIdent = imu;
+		tracker.imuCalib = calib;
+		// Assuming here that if this function was called, the IMU was already connected to the tracker
+		return;
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -556,53 +563,63 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			});
 		}
 
-		bool imusRegistered = false, imusUpdated = false, imusChanged = false;
+		bool imusRegistered = false;
 		{ // Fetch new state from IMUs
 			auto imuLock = state->imuProviders.contextualLock();
-			imusRegistered = !imuLock->empty();
+			int updatedDevices = 0;
+			IMUDeviceList removedIMUs, addedIMUs;
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
 				assert(*imuProvider);
 				// TODO: Fix seg fault here after re-entering device mode once
-				int updatedDevices = 0, changedDevices = 0;
-				if (imuProvider->get()->poll(updatedDevices, changedDevices) == IMU_STATUS_DISCONNECTED)
+				auto status = imuProvider->get()->poll(updatedDevices, removedIMUs, addedIMUs);
+				if (status == IMU_STATUS_DISCONNECTED)
 				{
-					imusChanged = true;
 					imuProvider = imuLock->erase(imuProvider);
 					continue;
 				}
-				if (updatedDevices > 0) imusUpdated = true;
-				if (changedDevices > 0)
+				if (status == IMU_STATUS_DEVICES_CONNECTED)
+					imusRegistered = true;
+				imuProvider++;
+			}
+			if (updatedDevices > 0)
+				SignalPipelineUpdate();
+			if (!addedIMUs.empty() || !removedIMUs.empty())
+			{
+				std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
+				for (auto &imuDevice : addedIMUs)
 				{
-					imusChanged = true;
-					std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
-					for (auto &imu : imuProvider->get()->devices)
+					if (!imuDevice || imuDevice->index >= 0) continue;
+					// TODO: Handle receiver replugging, should probably detect IMU as the same
+					// Either replace existing (Probably move old samples in to new IMU?)
+					// Or just add new and replace any tracking references
+					//auto ex = std::find_if(state->pipeline.record.imus.begin(), state->pipeline.record.imus.end(),
+					//	[&](auto &i){ return i->id == imu->id; });
+					//if (ex != state->pipeline.record.imus.end())
+					// Else just add to imu record
+					imuDevice->index = state->pipeline.record.imus.size();
+					auto imu = std::static_pointer_cast<IMU>(imuDevice);
+					state->pipeline.record.imus.push_back(imu); // new shared_ptr
+					if (state->isStreaming)
 					{
-						if (!imu || imu->index >= 0) continue;
-						// TODO: Handle receiver replugging, should probably detect IMU as the same
-						// Either replace existing (Probably move old samples in to new IMU?)
-						// Or just add new and replace any tracking references
-						//auto ex = std::find_if(state->pipeline.record.imus.begin(), state->pipeline.record.imus.end(),
-						//	[&](auto &i){ return i->driver == imu->driver && i->device == imu->device; });
-						//if (ex != state->pipeline.record.imus.end())
-						// Else just add to imu record
-						imu->index = state->pipeline.record.imus.size();
-						state->pipeline.record.imus.push_back(std::static_pointer_cast<IMU>(imu));
-						if (state->isStreaming)
+						auto trackerConfig = std::find_if(state->trackerConfigs.begin(), state->trackerConfigs.end(),
+							[&](auto &cfg){ return cfg.imuIdent == imu->id; });
+						if (trackerConfig != state->trackerConfigs.end())
 						{
-							// Add as individual tracker first until assigned to a tracker
-							state->pipeline.tracking.orphanedIMUs.emplace_back(std::static_pointer_cast<IMU>(imu), state->pipeline.params.track);
+							AssociateIMU(state->pipeline, imu, trackerConfig->id, trackerConfig->imuCalib);
+						}
+						else
+						{
+							OrphanIMU(state->pipeline, imu); // new shared_ptr
 							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
 						}
 					}
 				}
-				imuProvider++;
+				for (auto &imu : removedIMUs)
+				{
+					// TODO: Handle removal of IMUs - currently just ignored, and trackers using them will just not get any updates, which is fine
+				}
 			}
-		}
-		if (imusUpdated)
-			SignalPipelineUpdate();
-		if (imusChanged)
-		{ // TODO: Handle disconnected IMUs?
 		}
 
 		// Frame consistency supervision and processing stream frames once deemed complete
@@ -677,36 +694,35 @@ void StartSimulation(ServerState &state)
 	}
 
 	// Add testing targets for which there isn't already a calibration
-	auto &targets = state.pipeline.tracking.targetCalibrations;
-	for (int i = 0; i < state.config.simulation.trackingTargets.size(); i++)
+	for (auto simTarget : state.config.simulation.trackingTargets)
 	{
-		const TargetCalibration3D &targetDef = state.config.simulation.trackingTargets[i];
-
-		state.pipeline.simulation.contextualLock()->objects.push_back(
-			SimulatedObject { .target = &targetDef, .motionPreset = 2, .motion = motionPresets[2] }
-		);
+		const std::string &label = simTarget.first;
+		const TargetCalibration3D &calib = simTarget.second;
+		int id = 0;
 
 		// Check if this target has been calibrated yet
-		auto existingCalib = std::find_if(targets.begin(), targets.end(), [targetDef](auto &t)
-										  { return t.id == targetDef.id; });
-		if (existingCalib != targets.end())
+		auto existingCalib = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+			[&](auto &t) { return t.label == simTarget.first; });
+		if (existingCalib != state.trackerConfigs.end())
 		{ // Determine offset of calibrated target template compared to ground truth
-			LOG(LDefault, LInfo, "Using calibrated target template %d for simulated target %s (%d)!\n",
-				existingCalib->id, targetDef.label.c_str(), targetDef.id);
+			LOG(LDefault, LInfo, "Using calibrated target template %s (%d) for simulated target %s!\n",
+				existingCalib->label.c_str(), existingCalib->id, label.c_str());
+			id = existingCalib->id;
 
 			// Set ground truth target as point cloud
 			std::vector<TriangulatedPoint> triPoints;
-			triPoints.reserve(targetDef.markers.size());
-			for (const auto &marker : targetDef.markers)
+			triPoints.reserve(calib.markers.size());
+			for (const auto &marker : calib.markers)
 				triPoints.emplace_back(marker.pos, state.pipeline.params.tri.maxIntersectError, state.pipeline.params.tri.minIntersectionConfidence);
 			std::vector<int> triIndices(triPoints.size());
 			std::iota(triIndices.begin(), triIndices.end(), 0);
 
 			// Detect match using calibrated target
-			auto cand = detectTarget3D(*existingCalib, triPoints, triIndices, state.pipeline.params.detect.tri.sigmaError, state.pipeline.params.detect.tri.poseSigmaError, false);
+			auto cand = detectTarget3D(existingCalib->calib, triPoints, triIndices,
+				state.pipeline.params.detect.tri.sigmaError, state.pipeline.params.detect.tri.poseSigmaError, false);
 			if (cand.points.size() > 0)
 			{ // Read out offset transform and correct for it to get accurate error calculations
-				for (auto &marker : existingCalib->markers)
+				for (auto &marker : existingCalib->calib.markers)
 				{
 					marker.pos = cand.pose * marker.pos;
 					marker.nrm = cand.pose.rotation() * marker.nrm;
@@ -717,13 +733,23 @@ void StartSimulation(ServerState &state)
 			// No need to re-generate lookup tables for target detection
 		}
 		else
-		{
-			LOG(LDefault, LInfo, "Using ground truth target template for simulated target %s (%d) with %d points!\n",
-				targetDef.label.c_str(), targetDef.id, (int)targetDef.markers.size());
+		{ // Add ground truth tracker config
 
-			// Add ground truth as target template
-			targets.push_back(targetDef);
+			for (auto &tracker : state.trackerConfigs)
+				id = std::min(id, tracker.id);
+			id--;
+
+			LOG(LDefault, LInfo, "Using ground truth target template for simulated target %s (%d) with %d points!\n",
+				label.c_str(), id, (int)calib.markers.size());
+
+			TrackerConfig tracker(id, label, TargetCalibration3D(calib));
+			tracker.isSimulated = true;
+			state.trackerConfigs.push_back(std::move(tracker));
 		}
+
+		state.pipeline.simulation.contextualLock()->objects.push_back(
+			SimulatedObject { .id = id, .label = label, .target = calib, .motionPreset = 2, .motion = motionPresets[2] }
+		);
 	}
 
 	{ // Align calibrations to simulated calibrations
@@ -1021,9 +1047,6 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	for (auto &storedIMU : state.stored.imus)
 	{
 		auto imu = std::make_shared<IMURecord>(*storedIMU);
-		auto tracker = getIMUTracker(imu->id);
-		if (!imu->tracker || imu->tracker.id == tracker.id)
-			imu->tracker = tracker;
 		imu->index = state.pipeline.record.imus.size();
 		state.pipeline.record.imus.push_back(std::move(imu));
 		// Don't setup samples, Start Streaming deletes prior frame and imu records
@@ -1102,6 +1125,8 @@ bool StartStreaming(ServerState &state)
 		return false;
 	} */
 
+	std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
+
 	// Clean any prior streaming state
 	// TODO: Find a way to retain records and calibration state of last Streaming (without leaving current mode!)
 	// Currently after stop	ping stream, all data is retained, and only deleted after starting stream again or leaving mode
@@ -1112,6 +1137,12 @@ bool StartStreaming(ServerState &state)
 	// Initialise state
 	InitPipelineStreaming(state.pipeline);
 	state.isStreaming = true;
+
+	// Setup trackers
+	for (auto &tracker : state.trackerConfigs)
+	{
+		ServerUpdatedTrackerConfig(state, tracker);
+	}
 
 	if (state.mode == MODE_Device)
 	{
@@ -1142,8 +1173,8 @@ void StopStreaming(ServerState &state)
 
 	LOG(LDefault, LInfo, "Stopped stream!\n");
 
-	// TODO: Move IMU Config storage to on-demand callback?
-	ServerStoreIMUConfig(state);
+	// Store any target or IMU calibration changes that happened during this session
+	ServerStoreTargetConfigs(state);
 }
 
 void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
@@ -1309,14 +1340,14 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
-			auto target = std::find_if(state.pipeline.tracking.targetCalibrations.begin(), state.pipeline.tracking.targetCalibrations.end(),
+			auto tracker = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 				[&](auto &t){ return t.id == trackRecord.id; });
-			if (target == state.pipeline.tracking.targetCalibrations.end()) continue;
-			std::string path = target->label;
-			//std::string path = asprintf_s("AsterTarget_%.4d", trackedTarget.id);
+			if (tracker == state.trackerConfigs.end()) continue;
+			std::string path = tracker->label;
+			//std::string path = asprintf_s("AsterTarget_%.4d", tracker->id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());
-			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(trackRecord.id, path.c_str(), state.io.vrpn_server.get());
-			io_tracker = state.io.vrpn_trackers.insert({ trackRecord.id, std::move(vrpn_tracker) }).first;
+			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker->id, path.c_str(), state.io.vrpn_server.get());
+			io_tracker = state.io.vrpn_trackers.insert({ tracker->id, std::move(vrpn_tracker) }).first;
 		}
 
 		// TODO: Send both poseObserved and poseFiltered?

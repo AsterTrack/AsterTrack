@@ -139,9 +139,6 @@ struct PipelineState
 	// Tracking pipeline state
 	struct
 	{
-		// All stored target calibrations
-		// TODO: This is the actual store, though pipeline resets needs this, it might be better stored in the main server
-		std::vector<TargetCalibration3D> targetCalibrations;
 		// Currently triangulated points
 		std::vector<Eigen::Vector3f> points3D; // points of triangulations3D
 		std::vector<TriangulatedPoint> triangulations3D; // Likely to be real markers
@@ -151,6 +148,7 @@ struct PipelineState
 		std::list<TrackedMarker> trackedMarkers;
 		// Objects not currently tracked
 		std::list<DormantTarget> dormantTargets;
+		std::list<DormantMarker> dormantMarkers;
 		std::list<OrphanedIMU> orphanedIMUs;
 		// Asynchronous Detections
 		bool asyncDetection;
@@ -263,23 +261,26 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record);
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord);
 
 /* For simulation/replay to update past filter behaviour with new settings for testing */
-void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
+void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
 
 /**
- * Handle association of IMU and tracked markers/targets
+ * Setup and update tracked markers/targets and their associations to IMUs
  */
 
-/* Connect the IMU to a tracked target using an existing target association */
-bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
+/* Add or update a tracked target with given config */
+void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib);
 
-/* Connect the IMU to a tracked marker IF the marker matches an existing marker association */
-bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker);
+/* Add or update a tracked marker with given config */
+void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size);
 
-/* Clear all associations of the given IMU */
-void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
+/* Associate the IMU to a tracker with given calibration, clearing it's orphaned status */
+bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib);
 
-/* Clear all associations of the given tracker */
+/* Disassociate and orphan any IMU associated with the given tracker */
 void DisassociateIMU(PipelineState &pipeline, int trackerID);
+
+/* Disassociate IMU from any tracker and add as orphaned IMU */
+void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 
 
 /* General functions */
@@ -287,19 +288,19 @@ void DisassociateIMU(PipelineState &pipeline, int trackerID);
 /**
  * Normalise the room (camera calibrations), discarding any room calibration done before
  */
-void normaliseRoom(PipelineState &pipeline);
+void NormaliseRoom(PipelineState &pipeline);
 
 /**
  * Calibrate the room coordinate system given a number of floor points and scale for reference (pipeline state)
  */
-bool calibrateFloor(PipelineState &pipeline);
+bool CalibrateFloor(PipelineState &pipeline);
 
 /**
  * Adopts an existing room calibration into the given new calibrations.
  * Tries to identify at least two cameras that have not changed between the current calibration and this one.
  * If these don't exist, returns false.
  */
-bool adoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs);
+bool AdoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations
@@ -314,7 +315,7 @@ void DebugCameraParameters(const std::vector<CameraCalib> &calibs);
 /**
  * Update the error maps for visualisation across each camera frame
  */
-void updateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &cameras);
+void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &cameras);
 
 void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps = true);
 

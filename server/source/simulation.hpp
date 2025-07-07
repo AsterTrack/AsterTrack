@@ -56,7 +56,9 @@ const extern std::array<MotionParameters, MotionCustom> motionPresets;
 struct SimulatedObject
 {
 	bool enabled, logPose;
-	const TargetCalibration3D *target;
+	int id;
+	std::string label;
+	TargetCalibration3D target;
 	int motionPreset;
 	MotionParameters motion;
 	struct {
@@ -100,20 +102,20 @@ struct SimulationState
 		return objects[primaryObject];
 	}
 
-	inline const SimulatedObject *getGT(const TargetCalibration3D &target) const
+	inline const SimulatedObject *getGT(int trackerID) const
 	{
 		for (const auto &object : objects)
 		{
-			if (object.target->id == target.id)
+			if (object.id == trackerID)
 				return &object;
 		}
 		return nullptr;
 	}
 
-	inline Eigen::Isometry3f getGTPose(const TargetCalibration3D &target) const
+	inline Eigen::Isometry3f getGTPose(int trackerID) const
 	{ // Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
 		Eigen::Isometry3f gtPose;
-		auto gt = getGT(target);
+		auto gt = getGT(trackerID);
 		if (gt) gtPose = gt->pose;
 		return gtPose;
 	}
@@ -128,7 +130,7 @@ struct SimulationState
 		if (objects.empty())
 		{
 			objects = {
-			SimulatedObject { .target = &PointCalibMarker, .motionPreset = 0, .motion = motionPresets[0] }
+			SimulatedObject { .id = 0, .label = "Single Marker", .target = PointCalibMarker, .motionPreset = 0, .motion = motionPresets[0] }
 		 	};
 		}
 		primaryObject = 0;

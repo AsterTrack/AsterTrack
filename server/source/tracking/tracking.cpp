@@ -152,7 +152,7 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Match target with points and optimise pose
-	target.match2D = trackTarget2D(*target.calib, observation.predicted, observation.covPredicted,
+	target.match2D = trackTarget2D(target.calib, observation.predicted, observation.covPredicted,
 		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
 	int pointCount = target.match2D.count();
 	if (pointCount != target.match2D.error.samples)
@@ -650,24 +650,21 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 
 	if (inertial.calibration.phase == IMU_CALIB_UNKNOWN)
 	{ // Initialise calibration
-		if (inertial.imu->tracker.orientation.coeffs().hasNaN())
+		if (inertial.calib.orientation.coeffs().hasNaN())
 		{
 			LOG(LTrackingIMU, LInfo, "IMU %d is entering Orientation Calibration!", inertial.imu->index);
 			inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
 		}
 		else
 		{
-			inertial.calibration.conversion = inertial.imu->tracker.conversion;
-			inertial.calibration.quat = inertial.imu->tracker.orientation.cast<double>();
-			inertial.calibration.mat = inertial.calibration.quat.toRotationMatrix() * inertial.calibration.conversion.cast<double>();
-			if (inertial.imu->tracker.offset.hasNaN())
+			inertial.calibration.mat = inertial.calib.orientation.toRotationMatrix().cast<double>() * inertial.calib.conversion.cast<double>();
+			if (inertial.calib.offset.hasNaN())
 			{
 				LOG(LTrackingIMU, LInfo, "IMU %d is entering Offset Calibration!", inertial.imu->index);
 				inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
 			}
 			else
 			{
-				inertial.calibration.offset = inertial.imu->tracker.offset.cast<double>();
 				inertial.calibration.phase = IMU_CALIB_DONE;
 			}
 		}
@@ -1184,21 +1181,20 @@ static void alignIMUOrientation(TrackerInertial &inertial)
 		LOG(LTrackingIMU, LDebug, "Orientation Quat: (%f, %f, %f), %f", orientation.x(), orientation.y(), orientation.z(), orientation.w());
 		LOG(LTrackingIMU, LDebug, "Conversion matrix: \n%s", printMatrix(conversion).c_str());
 
-		inertial.calibration.conversion = conversion;
-		inertial.calibration.quat = orientation;
-		inertial.calibration.mat = orientation.toRotationMatrix() * conversion.cast<double>();
-		inertial.imu->tracker.conversion = conversion;
-		inertial.imu->tracker.orientation = orientation.cast<float>();
+		inertial.calib.conversion = conversion;
+		inertial.calib.orientation = orientation.cast<float>();
+		inertial.calibration.mat = inertial.calib.orientation.toRotationMatrix().cast<double>() * inertial.calib.conversion.cast<double>();
 	}
 }
 
 static void calibrateIMUOffset(TrackerInertial &inertial, const TrackerInertial::State &lastState, const TrackerInertial::State &newState)
 {
-	inertial.calibration.offset.setIdentity();
-	//inertial.calibration.offset = Eigen::Vector3d(0.2f, 0.05f, -0.15f);
+	Eigen::Vector3d offset = inertial.calib.offset.cast<double>();
+	offset.setIdentity();
+	//offset = Eigen::Vector3d(0.2f, 0.05f, -0.15f);
 
 	// Global velocity change observed at IMUs offset from the tracker
-	Eigen::Vector3d dVelIntegrated = inertial.fusion.imuVelocity - (lastState.velocity() + lastState.angularVelocity().cross(inertial.calibration.offset));
+	Eigen::Vector3d dVelIntegrated = inertial.fusion.imuVelocity - (lastState.velocity() + lastState.angularVelocity().cross(offset));
 
 	// Determine observed global velocity change at a given offset from the tracker
 

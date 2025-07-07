@@ -506,35 +506,47 @@ static bool ShowTrackingPanel()
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	static int curTargetID = 0;
-	static std::string curTargetLabel = "Select Target";
-	if (ImGui::BeginCombo("Target", curTargetLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
-	{
-		bool changed = false;
-		auto TargetSelect = [&changed](const TargetCalibration3D &target)
+	int &focusedTrackerID = ui.visState.tracking.focusedTrackerID;
+	static int curTrackerID = 0;
+	static std::string curTrackerLabel = "Select Tracker";
+	if (focusedTrackerID != 0 && focusedTrackerID != curTrackerID)
+	{ // External change
+		curTrackerID = focusedTrackerID;
+		for (auto &tracker : state.trackerConfigs)
 		{
-			ImGui::PushID(target.id);
-			bool selected = curTargetID == target.id;
-			if (ImGui::Selectable(target.label.c_str(), selected) && curTargetID != target.id)
+			if (tracker.id == focusedTrackerID)
 			{
-				curTargetID = target.id;
-				curTargetLabel = target.label;
+				curTrackerID = tracker.id;
+				curTrackerLabel = tracker.label;
+			}
+		}
+	}
+	if (ImGui::BeginCombo("Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
+	{ // Local change
+		bool changed = false;
+		auto TrackerSelect = [&](const TrackerConfig &tracker)
+		{
+			ImGui::PushID(tracker.id);
+			if (ImGui::Selectable(tracker.label.c_str(), curTrackerID == tracker.id) && curTrackerID != tracker.id)
+			{
+				focusedTrackerID = tracker.id;
+				curTrackerID = tracker.id;
+				curTrackerLabel = tracker.label;
 				changed = true;
 			}
 			ImGui::PopID();
 		};
-		for (auto &target : pipeline.tracking.targetCalibrations)
-			TargetSelect(target);
+		for (auto &tracker : state.trackerConfigs)
+			TrackerSelect(tracker);
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
-	if (curTargetID == 0 && (!pipeline.tracking.trackedTargets.empty() || !pipeline.tracking.targetCalibrations.empty()))
-	{
-		auto target = !pipeline.tracking.trackedTargets.empty()? pipeline.tracking.trackedTargets.front().target.calib : &pipeline.tracking.targetCalibrations.front();
-		curTargetID = target->id;
-		curTargetLabel = target->label;
-	}
+	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+		[&](auto &t){ return t.id == curTrackerID; });
+	if (trackerIt == state.trackerConfigs.end()) return true;
+	if (trackerIt->type != TrackerConfig::TRACKER_TARGET) return true;
+	// TODO: Support marker trackers
 
 	static bool followFrame = true, showCur = true, showRec = true;
 	ImGui::SameLine();
@@ -550,169 +562,170 @@ static bool ShowTrackingPanel()
 	auto framesRecord = pipeline.record.frames.getView();
 	auto framesStored = state.stored.frames.getView();
 	unsigned int frameNum = pipeline.frameNum.load();
-	if (curTargetID != 0 && (!framesRecord.empty() || !framesStored.empty())
-		&& ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
-	{
-		static struct {
-			std::vector<int> sampleCount;
-			std::vector<float> errors2D;
-			std::vector<float> tracking;
+	if (framesRecord.empty() && framesStored.empty())
+		return true;
 
-			void setup(int size)
-			{
-				sampleCount.clear();
-				errors2D.clear();
-				tracking.clear();
-				sampleCount.resize(size, 0);
-				errors2D.resize(size, NAN);
-				tracking.resize(size, NAN); // ImPlot needs one last entry to render the most recent state
-			}
-		} tracking, recording;
+	if (!ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
+		return true;
 
-		auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
+	static struct {
+		std::vector<int> sampleCount;
+		std::vector<float> errors2D;
+		std::vector<float> tracking;
+
+		void setup(int size)
 		{
-			auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTargetID; });
-			if (trackRecord == frame.trackers.end())
-				return;
-			stats.sampleCount[index] = trackRecord->error.samples;
-			stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
-
-			// Indices into ImPlotColormap_Dark:
-			if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
-				stats.tracking[index] = 0;
-			else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
-				stats.tracking[index] = 1;
-			else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
-				stats.tracking[index] = 2;
-			else if (trackRecord->result.isProbe())
-				stats.tracking[index] = 3;
-			else if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
-				stats.tracking[index] = 4;
-			else if (trackRecord->result.isDetected())
-				stats.tracking[index] = 7;
-		};
-
-		// Update frameRange
-		static ImPlotRange frameRange(0, 1000);
-		int maxOffset = std::max(10.0, frameRange.Size()/6);
-		if (followFrame)
-		{ // Apply offset due to new recent frame
-			double offset = 0;
-			if (frameRange.Max < frameNum+maxOffset)
-				offset = std::max(frameNum + maxOffset - frameRange.Max, -frameRange.Min);
-			else if (frameRange.Min > frameNum-maxOffset)
-				offset = std::max(frameNum - maxOffset - frameRange.Min, -frameRange.Min);
-			frameRange.Min += offset;
-			frameRange.Max += offset;
+			sampleCount.clear();
+			errors2D.clear();
+			tracking.clear();
+			sampleCount.resize(size, 0);
+			errors2D.resize(size, NAN);
+			tracking.resize(size, NAN); // ImPlot needs one last entry to render the most recent state
 		}
-		double framesAxisMax = std::max((double)std::max(framesRecord.endIndex(), framesStored.size()), frameRange.Max);
+	} tracking, recording;
 
-		// Setup plots
-		ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
-		ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
-		ImPlot::SetupAxis(ImAxis_Y1, "Samples",ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50);
-		ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
-		ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
+	auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
+	{
+		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTrackerID; });
+		if (trackRecord == frame.trackers.end())
+			return;
+		stats.sampleCount[index] = trackRecord->error.samples;
+		stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
 
-		// Update frameRange from inputs
-		ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
-		frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
-		// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
+		// Indices into ImPlotColormap_Dark:
+		if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
+			stats.tracking[index] = 0;
+		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
+			stats.tracking[index] = 1;
+		else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
+			stats.tracking[index] = 2;
+		else if (trackRecord->result.isProbe())
+			stats.tracking[index] = 3;
+		else if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
+			stats.tracking[index] = 4;
+		else if (trackRecord->result.isDetected())
+			stats.tracking[index] = 7;
+	};
 
-		double frameShift = 0.0f, frameShiftRec = 0.0f;
-		bool drawCur = false, drawRec = false;
+	// Update frameRange
+	static ImPlotRange frameRange(0, 1000);
+	int maxOffset = std::max(10.0, frameRange.Size()/6);
+	if (followFrame)
+	{ // Apply offset due to new recent frame
+		double offset = 0;
+		if (frameRange.Max < frameNum+maxOffset)
+			offset = std::max(frameNum + maxOffset - frameRange.Max, -frameRange.Min);
+		else if (frameRange.Min > frameNum-maxOffset)
+			offset = std::max(frameNum - maxOffset - frameRange.Min, -frameRange.Min);
+		frameRange.Min += offset;
+		frameRange.Max += offset;
+	}
+	double framesAxisMax = std::max((double)std::max(framesRecord.endIndex(), framesStored.size()), frameRange.Max);
 
-		if (showCur && !framesRecord.empty())
-		{ // Gather stats for realtime tracking data
-			long long min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
-			long long max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
-			if (max >= min)
+	// Setup plots
+	ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
+	ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
+	ImPlot::SetupAxis(ImAxis_Y1, "Samples",ImPlotAxisFlags_Lock);
+	ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50);
+	ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+	ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
+	ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
+
+	// Update frameRange from inputs
+	ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
+	frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
+	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
+
+	double frameShift = 0.0f, frameShiftRec = 0.0f;
+	bool drawCur = false, drawRec = false;
+
+	if (showCur && !framesRecord.empty())
+	{ // Gather stats for realtime tracking data
+		long long min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
+		long long max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
+		if (max >= min)
+		{
+			std::size_t frameCnt = max-min+1;
+			tracking.setup(frameCnt);
+			auto frameIt = framesRecord.pos(max);
+			for (int i = 0; i < frameCnt; i++, frameIt--)
 			{
-				std::size_t frameCnt = max-min+1;
-				tracking.setup(frameCnt);
-				auto frameIt = framesRecord.pos(max);
-				for (int i = 0; i < frameCnt; i++, frameIt--)
-				{
-					if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
-					updateFrameStats(tracking, frameCnt-i-1, *frameIt->get());
-				}
-				frameShift = (double)min;
-				drawCur = frameCnt > 0;
+				if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
+				updateFrameStats(tracking, frameCnt-i-1, *frameIt->get());
 			}
-			GetUI().RequestUpdates();
+			frameShift = (double)min;
+			drawCur = frameCnt > 0;
 		}
-
-		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
-		{ // Gather stats for recorded tracking data
-			long long min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
-			long long max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
-			if (max >= min)
-			{
-				std::size_t frameCnt = max-min+1;
-				recording.setup(frameCnt);
-				auto frameIt = framesStored.pos(max);
-				for (int i = 0; i < frameCnt; i++, frameIt--)
-				{
-					if (!*frameIt) continue;
-					updateFrameStats(recording, frameCnt-i-1, *frameIt->get());
-				}
-				frameShiftRec = (double)min;
-				drawRec = frameCnt > 0;
-			}
-		}
-
-		ImPlot::PushColormap(ImPlotColormap_Deep);
-
-		// Sample count bars
-		ImPlot::SetAxis(ImAxis_Y1);
-		if (drawCur)
-		{ // Draw current
-			ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
-			ImPlot::SetNextFillStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
-			ImPlot::PlotBars("Samples", tracking.sampleCount.data(), tracking.sampleCount.size(), 0.67f, frameShift);
-		}
-		if (drawRec)
-		{ // Draw recorded
-			ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
-			ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
-			ImPlot::PlotBars("Samples Recorded", recording.sampleCount.data(), recording.sampleCount.size(), 0.67f, frameShiftRec);
-		}
-
-		// Error line
-		ImPlot::SetAxis(ImAxis_Y2);
-		if (drawRec)
-		{ // Draw recorded
-			ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
-			ImPlot::PlotLine("Errors Recorded", recording.errors2D.data(), recording.errors2D.size(), 1, frameShiftRec);
-		}
-		if (drawCur)
-		{ // Draw current
-			ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
-			ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
-		}
-
-		// Tracking state
-		ImPlot::PushColormap(ImPlotColormap_Dark);
-		if (drawRec)
-			ImPlot::PlotDigital("##TrackingRec", recording.tracking.data(), recording.tracking.size(), frameShiftRec-0.5f);
-		if (drawCur)
-			ImPlot::PlotDigital("##Tracking", tracking.tracking.data(), tracking.tracking.size(), frameShift-0.5f);
-		ImPlot::PopColormap();
-
-		// Current and selected frames
-		double curFrame = frameNum + 0.5;
-		double jumpFrame = (double)ui.frameJumpTarget;
-		ImPlot::SetNextLineStyle(ImVec4(0.33, 0.66, 0.4, 1.0), 3);
-		ImPlot::PlotInfLines("CurFrame", &curFrame, 1);
-		if (ImPlot::DragLineX(2, &jumpFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
-			ui.frameJumpTarget = (unsigned int)jumpFrame;
-
-		ImPlot::PopColormap();
-		ImPlot::EndPlot();
+		GetUI().RequestUpdates();
 	}
 
+	if (showRec && state.mode == MODE_Replay && !framesStored.empty())
+	{ // Gather stats for recorded tracking data
+		long long min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
+		long long max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
+		if (max >= min)
+		{
+			std::size_t frameCnt = max-min+1;
+			recording.setup(frameCnt);
+			auto frameIt = framesStored.pos(max);
+			for (int i = 0; i < frameCnt; i++, frameIt--)
+			{
+				if (!*frameIt) continue;
+				updateFrameStats(recording, frameCnt-i-1, *frameIt->get());
+			}
+			frameShiftRec = (double)min;
+			drawRec = frameCnt > 0;
+		}
+	}
+
+	ImPlot::PushColormap(ImPlotColormap_Deep);
+
+	// Sample count bars
+	ImPlot::SetAxis(ImAxis_Y1);
+	if (drawCur)
+	{ // Draw current
+		ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
+		ImPlot::SetNextFillStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
+		ImPlot::PlotBars("Samples", tracking.sampleCount.data(), tracking.sampleCount.size(), 0.67f, frameShift);
+	}
+	if (drawRec)
+	{ // Draw recorded
+		ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
+		ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
+		ImPlot::PlotBars("Samples Recorded", recording.sampleCount.data(), recording.sampleCount.size(), 0.67f, frameShiftRec);
+	}
+
+	// Error line
+	ImPlot::SetAxis(ImAxis_Y2);
+	if (drawRec)
+	{ // Draw recorded
+		ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
+		ImPlot::PlotLine("Errors Recorded", recording.errors2D.data(), recording.errors2D.size(), 1, frameShiftRec);
+	}
+	if (drawCur)
+	{ // Draw current
+		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
+		ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
+	}
+
+	// Tracking state
+	ImPlot::PushColormap(ImPlotColormap_Dark);
+	if (drawRec)
+		ImPlot::PlotDigital("##TrackingRec", recording.tracking.data(), recording.tracking.size(), frameShiftRec-0.5f);
+	if (drawCur)
+		ImPlot::PlotDigital("##Tracking", tracking.tracking.data(), tracking.tracking.size(), frameShift-0.5f);
+	ImPlot::PopColormap();
+
+	// Current and selected frames
+	double curFrame = frameNum + 0.5;
+	double jumpFrame = (double)ui.frameJumpTarget;
+	ImPlot::SetNextLineStyle(ImVec4(0.33, 0.66, 0.4, 1.0), 3);
+	ImPlot::PlotInfLines("CurFrame", &curFrame, 1);
+	if (ImPlot::DragLineX(2, &jumpFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
+		ui.frameJumpTarget = (unsigned int)jumpFrame;
+
+	ImPlot::PopColormap();
+	ImPlot::EndPlot();
 	return true;
 }
 static void CleanTrackingPanel()

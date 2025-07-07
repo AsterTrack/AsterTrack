@@ -218,30 +218,34 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record)
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord)
 {
-	ResetPipelineStreaming(pipeline);
-
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-	{
+
+	{ // Initialise the given frame in case it hasn't been replayed yet
 		auto framesRecord = pipeline.record.frames.getView();
 		if (framesRecord.size() <= frameRecord.num || !framesRecord[frameRecord.num] || framesRecord[frameRecord.num].get() != &frameRecord)
 			pipeline.record.frames.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
 	}
 	pipeline.frameNum = frameRecord.num; // Next frame will be processed
 
-	InitPipelineStreaming(pipeline);
-
 	// Point and Target calibration pipeline can just stay as is, as long as frame records stays
 	// We will be overwriting frame records, so technically leaving them as-is is not thread-safe
 
-	// Adopt recorded tracking state
+	// Mark all trackers as dormant
+	std::move(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(), std::back_inserter(pipeline.tracking.dormantTargets));
+	pipeline.tracking.trackedTargets.clear();
+	std::move(pipeline.tracking.trackedMarkers.begin(), pipeline.tracking.trackedMarkers.end(), std::back_inserter(pipeline.tracking.dormantMarkers));
+	pipeline.tracking.trackedMarkers.clear();
+
+	// Adopt state for all recorded trackers in that frame to kickstart tracking
 	for (auto &targetRecord : frameRecord.trackers)
 	{
 		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
-			[&](auto &e){ return e.target.calib->id == targetRecord.id; });
+			[&](auto &trk){ return trk.id == targetRecord.id; });
 		if (dormantIt == pipeline.tracking.dormantTargets.end()) continue;
 		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
 		pipeline.tracking.dormantTargets.erase(dormantIt);
 	}
+	// TODO: Adopt tracked markers
 }
 
 
@@ -288,7 +292,7 @@ void DebugCameraParameters(const std::vector<CameraCalib> &calibs)
 /**
  * Update the error maps in pipeline with errors calculated from the given calibs and data
  */
-void updateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &calibs)
+void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &calibs)
 {
 	std::vector<CameraErrorMaps*> errorMaps(calibs.size());
 	std::vector<SynchronisedS<CameraErrorMaps>::LockedPtr> errorMapLocks;
@@ -326,7 +330,7 @@ void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
 	if (errorMaps)
 	{
 		ScopedLogLevel scopedLogLevel(LDebug);
-		updateErrorMaps(pipeline, data, calibs);
+		UpdateErrorMaps(pipeline, data, calibs);
 	}
 
 	{

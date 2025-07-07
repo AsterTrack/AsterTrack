@@ -24,9 +24,11 @@ class RemoteIMUSingleton : public IMUDeviceProvider
 {
 public:
 
-	std::size_t deviceCount;
+	IMUDeviceList devices;
+	IMUDeviceList removedIMUs;
+	IMUDeviceList addedIMUs;
 
-	RemoteIMUSingleton() : IMUDeviceProvider(IMU_DRIVER_REMOTE), deviceCount(0)
+	RemoteIMUSingleton() : IMUDeviceProvider(IMU_DRIVER_REMOTE)
 	{
 		latencyDescriptions.descriptions.push_back("Remote RX");
 		latencyDescriptions.descriptions.push_back("Fusion");
@@ -37,30 +39,30 @@ public:
 		remoteIMUSingleton = nullptr;
 	}
 
-	IMUDeviceProviderStatus poll(int &updatedDevices, int &changedDevices);
+	IMUDeviceProviderStatus poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added);
 };
 
-IMUDeviceProviderStatus RemoteIMUSingleton::poll(int &updatedDevices, int &changedDevices)
+IMUDeviceProviderStatus RemoteIMUSingleton::poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added)
 {
-	if (deviceCount < devices.size())
-	{ // Detected added RemoteIMU
-		changedDevices = devices.size() - deviceCount;
-		deviceCount = devices.size();
-	}
 	for (auto &remoteIMU : devices)
 	{ // Check for updated RemoteIMUs
+		if (!remoteIMU) continue;
 		auto &imu = *(RemoteIMU*)remoteIMU.get();
 		std::size_t count = imu.isFused? imu.samplesFused.getView().size() : imu.samplesRaw.getView().size();
 		if (imu.sampleCount < count)
 		{ // Detected updated RemoteIMU
-			updatedDevices++;
+			updated++;
 			imu.sampleCount = count;
 		}
 	}
-	return IMU_STATUS_NORMAL;
+	std::move(removedIMUs.begin(), removedIMUs.end(), std::back_inserter(removed));
+	std::move(addedIMUs.begin(), addedIMUs.end(), std::back_inserter(added));
+	removedIMUs.clear();
+	addedIMUs.clear();
+	return devices.empty()? IMU_STATUS_NO_DEVICES : IMU_STATUS_DEVICES_CONNECTED;
 }
 
-bool initialiseRemoteIMUs(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers)
+bool initialiseRemoteIMUs(IMUDeviceProviderList &providers)
 {
 	auto singletonIt = std::find_if(providers.begin(), providers.end(),
 		[](auto &p){ return p->driver == IMU_DRIVER_REMOTE; });
@@ -81,12 +83,12 @@ std::shared_ptr<IMUDevice> registerRemoteIMU(std::string path)
 	auto remote = remoteIMUSingleton;
 	if (!remote) return nullptr;
 	auto remoteIMUIt = std::find_if(remote->devices.begin(), remote->devices.end(),
-		[&](const auto &imu) { return imu->id.path().compare(path) == 0; });
+		[&](const auto &imu) { return imu && imu->id.path().compare(path) == 0; });
 	if (remoteIMUIt != remote->devices.end())
 		return *remoteIMUIt;
 	auto imu = std::make_shared<RemoteIMU>(path);
-	imu->tracker = getIMUTracker(imu->id);
 	remote->devices.push_back(imu);
+	remote->addedIMUs.push_back(imu);
 	return imu;
 }
 
@@ -97,7 +99,8 @@ void removeRemoteIMU(std::shared_ptr<IMUDevice> remoteIMU)
 	auto remoteIMUIt = std::find_if(remote->devices.begin(), remote->devices.end(),
 		[&](const auto &imu) { return imu == remoteIMU; });
 	if (remoteIMUIt != remote->devices.end())
-		remote->devices.erase(remoteIMUIt);
+		*remoteIMUIt = nullptr;
+	remote->removedIMUs.push_back(std::move(remoteIMU));
 }
 
 IMUDeviceProvider *getRemoteIMUProvider()

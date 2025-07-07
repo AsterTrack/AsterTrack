@@ -77,6 +77,7 @@ class SlimeVRReceiver : public IMUDeviceProvider
 public:
 	std::string path;
 	hid_device *handle;
+	IMUDeviceList devices;
 
 	SlimeVRReceiver(const char *path, hid_device *handle)
 		: path(path), handle(handle),
@@ -87,7 +88,7 @@ public:
 		hid_close(handle);
 	}
 
-	IMUDeviceProviderStatus poll(int &updatedDevices, int &changedDevices);
+	IMUDeviceProviderStatus poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added);
 	bool parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRACKER_REPORT_SIZE], TimePoint_t &timestamp);
 };
 
@@ -100,7 +101,7 @@ enum PACKET_HEADER_TYPE
 	HEADER_SKIP = 0b11111111,
 };
 
-IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedDevices)
+IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added)
 {
 	thread_local uint8_t data[64+8]; 
 	int reports = 0;
@@ -126,7 +127,7 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 			int i = p*TRACKER_REPORT_SIZE;
 			if (packet[i+0] == HEADER_SKIP) continue;
 			uint8_t tracker_id = packet[i+1];
-			LOG(LIO, LTrace, "    Packet %d from tracker %d!", packet[i+0], packet[i+1]);
+			LOG(LIO, LTrace, "    Packet %d from Tracker IMU %d!", packet[i+0], packet[i+1]);
 			if (devices.size() <= tracker_id)
 				devices.resize(tracker_id+1);
 			if (!devices[tracker_id])
@@ -134,15 +135,14 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 				// TODO: Use tracker serial number
 				std::string serial = asprintf_s("IMU %d", tracker_id);
 				auto imu = std::make_shared<SlimeVRTracker>(serial);
-				imu->tracker = getIMUTracker(imu->id);
-				LOG(LIO, LInfo, "    Registered new tracker %d (%s)!", tracker_id, imu->id.serial().c_str());
+				LOG(LIO, LInfo, "    Registered new Tracker IMU %d (%s)!", tracker_id, imu->id.serial().c_str());
+				added.push_back(imu); // new shared_ptr
 				devices[tracker_id] = std::move(imu);
-				changedDevices++;
 			}
 			SlimeVRTracker &tracker = *static_cast<SlimeVRTracker*>(devices[tracker_id].get());
 			TimePoint_t sampleTime = recvTime;
 			if (parseDataPacket(tracker, packet+i, sampleTime))
-				updatedDevices++;
+				updated++;
 			/* else if (tracker.status == SLIMEVR_TRACKER_DISCONNECTED || tracker.status == SLIMEVR_TRACKER_ERROR)
 				devices[trkID] = nullptr; */
 		}
@@ -152,7 +152,7 @@ IMUDeviceProviderStatus SlimeVRReceiver::poll(int &updatedDevices, int &changedD
 		LOG(LIO, LInfo, "SlimeVR Receiver %s: %ls", path.c_str(), hid_error(handle));
 		return IMU_STATUS_DISCONNECTED;
 	}
-	return IMU_STATUS_NORMAL;
+	return devices.empty()? IMU_STATUS_NO_DEVICES : IMU_STATUS_DEVICES_CONNECTED;
 }
 
 bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRACKER_REPORT_SIZE], TimePoint_t &timestamp)
@@ -241,7 +241,7 @@ bool SlimeVRReceiver::parseDataPacket(SlimeVRTracker &tracker, uint8_t data[TRAC
 	}
 }
 
-bool detectSlimeVRReceivers(std::vector<std::shared_ptr<IMUDeviceProvider>> &providers)
+bool detectSlimeVRReceivers(IMUDeviceProviderList &providers)
 {
 	bool added = false;
 	hid_device_info *devs = hid_enumerate(0x1209, 0x7690);

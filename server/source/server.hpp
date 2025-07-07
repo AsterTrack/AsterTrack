@@ -71,6 +71,7 @@ struct ServerState
 	CameraConfigMap cameraConfig;
 	ControllerConfig controllerConfig; // TODO: Add support for multiple controllers with different configs
 	std::vector<CameraCalib> cameraCalibrations;
+	std::vector<TrackerConfig> trackerConfigs; // TODO: Synchronised
 	std::string wpa_supplicant_conf;
 	// TODO: Should not store on disk by default, but provide option to store wifi credentials using secret service on linux 
 
@@ -103,7 +104,7 @@ struct ServerState
 
 	// IMU Device integration
 	std::mutex hid_access;
-	Synchronised<std::vector<std::shared_ptr<IMUDeviceProvider>>> imuProviders;
+	Synchronised<IMUDeviceProviderList> imuProviders;
 
 	// All integrations
 	struct 
@@ -122,10 +123,12 @@ struct ServerState
 
 bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
-void ServerStoreCameraCalib(ServerState &state);
-void ServerStoreTargetCalib(ServerState &state);
-void ServerStoreIMUConfig(ServerState &state);
 void ServerStoreConfiguration(ServerState &state);
+void ServerStoreCameraCalib(ServerState &state);
+void ServerStoreTargetConfigs(ServerState &state);
+void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker);
+void ServerUpdateTrackerTargetCalib(ServerState &state, int trackerID, TargetCalibration3D calib);
+void ServerUpdateTrackerIMUCalib(ServerState &state, int trackerID, IMUIdent imu, IMUCalib calib);
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);

@@ -814,16 +814,18 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			{
 				// Find max occupied target id (excluding testing markers because they are negative)
 				int id = -1;
-				for (int i = 0; i < pipeline.tracking.targetCalibrations.size(); i++)
-					id = std::max(id, pipeline.tracking.targetCalibrations[i].id);
+				for (auto &tracker : state.trackerConfigs)
+					id = std::min(id, tracker.id);
 				id++;
-				// Register latest assembly stage as tracking target
+				std::string label = std::string("Target ID ") + (char)((int)'0' + id);
+				// Take latest assembly stage
 				auto stage = getSelectedStage();
-				TargetCalibration3D targetCalib(id, std::string("Target ID ") + (char)((int)'0' + id), 
-					finaliseTargetMarkers(pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
-				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)targetCalib.markers.size(), id);
-				pipeline.tracking.targetCalibrations.push_back(std::move(targetCalib));
-				ServerStoreTargetCalib(state);
+				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)stage->base.target.markers.size(), id);
+				// Register as calibrated target
+				TargetCalibration3D targetCalib(finaliseTargetMarkers(
+					pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
+				state.trackerConfigs.emplace_back(id, label, std::move(targetCalib));
+				ServerStoreTargetConfigs(state);
 			}
 
 			ImGui::SameLine();

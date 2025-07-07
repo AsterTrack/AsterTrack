@@ -37,25 +37,21 @@ extern ctpl::thread_pool threadPool;
 // General 3D- and 2D Marker Tracking
 // ----------------------------------------------------------------------------
 
-void InitTrackingPipeline(PipelineState &pipeline)
-{
-	pipeline.tracking.dormantTargets.clear();
-	for (auto &target : pipeline.tracking.targetCalibrations)
-		pipeline.tracking.dormantTargets.emplace_back(&target);
-	pipeline.tracking.orphanedIMUs.clear();
-	for (auto &imu : pipeline.record.imus)
-	{
-		if (!imu->tracker || !ConnectIMU(pipeline, imu))
-			pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
-	}
-}
-
 void ResetTrackingPipeline(PipelineState &pipeline)
 {
 	pipeline.tracking.trackedMarkers.clear();
 	pipeline.tracking.trackedTargets.clear();
 	pipeline.tracking.dormantTargets.clear();
+	pipeline.tracking.dormantMarkers.clear();
 	pipeline.tracking.orphanedIMUs.clear();
+}
+
+void InitTrackingPipeline(PipelineState &pipeline)
+{
+	ResetTrackingPipeline(pipeline);
+	for (auto &imu : pipeline.record.imus)
+		pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
+	// Trackers (both markers and targets) will be added when triggered, and IMUs reassigned
 }
 
 /**
@@ -116,7 +112,7 @@ static void recordTrackerObservation(TrackerRecord &record, const TrackerObserva
 /**
  * Consider recording tracked target into database for optimisation
  */
-static void recordTrackingTargetData(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackerTarget &tracker)
+static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, const TrackerTarget &tracker, std::shared_ptr<FrameRecord> &frame)
 {
 	// Consider recording target in optimisation database
 	auto &params = pipeline.params.cont.targetObs;
@@ -131,13 +127,14 @@ static void recordTrackingTargetData(PipelineState &pipeline, std::shared_ptr<Fr
 	if (strongCameras >= params.minStrongCameras && sampleCount >= params.minTotalSamples)
 	{
 		auto db_lock = pipeline.obsDatabase.contextualLock();
-		auto targetIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(), [&](auto &tgt){ return tgt.targetID == tracker.calib->id; });
+		auto targetIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
+			[&](auto &tgt){ return tgt.targetID == trackerID; });
 		if (targetIt == db_lock->targets.end())
 		{
-			db_lock->targets.push_back({ tracker.calib->id });
+			db_lock->targets.push_back({ trackerID });
 			targetIt = std::prev(db_lock->targets.end());
-			targetIt->markers.reserve(tracker.calib->markers.size());
-			for (auto &marker : tracker.calib->markers)
+			targetIt->markers.reserve(tracker.calib.markers.size());
+			for (auto &marker : tracker.calib.markers)
 			{
 				targetIt->markerMap.emplace((int)targetIt->markers.size(), (int)targetIt->markers.size());
 				targetIt->markers.push_back(marker.pos);
@@ -172,13 +169,13 @@ static void recordTrackingTargetData(PipelineState &pipeline, std::shared_ptr<Fr
 
 static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTarget &tracker, TrackingResult result)
 {
-	TrackerRecord &record = createTrackerRecord(frame, tracker.target.calib->id, result);
+	TrackerRecord &record = createTrackerRecord(frame, tracker.id, result);
 	if (result.isTracked())
 	{
 		recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
 		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
 		if (!result.hasFlag(TrackingResult::FILTER_FAILED))
-			recordTrackingTargetData(pipeline, frame, tracker.target);
+			recordTrackingTargetData(pipeline, tracker.id, tracker.target, frame);
 	}
 	else if (result.isDetected())
 	{
@@ -243,17 +240,16 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		}
 
 		// Detect target first in this cameras 2D points, and then match with others
-		dormant.target.match2D = detectTarget2D(stopToken, *dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+		dormant.target.match2D = detectTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
 			focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total)
 		{
-			createTrackerRecord(frame, dormant.target.calib->id, TrackingResult::SEARCHED_2D);
+			createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
 			return false;
 		}
 
 		LOG(LDetection2D, LInfo, "    Detected tracked target in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
-		return true;
 	}
 	if (stopToken.stop_requested())
 		return false;
@@ -285,7 +281,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				break;
 			for (auto &trackRecord : frameRecord.trackers)
 			{
-				if (trackRecord.id != tracker.target.calib->id) continue;
+				if (trackRecord.id != tracker.id) continue;
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
@@ -327,7 +323,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				break;
 			for (auto &trackRecord : frameRecord.trackers)
 			{
-				if (trackRecord.id != tracker.target.calib->id) continue;
+				if (trackRecord.id != tracker.id) continue;
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
@@ -352,13 +348,13 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
 
 	// Finally, no more frames to catch up on, register as new tracked target
-	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.target.calib == tracker.target.calib; });
+	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
 	assert(erased == 1);
 	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	return true;
 }
 
-void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd)
+void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
@@ -382,7 +378,7 @@ void retroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 		{
 			auto &targets = pipeline.tracking.trackedTargets;
 			auto targetIt = std::find_if(targets.begin(), targets.end(),
-				[&](auto &e){ return e.target.calib->id == trackRecord.id; });
+				[&](auto &e){ return e.id == trackRecord.id; });
 			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
 			if (targetIt->state.lastObsFrame > frameRecord.num)
 			{ // Initialise filter as good as possible
@@ -478,8 +474,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		auto tracker = track.trackedTargets.begin();
 		while (tracker != track.trackedTargets.end())
 		{
-			const TargetCalibration3D &target = *tracker->target.calib;
-			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!\n", target.id, target.label.c_str(), (int)target.markers.size());
+			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!\n", tracker->id, tracker->label.c_str(), (int)tracker->target.calib.markers.size());
 
 			if (tracker->inertial)
 				integrateIMU(tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
@@ -490,7 +485,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (result.isTracked())
 			{
 				LOG(LTracking, LDebug, "    Found continuation of target %d (name %s) with %d observations and %.3fpx mean error!\n",
-					target.id, target.label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
 
 				if (tracker->inertial)
 					postCorrectIMU(tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
@@ -510,7 +505,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					dtMS(tracker->state.firstObservation, frame->time) > pipeline.params.track.coastMinTrackTime)
 			{
 				LOG(LTracking, LDarn, "Failed to find continuation of target %d (name %s), got %d observations and %.3fpx mean error!\n",
-					target.id, target.label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
 
 				recordTrackingResult(pipeline, frame, *tracker, result);
 
@@ -527,7 +522,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			else
 			{
 				LOG(LTracking, LWarn, "Failed to find continuation of target %d (name %s), got %d observations and %.3fpx mean error!\n",
-					target.id, target.label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
 
 				result.setFlag(TrackingResult::REMOVED);
 				recordTrackingResult(pipeline, frame, *tracker, result);
@@ -548,7 +543,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (pipeline.isSimulationMode)
 			{
 				// Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
-				Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(target);
+				Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(tracker->id);
 				std::pair<double,double> GTErrorOpt = calculatePoseError(gtPose, tracker->pose.observed);
 				LOG(LTracking, LDebug, "    GT Opt Tracking Error: %fmm, %fdeg\n", GTErrorOpt.first, GTErrorOpt.second);
 				std::pair<double,double> GTError = calculatePoseError(gtPose, tracker->pose.filtered);
@@ -562,6 +557,32 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		trk1 = pclock::now();
 	}
+
+	/* { // Single Marker Tracking
+
+		tpt0 = pclock::now();
+
+		auto tracker = pipeline.tracking.trackedMarkers.begin();
+		while (tracker != pipeline.tracking.trackedMarkers.end())
+		{
+			int matchedPoint = -1;
+			// TODO: Use 2D Points
+			TrackingResult result = trackMarker(tracker->state, tracker->marker, tracker->pose,
+					pipeline.tracking.points3D, triIndices, &matchedPoint, frame->time, 3);
+			if (result.isTracked())
+			{
+				tracker++;
+			}
+			else
+			{
+				LOG(LTracking, LDarn, "Failed to find continuation of tracked point!\n");
+				tracker = pipeline.tracking.trackedMarkers.erase(tracker);
+				// TODO: Add to dormant markers
+			}
+		}
+
+		tpt1 = pclock::now();
+	} */
 
 	std::vector<std::vector<int>> clusters3D;
 
@@ -679,12 +700,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		while (dormantIt != pipeline.tracking.dormantTargets.end())
 		{
 			DormantTarget &dormant = *dormantIt;
-			const TargetCalibration3D &target = *dormant.target.calib;
 			LOG(LTracking, LDebug, "Trying to detect target %d (name %s) with %d markers in 3D point cloud!\n",
-				target.id, target.label.c_str(), (int)target.markers.size());
+				dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
 
 			// Detect target in remaining 3D point cloud
-			TargetCandidate3D candidate = detectTarget3D(target,
+			TargetCandidate3D candidate = detectTarget3D(dormant.target.calib,
 				pipeline.tracking.triangulations3D, triIndices,
 				detect.tri.sigmaError, detect.tri.poseSigmaError, detect.tri.quickAssignTargetMatches);
 
@@ -693,7 +713,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				// Use pose candidate to track target with 2D points
 				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * pipeline.params.track.filter.detectSigma;
-				dormant.target.match2D = trackTarget2D(target, candidate.pose, covariance,
+				dormant.target.match2D = trackTarget2D(dormant.target.calib, candidate.pose, covariance,
 					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.track, dormant.target.data);
 
 				acceptCandidate = dormant.target.match2D.error.samples >= pipeline.params.track.quality.minTotalObs
@@ -701,7 +721,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (acceptCandidate)
 				{ // Register as tracked target
 					{ // Make sure no async detection of this target is ongoing
-						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == target.id)
+						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == dormant.id)
 							pipeline.tracking.asyncDetectionStop.request_stop();
 					}
 					Eigen::Isometry3f pose = dormant.target.match2D.pose;
@@ -711,14 +731,14 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 					LOG(LTracking, LInfo, "    Added dormant tracked target %s back with %d points and %fmm RMSE"
 						", now with %d 2D points and %fpx mean error!\n",
-						target.label.c_str(), (int)candidate.points.size(), std::sqrt(candidate.MSE),
+						dormant.label.c_str(), (int)candidate.points.size(), std::sqrt(candidate.MSE),
 						tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 
 					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 				}
 				else
 				{
-					createTrackerRecord(frame, dormant.target.calib->id, TrackingResult::TESTED_3D);
+					createTrackerRecord(frame, dormant.id, TrackingResult::TESTED_3D);
 					LOG(LTracking, LDebug, "    No good candidate, best has %d points and %fmm RMSE!\n",
 						(int)candidate.points.size(), std::sqrt(candidate.MSE));
 				}
@@ -739,7 +759,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (pipeline.isSimulationMode)
 			{
 				// Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
-				Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(target);
+				Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(dormant.id);
 				std::pair<double,double> GTError = calculatePoseError(gtPose, candidate.pose);
 				LOG(LTracking, LDebug, "    Best candidate has GT Error %fmm, %fdeg!\n", GTError.first, GTError.second);
 			}
@@ -750,6 +770,21 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				dormantIt++;
 		}
 	}
+
+	/* { // Add single markers to track
+
+		// TODO: Rewrite this fully to consider DormantMarkers
+		// Consider cues over multiple frames from associated IMUs, too
+		// E.g. keep track of markers for a bit, and eventually associate with DormantMarker to turn to TrackedMarker
+
+		for (int p : triIndices)
+		{
+			Eigen::Vector3f pos = pipeline.tracking.points3D[p];
+
+			// TODO: Add tracked marker
+			// TODO: Remove 2D points
+		}
+	} */
 
 	det1 = pclock::now();
 
@@ -779,9 +814,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		// Select target to detect
 		DormantTarget &dormant = pipeline.tracking.dormantTargets.front();
-		const TargetCalibration3D &target = *dormant.target.calib;
 		LOG(LDetection2D, LDarn, "Trying target %d (name %s) with %d markers!\n",
-			target.id, target.label.c_str(), (int)target.markers.size());
+			dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
 
 		// Move to back in queue
 		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
@@ -795,7 +829,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			// Detect target first in this cameras 2D points, and then match with others
 			dormant.target.match2D = detectTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
-				*dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
+				dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
 				clusterCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 			if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
 			{
@@ -810,7 +844,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 			else
 			{
-				createTrackerRecord(frame, dormant.target.calib->id, TrackingResult::SEARCHED_2D);
+				createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
 			}
 		}
 		else if (detect.enable2DAsync)
@@ -820,7 +854,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			pipeline.tracking.asyncDetection = true;
 			pipeline.tracking.asyncDetectionStop = {};
-			pipeline.tracking.asyncDetectTargetID = target.id;
+			pipeline.tracking.asyncDetectTargetID = dormant.id;
 			threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
 				std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
 				DormantTarget dormant, int focus)
@@ -833,54 +867,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det2 = pclock::now();
 
-	tpt0 = pclock::now();
-
-	{ // Single Marker Tracking
-
-		auto tracker = pipeline.tracking.trackedMarkers.begin();
-		while (tracker != pipeline.tracking.trackedMarkers.end())
-		{
-			int matchedPoint = -1;
-			TrackingResult result = trackMarker(tracker->state, tracker->marker, tracker->pose,
-					pipeline.tracking.points3D, triIndices, &matchedPoint, frame->time, 3);
-			if (result.isTracked())
-			{
-				triIndices.erase(std::find(triIndices.begin(), triIndices.end(), matchedPoint));
-				tracker++;
-			}
-			else
-			{
-				LOG(LTracking, LDarn, "Failed to find continuation of tracked point!\n");
-				tracker = pipeline.tracking.trackedMarkers.erase(tracker);
-			}
-		}
-	}
-
-	/*{ // Add single markers to track
-		// TODO: Limit by size? Or stability over multiple frames
-		for (int p = 0; p < pipeline.tracking.points3D.size(); p++)
-		{
-			if (!occupied3D[p])
-			{
-				Eigen::Vector3f pos = pipeline.tracking.points3D[p];
-				// Add tracked marker
-				pipeline.tracking.trackedMarkers.push_back({});
-				auto &marker = pipeline.tracking.trackedMarkers.back();
-				marker.state.setZero();
-				marker.state.pos() = pos;
-				marker.errorScaleT = 100000; // To allow for quick adaption of correct velocity and acceleration
-				marker.measurements = 1;
-				marker.time = frame->time;
-				LOG(LTracking, LDebug, "Added new tracked point!\n");
-				occupied3D[p] = true;
-			}
-		}
-	}*/
-
 	// TODO: Properly integrate triangulation records (2/3)
 	frame->triangulations = track.points3D;
-
-	tpt1 = pclock::now();
 
 	{ // Log timing
 		float frameTime = dtMS(start, pclock::now());
@@ -896,48 +884,131 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 }
 
-bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
+void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib)
 {
-	if (imu->tracker.id == 0) return false;
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock lock (pipeline.pipelineLock);
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
-		if (tracker.target.calib->id != imu->tracker.id) continue;
-		tracker.inertial = TrackerInertial(imu); // new shared_ptr
-		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
+		if (tracker.id != ID) continue;
+		tracker.label = label;
+		tracker.target.calib = calib;
+		return;
+	}
+	for (auto &tracker : pipeline.tracking.dormantTargets)
+	{
+		if (tracker.id != ID) continue;
+		tracker.label = label;
+		tracker.target.calib = calib;
+		return;
+	}
+	pipeline.tracking.dormantTargets.emplace_back(ID, label, TrackerTarget(std::move(calib)));
+}
+
+void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size)
+{
+	std::unique_lock lock (pipeline.pipelineLock);
+	for (auto &tracker : pipeline.tracking.trackedMarkers)
+	{
+		if (tracker.id != ID) continue;
+		tracker.label = label;
+		tracker.marker.size = size;
+		return;
+	}
+	for (auto &tracker : pipeline.tracking.dormantMarkers)
+	{
+		if (tracker.id != ID) continue;
+		tracker.label = label;
+		tracker.marker.size = size;
+		return;
+	}
+	pipeline.tracking.dormantMarkers.emplace_back(ID, label, TrackerMarker(size));
+}
+
+bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	OrphanIMU(pipeline, imu);
+	for (auto &tracker : pipeline.tracking.trackedTargets)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.inertial = TrackerInertial(imu, calib); // new shared_ptr
 		tracker.state.lastIMUSample = -1;
+		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
 		return true;
 	}
 	for (auto &tracker : pipeline.tracking.dormantTargets)
 	{
-		if (tracker.target.calib->id != imu->tracker.id) continue;
-		tracker.inertial = TrackerInertial(imu); // new shared_ptr
+		if (tracker.id != trackerID) continue;
+		tracker.inertial = TrackerInertial(imu, calib); // new shared_ptr
 		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
 		return true;
 	}
+	for (auto &tracker : pipeline.tracking.trackedMarkers)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.inertial = TrackerInertial(imu, calib); // new shared_ptr
+		tracker.state.lastIMUSample = -1;
+		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
+		return true;
+	}
+	for (auto &tracker : pipeline.tracking.trackedMarkers)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.inertial = TrackerInertial(imu, calib); // new shared_ptr
+		std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
+		return true;
+	}
+	// Ensure it's orphaned
+	if (std::find_if(pipeline.tracking.orphanedIMUs.begin(), pipeline.tracking.orphanedIMUs.end(),
+		[&](const auto &t){ return t.inertial.imu == imu; }) == pipeline.tracking.orphanedIMUs.end())
+		pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
 	return false;
 }
 
-bool ConnectIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, TrackedMarker &tracker)
+void DisassociateIMU(PipelineState &pipeline, int trackerID)
 {
-	if (!imu->tracker.isMarker()) return false;
-
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-	// TODO: Properly implement automatic association of IMUs to markers 
-
-	// Check marker against existing association
-	if (tracker.inertial.imu)
-		return false; // Don't handle here
-	if (std::abs(tracker.marker.size/imu->tracker.size - 1) < 0.1f)
-		return false; // Don't handle here
-
-	tracker.inertial = TrackerInertial(imu); // new shared_ptr
-	tracker.state.lastIMUSample = -1;
-	std::erase_if(pipeline.tracking.orphanedIMUs, [&](const auto &t){ return t.inertial.imu == imu; });
-	return true;
+	std::shared_ptr<IMU> imu = nullptr;
+	for (auto &tracker : pipeline.tracking.trackedTargets)
+	{
+		if (tracker.id != trackerID) continue;
+		imu = std::move(tracker.inertial.imu);
+		tracker.inertial = {};
+		tracker.state.lastIMUSample = -1;
+		break;
+	}
+	for (auto &tracker : pipeline.tracking.dormantTargets)
+	{
+		if (tracker.id != trackerID) continue;
+		imu = std::move(tracker.inertial.imu);
+		tracker.inertial = {};
+		break;
+	}
+	for (auto &tracker : pipeline.tracking.trackedMarkers)
+	{
+		if (tracker.id != trackerID) continue;
+		imu = std::move(tracker.inertial.imu);
+		tracker.inertial = {};
+		tracker.state.lastIMUSample = -1;
+		break;
+	}
+	for (auto &tracker : pipeline.tracking.dormantMarkers)
+	{
+		if (tracker.id != trackerID) continue;
+		imu = std::move(tracker.inertial.imu);
+		tracker.inertial = {};
+		break;
+	}
+	if (imu)
+	{
+		// Ensure it's orphaned
+		if (std::find_if(pipeline.tracking.orphanedIMUs.begin(), pipeline.tracking.orphanedIMUs.end(),
+			[&](const auto &t){ return t.inertial.imu == imu; }) == pipeline.tracking.orphanedIMUs.end())
+			pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
+	}
 }
 
-void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
+void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	
@@ -948,43 +1019,11 @@ void DisassociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};
 	for (auto &tracker : pipeline.tracking.trackedMarkers)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};
-
-	// Clear association
-	imu->tracker = IMUTracker();
+	for (auto &tracker : pipeline.tracking.dormantMarkers)
+		if (tracker.inertial.imu == imu) tracker.inertial = {};
 
 	// Ensure it's orphaned
 	if (std::find_if(pipeline.tracking.orphanedIMUs.begin(), pipeline.tracking.orphanedIMUs.end(),
-		[&](const auto &t){ return t.inertial.imu == imu; }) != pipeline.tracking.orphanedIMUs.end())
-		return;
-	pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
-}
-
-void DisassociateIMU(PipelineState &pipeline, int trackerID)
-{
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-	std::shared_ptr<IMU> imu = nullptr;
-	// Disconnect
-	for (auto &tracker : pipeline.tracking.trackedTargets)
-	{
-		if (tracker.target.calib->id != trackerID) continue;
-		imu = std::move(tracker.inertial.imu);
-		tracker.inertial = {};
-		tracker.state.lastIMUSample = -1;
-		break;
-	}
-	for (auto &tracker : pipeline.tracking.dormantTargets)
-	{
-		if (tracker.target.calib->id != trackerID) continue;
-		imu = std::move(tracker.inertial.imu);
-		tracker.inertial = {};
-		break;
-	}
-	if (imu)
-	{
-		// Clear association
-		imu->tracker = IMUTracker();
-		// Ensure it's orphaned
-		pipeline.tracking.orphanedIMUs.emplace_back(std::move(imu), pipeline.params.track);
-	}
-
+		[&](const auto &t){ return t.inertial.imu == imu; }) == pipeline.tracking.orphanedIMUs.end())
+		pipeline.tracking.orphanedIMUs.emplace_back(imu, pipeline.params.track);
 }

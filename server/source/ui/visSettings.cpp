@@ -81,7 +81,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			if (displayInternalDebug && visFrame)
 			{
 				auto trackRecord = std::find_if(visFrame.frameIt->get()->trackers.begin(), visFrame.frameIt->get()->trackers.end(),
-					[&](auto &tgt){ return tgt.id == visState.tracking.focusedTargetID; });
+					[&](auto &tgt){ return tgt.id == visState.tracking.focusedTrackerID; });
 				if (trackRecord != visFrame.frameIt->get()->trackers.end())
 				{
 					Eigen::Matrix3f covariance = trackRecord->covFiltered.topLeftCorner<3,3>().transpose();

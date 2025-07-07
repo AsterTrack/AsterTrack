@@ -56,19 +56,18 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	}
 	else if (target.selectedTargetID != 0)
 	{
-		auto &pipeline = GetState().pipeline;
 		// Get TargetCalibration3D
-		auto tgtIt = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
+		auto trackerIt = std::find_if(GetState().trackerConfigs.begin(), GetState().trackerConfigs.end(),
 			[&](auto &tgt){ return tgt.id == target.selectedTargetID; });
-		if (tgtIt != pipeline.tracking.targetCalibrations.end())
-			state.calib = &*tgtIt;
-		else if (target.selectedTargetCalib.id == target.selectedTargetID)
+		if (trackerIt != GetState().trackerConfigs.end() && trackerIt->type == TrackerConfig::TRACKER_TARGET)
+			state.calib = &trackerIt->calib;
+		else if (!target.selectedTargetCalib.markers.empty())
 			state.calib = &target.selectedTargetCalib;
 		else
 			return state;
 		state.targetGT = nullptr;
 		// Get ObsTarget if tracking data exists
-		auto db_lock = pipeline.obsDatabase.contextualRLock();
+		auto db_lock = GetState().pipeline.obsDatabase.contextualRLock();
 		auto obsIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
 			[&](auto &tgt){ return tgt.targetID == target.selectedTargetID; });
 		if (obsIt == db_lock->targets.end())

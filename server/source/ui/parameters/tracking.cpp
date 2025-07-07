@@ -283,7 +283,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			}
 			if (filterMod && visState.tracking.trailLength > 0)
 			{ // Debugging filter, simulate new filter parameters on recent history
-				retroactivelySimulateFilter(pipeline, pipeline.frameNum-visState.tracking.trailLength, pipeline.frameNum);
+				RetroactivelySimulateFilter(pipeline, pipeline.frameNum-visState.tracking.trailLength, pipeline.frameNum);
 			}
 		}
 

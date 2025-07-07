@@ -124,196 +124,135 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		BeginSection("Tracking (?)");
 		ImGui::SetItemTooltip("Any calibrated target will be detected and tracked automatically.\n");
 
-		auto getIMULabel = [](const IMU &imu)
-		{
-			return asprintf_s("IMU %d (%s) - %s", imu.index, imu.id.string.c_str(), imu.isFused? "fused" : "raw");
-		};
-		std::string NoIMULabel = "No IMU";
-
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
 		long frameNum = pipeline.frameNum;
 		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
 		if (visFrame)
 		{
 			frameNum = visFrame.frameIt.index();
-			int imuUpdateWait = 0;
 			auto &frameRecord = *visFrame.frameIt->get();
 			for (auto &trackRecord : frameRecord.trackers)
 			{
+				auto findIt = visState.tracking.targets.find(trackRecord.id);
 				auto &t = visState.tracking.targets[trackRecord.id];
-				if (!t.calib)
+				if (findIt == visState.tracking.targets.end())
 				{ // Setup tracked target for the first time
-					auto target = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
+					auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 						[&](auto &t){ return t.id == trackRecord.id; });
-					assert(target != pipeline.tracking.targetCalibrations.end());
-					t.calib = &*target;
-					t.imu = "No IMU";
-					imuUpdateWait = 10;
+					assert(trackConfig != state.trackerConfigs.end());
+					t.label = trackConfig->label;
 				}
-				t.lastFrame = frameNum;
-			}
-
-			std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(imuUpdateWait));
-			if (pipeline_lock.owns_lock())
-			{
-				for (auto &tracker : pipeline.tracking.trackedTargets)
-				{
-					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
-					if (tracked == visState.tracking.targets.end()) continue;
-					if (tracker.inertial)
-						tracked->second.imu = getIMULabel(*tracker.inertial.imu);
-					else if (tracked->second.imu.compare(NoIMULabel))
-					{
-						LOG(LGUI, LInfo, "Detected IMU removed!");
-						tracked->second.imu = NoIMULabel;
-					}
-				}
-				for (auto &tracker : pipeline.tracking.dormantTargets)
-				{
-					auto tracked = visState.tracking.targets.find(tracker.target.calib->id);
-					if (tracked == visState.tracking.targets.end()) continue;
-					//target->second.imu = tracker.imu? getIMULabel(*tracker.imu) : NoIMULabel;
-					if (tracker.inertial)
-						tracked->second.imu = getIMULabel(*tracker.inertial.imu);
-					else if (tracked->second.imu.compare(NoIMULabel))
-					{
-						LOG(LGUI, LInfo, "Detected IMU removed!");
-						tracked->second.imu = NoIMULabel;
-					}
-				}
+				if (trackRecord.result.isTracked())
+					t.lastFrame = frameNum;
 			}
 		}
 
 		// Display list of trackable targets
-		for (auto &tracked : visState.tracking.targets)
+		for (auto &trackerIt : visState.tracking.targets)
 		{
-			ImGui::PushID(tracked.first);
-			long ago = frameNum - tracked.second.lastFrame;
+			int trackerID = trackerIt.first;
+			auto &tracker = trackerIt.second;
+			ImGui::PushID(trackerID);
+			long trackedAgo = frameNum - tracker.lastFrame;
 			std::string label;
-			if (ago < 5)
-				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracked.second.calib->label.c_str(), tracked.first);
-			else if (ago < 1000)
-				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracked.second.calib->label.c_str(), tracked.first, ago);
+			if (trackedAgo < 5)
+				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
+			else if (trackedAgo < 1000)
+				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracker.label.c_str(), trackerID, trackedAgo);
 			else
-				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tracked.second.calib->label.c_str(), tracked.first);
+				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
 			ImGui::AlignTextToFramePadding();
-			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTargetID == tracked.first, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
-				visState.tracking.focusedTargetID = tracked.first;
-			SameLineTrailing(SizeWidthDiv3().x);
-			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-			if (ImGui::BeginCombo("##IMU", tracked.second.imu.c_str()))
-			{
-				bool changed = false;
-				if (ImGui::Selectable(NoIMULabel.c_str(), tracked.second.imu.compare(NoIMULabel) == 0))
-				{
-					tracked.second.imu = NoIMULabel;
-					DisassociateIMU(pipeline, tracked.first);
-				}
-				for (auto &imu : pipeline.record.imus)
-				{
-					ImGui::PushID(imu->index);
-					if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->tracker.id == tracked.first))
-					{
-						if (imu->tracker.id != tracked.first)
-						{ // Initialise new association
-							DisassociateIMU(pipeline, imu);
-							imu->tracker = IMUTracker(tracked.first);
-						}
-						tracked.second.imu = getIMULabel(*imu);
-						ConnectIMU(pipeline, imu);
-						changed = true;
-					}
-					ImGui::PopID();
-				}
-				ImGui::EndCombo();
-				if (changed)
-					ImGui::MarkItemEdited(ImGui::GetItemID());
-			}
+			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTrackerID == trackerID, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+				visState.tracking.focusedTrackerID = trackerID;
+
 			ImGui::PopID();
 		}
 
 		EndSection();
 
-		if (displayInternalDebug && visFrame && visState.tracking.focusedTargetID != 0 &&
-			visState.tracking.targets.at(visState.tracking.focusedTargetID).lastFrame == frameNum)
+		if (displayInternalDebug && visFrame && visState.tracking.focusedTrackerID != 0)
 		{
-			BeginSection("Tracking Debug");
-
 			// Temporary debug tools, data, etc.
 
 			auto &frameRecord = *visFrame.frameIt->get();
 			auto trackRecord = std::find_if(frameRecord.trackers.begin(), frameRecord.trackers.end(),
-						[&](auto &t){ return t.id == visState.tracking.focusedTargetID; });
-			assert(trackRecord != frameRecord.trackers.end());
-			auto &target = *visState.tracking.targets.at(visState.tracking.focusedTargetID).calib;
-			auto &debugVis = visState.tracking.debug;
-
-			std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
-			std::vector<std::vector<BlobProperty> const *> properties(pipeline.cameras.size());
-			std::vector<std::vector<int>> remainingPoints2D(pipeline.cameras.size());
-			std::vector<std::vector<int> const *> relevantPoints2D(pipeline.cameras.size());
-			for (int c = 0; c < pipeline.cameras.size(); c++)
+						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+			auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+			if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
+				&& trackConfig->type == TrackerConfig::TRACKER_TARGET)
 			{
-				points2D[c] = &frameRecord.cameras[c].points2D;
-				properties[c] = &frameRecord.cameras[c].properties;
-				remainingPoints2D[c].resize(points2D[c]->size());
-				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-				relevantPoints2D[c] = &remainingPoints2D[c];
-			}
+				BeginSection("Tracking Debug");
+					
+				auto &debugVis = visState.tracking.debug;
 
-			if (ImGui::Button("Debug target matching", SizeWidthFull()))
-			{ // Manually trigger update - might also be automatic
-				debugVis.needsUpdate = true;
-			}
-			if (debugVis.needsUpdate)
-			{
-				debugVis.needsUpdate = false;
-				debugVis.internalData.init(pipeline.cameras.size());
-				debugVis.targetMatch2D = trackTarget2D(target,
-					trackRecord->posePredicted, trackRecord->covPredicted,
-					pipeline.getCalibs(), pipeline.cameras.size(),
-					points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
-				debugVis.editedMatch2D = debugVis.targetMatch2D;
-				debugVis.trackerID = visState.tracking.focusedTargetID;
-				debugVis.calib = &target;
-				debugVis.frameNum = frameNum;
-			}
+				std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
+				std::vector<std::vector<BlobProperty> const *> properties(pipeline.cameras.size());
+				std::vector<std::vector<int>> remainingPoints2D(pipeline.cameras.size());
+				std::vector<std::vector<int> const *> relevantPoints2D(pipeline.cameras.size());
+				for (int c = 0; c < pipeline.cameras.size(); c++)
+				{
+					points2D[c] = &frameRecord.cameras[c].points2D;
+					properties[c] = &frameRecord.cameras[c].properties;
+					remainingPoints2D[c].resize(points2D[c]->size());
+					std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
+					relevantPoints2D[c] = &remainingPoints2D[c];
+				}
 
-			if (debugVis.frameNum == frameNum)
-			{
-				ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-					trackRecord->error.mean*PixelFactor, trackRecord->error.stdDev*PixelFactor, trackRecord->error.max*PixelFactor);
-				ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-					debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor);
-				ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-					debugVis.editedMatch2D.error.mean*PixelFactor, debugVis.editedMatch2D.error.stdDev*PixelFactor, debugVis.editedMatch2D.error.max*PixelFactor);
-
-				if (ImGui::Button(debugVis.showEdited? "Hide" : "Edit", SizeWidthDiv4()))
-				{
-					debugVis.showEdited = !debugVis.showEdited;
-					debugVis.showEditTools = false;
+				if (ImGui::Button("Debug target matching", SizeWidthFull()))
+				{ // Manually trigger update - might also be automatic
+					debugVis.needsUpdate = true;
 				}
-				ImGui::SameLine();
-				ImGui::BeginDisabled(!debugVis.showEdited);
-				if (ImGui::Button("Matches", SizeWidthDiv4()))
+				if (debugVis.needsUpdate)
 				{
-					debugVis.showEditTools = !debugVis.showEditTools;
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("Optimise", SizeWidthDiv4()))
-				{
-					debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
-						debugVis.editedMatch2D, trackRecord->posePredicted, pipeline.params.track.opt);
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("Reset", SizeWidthDiv4()))
-				{
+					debugVis.needsUpdate = false;
+					debugVis.internalData.init(pipeline.cameras.size());
+					debugVis.targetMatch2D = trackTarget2D(trackConfig->calib,
+						trackRecord->posePredicted, trackRecord->covPredicted,
+						pipeline.getCalibs(), pipeline.cameras.size(),
+						points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
 					debugVis.editedMatch2D = debugVis.targetMatch2D;
+					debugVis.trackerID = visState.tracking.focusedTrackerID;
+					debugVis.calib = &trackConfig->calib;
+					debugVis.frameNum = frameNum;
 				}
-				ImGui::EndDisabled();
-			}
 
-			EndSection();
+				if (debugVis.frameNum == frameNum)
+				{
+					ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max",
+						trackRecord->error.mean*PixelFactor, trackRecord->error.stdDev*PixelFactor, trackRecord->error.max*PixelFactor);
+					ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max",
+						debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor);
+					ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max",
+						debugVis.editedMatch2D.error.mean*PixelFactor, debugVis.editedMatch2D.error.stdDev*PixelFactor, debugVis.editedMatch2D.error.max*PixelFactor);
+
+					if (ImGui::Button(debugVis.showEdited? "Hide" : "Edit", SizeWidthDiv4()))
+					{
+						debugVis.showEdited = !debugVis.showEdited;
+						debugVis.showEditTools = false;
+					}
+					ImGui::SameLine();
+					ImGui::BeginDisabled(!debugVis.showEdited);
+					if (ImGui::Button("Matches", SizeWidthDiv4()))
+					{
+						debugVis.showEditTools = !debugVis.showEditTools;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Optimise", SizeWidthDiv4()))
+					{
+						debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
+							debugVis.editedMatch2D, trackRecord->posePredicted, pipeline.params.track.opt);
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Reset", SizeWidthDiv4()))
+					{
+						debugVis.editedMatch2D = debugVis.targetMatch2D;
+					}
+					ImGui::EndDisabled();
+				}
+
+				EndSection();
+			}
 		}
 	}
 
@@ -349,14 +288,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				if (ImGui::Selectable(label.c_str(), visState.target.selectedTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
 				{
 					if (visState.target.selectedTargetID != tgt.targetID)
-					{
+					{ // Set new selected target ID
 						visState.target.selectedTargetCalib = {};
-						auto track = std::find_if(pipeline.tracking.targetCalibrations.begin(), pipeline.tracking.targetCalibrations.end(),
+						auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 							[&](auto &t){ return t.id == tgt.targetID; });
-						if (track == pipeline.tracking.targetCalibrations.end())
+						if (track == state.trackerConfigs.end())
 						{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-							visState.target.selectedTargetCalib = TargetCalibration3D(tgt.targetID, "Temp",
-								finaliseTargetMarkers(pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
+							visState.target.selectedTargetCalib = TargetCalibration3D(finaliseTargetMarkers(
+								pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
 						}
 						visState.target.selectedTargetID = tgt.targetID;
 					}
@@ -401,7 +340,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					{ // Update calibration
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
-						adoptRoomCalibration(pipeline, calibs);
+						AdoptRoomCalibration(pipeline, calibs);
 						for (int c = 0; c < calibs.size(); c++)
 							pipeline.cameras[calibs[c].index]->calib = calibs[c];
 					}
@@ -439,22 +378,29 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					LOGCL("Done optimising! Applying to targets!");
 
 					{ // Update Targets
-						std::unique_lock pipeline_lock(pipeline.pipelineLock);
 						for (auto &tgtNew : data.targets)
 						{
 							bool found = false;
-							for (auto &tgt : pipeline.tracking.targetCalibrations)
+							for (auto &tracker : state.trackerConfigs)
 							{
-								if (std::abs(tgt.id) != std::abs(tgtNew.targetID)) continue;
-								updateMarkerOrientations(tgt.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
-								tgt.updateMarkers();
+								if (tracker.id != tgtNew.targetID) continue;
+								updateMarkerOrientations(tracker.calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
+								tracker.calib.updateMarkers();
+								if (tracker.isSimulated)
+								{ // Ensure calibrated, simulated targets are adopted as normal targets and stored
+									tracker.isSimulated = false;
+								}
+								ServerUpdatedTrackerConfig(state, tracker);
 								found = true;
 								break;
 							}
 							if (!found)
 							{
-								state.pipeline.tracking.targetCalibrations.push_back(TargetCalibration3D(std::abs(tgtNew.targetID), "New Target",
-									finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post)));
+								// Register as calibrated target
+								TargetCalibration3D targetCalib(finaliseTargetMarkers(
+									pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post));
+								state.trackerConfigs.emplace_back(tgtNew.targetID, "New Target", std::move(targetCalib));
+								ServerUpdatedTrackerConfig(state, state.trackerConfigs.back());
 							}
 						}
 					}
@@ -496,17 +442,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					LOGCL("Errors:");
 					updateReprojectionErrors(data, calibs);
 
-					{ // Update Targets
-						std::unique_lock pipeline_lock(pipeline.pipelineLock);
-						for (auto &tgtNew : data.targets)
+					// Update Targets
+					for (auto &tgtNew : data.targets)
+					{
+						for (auto &tracker : state.trackerConfigs)
 						{
-							for (auto &tgt : pipeline.tracking.targetCalibrations)
-							{
-								if (tgt.id != tgtNew.targetID) continue;
-								updateMarkerOrientations(tgt.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
-								tgt.updateMarkers();
-								break;
-							}
+							if (tracker.id != tgtNew.targetID) continue;
+							updateMarkerOrientations(tracker.calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
+							tracker.calib.updateMarkers();
+							ServerUpdatedTrackerConfig(state, tracker);
+							break;
 						}
 					}
 
@@ -520,7 +465,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::SameLine();
 			if (ImGui::Button("Save Targets", SizeWidthDiv3()))
 			{
-				ServerStoreTargetCalib(state);
+				ServerStoreTargetConfigs(state);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Clear Database", SizeWidthDiv3()))
@@ -679,11 +624,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						}
 					}
 				}
-				for (auto &tgt : state.pipeline.tracking.targetCalibrations)
+				for (auto &tracker: state.trackerConfigs)
 				{
-					auto it = trackers.find(tgt.id);
+					auto it = trackers.find(tracker.id);
 					if (it != trackers.end())
-						it->second.label = tgt.label;
+						it->second.label = tracker.label;
 				}
 			}
 			if (!trackers.empty() && ImGui::TreeNode("Target Results"))

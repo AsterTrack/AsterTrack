@@ -107,7 +107,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					*view->target.contextualLock() = std::move(newRange.target);
 					if (pipeline.isSimulationMode)
 					{
-						view->simulation.targetGT = pipeline.simulation.contextualRLock()->getPrimary().target;
+						view->simulation.targetGT = &pipeline.simulation.contextualRLock()->getPrimary().target;
 					}
 					{ // Reconstruct and optimise view immediately
 						view->settings.typeFlags = 0b11;
@@ -164,9 +164,8 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 }
 
 // Update data of tgtGT to newly projected GT data, used for debugging in simulation
-static void makeGTTarget(const SimulationState &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetCalibration3D *calibGT)
+static void makeGTTarget(const SimulationState &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetCalibration3D &calibGT)
 {
-	if (!calibGT) return;
 	// Set marker positions to most likely GT candidate
 	for (auto m : targetGT.markerMap)
 	{
@@ -181,7 +180,7 @@ static void makeGTTarget(const SimulationState &simulation, const SequenceData &
 			LOGC(LDebug, "Marker %d had uncertain GT, best is %d with %f%% certainty!\n",
 				m.first, gtMarker.first, gtMarker.second*100);
 		}
-		targetGT.markers[m.second] = calibGT->markers[gtMarker.first].pos;
+		targetGT.markers[m.second] = calibGT.markers[gtMarker.first].pos;
 	}
 	// Take GT frame poses and overwrite observations with GT
 	for (auto &frame : targetGT.frames)
@@ -259,8 +258,8 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 
 	// Build a GT target
 	ObsTarget targetGT = obsData.targets.front();
-	if (pipeline->isSimulationMode)
-		makeGTTarget(*pipeline->simulation.contextualRLock(), *pipeline->seqDatabase.contextualRLock(), calibs, targetGT, viewPtr->simulation.targetGT);
+	if (pipeline->isSimulationMode && viewPtr->simulation.targetGT)
+		makeGTTarget(*pipeline->simulation.contextualRLock(), *pipeline->seqDatabase.contextualRLock(), calibs, targetGT, *viewPtr->simulation.targetGT);
 
 	auto alignWithGT = [](ObsTarget &target, const ObsTarget &tgtGT)
 	{

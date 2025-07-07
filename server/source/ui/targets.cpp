@@ -44,8 +44,11 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::TableSetupColumn("Del", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		//ImGui::TableHeadersRow();
 
-		for (auto &target : state.pipeline.tracking.targetCalibrations)
+		for (auto &target : state.trackerConfigs)
 		{
+			if (target.type != TrackerConfig::TRACKER_TARGET)
+				continue;
+
 			ImGui::PushID(target.id);
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
@@ -57,17 +60,18 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			ImGui::Text("'%s'", target.label.c_str());
 			ImGui::TableNextColumn();
 
-			ImGui::Text("%d", (int)target.markers.size());
+			ImGui::Text("%d", (int)target.calib.markers.size());
 			ImGui::TableNextColumn();
 
-			ImGui::Text("%d", (int)target.markers.size());
+			ImGui::Text("%d", (int)target.calib.markers.size());
 			ImGui::TableNextColumn();
 
 			bool select = visState.target.selectedTargetID == target.id;
-			
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				if (visState.resetVisTarget())
+				if (visState.target.selectedTargetID == target.id)
+					visState.target.selectedTargetID = 0;
+				else if (visState.resetVisTarget())
 				{
 					if (visState.target.selectedTargetID == target.id)
 						visState.target.selectedTargetID = 0;
@@ -89,31 +93,18 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
-	TargetCalibration3D *target = nullptr, *targetSim = nullptr;
-	if (visState.target.selectedTargetID > 0)
+	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+		[&](auto &t){ return t.id == visState.target.selectedTargetID; });
+	if (trackerIt == state.trackerConfigs.end())
 	{
-		auto targetIt = std::find_if(state.pipeline.tracking.targetCalibrations.begin(), state.pipeline.tracking.targetCalibrations.end(),
-			[&](auto &t){ return t.id == visState.target.selectedTargetID; });
-		if (targetIt != state.pipeline.tracking.targetCalibrations.end())
-			target = &*targetIt;
+		ImGui::End();
+		return;
 	}
-	else if (visState.target.selectedTargetID < 0)
-	{
-		auto targetIt = std::find_if(state.config.simulation.trackingTargets.begin(), state.config.simulation.trackingTargets.end(),
-			[&](auto &t){ return t.id == visState.target.selectedTargetID; });
-		if (targetIt != state.pipeline.tracking.targetCalibrations.end())
-			target = &*targetIt;
-	}
-	// TODO: Improve handling of simulated and calibrated target IDs
-	// may have a simulated target that's calibrated, so exists as both simulated and calibrated variant
-	// Currently the former is < 0, latter > 0, what about calibrated simulated targets? Clarify
+	auto &tracker = *trackerIt;
 
-	// TODO: Allow adoption of simulated target into pipeline.tracking.targetCalibrations
-	// Would allow for kick-starting calibrations with a designed calibration
-
-	if (target)
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 	{
-		ImGui::Text("Selected calibrated target %d '%s'", target->id, target->label.c_str());
+		ImGui::Text("Selected %s target %d '%s'", tracker.isSimulated? "simulated" : "calibrated", tracker.id, tracker.label.c_str());
 
 		static float adjustScale = 1.0f;
 		ImGui::SetNextItemWidth(SizeWidthDiv2().x);
@@ -121,10 +112,10 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::SameLine();
 		if (ImGui::Button("Adjust scale", SizeWidthDiv2()))
 		{
-			LOG(LTargetCalib, LInfo, "Adjusting scale of target '%s' by %f!", target->label.c_str(), adjustScale);
-			for (auto &mk : target->markers)
+			LOG(LTargetCalib, LInfo, "Adjusting scale of target '%s' by %f!", tracker.label.c_str(), adjustScale);
+			for (auto &mk : tracker.calib.markers)
 				mk.pos *= adjustScale;
-			target->updateMarkers();
+			tracker.calib.updateMarkers();
 			auto obs_lock = state.pipeline.obsDatabase.contextualLock();
 			for (auto &tgt : obs_lock->targets)
 			{
@@ -132,18 +123,55 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}
+			ServerUpdatedTrackerConfig(state, tracker);
 		}
 
 		if (ImGui::Button("Save Target as OBJ", SizeWidthFull()))
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			writeTargetObjFile(tgtPath, TargetCalibration3D(target->markers));
+			writeTargetObjFile(tgtPath, TargetCalibration3D(tracker.calib));
 		}
 	}
-	else if (targetSim)
+
 	{
-		ImGui::Text("Selected simulated target %d '%s'", targetSim->id, targetSim->label.c_str());
+		std::string NoIMULabel = "No IMU";
+		auto getIMULabel = [](const IMU &imu)
+		{
+			return asprintf_s("IMU %s (%d) [%d] - %s", imu.id.string.c_str(), imu.id.driver, imu.index, imu.isFused? "fused" : "raw");
+		};
+		auto getIMUIdentLabel = [&](const IMUIdent &imu)
+		{
+			if (imu)
+				return asprintf_s("IMU %s (%d)", imu.string.c_str(), imu.driver);
+			else
+				return NoIMULabel;
+		};
+		if (ImGui::BeginCombo("IMU", getIMUIdentLabel(tracker.imuIdent).c_str()))
+		{
+			bool changed = false;
+			if (ImGui::Selectable(NoIMULabel.c_str(), !tracker.imuIdent))
+			{
+				tracker.imuIdent = {};
+				tracker.imuCalib = {};
+				ServerUpdatedTrackerConfig(state, *trackerIt);
+			}
+			for (auto &imu : state.pipeline.record.imus)
+			{
+				ImGui::PushID(imu->index);
+				if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->id == tracker.imuIdent))
+				{
+					tracker.imuIdent = imu->id;
+					tracker.imuCalib = {};
+					ServerUpdatedTrackerConfig(state, *trackerIt);
+					changed = true;
+				}
+				ImGui::PopID();
+			}
+			ImGui::EndCombo();
+			if (changed)
+				ImGui::MarkItemEdited(ImGui::GetItemID());
+		}
 	}
 
 	ImGui::End();

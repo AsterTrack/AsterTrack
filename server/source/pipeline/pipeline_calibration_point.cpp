@@ -202,7 +202,7 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		ScopedLogLevel scopedLogLevel(LInfo);
 
 		LOGCL("== Updating Error Maps:\n");
-		updateErrorMaps(*pipeline, *db_lock, calibs);
+		UpdateErrorMaps(*pipeline, *db_lock, calibs);
 
 		LOGCL("== Determining Reprojection Errors:\n");
 		ptCalib.state.errors = updateReprojectionErrors(*db_lock, calibs);
@@ -212,7 +212,7 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
 		for (int c = 0; c < calibs.size(); c++)
 			pipeline->cameras[calibs[c].index]->calib = calibs[c];
-		normaliseRoom(*pipeline);
+		NormaliseRoom(*pipeline);
 	}
 
 	// Update fundamental matrices using calibration
@@ -272,7 +272,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	{
 		ScopedLogLevel scopedLogLevel(LDebug);
 		LOGCL("== Updating Error Maps:\n");
-		updateErrorMaps(*pipeline, pointData, calibs);
+		UpdateErrorMaps(*pipeline, pointData, calibs);
 	}
 
 	/* {
@@ -301,7 +301,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 		{ // Update calibration
 			std::unique_lock pipeline_lock(pipeline->pipelineLock);
-			adoptRoomCalibration(*pipeline, calibs);
+			AdoptRoomCalibration(*pipeline, calibs);
 			for (int c = 0; c < calibs.size(); c++)
 				pipeline->cameras[calibs[c].index]->calib = calibs[c];
 		}
@@ -334,7 +334,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	{
 		ScopedLogLevel scopedLogLevel(LDebug);
 		LOGCL( "-- Updating Error Maps:\n");
-		updateErrorMaps(*pipeline, pointData, calibs);
+		UpdateErrorMaps(*pipeline, pointData, calibs);
 	}
 
 	{
@@ -378,7 +378,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 	{ // Update calibration
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
-		adoptRoomCalibration(*pipeline, calibs);
+		AdoptRoomCalibration(*pipeline, calibs);
 		for (int c = 0; c < calibs.size(); c++)
 			pipeline->cameras[calibs[c].index]->calib = calibs[c];
 	}
@@ -392,7 +392,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	LOGC(LDebug, "=======================\n");
 }
 
-void normaliseRoom(PipelineState &pipeline)
+void NormaliseRoom(PipelineState &pipeline)
 {
 	Eigen::Matrix3d roomOrientation;
 	Eigen::Affine3d roomTransform;
@@ -409,7 +409,7 @@ void normaliseRoom(PipelineState &pipeline)
 	SignalPipelineUpdate();
 }
 
-bool calibrateFloor(PipelineState &pipeline)
+bool CalibrateFloor(PipelineState &pipeline)
 {
 	auto &ptCalib = pipeline.pointCalib;
 	if (ptCalib.room.floorPoints.size() < 3)
@@ -453,7 +453,7 @@ bool calibrateFloor(PipelineState &pipeline)
 	}
 }
 
-bool adoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs)
+bool AdoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs)
 {
 	std::vector<CameraCalib> oldCalibs(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)

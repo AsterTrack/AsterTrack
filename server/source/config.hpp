@@ -21,6 +21,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/record.hpp"
 #include "blob/parameters.hpp"
+#include "target/parameters.hpp"
+#include "target/target.hpp"
 #include "imu/imu.hpp"
 
 #include "util/eigendef.hpp"
@@ -73,13 +75,45 @@ struct ControllerConfig
 	// Should be configurable in UI in "Devices" window
 };
 
+struct TrackerConfig
+{
+	enum TrackerType
+	{
+		TRACKER_TARGET = 1,
+		TRACKER_MARKER = 2
+	};
+
+	// General Config
+	int id;
+	std::string label;
+	TrackerType type;
+	bool isSimulated;
+
+	// Target-specific Config
+	TargetCalibration3D calib;
+
+	// Marker-specific Config
+	float markerSize;
+
+	// Optional IMU
+	IMUIdent imuIdent;
+	IMUCalib imuCalib;
+
+	TrackerConfig(int ID, std::string label, TrackerType type)
+		: id(ID), label(label), type(type) {}
+
+	TrackerConfig(int ID, std::string label, TargetCalibration3D &&target)
+		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)) {}
+
+	TrackerConfig(int ID, std::string label, float markerSize)
+		: id(ID), label(label), type(TRACKER_MARKER), markerSize(markerSize) {}
+};
+
 struct GeneralConfig
 {
 	struct {
 		float blobPxStdDev = 0.5f;
-		// TODO: WARNING: These simulated targets in config are pointed to!
-		// Relevant should we ever want to re-load the config at runtime - make sure to handle all users of this first
-		std::vector<TargetCalibration3D> trackingTargets;
+		std::map<std::string, TargetCalibration3D> trackingTargets;
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;
 	} simulation;
@@ -146,11 +180,8 @@ void storeCameraConfigFile(const std::string &path, const CameraConfigMap &confi
 void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
 void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
 
-void parseTargetCalibrations(const std::string &path, std::vector<TargetCalibration3D> &targetCalibs);
-void storeTargetCalibrations(const std::string &path, const std::vector<TargetCalibration3D> &targetCalibs);
-
-void parseIMUConfigs(const std::string &path, std::vector<IMUConfig> &configs);
-void storeIMUConfigs(const std::string &path, const std::vector<IMUConfig> &configs);
+void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
+void storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig);
 
 std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
 void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
@@ -168,7 +199,7 @@ void dumpTargetViewRecords(const std::string &path, const std::vector<std::share
 bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base);
 void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
 
-bool parseTargetObjFile(const std::string &path, std::vector<TargetCalibration3D> &targets, float fov, float size);
+bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size);
 void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target);
 
 #endif // CONFIG_H

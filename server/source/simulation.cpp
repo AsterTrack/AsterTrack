@@ -49,7 +49,7 @@ const std::array<MotionParameters, MotionCustom> motionPresets = {
 static std::mt19937 gen = std::mt19937(std::random_device{}());
 
 
-TargetCalibration3D PointCalibMarker(0, "Single Marker", {
+TargetCalibration3D PointCalibMarker({
 	{
 		Eigen::Vector3f::Zero(),
 		Eigen::Vector3f::UnitZ(),
@@ -59,7 +59,7 @@ TargetCalibration3D PointCalibMarker(0, "Single Marker", {
 });
 
 #ifdef USE_LINE_LENGTH
-TargetCalibration3D LineCalibMarker(1, "Line", {
+TargetCalibration3D LineCalibMarker({
 	{
 		Eigen::Vector3f(-30,0,0),
 		Eigen::Vector3f(-1,0,0),
@@ -163,7 +163,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 	{
 		i++;
 		if (!object.enabled) continue;
-		LOGC(LTrace, "    Generating object %d: %s!\n", object.target->id, object.target->label.c_str());
+		LOGC(LTrace, "    Generating object %d: %s!\n", object.id, object.label.c_str());
 
 		// ----- Generate new pose -----
 
@@ -174,7 +174,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			Eigen::Quaternionf quat(object.internalMotionState.RGT);
 			LOGC(LDebug, "Object %s GT Pose: (%.4f, %.4f, %.4f), Quat (%.4f, %.4f, %.4f, %.4f) --"
 				"Dynamic state %.3fcm/f, %.3fcm/f^2, %.3fdg/f, Change: %.3fcm, %.3fdg/f\n",
-				object.target->label.c_str(),
+				object.label.c_str(),
 				object.pose.translation().x(), object.pose.translation().y(), object.pose.translation().z(),
 				quat.x(), quat.y(), quat.z(), quat.w(),
 				object.internalMotionState.TD.norm()*100,
@@ -189,7 +189,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		std::vector<int> markerObsCount;
 		if (recordPoints)
-			markerObsCount.resize(object.target->markers.size());
+			markerObsCount.resize(object.target.markers.size());
 
 		for (auto &cam : pipeline.cameras)
 		{
@@ -199,7 +199,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			// Project marker into camera view (simulated test data)
 			int startPts = record.rawPoints2D.size();
 			std::vector<int> markerMap;
-			createTargetProjection(record.rawPoints2D, record.properties, markerMap, *object.target,
+			createTargetProjection(record.rawPoints2D, record.properties, markerMap, object.target,
 				cam->simulation.calib, cam->mode, object.pose, simulation.blobPxStdDev);
 
 			// Keep track of how many times a point is visible
@@ -250,12 +250,12 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			}
 
 			simulation.triangulatedPoints3D = { frameState.num, object.pose, {} };
-			simulation.triangulatedPoints3D.triangulation.reserve(object.target->markers.size());
-			for (int i = 0; i < object.target->markers.size(); i++)
+			simulation.triangulatedPoints3D.triangulation.reserve(object.target.markers.size());
+			for (int i = 0; i < object.target.markers.size(); i++)
 			{
 				if (markerObsCount[i] < 2)
 					continue;
-				Eigen::Vector3f gtPoint = object.pose * object.target->markers[i].pos;
+				Eigen::Vector3f gtPoint = object.pose * object.target.markers[i].pos;
 				simulation.triangulatedPoints3D.triangulation.emplace_back(i, gtPoint);
 
 				if (SHOULD_LOGC(LTrace))

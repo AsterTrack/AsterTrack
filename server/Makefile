@@ -268,11 +268,14 @@ ifneq ($(checkLibs),0)
   $(error vrpn library is missing ($(libdir)/vrpn), make sure to build dependencies)
 endif
 
-all: $(b)/astertrack-interface.so $(b)/astertrack-server $(b)/astertrack-static cpylib
+all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static copybinaries
 
-.PHONY: cpylib
-cpylib:
+.PHONY: copybinaries
+copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
 	@cp -u $(usblibs) "$(b)/"
+	@cp $(o)/astertrack-static $(b)/astertrack-static
+	@cp $(o)/astertrack-server $(b)/astertrack-server
+	@cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so
 
 
 # May prefix this before each target to measure compile times
@@ -307,22 +310,16 @@ $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
 $(o)/astertrack-static: $(OBJECTS_STATIC)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
-$(b)/astertrack-static: $(o)/astertrack-static
-	cp $(o)/astertrack-static $(b)/astertrack-static
 
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
 $(o)/astertrack-server: $(OBJECTS_SERVER)
 	$(CXX) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
-$(b)/astertrack-server: $(o)/astertrack-server
-	cp $(o)/astertrack-server $(b)/astertrack-server
 
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
 $(o)/astertrack-interface.so: $(OBJECTS_INTERFACE)
 	$(CXX) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
-$(b)/astertrack-interface.so: $(o)/astertrack-interface.so
-	cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so
 
 # Always force re-link at least, since different modes share the same target
 .PHONY: .FORCE

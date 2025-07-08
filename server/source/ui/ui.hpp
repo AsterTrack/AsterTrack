@@ -143,7 +143,11 @@ struct VisualisationState
 		struct TrackingTargets
 		{
 			std::string label;
-			long lastFrame;
+			long lastTrackedFrame;
+			TrackingResult trackState;
+			TrackerInertialState imuState;
+			StatFloatingf imuSampleRate;
+			float imuSampleAgo;
 		};
 		std::map<int, TrackingTargets> targets;
 

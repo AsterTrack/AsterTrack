@@ -85,6 +85,30 @@ static void recordTrackerTarget(TrackerRecord &record, const TrackerTarget &targ
 }
 
 /**
+ * Update tracked target record with inertial data
+ */
+static void recordTrackerInertial(TrackerRecord &record, const TrackerInertial &inertial, bool keepInternalData)
+{
+	if (inertial)
+	{
+		if (dtMS(inertial.fusion.lastIntegration, inertial.fusion.time) < 20)
+		{
+			if (inertial.calibration.phase < IMU_CALIB_DONE)
+				record.imuState = TrackerInertialState::IMU_CALIBRATING;
+			else
+				record.imuState = TrackerInertialState::IMU_TRACKING;
+		}
+		else
+			record.imuState = TrackerInertialState::IMU_LOST;
+
+		record.imuSampleInterval = inertial.fusion.sampleInterval.floating;
+		record.imuLastSample = inertial.fusion.lastIntegration;
+	}
+	else
+		record.imuState = TrackerInertialState::NO_IMU;
+}
+
+/**
  * Update tracked target record with tracker pose
  */
 static void recordTrackerObservation(TrackerRecord &record, const TrackerObservation &pose, bool keepInternalData)
@@ -187,6 +211,7 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
 		recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
 		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
 	}
+	recordTrackerInertial(record, tracker.inertial, pipeline.keepInternalData);
 	return record;
 }
 

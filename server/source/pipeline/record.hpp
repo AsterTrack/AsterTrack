@@ -181,11 +181,25 @@ private:
 	Value value;
 };
 
+enum class TrackerInertialState 
+{
+	NO_IMU,
+	IMU_CALIBRATING,
+	IMU_TRACKING,
+	IMU_LOST
+};
+
 struct TrackerRecord
 {
 	int id;
+
 	TrackingResult result;
 	TargetMatchError error;
+
+	TrackerInertialState imuState;
+	float imuSampleInterval;
+	TimePoint_t imuLastSample;
+
 	Eigen::Isometry3f poseObserved, poseFiltered;
 	CovarianceMatrix covObserved, covFiltered;
 

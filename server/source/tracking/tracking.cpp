@@ -439,6 +439,14 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 		lastSample = *sample;
 		state.lastIMUSample = sample.index();
 		state.lastIMUTime = sample->timestamp;
+
+		// Keep stats of IMU samples
+		float dtSample = dtS(inertial.fusion.lastIntegration, sample->timestamp);
+		if (dtSample > 0.1f)
+			inertial.fusion.sampleInterval.reset();
+		else
+			inertial.fusion.sampleInterval.update(dtSample);
+		inertial.fusion.lastIntegration = sample->timestamp;
 	}
 
 	// Predict new state

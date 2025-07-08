@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp" // TimePoint_t
 #include "util/eigendef.hpp"
+#include "util/stats.hpp"
 
 #include "flexkalman/process/PoseSeparatelyDampedConstantVelocity.h"
 #include "flexkalman/state/PoseState.h"
@@ -156,6 +157,8 @@ struct TrackerInertial
 		Eigen::Quaterniond integrated = Eigen::Quaterniond::Identity();
 		Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
 		int corrections = 0;
+		TimePoint_t lastIntegration;
+		StatFloatingf sampleInterval;
 
 		Eigen::Vector3d imuVelocity = Eigen::Vector3d::Zero(); // Positional velocity of IMU (due to tracker positional velocity AND rotation)
 		Eigen::Vector3d angularVelocity; // Angular velocity of tracker rotation

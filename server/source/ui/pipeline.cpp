@@ -141,9 +141,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						[&](auto &t){ return t.id == trackRecord.id; });
 					assert(trackConfig != state.trackerConfigs.end());
 					t.label = trackConfig->label;
+					t.imuSampleRate = StatFloatingf(1000);
 				}
 				if (trackRecord.result.isTracked())
-					t.lastFrame = frameNum;
+					t.lastTrackedFrame = frameNum;
+				t.trackState = trackRecord.result;
+				t.imuState = trackRecord.imuState;
+				t.imuSampleRate.update(std::round(1/trackRecord.imuSampleInterval));
+				t.imuSampleAgo = dtS(trackRecord.imuLastSample, frameRecord.time);
 			}
 		}
 
@@ -153,7 +158,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			int trackerID = trackerIt.first;
 			auto &tracker = trackerIt.second;
 			ImGui::PushID(trackerID);
-			long trackedAgo = frameNum - tracker.lastFrame;
+			long trackedAgo = frameNum - tracker.lastTrackedFrame;
 			std::string label;
 			if (trackedAgo < 5)
 				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
@@ -165,6 +170,27 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTrackerID == trackerID, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				visState.tracking.focusedTrackerID = trackerID;
 
+			if (tracker.imuState != TrackerInertialState::NO_IMU)
+			{
+				ImVec2 iconSize(ImGui::GetTextLineHeight()*6/5, ImGui::GetTextLineHeight());
+				SameLineTrailing(iconSize.x);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
+				if (tracker.imuState == TrackerInertialState::IMU_CALIBRATING)
+				{
+					ImGui::Image(icons().frameHDMI, iconSize);
+					ImGui::SetItemTooltip("Calibrating with %dHz sample rate", (int)tracker.imuSampleRate.floating);
+				}
+				else if (tracker.imuState == TrackerInertialState::IMU_TRACKING)
+				{
+					ImGui::Image(icons().frameWireless, iconSize);
+					ImGui::SetItemTooltip("Tracking with %dHz sample rate", (int)tracker.imuSampleRate.floating);
+				}
+				else if (tracker.imuState == TrackerInertialState::IMU_LOST)
+				{
+					ImGui::Image(icons().detach, iconSize);
+					ImGui::SetItemTooltip("No IMU samples received for %.1fs", tracker.imuSampleAgo);
+				}
+			}
 			ImGui::PopID();
 		}
 

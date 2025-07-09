@@ -38,7 +38,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	Eigen::Vector3f pos, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
+	Eigen::Vector3f pos, int cameraCount, int probeCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData);
 
 /**

@@ -125,6 +125,7 @@ struct TargetFilteringParameters
 struct RotationGenerationParameters
 {
 	int shellPoints = 100;
+	int rollAxisShells = 10;
 
 	// Right parameter is increasingly sensitive with point counts > 1000, so precision here is required
 	std::vector<Eigen::Vector2f> shells = {
@@ -136,14 +137,21 @@ struct RotationGenerationParameters
 
 	float spreadFloor = 0.5f, spreadCeil = 0.1f;
 	float spreadVariance = 1.0f;
+};
 
-	int rollAxisShells = 10;
+struct TargetDetectionConfig
+{
+	bool match3D = true; // Quick, but may not work on all targets
+	// Computationally intensive 2D detection methods (limited number active at the same time):
+	bool search2D = true; // Faster, may not work on targets with few markers visible at once
+	bool probe2D = true; // Slower, should work on all targets
+	
+	// Critical parameters that may be tuned per target:
+	int probeCount = 1000;
 };
 
 struct TargetDetectionParameters
 {
-	// Detection algorithms (2D brute force, or quick based on 3D triangulations)
-	bool probe2D = false, search2D = true, match3D = true;
 	bool useAsyncDetection = true;
 	struct
 	{

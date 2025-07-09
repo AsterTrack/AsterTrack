@@ -548,11 +548,29 @@ void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConf
 				jsTracker["label"].get<std::string>(),
 				(TrackerConfig::TrackerType)jsTracker["type"].get<int>());
 
+			if (jsTracker.contains("trigger") && jsTracker["trigger"].is_number_unsigned())
+				tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
+			if (jsTracker.contains("expose") && jsTracker["expose"].is_number_unsigned())
+				tracker.expose = jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX?
+					(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_ALWAYS;
+
 			if (tracker.type == TrackerConfig::TRACKER_TARGET)
 			{
 				if (!jsTracker.contains("target") || !jsTracker["target"].is_object()) continue;
 				if (!readTargetCalib(jsTracker["target"], tracker.calib))
 					continue;
+				if (jsTracker["target"].contains("detection") && jsTracker["target"]["detection"].is_object())
+				{
+					auto &jsDetect = jsTracker["target"]["detection"];
+					if (jsDetect.contains("match3D") && jsDetect["match3D"].is_boolean())
+						tracker.detectionConfig.match3D = jsDetect["match3D"].get<bool>();
+					if (jsDetect.contains("search2D") && jsDetect["search2D"].is_boolean())
+						tracker.detectionConfig.search2D = jsDetect["search2D"].get<bool>();
+					if (jsDetect.contains("probe2D") && jsDetect["probe2D"].is_boolean())
+						tracker.detectionConfig.probe2D = jsDetect["probe2D"].get<bool>();
+					if (jsDetect.contains("probeCount") && jsDetect["probeCount"].is_number_unsigned())
+						tracker.detectionConfig.probeCount = jsDetect["probeCount"].get<int>();
+				}
 			}
 			else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 			{
@@ -606,10 +624,18 @@ void storeTrackerConfigurations(const std::string &path, const std::vector<Track
 		jsTracker["id"] = tracker.id;
 		jsTracker["label"] = tracker.label;
 		jsTracker["type"] = tracker.type;
+		jsTracker["trigger"] = tracker.trigger;
+		jsTracker["expose"] = tracker.expose;
 
 		if (tracker.type == TrackerConfig::TRACKER_TARGET)
 		{
 			writeTargetCalib(tracker.calib, jsTracker["target"]);
+
+			auto &jsDetect = jsTracker["target"]["detection"];
+			jsDetect["match3D"] = tracker.detectionConfig.match3D;
+			jsDetect["search2D"] = tracker.detectionConfig.search2D;
+			jsDetect["probe2D"] = tracker.detectionConfig.probe2D;
+			jsDetect["probeCount"] = tracker.detectionConfig.probeCount;
 		}
 		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 		{

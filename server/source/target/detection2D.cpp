@@ -50,14 +50,20 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	Eigen::Vector3f pos, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
+	Eigen::Vector3f pos, int cameraCount, int probeCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData)
 {
 	ScopedLogCategory scopedLogCategory(LDetection2D);
 
 	// Brute-force a few candidate poses based on 3 points only
-	
+	assert(probeCount > 0);
 	auto gen = params.rotGen;
+	float axisCount = std::pow(probeCount, 0.3334f);
+	gen.rollAxisShells = std::max<int>(1, std::floor(axisCount));
+	gen.shellPoints = probeCount/gen.rollAxisShells;
+	LOG(LDetection2D, LInfo, "Probing %d rotations, %d on the sphere with %d rotation shells (%f equal split)",
+		probeCount, gen.shellPoints, gen.rollAxisShells, axisCount);
+
 	std::vector<Eigen::Quaternionf> rotations(gen.rollAxisShells*gen.shellPoints);
 	for (int r = 0; r < gen.rollAxisShells; r++)
 	{

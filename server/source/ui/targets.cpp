@@ -118,9 +118,104 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 	}
 	auto &tracker = *trackerIt;
 
+	{
+		BeginSection("Selected Tracker");
+
+		bool changed = false;
+
+		ImGui::AlignTextToFramePadding();
+		BeginLabelledGroup("Trigger Conditions");
+		std::array<const char*,7> triggerLabels;
+		triggerLabels.fill("Invalid State");
+		triggerLabels[TrackerConfig::TRIGGER_ALWAYS] = "Always";
+		triggerLabels[TrackerConfig::TRIGGER_ONLY_MANUALLY] = "Only Manually";
+		triggerLabels[TrackerConfig::TRIGGER_ON_IMU_CONNECT] = "On IMU Connect";
+		triggerLabels[TrackerConfig::TRIGGER_ON_IO_CONNECT] = "On IO Connect";
+		triggerLabels[TrackerConfig::TRIGGER_ON_IMU_CONNECT | TrackerConfig::TRIGGER_ON_IO_CONNECT] = "On IMU or IO Connect";
+		if (ImGui::BeginCombo("##TrgCond", triggerLabels[tracker.trigger]))
+		{
+			bool updated = false;
+			if (ImGui::Selectable("Always", tracker.trigger == TrackerConfig::TRIGGER_ALWAYS))
+			{
+				updated = tracker.trigger != TrackerConfig::TRIGGER_ALWAYS;
+				tracker.trigger = TrackerConfig::TRIGGER_ALWAYS;
+			}
+			if (ImGui::Selectable("Only Manually", tracker.trigger == TrackerConfig::TRIGGER_ONLY_MANUALLY))
+			{
+				updated = tracker.trigger != TrackerConfig::TRIGGER_ONLY_MANUALLY;
+				tracker.trigger = TrackerConfig::TRIGGER_ONLY_MANUALLY;
+			}
+			bool triggerIMU = tracker.trigger & TrackerConfig::TRIGGER_ON_IMU_CONNECT;
+			if (ImGui::Selectable("On IMU Connect", triggerIMU))
+			{
+				updated = !triggerIMU;
+				if (triggerIMU)
+					tracker.trigger = (TrackerConfig::TrackerTrigger)((tracker.trigger & TrackerConfig::TRIGGER_FLAG_MASK) & ~TrackerConfig::TRIGGER_ON_IMU_CONNECT);
+				else
+					tracker.trigger = (TrackerConfig::TrackerTrigger)((tracker.trigger & TrackerConfig::TRIGGER_FLAG_MASK) | TrackerConfig::TRIGGER_ON_IMU_CONNECT);
+			}
+			bool triggerIO = tracker.trigger & TrackerConfig::TRIGGER_ON_IO_CONNECT;
+			if (ImGui::Selectable("On IO Connect", triggerIO))
+			{
+				updated = !triggerIO;
+				if (triggerIO)
+					tracker.trigger = (TrackerConfig::TrackerTrigger)((tracker.trigger & TrackerConfig::TRIGGER_FLAG_MASK) & ~TrackerConfig::TRIGGER_ON_IO_CONNECT);
+				else
+					tracker.trigger = (TrackerConfig::TrackerTrigger)((tracker.trigger & TrackerConfig::TRIGGER_FLAG_MASK) | TrackerConfig::TRIGGER_ON_IO_CONNECT);
+			}
+			ImGui::EndCombo();
+			if (updated)
+				ImGui::MarkItemEdited(ImGui::GetItemID());
+			changed |= updated;
+		}
+		ImGui::EndGroup();
+		ImGui::SetItemTooltip("Conditions to trigger a tracker. After that it is expected to be in the tracking volume and actively searched for.");
+
+		ImGui::AlignTextToFramePadding();
+		BeginLabelledGroup("Expose Conditions");
+		const TrackerConfig::TrackerExpose exposeMap[] = { TrackerConfig::EXPOSE_ALWAYS, TrackerConfig::EXPOSE_ONCE_TRIGGERED, TrackerConfig::EXPOSE_ONCE_TRACKED };
+		std::array<const char*,3> exposeLabel;
+		exposeLabel[TrackerConfig::EXPOSE_ALWAYS] = "Always";
+		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRIGGERED] = "Once Triggered";
+		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRACKED] = "Once Tracked";
+		int exposeCond = tracker.expose;
+		if (ImGui::Combo("##ExpCond", &exposeCond, exposeLabel.data(), 3))
+		{
+			tracker.expose = (TrackerConfig::TrackerExpose)exposeCond;
+			changed = true;
+		}
+		ImGui::EndGroup();
+		ImGui::SetItemTooltip("Conditions to expose the tracker on IO. After that, external clients can see/connect to the tracker.");
+
+		if (state.isStreaming)
+		{
+			ImGui::BeginDisabled(tracker.triggered);
+			if (ImGui::Button("Trigger Manually", SizeWidthDiv2()))
+			{ // ServerUpdatedTrackerConfig will update with triggered set
+				tracker.triggered = true;
+				ServerUpdatedTrackerConfig(state, tracker);
+			}
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::BeginDisabled(tracker.exposed);
+			if (ImGui::Button("Expose Manually", SizeWidthDiv2()))
+			{ // CheckTrackingIO in supervisor thread will act with exposed set
+				tracker.exposed = true;
+			}
+			ImGui::EndDisabled();
+		}
+
+		if (changed)
+		{
+			ServerUpdatedTrackerConfig(state, tracker);
+		}
+
+		EndSection();
+	}
+
 	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 	{
-		ImGui::Text("Selected %s target %d '%s'", tracker.isSimulated? "simulated" : "calibrated", tracker.id, tracker.label.c_str());
+		BeginSection("Target Calibration");
 
 		static float adjustScale = 1.0f;
 		ImGui::SetNextItemWidth(SizeWidthDiv2().x);
@@ -150,9 +245,13 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
 			writeTargetObjFile(tgtPath, TargetCalibration3D(tracker.calib));
 		}
+
+		EndSection();
 	}
 
 	{
+		BeginSection("IMU Config");
+
 		std::string NoIMULabel = "No IMU";
 		auto getIMULabel = [](const IMU &imu)
 		{
@@ -165,7 +264,9 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			else
 				return NoIMULabel;
 		};
-		if (ImGui::BeginCombo("IMU", getIMUIdentLabel(tracker.imuIdent).c_str()))
+		ImGui::AlignTextToFramePadding();
+		BeginLabelledGroup("IMU");
+		if (ImGui::BeginCombo("##IMUSel", getIMUIdentLabel(tracker.imuIdent).c_str()))
 		{
 			bool changed = false;
 			if (ImGui::Selectable(NoIMULabel.c_str(), !tracker.imuIdent))
@@ -187,6 +288,41 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			if (changed)
 				ImGui::MarkItemEdited(ImGui::GetItemID());
 		}
+		ImGui::EndGroup();
+
+		EndSection();
+	}
+
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
+	{
+		BeginSection("Detection Config");
+
+		TargetDetectionConfig defaultConfig = {};
+		bool changed = false;
+
+		changed |= BooleanProperty("3D Matching with Triangulations", &tracker.detectionConfig.match3D, &defaultConfig.match3D);
+		ImGui::SetItemTooltip("Quick 3D detection, but may not work on targets with primarily flat markers");
+
+		changed |= BooleanProperty("2D Brute-Force Searching", &tracker.detectionConfig.search2D, &defaultConfig.search2D);
+		ImGui::SetItemTooltip("Somewhat slow 2D search, may not work on targets with few markers visible at once");
+
+		changed |= BooleanProperty("2D Brute-Force Probing", &tracker.detectionConfig.probe2D, &defaultConfig.probe2D);
+		ImGui::SetItemTooltip("2D probing which should work well on all targets, but slower than 2D searching like-for-like\nTune probe number to get optimal speed/detection ratio for each target.");
+
+		ImGui::BeginDisabled(!tracker.detectionConfig.probe2D && !tracker.detectionConfig.probe2D);
+		changed |= ScalarProperty<int>("Probe Count", "", &tracker.detectionConfig.probeCount, &defaultConfig.probeCount, 10, 10000);
+		ImGui::SetItemTooltip("Determines the number of rotations probed. A higher number increases processing time, but also increases reliability of detection - up until a point.");
+		ImGui::EndDisabled();
+
+		if (changed)
+		{
+			state.trackerConfigDirty = true;
+			ServerUpdatedTrackerConfig(state, tracker);
+		}
+
+		EndSection();
+		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
+		// Maybe make TrackedTarget::filter object an opaque pointer, and have a few method calls abstracted away
 	}
 
 	ImGui::End();

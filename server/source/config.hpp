@@ -83,14 +83,36 @@ struct TrackerConfig
 		TRACKER_MARKER = 2
 	};
 
+	enum TrackerTrigger
+	{
+		TRIGGER_ALWAYS = 0,
+		TRIGGER_ONLY_MANUALLY = (1 << 0),
+		TRIGGER_ON_IMU_CONNECT = (1 << 1),
+		TRIGGER_ON_IO_CONNECT = (1 << 2),
+		TRIGGER_MAX,
+		TRIGGER_MASK = ((TRIGGER_MAX-1)*2-1),
+		TRIGGER_FLAG_MASK = (TRIGGER_MASK&~1)
+	};
+
+	enum TrackerExpose
+	{
+		EXPOSE_ALWAYS = 0,
+		EXPOSE_ONCE_TRIGGERED = 1,
+		EXPOSE_ONCE_TRACKED = 2,
+		EXPOSE_MAX
+	};
+
 	// General Config
 	int id;
 	std::string label;
 	TrackerType type;
 	bool isSimulated;
+	TrackerTrigger trigger = TRIGGER_ALWAYS;
+	TrackerExpose expose = EXPOSE_ALWAYS;
 
 	// Target-specific Config
 	TargetCalibration3D calib;
+	TargetDetectionConfig detectionConfig = {};
 
 	// Marker-specific Config
 	float markerSize;
@@ -99,11 +121,17 @@ struct TrackerConfig
 	IMUIdent imuIdent;
 	IMUCalib imuCalib;
 
+	// Current state
+	std::shared_ptr<IMU> imu;
+	bool triggered, tracked;
+	bool exposed, connected;
+	// TODO: Support tracked trigger and connected expose condition
+
 	TrackerConfig(int ID, std::string label, TrackerType type)
 		: id(ID), label(label), type(type) {}
 
-	TrackerConfig(int ID, std::string label, TargetCalibration3D &&target)
-		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)) {}
+	TrackerConfig(int ID, std::string label, TargetCalibration3D &&target, TargetDetectionConfig detectionConfig)
+		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)), detectionConfig(detectionConfig) {}
 
 	TrackerConfig(int ID, std::string label, float markerSize)
 		: id(ID), label(label), type(TRACKER_MARKER), markerSize(markerSize) {}

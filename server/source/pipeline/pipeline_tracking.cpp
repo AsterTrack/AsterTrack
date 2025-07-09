@@ -253,7 +253,7 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<int>> &detectionPoints2D,
-	bool useProbe, int focus, Eigen::Vector3f pos, DormantTarget &&dormant)
+	bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget &&dormant)
 {
 	{ // Detect in the first frame
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
@@ -269,7 +269,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		if (useProbe)
 		{ // Probe target against clusters points
 			dormant.target.match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
-				pos, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				pos, pipeline.cameras.size(), probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
 		}
 		else
 		{ // Detect target first in focusCameras 2D points, and then match with others
@@ -386,6 +386,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	// Finally, no more frames to catch up on, register as new tracked target
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
 	assert(erased == 1);
+	SignalTrackerDetected(tracker.id);
 	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	return true;
 }
@@ -503,6 +504,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// TODO: Associate orphaned IMU with tracked target
 	}
 
+	if (trackTargets)
 	{ // 6-DOF Target Tracking
 
 		trk0 = pclock::now();
@@ -729,12 +731,17 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det0 = pclock::now();
 
-	if (trackTargets && detect.match3D && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
+	if (trackTargets && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
 	{ // Target detection in 3D point cloud
 
 		auto dormantIt = pipeline.tracking.dormantTargets.begin();
 		while (dormantIt != pipeline.tracking.dormantTargets.end())
 		{
+			if (!dormantIt->target.detectionConfig.match3D)
+			{
+				dormantIt++;
+				continue;
+			}
 			DormantTarget &dormant = *dormantIt;
 			LOG(LTracking, LDebug, "Trying to detect target %d (name %s) with %d markers in 3D point cloud!\n",
 				dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
@@ -764,6 +771,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 					occupyTargetMatches(tracker.target.match2D);
 					recordTrackingResult(pipeline, frame, tracker, TrackingResult::DETECTED_M3D);
+					SignalTrackerDetected(tracker.id);
 
 					LOG(LTracking, LInfo, "    Added dormant tracked target %s back with %d points and %fmm RMSE"
 						", now with %d 2D points and %fpx mean error!\n",
@@ -854,8 +862,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		trackedClusters3D.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.1f);
 	}
 
-	if (trackTargets && (detect.search2D || detect.probe2D) && !clusters2DTri.empty() &&
-		!pipeline.tracking.dormantTargets.empty() && !pipeline.tracking.asyncDetection)
+	if (trackTargets && !clusters2DTri.empty() && !pipeline.tracking.dormantTargets.empty() && !pipeline.tracking.asyncDetection)
 	{
 		// Select cluster to detect in
 		Cluster2DTri3D &cluster = clusters2DTri.front();
@@ -863,6 +870,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// Select target to detect
 		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
 		DormantTarget &dormant = pipeline.tracking.dormantTargets.back();
+		TargetDetectionConfig config = dormant.target.detectionConfig;
 
 		// Select best camera from that cluster
 		int focusPoints = 0, focusCamera = -1;
@@ -878,86 +886,90 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		// Cycle through methods to use (per target)
 		std::array<bool,2> options = {
-			detect.search2D && focusPoints >= detect.minObservations.focus,
-			detect.probe2D
+			config.search2D && focusPoints >= detect.minObservations.focus,
+			config.probe2D
 		};
-		static int cycle = 0;
 		int opt = -1;
-		for (int i = 0; i < options.size(); i++, cycle++)
+		for (int i = 0; i < options.size(); i++, dormant.target.detectionCycle++)
 		{
-			if (!options[cycle%options.size()]) continue;
-			opt = cycle%options.size();
+			if (!options[dormant.target.detectionCycle%options.size()]) continue;
+			opt = dormant.target.detectionCycle%options.size();
 			break;
 		}
-		cycle = (cycle+1)%options.size();
-		bool useProbe = opt == 1;
+		dormant.target.detectionCycle = (dormant.target.detectionCycle+1)%4;
 
-		LOG(LDetection2D, LDarn, opt == 1?
-			"Probing for target %d (name %s) with %d markers!\n" :
-			"Searching for target %d (name %s) with %d markers!\n",
-			dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
-
-		// TODO: Figure out why (async) search sucks now - did it always suck or just because of new clustering? Or a regression?
-
-		// Prepare selection of points
-		std::vector<std::vector<int>> detectionPoints2DAsync(calibs.size());
-		std::vector<Cluster2D const *> detectionPoints2DSync(calibs.size());
-		for (int c = 0; c < calibs.size(); c++)
+		if (opt != -1)
 		{
-			int cIndex = cluster.camClusters[c];
-			if (cIndex < 0) continue;
-			// TODO: Track clusters in 3D (1/2) - would allow nearby points below cluster limit to be used here
-			detectionPoints2DAsync[c] = clusters2D[c][cIndex];
-			detectionPoints2DSync[c] = &clusters2D[c][cIndex];
-		}
+			bool useProbe = opt == 1;
 
-		if (detect.useAsyncDetection)
-		{
-			pipeline.tracking.asyncDetection = true;
-			pipeline.tracking.asyncDetectionStop = {};
-			pipeline.tracking.asyncDetectTargetID = dormant.id;
-			threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
-				std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
-				bool useProbe, int focus, Eigen::Vector3f pos, DormantTarget dormant)
-			{ // Working with copy of dormant tracker
-				detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
-					useProbe, focus, pos, std::move(dormant));
-				pipeline.tracking.asyncDetection = false;
-			}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2DAsync,
-				useProbe, focusCamera, cluster.center, dormant);
-		}
-		else
-		{
-			pipeline.tracking.syncDetectionStop = {};
-			if (useProbe)
-			{ // Probe target against clusters points
-				dormant.target.match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
-					dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, cluster.center,
-					pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
-			}
-			else
-			{ // Detect target first in focusCameras 2D points, and then match with others
-				dormant.target.match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
-					dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync,
-					focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
-				
-			}
-			if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
+			LOG(LDetection2D, LDarn, opt == 1?
+				"Probing for target %d (name %s) with %d markers!\n" :
+				"Searching for target %d (name %s) with %d markers!\n",
+				dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
+
+			// TODO: Figure out why (async) search sucks now - did it always suck or just because of new clustering? Or a regression?
+
+			// Prepare selection of points
+			std::vector<std::vector<int>> detectionPoints2DAsync(calibs.size());
+			std::vector<Cluster2D const *> detectionPoints2DSync(calibs.size());
+			for (int c = 0; c < calibs.size(); c++)
 			{
-				LOG(LDetection2D, LInfo, useProbe?
-				"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
-				"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
-					frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
-				Eigen::Isometry3f pose = dormant.target.match2D.pose;
-				TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
-				occupyTargetMatches(tracker.target.match2D);
-				recordTrackingResult(pipeline, frame, tracker, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D);
-				pipeline.tracking.trackedTargets.push_back(std::move(tracker));
-				pipeline.tracking.dormantTargets.pop_back();
+				int cIndex = cluster.camClusters[c];
+				if (cIndex < 0) continue;
+				// TODO: Track clusters in 3D (1/2) - would allow nearby points below cluster limit to be used here
+				detectionPoints2DAsync[c] = clusters2D[c][cIndex];
+				detectionPoints2DSync[c] = &clusters2D[c][cIndex];
+			}
+
+			if (detect.useAsyncDetection)
+			{
+				pipeline.tracking.asyncDetection = true;
+				pipeline.tracking.asyncDetectionStop = {};
+				pipeline.tracking.asyncDetectTargetID = dormant.id;
+				threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
+					std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
+					bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget dormant)
+				{ // Working with copy of dormant tracker
+					detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
+						useProbe, focus, pos, probeCount, std::move(dormant));
+					pipeline.tracking.asyncDetection = false;
+				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2DAsync,
+					useProbe, focusCamera, cluster.center, config.probeCount, dormant);
 			}
 			else
 			{
-				createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
+				pipeline.tracking.syncDetectionStop = {};
+				if (useProbe)
+				{ // Probe target against clusters points
+					dormant.target.match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
+						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, cluster.center,
+						pipeline.cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				}
+				else
+				{ // Detect target first in focusCameras 2D points, and then match with others
+					dormant.target.match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
+						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync,
+						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+					
+				}
+				if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
+				{
+					LOG(LDetection2D, LInfo, useProbe?
+					"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
+					"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
+						frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
+					Eigen::Isometry3f pose = dormant.target.match2D.pose;
+					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
+					occupyTargetMatches(tracker.target.match2D);
+					recordTrackingResult(pipeline, frame, tracker, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D);
+					SignalTrackerDetected(tracker.id);
+					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
+					pipeline.tracking.dormantTargets.pop_back();
+				}
+				else
+				{
+					createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
+				}
 			}
 		}
 	}
@@ -987,7 +999,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 }
 
-void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib)
+void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib, TargetDetectionConfig detectionConfig)
 {
 	std::unique_lock lock (pipeline.pipelineLock);
 	for (auto &tracker : pipeline.tracking.trackedTargets)
@@ -995,6 +1007,7 @@ void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, Target
 		if (tracker.id != ID) continue;
 		tracker.label = label;
 		tracker.target.calib = calib;
+		tracker.target.detectionConfig = detectionConfig;
 		return;
 	}
 	for (auto &tracker : pipeline.tracking.dormantTargets)
@@ -1002,9 +1015,10 @@ void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, Target
 		if (tracker.id != ID) continue;
 		tracker.label = label;
 		tracker.target.calib = calib;
+		tracker.target.detectionConfig = detectionConfig;
 		return;
 	}
-	pipeline.tracking.dormantTargets.emplace_back(ID, label, TrackerTarget(std::move(calib)));
+	pipeline.tracking.dormantTargets.emplace_back(ID, label, TrackerTarget(std::move(calib), detectionConfig));
 }
 
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size)

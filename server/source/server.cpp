@@ -125,29 +125,65 @@ void ServerExit(ServerState &state)
 
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 {
-	if (state.isStreaming)
-	{ // Trigger tracker to be considered for tracking
+	if (!state.isStreaming) return;
+	// Trigger tracker to be considered for tracking
 
-		// Set (or update) tracked object with tracker config
-		if (tracker.type == TrackerConfig::TRACKER_TARGET)
-			SetTrackedTarget(state.pipeline, tracker.id, tracker.label, tracker.calib);
-		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
-			SetTrackedMarker(state.pipeline, tracker.id, tracker.label, tracker.markerSize);
-
-		if (tracker.imuIdent)
-		{ // Ensure IMU is associated (if it is connected)
+	bool updatedIMU = false;
+	if (tracker.imuIdent)
+	{ // Ensure IMU is properly associated
+		if (tracker.imu && tracker.imu->id != tracker.imuIdent)
+		{ // Switched / Removed IMU
+			tracker.imu = nullptr;
+			updatedIMU = true;
+		}
+		if (!tracker.imu)
+		{ // Attempt to find IMU among those connected
 			for (auto &imu : state.pipeline.record.imus)
 			{
-				if (imu->id == tracker.imuIdent)
-					AssociateIMU(state.pipeline, imu, tracker.id, tracker.imuCalib);
+				if (imu->id != tracker.imuIdent) continue;
+				tracker.imu = imu;
+				updatedIMU = true;
 			}
 		}
+	}
+
+	if (!tracker.triggered)
+	{ // Ensure trigger conditions have been met
+		if (tracker.trigger == TrackerConfig::TRIGGER_ALWAYS)
+			tracker.triggered = true;
+		else if (tracker.trigger == TrackerConfig::TRIGGER_ON_IMU_CONNECT && tracker.imu)
+			tracker.triggered = true;
+		else if (tracker.trigger == TrackerConfig::TRIGGER_ON_IO_CONNECT && tracker.connected)
+			tracker.triggered = true;
 		else
-			DisassociateIMU(state.pipeline, tracker.id);
+			return;
+	}
+
+	// Set (or update) tracked object with tracker config
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
+		SetTrackedTarget(state.pipeline, tracker.id, tracker.label, tracker.calib, tracker.detectionConfig);
+	else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+		SetTrackedMarker(state.pipeline, tracker.id, tracker.label, tracker.markerSize);
+
+	if (updatedIMU)
+	{ // Ensure tracked object receives updated IMU association
+		DisassociateIMU(state.pipeline, tracker.id);
+		if (tracker.imu)
+			AssociateIMU(state.pipeline, tracker.imu, tracker.id, tracker.imuCalib);
 	}
 }
 
 // Signals
+
+void SignalTrackerDetected(int trackerID)
+{
+	for (auto &tracker : GetState().trackerConfigs)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.tracked = true;
+		return;
+	}
+}
 
 void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
 {
@@ -507,6 +543,11 @@ void StopDeviceMode(ServerState &state)
 	state.imuProviders.contextualLock()->clear();
 	hid_exit();
 
+	for (auto &tracker : state.trackerConfigs)
+	{
+		tracker.imu = nullptr;
+	}
+
 	// Reset state
 	state.mode = MODE_None;
 	assert(state.controllers.empty() && state.cameras.empty());
@@ -612,6 +653,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 						if (trackerConfig != state->trackerConfigs.end())
 						{
 							AssociateIMU(state->pipeline, imu, trackerConfig->id, trackerConfig->imuCalib);
+							trackerConfig->imu = imu;
 						}
 						else
 						{
@@ -747,7 +789,7 @@ void StartSimulation(ServerState &state)
 			LOG(LDefault, LInfo, "Using ground truth target template for simulated target %s (%d) with %d points!\n",
 				label.c_str(), id, (int)calib.markers.size());
 
-			TrackerConfig tracker(id, label, TargetCalibration3D(calib));
+			TrackerConfig tracker(id, label, TargetCalibration3D(calib), TargetDetectionConfig());
 			tracker.isSimulated = true;
 			state.trackerConfigs.push_back(std::move(tracker));
 		}
@@ -1173,6 +1215,12 @@ void StopStreaming(ServerState &state)
 	SignalServerEvent(EVT_STOP_STREAMING);
 
 	LOG(LDefault, LInfo, "Stopped stream!\n");
+
+	for (auto &tracker : state.trackerConfigs)
+	{
+		tracker.triggered = false;
+		tracker.tracked = false;
+	}
 }
 
 void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
@@ -1326,6 +1374,12 @@ void ResetIO(ServerState &state)
 	state.io.vrpn_trackers.clear();
 	state.io.vrpn_server = nullptr;
 	state.io.useVRPN = false;
+
+	for (auto &tracker : state.trackerConfigs)
+	{
+		tracker.exposed = false;
+		tracker.connected = false;
+	}
 }
 
 void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
@@ -1338,14 +1392,26 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 		auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
-			auto tracker = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 				[&](auto &t){ return t.id == trackRecord.id; });
-			if (tracker == state.trackerConfigs.end()) continue;
-			std::string path = tracker->label;
-			//std::string path = asprintf_s("AsterTarget_%.4d", tracker->id);
+			if (trackerIt == state.trackerConfigs.end()) continue;
+			TrackerConfig &tracker = *trackerIt;
+			if (!tracker.exposed)
+			{ // Check expose conditions
+				if (tracker.expose == TrackerConfig::EXPOSE_ALWAYS)
+					tracker.exposed = true;
+				else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRIGGERED && tracker.triggered)
+					tracker.exposed = true;
+				else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRACKED && tracker.tracked)
+					tracker.exposed = true;
+				else
+					continue;
+			}
+			std::string path = tracker.label;
+			//std::string path = asprintf_s("AsterTarget_%.4d", tracker.id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());
-			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker->id, path.c_str(), state.io.vrpn_server.get());
-			io_tracker = state.io.vrpn_trackers.insert({ tracker->id, std::move(vrpn_tracker) }).first;
+			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker.id, path.c_str(), state.io.vrpn_server.get());
+			io_tracker = state.io.vrpn_trackers.insert({ tracker.id, std::move(vrpn_tracker) }).first;
 		}
 
 		// TODO: Send both poseObserved and poseFiltered?

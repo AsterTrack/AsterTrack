@@ -824,7 +824,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				// Register as calibrated target
 				TargetCalibration3D targetCalib(finaliseTargetMarkers(
 					pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
-				state.trackerConfigs.emplace_back(id, label, std::move(targetCalib));
+				state.trackerConfigs.emplace_back(id, label, std::move(targetCalib), TargetDetectionConfig());
 				storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
 				state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 			}

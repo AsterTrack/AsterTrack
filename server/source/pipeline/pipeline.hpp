@@ -269,7 +269,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
  */
 
 /* Add or update a tracked target with given config */
-void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib);
+void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib, TargetDetectionConfig detectionConfig);
 
 /* Add or update a tracked marker with given config */
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size);

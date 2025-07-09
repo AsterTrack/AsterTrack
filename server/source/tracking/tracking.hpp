@@ -68,14 +68,18 @@ struct TrackerTarget
 	// Calibrated target template
 	TargetCalibration3D calib;
 
+	// Config of detection methods used for this target 
+	TargetDetectionConfig detectionConfig;
+	int detectionCycle;
+
 	// Store internal data for visualisation purposes (low overhead)
 	TargetTracking2DData data;
 
 	// 2D Tracking result
 	TargetMatch2D match2D;
 
-	TrackerTarget(TargetCalibration3D &&calib) :
-		calib(std::move(calib)), data{}, match2D{} {}
+	TrackerTarget(TargetCalibration3D &&calib, TargetDetectionConfig config) :
+		calib(std::move(calib)), detectionConfig(config), detectionCycle(0), data{}, match2D{} {}
 };
 
 

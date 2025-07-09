@@ -27,6 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * (from Pipeline, UI can interact directly with Server)
  */
 
+void SignalTrackerDetected(int trackerID);									// Signal: Pipeline -> Server
 void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib);		// Signal: Pipeline -> Server
 void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib);	// Signal: Pipeline -> Server
 void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs);				// Signal: Pipeline -> Server

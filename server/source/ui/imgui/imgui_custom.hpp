@@ -271,4 +271,17 @@ static inline ImVec2 SizeWidthDiv4_3()
 	return size;
 }
 
+static void BeginLabelledGroup(const char* fmt, ...)
+{
+	ImGui::BeginGroup();
+
+    va_list args;
+    va_start(args, fmt);
+    ImGui::TextV(fmt, args);
+    va_end(args);
+
+	SameLineTrailing(SizeWidthDiv3_2().x);
+	ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);
+}
+
 #endif // IMGUI_CUSTOM_H

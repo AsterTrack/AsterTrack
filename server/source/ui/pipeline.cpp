@@ -284,21 +284,6 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	if (pipeline.phase == PHASE_Tracking)
 	{
-		BeginSection("Settings");
-
-		if (ImGui::TreeNode("Detection Method"))
-		{
-			CheckboxInput("3D Detection in Triangulations", &pipeline.params.detect.match3D);
-			CheckboxInput("2D Brute-Force Searching", &pipeline.params.detect.search2D);
-			CheckboxInput("2D Brute-Force Probing", &pipeline.params.detect.probe2D);
-			CheckboxInput("2D Brute-Force Async", &pipeline.params.detect.useAsyncDetection);
-			ImGui::TreePop();
-		}
-		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
-		// Maybe make TrackedTarget::filter object an opaque pointer, and have a few method calls abstracted away
-
-		EndSection();
-
 		if (ImGui::CollapsingHeader("Optimisation Database"))
 		{
 			ImGui::PushID("OptDb");

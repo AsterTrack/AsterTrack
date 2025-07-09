@@ -140,7 +140,7 @@ struct VisualisationState
 
 	struct
 	{
-		// Tracking target to focus on		
+		// Tracking target to focus on
 		int focusedTrackerID = 0;
 		struct TrackingTargets
 		{

@@ -314,14 +314,22 @@ void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Mat
 	Affine3<Scalar> &roomTransform, Scalar height, Scalar pairwiseDist)
 {
 	Vector3<Scalar> origin = Vector3<Scalar>::Zero();
+	int c = 0;
 	for (auto &calib : calibs)
+	{
+		if (calib.invalid()) continue;
 		origin += calib.transform.translation();
-	origin /= calibs.size();
+		c++;
+	}
+	if (c < 2) return; 
+	origin /= c;
 
 	// Perform Principle Component Analysis to get the least represented axis, which is our axis going vertically through the plane of the points
-	Eigen::Matrix3X<Scalar> N = Eigen::Matrix3X<Scalar>(3, calibs.size());
-	for (int c = 0; c < calibs.size(); c++)
-		N.col(c) = calibs[c].transform.translation()-origin;
+	Eigen::Matrix3X<Scalar> N = Eigen::Matrix3X<Scalar>(3, c);
+	c = 0;
+	for (auto &calib : calibs)
+		if (!calib.invalid())
+			N.col(c++) = calib.transform.translation()-origin;
 
 	// TODO: Choose either SVD or EVD
 	Eigen::JacobiSVD<Eigen::Matrix3X<Scalar>, Eigen::ComputeFullU> svd_N(N);
@@ -333,8 +341,9 @@ void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Mat
 
 	// Flip room up axis based on camera positions
 	Scalar flipAxis = 0;
-	for (int c = 0; c < calibs.size(); c++)
-		flipAxis += axis.dot(calibs[c].transform.translation() - origin);
+	for (auto &calib : calibs)
+		if (!calib.invalid())
+			flipAxis += axis.dot(calib.transform.translation() - origin);
 	if (flipAxis < 0)
 		axis = -axis;
 

@@ -20,7 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "server.hpp"
 
-#include "ui/shared.hpp" // Signals
+#include "ui/shared.hpp" // Signals to UI
+#include "signals.hpp" // Signals to Server
 
 #include "device/tracking_controller.hpp"
 #include "device/tracking_camera.hpp"
@@ -74,11 +75,16 @@ bool ServerInit(ServerState &state)
 
 	// Read configurations
 	parseGeneralConfigFile("store/general_config.json", state.config);
+	state.generalConfigDirty = false;
+	// TODO: Add UI and storage of general config
 	parseCameraConfigFile("store/camera_config.json", state.cameraConfig);
+	state.cameraConfigDirty = false;
 
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+	state.cameraCalibsDirty = false;
 	parseTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+	state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 
 	{
 		// Debug calibration
@@ -117,35 +123,6 @@ void ServerExit(ServerState &state)
 	ResetIO(state);
 }
 
-void ServerStoreConfiguration(ServerState &state)
-{
-	storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
-}
-
-void ServerStoreCameraCalib(ServerState &state)
-{
-	// Update list of calibrations with current set of cameras
-	for (auto &cam : state.pipeline.cameras)
-	{
-		int i;
-		for (i = 0; i < state.cameraCalibrations.size(); i++)
-		{
-			if (state.cameraCalibrations[i].id == cam->id)
-			{ // Found calibration entry, update calibration data
-				state.cameraCalibrations[i] = cam->calib;
-				break;
-			}
-		}
-		if (i >= state.cameraCalibrations.size())
-		{ // New camera with calibration, add as calibration entry
-			state.cameraCalibrations.push_back(cam->calib);
-		}
-	}
-
-	// Write both as current calibration
-	storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-}
-
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 {
 	if (state.isStreaming)
@@ -170,32 +147,63 @@ void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 	}
 }
 
-void ServerStoreTargetConfigs(ServerState &state)
-{
-	storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-}
+// Signals
 
-void ServerUpdateTrackerTargetCalib(ServerState &state, int trackerID, TargetCalibration3D calib)
+void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
 {
-	for (auto &tracker : state.trackerConfigs)
+	for (auto &tracker : GetState().trackerConfigs)
 	{
 		if (tracker.id != trackerID) continue;
-		tracker.calib = std::move(calib);
-		// Assuming here that if this function was called, the calib was already updated in the TrackedTarget
+		tracker.calib = calib;
+		if (tracker.isSimulated)
+		{ // Ensure calibrated, simulated targets are adopted as normal targets and stored
+			tracker.isSimulated = false;
+		}
+		GetState().trackerCalibsDirty = true;
+		// Update pipeline - this update may have come from pipeline, still
+		ServerUpdatedTrackerConfig(GetState(), tracker);
 		return;
 	}
 }
 
-void ServerUpdateTrackerIMUCalib(ServerState &state, int trackerID, IMUIdent imu, IMUCalib calib)
+void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)
 {
-	for (auto &tracker : state.trackerConfigs)
+	for (auto &tracker : GetState().trackerConfigs)
 	{
 		if (tracker.id != trackerID) continue;
-		tracker.imuIdent = imu;
+		tracker.imuIdent = ident;
 		tracker.imuCalib = calib;
-		// Assuming here that if this function was called, the IMU was already connected to the tracker
+		GetState().trackerIMUsDirty = true;
+		// Update pipeline - this update may have come from pipeline, still
+		ServerUpdatedTrackerConfig(GetState(), tracker);
 		return;
 	}
+}
+
+void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
+{
+	auto &state = GetState();
+	for (auto &calib : calibs)
+	{ // Integrate changed calibs into stored list of calibrations
+		if (calib.invalid()) continue;
+		int i;
+		for (i = 0; i < state.cameraCalibrations.size(); i++)
+		{
+			if (state.cameraCalibrations[i].id == calib.id)
+			{ // Found calibration entry, update calibration data
+				state.cameraCalibrations[i] = calib;
+				break;
+			}
+		}
+		if (i >= state.cameraCalibrations.size())
+		{ // New camera with calibration, add as calibration entry
+			state.cameraCalibrations.push_back(calib);
+		}
+	}
+	GetState().cameraCalibsDirty = true;
+	// Signal UI that calibrations got updated
+	SignalServerEvent(EVT_UPDATE_CALIBS);
+	// This update is assumed to have come from pipeline, so no need to update it
 }
 
 // ----------------------------------------------------------------------------
@@ -570,8 +578,6 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			IMUDeviceList removedIMUs, addedIMUs;
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
-				assert(*imuProvider);
-				// TODO: Fix seg fault here after re-entering device mode once
 				auto status = imuProvider->get()->poll(updatedDevices, removedIMUs, addedIMUs);
 				if (status == IMU_STATUS_DISCONNECTED)
 				{
@@ -582,10 +588,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					imusRegistered = true;
 				imuProvider++;
 			}
-			if (updatedDevices > 0)
-				SignalPipelineUpdate();
 			if (!addedIMUs.empty() || !removedIMUs.empty())
 			{
+				SignalPipelineUpdate();
 				std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
 				for (auto &imuDevice : addedIMUs)
 				{
@@ -753,13 +758,9 @@ void StartSimulation(ServerState &state)
 	}
 
 	{ // Align calibrations to simulated calibrations
-		std::vector<CameraCalib> calibs;
-		for (auto &cam : state.pipeline.cameras)
-			calibs.push_back(cam->calib);
+		auto calibs = state.pipeline.getCalibs();
 		AlignWithGT(state.pipeline, calibs);
-		for (int c = 0; c < calibs.size(); c++)
-			state.pipeline.cameras[c]->calib = calibs[c];
-		SignalServerEvent(EVT_UPDATE_CALIBS);
+		AdoptNewCalibrations(state.pipeline, calibs, false);
 	}
 
 	// Debug calibrations
@@ -835,7 +836,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 
 		if (!state->isStreaming || stop_token.stop_requested())
-			break;
+			continue;
 
 		// Check after breakpoint to allow for halting while in breakpoint
 		if (state->simAdvance == 0)
@@ -847,7 +848,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 
 		if (!state->isStreaming || stop_token.stop_requested())
-			break;
+			continue;
 
 		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
 
@@ -971,7 +972,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		pipeline_lock.unlock();
 
 		if (!state->isStreaming || stop_token.stop_requested())
-			break;
+			continue;
 
 		auto frameReceiveTime = sclock::now();
 
@@ -1172,9 +1173,6 @@ void StopStreaming(ServerState &state)
 	SignalServerEvent(EVT_STOP_STREAMING);
 
 	LOG(LDefault, LInfo, "Stopped stream!\n");
-
-	// Store any target or IMU calibration changes that happened during this session
-	ServerStoreTargetConfigs(state);
 }
 
 void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)

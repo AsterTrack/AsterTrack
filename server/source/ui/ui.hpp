@@ -338,7 +338,6 @@ public:
 	long seqJumpToFrame = -1;
 
 	// Pipeline/PointCalib state
-	bool newCalibration = false;
 	Synchronised<std::string> calibSamples;
 	struct {
 		int numCalibrated, numUncalibrated, relCertain, relUncertain;
@@ -363,7 +362,7 @@ public:
 
 	void UpdateSequences(bool reset = false);
 		void UpdateIncrementalSequencesVis(const SequenceData &sequences, bool updateStable, bool rawPoints);
-	void UpdateCalibrations(bool calibrated = true);
+	void UpdateCalibrations();
 
 	// UI-only device functions
 	CameraConfig& getCameraConfig(const TrackingCameraState &camera);

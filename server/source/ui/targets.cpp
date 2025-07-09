@@ -93,6 +93,22 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
+	if (SaveButton("Save Target Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
+	{
+		storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+		state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+	}
+	if ((state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty) && ImGui::BeginItemTooltip())
+	{
+		if (state.trackerConfigDirty)
+			ImGui::TextUnformatted("Tracker Config has been changed.");
+		if (state.trackerCalibsDirty)
+			ImGui::TextUnformatted("Tracker Calibration has been changed.");
+		if (state.trackerIMUsDirty)
+			ImGui::TextUnformatted("Tracker IMU Configuration has been changed.");
+		ImGui::EndTooltip();
+	}
+
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 		[&](auto &t){ return t.id == visState.target.selectedTargetID; });
 	if (trackerIt == state.trackerConfigs.end())
@@ -113,9 +129,10 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		if (ImGui::Button("Adjust scale", SizeWidthDiv2()))
 		{
 			LOG(LTargetCalib, LInfo, "Adjusting scale of target '%s' by %f!", tracker.label.c_str(), adjustScale);
-			for (auto &mk : tracker.calib.markers)
+			TargetCalibration3D calib = tracker.calib;
+			for (auto &mk : calib.markers)
 				mk.pos *= adjustScale;
-			tracker.calib.updateMarkers();
+			calib.updateMarkers();
 			auto obs_lock = state.pipeline.obsDatabase.contextualLock();
 			for (auto &tgt : obs_lock->targets)
 			{
@@ -123,7 +140,8 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}
-			ServerUpdatedTrackerConfig(state, tracker);
+			// Signal server to update calib
+			SignalTargetCalibUpdate(tracker.id, calib);
 		}
 
 		if (ImGui::Button("Save Target as OBJ", SizeWidthFull()))
@@ -152,19 +170,16 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			bool changed = false;
 			if (ImGui::Selectable(NoIMULabel.c_str(), !tracker.imuIdent))
 			{
-				tracker.imuIdent = {};
-				tracker.imuCalib = {};
-				ServerUpdatedTrackerConfig(state, *trackerIt);
+				changed = tracker.imuIdent;
+				SignalIMUCalibUpdate(tracker.id, {}, {});
 			}
 			for (auto &imu : state.pipeline.record.imus)
 			{
 				ImGui::PushID(imu->index);
 				if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->id == tracker.imuIdent))
 				{
-					tracker.imuIdent = imu->id;
-					tracker.imuCalib = {};
-					ServerUpdatedTrackerConfig(state, *trackerIt);
-					changed = true;
+					changed = tracker.imuIdent != imu->id;
+					SignalIMUCalibUpdate(tracker.id, imu->id, {});
 				}
 				ImGui::PopID();
 			}

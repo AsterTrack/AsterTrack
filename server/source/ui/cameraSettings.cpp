@@ -33,8 +33,6 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	static bool configsDirty = false;
-
 	auto displayConfigurationUI = [&](int configIndex)
 	{
 		auto &config = state.cameraConfig.configurations[configIndex];
@@ -46,7 +44,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);
 			ImGui::InputText("##Label", &config.label);
 			if (ImGui::IsItemDeactivatedAfterEdit())
-				configsDirty = true;
+				state.cameraConfigDirty = true;
 		}
 
 		{
@@ -185,7 +183,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		updateDevice |= updateProc;
 		if (updateDevice)
 		{
-			configsDirty = true;
+			state.cameraConfigDirty = true;
 			if (updateProc && config.shareBlobProcessing)
 			{
 				for (auto &cfg : state.cameraConfig.configurations)
@@ -276,20 +274,10 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 	if (selectedConfiguration >= 0)
 		displayConfigurationUI(selectedConfiguration);
 
-	bool markSaveButton = configsDirty;
-	if (markSaveButton)
+	if (SaveButton("Save Configurations", SizeWidthFull(), state.cameraConfigDirty))
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
-	}
-	if (ImGui::Button("Save Configurations", SizeWidthFull()))
-	{
-		ServerStoreConfiguration(state);
-		configsDirty = false;
-	}
-	if (markSaveButton)
-	{
-		ImGui::PopStyleColor(2);
+		storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+		state.cameraConfigDirty = false;
 	}
 
 	BeginSection("Controller Configuration");

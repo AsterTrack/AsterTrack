@@ -49,11 +49,16 @@ typedef void (*SignalServerEvent_t)(ServerEvents);
 
 }
 
+/**
+ * Signals to UI
+ * (from Server and Pipeline)
+ */
+
 extern InterfaceThread_t InterfaceThread;
-extern SignalShouldClose_t SignalInterfaceShouldClose;
-extern SignalLogUpdate_t SignalLogUpdate;
-extern SignalCameraRefresh_t SignalCameraRefresh;
-extern SignalPipelineUpdate_t SignalPipelineUpdate;
-extern SignalServerEvent_t SignalServerEvent;
+extern SignalShouldClose_t SignalInterfaceShouldClose;	// Signal: Server -> UI
+extern SignalLogUpdate_t SignalLogUpdate;				// Signal: Server -> UI
+extern SignalCameraRefresh_t SignalCameraRefresh;		// Signal: Server -> UI
+extern SignalPipelineUpdate_t SignalPipelineUpdate;		// Signal: Pipeline -> UI
+extern SignalServerEvent_t SignalServerEvent;			// Signal: Server -> UI
 
 #endif // UI_SIGNALS_H

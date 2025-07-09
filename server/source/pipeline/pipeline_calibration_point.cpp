@@ -39,6 +39,8 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 // Calibration
 // ----------------------------------------------------------------------------
 
+static void ApplyTransformation(std::vector<CameraCalib> &calibs, Eigen::Matrix3d orientation, Eigen::Affine3d transform);
+
 void ResetPointCalibration(PipelineState &pipeline)
 {
 	// Wait for all calibration threads to stop if they are still running
@@ -185,6 +187,13 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		else
 			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3fdg\n", errors.first, errors.second);
 	}
+	else
+	{
+		Eigen::Matrix3d roomOrientation;
+		Eigen::Affine3d roomTransform;
+		getCalibNormalisation<double>(calibs, roomOrientation, roomTransform);
+		ApplyTransformation(calibs, roomOrientation, roomTransform);
+	}
 
 	if (stopToken.stop_requested())
 	{
@@ -210,16 +219,11 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 
 	{ // Update calibration
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
-		for (int c = 0; c < calibs.size(); c++)
-			pipeline->cameras[calibs[c].index]->calib = calibs[c];
-		NormaliseRoom(*pipeline);
+		AdoptNewCalibrations(*pipeline, calibs, true);
 	}
+	SignalCameraCalibUpdate(calibs);
 
-	// Update fundamental matrices using calibration
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
-
-	SignalServerEvent(EVT_UPDATE_CALIBS);
-	SignalPipelineUpdate();
 
 	LOGC(LInfo, "== Done Reconstructing Calibration!\n");
 
@@ -301,13 +305,9 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 		{ // Update calibration
 			std::unique_lock pipeline_lock(pipeline->pipelineLock);
-			AdoptRoomCalibration(*pipeline, calibs);
-			for (int c = 0; c < calibs.size(); c++)
-				pipeline->cameras[calibs[c].index]->calib = calibs[c];
+			AdoptNewCalibrations(*pipeline, calibs, true);
 		}
-
-		SignalServerEvent(EVT_UPDATE_CALIBS);
-		SignalPipelineUpdate();
+		SignalCameraCalibUpdate(calibs);
 
 		if (errors.max > errors.mean + params.outliers.sigma.trigger*errors.stdDev)
 		{
@@ -378,38 +378,16 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 
 	{ // Update calibration
 		std::unique_lock pipeline_lock(pipeline->pipelineLock);
-		AdoptRoomCalibration(*pipeline, calibs);
-		for (int c = 0; c < calibs.size(); c++)
-			pipeline->cameras[calibs[c].index]->calib = calibs[c];
+		AdoptNewCalibrations(*pipeline, calibs, true);
 	}
+	SignalCameraCalibUpdate(calibs);
 
-	// Update fundamental matrices using calibration
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
-
-	SignalServerEvent(EVT_UPDATE_CALIBS);
-	SignalPipelineUpdate();
 
 	LOGC(LDebug, "=======================\n");
 }
 
-void NormaliseRoom(PipelineState &pipeline)
-{
-	Eigen::Matrix3d roomOrientation;
-	Eigen::Affine3d roomTransform;
-	getCalibNormalisation<double>(pipeline.getCalibs(), roomOrientation, roomTransform);
-	for (auto &cam : pipeline.cameras)
-	{
-		if (cam->calib.invalid()) continue;
-		cam->calibBackup = cam->calib;
-		cam->calib.transform.linear() = roomOrientation * cam->calib.transform.linear();
-		cam->calib.transform.translation() = roomTransform * cam->calib.transform.translation();
-		cam->calib.UpdateDerived();
-	}
-	SignalServerEvent(EVT_UPDATE_CALIBS);
-	SignalPipelineUpdate();
-}
-
-bool CalibrateFloor(PipelineState &pipeline)
+bool CalibrateRoom(PipelineState &pipeline)
 {
 	auto &ptCalib = pipeline.pointCalib;
 	if (ptCalib.room.floorPoints.size() < 3)
@@ -434,16 +412,9 @@ bool CalibrateFloor(PipelineState &pipeline)
 		LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
 		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
 			roomTransform.linear().colwise().norm().mean());
-		for (auto &cam : pipeline.cameras)
-		{
-			if (cam->calib.invalid()) continue;
-			cam->calibBackup = cam->calib;
-			cam->calib.transform.linear() = roomOrientation * cam->calib.transform.linear();
-			cam->calib.transform.translation() = roomTransform * cam->calib.transform.translation();
-			cam->calib.UpdateDerived();
-		}
-		SignalServerEvent(EVT_UPDATE_CALIBS);
-		SignalPipelineUpdate();
+		ApplyTransformation(calibs, roomOrientation, roomTransform);
+		AdoptNewCalibrations(pipeline, calibs, false);
+		SignalCameraCalibUpdate(calibs);
 		return true;
 	}
 	else
@@ -453,20 +424,44 @@ bool CalibrateFloor(PipelineState &pipeline)
 	}
 }
 
-bool AdoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs)
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool copyRoomCalib)
 {
-	std::vector<CameraCalib> oldCalibs(calibs.size());
-	for (int c = 0; c < calibs.size(); c++)
-		oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
-	Eigen::Matrix3d roomOrientation;
-	Eigen::Affine3d roomTransform;
-	if (!transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
-		return false;
+	if (copyRoomCalib)
+	{
+		std::vector<CameraCalib> oldCalibs(calibs.size());
+		for (int c = 0; c < calibs.size(); c++)
+			oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
+		Eigen::Matrix3d roomOrientation;
+		Eigen::Affine3d roomTransform;
+		if (transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
+			ApplyTransformation(calibs, roomOrientation, roomTransform);
+	}
+
+	for (auto &cam : pipeline.cameras)
+	{
+		cam->calibBackup = cam->calib; // Create backup
+		cam->calib.id = CAMERA_ID_NONE; // Invalidate existing
+		for (auto &calib : calibs)
+		{ // Try to find valid new calibration
+			if (calib.invalid()) continue;
+			if (calib.id == cam->id)
+			{ // Adopt
+				cam->calib = calib;
+				break;
+			}
+		}
+		// Make sure index is correct
+		cam->calib.index = cam->index;
+	}
+}
+
+static void ApplyTransformation(std::vector<CameraCalib> &calibs, Eigen::Matrix3d orientation, Eigen::Affine3d transform)
+{
 	for (auto &calib : calibs)
 	{
-		calib.transform.linear() = roomOrientation * calib.transform.linear();
-		calib.transform.translation() = roomTransform * calib.transform.translation();
+		if (calib.invalid()) continue;
+		calib.transform.linear() = orientation * calib.transform.linear();
+		calib.transform.translation() = transform * calib.transform.translation();
 		calib.UpdateDerived();
 	}
-	return true;
 }

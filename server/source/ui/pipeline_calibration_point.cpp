@@ -73,51 +73,30 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 			pipeline.calibration.contextualLock()->init(pipeline.cameras.size());
 			UpdateErrorFromObservations(pipeline);
-			UpdateCalibrations(false);
+			UpdateCalibrations();
+			state.cameraCalibsDirty = true;
 		}
 		ImGui::SameLine();
-		bool markSaveButton = newCalibration;
-		if (markSaveButton)
+		if (SaveButton("Save##Calibration", ButtonSize, state.cameraCalibsDirty))
 		{
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
+			storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			state.cameraCalibsDirty = false;
 		}
-		if (ImGui::Button("Save##Calibration", ButtonSize))
-		{
-			ServerStoreCameraCalib(state);
-			newCalibration = false;
-		}
-		if (markSaveButton)
-			ImGui::PopStyleColor(2);
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Calibration", ButtonSize))
 		{
+			parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			state.cameraCalibsDirty = false;
 			{
 				std::unique_lock pipeline_lock(pipeline.pipelineLock);
-
-				parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-
-				for (auto &cam : pipeline.cameras)
-				{ // Update calibration
-					cam->calib.id = CAMERA_ID_NONE; // Invalidate existing
-					for (int i = 0; i < state.cameraCalibrations.size(); i++)
-					{
-						if (state.cameraCalibrations[i].id == cam->id)
-						{ // Camera has stored calibration
-							cam->calib = state.cameraCalibrations[i];
-							break;
-						}
-					}
-					cam->calib.index = cam->index;
-				}
+				AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, false);
 			}
-
 			{
 				auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
 				UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
 			}
 			UpdateErrorFromObservations(pipeline);
-			UpdateCalibrations(false);
+			UpdateCalibrations();
 
 			LOG(LGUI, LDebug, "== Loaded %d camera calibrations:\n", (int)state.cameraCalibrations.size());
 			DebugCameraParameters(state.cameraCalibrations);
@@ -408,9 +387,9 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::SetCursorPosX(GetRightAlignedCursorPos(SizeWidthDiv3_2().x));
 	if (ImGui::Button("Calibrate Floor", SizeWidthDiv3_2()))
 	{
-		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(200));
 		if (pipeline_lock.owns_lock())
-			CalibrateFloor(pipeline);
+			CalibrateRoom(pipeline);
 	}
 	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
 

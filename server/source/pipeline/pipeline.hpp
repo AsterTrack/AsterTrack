@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define PIPELINE_H
 
 #include "record.hpp"
+#include "signals.hpp" // Signals to Server
 
 #include "pipeline/parameters.hpp"
 
@@ -286,21 +287,16 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 /* General functions */
 
 /**
- * Normalise the room (camera calibrations), discarding any room calibration done before
- */
-void NormaliseRoom(PipelineState &pipeline);
-
-/**
  * Calibrate the room coordinate system given a number of floor points and scale for reference (pipeline state)
  */
-bool CalibrateFloor(PipelineState &pipeline);
+bool CalibrateRoom(PipelineState &pipeline);
 
 /**
- * Adopts an existing room calibration into the given new calibrations.
- * Tries to identify at least two cameras that have not changed between the current calibration and this one.
- * If these don't exist, returns false.
+ * Updates pipeline cameras with given calibrations
+ * Optionally copies an existing room calibration from current camera calibrations into the given new calibrations (updating them in the process).
+ * This will try to identify at least two cameras that have not changed between the current calibration and this one.
  */
-bool AdoptRoomCalibration(PipelineState &pipeline, std::vector<CameraCalib> &calibs);
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool copyRoomCalib);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations

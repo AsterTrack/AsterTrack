@@ -217,7 +217,7 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.track);
 
 	if (result.isTracked() && tracker.inertial)
-		postCorrectIMU(tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
+		postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
 
 	result.setFlag(TrackingResult::CATCHING_UP);
 	return recordTrackingResult(pipeline, frame, tracker, result);
@@ -396,7 +396,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 				calibs, points2D, trackRecord, frameRecord.time, frameRecord.num, pipeline.params.track);
 
 			if (trackRecord.result.isTracked() && targetIt->inertial)
-				postCorrectIMU(targetIt->state, targetIt->inertial, targetIt->pose, frameRecord.time, pipeline.params.track);
+				postCorrectIMU(*targetIt, targetIt->state, targetIt->inertial, targetIt->pose, frameRecord.time, pipeline.params.track);
 
 			recordTrackerObservation(trackRecord, targetIt->pose, pipeline.keepInternalData);
 			recordTrackerTarget(trackRecord, targetIt->target, pipeline.keepInternalData);
@@ -488,7 +488,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
 
 				if (tracker->inertial)
-					postCorrectIMU(tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
+					postCorrectIMU(*tracker, tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
 
 				// Occupy all 2D points of tracked target
 				occupyTargetMatches(tracker->target.match2D);

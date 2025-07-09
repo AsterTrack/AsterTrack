@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "tracking/tracking.hpp"
 #include "tracking/kalman.hpp"
 
+#include "signals.hpp"
+
 #include "util/log.hpp"
 
 #include "flexkalman/FlexibleKalmanFilter.h"
@@ -639,11 +641,11 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw
 static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInertial::State &state);
 static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &state);
 static bool collectFusedSamples(TrackerInertial &inertial, const TrackerInertial::State &state);
-static void alignIMUOrientation(TrackerInertial &inertial);
+static bool alignIMUOrientation(TrackerInertial &inertial);
 
 static void calibrateIMUOffset(TrackerInertial &inertial, const TrackerInertial::State &lastState, const TrackerInertial::State &newState);
 
-void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	auto &calib = inertial.calibration;
@@ -696,7 +698,10 @@ void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObser
 
 		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size() + calib.fused.samples.size();
 		if (newSamples && calib.accel.samples.size() >= 3 && (countSamples % 5) == 0)
-			alignIMUOrientation(inertial);
+		{ // Attempt to align orientation with new data
+			if (alignIMUOrientation(inertial))
+				SignalIMUCalibUpdate(tracker.id, inertial.imu->id, inertial.calib);
+		}
 	}
 	else
 	{
@@ -1028,7 +1033,7 @@ struct AlignementErrorTerm
 	int values() const { return accelSamples.size() + gyroSamples.size() + fusedSamples.size(); }
 };
 
-static void alignIMUOrientation(TrackerInertial &inertial)
+static bool alignIMUOrientation(TrackerInertial &inertial)
 {
 	// Precalculation for gyro alignment
 	float gyroDiffAvg = 0;
@@ -1184,7 +1189,9 @@ static void alignIMUOrientation(TrackerInertial &inertial)
 		inertial.calib.conversion = conversion;
 		inertial.calib.orientation = orientation.cast<float>();
 		inertial.calibration.mat = inertial.calib.orientation.toRotationMatrix().cast<double>() * inertial.calib.conversion.cast<double>();
+		return true;
 	}
+	return false;
 }
 
 static void calibrateIMUOffset(TrackerInertial &inertial, const TrackerInertial::State &lastState, const TrackerInertial::State &newState)

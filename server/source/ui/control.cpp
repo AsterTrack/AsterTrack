@@ -171,21 +171,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				});
 				SameLineTrailing(SizeWidthDiv3().x);
 				if (ImGui::Button("Restart", SizeWidthDiv3()))
-				{
-					// Stop advancing replay
-					int prevState = state.simAdvance;
-					state.simAdvance = 0;
-					state.simWaiting.wait(false);
-					// Reset pipeline after the last frame has processed
-					ResetPipelineStreaming(state.pipeline);
-					ResetPipelineData(state.pipeline);
-					UpdateSequences(true);
-					InitPipelineStreaming(state.pipeline);
-					for (auto &tracker : state.trackerConfigs)
-						ServerUpdatedTrackerConfig(state, tracker);
-					// Continue advancing
-					state.simAdvance = prevState;
-					state.simAdvance.notify_all();
+				{ // Stop and Start Streaming to restart
+					StopStreaming(state);
+					StartStreaming(state);
 				}
 			}
 

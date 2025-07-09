@@ -92,7 +92,7 @@ void InterfaceState::UpdateSequences(bool reset)
 	}
 }
 
-void InterfaceState::UpdateCalibrations(bool calibrated)
+void InterfaceState::UpdateCalibrations()
 { // Check how many cameras are calibrated, and whether their calibration has been verified
 
 	// Warning: May not be in UI thread right now
@@ -122,10 +122,6 @@ void InterfaceState::UpdateCalibrations(bool calibrated)
 		}
 	}
 	calibState = state;
-
-	// If not calibrated, then loaded or reset
-	if (calibrated && state.numCalibrated > 0)
-		newCalibration = true;
 
 	// Tell visualisation to update precalculated calibration data
 	for (auto &cam : cameraViews)

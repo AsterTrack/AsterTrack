@@ -88,7 +88,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					}
 				}
 			}
-			UpdateCalibrations(false);
+			UpdateCalibrations();
 		}
 	}
 
@@ -340,14 +340,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					{ // Update calibration
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
-						AdoptRoomCalibration(pipeline, calibs);
-						for (int c = 0; c < calibs.size(); c++)
-							pipeline.cameras[calibs[c].index]->calib = calibs[c];
+						AdoptNewCalibrations(pipeline, calibs, true);
 					}
+					SignalCameraCalibUpdate(calibs);
 
-					// Update fundamental matrices using calibration
 					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), lastError, data.getValidSamples());
-					UpdateCalibrations();
+
 				}, *db_lock);
 			}
 			ImGui::SameLine();
@@ -377,31 +375,19 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					LOGCL("Done optimising! Applying to targets!");
 
-					{ // Update Targets
-						for (auto &tgtNew : data.targets)
-						{
-							bool found = false;
-							for (auto &tracker : state.trackerConfigs)
-							{
-								if (tracker.id != tgtNew.targetID) continue;
-								updateMarkerOrientations(tracker.calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
-								tracker.calib.updateMarkers();
-								if (tracker.isSimulated)
-								{ // Ensure calibrated, simulated targets are adopted as normal targets and stored
-									tracker.isSimulated = false;
-								}
-								ServerUpdatedTrackerConfig(state, tracker);
-								found = true;
-								break;
-							}
-							if (!found)
-							{
-								// Register as calibrated target
-								TargetCalibration3D targetCalib(finaliseTargetMarkers(
-									pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post));
-								state.trackerConfigs.emplace_back(tgtNew.targetID, "New Target", std::move(targetCalib));
-								ServerUpdatedTrackerConfig(state, state.trackerConfigs.back());
-							}
+					// Update Targets
+					for (auto &tgtNew : data.targets)
+					{
+						for (auto &tracker : state.trackerConfigs)
+						{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
+							if (tracker.id != tgtNew.targetID) continue;
+							// Copy and update target calibration
+							TargetCalibration3D calib = tracker.calib;
+							calib.markers = finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post);
+							calib.updateMarkers();
+							// Signal server to update calib
+							SignalTargetCalibUpdate(tgtNew.targetID, calib);
+							break;
 						}
 					}
 
@@ -446,11 +432,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					for (auto &tgtNew : data.targets)
 					{
 						for (auto &tracker : state.trackerConfigs)
-						{
+						{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
 							if (tracker.id != tgtNew.targetID) continue;
-							updateMarkerOrientations(tracker.calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
-							tracker.calib.updateMarkers();
-							ServerUpdatedTrackerConfig(state, tracker);
+							// Copy and update target calibration
+							TargetCalibration3D calib = tracker.calib;
+							updateMarkerOrientations(calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
+							calib.updateMarkers();
+							// Signal server to update calib
+							SignalTargetCalibUpdate(tgtNew.targetID, calib);
 							break;
 						}
 					}
@@ -458,14 +447,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				}, *db_lock);
 			}
 
-			if (ImGui::Button("Save Cameras", SizeWidthDiv3()))
+			if (SaveButton("Save Cameras", SizeWidthDiv3(), state.cameraCalibsDirty))
 			{
-				ServerStoreCameraCalib(state);
+				storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+				state.cameraCalibsDirty = false;
 			}
 			ImGui::SameLine();
-			if (ImGui::Button("Save Targets", SizeWidthDiv3()))
+			if (SaveButton("Save Targets", SizeWidthDiv3(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 			{
-				ServerStoreTargetConfigs(state);
+				storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+				state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Clear Database", SizeWidthDiv3()))

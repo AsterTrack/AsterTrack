@@ -118,7 +118,7 @@ EXPORT bool _InterfaceThread()
 
 	// Sync state with server if necessary
 	ui.UpdateCameras();
-	ui.UpdateCalibrations(false);
+	ui.UpdateCalibrations();
 	ui.UpdateSequences(true);
 
 	// Render loop, starting off with 3 full UI update iterations

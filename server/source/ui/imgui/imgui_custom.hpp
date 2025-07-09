@@ -81,6 +81,21 @@ static inline bool InteractionSurface(const char *idLabel, ImRect rect, bool &ho
     return ImGui::ButtonBehavior(rect, id, &hovered, &held, flags);
 }
 
+static bool SaveButton(const char* label, const ImVec2 &size, bool marked)
+{
+	if (marked)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
+	}
+	bool press = ImGui::Button(label, size);
+	if (marked)
+	{
+		ImGui::PopStyleColor(2);
+	}
+	return press;
+}
+
 static inline void BeginSection(const char *label)
 {
 	/* ImGui::BeginGroup();

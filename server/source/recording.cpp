@@ -127,18 +127,7 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	{ // Overwrite any calibrations
 		std::vector<CameraCalib> cameraCalibs;
 		parseCameraCalibrations(recordEntries.calib, cameraCalibs);
-
-		for (auto &cam : state.pipeline.cameras)
-		{
-			for (int i = 0; i < cameraCalibs.size(); i++)
-			{
-				if (cameraCalibs[i].id == cam->id)
-				{
-					cam->calib = cameraCalibs[i];
-					cam->calib.index = cam->index;
-					break;
-				}
-			}
-		}
+		std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
+		AdoptNewCalibrations(state.pipeline, cameraCalibs, false);
 	}
 }

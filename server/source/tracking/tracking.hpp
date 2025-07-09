@@ -321,7 +321,7 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 
 bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);
-void postCorrectIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);
 void interruptIMU(TrackerInertial &inertial);
 
@@ -335,7 +335,7 @@ inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f p
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 	if (inertial)
-		postCorrectIMU(state, inertial, this->pose, time, params);
+		postCorrectIMU(*this, state, inertial, this->pose, time, params);
 }
 
 inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
@@ -355,7 +355,7 @@ inline TrackedMarker::TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 	if (inertial)
-		postCorrectIMU(state, inertial, this->pose, time, params);
+		postCorrectIMU(*this, state, inertial, this->pose, time, params);
 }
 
 inline DormantMarker::DormantMarker(TrackedMarker &&tracker) :

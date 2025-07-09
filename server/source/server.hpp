@@ -73,6 +73,8 @@ struct ServerState
 	std::vector<CameraCalib> cameraCalibrations;
 	std::vector<TrackerConfig> trackerConfigs; // TODO: Synchronised
 	std::string wpa_supplicant_conf;
+	bool generalConfigDirty, cameraConfigDirty, trackerConfigDirty;
+	bool cameraCalibsDirty, trackerCalibsDirty, trackerIMUsDirty;
 	// TODO: Should not store on disk by default, but provide option to store wifi credentials using secret service on linux 
 
 	// Device setup
@@ -123,12 +125,7 @@ struct ServerState
 
 bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
-void ServerStoreConfiguration(ServerState &state);
-void ServerStoreCameraCalib(ServerState &state);
-void ServerStoreTargetConfigs(ServerState &state);
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker);
-void ServerUpdateTrackerTargetCalib(ServerState &state, int trackerID, TargetCalibration3D calib);
-void ServerUpdateTrackerIMUCalib(ServerState &state, int trackerID, IMUIdent imu, IMUCalib calib);
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);

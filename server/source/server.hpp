@@ -147,6 +147,8 @@ void StopStreaming(ServerState &state);
 
 void SetupIO(ServerState &state);
 void ResetIO(ServerState &state);
-void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame);
+void CheckTrackingIO(ServerState &state);
+void FetchTrackingIO(ServerState &state);
+void PushTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame);
 
 #endif // SERVER_H

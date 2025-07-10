@@ -72,6 +72,8 @@ static inline TimePoint_t getTimestamp(struct timeval time_msg)
 	timestamp -= std::chrono::microseconds(time_now.tv_usec-time_msg.tv_usec);
 	return timestamp;
 }
+
+
 /* Wrapper for a VRPN tracker output */
 
 static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
@@ -144,7 +146,7 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 
 vrpn_Tracker_AsterTrack::vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index)
 	: vrpn_Tracker(path, connection),
-	vrpn_IMU_Remote(path, vrpn_Tracker::d_connection),
+	vrpn_IMU_Remote(path, connection),
 	id(ID), path(path)
 {
 	vrpn_IMU_Remote::register_change_handler(this, handleIMURaw);
@@ -198,13 +200,21 @@ void vrpn_Tracker_AsterTrack::updatePose(int sensor, TimePoint_t time, Eigen::Is
 	if (error) LOG(LIO, LError, "Failed to write VRPN message with error %d!\n", error);
 }
 
+bool vrpn_Tracker_AsterTrack::isConnected()
+{
+	struct timeval now;
+	struct timeval diff;
+	vrpn_gettimeofday(&now, NULL);
+	diff = vrpn_TimevalDiff(now, time_last_ping_response);
+	vrpn_TimevalNormalize(diff);
+	return diff.tv_sec < 3;
+}
+
 void vrpn_Tracker_AsterTrack::mainloop()
 {
-	vrpn_Tracker::server_mainloop();
-
-	// While this is a remote object (receiving), we operate it in server mode
-	// So the client may send us (the tracking server) IMU samples
-	vrpn_IMU_Remote::mainloop_server();
+	// While the vrpn_IMU_Remote MAY be receiving, this object does act as the server
+	// This only handles ping/pong and the likes
+	vrpn_BaseClassUnique::server_mainloop();
 }
 
 
@@ -277,43 +287,31 @@ void vrpn_Tracker_Wrapper::connect()
 	remote->register_change_handler(this, handleTrackerAccel);
 }
 
-
+bool vrpn_Tracker_Wrapper::isConnected()
+{
+	if (!remote) return false;
+	struct timeval now;
+	struct timeval diff;
+	vrpn_gettimeofday(&now, NULL);
+	diff = vrpn_TimevalDiff(now, remote->time_last_ping_response);
+	vrpn_TimevalNormalize(diff);
+	return diff.tv_sec < 3;
+}
 
 std::vector<std::string> vrpn_getKnownTrackers(vrpn_Connection *connection)
 {
 	std::vector<std::string> trackers;
-	// TODO: Implement custom protocol to send trackers to clients?
-	// I thought VRPN internally had knowledge on tracker server provides, but that is not the case
+
+	// Sadly, this uses d_dispatcher, which does not differentiate between local and remote sender name
+	// d_senders of an endpoint in d_endpoints might have more differentiating info (e.g. assigned remote id)
+	// but these are all protected members
+	int i = 1;
+	while (true)
+	{
+		const char *senderName = connection->sender_name(i++);
+		if (!senderName) break;
+		trackers.emplace_back(senderName);
+	}
+
 	return trackers;
 }
-
-
-/*
- * A horrible hack to allow access to private members of VRPN.
- */
-
-/* #define MOD_CONCATE_(X, Y) X##Y
-#define MOD_CONCATE(X, Y) MOD_CONCATE_(X, Y)
-
-#define ALLOW_ACCESS(CLASS, MEMBER, ...) \
-  template<typename Only, __VA_ARGS__ CLASS::*Member> \
-  struct MOD_CONCATE(MEMBER, __LINE__) { friend __VA_ARGS__ CLASS::*Access(Only*) { return Member; } }; \
-  template<typename> struct Only_##MEMBER; \
-  template<> struct Only_##MEMBER<CLASS> { friend __VA_ARGS__ CLASS::*Access(Only_##MEMBER<CLASS>*); }; \
-  template struct MOD_CONCATE(MEMBER, __LINE__)<Only_##MEMBER<CLASS>, &CLASS::MEMBER>
-
-#define ACCESS(OBJECT, MEMBER) \
- (OBJECT).*Access((Only_##MEMBER<std::remove_reference<decltype(OBJECT)>::type>*)nullptr)
-#define ACCESS_AS(OBJECT, TYPE, MEMBER) \
- (OBJECT).*Access((Only_##MEMBER<std::remove_reference<TYPE>::type>*)nullptr)
-
-
-ALLOW_ACCESS(vrpn_Connection, d_endpoints, vrpn::EndpointContainer);
-ALLOW_ACCESS(vrpn_Endpoint, d_dispatcher, vrpn_TypeDispatcher*);
-
-class vrpn_TypeDispatcher {
-
-public:
-	int numSenders(void) const;
-	const char *senderName(int which) const;
-}; */

@@ -52,6 +52,8 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 
 		void updatePose(int sensor, TimePoint_t time, Eigen::Isometry3f pose);
 
+		bool isConnected();
+
 		std::shared_ptr<IMU> remoteIMU;
 
 		virtual void mainloop ();
@@ -65,6 +67,7 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 struct vrpn_Tracker_Wrapper
 {
 	std::string path;
+	bool editing = false;
 	std::unique_ptr<vrpn_Tracker_Remote> remote = nullptr;
 	bool receivedPackets = false;
 	TimePoint_t lastPacket, lastTimestamp;
@@ -72,6 +75,8 @@ struct vrpn_Tracker_Wrapper
 	Eigen::Isometry3f pose;
 
 	vrpn_Tracker_Wrapper(std::string Path);
+
+	bool isConnected();
 
 	void connect();
 };

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
 # Frozen v07.36
-FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/tags/v07.36.zip
-FETCH_VERSION=v07.36
+#FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/tags/v07.36.zip
+# Custom modification to expose more connectivity information
+FETCH_URL=https://github.com/Seneral/vrpn/archive/3474fff0c3bb12b56af16a5f7ed469558e54a597.zip
+FETCH_VERSION=v07.37-custom
 FETCH_NAME=vrpn
 FETCH_ARCHIVE=source.zip
 

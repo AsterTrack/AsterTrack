@@ -2,7 +2,9 @@
 
 :: Frozen v07.36
 set FETCH_URL=https://github.com/vrpn/vrpn/archive/refs/tags/v07.36.zip
-set FETCH_VERSION=v07.36
+:: Custom modification to expose more connectivity information
+set FETCH_URL=https://github.com/Seneral/vrpn/archive/3474fff0c3bb12b56af16a5f7ed469558e54a597.zip
+set FETCH_VERSION=v07.37-custom
 set FETCH_NAME=vrpn
 set FETCH_ARCHIVE=source.zip
 

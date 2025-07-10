@@ -669,6 +669,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			}
 		}
 
+		// Intermittendly check Tracking IO
+		CheckTrackingIO(*state);
+
 		// Frame consistency supervision and processing stream frames once deemed complete
 		TimePoint_t s0 = sclock::now();
 		if (state->isStreaming)
@@ -1019,11 +1022,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		auto frameReceiveTime = sclock::now();
 
 		{
-			auto start = sclock::now();
-			ProcessFrame(pipeline, frameRecord); // new shared_ptr
-			auto end = sclock::now();
+			CheckTrackingIO(*state);
+			//FetchTrackingIO(*state);
 
-			UpdateTrackingIO(*state, frameRecord);
+			ProcessFrame(pipeline, frameRecord); // new shared_ptr
+
+			PushTrackingIO(*state, frameRecord);
 
 			SignalCameraRefresh(0);
 			SignalPipelineUpdate();
@@ -1334,6 +1338,8 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 
 	// Queue for processing in a separate thread
 	threadPool.push([&](int, std::shared_ptr<FrameRecord> frame){
+		FetchTrackingIO(GetState());
+
 		auto start = sclock::now();
 		ProcessFrame(pipeline, frame); // new shared_ptr
 		auto end = sclock::now();
@@ -1343,7 +1349,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 
 		std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
-		UpdateTrackingIO(GetState(), frame);
+		PushTrackingIO(GetState(), frame);
 
 		for (int c = 0; c < frame->cameras.size(); c++)
 		{
@@ -1382,41 +1388,45 @@ void ResetIO(ServerState &state)
 	}
 }
 
-void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
+void CheckTrackingIO(ServerState &state)
 {
 	auto io_lock = std::unique_lock(state.io.mutex);
 	if (!state.io.vrpn_server) return;
 
-	for (auto &trackRecord : frame->trackers)
+	for (auto &tracker : state.trackerConfigs)
 	{
-		auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
+		if (!tracker.exposed)
+		{ // Check expose conditions
+			if (tracker.expose == TrackerConfig::EXPOSE_ALWAYS)
+				tracker.exposed = true;
+			else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRIGGERED && tracker.triggered)
+				tracker.exposed = true;
+			else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRACKED && tracker.tracked)
+				tracker.exposed = true;
+			else
+			 	continue;
+		}
+		auto io_tracker = state.io.vrpn_trackers.find(tracker.id);
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
-			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-				[&](auto &t){ return t.id == trackRecord.id; });
-			if (trackerIt == state.trackerConfigs.end()) continue;
-			TrackerConfig &tracker = *trackerIt;
-			if (!tracker.exposed)
-			{ // Check expose conditions
-				if (tracker.expose == TrackerConfig::EXPOSE_ALWAYS)
-					tracker.exposed = true;
-				else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRIGGERED && tracker.triggered)
-					tracker.exposed = true;
-				else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRACKED && tracker.tracked)
-					tracker.exposed = true;
-				else
-					continue;
-			}
 			std::string path = tracker.label;
 			//std::string path = asprintf_s("AsterTarget_%.4d", tracker.id);
 			LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", path.c_str());
 			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker.id, path.c_str(), state.io.vrpn_server.get());
 			io_tracker = state.io.vrpn_trackers.insert({ tracker.id, std::move(vrpn_tracker) }).first;
 		}
-
-		// TODO: Send both poseObserved and poseFiltered?
-		io_tracker->second->updatePose(0, frame->time, trackRecord.poseFiltered);
-		io_tracker->second->mainloop();
+		if (!tracker.connected && io_tracker->second->isConnected())
+		{
+			LOG(LIO, LInfo, "VRPN Tracker '%s' has been connected!", tracker.label.c_str());
+			tracker.connected = true;
+			ServerUpdatedTrackerConfig(state, tracker);
+		}
+		else if (tracker.connected && !io_tracker->second->isConnected())
+		{
+			LOG(LIO, LInfo, "VRPN Tracker '%s' has been disconnected!", tracker.label.c_str());
+			tracker.connected = false;
+			ServerUpdatedTrackerConfig(state, tracker);
+		}
 	}
 
 	// Add cameras as trackers to give clients an opportunity to display them as references
@@ -1430,14 +1440,71 @@ void UpdateTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 			auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.io.vrpn_server.get());
 			io_tracker = state.io.vrpn_trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
 		}
-
-		io_tracker->second->updatePose(0, frame->time, camera->calib.transform.cast<float>());
-		io_tracker->second->mainloop();
 	}
 
+	LOG(LIO, LTrace, "Updating individual trackers!\n");
+	for (auto &trackerIO : state.io.vrpn_trackers)
+	{ // Handle mainloop (mostly ping-pong) here as well
+		trackerIO.second->mainloop();
+	}
+
+	// Fetch incoming packets
+	LOG(LIO, LTrace, "Intermittedly checking server connection to fetch IMU packets!\n");
 	state.io.vrpn_server->mainloop();
 	if (!state.io.vrpn_server->doing_okay())
 	{
 		LOG(LIO, LWarn, "VRPN Connection Error!\n");
+	}
+	else
+		LOG(LIO, LTrace, "     Server connection is doing ok!\n");
+}
+
+void FetchTrackingIO(ServerState &state)
+{
+	auto io_lock = std::unique_lock(state.io.mutex);
+	if (state.io.vrpn_server)
+	{
+		// Fetch incoming packets
+		LOG(LIO, LTrace, "Updating server connection to fetch IMU packets!\n");
+		state.io.vrpn_server->mainloop();
+		if (!state.io.vrpn_server->doing_okay())
+		{
+			LOG(LIO, LWarn, "VRPN Connection Error!\n");
+		}
+		else
+			LOG(LIO, LTrace, "     Server connection is doing ok!\n");
+	}
+}
+
+void PushTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
+{
+	auto io_lock = std::unique_lock(state.io.mutex);
+	if (state.io.vrpn_server)
+	{
+		for (auto &trackRecord : frame->trackers)
+		{
+			auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
+			if (io_tracker == state.io.vrpn_trackers.end()) continue;
+			// TODO: Send both poseObserved and poseFiltered?
+			io_tracker->second->updatePose(0, frame->time, trackRecord.poseFiltered);
+		}
+
+		for (auto &camera : state.pipeline.cameras)
+		{
+			auto io_tracker = state.io.vrpn_trackers.find(camera->id);
+			if (io_tracker == state.io.vrpn_trackers.end()) continue;
+			// Send static position of cameras as reference for clients
+			// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
+			io_tracker->second->updatePose(0, frame->time, camera->calib.transform.cast<float>());
+		}
+
+		LOG(LIO, LTrace, "Updating server connection to push tracker packets!\n");
+		state.io.vrpn_server->send_pending_reports();
+		if (!state.io.vrpn_server->doing_okay())
+		{
+			LOG(LIO, LWarn, "VRPN Connection Error!\n");
+		}
+		else
+			LOG(LIO, LTrace, "     Server connection is doing ok!\n");
 	}
 }

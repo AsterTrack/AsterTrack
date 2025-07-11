@@ -76,7 +76,6 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader);
 static void closePlatformWindow(GLFWwindow *windowHandle);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
-static bool setupImGuiTheme();
 static void loadFont();
 static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
 static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
@@ -228,6 +227,9 @@ void InterfaceState::UpdateUI()
 			ResetWindowLayout();
 		}
 	}
+
+	ImVec4 baseCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+	isDarkMode = baseCol.x + baseCol.y + baseCol.z > 1.5f;
 
 	UpdateMainMenuBar();
 
@@ -465,7 +467,8 @@ bool InterfaceState::Init()
 		io.ConfigWindowsMoveFromTitleBarOnly = true;
 	}
 
-	setupImGuiTheme();
+	StyleSizingAsterDark();
+	StyleColorsAsterDark();
 
 	loadFont();
 
@@ -878,115 +881,149 @@ static void closePlatformWindow(GLFWwindow *windowHandle)
  * ImGui code
  */
 
-static bool setupImGuiTheme()
+void InterfaceState::StyleSizingDefault(ImGuiStyle *dst)
 {
-	// Setup Dear ImGui style
-	ImGuiStyle& style = ImGui::GetStyle();
+	ImGuiStyle newStyle;
+	std::memcpy(&newStyle.Colors, &ImGui::GetStyle().Colors, sizeof(newStyle.Colors));
+	ImGuiStyle &style = dst ? *dst : ImGui::GetStyle();
+	style = newStyle;
+}
 
-	style.WindowPadding = ImVec2(7, 7);				// Padding within a window.
-	style.WindowRounding = 0.0f;					// Radius of window corners rounding. Set to 0.0f to have rectangular windows. Large values tend to lead to variety of artifacts and are not recommended.
-	style.WindowBorderSize = 1.0f;					// Thickness of border around windows. Generally set to 0.0f or 1.0f. (Other values are not well tested and more CPU/GPU costly).
-	//style.WindowMinSize;					// Minimum window size. This is a global setting. If you want to constrain individual windows, use SetNextWindowSizeConstraints().
-	//style.WindowTitleAlign;				// Alignment for title bar text. Defaults to (0.0f,0.5f) for left-aligned,vertically centered.
-	style.WindowMenuButtonPosition = ImGuiDir_None;	// Side of the collapsing/docking button in the title bar (None/Left/Right). Defaults to ImGuiDir_Left.
-	style.ChildRounding = 8.0f;						// Radius of child window corners rounding. Set to 0.0f to have rectangular windows.
-	style.ChildBorderSize = 1.0f;					// Thickness of border around child windows. Generally set to 0.0f or 1.0f. (Other values are not well tested and more CPU/GPU costly).
-	style.PopupRounding = 0.0f;						// Radius of popup window corners rounding. (Note that tooltip windows use WindowRounding)
-	style.PopupBorderSize = 1.0f;					// Thickness of border around popup/tooltip windows. Generally set to 0.0f or 1.0f. (Other values are not well tested and more CPU/GPU costly).
-	style.FramePadding = ImVec2(8,4);				// Padding within a framed rectangle (used by most widgets).
-	style.FrameRounding = 2.0f;						// Radius of frame corners rounding. Set to 0.0f to have rectangular frame (used by most widgets).
-	style.FrameBorderSize = 0.0f;					// Thickness of border around frames. Generally set to 0.0f or 1.0f. (Other values are not well tested and more CPU/GPU costly).
-	style.ItemSpacing = ImVec2(8,6);				// Horizontal and vertical spacing between widgets/lines.
-	style.ItemInnerSpacing = ImVec2(6,6);			// Horizontal and vertical spacing between within elements of a composed widget (e.g. a slider and its label).
-	style.CellPadding = ImVec2(4,4);				// Padding within a table cell. CellPadding.y may be altered between different rows.
-	style.TouchExtraPadding = ImVec2(0, 0);			// Expand reactive bounding box for touch-based system where touch position is not accurate enough. Unfortunately we don't sort widgets so priority on overlap will always be given to the first widget. So don't grow this too much!
-	style.IndentSpacing = 20.0f;					// Horizontal indentation when e.g. entering a tree node. Generally == (FontSize + FramePadding.x*2).
-	style.ColumnsMinSpacing = 8;					// Minimum horizontal spacing between two columns. Preferably > (FramePadding.x + 1).
-	style.ScrollbarSize = 20.0f;					// Width of the vertical scrollbar, Height of the horizontal scrollbar.
-	style.ScrollbarRounding = 10.0f;				// Radius of grab corners for scrollbar.
-	style.GrabMinSize = 8.0f;						// Minimum width/height of a grab box for slider/scrollbar.
-	style.GrabRounding = 4.0f;						// Radius of grabs corners rounding. Set to 0.0f to have rectangular slider grabs.
-	//style.LogSliderDeadzone;				// The size in pixels of the dead-zone around zero on logarithmic sliders that cross zero.
-	style.TabRounding = 4.0f;						// Radius of upper corners of a tab. Set to 0.0f to have rectangular tabs.
-	style.TabBorderSize = 0.0f;						// Thickness of border around tabs.
-	style.TabCloseButtonMinWidthSelected = 0.0f;			// Minimum width for close button to appear on an unselected tab when hovered. Set to 0.0f to always show when hovering, set to FLT_MAX to never show close button unless selected.
-	style.TabCloseButtonMinWidthUnselected = 0.0f;			// Minimum width for close button to appear on an unselected tab when hovered. Set to 0.0f to always show when hovering, set to FLT_MAX to never show close button unless selected.
-	style.TabBarBorderSize = 1.0f;					// Thickness of tab-bar separator, which takes on the tab active color to denote focus.
-	//style.ColorButtonPosition;			// Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
-	//style.ButtonTextAlign;				// Alignment of button text when button is larger than text. Defaults to (0.5f, 0.5f) (centered).
-	//style.SelectableTextAlign;			// Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.
-	style.SeparatorTextBorderSize = 2.0f;			// Thickkness of border in SeparatorText()
-	//style.SeparatorTextAlign;				// Alignment of text within the separator. Defaults to (0.0f, 0.5f) (left aligned, center).
-	//style.SeparatorTextPadding;			// Horizontal offset of text from each edge of the separator + spacing on other axis. Generally small values. .y is recommended to be == FramePadding.y.
-	//style.DisplayWindowPadding;			// Window position are clamped to be visible within the display area or monitors by at least this amount. Only applies to regular windows.
-	style.DisplaySafeAreaPadding = ImVec2(0,0);		// If you cannot see the edges of your screen (e.g. on a TV) increase the safe area padding. Apply to popups/tooltips as well regular windows. NB: Prefer configuring your TV sets correctly!
-	style.DockingSeparatorSize = 3.0f;				// Thickness of resizing border between docked windows
-	//style.MouseCursorScale;				// Scale software rendered mouse cursor (when io.MouseDrawCursor is enabled). We apply per-monitor DPI scaling over this scale. May be removed later.
-	style.AntiAliasedLines = true;					// Enable anti-aliased lines/borders. Disable if you are really tight on CPU/GPU. Latched at the beginning of the frame (copied to ImDrawList).
-	style.AntiAliasedLinesUseTex = true;			// Enable anti-aliased lines/borders using textures where possible. Require backend to render with bilinear filtering (NOT point/nearest filtering). Latched at the beginning of the frame (copied to ImDrawList).
-	style.AntiAliasedFill = true;					// Enable anti-aliased edges around filled shapes (rounded rectangles, circles, etc.). Disable if you are really tight on CPU/GPU. Latched at the beginning of the frame (copied to ImDrawList).
-	//style.CurveTessellationTol;			// Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
-	//style.CircleTessellationMaxError;		// Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+void InterfaceState::StyleSizingAsterDark(ImGuiStyle *dst)
+{
+	ImGuiStyle newStyle;
+	std::memcpy(&newStyle.Colors, &ImGui::GetStyle().Colors, sizeof(newStyle.Colors));
+	ImGuiStyle &style = dst ? *dst : ImGui::GetStyle();
+	style = newStyle;
 
+	//style.Alpha							= 1.0f;					// Global alpha applies to everything in Dear ImGui.
+	//style.DisabledAlpha					= 0.60f;				// Additional alpha multiplier applied by BeginDisabled(). Multiply over current value of Alpha.
+	style.WindowPadding					= ImVec2(7,7);		// Padding within a window
+	//style.WindowRounding				= 0.0f;					// Radius of window corners rounding. Set to 0.0f to have rectangular windows. Large values tend to lead to variety of artifacts and are not recommended.
+	//style.WindowBorderSize				= 1.0f;					// Thickness of border around windows. Generally set to 0.0f or 1.0f. Other values not well tested.
+	//style.WindowBorderHoverPadding		= 4.0f;					// Hit-testing extent outside/inside resizing border. Also extend determination of hovered window. Generally meaningfully larger than WindowBorderSize to make it easy to reach borders.
+	//style.WindowMinSize					= ImVec2(32,32);		// Minimum window size
+	//style.WindowTitleAlign				= ImVec2(0.0f,0.5f);	// Alignment for title bar text
+	style.WindowMenuButtonPosition		= ImGuiDir_None;		// Position of the collapsing/docking button in the title bar (left/right). Defaults to ImGuiDir_Left.
+	style.ChildRounding					= 8.0f;					// Radius of child window corners rounding. Set to 0.0f to have rectangular child windows
+	//style.ChildBorderSize				= 1.0f;					// Thickness of border around child windows. Generally set to 0.0f or 1.0f. Other values not well tested.
+	//style.PopupRounding					= 0.0f;					// Radius of popup window corners rounding. Set to 0.0f to have rectangular child windows
+	//style.PopupBorderSize				= 1.0f;					// Thickness of border around popup or tooltip windows. Generally set to 0.0f or 1.0f. Other values not well tested.
+	style.FramePadding					= ImVec2(8,4);	 	// Padding within a framed rectangle (used by most widgets)
+	style.FrameRounding					= 2.0f;					// Radius of frame corners rounding. Set to 0.0f to have rectangular frames (used by most widgets).
+	//style.FrameBorderSize				= 0.0f;					// Thickness of border around frames. Generally set to 0.0f or 1.0f. Other values not well tested.
+	style.ItemSpacing					= ImVec2(8,6);	 	// Horizontal and vertical spacing between widgets/lines
+	style.ItemInnerSpacing				= ImVec2(6,6);	 	// Horizontal and vertical spacing between within elements of a composed widget (e.g. a slider and its label)
+	style.CellPadding					= ImVec2(4,4);	 	// Padding within a table cell. Cellpadding.x is locked for entire table. CellPadding.y may be altered between different rows.
+	//style.TouchExtraPadding				= ImVec2(0,0);	 	// Expand reactive bounding box for touch-based system where touch position is not accurate enough. Unfortunately we don't sort widgets so priority on overlap will always be given to the first widget. So don't grow this too much!
+	style.IndentSpacing					= 20.0f;				// Horizontal spacing when e.g. entering a tree node. Generally == (FontSize + FramePadding.x*2).
+	style.ColumnsMinSpacing				= 8.0f;					// Minimum horizontal spacing between two columns. Preferably > (FramePadding.x + 1).
+	style.ScrollbarSize					= 20.0f;				// Width of the vertical scrollbar, Height of the horizontal scrollbar
+	style.ScrollbarRounding				= 10.0f;					// Radius of grab corners rounding for scrollbar
+	style.GrabMinSize					= 8.0f;				// Minimum width/height of a grab box for slider/scrollbar
+	style.GrabRounding					= 4.0f;					// Radius of grabs corners rounding. Set to 0.0f to have rectangular slider grabs.
+	//style.LogSliderDeadzone				= 4.0f;					// The size in pixels of the dead-zone around zero on logarithmic sliders that cross zero.
+	//style.ImageBorderSize				= 0.0f;					// Thickness of border around tabs.
+	style.TabRounding					= 4.0f;					// Radius of upper corners of a tab. Set to 0.0f to have rectangular tabs.
+	//style.TabBorderSize					= 0.0f;					// Thickness of border around tabs.
+	style.TabCloseButtonMinWidthSelected = 0.0f;				// -1: always visible. 0.0f: visible when hovered. >0.0f: visible when hovered if minimum width.
+	//style.TabCloseButtonMinWidthUnselected = 0.0f;				// -1: always visible. 0.0f: visible when hovered. >0.0f: visible when hovered if minimum width. FLT_MAX: never show close button when unselected.
+	//style.TabBarBorderSize				= 1.0f;					// Thickness of tab-bar separator, which takes on the tab active color to denote focus.
+	//style.TabBarOverlineSize			= 1.0f;					// Thickness of tab-bar overline, which highlights the selected tab-bar.
+	//style.TableAngledHeadersAngle		= 35.0f * (IM_PI / 180.0f);	// Angle of angled headers (supported values range from -50 degrees to +50 degrees).
+	//style.TableAngledHeadersTextAlign	= ImVec2(0.5f,0.0f);	// Alignment of angled headers within the cell
+	//style.TreeLinesFlags				= ImGuiTreeNodeFlags_DrawLinesNone;
+	//style.TreeLinesSize					= 1.0f;					// Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
+	//style.TreeLinesRounding				= 0.0f;					// Radius of lines connecting child nodes to the vertical line.
+	//style.ColorButtonPosition			= ImGuiDir_Right;		// Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
+	//style.ButtonTextAlign				= ImVec2(0.5f,0.5f);	// Alignment of button text when button is larger than text.
+	//style.SelectableTextAlign			= ImVec2(0.0f,0.0f);	// Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.
+	style.SeparatorTextBorderSize		= 2.0f;					// Thickness of border in SeparatorText()
+	//style.SeparatorTextAlign			= ImVec2(0.0f,0.5f);	// Alignment of text within the separator. Defaults to (0.0f, 0.5f) (left aligned, center).
+	//style.SeparatorTextPadding			= ImVec2(20.0f,3.f);	// Horizontal offset of text from each edge of the separator + spacing on other axis. Generally small values. .y is recommended to be == FramePadding.y.
+	//style.DisplayWindowPadding			= ImVec2(19,19);		// Window position are clamped to be visible within the display area or monitors by at least this amount. Only applies to regular windows.
+	style.DisplaySafeAreaPadding		= ImVec2(0,0);		// If you cannot see the edge of your screen (e.g. on a TV) increase the safe area padding. Covers popups/tooltips as well regular windows.
+	style.DockingSeparatorSize			= 3.0f;					// Thickness of resizing border between docked windows
+	//style.MouseCursorScale				= 1.0f;					// Scale software rendered mouse cursor (when io.MouseDrawCursor is enabled). May be removed later.
+	//style.AntiAliasedLines				= true;					// Enable anti-aliased lines/borders. Disable if you are really tight on CPU/GPU.
+	//style.AntiAliasedLinesUseTex		= true;					// Enable anti-aliased lines/borders using textures where possible. Require backend to render with bilinear filtering (NOT point/nearest filtering).
+	//style.AntiAliasedFill				= true;					// Enable anti-aliased filled shapes (rounded rectangles, circles, etc.).
+	//style.CurveTessellationTol			= 1.25f;				// Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
+	//style.CircleTessellationMaxError	= 0.30f;				// Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+}
+
+void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
+{
+	ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
+	ImVec4* colors = style->Colors;
 
 	// Interesting colors
-	//(11,36,36,255)   (0.043f, 0.141f, 0.141f, 1.000f)
+	#define DARK_GREEN_RGB		0.26f, 0.59f, 0.98f
 
-	// Default dark colors
-	style.Colors[ImGuiCol_Text]						= ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-	style.Colors[ImGuiCol_TextDisabled]				= ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-	style.Colors[ImGuiCol_WindowBg]					= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
-	style.Colors[ImGuiCol_ChildBg]					= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
-	style.Colors[ImGuiCol_PopupBg]					= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
-	style.Colors[ImGuiCol_Border]					= ImVec4(0.25f, 0.25f, 0.25f, 0.50f);
-	style.Colors[ImGuiCol_BorderShadow]				= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-	style.Colors[ImGuiCol_FrameBg]					= ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
-	style.Colors[ImGuiCol_FrameBgHovered]			= ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
-	style.Colors[ImGuiCol_FrameBgActive]			= ImVec4(0.67f, 0.67f, 0.67f, 0.39f);
-	style.Colors[ImGuiCol_TitleBg]					= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
-	style.Colors[ImGuiCol_TitleBgActive]			= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
-	style.Colors[ImGuiCol_TitleBgCollapsed]			= ImVec4(0.00f, 0.00f, 0.00f, 0.51f);
-	style.Colors[ImGuiCol_MenuBarBg]				= ImVec4(0.027f, 0.027f, 0.027f, 1.0f);
-	style.Colors[ImGuiCol_ScrollbarBg]				= ImVec4(0.02f, 0.02f, 0.02f, 0.53f);
-	style.Colors[ImGuiCol_ScrollbarGrab]			= ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
-	style.Colors[ImGuiCol_ScrollbarGrabHovered]		= ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
-	style.Colors[ImGuiCol_ScrollbarGrabActive]		= ImVec4(0.51f, 0.51f, 0.51f, 1.00f);
-	style.Colors[ImGuiCol_CheckMark]				= ImVec4(0.11f, 0.64f, 0.92f, 1.00f);
-	style.Colors[ImGuiCol_SliderGrab]				= ImVec4(0.11f, 0.64f, 0.92f, 1.00f);
-	style.Colors[ImGuiCol_SliderGrabActive]			= ImVec4(0.08f, 0.50f, 0.72f, 1.00f);
-	style.Colors[ImGuiCol_Button]					= ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
-	style.Colors[ImGuiCol_ButtonHovered]			= ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
-	style.Colors[ImGuiCol_ButtonActive]				= ImVec4(0.67f, 0.67f, 0.67f, 0.39f);
-	style.Colors[ImGuiCol_Header]					= ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-	style.Colors[ImGuiCol_HeaderHovered]			= ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-	style.Colors[ImGuiCol_HeaderActive]				= ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-	style.Colors[ImGuiCol_Separator]				= style.Colors[ImGuiCol_Border];
-	style.Colors[ImGuiCol_SeparatorHovered]			= ImVec4(0.41f, 0.42f, 0.44f, 1.00f);
-	style.Colors[ImGuiCol_SeparatorActive]			= ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
-	style.Colors[ImGuiCol_ResizeGrip]				= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-	style.Colors[ImGuiCol_ResizeGripHovered]		= ImVec4(0.29f, 0.30f, 0.31f, 0.67f);
-	style.Colors[ImGuiCol_ResizeGripActive]			= ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
-	style.Colors[ImGuiCol_Tab]						= ImVec4(0.08f, 0.08f, 0.09f, 0.83f);
-	style.Colors[ImGuiCol_TabHovered]				= ImVec4(0.33f, 0.34f, 0.36f, 0.83f);
-	style.Colors[ImGuiCol_TabSelected]				= ImVec4(0.23f, 0.23f, 0.24f, 1.00f);
-	style.Colors[ImGuiCol_TabDimmed]				= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
-	style.Colors[ImGuiCol_TabDimmedSelected]		= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
-	style.Colors[ImGuiCol_DockingPreview]			= ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
-	style.Colors[ImGuiCol_DockingEmptyBg]			= ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-	style.Colors[ImGuiCol_PlotLines]				= ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
-	style.Colors[ImGuiCol_PlotLinesHovered]			= ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
-	style.Colors[ImGuiCol_PlotHistogram]			= ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
-	style.Colors[ImGuiCol_PlotHistogramHovered]		= ImVec4(1.00f, 0.60f, 0.00f, 1.00f);
-	style.Colors[ImGuiCol_TextSelectedBg]			= ImVec4(0.26f, 0.59f, 0.98f, 0.35f);
-	style.Colors[ImGuiCol_DragDropTarget]			= ImVec4(0.11f, 0.64f, 0.92f, 1.00f);
-	style.Colors[ImGuiCol_NavCursor]				= ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-	style.Colors[ImGuiCol_NavWindowingHighlight]	= ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
-	style.Colors[ImGuiCol_NavWindowingDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
-	style.Colors[ImGuiCol_ModalWindowDimBg]			= ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
+	#define LOG_COL(ID) LOG(LIO, LInfo, "colors["#ID"] = = ImVec4(%ff, %ff, %ff, %ff)", colors[ID].x, colors[ID].y, colors[ID].z, colors[ID].w)
+	#define ACCENT_1_RGB		0.26f, 0.59f, 0.98f
+	#define ACCENT_2_RGB		0.11f, 0.64f, 0.92f
 
-	//ImGui::StyleColorsLight();
-
-	return true;
+	colors[ImGuiCol_Text]					= ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+	colors[ImGuiCol_TextDisabled]			= ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+	colors[ImGuiCol_WindowBg]				= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
+	colors[ImGuiCol_ChildBg]				= colors[ImGuiCol_WindowBg];
+	colors[ImGuiCol_PopupBg]				= colors[ImGuiCol_WindowBg];
+	colors[ImGuiCol_Border]					= ImVec4(0.25f, 0.25f, 0.25f, 0.50f);
+	colors[ImGuiCol_BorderShadow]			= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+	colors[ImGuiCol_FrameBg]				= ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
+	colors[ImGuiCol_FrameBgHovered]			= ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
+	colors[ImGuiCol_FrameBgActive]			= ImVec4(0.67f, 0.67f, 0.67f, 0.39f);
+	colors[ImGuiCol_TitleBg]				= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
+	colors[ImGuiCol_TitleBgActive]			= colors[ImGuiCol_TitleBg];
+	colors[ImGuiCol_TitleBgCollapsed]		= ImVec4(0.00f, 0.00f, 0.00f, 0.51f);
+	colors[ImGuiCol_MenuBarBg]				= ImVec4(0.027f, 0.027f, 0.027f, 1.0f);
+	colors[ImGuiCol_ScrollbarBg]			= ImVec4(0.02f, 0.02f, 0.02f, 0.53f);
+	colors[ImGuiCol_ScrollbarGrab]			= ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
+	colors[ImGuiCol_ScrollbarGrabHovered]	= ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
+	colors[ImGuiCol_ScrollbarGrabActive]	= ImVec4(0.51f, 0.51f, 0.51f, 1.00f);
+	colors[ImGuiCol_CheckMark]				= ImVec4(ACCENT_2_RGB, 1.00f);
+	colors[ImGuiCol_SliderGrab]				= ImVec4(ACCENT_2_RGB, 1.00f);
+	colors[ImGuiCol_SliderGrabActive]		= ImVec4(0.08f, 0.50f, 0.72f, 1.00f);
+	colors[ImGuiCol_Button]					= colors[ImGuiCol_FrameBg];
+	colors[ImGuiCol_ButtonHovered]			= colors[ImGuiCol_FrameBgHovered];
+	colors[ImGuiCol_ButtonActive]			= colors[ImGuiCol_FrameBgActive];
+	colors[ImGuiCol_Header]					= ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+	colors[ImGuiCol_HeaderHovered]			= ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+	colors[ImGuiCol_HeaderActive]			= ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+	colors[ImGuiCol_Separator]				= colors[ImGuiCol_Border];
+	colors[ImGuiCol_SeparatorHovered]		= ImVec4(0.41f, 0.42f, 0.44f, 1.00f);
+	colors[ImGuiCol_SeparatorActive]		= ImVec4(ACCENT_1_RGB, 0.95f);
+	colors[ImGuiCol_ResizeGrip]				= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+	colors[ImGuiCol_ResizeGripHovered]		= ImVec4(0.29f, 0.30f, 0.31f, 0.67f);
+	colors[ImGuiCol_ResizeGripActive]		= ImVec4(ACCENT_1_RGB, 0.95f);
+	colors[ImGuiCol_InputTextCursor]		= colors[ImGuiCol_Text];
+	colors[ImGuiCol_TabHovered]				= ImVec4(0.33f, 0.34f, 0.36f, 0.83f);
+	colors[ImGuiCol_Tab]					= ImVec4(0.08f, 0.08f, 0.09f, 0.83f);
+	colors[ImGuiCol_TabSelected]			= ImVec4(0.23f, 0.23f, 0.24f, 1.00f);
+	colors[ImGuiCol_TabSelectedOverline]	= ImVec4(ACCENT_1_RGB, 1.00f);
+	colors[ImGuiCol_TabDimmed]				= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
+	colors[ImGuiCol_TabDimmedSelected]		= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
+	colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.50f, 0.50f, 0.50f, 0.00f);
+	colors[ImGuiCol_DockingPreview]			= ImVec4(ACCENT_1_RGB, 0.70f);
+	colors[ImGuiCol_DockingEmptyBg]			= ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+	colors[ImGuiCol_PlotLines]				= ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
+	colors[ImGuiCol_PlotLinesHovered]		= ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
+	colors[ImGuiCol_PlotHistogram]			= ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
+	colors[ImGuiCol_PlotHistogramHovered]	= ImVec4(1.00f, 0.60f, 0.00f, 1.00f);
+	colors[ImGuiCol_TableHeaderBg]			= ImVec4(0.19f, 0.19f, 0.20f, 1.00f);
+	colors[ImGuiCol_TableBorderStrong]		= ImVec4(0.31f, 0.31f, 0.35f, 1.00f);	// Prefer using Alpha=1.0 here
+	colors[ImGuiCol_TableBorderLight]		= ImVec4(0.23f, 0.23f, 0.25f, 1.00f);	// Prefer using Alpha=1.0 here
+	colors[ImGuiCol_TableRowBg]				= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+	colors[ImGuiCol_TableRowBgAlt]			= ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
+	colors[ImGuiCol_TextLink]				= ImVec4(ACCENT_1_RGB, 1.00f);
+	colors[ImGuiCol_TextSelectedBg]			= ImVec4(ACCENT_1_RGB, 0.35f);
+	colors[ImGuiCol_TreeLines]				= ImVec4(0.43f, 0.43f, 0.50f, 0.50f);
+	colors[ImGuiCol_DragDropTarget]			= ImVec4(ACCENT_2_RGB, 1.00f);
+	colors[ImGuiCol_NavCursor]				= ImVec4(ACCENT_1_RGB, 1.00f);
+	colors[ImGuiCol_NavWindowingHighlight]	= ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+	colors[ImGuiCol_NavWindowingDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
+	colors[ImGuiCol_ModalWindowDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
 static void loadFont()

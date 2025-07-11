@@ -244,9 +244,9 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	bool modified = compare && (!isSame(value, compare) || (value2 && !isSame(value2, compare)));
 	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
 	if (value2)
-		ImGui::InputScalarN("I", getDataType<Scalar>(), temp, 2, NULL, NULL, fmt);
+		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 2, NULL, NULL, fmt);
 	else
-		ImGui::InputScalarN("I", getDataType<Scalar>(), temp, 1, &step, NULL, fmt);
+		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 1, &step, NULL, fmt);
 	if (modified) ImGui::PopStyleColor();
 	if (unit && *unit != 0)
 	{ // Insert unit as an overlay
@@ -310,7 +310,7 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 	SameLinePos(SizeWidthDiv3().x+style.ItemSpacing.x);
 	ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);
 	Scalar temp[2] = { *value * editFactor, value2? (*value2 * editFactor) : 0 };
-	ImGui::SliderScalarN("S", getDataType<Scalar>(), temp, value2? 2 : 1, &min, &max, NULL);
+	ImGui::SliderScalarN("##S", getDataType<Scalar>(), temp, value2? 2 : 1, &min, &max, NULL);
 	ImGui::EndGroup();
 	bool update = false;
 	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())

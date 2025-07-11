@@ -290,7 +290,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				}
 				else
 				{
-					ImGui::Image((isDarkMode? lightModeIcons : darkModeIcons).camera, cameraSize);
+					ImGui::Image(icons().camera, cameraSize);
 				}
 			}
 			for (int i = 0; i < freeCols; i++)
@@ -298,7 +298,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::TableNextColumn();
 				if (free >= numFreeCameras)
 				{ // No more to draw
-					ImGui::Image((isDarkMode? lightModeIcons : darkModeIcons).camera, cameraSize);
+					ImGui::Image(icons().camera, cameraSize);
 					continue;
 				}
 				int cnt = 0;

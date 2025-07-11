@@ -91,7 +91,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 			};
 			// Wireless toggle column header
 			ImVec2 iconSize(ImGui::GetFontSize()*6/5,ImGui::GetFontSize());
-			iconHeader(0, darkModeIcons.wireless, iconSize);
+			iconHeader(0, icons().wireless, iconSize);
 			if (ImGui::IsItemClicked())
 				toggleColumnProperties([](TrackingCameraState::Wireless &wireless) -> bool& { return wireless.enabled; }, true);
 			for (int i = 1; i < 4; i++)
@@ -100,7 +100,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::TableHeader(ImGui::TableGetColumnName(i));
 			}
 			// Server toggle column header
-			iconHeader(4, darkModeIcons.server, iconSize);
+			iconHeader(4, icons().server, iconSize);
 			if (ImGui::IsItemClicked())
 				toggleColumnProperties([](TrackingCameraState::Wireless &wireless) -> bool& { return wireless.Server; }, true);
 		}

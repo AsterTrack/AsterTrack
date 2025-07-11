@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui.hpp"
 #include "app.hpp"
+#include "imgui_internal.h" // ImLerp
 
 #include <regex>
 
@@ -83,6 +84,21 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		float startLevel = ImGui::GetCursorPosX() + preWidth1;
 		float startLog = startLevel + preWidth2;
 		bool focusVisible = false;
+
+		{ // Base derived text colors on base color - not perfect, but better than nothing
+			ImVec4 baseCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+			ImVec4 fadeColor(0.6f, 0.6f, 0.6f, 1.0f);
+			ImVec4 errorColor(1.0f, 0.3f, 0.3f, 1.0f);
+			ImVec4 warnColor(0.85f, 0.5f, 0.25f, 1.0f);
+			ImVec4 outputCol(1.0f, 1.0f, 0.35f, 1.0f);
+			LogLevelHexColors[LTrace]  = ImColor(ImLerp(baseCol, fadeColor, 0.8f));
+			LogLevelHexColors[LDebug]  = ImColor(ImLerp(baseCol, fadeColor, 0.4f));
+			LogLevelHexColors[LDarn]   = ImColor(ImLerp(baseCol, warnColor, 0.6f));
+			LogLevelHexColors[LInfo]   = ImColor(ImLerp(baseCol, fadeColor, 0.0f));
+			LogLevelHexColors[LWarn]   = ImColor(ImLerp(baseCol, warnColor, 0.8f));
+			LogLevelHexColors[LError]  = ImColor(ImLerp(baseCol, errorColor, 0.9f));
+			LogLevelHexColors[LOutput] = ImColor(ImLerp(baseCol, outputCol, 0.75f));
+		}
 
 		{ // Has some glitching sometimes, scrollbar shows you can go down further, but it refuses, resulting in visual glitching
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));

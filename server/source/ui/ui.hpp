@@ -402,6 +402,9 @@ public:
 	void UpdateUI();
 	void RenderUI(bool fullUpdate = true);
 	void ResetWindowLayout();
+	static void StyleSizingDefault(ImGuiStyle *dst = nullptr);
+	static void StyleSizingAsterDark(ImGuiStyle *dst = nullptr);
+	static void StyleColorsAsterDark(ImGuiStyle* dst = nullptr);
 
 	void UpdateMainMenuBar();
 

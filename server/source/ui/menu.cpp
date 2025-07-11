@@ -81,10 +81,6 @@ void InterfaceState::UpdateMainMenuBar()
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 	if (ImGui::BeginMenu("View"))
 	{
-		if (ImGui::MenuItem("Reset Layout"))
-			ResetWindowLayout();
-		ImGui::Separator();
-
 		auto addWindowMenuItem = [](InterfaceWindow &window)
 		{
 			if (!ImGui::MenuItem(window.title.c_str(), nullptr, &window.open))
@@ -134,6 +130,25 @@ void InterfaceState::UpdateMainMenuBar()
 			addWindowMenuItem(windows[WIN_IMPLOT_DEMO]);
 			ImGui::EndMenu();
 		}
+		ImGui::Separator();
+		if (ImGui::BeginMenu("Style"))
+		{
+			if (ImGui::MenuItem("AsterTrack Style"))
+				StyleSizingAsterDark();
+			if (ImGui::MenuItem("AsterTrack Dark Colors"))
+				StyleColorsAsterDark();
+			if (ImGui::MenuItem("Default Style"))
+				StyleSizingDefault();
+			if (ImGui::MenuItem("ImGui Dark Colors"))
+				ImGui::StyleColorsDark();
+			if (ImGui::MenuItem("ImGui Light Colors"))
+				ImGui::StyleColorsLight();
+			if (ImGui::MenuItem("ImGui Classic Colors"))
+				ImGui::StyleColorsClassic();
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("Reset Layout"))
+			ResetWindowLayout();
 		ImGui::EndMenu();
 	}
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
@@ -219,8 +234,8 @@ void InterfaceState::UpdateMainMenuBar()
 	ImGui::Dummy(ImVec2(20, ImGui::GetFrameHeight()));
 
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.157f, 0.157f, 0.157f, 1.000f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.251f, 0.251f, 0.251f, 1.000f));
+		ImGui::PushStyleColor(ImGuiCol_Button, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_Button), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
 
 		ImGui::BeginDisabled(state.mode == MODE_None);
 		if (ImGui::Button(state.isStreaming? "Stop Streaming###Streaming" : "Start Streaming###Streaming"))
@@ -243,7 +258,7 @@ void InterfaceState::UpdateMainMenuBar()
 		/* ImVec2 iconSize = ImVec2(24, 20); // For aspect ratio
 		float factor = std::min(maxIconSize.x/iconSize.x, maxIconSize.y/iconSize.y);
 		iconSize = ImVec2(iconSize.x*factor, iconSize.y*factor); */
-		//if (ImGui::ImageButton("##WindowMinButton", darkModeIcons.visual, maxIconSize))
+		//if (ImGui::ImageButton("##WindowMinButton", icons().visual, maxIconSize))
 
 		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.251f, 0.251f, 0.251f, 1.000f));
@@ -386,7 +401,7 @@ void InterfaceState::UpdateMainMenuBar()
 	{
 		if (ImGui::BeginMenuBar())
 		{
-			if (ImGui::ImageButton(darkModeIcons.wireless, iconSize))
+			if (ImGui::ImageButton(icons().wireless, iconSize))
 			{
 				LOG(LGUI, LDebug, "Pressed Test Button\n");
 			}

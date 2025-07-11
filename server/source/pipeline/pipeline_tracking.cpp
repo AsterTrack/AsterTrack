@@ -303,8 +303,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	{
 		auto framesRecord = pipeline.record.frames.getView<false>();
-		if (frameIndex >= framesRecord.size())
+		if (frameIndex >= framesRecord.endIndex())
 		{ // FrameRecords were cleared while starting detection, abort
+			LOG(LDetection2D, LDarn, "    Detection - Frame %d: Frames were cleared while detecting!\n", (int)frameIndex);
 			return false;
 		}
 		auto frameRecordIt = framesRecord.pos(frameIndex+1);
@@ -336,8 +337,10 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				return false;
 		}
 		// Release view when leaving scope
-		frameIndex = frameRecordIt.index();
+		frameIndex = frameRecordIt.index()-1;
 	}
+
+	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to snapshot, syncing with realtime!\n", (int)frameIndex);
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	if (stopToken.stop_requested())
@@ -345,8 +348,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	{ // Finish the rest of the frames that were processed while waiting for the lock
 		auto framesRecord = pipeline.record.frames.getView<false>();
-		if (frameIndex >= framesRecord.size())
+		if (frameIndex >= framesRecord.endIndex())
 		{ // FrameRecords were cleared while waiting for the lock, abort
+			LOG(LDetection2D, LDarn, "    Detection - Frame %d: Frames were cleared while syncing with realtime!\n", (int)frameIndex);
 			return false;
 		}
 		auto frameRecordIt = framesRecord.pos(frameIndex+1);
@@ -378,7 +382,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				return false;
 		}
 		// Release view when leaving scope
-		frameIndex = frameRecordIt.index();
+		frameIndex = frameRecordIt.index()-1;
 	}
 
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
@@ -765,7 +769,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				{ // Register as tracked target
 					{ // Make sure no async detection of this target is ongoing
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == dormant.id)
+						{
+							LOG(LDetection2D, LDarn, "    Interrupting async detection because tracker has been found!\n");
 							pipeline.tracking.asyncDetectionStop.request_stop();
+						}
 					}
 					Eigen::Isometry3f pose = dormant.target.match2D.pose;
 					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);

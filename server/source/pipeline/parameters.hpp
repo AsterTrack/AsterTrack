@@ -48,7 +48,7 @@ struct ClusteringParameters
 	{
 		int minFocusClusterPoints = 6;
 		float min2DClusterOverlap = 0.7f;
-		float min3DClusterScore = 10.0f;
+		float min3DClusterScore = 8.0f;
 		bool allowCompeting = false;
 	} clusterTri;
 	// 3D clusters of triangulated points

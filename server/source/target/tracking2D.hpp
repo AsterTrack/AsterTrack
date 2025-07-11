@@ -73,6 +73,12 @@ struct TargetMatchingData
 	int markerCount = 0;
 	std::vector<MarkerMatchingData> markers;
 	Eigen::Isometry3f pose;
+
+	void clear()
+	{ // Keep allocations of markers and markers->matches
+		markerCount = 0;
+		identifier = -1;
+	}
 };
 struct TargetTracking2DData
 {
@@ -85,10 +91,7 @@ struct TargetTracking2DData
 		void clear()
 		{ // Keep allocations of each stage
 			for (auto &stage : stages)
-			{ // Keep allocations of markers and markers->matches
-				stage.markerCount = 0;
-				stage.identifier = -1;
-			}
+				stage.clear();
 			numStages = 0;
 		}
 	};

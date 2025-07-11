@@ -72,6 +72,11 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 			rotations[r*gen.shellPoints + i] = generateRotation(gen, r % gen.shells.size(), i, rollAngle);
 	}
 
+	// Normalise pixel parameters to a fixed distance
+	std::vector<float> paramScale(calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+		paramScale[c] = params.normaliseDistance / (pos - calibs[c].transform.translation().cast<float>()).norm();
+
 	if (stopToken.stop_requested())
 		return {};
 
@@ -87,22 +92,56 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 		if (stopToken.stop_requested())
 			continue;
 
-		thread_local TargetTracking2DData internalDataTemp;
-
 		Eigen::Isometry3f estimate;
 		estimate.linear() = quat.toRotationMatrix();
 		estimate.translation() = pos;
 
-		CovarianceMatrix cov = CovarianceMatrix::Identity() * 0.1f;
+		// Find candidate for 2D point matches
+		TargetMatch2D targetMatch2D = {};
+		targetMatch2D.calib = &target3D;
+		targetMatch2D.pose = estimate;
+		targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 
-		auto targetMatch2D = trackTarget2D(target3D, estimate, cov,
-			calibs, cameraCount, points2D, properties, relevantPoints2D, track, internalDataTemp);
-		LOG(LDetection2D, LTrace, "    Rotation %d resulted in %d matches, error %fpx!", i, targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
+		// Reused allocation of target point reprojections
+		thread_local std::vector<std::vector<Eigen::Vector2f>> projected2D;
+		thread_local std::vector<std::vector<int>> relevantProjected2D;
+		if (projected2D.size() < points2D.size())
+			projected2D.resize(points2D.size());
+		if (relevantProjected2D.size() < points2D.size())
+			relevantProjected2D.resize(points2D.size());
+
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
+			projectTarget(projected2D[c], relevantProjected2D[c],
+				target3D, calibs[c], targetMatch2D.pose, params.expandMarkerFoV);
+			if (relevantProjected2D[c].empty()) continue;
+
+			// Reused allocation of target matching data
+			thread_local TargetMatchingData matchingStage;
+			matchingStage.clear();
+
+			// Match relevant points (observation and projected target)
+			// Note: We use "Slow" here because it can deal with our position estimate being wildly off
+			auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
+			matchTargetPointsSlow(*points2D[c], *properties[c], *relevantPoints2D[c],
+				projected2D[c], relevantProjected2D[c], cameraMatches,
+				matchingStage, track.matchSlow, paramScale[c]);
+			if (cameraMatches.size() < track.quality.minCameraObs)
+				cameraMatches.clear();
+			targetMatch2D.error.samples += cameraMatches.size();
+		}
+
+		if (targetMatch2D.error.samples >= params.probe.minObs)
+		{ // Initial optimisation
+			optimiseTargetPose<false>(calibs, points2D, targetMatch2D,
+				Eigen::Isometry3f::Identity(), params.opt);
+		}
 
 		itResults[i] = { targetMatch2D.error.samples, targetMatch2D.error.mean };
 
 		bool accept = targetMatch2D.error.samples >= params.probe.minObs
-					&& targetMatch2D.error.mean < params.probe.errorMax;
+					&& targetMatch2D.error.mean < params.probe.errorInitialMax;
 		if (accept)
 		{
 			itMatches[i] = targetMatch2D;
@@ -111,36 +150,59 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	if (stopToken.stop_requested())
 		return {};
 
+	auto &results = itResults;
+	float maxError = params.probe.errorInitialMax;
+	auto cullTheForgotten = [&](const int &a, const int &b) {
+		return (results[a].first < params.probe.minObs && results[b].first < params.probe.minObs)
+			|| (results[a].second > maxError && results[b].second > maxError);
+	};
+	auto errorRules = [&](const int &a, const int &b) {
+		return results[a].second > maxError || results[b].second > maxError? 
+			results[a].second < results[b].second :
+			(results[a].first > results[b].first || (results[a].first == results[b].first && results[a].second < results[b].second));
+	};
+	auto pointSupremacy = [&](const int &a, const int &b) {
+		return results[a].first > results[b].first;
+	};
+	auto conservativeOrder = [&](const int &a, const int &b) {
+		if (cullTheForgotten(a, b)) return false;
+		return results[a].first < params.probe.minObs || results[b].first < params.probe.minObs? 
+			pointSupremacy(a, b) : errorRules(a, b);
+	};
+
 	// Sort solutions by lowest error
 	std::vector<int> bestSolutions(rotations.size());
 	std::iota(bestSolutions.begin(), bestSolutions.end(), 0);
-	std::stable_sort(bestSolutions.begin(), bestSolutions.end(),
-		[&](const int &a, const int &b) {
-			if ((itResults[a].first < params.probe.minObs && itResults[b].first < params.probe.minObs)
-				|| (itResults[a].second > params.probe.errorMax && itResults[b].second > params.probe.errorMax))
-				return false;
-			return itResults[a].first < params.probe.minObs || itResults[b].first < params.probe.minObs? 
-				itResults[a].first > itResults[b].first : 
-				(itResults[a].second > params.probe.errorMax || itResults[b].second > params.probe.errorMax? 
-					itResults[a].second < itResults[b].second :
-					(itResults[a].first > itResults[b].first || 
-						(itResults[a].first == itResults[b].first && itResults[a].second < itResults[b].second))
-				);
-		});
+	std::stable_sort(bestSolutions.begin(), bestSolutions.end(), conservativeOrder);
 
+	std::vector<std::pair<int,float>> candResults(params.probe.maxCandidates, { 0, std::numeric_limits<float>::max() });
+	std::vector<TargetMatch2D> candMatches(params.probe.maxCandidates);
 	int index = 0;
 	for (int it : bestSolutions)
 	{
 		auto &res = itResults[it];
 		if (res.first < params.probe.minObs) break;
-		if (res.second >= params.probe.errorMax)
+		if (res.second >= params.probe.errorInitialMax)
 		{
 			LOG(LDetection2D, LDebug, "    Discarded: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
 			continue;
 		}
-		//if (res.first < params.probe.minObs) break;
 		LOG(LDetection2D, LDebug, "    Best: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
 
+		TargetMatch2D targetMatch2D = std::move(itMatches[it]);
+		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
+		TargetMatchError newErrors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D,
+			Eigen::Isometry3f::Identity(), params.opt);
+		if (newErrors.samples > 0)
+		{
+			LOGC(LDebug, "          Reduced average pixel error of %d points from %.4fpx to %d inliers with %.4fpx error\n",
+				prevErrors.samples, prevErrors.mean * PixelFactor, newErrors.samples, newErrors.mean * PixelFactor);
+		}
+		else
+			LOGC(LDarn, "          Failed to optimise pose of %d points!\n", prevErrors.samples);
+
+		candResults[index] = { targetMatch2D.error.samples, targetMatch2D.error.mean };
+		candMatches[index] = std::move(targetMatch2D);
 		index++;
 		if (index >= params.probe.maxCandidates)
 			break;
@@ -148,11 +210,18 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	if (index == 0)
 		return {};
 
-	auto bestResult = itResults[bestSolutions[0]];
-	if (bestResult.first < params.minObservations.total || bestResult.second > params.search.errorMax)
+	// Sort solutions by lowest error
+	results = candResults;
+	maxError = params.probe.errorMax;
+	std::vector<int> candSolutions(index);
+	std::iota(candSolutions.begin(), candSolutions.end(), 0);
+	std::stable_sort(candSolutions.begin(), candSolutions.end(), conservativeOrder);
+
+	auto bestResult = candResults[candSolutions[0]];
+	if (bestResult.first < params.minObservations.total || bestResult.second > params.probe.errorMax)
 		return {};
 
-	return itMatches[bestSolutions[0]];
+	return candMatches[candSolutions[0]];
 }
 
 static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token stopToken,

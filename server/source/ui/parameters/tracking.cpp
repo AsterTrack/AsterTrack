@@ -146,6 +146,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("2D Probe");
 		modified |= ScalarProperty<int>("Min Observations", "", &params.probe.minObs, &standard.probe.minObs, 0, 20);
+		modified |= ScalarProperty<float>("Initial Error Max", "px", &params.probe.errorInitialMax, &standard.probe.errorInitialMax, 0, 30, 0.5f, PixelFactor, "%.1f");
 		modified |= ScalarProperty<float>("Error Max", "px", &params.probe.errorMax, &standard.probe.errorMax, 0, 10, 0.5f, PixelFactor, "%.1f");
 		modified |= ScalarProperty<int>("Max Candidates", "", &params.probe.maxCandidates, &standard.probe.maxCandidates, 1, 100);
 		if (ImGui::TreeNode("Rotation Generation"))

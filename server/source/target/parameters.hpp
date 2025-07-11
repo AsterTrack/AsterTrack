@@ -162,9 +162,10 @@ struct TargetDetectionParameters
 	RotationGenerationParameters rotGen;
 	struct
 	{
-		int minObs = 6;
+		int minObs = 8;
+		float errorInitialMax = 8.0f*PixelSize;
 		float errorMax = 2.0f*PixelSize;
-		int maxCandidates = 10;
+		int maxCandidates = 20;
 	} probe;
 	struct
 	{

@@ -219,6 +219,7 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
 
 static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &tracker, std::shared_ptr<FrameRecord> &frame)
 {
+	frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
 	// TODO: Only take calibs of cameras actually part of the frame!
 	// Would need to iterate over frame->cameras and take cameras that have points
@@ -247,7 +248,9 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 		postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
 
 	result.setFlag(TrackingResult::CATCHING_UP);
-	return recordTrackingResult(pipeline, frame, tracker, result);
+	auto &record = recordTrackingResult(pipeline, frame, tracker, result);
+	frame->finishedProcessing = true;
+	return record;
 }
 
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
@@ -266,6 +269,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			relevantPoints2D[c] = &detectionPoints2D[c];
 		}
 
+		frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
 		if (useProbe)
 		{ // Probe target against clusters points
 			dormant.target.match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
@@ -279,6 +283,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total)
 		{
 			createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D);
+			frame->finishedProcessing = true;
 			return false;
 		}
 
@@ -287,12 +292,14 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
 			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
 	}
-	if (stopToken.stop_requested())
-		return false;
 
 	Eigen::Isometry3f pose = dormant.target.match2D.pose;
 	TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 	recordTrackingResult(pipeline, frame, tracker, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D);
+	frame->finishedProcessing = true;
+
+	if (stopToken.stop_requested())
+		return false;
 
 	// Then continue on tracking to catch up with the latest realtime frame
 	// TODO: Skip some frames to catch up faster, should handle some skips as long as prediction is accurate
@@ -322,7 +329,6 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-
 			TrackerRecord &trackRecord = retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
 			if (!trackRecord.result.isTracked())
 			{ // Don't record as real loss since this is retroactive
@@ -387,11 +393,13 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
 
-	// Finally, no more frames to catch up on, register as new tracked target
-	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
-	assert(erased == 1);
+	{ // Finally, no more frames to catch up on, register as new tracked target
+		std::unique_lock pipeline_lock(pipeline.pipelineLock);
+		int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
+		assert(erased == 1);
+		pipeline.tracking.trackedTargets.push_back(std::move(tracker));
+	}
 	SignalTrackerDetected(tracker.id);
-	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	return true;
 }
 

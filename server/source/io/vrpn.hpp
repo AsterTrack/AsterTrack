@@ -30,7 +30,7 @@ SOFTWARE.
 #include "util/util.hpp" // TimePoint_t
 #include "util/memory.hpp" // unique_ptr, opaque_ptr
 
-#include "imu/imu.hpp"
+#include "imu/device.hpp"
 
 #include "vrpn_imu.hpp"
 
@@ -54,7 +54,7 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 
 		bool isConnected();
 
-		std::shared_ptr<IMU> remoteIMU;
+		std::shared_ptr<IMUDevice> remoteIMU;
 
 		virtual void mainloop ();
 

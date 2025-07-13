@@ -10,7 +10,10 @@ class RemoteIMU : public IMUDevice
 public:
 	RemoteIMU(std::string path, bool hasMag = false, bool isFused = false)
 		: IMUDevice(IMUIdent{ IMU_DRIVER_REMOTE, path }, hasMag, isFused), sampleCount(0)
-	{}
+	{
+		timingRecord.latencyDescriptions.push_back("Remote RX");
+		timingRecord.latencyDescriptions.push_back("Fusion");
+	}
 
 	~RemoteIMU() = default;
 
@@ -30,8 +33,8 @@ public:
 
 	RemoteIMUSingleton() : IMUDeviceProvider(IMU_DRIVER_REMOTE)
 	{
-		latencyDescriptions.descriptions.push_back("Remote RX");
-		latencyDescriptions.descriptions.push_back("Fusion");
+		timingRecord.latencyDescriptions.push_back("Remote RX");
+		timingRecord.latencyDescriptions.push_back("Fusion");
 	}
 
 	~RemoteIMUSingleton()

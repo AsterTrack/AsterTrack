@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/packet.h"
 #include "comm/protocol_packet.hpp" // PacketProtocolState
 #include "comm/timesync.hpp" // TimeSync
+#include "comm/timingRecord.hpp" // TimingRecord
 
 #include "util/blocked_vector.hpp"
 #include "util/synchronised.hpp"
@@ -95,12 +96,8 @@ struct TrackingControllerState
 
 	// Event Log
 	BlockedQueue<ControllerEventLog, 4096> eventLog;
-	// TimeSync Log
-	bool recordTimeSyncMeasurements = false;
-	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
-	// Latency Log
-	bool recordLatencyMeasurements;
-	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
+	// TimeSync and Latency Log
+	TimingRecord timingRecord;
 };
 static bool operator==(const TrackingControllerState& a, const TrackingControllerState& b) { return &a == &b; }
 

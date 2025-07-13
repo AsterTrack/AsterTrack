@@ -29,24 +29,6 @@ SOFTWARE.
 #include "util/util.hpp" // TimePoint_t
 #include "util/stats.hpp"
 
-struct TimeSyncMeasurement
-{
-	uint64_t timestamp;
-	TimePoint_t estimation;
-	TimePoint_t measurement;
-};
-
-const int LatencyStackSize = 8;
-struct LatencyDescriptor
-{
-	std::vector<std::string> descriptions;
-};
-struct LatencyMeasurement
-{
-	TimePoint_t sample;
-	uint16_t latency[LatencyStackSize];
-};
-
 /*
  * Time Sync
  * Determines a best-estimate time sync between two systems (here over USB)

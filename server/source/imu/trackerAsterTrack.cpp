@@ -1,6 +1,8 @@
 
 #include "imu/device.hpp"
 
+#include "comm/timesync.hpp"
+
 #include "util/log.hpp"
 
 #include "hidapi/hidapi.h"
@@ -93,9 +95,9 @@ public:
 	{
 		ResetTimeSync(timeSync);
 		// Unknown latencies of fusion and radio transmission, only the sample timestamp is sent
-		latencyDescriptions.descriptions.push_back("USB TX");
-		latencyDescriptions.descriptions.push_back("USB RX");
-		latencyDescriptions.descriptions.push_back("Fusion");
+		timingRecord.latencyDescriptions.push_back("USB TX");
+		timingRecord.latencyDescriptions.push_back("USB RX");
+		timingRecord.latencyDescriptions.push_back("Fusion");
 	}
 
 	~AsterTrackReceiver()
@@ -142,8 +144,8 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 		LOG(LIO, LTrace, "Raw receiver timestamp of last packet is %d", timestampUS);
 		auto packetSentSync = UpdateTimeSync(timeSync, timestampUS, 1<<16, recvTime);
 		TimePoint_t sentTime = packetSentSync.second;
-		if (recordTimeSyncMeasurements)
-			timeSyncMeasurements.push_back({ packetSentSync.first, sentTime, recvTime });
+		if (timingRecord.recordTimeSync)
+			timingRecord.timeSync.push_back({ packetSentSync.first, sentTime, recvTime });
 
 		uint8_t *packet = header+HID_HEADER_SIZE;
 		int packets = (size-HID_HEADER_SIZE)/TRACKER_REPORT_SIZE;
@@ -170,12 +172,12 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 			TimePoint_t sampleTime = recvTime;
 			if (parseDataPacket(tracker, packet+i, sampleTime))
 			{
-				if (recordLatencyMeasurements)
+				if (timingRecord.recordLatency)
 				{ // TODO: Move latency measurement up after fusion
 					// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
-					latencyMeasurements.push_back({ sampleTime, { 
-						(uint16_t)dtUS(sampleTime, sentTime),
-						(uint16_t)dtUS(sampleTime, recvTime) } } );
+					timingRecord.latency.push_back({ sampleTime, { 
+						(uint16_t)std::max<long>(0, dtUS(sampleTime, sentTime)),
+						(uint16_t)std::max<long>(0, dtUS(sampleTime, recvTime)) } } );
 				}
 				updated++;
 			}

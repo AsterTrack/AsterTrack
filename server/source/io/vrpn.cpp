@@ -99,13 +99,19 @@ static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
 		tracker->remoteIMU->hasMag = true;
 	tracker->remoteIMU->samplesRaw.push_back(sample);
 
+	long latency = dtUS(sample.timestamp, sclock::now());
+	if (latency < -500)
+		LOG(LIO, LDarn, "Remote IMU %d send timestamp %ldus in the future! Indicates suboptimal timesync!", tracker->remoteIMU->index, -latency);
+
+	// TODO: Move latency measurement up after fusion
+	// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
+	if (tracker->remoteIMU->timingRecord.recordLatency)
+		tracker->remoteIMU->timingRecord.latency.push_back({ sample.timestamp, { 
+			(uint16_t)std::max<long>(0, latency) } } );
 	auto provider = getRemoteIMUProvider();
-	if (provider->recordLatencyMeasurements)
-	{ // TODO: Move latency measurement up after fusion
-		// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
-		provider->latencyMeasurements.push_back({ sample.timestamp, { 
-			(uint16_t)dtUS(sample.timestamp, sclock::now()) } } );
-	}
+	if (provider->timingRecord.recordLatency)
+		provider->timingRecord.latency.push_back({ sample.timestamp, { 
+			(uint16_t)std::max<long>(0, latency) } } );
 
 	LOG(LIO, LTrace, "Tracker %s (%d) got raw IMU sample with %fms latency!",
 		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));
@@ -132,13 +138,19 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 	tracker->remoteIMU->hasMag = false; // TODO: Technically unknown. Should IMU side advertise capabilities?
 	tracker->remoteIMU->samplesFused.push_back(sample);
 
+	long latency = dtUS(sample.timestamp, sclock::now());
+	if (latency < -500)
+		LOG(LIO, LDarn, "Remote IMU %d send timestamp %ldus in the future! Indicates suboptimal timesync!", tracker->remoteIMU->index, -latency);
+
+	// TODO: Move latency measurement up after fusion
+	// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
+	if (tracker->remoteIMU->timingRecord.recordLatency)
+		tracker->remoteIMU->timingRecord.latency.push_back({ sample.timestamp, { 
+			(uint16_t)std::max<long>(0, latency) } } );
 	auto provider = getRemoteIMUProvider();
-	if (provider->recordLatencyMeasurements)
-	{ // TODO: Move latency measurement up after fusion
-		// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
-		provider->latencyMeasurements.push_back({ sample.timestamp, { 
-			(uint16_t)dtUS(sample.timestamp, sclock::now()) } } );
-	}
+	if (provider->timingRecord.recordLatency)
+		provider->timingRecord.latency.push_back({ sample.timestamp, { 
+			(uint16_t)std::max<long>(0, latency) } } );
 
 	LOG(LIO, LTrace, "Tracker %s (%d) got fused IMU sample with %fms latency!",
 		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));

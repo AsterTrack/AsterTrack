@@ -798,8 +798,8 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 			LOG(LTimesync, LTrace, "Packet of size %d had timestamp %uus for last packet received %.2fms ago, estimated to be sent %.2fms ago (this packet was received %.2fms ago)\n",
 				length, header.lastTimestamp, dtMS(stats.lastReceived, sclock::now()), dtMS(packetSentSync.second, sclock::now()), dtMS(receiveTime, sclock::now()));
 
-			if (packetSentSync.first > 0 && controller.recordTimeSyncMeasurements)
-				controller.timeSyncMeasurements.push_back({ packetSentSync.first, packetSentSync.second, stats.lastReceived });
+			if (packetSentSync.first > 0 && controller.timingRecord.recordTimeSync)
+				controller.timingRecord.timeSync.push_back({ packetSentSync.first, packetSentSync.second, stats.lastReceived });
 		}
 		stats = { header.counter, receiveTime };
 

@@ -418,25 +418,24 @@ static void CleanTimingPanel();
 void InterfaceState::UpdateInsights(InterfaceWindow &window)
 {
 	static int lastPanel = 0;
-	auto clean = []()
+	int curPanel = 0;
+	auto cleanNewlyClosed = [&]()
 	{
+		if (curPanel == lastPanel) return;
 		if (lastPanel == 1)
-			CleanTargetCalibrationPanel();
+			CleanTrackingPanel();
 		else if (lastPanel == 2)
-			CleanTrackingControllerPanel();
+			CleanTargetCalibrationPanel();
 		else if (lastPanel == 3)
+			CleanTrackingControllerPanel();
+		else if (lastPanel == 4)
 			CleanTimingPanel();
-		lastPanel = 0;
+		lastPanel = curPanel;
 	};
-	if (!ImGui::Begin(window.title.c_str(), &window.open))
+	if (!ImGui::Begin(window.title.c_str(), &window.open) ||
+		!ImGui::BeginTabBar("InsightsSelector", ImGuiTabBarFlags_None))
 	{
-		clean();
-		ImGui::End();
-		return;
-	}
-	if (!ImGui::BeginTabBar("InsightsSelector", ImGuiTabBarFlags_None))
-	{
-		clean();
+		cleanNewlyClosed();
 		ImGui::End();
 		return;
 	}
@@ -444,58 +443,39 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	int curPanel = -1;
-
 	if (pipeline.phase == PHASE_Tracking && ImGui::BeginTabItem("Tracking"))
 	{
-		if (!ShowTrackingPanel())
-			CleanTrackingPanel();
-		else
+		if (ShowTrackingPanel())
 			curPanel = 1;
 		ImGui::EndTabItem();
 	}
-	else if (lastPanel == 1)
-		CleanTrackingPanel();
 
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if ((visTarget.hasObs() || pipeline.phase == PHASE_Calibration_Target)
 			&& ImGui::BeginTabItem("Target Calibration"))
 		{
-			if (!ShowTargetCalibrationPanel(visTarget))
-				CleanTargetCalibrationPanel();
-			else
+			if (ShowTargetCalibrationPanel(visTarget))
 				curPanel = 2;
 			ImGui::EndTabItem();
 		}
-		else if (lastPanel == 2)
-			CleanTargetCalibrationPanel();
 	}
 
 	if (state.mode == MODE_Device && !state.controllers.empty() && ImGui::BeginTabItem("Tracking Controller"))
 	{
-		if (!ShowTrackingControllerPanel())
-			CleanTrackingControllerPanel();
-		else
+		if (ShowTrackingControllerPanel())
 			curPanel = 3;
 		ImGui::EndTabItem();
 	}
-	else if (lastPanel == 3)
-		CleanTrackingControllerPanel();
 
 	if (state.mode == MODE_Device && ImGui::BeginTabItem("Timing"))
 	{
-		if (!ShowTimingPanel())
-			CleanTimingPanel();
-		else
+		if (ShowTimingPanel())
 			curPanel = 4;
 		ImGui::EndTabItem();
 	}
-	else if (lastPanel == 4)
-		CleanTimingPanel();
 
-	lastPanel = curPanel;
-
+	cleanNewlyClosed();
 	ImGui::EndTabBar();
 	ImGui::End();
 }
@@ -544,8 +524,8 @@ static bool ShowTrackingPanel()
 	}
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 		[&](auto &t){ return t.id == curTrackerID; });
-	if (trackerIt == state.trackerConfigs.end()) return true;
-	if (trackerIt->type != TrackerConfig::TRACKER_TARGET) return true;
+	if (trackerIt == state.trackerConfigs.end()) return false;
+	if (trackerIt->type != TrackerConfig::TRACKER_TARGET) return false;
 	// TODO: Support marker trackers
 
 	static bool followFrame = true, showCur = true, showRec = true;
@@ -563,10 +543,10 @@ static bool ShowTrackingPanel()
 	auto framesStored = state.stored.frames.getView();
 	unsigned int frameNum = pipeline.frameNum.load();
 	if (framesRecord.empty() && framesStored.empty())
-		return true;
+		return false;
 
 	if (!ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
-		return true;
+		return false;
 
 	static struct {
 		std::vector<int> sampleCount;
@@ -1039,38 +1019,10 @@ static int PlotFormatterTimeUS(double value, char* buff, int size, void* data)
 	else
 		return snprintf(buff, size, "%ldus", timeUS%1000);
 }
-static bool ShowTimeSyncPanel()
+static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true> &samples)
 {
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
-
-	BlockedQueue<TimeSyncMeasurement, 4096> *syncMeasurements = nullptr;
-	if (sourceType == 0)
-	{
-		if (sourceIndex >= state.controllers.size())
-		{
-			sourceType = sourceIndex = -1;
-			return false;
-		}
-		syncMeasurements = &state.controllers[sourceIndex]->timeSyncMeasurements;
-		if (state.controllers[sourceIndex]->comm->commStreaming)
-			ui.RequestUpdates();
-	}
-	else if (sourceType == 1)
-	{
-		auto imuProviders = state.imuProviders.contextualRLock();
-		// Don't need to retain lock, measuremnts is BlockedQueue
-		if (sourceIndex >= imuProviders->size())
-		{
-			sourceType = sourceIndex = -1;
-			return false;
-		}
-		syncMeasurements = &imuProviders->at(sourceIndex)->timeSyncMeasurements;
-	}
-	if (!syncMeasurements)
-		return false;
-	syncMeasurements->delete_culled();
-	auto samples = syncMeasurements->getView();
 
 	static std::size_t graphBegin = 0, graphEnd = 0;
 	bool updateGraph = graphBegin != samples.beginIndex() || graphEnd != samples.endIndex();
@@ -1184,46 +1136,12 @@ static bool ShowTimeSyncPanel()
 		ImPlot::EndPlot();
 	}
 
-	// Blocks of 4096 measurements each - keep only last 10
-	syncMeasurements->cull_front(-10);
-
 	return true;
 }
-static bool ShowLatencyPanel()
+static bool ShowLatencyPanel(BlockedQueue<LatencyMeasurement, 4096>::View<true> &samples, const std::vector<std::string> &descriptions)
 {
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
-
-	BlockedQueue<LatencyMeasurement, 4096> *latencyMeasurements = nullptr;
-	LatencyDescriptor *descriptor = nullptr;
-	if (sourceType == 0)
-	{
-		if (sourceIndex >= state.controllers.size())
-		{
-			sourceType = sourceIndex = -1;
-			return false;
-		}
-		latencyMeasurements = &state.controllers[sourceIndex]->latencyMeasurements;
-		//descriptor = &state.controllers[sourceIndex]->des;
-		if (state.controllers[sourceIndex]->comm->commStreaming)
-			ui.RequestUpdates();
-	}
-	else if (sourceType == 1)
-	{
-		auto imuProviders = state.imuProviders.contextualRLock();
-		// Don't need to retain lock, measuremnts is BlockedQueue
-		if (sourceIndex >= imuProviders->size())
-		{
-			sourceType = sourceIndex = -1;
-			return false;
-		}
-		latencyMeasurements = &imuProviders->at(sourceIndex)->latencyMeasurements;
-		descriptor = &imuProviders->at(sourceIndex)->latencyDescriptions;
-	}
-	if (!latencyMeasurements || !descriptor)
-		return false;
-	latencyMeasurements->delete_culled();
-	auto samples = latencyMeasurements->getView();
 
 	static bool followFrame = true;
 	ImGui::SameLine(); // Append to header
@@ -1286,31 +1204,28 @@ static bool ShowLatencyPanel()
 				latencyOffset.clear();
 
 			sampleTimesstamps.reserve(sampleCount);
-			for (int i = 0; i < descriptor->descriptions.size(); i++)
+			for (int i = 0; i < descriptions.size(); i++)
 				latencyOffsets[i].reserve(sampleCount);
 
 			for (const auto &sample : samples)
 			{
 				sampleTimesstamps.push_back((double)dtUS(timeBegin, sample.sample));
-				for (int i = 0; i < descriptor->descriptions.size(); i++)
+				for (int i = 0; i < descriptions.size(); i++)
 					latencyOffsets[i].push_back((double)sample.latency[i]);
 			}
 		}
 
 		ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 2);
-		for (int i = descriptor->descriptions.size()-1; i >= 0; i--)
+		for (int i = descriptions.size()-1; i >= 0; i--)
 		{
 			ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
-			ImPlot::PlotStems(descriptor->descriptions[i].c_str(), sampleTimesstamps.data(), latencyOffsets[i].data(), sampleCount);
+			ImPlot::PlotStems(descriptions[i].c_str(), sampleTimesstamps.data(), latencyOffsets[i].data(), sampleCount);
 		}
 
 		ImPlot::PopStyleVar();
 
 		ImPlot::EndPlot();
 	}
-
-	// Blocks of 4096 measurements each - keep only last 10
-	latencyMeasurements->cull_front(-10);
 
 	return true;
 }
@@ -1319,116 +1234,141 @@ static bool ShowTimingPanel()
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
 
-	static const char* typeLabel = "Select Type";
+	std::unique_lock dev_lock(state.deviceAccessMutex);
+
+	static const char* typeLabel;
 	if (timeType < 0) typeLabel = "Select Type";
 	const char* timeTypeSelection[] = { "TimeSync", "Latency" };
 	if (ImGui::BeginCombo("Type", typeLabel, ImGuiComboFlags_WidthFitPreview))
 	{
 		bool changed = false;
-		if ((changed = ImGui::Selectable(timeTypeSelection[0])))
+		for (int i = 0; i < 2; i++)
 		{
-			typeLabel = timeTypeSelection[0];
-			timeType = 0;
-			if (sourceIndex >= state.controllers.size())
-				sourceType = sourceIndex = -1;
-			else
-			{
-				state.controllers[sourceIndex]->recordTimeSyncMeasurements = timeType == 0;
-				state.controllers[sourceIndex]->recordLatencyMeasurements = timeType == 1;
-			}
-		}
-		else if ((changed = ImGui::Selectable(timeTypeSelection[1])))
-		{
-			typeLabel = timeTypeSelection[1];
-			timeType = 1;
-			auto imuProviders = state.imuProviders.contextualRLock();
-			if (sourceIndex >= imuProviders->size())
-				sourceType = sourceIndex = -1;
-			else
-			{
-				imuProviders->at(sourceIndex)->recordTimeSyncMeasurements = timeType == 0;
-				imuProviders->at(sourceIndex)->recordLatencyMeasurements = timeType == 1;
-			}
+			if (!ImGui::Selectable(timeTypeSelection[i])) continue;
+			changed = true;
+			typeLabel = timeTypeSelection[i];
+			timeType = i;
 		}
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
+	if (timeType < 0) return false;
 
 	ImGui::SameLine();
-	static std::string sourceLabel = "Select Source";
-	int numControllers = state.controllers.size();
+	static std::string sourceLabel;
+	if (sourceType < 0) sourceLabel = "Select Source";
 	if (ImGui::BeginCombo("Source", sourceLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{
 		bool changed = false;
-		for (int i = 0; i < numControllers; i++)
+		for (int i = 0; i < state.controllers.size(); i++)
 		{
 			std::string label = asprintf_s("Controller %d", i);
-			if (ImGui::Selectable(label.c_str()))
-			{
-				sourceType = 0;
-				sourceIndex = i;
-				sourceLabel = std::move(label);
-				changed = true;
-				state.controllers[sourceIndex]->recordTimeSyncMeasurements = timeType == 0;
-				state.controllers[sourceIndex]->recordLatencyMeasurements = timeType == 1;
-			}
-			else
-			{
-				state.controllers[i]->recordTimeSyncMeasurements = false;
-				state.controllers[i]->recordLatencyMeasurements = false;
-			}
+			if (!ImGui::Selectable(label.c_str(), sourceType == 0 && sourceIndex == i)) continue;
+			changed = true;
+			sourceType = 0;
+			sourceIndex = i;
+			sourceLabel = std::move(label);
+		}
+		for (auto &imu : state.pipeline.record.imus)
+		{
+			if (imu->id.driver == IMU_DRIVER_NONE) continue; // Not an IMUDevice
+			IMUDevice &device = *(IMUDevice*)imu.get();
+			std::string label = asprintf_s("IMU %s (%d) [%d]", device.id.string.c_str(), device.id.driver, device.index);
+			if (!ImGui::Selectable(label.c_str() , sourceType == 1 && sourceIndex == device.index)) continue;
+			changed = true;
+			sourceType = 1;
+			sourceIndex = device.index;
+			sourceLabel = std::move(label);
 		}
 		auto imuProviders = state.imuProviders.contextualRLock();
 		for (int i = 0; i < imuProviders->size(); i++)
 		{ // TODO: Improve labels, at least based on type
+			if (!imuProviders->at(i)) continue;
 			std::string label = asprintf_s("IMU Provider %d", i);
-			if (ImGui::Selectable(label.c_str()))
-			{
-				sourceType = 1;
-				sourceIndex = i;
-				sourceLabel = std::move(label);
-				changed = true;
-				imuProviders->at(sourceIndex)->recordTimeSyncMeasurements = timeType == 0;
-				imuProviders->at(sourceIndex)->recordLatencyMeasurements = timeType == 1;
-			}
-			else
-			{
-				imuProviders->at(i)->recordTimeSyncMeasurements = false;
-				imuProviders->at(i)->recordLatencyMeasurements = false;
-			}
+			if (!ImGui::Selectable(label.c_str() , sourceType == 2 && sourceIndex == i)) continue;
+			changed = true;
+			sourceType = 2;
+			sourceIndex = i;
+			sourceLabel = std::move(label);
 		}
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
 
-	if (timeType == 0)
-		return ShowTimeSyncPanel();
-	else if (timeType == 1)
-		return ShowLatencyPanel();
-	else return false;
+	// Update all available TimingRecord sources and find selected
+	BlockedQueue<TimeSyncMeasurement, 4096>::View<true> timesyncView;
+	BlockedQueue<LatencyMeasurement, 4096>::View<true> latencyView;
+	const std::vector<std::string> *latencyDescriptions = nullptr;
+	bool found = false;
+	auto handleTimingRecord = [&](TimingRecord &record, bool selected)
+	{
+		record.recordTimeSync = selected && timeType == 0;
+		record.recordLatency = selected && timeType == 1;
+		if (!selected || found) return false;
+		if (timeType == 0)
+		{ // Blocks of 4096 measurements each - keep only last 10
+			record.timeSync.delete_culled();
+			record.timeSync.cull_front(-10);
+			timesyncView = record.timeSync.getView();
+		}
+		else if (timeType == 1)
+		{ // Blocks of 4096 measurements each - keep only last 10
+			record.latency.delete_culled();
+			record.latency.cull_front(-10);
+			latencyView = record.latency.getView();
+			latencyDescriptions = &record.latencyDescriptions;
+		}
+		else return false;
+		// NOTE: If timeType is not applicable to this source, might be discarded without rendering
+		// For timeSync, that isn't detected, for latency, that's missing latencyDescriptor
+		found = true;
+		return true;
+	};
+
+	for (int i = 0; i < state.controllers.size(); i++)
+	{
+		if (!handleTimingRecord(state.controllers[i]->timingRecord, sourceType == 0 && sourceIndex == i)) continue;
+		if (state.controllers[i]->comm->commStreaming)
+			ui.RequestUpdates();
+	}
+	for (auto &imu : state.pipeline.record.imus)
+	{
+		if (imu->id.driver == IMU_DRIVER_NONE) continue; // Not an IMUDevice
+		IMUDevice &device = *(IMUDevice*)imu.get();
+		if (!handleTimingRecord(device.timingRecord, sourceType == 1 && sourceIndex == device.index)) continue;
+		ui.RequestUpdates();
+	}
+	auto imuProviders = state.imuProviders.contextualRLock();
+	for (int i = 0; i < imuProviders->size(); i++)
+	{
+		if (!imuProviders->at(i)) continue;
+		if (!handleTimingRecord(imuProviders->at(i)->timingRecord, sourceType == 2 && sourceIndex == i)) continue;
+		ui.RequestUpdates();
+	}
+
+	if (found && timeType == 0)
+		return ShowTimeSyncPanel(timesyncView);
+	else if (found && timeType == 1 && !latencyDescriptions->empty())
+		return ShowLatencyPanel(latencyView, *latencyDescriptions);
+	else return found; // Influences if we get to cleanup after panel gets inactive
 }
 static void CleanTimingPanel()
 {
+	std::unique_lock dev_lock(GetState().deviceAccessMutex);
 	for (auto &controller : GetState().controllers)
+		controller->timingRecord.clear();
+	for (auto &imu : GetState().pipeline.record.imus)
 	{
-		controller->recordTimeSyncMeasurements = false;
-		controller->timeSyncMeasurements.cull_clear();
+		if (imu->id.driver == IMU_DRIVER_NONE) continue; // Not an IMUDevice
+		IMUDevice &device = *(IMUDevice*)imu.get();
+		device.timingRecord.clear();
 	}
-	for (auto &controller : GetState().controllers)
-	{
-		controller->timeSyncMeasurements.delete_culled();
-	}
-
 	auto imuProviders = GetState().imuProviders.contextualRLock();
-	for (auto &provider : *imuProviders)
+	for (int i = 0; i < imuProviders->size(); i++)
 	{
-		provider->recordTimeSyncMeasurements = false;
-		provider->timeSyncMeasurements.delete_culled();
-	}
-	for (auto &provider : *imuProviders)
-	{
-		provider->timeSyncMeasurements.delete_culled();
+		if (!imuProviders->at(i)) continue;
+		imuProviders->at(i)->timingRecord.clear();
 	}
 }

@@ -12,7 +12,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "imu/imu.hpp"
 
-#include "comm/timesync.hpp"
+#include "comm/timingRecord.hpp" // TimingRecord
 
 
 enum IMUDriver : uint32_t
@@ -44,6 +44,8 @@ public:
 	float temperature;
 	float signalStrength;
 
+	TimingRecord timingRecord;
+
 	virtual ~IMUDevice() = default;
 
 protected:
@@ -63,12 +65,7 @@ class IMUDeviceProvider
 public:
 	IMUDriver driver;
 
-	// Can be optionally used to provide debug data about timing
-	bool recordTimeSyncMeasurements = false;
-	BlockedQueue<TimeSyncMeasurement, 4096> timeSyncMeasurements;
-	bool recordLatencyMeasurements = false;
-	LatencyDescriptor latencyDescriptions;
-	BlockedQueue<LatencyMeasurement, 4096> latencyMeasurements;
+	TimingRecord timingRecord;
 
 	virtual ~IMUDeviceProvider() = default;
 

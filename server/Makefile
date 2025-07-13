@@ -14,6 +14,13 @@ endif
 endif
 endif
 
+# Base architecture to target
+# v2 has better compatibility with older processors
+# v3 is much better for linear algebra heavy applications such as ours
+# But it will not run on very old processors or very low end Intel Core processors
+# v4 is even better but too recent so we're compiling sensitive functions for x86-64-v4 with multi-target
+march = -march=x86-64-v3
+
 # Set compiler and options used
 ifeq ($(COMPILER), clang-libc)
 # clang compiler
@@ -60,8 +67,9 @@ else ifeq ($(BUILD_TYPE), release-native)
 # Very fast, but slow to iterate on, only used to check for any modern optimisation we missed to take advantage of
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -march=native -mtune=native
-lmode = $(lto) -march=native -mtune=native
+cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto)
+lmode = $(lto)
+march = -march=native -mtune=native
 mode = release-native
 
 else ifeq ($(BUILD_TYPE), release-verify)
@@ -142,13 +150,13 @@ dep = dependencies/sources
 b = build
 o = $(b)/$(COMPILER)-$(mode)
 cflags = -Idependencies/include -Idependencies/sources \
-	-DGLEW_STATIC $(cmode) -ffunction-sections -fpic -mshstk
+	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk
 cxxflags = $(cstd) $(cflags) -I$(src) -I$(sh) -I$(dep)/imgui -DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion \
 	-D_UNICODE -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
-	-std=c++20 -msse4.2 -mavx2 -mfma -ffp-contract=fast
-lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode)
+	-std=c++20 -ffp-contract=fast
+lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 
 
 # Define all source files to be compiled

@@ -104,8 +104,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
  * Parameters may include camera extrinsics and intrinsics, target structure and motion, etc.
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-template<int Options = 0>
-int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor = 1.0f);
+int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor = 1.0f);
 
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations

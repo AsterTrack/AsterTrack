@@ -84,6 +84,7 @@ static std::pair<int,double> calculateFundamentalMatrix(const Eigen::Ref<const E
 /**
  * Attempts to reconstruct the geometry (points, cameras calibration) of the scene given the observed points
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params)
 {
 	ScopedLogCategory scopedLogCategory(LPointReconstruction);

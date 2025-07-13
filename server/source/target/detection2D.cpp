@@ -46,6 +46,7 @@ static std::vector<std::array<int,3>> generateTriplets(int n);
 
 static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &reprojected2D, float maxError);
 
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -314,6 +315,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 	return poseCandidates;
 }
 
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,

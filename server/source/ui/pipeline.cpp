@@ -348,7 +348,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					LOGCL("Optimising camera position:");
 					OptimisationOptions options(false, true, false, false, false);
-					optimiseData<OptSparse>(options, data, calibs, itUpdate, 1);
+					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
 					{ // Update calibration
 						std::unique_lock pipeline_lock(pipeline.pipelineLock);
@@ -383,7 +383,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 					LOGCL("Optimising target markers:");
 					OptimisationOptions options(true, false, false, false, false);
-					optimiseData<OptSparse>(options, data, calibs, itUpdate, 1);
+					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
 					LOGCL("Done optimising! Applying to targets!");
 

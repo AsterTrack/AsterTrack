@@ -55,6 +55,7 @@ struct SolutionCandidate
 /**
  * Attempts to reconstruct the motion and structure of a single rigid target given its observations
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &target,
 	int pMaxIteration, int pMinAbortIteration, int pCorrectIteration, int pDropIteration,
 	ObsTarget *targetGT, std::vector<float> *frameChanges, std::vector<float> *frameErrors, std::vector<float> *frameGTDiff)

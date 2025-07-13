@@ -737,6 +737,7 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * Redetect the target in the observed 2D points using a predicted pose
  * Iteratively matches fast, then slow if needed, optimises, matches more, and optimises
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,

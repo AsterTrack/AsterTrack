@@ -399,8 +399,6 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 	return status;
 }
 
-template int optimiseData<OptSparse>(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor);
-
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations
  * Parameters may include camera extrinsics and intrinsics, target structure and motion, etc.
@@ -594,22 +592,30 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 	return status1;
 }
 
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
+int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+{
+	return optimiseData<OptSparse>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, toleranceFactor);
+}
+
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations
  * Parameters may include camera extrinsics and intrinsics, but NOT target parameters, as they would need to be written back to data
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration)
 {
 	assert(data.targets.empty() || (!options.motion && !options.structure));
 	// Does not make sense to use OptSparse only for points, generally over 10x slower - only benefit is for targets
-	return optimiseData<OptParallel>(options, const_cast<ObsData&>(data), cameraCalibs, iteration);
+	return optimiseData<OptParallel>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, 1.0f);
 }
 
 /**
  * Optimises target structure and motion to conform to the dataset of observations
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
 {
 	assert(data.points.points.empty());
@@ -623,6 +629,7 @@ int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraC
  * Optimises target structure and motion to conform to the dataset of observations
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
+[[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
 int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
 {
 	assert(data.points.points.empty());

@@ -280,7 +280,8 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 				if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->id == tracker.imuIdent))
 				{
 					changed = tracker.imuIdent != imu->id;
-					SignalIMUCalibUpdate(tracker.id, imu->id, {});
+					if (changed)
+						SignalIMUCalibUpdate(tracker.id, imu->id, {});
 				}
 				ImGui::PopID();
 			}
@@ -289,6 +290,31 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 				ImGui::MarkItemEdited(ImGui::GetItemID());
 		}
 		ImGui::EndGroup();
+
+		if (tracker.imuIdent)
+		{
+			if (tracker.imuCalib.orientation.coeffs().hasNaN())
+			{
+				ImGui::TextUnformatted("IMU not calibrated!");
+				ImGui::SetItemTooltip("IMU orientation and offset to optical tracker have to be calibrated.\n"
+					"Use the tracker (and/or place it in various static positions) to calibrate.");
+			}
+			else if (tracker.imuCalib.offset.isZero())
+			{
+				ImGui::TextUnformatted("IMU partially calibrated!");
+				ImGui::SetItemTooltip("IMU orientation to optical tracker is calibrated, but offset is not yet.\n"
+					"Keep using the tracker to continue calibration.");
+			}
+			else
+			{
+				ImGui::TextUnformatted("IMU fully calibrated!");
+				ImGui::SetItemTooltip("IMU orientation and offset to optical tracker have been fully calibrated.");
+			}
+			int noOffset = 0;
+
+			bool changed = ScalarProperty<int>("Timestamp Offset", "us", &tracker.imuCalib.timestampOffsetUS, &noOffset, -10000, +10000);
+			if (changed) SignalIMUCalibUpdate(tracker.id, tracker.imuIdent, tracker.imuCalib);
+		}
 
 		EndSection();
 	}

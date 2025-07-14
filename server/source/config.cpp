@@ -434,6 +434,10 @@ static IMUCalib readIMUCalib(json &jsIMU)
 		for (auto &val : jsIMU["offset"])
 			arr(i++) = val.is_number_float()? val.get<float>() : NAN;
 	}
+	if (jsIMU.contains("timestampOffsetUS") && jsIMU["timestampOffsetUS"].is_number_integer())
+	{
+		calib.timestampOffsetUS = jsIMU["timestampOffsetUS"].get<int>();
+	}
 	return calib;
 }
 
@@ -455,6 +459,10 @@ static void writeIMUCalib(const IMUCalib &calib, json &jsIMU)
 		auto arr = calib.offset.array();
 		for (int i = 0; i < arr.size(); i++)
 			jsIMU["offset"].push_back(arr(i));
+	}
+	if (calib.timestampOffsetUS != 0)
+	{
+		jsIMU["timestampOffsetUS"] = calib.timestampOffsetUS;
 	}
 }
 

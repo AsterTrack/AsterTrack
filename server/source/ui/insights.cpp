@@ -526,6 +526,7 @@ static bool ShowTrackingPanel()
 		[&](auto &t){ return t.id == curTrackerID; });
 	if (trackerIt == state.trackerConfigs.end()) return false;
 	if (trackerIt->type != TrackerConfig::TRACKER_TARGET) return false;
+	bool hasIMU = trackerIt->imu != nullptr;
 	// TODO: Support marker trackers
 
 	static bool followFrame = true, showCur = true, showRec = true;
@@ -560,9 +561,11 @@ static bool ShowTrackingPanel()
 			tracking.clear();
 			sampleCount.resize(size, 0);
 			errors2D.resize(size, NAN);
-			tracking.resize(size, NAN); // ImPlot needs one last entry to render the most recent state
+			tracking.resize(size, NAN);
 		}
 	} tracking, recording;
+	static std::vector<float> imuSampleTime;
+	static std::vector<float> imuSampleRate;
 
 	auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
 	{
@@ -609,6 +612,11 @@ static bool ShowTrackingPanel()
 	ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50);
 	ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
 	ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
+	//if (hasIMU)
+	{
+		ImPlot::SetupAxis(ImAxis_Y3, "IMU /Hz", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y3, 0, 1020);
+	}
 	ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
 
 	// Update frameRange from inputs
@@ -619,10 +627,11 @@ static bool ShowTrackingPanel()
 	double frameShift = 0.0f, frameShiftRec = 0.0f;
 	bool drawCur = false, drawRec = false;
 
+	long long min = 1, max = 0;
 	if (showCur && !framesRecord.empty())
 	{ // Gather stats for realtime tracking data
-		long long min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
-		long long max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
+		min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
+		max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
 		if (max >= min)
 		{
 			std::size_t frameCnt = max-min+1;
@@ -639,10 +648,42 @@ static bool ShowTrackingPanel()
 		GetUI().RequestUpdates();
 	}
 
+	if (hasIMU)
+	{ // Show individual IMU samples at their timestamp, with Y showing deltaT to last sample (hopefully building a smooth line)
+		imuSampleTime.clear();
+		imuSampleRate.clear();
+		auto getIMUSamples = [&](auto samples)
+		{
+			if (max <= min) return; // Need at least two frames to serve as an anchor
+			float frameRate = (max-min)/dtS(framesRecord[min]->time, framesRecord[max]->time);
+			long long anchorFrame = min;
+			TimePoint_t anchorTime = framesRecord[min]->time -  std::chrono::microseconds(trackerIt->imuCalib.timestampOffsetUS);
+			TimePoint_t minTime = anchorTime + std::chrono::microseconds((long long)((frameRange.Min - anchorFrame)/frameRate*1000000));
+			TimePoint_t maxTime = anchorTime + std::chrono::microseconds((long long)((frameRange.Max - anchorFrame)/frameRate*1000000));
+			auto itBegin = std::lower_bound(samples.begin(), samples.end(), minTime);
+			auto itEnd = std::upper_bound(samples.begin(), samples.end(), maxTime);
+			if (itBegin == itEnd) return;
+			imuSampleTime.reserve(itEnd.index()-itBegin.index());
+			imuSampleRate.reserve(itEnd.index()-itBegin.index());
+			TimePoint_t last = itBegin->timestamp;
+			for (auto it = itBegin; it != itEnd; it++)
+			{
+				imuSampleTime.push_back(anchorFrame + dtS(anchorTime, it->timestamp)*frameRate);
+				imuSampleRate.push_back(1/dtS(last, it->timestamp));
+				last = it->timestamp;
+			}
+		};
+		auto &imu = *trackerIt->imu;
+		if (imu.isFused)
+			getIMUSamples(imu.samplesFused.getView<true>());
+		else
+			getIMUSamples(imu.samplesRaw.getView<true>());
+	}
+
 	if (showRec && state.mode == MODE_Replay && !framesStored.empty())
 	{ // Gather stats for recorded tracking data
-		long long min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
-		long long max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
+		min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
+		max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
 		if (max >= min)
 		{
 			std::size_t frameCnt = max-min+1;
@@ -672,7 +713,7 @@ static bool ShowTrackingPanel()
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
 		ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
-		ImPlot::PlotBars("Samples Recorded", recording.sampleCount.data(), recording.sampleCount.size(), 0.67f, frameShiftRec);
+		ImPlot::PlotBars("Samples", recording.sampleCount.data(), recording.sampleCount.size(), 0.67f, frameShiftRec);
 	}
 
 	// Error line
@@ -680,12 +721,20 @@ static bool ShowTrackingPanel()
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
-		ImPlot::PlotLine("Errors Recorded", recording.errors2D.data(), recording.errors2D.size(), 1, frameShiftRec);
+		ImPlot::PlotLine("Errors", recording.errors2D.data(), recording.errors2D.size(), 1, frameShiftRec);
 	}
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
 		ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
+	}
+
+	// IMU Update Rate line
+	if (hasIMU)
+	{ // Draw recorded
+		ImPlot::SetAxis(ImAxis_Y3);
+		ImPlot::SetNextMarkerStyle(ImPlotMarker_Diamond, 2, ImVec4(0.87, 0.82, 0.22, 1.0), 0);
+		ImPlot::PlotScatter("IMU", imuSampleTime.data(), imuSampleRate.data(), imuSampleTime.size());
 	}
 
 	// Tracking state

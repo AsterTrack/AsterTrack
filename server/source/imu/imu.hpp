@@ -64,12 +64,13 @@ struct IMUCalib
 {
 	// Conversion of coordinate axes from source to ours (e.g. to change handedness)
 	Eigen::Matrix<int8_t,3,3> conversion;
+	int timestampOffsetUS;
 
 	// Calibrated offset from IMU to tracker
 	Eigen::Quaternionf orientation;
 	Eigen::Vector3f offset;
 
-	IMUCalib() { conversion.setIdentity(); orientation.coeffs().setConstant(NAN); offset.setConstant(NAN); }
+	IMUCalib() : timestampOffsetUS(0) { conversion.setIdentity(); orientation.coeffs().setConstant(NAN); offset.setConstant(NAN); }
 };
 
 /**

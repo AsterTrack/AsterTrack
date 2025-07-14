@@ -418,35 +418,41 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	{ // Use last IMU sample as reference
 		lastSample = *std::prev(itBegin);
 	}
+	lastSample.timestamp += std::chrono::microseconds(inertial.calib.timestampOffsetUS);
 
 	// Find last IMU sample before specified maximum time (e.g. current frame)
 	auto itEnd = itBegin;
 	while (itEnd != samples.end() && itEnd->timestamp < time) itEnd++;
 
 	// Integrate range of IMU samples
-	for (auto sample = itBegin; sample < itEnd; sample++)
+	for (auto it = itBegin; it < itEnd; it++)
 	{
+		IMUSample sample = *it;
+		sample.timestamp += std::chrono::microseconds(inertial.calib.timestampOffsetUS);
 		LOG(LTrackingFilter, LTrace, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion%s",
-			dtMS(lastSample.timestamp, sample->timestamp), dtMS(filterTime, sample->timestamp), dtMS(inertial.fusion.time, sample->timestamp),
-			state.lastObsFrame == 0? "!" : asprintf_s(", %fms ahead of last observation!", dtMS(state.lastObservation, sample->timestamp)).c_str());
+			dtMS(lastSample.timestamp, sample.timestamp), dtMS(filterTime, sample.timestamp), dtMS(inertial.fusion.time, sample.timestamp),
+			state.lastObsFrame == 0? "!" : asprintf_s(", %fms ahead of last observation!", dtMS(state.lastObservation, sample.timestamp)).c_str());
 
 		// Predict up until new IMU filter time
-		flexkalman::predict(filterState, model, dtS(filterTime, sample->timestamp));
-		filterTime = sample->timestamp;
+		flexkalman::predict(filterState, model, dtS(filterTime, sample.timestamp));
+		filterTime = sample.timestamp;
 
 		// Integrate on current IMU filter state
-		integrateIMUSample(inertial, *sample, lastSample, params, filterState, updateFilter, state.lastObsFrame >= 0, false);
-		lastSample = *sample;
-		state.lastIMUSample = sample.index();
-		state.lastIMUTime = sample->timestamp;
+		integrateIMUSample(inertial, sample, lastSample, params, filterState, updateFilter, state.lastObsFrame >= 0, false);
+		lastSample = sample;
+		state.lastIMUSample = it.index();
+		state.lastIMUTime = sample.timestamp;
 
 		// Keep stats of IMU samples
-		float dtSample = dtS(inertial.fusion.lastIntegration, sample->timestamp);
-		if (dtSample > 0.1f)
+		float dtSample = dtS(inertial.fusion.lastIntegration, sample.timestamp);
+		if (dtSample > 0.1f || dtSample < 0.0f)
+		{
+			LOG(LTrackingIMU, LInfo, "Resetting IMU rate stat due to diff of %fs", dtSample);
 			inertial.fusion.sampleInterval.reset();
+		}
 		else
 			inertial.fusion.sampleInterval.update(dtSample);
-		inertial.fusion.lastIntegration = sample->timestamp;
+		inertial.fusion.lastIntegration = sample.timestamp;
 	}
 
 	// Predict new state
@@ -455,7 +461,11 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 
 	// Get best estimate for sample at current time (extrapolated if need be) for prediction
 	if (itEnd != samples.end())
-		*interpolatedSample = interpolateIMUSample(lastSample, *itEnd, time);
+	{ // Interpolate between last before current time and next after current time
+		IMUSample futureSample = *itEnd;
+		futureSample.timestamp += std::chrono::microseconds(inertial.calib.timestampOffsetUS);
+		*interpolatedSample = interpolateIMUSample(lastSample, futureSample, time);
+	}
 	else
 	{ // Extrapolate if no more recent sample exists
 		*interpolatedSample = lastSample;

@@ -44,8 +44,11 @@ BUILD_DIR = build
 C_SOURCES_ARM_LL = \
 source/main.c \
 source/uartd.c \
+source/rgbled.c \
+source/rgbled_anims.c \
 targets/ARM/source/config_arm_ll.c \
-targets/ARM/source/uart_arm_ll.c
+targets/ARM/source/uart_arm_ll.c \
+targets/ARM/source/rgbled_arm_ll.c
 
 C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL)
 
@@ -76,7 +79,6 @@ C_DEFS_STM32G030 = \
 -DARM_LL \
 -DSTM32G0 \
 -DSTM32G030xx \
--DBOARD_OLD \
 -DUSE_UART
 
 #-DUSE_SYNC

@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util.h"
 #include "uartd.h"
+#include "rgbled.h"
 
 #include "compat.h"
 #include "config_impl.h"
@@ -84,6 +85,7 @@ static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 
 // camera_mcu state
+volatile TimePoint lastFilterSwitch;
 volatile TimePoint lastUARTActivity = 0;
 volatile TimePoint lastMarker = 0;
 volatile bool piIsBooted;
@@ -103,7 +105,7 @@ static void uart_set_identification()
 	storeIdentPacket(ownIdent, ownIdentPacket+(1+PACKET_HEADER_SIZE));
 }
 
-static void UpdateFilterSwitcher(enum FilterSwitchCommand state);
+static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
 
 static void SetupUARTEXTI();
 
@@ -120,6 +122,10 @@ int main(void)
 	piHasUARTControl = true;
 	lastUARTActivity = GetTimePoint();
 	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to Pi
+
+	// Init LEDs to default state
+	rgbled_init();
+	rgbled_transition(LED_STANDBY, 0);
 
 	DEBUG_STR("/START");
 
@@ -174,41 +180,52 @@ int main(void)
 		UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 		delayUS(10000000); */
 
-		// Allow toggling of filter switcher via buttons
-		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
-			UpdateFilterSwitcher(FILTER_SWITCH_VISIBLE);
-		else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
-			UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
-		else
-			UpdateFilterSwitcher(FILTER_KEEP);
+		{
+			// Allow switching of filter via buttons
+			enum FilterSwitchCommand target = FILTER_KEEP;
+			if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+				target = FILTER_SWITCH_INFRARED;
+			else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+				target = FILTER_SWITCH_VISIBLE;
 
-		/* Flash respective LED if button has been pressed (visual only) */
-		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
-		{
-			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-			GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			delayUS(50000);
-			GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			delayUS(50000);
-			GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			delayUS(50000);
-			GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
+			// Update status of filter and LEDs showing status
+			static enum FilterSwitchCommand showingFSStatus = FILTER_KEEP;
+			static TimePoint lastFSStatus;
+			if (target != FILTER_KEEP)
+			{ // Wish to switch filter
+				UpdateFilterSwitcher(target);
+				if (showingFSStatus != target)
+					rgbled_transition(target == FILTER_SWITCH_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
+				showingFSStatus = target;
+				lastFSStatus = GetTimePoint();
+			}
+			else
+			{ // No change to filter desired
+				UpdateFilterSwitcher(FILTER_KEEP);
+				if (showingFSStatus != FILTER_KEEP &&
+					GetTimeSinceMS(lastFSStatus) > 500 &&
+					GetTimeSinceMS(lastFilterSwitch) > 1000)
+				{
+					rgbled_transition(LED_STANDBY, 500);
+					showingFSStatus = FILTER_KEEP;
+				}
+			}
 		}
-		else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+
+		/* if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && brightness > 0.01f)
 		{
-			GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-			delayUS(50000);
-			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-			delayUS(50000);
-			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-			delayUS(50000);
-			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+			brightness = brightness * 0.8;
+			rgbled_transition_to(RGB_DEFAULT_ON, 0);
 		}
+		else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && brightness < 0.8)
+		{
+			brightness = brightness * 1.25f;
+			rgbled_transition_to(RGB_DEFAULT_ON, 0);
+		} */
 
 		now = GetTimePoint();
 
-		/* Indicate UART activity on green LED */
+		/* Indicate UART activity on orange LED */
 		if (GetTimeSpanMS(lastMarker, now) < 20)
 			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		else
@@ -454,21 +471,21 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 	}
 }
 
-static void UpdateFilterSwitcher(enum FilterSwitchCommand state)
+static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 {
-	static TimePoint lastSwitch;
-	if (state != FILTER_KEEP && filterSwitcherState != state)
+	bool switched = state != FILTER_KEEP && filterSwitcherState != state;
+	if (switched)
 	{ // Need to actuate the motor to switch
 		filterSwitcherState = state;
-		lastSwitch = GetTimePoint();
+		lastFilterSwitch = GetTimePoint();
 	}
-	int timeSince = GetTimeSinceMS(lastSwitch);
+	int timeSince = GetTimeSinceMS(lastFilterSwitch);
 	bool actuateMotor = timeSince < FILTER_SWITCHER_COIL_PULSE_MS; // Need 10-50ms to switch
 	/* if (timeSince > 10000)
 	{ // Actuate motor regularly just in case a vibration knocked it out of place
 	 	// Sadly it's kind of audible so don't do for now
 		actuateMotor = true;
-		lastSwitch = GetTimePoint();
+		lastFilterSwitch = GetTimePoint();
 	} */
 	if (actuateMotor)
 	{
@@ -491,17 +508,7 @@ static void UpdateFilterSwitcher(enum FilterSwitchCommand state)
 		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
 		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
 	}
-	// May assume control over LEDs, too
-	/* if (filterSwitcherState == FILTER_SWITCH_VISIBLE)
-	{
-		GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-		GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-	}
-	else
-	{
-		GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-		GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-	} */
+	return switched;
 }
 
 void SetupUARTEXTI()

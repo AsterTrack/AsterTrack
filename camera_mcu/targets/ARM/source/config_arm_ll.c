@@ -113,34 +113,6 @@ void Setup_Peripherals()
 		// Additionally, number of us within that 1ms frame can be read from TIM1->CNT
 	}
 
-	// -- PWM TIMER --
-
-	/* { // TODO: TIM16 is used to generate PWM via DMA to control a WS2812 LED
-		// Set TIM16 interrupts
-		NVIC_SetPriority(TIM16_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
-		NVIC_EnableIRQ(TIM16_IRQn);
-
-		// Initialise TIM16
-		TIM16->CR1 &= ~TIM_CR1_CEN; // Disable Counter
-		RCC->APB1RSTR |= RCC_APB1RSTR_TIM16RST; // Reset TIM16
-		RCC->APB1RSTR &= ~RCC_APB1RSTR_TIM16RST;
-		RCC->APB1ENR |= RCC_APB1ENR_TIM16EN; // Enable internal clock for TIM16
-
-		// Setup TIM16 for 1us counter
-		TIM16->PSC = SYSCLKFRQ-1; // Set Prescaler to get a 1MHz timer (1us interval)
-		TIM16->ARR = 10000-1; // Set Auto-Reload to count up to a default of 10ms
-		TIM16->CR1 = TIM_CR1_ARPE | TIM_CR1_URS; // Enable Auto-Reload Preload, and only generate update on overflow
-
-		TIM16->SR = 0;
-
-		// Setup and start streaming:
-		// TIM16->ARR = 10000-1; // Set Auto-Reload to count up to a default of 10ms
-		// TIM16->EGR |= TIM_EGR_UG; // Trigger update event to load values
-		// TIM16->CR1 |= TIM_CR1_CEN; // Enable Counter
-		//TIM16->DIER = TIM_DIER_UIE; // Enable update interrupt
-		// Then TIM16_IRQHandler is called every frameInterval us, whenever a camera sync needs to be generated
-	} */
-
 	// -- GPIO --
 
 	// Peripheral clock enable
@@ -156,11 +128,6 @@ void Setup_Peripherals()
 	LL_GPIO_SetPinMode(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_MODE_OUTPUT);
 	LL_GPIO_SetPinOutputType(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_OUTPUT_PUSHPULL);
 	LL_GPIO_SetPinSpeed(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_SPEED_FREQ_LOW);
-
-	// WS2812 Output
-	LL_GPIO_SetPinMode(WS2812_GPIO_X, WS2812_PIN, LL_GPIO_MODE_OUTPUT);
-	LL_GPIO_SetPinOutputType(WS2812_GPIO_X, WS2812_PIN, LL_GPIO_OUTPUT_PUSHPULL);
-	LL_GPIO_SetPinSpeed(WS2812_GPIO_X, WS2812_PIN, LL_GPIO_SPEED_FREQ_HIGH);
 
 	// UART Select Output
 	LL_GPIO_SetPinMode(UARTSEL_GPIO_X, UARTSEL_PIN, LL_GPIO_MODE_OUTPUT);

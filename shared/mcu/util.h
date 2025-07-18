@@ -487,6 +487,11 @@ static inline __attribute__((always_inline)) void delayUS(uint32_t us)
 	while (GetTimePoint() < tgt);
 }
 
+static inline __attribute__((always_inline)) void delayMS(uint16_t ms)
+{ // General, works on all processors
+	delayUS(ms*1000);
+}
+
 
 #define EVENTLOG defined(ENABLE_EVENTS)
 #if EVENTLOG

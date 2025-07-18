@@ -24,7 +24,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //#include "stm32g0xx_ll_wwdg.h"
 #endif
 
-#include "main.h"
 #include "util.h"
 #include "uartd.h"
 
@@ -113,15 +112,19 @@ int main(void)
 	// Base setup
 	Setup_Peripherals();
 
-#if !defined(USE_UART)
-	SetupUARTEXTI();
-#endif
-
 	// Initialise
+	startup = GetTimePoint();
 	GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+	piHasUARTControl = true;
 	lastUARTActivity = GetTimePoint();
+	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to Pi
+
+	DEBUG_STR("/START");
+
+	// Initialise version
+	version = GetVersion(0, 0, 0);
 
 #if !defined(BOARD_OLD)/*  && defined(USE_UART)
 	// Route UART to this STM32
@@ -135,19 +138,13 @@ int main(void)
 	piHasUARTControl = true;
 #endif
 
-	DEBUG_STR("/START");
-
-	// Startup sequence
-	startup = GetTimePoint();
-
-	// Initialise version
-	version = GetVersion(0, 0, 0);
-
 #if defined(USE_UART)
 	// Init UART device
 	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
 	// Prepare identification to be sent out over UART
 	uart_set_identification();
+#else
+	SetupUARTEXTI();
 #endif
 
 	// Bring filter switcher into default position

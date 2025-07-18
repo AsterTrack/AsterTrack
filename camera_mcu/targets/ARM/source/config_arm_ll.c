@@ -35,6 +35,8 @@ volatile uint64_t usCounter;
 
 #define TIM1_ARR 65000
 
+void SystemInit(void) {}
+
 void Setup_Peripherals()
 {
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
@@ -79,7 +81,6 @@ void Setup_Peripherals()
 	LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_PLL); // SYSCLK 64MHz
 	while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL);
 
-	SystemCoreClock = SYSCLKFRQ * 1000000;
 	//assert(SYSCLKFRQ == 64);
 #endif
 
@@ -223,16 +224,17 @@ void Setup_Peripherals()
 #endif
 }
 
+
+/**
+ * General IRQ Handlers
+ */
+
 void TIM1_BRK_UP_TRG_COM_IRQHandler(void) __IRQ;
 void TIM1_BRK_UP_TRG_COM_IRQHandler()
 {
 	usCounter += TIM1_ARR;
 	TIM1->SR = 0;
 }
-
-/**
- * General IRQ Handlers
- */
 
 /* void WWDG_IRQHandler(void)
 {

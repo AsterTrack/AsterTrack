@@ -24,6 +24,9 @@ extern "C"
 {
 #endif
 
+#if defined(STM32G0)
+#include "stm32g0xx_ll_gpio.h"
+#endif
 #include "compat.h"
 
 

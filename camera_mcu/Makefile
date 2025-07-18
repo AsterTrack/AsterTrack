@@ -47,8 +47,7 @@ source/uartd.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c
 
-C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL) \
-targets/ARM/source/system_stm32g0xx.c
+C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL)
 
 C_SOURCES = $(C_SOURCES_$(DEVICE))
 

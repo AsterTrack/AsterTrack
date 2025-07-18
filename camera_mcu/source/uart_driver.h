@@ -28,7 +28,6 @@ extern "C"
 #include <stdbool.h>
 
 #include "uartd_conf.h"
-#include "compat.h"
 
 
 /* Structures */

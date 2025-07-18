@@ -68,9 +68,9 @@ int numCPUCores = 0;
 const int emulBufCnt = 4;
 
 // Terminal Output and Input
+bool isConsole;
 struct termios terminalSettings;
 static void setConsoleRawMode();
-//static char checkInput();
 
 
 // Static initialised members (for atexit)
@@ -264,7 +264,8 @@ int main(int argc, char **argv)
 	atexit(vcsm_exit);
 
 	// Modify tty to allow for non-blocking input (for console & ssh, but not background execution)
-	if (isatty(STDIN_FILENO))
+	isConsole = isatty(STDIN_FILENO);
+	if (isConsole)
 		setConsoleRawMode();
 
 	// Init visualisation resources
@@ -428,11 +429,16 @@ int main(int argc, char **argv)
 		while ((state.server.enabled || state.uart.enabled) && !state.curMode.streaming)
 		{ // Wait for a connected communications channel to instruct a stream start
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
-			char cin;
-			if (isatty(STDIN_FILENO) && read(STDIN_FILENO, &cin, 1) == 1 && cin == 'q')
-			//if ((cin = checkInput()) && cin == 'q')
-			{ // Complete stop of program requested
-				return EXIT_SUCCESS;
+			if (isConsole)
+			{ // Check input
+				char cin;
+				if (read(STDIN_FILENO, &cin, 1) == 1)
+				{
+					if (cin == 'q')
+					{ // Complete stop of program requested
+						return EXIT_SUCCESS;
+					}
+				}
 			}
 
 			if (state.updateSetupCPU.exchange(false))
@@ -1229,17 +1235,16 @@ int main(int argc, char **argv)
 				break;
 			}
 
-			if (isatty(STDIN_FILENO) && numFrames % 10 == 0)
+			if (isConsole && numFrames % 10 == 0)
 			{ // Check input
 				char cin;
-				if (isatty(STDIN_FILENO) && read(STDIN_FILENO, &cin, 1) == 1)
-				//if ((cin = checkInput()))
+				if (read(STDIN_FILENO, &cin, 1) == 1)
 				{
 					if (cin == 'q')
 					{ // Complete stop of program requested
 						running = false;
 						break;
-					}	
+					}
 					else if (cin == 'r')
 					{ // Reset/Restart, stop current blob detection and start again
 						break;
@@ -2089,21 +2094,3 @@ static void setConsoleRawMode()
 	termSet.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSANOW, &termSet);
 }
-
-/*static char checkInput()
-{
-	if (!isatty(STDIN_FILENO))
-		return 0;
-	fd_set set;
-	FD_ZERO(&set);
-	FD_SET(STDIN_FILENO, &set);
-	static struct timeval tv = {0, 0};
-
-	if (select(STDIN_FILENO+1, &set, NULL, NULL, &tv) > 0)
-	{
-		char c;
-		read(STDIN_FILENO, &c, 1);
-		return c;
-	}
-	return 0;
-}*/

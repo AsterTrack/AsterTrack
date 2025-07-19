@@ -191,6 +191,105 @@ void Setup_Peripherals()
 #endif
 }
 
+enum CameraMCUFlashConfig ReadFlashConfiguration()
+{
+	uint32_t optReg = FLASH->OPTR;
+	if (FLASH->SR & FLASH_SR_OPTVERR)
+		return MCU_FLASH_ERROR;
+	else if ((optReg & FLASH_OPTR_nBOOT1) && !(optReg & FLASH_OPTR_nBOOT_SEL))
+		return MCU_FLASH_BOOT0_PI;
+	else if ((optReg & FLASH_OPTR_nBOOT1) && (optReg & FLASH_OPTR_nBOOT_SEL))
+		return MCU_FLASH_DEBUG_SWD;
+	else
+		return MCU_FLASH_UNKNOWN;
+}
+
+void SetFlashConfiguration(enum CameraMCUFlashConfig config)
+{
+	enum CameraMCUFlashConfig currentConfig = ReadFlashConfiguration();
+	if (currentConfig == MCU_FLASH_UNKNOWN)
+	{
+		if (config == MCU_FLASH_KEEP)
+		{ // Flash warning code, override with known configuration
+			for (int i = 0; i < 10; i++)
+			{
+				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
+				GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+				delayUS(100000);
+				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
+				GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+				delayUS(100000);
+			}
+			config = MCU_FLASH_DEBUG_SWD;
+		}
+	}
+
+	if (config == MCU_FLASH_KEEP || currentConfig == config)
+	{ // No need to configure
+
+		// Lock FLASH->CR for this boot
+		FLASH->KEYR = 0x11111111;
+		FLASH->KEYR = 0x11111111;
+
+		// Lock Options for this boot
+		FLASH->OPTKEYR = 0x11111111;
+		FLASH->OPTKEYR = 0x11111111;
+
+		return;
+	}
+
+	// Update configuration
+
+	// Unlock FLASH->CR
+	FLASH->KEYR = 0x45670123;
+	FLASH->KEYR = 0xCDEF89AB;
+
+	// Unlock Options
+	FLASH->OPTKEYR = 0x08192A3B;
+	FLASH->OPTKEYR = 0x4C5D6E7F;
+
+	// Default OPTR: 0xDFFFE1AA 
+	if (config == MCU_FLASH_DEBUG_SWD)
+	{
+		// Set Default:
+		// - nBOOT1 = 1		(DC, we don't use bootloader)
+		// - nBOOT_SEL = 1	(use nBOOT0 bit instead of BOOT0 pin)
+		// - nBOOT0 = 1		(boot into main flash)
+		// Always boot into Main Flash, BOOT0 pin is not used - so SWD works and can flash (BOOT0 and SWCLK share pin PA14)
+		FLASH->OPTR =  0xDFFFE1AA;
+	}
+	else if (config == MCU_FLASH_BOOT0_PI)
+	{
+		// Modify:
+		// - nBOOT1 = 1		(use system memory as bootloader IF BOOT0 is high)
+		// - nBOOT_SEL = 0	(use BOOT0 pin instead of nBOOT0 bit)
+		// - nBOOT0 = 1		(DC, disabled)
+		// BOOT0 pin determines whether to enter bootloader - so Pi can flash, but SWD doesn't (BOOT0 and SWCLK share pin PA14)
+		FLASH->OPTR = 0xDEFFE1AA;
+	}
+
+	// Wait for any flash operation to finish
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Write option byte to flash
+	FLASH->CR |= FLASH_CR_OPTSTRT;
+
+	// Wait for write to finish
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Could load option bytes from flash back to register to check
+	FLASH->CR = 0xC0000000 | FLASH_CR_OBL_LAUNCH;
+	while (FLASH->CR & FLASH_CR_OBL_LAUNCH);
+	// TODO: Assert
+
+	// Lock Options and FLASH->CR again
+	FLASH->CR = 0xC0000000 | FLASH_CR_LOCK | FLASH_CR_OPTLOCK;
+
+	// Restart MCU
+	SCB->AIRCR = (0x05FA << SCB_AIRCR_VECTKEY_Pos) | (1 << SCB_AIRCR_SYSRESETREQ_Pos);
+	while(1) {}
+}
+
 
 /**
  * General IRQ Handlers

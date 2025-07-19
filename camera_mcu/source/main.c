@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #if defined(STM32G0)
+#include "stm32g030xx.h"
 #include "stm32g0xx_ll_gpio.h"
 #include "stm32g0xx_ll_exti.h"
 #include "stm32g0xx_ll_rcc.h"
@@ -92,6 +93,7 @@ volatile bool piIsBooted;
 volatile bool piHasUARTControl;
 volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
+volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 
 
 /* Functions */
@@ -106,6 +108,8 @@ static void uart_set_identification()
 }
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
+
+static enum CameraMCUFlashConfig InterpretUserFlashConfiguration();
 
 static void SetupUARTEXTI();
 
@@ -125,7 +129,63 @@ int main(void)
 
 	// Init LEDs to default state
 	rgbled_init();
-	rgbled_transition(LED_STANDBY, 0);
+	rgbled_transition(LED_ALL_OFF, 0);
+
+	// Enable configuration of boot/flashing configuration
+	mcuFlashConfig = ReadFlashConfiguration();
+	if (mcuFlashConfig == MCU_FLASH_UNKNOWN || mcuFlashConfig == MCU_FLASH_ERROR)
+	{ // Invalid state, signal error state, and allow user to select a state to enter
+		bool waitClearButtons = false;
+		while (true)
+		{ // Give user the option to pick boot/flashing configuration
+			if (GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+				waitClearButtons = false;
+			if (!waitClearButtons)
+			{
+				enum CameraMCUFlashConfig config = InterpretUserFlashConfiguration();
+				if (config == MCU_FLASH_USER_ABORTED)
+					waitClearButtons = true;
+				else if (config != MCU_FLASH_KEEP)
+				{
+					SetFlashConfiguration(config);
+					mcuFlashConfig = config;
+					delayMS(1000);
+					break;
+				}
+			}
+
+			if (!rgbled_animating(&LED_ANIM_FLASH_BAD))
+				rgbled_animation(&LED_ANIM_FLASH_BAD);
+
+			delayMS(1);
+		}
+	}
+	else
+	{
+		// Read buttons on boot to give user options to enable/disable SWD for debug
+		enum CameraMCUFlashConfig config = InterpretUserFlashConfiguration();
+		if (config == MCU_FLASH_USER_ABORTED)
+		{ // Flash animation if button is kept held from boot, but don't give another chance to change config this boot
+			rgbled_animation(&LED_ANIM_FLASH_BAD);
+			while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN));
+		}
+		else if (config != MCU_FLASH_KEEP)
+		{
+			SetFlashConfiguration(config);
+			mcuFlashConfig = config;
+			delayMS(1000);
+		}
+
+	}
+	if (true)
+	{ // Flash current flash config
+		if (mcuFlashConfig == MCU_FLASH_DEBUG_SWD)
+			rgbled_transition(LED_FLASH_DEBUG_SWD, 10);
+		else if (mcuFlashConfig == MCU_FLASH_BOOT0_PI)
+			rgbled_transition(LED_FLASH_BOOT0_PI, 10);
+		delayMS(100);
+	}
+	rgbled_transition(LED_STANDBY, 10);
 
 	DEBUG_STR("/START");
 
@@ -509,6 +569,34 @@ static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 		GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
 	}
 	return switched;
+}
+
+static enum CameraMCUFlashConfig InterpretUserFlashConfiguration()
+{
+	TimePoint check = GetTimePoint();
+	if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+	{
+		rgbled_animation(&LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD);
+		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
+		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+			return MCU_FLASH_USER_ABORTED; // A button is (still) pressed after check concluded
+		if (GetTimeSinceMS(check) < CHARGE_TIME_MIN_MS)
+			return MCU_FLASH_USER_ABORTED; // Button was pressed too short - be very conservative here
+		rgbled_transition(LED_FLASH_DEBUG_SWD, 50);
+		return MCU_FLASH_DEBUG_SWD;
+	}
+	else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+	{
+		rgbled_animation(&LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI);
+		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
+		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+			return MCU_FLASH_USER_ABORTED; // A button is (still) pressed after check concluded
+		if (GetTimeSinceMS(check) < CHARGE_TIME_MIN_MS)
+			return MCU_FLASH_USER_ABORTED; // Button was pressed too short - be very conservative here
+		rgbled_transition(LED_FLASH_BOOT0_PI, 50);
+		return MCU_FLASH_BOOT0_PI;
+	}
+	return MCU_FLASH_KEEP;
 }
 
 void SetupUARTEXTI()

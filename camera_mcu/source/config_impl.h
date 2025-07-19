@@ -29,6 +29,8 @@ extern "C"
 #endif
 #include "compat.h"
 
+#include "comm/packet.h"
+
 
 #ifdef BOARD_OLD
 
@@ -120,6 +122,9 @@ const static uint32_t VSENSE_ADC_PIN = GPIO_PIN_2;
 // Functions
 
 void Setup_Peripherals();
+
+enum CameraMCUFlashConfig ReadFlashConfiguration();
+void SetFlashConfiguration(enum CameraMCUFlashConfig config);
 
 #ifdef __cplusplus
 }

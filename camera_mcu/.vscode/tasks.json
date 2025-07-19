@@ -17,14 +17,20 @@
             "runOptions": { "reevaluateOnRerun": false }
         },
 		{
-			"label": "Upload ARM using OpenOCD",
+			"label": "Flash using OpenOCD",
 			"type": "shell",
 			"group": "test",
 			"command": "openocd -f targets/ARM/flash_${input:armTarget}.cfg",
             "dependsOn": [ "Build (clangd)" ]
 		},
 		{
-			"label": "Upload ARM using STM32_Programmer_CLI",
+			"label": "Flash using stlink",
+			"type": "shell",
+			"group": "test",
+			"command": "st-flash write build/TrackingCameraMCU.bin 0x08000000",
+		},
+		{
+			"label": "Flash using STM32_Programmer_CLI",
 			"type": "shell",
 			"group": "test",
 			"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf",

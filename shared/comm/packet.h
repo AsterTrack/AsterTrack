@@ -216,6 +216,15 @@ enum FilterSwitchCommand {
 	FILTER_SWITCH_INFRARED = 2,
 };
 
+enum CameraMCUFlashConfig {
+	MCU_FLASH_KEEP = 0,
+	MCU_FLASH_UNKNOWN = 0,
+	MCU_FLASH_BOOT0_PI = 1,
+	MCU_FLASH_DEBUG_SWD = 2,
+	MCU_FLASH_ERROR = 10,
+	MCU_FLASH_USER_ABORTED = 10,
+};
+
 
 /**
  * Header for full packets (for controller-camera and server-camera communication)

@@ -80,6 +80,16 @@ extern uint8_t LED_ACTIVE[RGBLED_COUNT*3];
 extern uint8_t LED_ALL_OFF[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_INFRARED[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_VISIBLE[RGBLED_COUNT*3];
+extern uint8_t LED_FLASH_DEBUG_SWD[RGBLED_COUNT*3];
+extern uint8_t LED_FLASH_BOOT0_PI[RGBLED_COUNT*3];
+
+extern struct LED_Animation LED_ANIM_FLASH_BAD;
+
+// These timings are critical as they influence behaviour and the animation needs to convey that behaviour to the user
+#define CHARGE_TIME_MIN_MS 1000
+#define CHARGE_TIME_MAX_MS 3000
+extern struct LED_Animation LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD;
+extern struct LED_Animation LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI;
 
 #ifdef __cplusplus
 }

@@ -29,5 +29,6 @@ SOFTWARE.
 bool mcu_init();
 bool mcu_probe();
 void mcu_cleanup();
+void mcu_reset();
 
 #endif // MCU_H

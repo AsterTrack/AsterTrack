@@ -54,6 +54,7 @@ set(SOURCES
 set(LIBRARIES
 	m dl pthread atomic
 	turbojpeg
+	gpiod
 )
 
 # Setup build for Zero 1

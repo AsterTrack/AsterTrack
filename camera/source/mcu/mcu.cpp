@@ -30,12 +30,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <thread>
 #include <atomic>
 
+#include <gpiod.h>
+
 #include <sys/ioctl.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
 const char *i2c_port = "/dev/i2c-1";
 unsigned int i2c_fd;
+
+const char *gpio_chipname = "/dev/gpiochip0";
+unsigned int PIN_BOOT0 = 27;
+unsigned int PIN_NRST = 18;
+unsigned int PIN_INT = 17;
+
+gpiod_chip *gpio_chip;
+gpiod_request_config *req_config;
+gpiod_line_config *line_config;
+gpiod_line_settings *line_boot0, *line_reset;
+gpiod_line_request *line_request;
 
 TimePoint_t lastPing;
 
@@ -46,13 +59,18 @@ static bool i2c_init();
 static bool i2c_probe();
 static void i2c_cleanup();
 
+static bool gpio_init();
+static void gpio_cleanup();
+
 static void mcu_send_ping();
 
 static void mcu_thread();
 
 bool mcu_init()
 {
-	return i2c_init();
+	bool i2c = i2c_init();
+	bool gpio = gpio_init();
+	return i2c && gpio;
 }
 
 bool mcu_probe()
@@ -74,6 +92,9 @@ void mcu_cleanup()
 		mcu_comm_thread->join();
 	delete mcu_comm_thread;
 
+	if (gpio_chip)
+		gpio_cleanup();
+
 	if (i2c_fd >= 0)
 		i2c_cleanup();
 }
@@ -90,6 +111,23 @@ static void mcu_thread()
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
+}
+
+void mcu_reset()
+{
+	if (!gpio_chip) return;
+
+	// BOOT0, RESET
+	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
+	if (gpiod_line_request_set_values(line_request, values_reset))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+	// BOOT0, RESET
+	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_set_values(line_request, values_normal))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 }
 
 static void mcu_send_ping()
@@ -150,4 +188,85 @@ static void i2c_cleanup()
 	if (i2c_fd >= 0)
 		close(i2c_fd);
 	i2c_fd = -1;
+}
+
+static bool gpio_init()
+{
+	gpio_chip = gpiod_chip_open(gpio_chipname);
+	if (!gpio_chip)
+	{
+		printf("Failed open GPIO Chip 0! %d: %s\n", errno, strerror(errno));
+		return false;
+	}
+
+	req_config = nullptr;
+	//req_config = gpiod_request_config_new();
+
+	line_config = gpiod_line_config_new();
+	if (line_config)
+		line_boot0 = gpiod_line_settings_new();
+	if (line_boot0)
+		line_reset = gpiod_line_settings_new();
+
+	if (!line_config || !line_boot0 || !line_reset)
+	{
+		printf("Failed open GPIO Chip 0! %d: %s\n", errno, strerror(errno));
+		gpiod_chip_close(gpio_chip);
+	}
+
+	gpiod_line_settings_set_direction(line_boot0, GPIOD_LINE_DIRECTION_OUTPUT);
+	gpiod_line_settings_set_drive(line_boot0, GPIOD_LINE_DRIVE_PUSH_PULL);
+	gpiod_line_settings_set_active_low(line_boot0, false);
+	gpiod_line_settings_set_output_value(line_boot0, GPIOD_LINE_VALUE_INACTIVE);
+
+	gpiod_line_settings_set_direction(line_reset, GPIOD_LINE_DIRECTION_OUTPUT);
+	gpiod_line_settings_set_drive(line_reset, GPIOD_LINE_DRIVE_PUSH_PULL);
+	gpiod_line_settings_set_active_low(line_reset, false);
+	gpiod_line_settings_set_output_value(line_reset, GPIOD_LINE_VALUE_INACTIVE);
+
+	if (gpiod_line_config_add_line_settings(line_config, &PIN_BOOT0, 1, line_boot0))
+	{
+		printf("Failed to add line setting for BOOT0 to GPIO! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
+	}
+
+	if (gpiod_line_config_add_line_settings(line_config, &PIN_NRST, 1, line_reset))
+	{
+		printf("Failed to add line setting for NRST to GPIO! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
+	}
+
+	line_request = gpiod_chip_request_lines(gpio_chip, req_config, line_config);
+	if (!line_request)
+	{
+		printf("Failed to request lines for GPIO! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
+	}
+
+	return true;
+}
+
+static void gpio_cleanup()
+{
+	if (line_request)
+		gpiod_line_request_release(line_request);
+
+	gpiod_line_settings_free(line_boot0);
+	gpiod_line_settings_free(line_reset);
+	gpiod_line_config_free(line_config);
+
+	if (req_config)
+		gpiod_request_config_free(req_config);
+
+	gpiod_chip_close(gpio_chip);
+
+	line_request = nullptr;
+	line_boot0 = nullptr;
+	line_reset = nullptr;
+	line_config  = nullptr;
+	req_config = nullptr;
+	gpio_chip = nullptr;
 }

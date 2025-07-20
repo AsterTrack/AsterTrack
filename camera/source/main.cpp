@@ -447,6 +447,10 @@ int main(int argc, char **argv)
 					{ // Complete stop of program requested
 						return EXIT_SUCCESS;
 					}
+					else if (cin == 'e')
+					{
+						mcu_reset();
+					}
 				}
 			}
 
@@ -1257,6 +1261,10 @@ int main(int argc, char **argv)
 					else if (cin == 'r')
 					{ // Reset/Restart, stop current blob detection and start again
 						break;
+					}
+					else if (cin == 'e')
+					{
+						mcu_reset();
 					}
 				}
 			}

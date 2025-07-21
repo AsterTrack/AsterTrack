@@ -1,6 +1,7 @@
 mkdir -p build/qpu
 mkdir -p build/util
 mkdir -p build/comm
+mkdir -p build/mcu
 mkdir -p build/blob
 mkdir -p build/camera
 mkdir -p build/vcsm
@@ -17,6 +18,7 @@ mkdir -p build/vcsm
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/comm/uart.cpp.o -c source/comm/uart.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/comm/timesync.cpp.o -c source/comm/timesync.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/comm/wireless.cpp.o -c source/comm/wireless.cpp
+/usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/mcu/mcu.cpp.o -c source/mcu/mcu.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/detection.cpp.o -c source/blob/detection.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/refinement.cpp.o -c ../shared/blob/refinement.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/blob.cpp.o -c ../shared/blob/blob.cpp

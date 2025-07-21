@@ -74,6 +74,13 @@ const static uint32_t BUTTON_TOP_PIN = GPIO_PIN_2;
 #define VSENSE_GPIO_X GPIOA
 const static uint32_t VSENSE_ADC_PIN = GPIO_PIN_0;
 
+// Pi I2C pins
+#define I2C_SXX_GPIO_X GPIOB
+const static uint32_t I2C_SCL_PIN = GPIO_PIN_6;
+const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
+#define I2C_INT_GPIO_X GPIOB
+const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
+
 #else
 
 // RJ45 LED pins
@@ -116,6 +123,13 @@ const static uint32_t BUTTON_TOP_PIN = GPIO_PIN_1;
 // VSense ADC pin
 #define VSENSE_GPIO_X GPIOA
 const static uint32_t VSENSE_ADC_PIN = GPIO_PIN_2;
+
+// Pi I2C pins
+#define I2C_SXX_GPIO_X GPIOB
+const static uint32_t I2C_SCL_PIN = GPIO_PIN_6;
+const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
+#define I2C_INT_GPIO_X GPIOA
+const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
 
 #endif
 

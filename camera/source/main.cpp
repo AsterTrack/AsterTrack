@@ -42,6 +42,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "options.hpp"
 #include "visualisation.hpp"
 
+#include "mcu/mcu.hpp"
+
 #include "comm/comm.hpp"
 #include "comm/uart.hpp"
 #include "comm/server.hpp"
@@ -81,6 +83,7 @@ std::vector<CommState*> comms;
 static std::thread *uartThread;
 static std::thread *serverThread;
 ErrorTag error = ERROR_NONE;
+bool hasMCU;
 
 static ctpl::thread_pool threadPool(6);
 static std::atomic<bool> isVisualising, isPreparingFrame;
@@ -256,6 +259,12 @@ int main(int argc, char **argv)
 	if (state.id == 0)
 		state.id = rand();
 
+	// Check MCU presence
+	bool hasMCU = false;
+	if (mcu_init())
+		hasMCU = mcu_probe();
+
+	// Init VCSM
 	if (!vcsm_init())
 	{
 		printf("Failed to init VCSM!\n");

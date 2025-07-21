@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util.h"
 #include "uartd.h"
 #include "rgbled.h"
+#include "comm/commands.h"
 
 #include "compat.h"
 #include "config_impl.h"
@@ -50,6 +51,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // UART Device callbacks
 static uartd_respond uartd_handle_header(uint_fast8_t port);
 static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
+
+// I2C Driver
+void i2c_driver_init();
 
 /* Variables */
 
@@ -213,6 +217,11 @@ int main(void)
 	SetupUARTEXTI();
 #endif
 
+#if defined(USE_I2C)
+	// Init I2C device
+	i2c_driver_init();
+#endif
+
 	// Bring filter switcher into default position
 	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 
@@ -266,7 +275,7 @@ int main(void)
 					GetTimeSinceMS(lastFSStatus) > 500 &&
 					GetTimeSinceMS(lastFilterSwitch) > 1000)
 				{
-					rgbled_transition(LED_STANDBY, 500);
+					rgbled_transition(piIsBooted? LED_ACTIVE : LED_STANDBY, 500);
 					showingFSStatus = FILTER_KEEP;
 				}
 			}
@@ -530,6 +539,53 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 		return uartd_unknown;
 	}
 }
+
+
+/* ------ I2C Behaviour ------ */
+
+bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len)
+{
+	piIsBooted = true;
+	rgbled_transition(LED_ACTIVE, 500);
+
+	switch (command)
+	{
+		case MCU_REQUEST_UART:
+			piHasUARTControl = true;
+			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			return true;
+		case MCU_RELEASE_UART:
+			piHasUARTControl = false;
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			return true;
+		case MCU_PING:
+			// Nothing to do
+			return true;
+			break;
+		default:
+			return false;
+			break;
+	}
+}
+
+uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
+{
+	piIsBooted = true;
+	rgbled_transition(LED_ACTIVE, 500);
+
+	switch (command)
+	{
+		case MCU_REG_ID:
+			response[0] = MCU_I2C_ID;
+			return 1;
+		default:
+			// TODO: Error?
+			return 0;
+	}
+}
+
+
+/* ------ Functional Behaviour ------ */
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 {

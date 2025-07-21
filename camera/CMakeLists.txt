@@ -43,6 +43,7 @@ set(SOURCES
 	source/comm/uart.cpp
 	source/comm/timesync.cpp
 	source/comm/wireless.cpp
+	source/mcu/mcu.cpp
 	source/blob/detection.cpp
 	source/main.cpp
 	../shared/util/image.cpp

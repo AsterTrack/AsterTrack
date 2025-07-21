@@ -48,6 +48,7 @@ source/rgbled.c \
 source/rgbled_anims.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c \
+targets/ARM/source/i2c_arm_ll.c \
 targets/ARM/source/rgbled_arm_ll.c
 
 C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL)
@@ -79,7 +80,8 @@ C_DEFS_STM32G030 = \
 -DARM_LL \
 -DSTM32G0 \
 -DSTM32G030xx \
--DUSE_UART
+-DUSE_UART \
+-DUSE_I2C
 
 #-DUSE_SYNC
 

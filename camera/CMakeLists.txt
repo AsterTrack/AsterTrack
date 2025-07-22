@@ -44,6 +44,7 @@ set(SOURCES
 	source/comm/timesync.cpp
 	source/comm/wireless.cpp
 	source/mcu/mcu.cpp
+	source/mcu/stm32_bootloader.cpp
 	source/blob/detection.cpp
 	source/main.cpp
 	../shared/util/image.cpp

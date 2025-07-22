@@ -451,6 +451,18 @@ int main(int argc, char **argv)
 					{
 						mcu_reset();
 					}
+					else if (cin == 'b')
+					{
+						mcu_switch_bootloader();
+					}
+					else if (cin == 'f')
+					{
+						mcu_flash_program("TrackingCamera/TrackingCameraMCU.bin");
+					}
+					else if (cin == 'v')
+					{
+						mcu_verify_program("TrackingCamera/TrackingCameraMCU.bin");
+					}
 				}
 			}
 

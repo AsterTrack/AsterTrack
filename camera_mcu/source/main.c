@@ -95,6 +95,7 @@ volatile TimePoint lastUARTActivity = 0;
 volatile TimePoint lastMarker = 0;
 volatile bool piIsBooted;
 volatile bool piHasUARTControl;
+volatile bool piWantsBootloader;
 volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
@@ -117,8 +118,24 @@ static enum CameraMCUFlashConfig InterpretUserFlashConfiguration();
 
 static void SetupUARTEXTI();
 
+// This flag (setup in linker script to be ontop of stack) persists across software resets
+extern int _bflag;
+uint32_t * const BOOTLOADER_FLAG = (uint32_t*) (&_bflag);
+const uint32_t BOOTLOADER_KEY = 0xB7E283F2;
+
 int main(void)
 {
+	if (*BOOTLOADER_FLAG == BOOTLOADER_KEY)
+	{ // Want to switch to bootloader
+		*BOOTLOADER_FLAG = 0;
+		// Switching now right after boot is a lot easier than mid-program
+		SwitchToBootloader();
+		// We should never get here
+		rgbled_animation(&LED_ANIM_FLASH_BAD);
+		while (true);
+	}
+	*BOOTLOADER_FLAG = 0;
+
 	// Base setup
 	Setup_Peripherals();
 
@@ -242,6 +259,18 @@ int main(void)
 			}
 		}
 		lastLoopIT = now;
+
+		if (piWantsBootloader)
+		{
+			delayMS(100);
+			rgbled_transition(LED_ACTIVE, 500);
+			// Set flag that persists the reset to switch to bootloader
+			*BOOTLOADER_FLAG = BOOTLOADER_KEY;
+			NVIC_SystemReset();
+			// Should never get here
+			rgbled_animation(&LED_ANIM_FLASH_BAD);
+			while (true);
+		}
 
 		/* // Automatic switching of filter switcher for testing
 		UpdateFilterSwitcher(FILTER_SWITCH_VISIBLE);
@@ -557,6 +586,10 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 		case MCU_RELEASE_UART:
 			piHasUARTControl = false;
 			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			return true;
+		case MCU_SWITCH_BOOTLOADER:
+			piWantsBootloader = true;
+			rgbled_transition(LED_BOOTLOADER, 0);
 			return true;
 		case MCU_PING:
 			// Nothing to do

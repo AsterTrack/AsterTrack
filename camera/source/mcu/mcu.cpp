@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "mcu.hpp"
 #include "comm/timesync.hpp"
 #include "comm/commands.h"
+#include "stm32_bootloader.hpp"
 
 #include "util/util.hpp"
 
@@ -29,6 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <fstream>
 
 #include <gpiod.h>
 
@@ -128,6 +130,121 @@ void mcu_reset()
 	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 	if (gpiod_line_request_set_values(line_request, values_normal))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+}
+
+void mcu_switch_bootloader()
+{
+	if (i2c_fd >= 0)
+	{
+		unsigned char REG_ID[1] = { MCU_SWITCH_BOOTLOADER };
+		struct i2c_msg I2C_MSG[] = {
+			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
+		};
+		struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 1 };
+		if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+			printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
+		{
+			printf("Successfully switched to and queried the MCUs bootloader!\n");
+			return;
+		}
+		else
+			printf("Failed to switch or query the bootloader via I2C message! %d: %s\n", errno, strerror(errno));
+	}
+
+	if (gpio_chip)
+	{
+		// BOOT0, RESET
+		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
+		if (gpiod_line_request_set_values(line_request, values_reset))
+			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+		// BOOT0, RESET
+		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+		if (gpiod_line_request_set_values(line_request, values_normal))
+			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
+		{
+			printf("Successfully switched to and queried the MCUs bootloader!\n");
+			return;
+		}
+		else
+			printf("Failed to switch or query the bootloader via GPIO pins! %d: %s\n", errno, strerror(errno));
+	}
+}
+
+bool mcu_flash_program(std::string filename)
+{
+	if (i2c_fd < 0) return false;
+	std::ifstream fs(filename);
+	if (!fs.is_open()) return false;
+
+	uint8_t loadAddress[4] = {0x08, 0x00, 0x00, 0x00};
+	uint8_t block[256] = {0};
+	int curr_block = 0, bytes_read = 0;
+	pRESULT ret = RES_OK;
+	while (!fs.eof())
+	{
+		fs.read((char*)block, sizeof(block));
+		bytes_read = fs.gcount();
+		if (bytes_read == 0) break;
+		curr_block++;
+		printf("Slave MCU IAP: Writing block: %d,block size: %d\n", curr_block, bytes_read);
+
+		ret = flashPage(loadAddress, block, bytes_read);
+		if (ret == RES_FAIL)
+			break;
+
+		ret = verifyPage(loadAddress, block, bytes_read);
+		if (ret == RES_FAIL)
+			break;
+
+		incrementAddress(loadAddress, bytes_read);
+		memset(block, 0xff, bytes_read);
+	}
+	fs.close();
+	if (ret != RES_FAIL)
+		printf("Successfully flashed MCU program!\n");
+	return ret != RES_FAIL;
+}
+
+bool mcu_verify_program(std::string filename)
+{
+	if (i2c_fd < 0) return false;
+	std::ifstream fs(filename);
+	if (!fs.is_open()) return false;
+
+	uint8_t loadAddress[4] = {0x08, 0x00, 0x00, 0x00};
+	uint8_t block[256] = {0};
+	int curr_block = 0, bytes_read = 0;
+	pRESULT ret = RES_OK;
+	while (!fs.eof())
+	{
+		fs.read((char*)block, sizeof(block));
+		bytes_read = fs.gcount();
+		if (bytes_read == 0) break;
+		curr_block++;
+		printf("Slave MCU IAP: Verifying block: %d,block size: %d\n", curr_block, bytes_read);
+
+		ret = verifyPage(loadAddress, block, bytes_read);
+		if (ret == RES_FAIL)
+			break;
+
+		incrementAddress(loadAddress, bytes_read);
+		memset(block, 0xff, bytes_read);
+	}
+	fs.close();
+	if (ret != RES_FAIL)
+		printf("Successfully verified MCU program!\n");
+	return ret != RES_FAIL;
 }
 
 static void mcu_send_ping()

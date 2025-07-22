@@ -23,6 +23,5 @@ if [[ -d "$BUILD_PATH/TrackingCamera" ]]; then
 	if [[ ! -d "$STORAGE_PATH/TrackingCamera" ]]; then
 		mkdir "$STORAGE_PATH/TrackingCamera"
 	fi
-	cp $BUILD_PATH/TrackingCamera/TrackingCamera* "$STORAGE_PATH/TrackingCamera"
-	cp $BUILD_PATH/TrackingCamera/*.bin "$STORAGE_PATH/TrackingCamera"
+	cp $BUILD_PATH/TrackingCamera/* "$STORAGE_PATH/TrackingCamera"
 fi

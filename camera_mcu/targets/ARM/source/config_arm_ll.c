@@ -207,23 +207,6 @@ enum CameraMCUFlashConfig ReadFlashConfiguration()
 void SetFlashConfiguration(enum CameraMCUFlashConfig config)
 {
 	enum CameraMCUFlashConfig currentConfig = ReadFlashConfiguration();
-	if (currentConfig == MCU_FLASH_UNKNOWN)
-	{
-		if (config == MCU_FLASH_KEEP)
-		{ // Flash warning code, override with known configuration
-			for (int i = 0; i < 10; i++)
-			{
-				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-			}
-			config = MCU_FLASH_DEBUG_SWD;
-		}
-	}
-
 	if (config == MCU_FLASH_KEEP || currentConfig == config)
 	{ // No need to configure
 
@@ -288,6 +271,28 @@ void SetFlashConfiguration(enum CameraMCUFlashConfig config)
 	// Restart MCU
 	SCB->AIRCR = (0x05FA << SCB_AIRCR_VECTKEY_Pos) | (1 << SCB_AIRCR_SYSRESETREQ_Pos);
 	while(1) {}
+}
+
+void SwitchToBootloader()
+{
+	struct boot_vectable_ {
+		uint32_t Initial_SP;
+		void (*Reset_Handler)(void);
+	};
+#if defined(STM32G0)
+	const struct boot_vectable_* BOOTVTAB = (struct boot_vectable_ *)0x1FFF0000;
+#else
+	#error "Lookup AN2606 for other MCU addresses"
+#endif
+
+	// No need for cleanup, only calling this right after startup
+	// Proper cleanup is difficult, might look like it works but then e.g. fail to flash
+
+	// Set the MSP
+	__set_MSP(BOOTVTAB->Initial_SP);
+
+	// Jump to bootloader
+	BOOTVTAB->Reset_Handler();
 }
 
 

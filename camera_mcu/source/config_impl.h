@@ -140,6 +140,8 @@ void Setup_Peripherals();
 enum CameraMCUFlashConfig ReadFlashConfiguration();
 void SetFlashConfiguration(enum CameraMCUFlashConfig config);
 
+void SwitchToBootloader();
+
 #ifdef __cplusplus
 }
 #endif

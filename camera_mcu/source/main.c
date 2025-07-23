@@ -353,7 +353,7 @@ int main(void)
 		// TODO: Inconsistent check once lastTimeCheck.ms lapses, will check every 100us within last 10ms, but will not happen normally
 		now = GetTimePoint();
 		static TimePoint lastTimeCheck = 0;
-		if (GetTimeSpanMS(lastTimeCheck, now) > 10)
+		if (GetTimeSpanMS(lastTimeCheck, now) < 10)
 			continue;
 		lastTimeCheck = now;
 		// Check all kinds of timeouts >= 50 ms
@@ -364,6 +364,7 @@ int main(void)
 		static TimePoint lastIdent = 0;
 		if (!piHasUARTControl && GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS)
 		{ // Send identification packet occasionally 
+			lastIdent = now;
 			uartd_send(0, ownIdentPacket, sizeof(ownIdentPacket), true);
 		}
 #endif
@@ -567,6 +568,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 	{
 		return uartd_unknown;
 	}
+	return uartd_accept;
 }
 
 

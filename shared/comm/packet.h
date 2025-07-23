@@ -92,8 +92,8 @@ enum DeviceTag
 {
 	DEVICE_SERVER					= 1<<2,
 	DEVICE_TRCAM					= 1<<4,
+	DEVICE_TRCAM_MCU				= 1<<5,
 	DEVICE_TRCONT					= 1<<6,
-	DEVICE_TRCAM_MCU				= 1<<8,
 };
 
 enum InterfaceTag

@@ -102,7 +102,7 @@ void uart_driver_init()
 
 	// Init UART
 	LL_USART_SetTransferDirection(u.uart, LL_USART_DIRECTION_TX_RX);
-	LL_USART_ConfigCharacter(u.uart, LL_USART_DATAWIDTH_8B, LL_USART_PARITY_NONE, LL_USART_STOPBITS_1);
+	LL_USART_ConfigCharacter(u.uart, LL_USART_DATAWIDTH_8B, LL_USART_PARITY_NONE, LL_USART_STOPBITS_2);
 	LL_USART_SetHWFlowCtrl(u.uart, LL_USART_HWCONTROL_NONE);
 	//LL_USART_SetTXRXSwap(u.uart, LL_USART_TXRX_STANDARD);
 	//LL_USART_EnableOneBitSamp(u.uart);

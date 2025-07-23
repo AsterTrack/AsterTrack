@@ -441,10 +441,10 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 
 	UART_STR("/RX:");
 	UART_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));
+	bool success = true;
 	if (state->parsePos < tail)
 	{ // One continuous range
-		if (!uartd_process_data(port, state->parsePos, tail))
-			uartd_reset_port_int(port);
+		success = uartd_process_data(port, state->parsePos, tail);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
 		if (dT > 100)
@@ -452,28 +452,31 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	}
 	else if (state->parsePos > tail)
 	{ // Two ranges, at start and end of ringbuffer
-		if (!uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE))
-			uartd_reset_port_int(port);
+		success = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
 		if (dT > 100)
 			TERR_STR("!UART_PP_2.1");
-		if (tail > 0)
+		if (success && tail > 0)
 		{
 			TimePoint now = GetTimePoint();
 			state->parsePos = 0;
-			if (!uartd_process_data(port, 0, tail))
-				uartd_reset_port_int(port);
+			success = uartd_process_data(port, 0, tail);
 
 			dT = GetTimeSinceUS(now);
 			if (dT > 100)
 				TERR_STR("!UART_PP_2.2");
 		}
 	}
+	if (success)
+	{
 	if (tail == UART_RX_BUFFER_SIZE)
 		state->parsePos = 0;
 	else
 		state->parsePos = tail;
+	}
+	else
+		uartd_reset_port_int(port);
 
 	TimeSpan dT = GetTimeSinceUS(state->lastComm);
 	if (dT > 100)

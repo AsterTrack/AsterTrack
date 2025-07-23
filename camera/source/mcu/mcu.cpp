@@ -81,8 +81,9 @@ bool mcu_probe()
 
 	if (!i2c_probe()) return false;
 
+	lastPing = sclock::now();
 	stop_thread = false;
-	//mcu_comm_thread = new std::thread(mcu_thread);
+	mcu_comm_thread = new std::thread(mcu_thread);
 
 	return true;
 }
@@ -105,7 +106,7 @@ static void mcu_thread()
 {
 	while (!stop_thread.load())
 	{
-		if (dtMS(lastPing, sclock::now()) < 1000)
+		if (dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
 		{
 			mcu_send_ping();
 			lastPing = sclock::now();

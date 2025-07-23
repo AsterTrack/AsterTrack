@@ -25,8 +25,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#define MCU_I2C_ADDRESS			0x3E // Max 7Bit (0x7F)
+#define MCU_I2C_ADDRESS			0x3E	// Max 7Bit (0x7F)
 #define MCU_I2C_ID				0x23
+#define MCU_PING_INTERVAL_MS	100
+#define MCU_COMM_TIMEOUT_MS		250
 
 enum CameraMCUCommand
 {
@@ -34,12 +36,11 @@ enum CameraMCUCommand
 	MCU_REG_ID = 1,
 
 	MCU_PING = 16,
+	MCU_BOOT_FIRST, // Notify Pi is booted and may take time initialising
+	MCU_BOOT,		// Notify Pi is booted even if main program fails to connect
 
 	MCU_COMMANDS = 32,
-	MCU_REQUEST_UART,
-	MCU_RELEASE_UART,
-	MCU_SWITCH_BOOTLOADER,
-	MCU_UPDATE_VIS,
+	MCU_SWITCH_BOOTLOADER
 };
 
 #endif // COMMANDS_H

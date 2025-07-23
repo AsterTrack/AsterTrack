@@ -179,6 +179,7 @@ inline void uartd_reset_port_int(uint_fast8_t port)
 	while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL & DMA_CONTROL_ENABLE);
 	// Reset port state
 	memset(&portStates[port], 0, sizeof(PortState));
+	portStates[port].resetTimer = GetTimePoint();
 	portStates[port].bufferPtr = UART_IO[port].rx_buffer;
 	// Reset UART_IO
 	for (int i = 0; i < SZ_TX_QUEUE; i++)
@@ -343,7 +344,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 		WARN_STR("+CommReset:");
 		WARN_CHARR(INT9_TO_CHARR(port));
 		rgbled_transition(LED_UART_ERROR, 0);
-		ReturnToDefaultLEDState(100);
+		ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
 	}
 	return success;
 }
@@ -351,6 +352,11 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 {
 	PortState *state = &portStates[port];
+	if (GetTimeSinceMS(state->resetTimer) < UART_RESET_TIMEOUT_MS)
+	{
+		state->parsePos = tail;
+		return;
+	}
 
 	UART_STR("/RX:");
 	UART_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));

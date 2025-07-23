@@ -263,6 +263,7 @@ int main(int argc, char **argv)
 	bool hasMCU = false;
 	if (mcu_init())
 		hasMCU = mcu_probe();
+	atexit(mcu_cleanup);
 
 	// Init VCSM
 	if (!vcsm_init())

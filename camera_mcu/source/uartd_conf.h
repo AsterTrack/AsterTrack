@@ -32,6 +32,12 @@ extern "C"
 #define UART_RX_BUFFER_SIZE		1024
 #define RX_HEADROOM 			0
 
+// UART Timing
+#define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
+#define UART_IDENT_STARTUP_DELAY_MS 50		// Delay after startup before first ident packet is sent to the controller
+#define UART_IDENT_INTERVAL_MS		100		// Interval at which the ident packet is sent to the controller
+#define UART_RESET_TIMEOUT_MS		20		// Timeout after comm loss (NAK) during which all comms are ignored
+
 #ifdef __cplusplus
 }
 #endif

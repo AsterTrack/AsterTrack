@@ -34,8 +34,6 @@ extern "C"
 /* Structures */
 
 typedef struct {
-	bool ready;
-	struct IdentPacket identity;
 
 	// Buffer state
 	uint8_t *bufferPtr;
@@ -52,6 +50,7 @@ typedef struct {
 	uint_fast16_t dataPos; // Position of data in packet
 
 	// Supervision
+	TimePoint resetTimer;
 	TimePoint lastComm;
 	TimePoint lastPacketTime;
 	TimePoint lastTimeSync;

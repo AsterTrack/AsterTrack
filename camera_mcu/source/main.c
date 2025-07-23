@@ -36,15 +36,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Defines */
 
-// UART
-#define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
-#define UART_IDENT_INTERVAL_MS		500		// Interval at which the ident packet is sent to the controller
-
 #define FSIN_PULSE_WIDTH_US		10
 #define FILTER_SWITCHER_COIL_PULSE_MS	100
 
 #define WWDG_TIMEOUT			0		// (Timeout+1)*113.77us
 
+typedef enum
+{
+	UART_None,
+	UART_CamMCU,
+	UART_CamPi
+} UART_STATE;
 
 /* Function Prototypes */
 
@@ -88,15 +90,18 @@ TimePoint startup = 0;
 static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
+PortState * const state = &portStates[0];
 
 // camera_mcu state
 volatile TimePoint lastFilterSwitch;
 volatile TimePoint lastUARTActivity = 0;
 volatile TimePoint lastMarker = 0;
+volatile TimePoint lastPiComm = 0;
+struct IdentPacket controllerIdentity;
+volatile UART_STATE uartState;
 // TODO: Toggle Pi Power after UART negotiation with CamMCU
 volatile bool piHasPower = true;
 volatile bool piIsBooted;
-volatile bool piHasUARTControl;
 volatile bool piWantsBootloader;
 volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
@@ -144,9 +149,9 @@ int main(void)
 	GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-	piHasUARTControl = true;
 	lastUARTActivity = GetTimePoint();
-	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to Pi
+	uartState = UART_None;
+	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
 
 	// Init LEDs to default state
 	rgbled_init();
@@ -213,23 +218,17 @@ int main(void)
 	// Initialise version
 	version = GetVersion(0, 0, 0);
 
-#if !defined(BOARD_OLD)/*  && defined(USE_UART)
-	// Route UART to this STM32
-	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
-	piHasUARTControl = false;
-#elif !defined(BOARD_OLD) && !defined(USE_UART) */
-	// Route UART to Pi
-	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
-	piHasUARTControl = true;
-#else
-	piHasUARTControl = true;
-#endif
-
 #if defined(USE_UART)
 	// Prepare identification to be sent out over UART
 	uart_set_identification();
 	// Init UART device
 	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
+#endif
+
+#if !defined(USE_UART) || !defined(USE_I2C)
+	// Route UART to Pi
+	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+	uartState = UART_CamPi;
 #endif
 
 #if defined(USE_I2C)
@@ -351,8 +350,11 @@ int main(void)
 #if defined(USE_UART)
 		// Check identification send timeout
 		static TimePoint lastIdent = 0;
-		if (!piHasUARTControl && GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS)
-		{ // Send identification packet occasionally 
+		if (uartState == UART_None && 
+			GetTimeSpanMS(startup, now) > UART_IDENT_STARTUP_DELAY_MS &&
+			GetTimeSpanMS(state->resetTimer, now) > UART_RESET_TIMEOUT_MS &&
+			(GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS || lastIdent == 0))
+		{ // Send identification packet occasionally
 			lastIdent = now;
 			rgbled_transition(LED_CONNECTING, 0);
 			ReturnToDefaultLEDState(UART_IDENT_INTERVAL_MS);
@@ -360,19 +362,48 @@ int main(void)
 		}
 
 		// Check UART timeouts
-		if (portStates[0].ready)
+		if (uartState == UART_CamMCU)
 		{
-			TimeSpan timeSinceLastComm = GetTimeSpanMS(portStates[0].lastComm, lastTimeCheck);
+			TimeSpan timeSinceLastComm = GetTimeSpanMS(state->lastComm, lastTimeCheck);
 			if (timeSinceLastComm > UART_COMM_TIMEOUT_MS || timeSinceLastComm < -1)
 			{ // Reset Comm after silence
 				EnterUARTZone(); // Mostly for the debug
-				if (!piHasUARTControl)
-					uartd_nak_int(0);
+				uartd_nak_int(0);
 				uartd_reset_port_int(0);
-				// Configurator is notified by its camera iteration check
 				WARN_CHARR('/', 'T', 'M', 'O'); // TiMeOut
 				LeaveUARTZone();
 			}
+		}
+#endif
+
+#if defined(USE_I2C)
+		if (piIsBooted && GetTimeSpanMS(lastPiComm, now) > MCU_COMM_TIMEOUT_MS)
+		{ // Pi stopped corresponding, clear booted flag and take back UART control
+			piIsBooted = false;
+			EnterUARTZone();
+			uartState = UART_None;
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			delayUS(1000);
+			// TODO: Switching UART Control - Properly notify controller of switch
+			//uartd_send_int(0, msg_sw_mcu, sizeof(msg_sw_mcu), true);
+			uartd_nak_int(0);
+			delayUS(10000);
+			uartd_reset_port(0);
+			LeaveUARTZone();
+			ReturnToDefaultLEDState(100);
+		}
+		else if (piIsBooted && uartState == UART_CamMCU)
+		{ // Pi started corresponding, hand over UART control automatically
+			EnterUARTZone();
+			// TODO: Switching UART Control - Properly notify controller of switch
+			//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
+			uartd_nak_int(0);
+			delayUS(10000);
+			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			uartd_reset_port(0);
+			uartState = UART_CamPi;
+			LeaveUARTZone();
+			ReturnToDefaultLEDState(100);
 		}
 #endif
 	}
@@ -383,22 +414,20 @@ int main(void)
 
 static uartd_respond uartd_handle_header(uint_fast8_t port)
 {
-	PortState *state = &portStates[port];
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
 		return uartd_unknown;
 
-	if (!state->ready)
+	if (uartState == UART_None)
 	{
 		if (state->header.tag == PACKET_IDENT)
-		{ // Redundant identification
+		{ // Received identification
 			if (state->header.length == IDENT_PACKET_SIZE)
 			{ // Correct size, receive and check fully
 				lastMarker = GetTimePoint();
 				return uartd_accept;
 			}
 			ERR_STR("#IdentWrongSize:");
-			if (!piHasUARTControl)
-				uartd_nak_int(port);
+			uartd_nak_int(port);
 			return uartd_reset;
 		}
 		else if (state->header.tag == PACKET_NAK)
@@ -410,11 +439,33 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Invalid packet before identification
 			COMM_STR("!Unexpected:");
 			COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag));
-			if (!piHasUARTControl)
-				uartd_nak_int(port);
+			uartd_nak_int(port);
 			return uartd_reset;
 		}
 	}
+	else if (uartState == UART_CamMCU)
+	{
+		if (state->header.tag == PACKET_PING)
+		{ // Answer ping to notify of existence
+			uartd_send_int(0, msg_ping, sizeof(msg_ping), true);
+			lastMarker = GetTimePoint();
+			return uartd_ignore;
+		}
+		else if (state->header.tag == PACKET_NAK)
+		{
+			WARN_CHARR('/', 'N', 'A', 'K');
+			uartState = UART_None;
+			return uartd_reset;
+		}
+		else if (state->header.tag == PACKET_IDENT)
+		{ // Redundant identification
+			WARN_CHARR('/', 'I', 'R', 'D');
+			uartd_nak_int(port);
+			return uartd_reset;
+		}
+		return uartd_unknown;
+	}
+	// else assert(uartState == UART_CamPi);
 
 	if (state->header.tag == PACKET_SOF)
 	{ // Received sof packet
@@ -434,19 +485,15 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 	}
 	else if (state->header.tag == PACKET_PING)
 	{
-		if (!piHasUARTControl)
-		{ // Answer ping to notify of existence
-			uartd_send_int(0, msg_ping, sizeof(msg_ping), true);
-		}
+		// Pi will answer ping to notify of existence
 		lastMarker = GetTimePoint();
 		return uartd_ignore;
 	}
 	else if (state->header.tag == PACKET_NAK)
 	{
 		WARN_CHARR('/', 'N', 'A', 'K');
-		state->ready = false;
-		uartd_reset_port(port);
-		return uartd_reset;
+		// Pi has to handle NAK
+		return uartd_ignore;
 	}
 	else if (state->header.tag == PACKET_ACK)
 	{ // Redundant ACK
@@ -456,9 +503,8 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 	else if (state->header.tag == PACKET_IDENT)
 	{ // Redundant identification
 		WARN_CHARR('/', 'I', 'R', 'D');
-		if (!piHasUARTControl)
-			uartd_nak_int(port);
-		return uartd_reset;
+		// Pi has to handle Ident
+		return uartd_ignore;
 	}
 	else
 	{
@@ -468,66 +514,80 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 
 static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
-	PortState *state = &portStates[port];
-
-	if (state->header.tag == PACKET_SOF)
+	if (uartState == UART_None)
 	{
-		//state->lastPacketTime;
-	}
-	else if (state->header.tag == PACKET_SYNC)
-	{ // Received sync packet
-		//state->lastPacketTime;
-	}
-	else if (state->header.tag == PACKET_IDENT)
-	{ // Identification
-		memcpy(rcvIdentPacket+state->dataPos, ptr, size);
-		//assert(!state->ready);
-		if (state->dataPos+size == IDENT_PACKET_SIZE)
-		{ // Received identification, check
-			struct IdentPacket ident = parseIdentPacket(rcvIdentPacket);
-			if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
-			{ // Ident packet was plain wrong
-				WARN_STR("!IdentFail:");
-				WARN_CHARR(INT9_TO_CHARR(port));
-				WARN_CHARR('+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
-				if (!piHasUARTControl)
+		if (state->header.tag == PACKET_IDENT)
+		{ // Identification
+			memcpy(rcvIdentPacket+state->dataPos, ptr, size);
+			if (state->dataPos+size == IDENT_PACKET_SIZE)
+			{ // Received identification, check
+				struct IdentPacket ident = parseIdentPacket(rcvIdentPacket);
+				if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
+				{ // Ident packet was plain wrong
+					WARN_STR("!IdentFail:");
+					WARN_CHARR(INT9_TO_CHARR(port));
+					WARN_CHARR('+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
 					uartd_nak_int(port);
-				return uartd_reset;
-			}
-			if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
-			{ // TODO: Deal with versions
-				WARN_STR("!VersionMismatch:");
-				WARN_CHARR(INT9_TO_CHARR(port));
-				WARN_STR("+Cont:v");
-				WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
-				WARN_STR("+Cam:v");
-				WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
-				if (!piHasUARTControl)
+					return uartd_reset;
+				}
+				if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
+				{ // TODO: Deal with versions
+					WARN_STR("!VersionMismatch:");
+					WARN_CHARR(INT9_TO_CHARR(port));
+					WARN_STR("+Cont:v");
+					WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
+					WARN_STR("+Cam:v");
+					WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
 					uartd_nak_int(port);
-				return uartd_reset;
-			}
-			// Idenfication verified
-			state->ready = true;
-			COMM_CHARR('/', 'I', 'D', 'S');
-			ReturnToDefaultLEDState(100);
-			// Send acknowledgement
-			if (!piHasUARTControl)
+					return uartd_reset;
+				}
+				// Idenfication verified
+				uartState = UART_CamMCU;
+				controllerIdentity = ident;
+				COMM_CHARR('/', 'I', 'D', 'S');
+				ReturnToDefaultLEDState(100);
+				// Send acknowledgement
 				uartd_ack_int(port);
+			}
+			return uartd_accept;
 		}
-		return uartd_accept;
+		return uartd_ignore;
 	}
-	else if (state->header.tag == PACKET_CFG_MODE)
-	{
-		if (size >= 1)
+
+	if (uartState == UART_CamPi)
+	{ // Only handle the following when CamPi has control
+
+		if (state->header.tag == PACKET_SOF)
 		{
-			uint8_t modePacket = ptr[0];
-			piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
-			ReturnToDefaultLEDState(500);
-			// TODO: Get this update from camera_pi directly instead over I2C?
-			// E.g. Errors from camera_pi cannot be read here
+			if (state->header.frameID != (state->lastAnnounceID+1)%256)
+				WARN_CHARR('/', 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
+			state->lastAnnounceID = state->header.frameID;
+			/* struct SOFPacket sync = parseSOFPacket(&proto.rcvBuf[proto.cmdPos]);
+			std::unique_lock lock(state.sync.access);
+			if (dtUS(state.sync.time.lastTime, sclock::now()) > 1000000)
+				ResetTimeSync(state.sync.time);
+			TimePoint_t SOF = UpdateTimeSync(state.sync.time, sync.timeUS, 1<<24, time_read);
+			state.sync.frameSOFs.emplace(sync.frameID, SOF); */
+
+			//state->lastPacketTime;
+			return uartd_accept;
+		}
+		else if (state->header.tag == PACKET_CFG_MODE)
+		{
+			if (size >= 1)
+			{
+				uint8_t modePacket = ptr[0];
+				piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
+				ReturnToDefaultLEDState(500);
+				// TODO: Get this update from camera_pi directly instead over I2C?
+				// E.g. Errors from camera_pi cannot be read here
+			}
+			return uartd_accept;
 		}
 	}
-	else if (state->header.tag == PACKET_CFG_FILTER)
+
+	// Always handle the following, whether CamPi or CamMCU has control
+	if (state->header.tag == PACKET_CFG_FILTER)
 	{
 		if (size >= 1)
 		{
@@ -535,10 +595,16 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 			if (filterState == FILTER_SWITCH_VISIBLE || filterState == FILTER_SWITCH_INFRARED)
 				UpdateFilterSwitcher(filterState);
 		}
+		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_CFG_SIGNAL)
 	{
 		// TODO: Set state for LEDs to signal, e.g. focus/selection in host UI, or calibration quality, etc.
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_SYNC)
+	{ // Received sync packet
+		//state->lastPacketTime;
 	}
 	else
 	{
@@ -552,19 +618,23 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 
 bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len)
 {
+	if (command == MCU_BOOT_FIRST)
+	{
+		// TODO: Notify user that Pi is initialising and may take longer to boot
+		return true;
+	}
+	else if (command == MCU_BOOT)
+	{
+		// TODO: If Pi doesn't connect shortly after, notify user
+		// May indicate program crashes or otherwise can't connect via I2C
+		return true;
+	}
+
+	lastPiComm = GetTimePoint();
 	piIsBooted = true;
-	ReturnToDefaultLEDState(100);
 
 	switch (command)
 	{
-		case MCU_REQUEST_UART:
-			piHasUARTControl = true;
-			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
-			return true;
-		case MCU_RELEASE_UART:
-			piHasUARTControl = false;
-			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
-			return true;
 		case MCU_SWITCH_BOOTLOADER:
 			piWantsBootloader = true;
 			rgbled_transition(LED_BOOTLOADER, 0);
@@ -581,8 +651,8 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
 {
+	lastPiComm = GetTimePoint();
 	piIsBooted = true;
-	ReturnToDefaultLEDState(100);
 
 	switch (command)
 	{
@@ -602,11 +672,11 @@ void ReturnToDefaultLEDState(int timeMS)
 {
 	if (piIsStreaming) // Implies piHasPower && piIsBooted && uartState == UART_CamPi
 		rgbled_animation(&LED_ANIM_STREAMING);
-	else if (piIsBooted) // Implies piHasPower && piIsBooted
+	else if (uartState == UART_CamPi) // Implies piHasPower && piIsBooted
 		rgbled_transition(LED_ACTIVE, timeMS);
-	else if (piHasPower)
+	else if (uartState == UART_CamMCU && piHasPower)
 		rgbled_animation(&LED_ANIM_BOOTING);
-	else if (portStates[0].ready)
+	else if (uartState == UART_CamMCU)
 		rgbled_transition(LED_STANDBY, timeMS);
 	else
 		rgbled_transition(LED_INITIALISING, timeMS);

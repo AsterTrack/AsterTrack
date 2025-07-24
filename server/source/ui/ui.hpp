@@ -388,12 +388,6 @@ public:
 		void UpdateIncrementalSequencesVis(const SequenceData &sequences, bool updateStable, bool rawPoints);
 	void UpdateCalibrations();
 
-	// UI-only device functions
-	CameraConfig& getCameraConfig(const TrackingCameraState &camera);
-	std::string getStatusText(const TrackingCameraState &camera);
-	Color getStatusColor(const TrackingCameraState &camera);
-	Color getStatusColor(const TrackingControllerState &controller);
-
 	void UpdateCameras();
 	void ResetCameras();
 
@@ -549,5 +543,12 @@ struct CameraView
 	bool isDetached;
 	int detachedIndex = -1;
 };
+
+// UI-only device functions
+CameraConfig& getCameraConfig(const TrackingCameraState &camera);
+std::string getStatusText(const TrackingCameraState &camera);
+std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bool &abnormalStreamingState);
+Color getStatusColor(const TrackingCameraState &camera);
+Color getStatusColor(const TrackingControllerState &controller);
 
 #endif // UI_H

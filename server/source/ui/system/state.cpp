@@ -284,46 +284,130 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 	}
 }
 
-CameraConfig& InterfaceState::getCameraConfig(const TrackingCameraState &camera)
+CameraConfig& getCameraConfig(const TrackingCameraState &camera)
 {
 	return GetState().cameraConfig.getCameraConfig(camera.id);
 }
 
-std::string InterfaceState::getStatusText(const TrackingCameraState &camera)
+std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bool &abnormalStreamingState)
 {
-	ServerState &state = GetState();
-	bool streamingMatch = (state.mode != MODE_Device) || (camera.isStreaming() == state.isStreaming);
-	auto error = *camera.state.error.contextualRLock();
-	if (error.encountered)
+	auto status = *camera.state.contextualRLock(); // Copy
+	std::vector<std::string> statusMsgs;
+	if (GetState().mode != MODE_Device)
 	{
-		return asprintf_s("Camera encountered error '%s' and is currently recovering.", ErrorTag_String[error.code]);
+		abnormalStreamingState = false;
+		return statusMsgs;
 	}
-	else if (error.recovered && !streamingMatch)
+
+	// Detect if camera may need a streaming restart
+	bool expectingStreaming = GetState().isStreaming && !status.error.encountered;
+	bool isCameraStreaming = camera.isStreaming();// && camera.state.fsEnabled;
+	bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
+	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySendCommand;
+
+	if ((status.commState & CommReady) != CommReady)
 	{
-		return asprintf_s("Camera recovered from error '%s' but is not yet streaming!", ErrorTag_String[error.code]);
+		// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
+		if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+			statusMsgs.push_back("Camera is trying to reconnect...");
+		else
+			statusMsgs.push_back("Camera is disconnected");
 	}
-	else if (!streamingMatch)
-	{ // May happen if controller stop streaming on it's own (e.g. when program hung for several seconds in debug)
-		return asprintf_s("Camera is not streaming!");
-	}
-	else
+	else if (status.commState == CommMCUReady)
 	{
-		if (error.code != ERROR_NONE)
+		statusMsgs.push_back("Camera is connected and starting up...");
+	}
+
+	// Display recent error
+	if (status.error.encountered)
+		statusMsgs.push_back(asprintf_s("'%s' (Recovering)", ErrorTag_String[status.error.code]));
+	else if (status.error.recovered && dtMS(status.error.recoverTime, sclock::now()) < 3000)
+		statusMsgs.push_back(asprintf_s("'%s' (Recovered)", ErrorTag_String[status.error.code]));
+	else if (expectingStreaming && !isCameraStreaming)
+	{ // May happen if controller stopped streaming on it's own and told cameras to stop, too
+		// e.g. when server hung for several seconds in debug
+		statusMsgs.push_back("Camera is not streaming!");
+	}
+
+	return statusMsgs;
+}
+
+std::string getStatusText(const TrackingCameraState &camera)
+{
+	auto status = *camera.state.contextualRLock(); // Copy
+	if (GetState().mode != MODE_Device)
+	{
+		return "Camera.";
+	}
+
+	// Detect if camera may need a streaming restart
+	bool expectingStreaming = GetState().mode == MODE_Device && GetState().isStreaming && !status.error.encountered;
+	bool isCameraStreaming = camera.isStreaming();// && camera.state.fsEnabled;
+	//bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
+	bool abnormalStreamingState = expectingStreaming && !isCameraStreaming;
+
+	if (status.error.encountered)
+	{
+		if ((status.commState & CommReady) != CommReady)
 		{
-			return asprintf_s("Camera is working properly.\n Last Error was '%s'.", ErrorTag_String[error.code]);
+			// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
+			if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+				return asprintf_s("Camera encountered error '%s' and is currently trying to reconnect.", ErrorTag_String[status.error.code]);
+			else
+				return asprintf_s("Camera encountered error '%s' and is disconnected.", ErrorTag_String[status.error.code]);
 		}
 		else
 		{
-			return asprintf_s("Camera is working properly.");
+			assert(status.commState == CommMCUReady);
+			return asprintf_s("Camera encountered error '%s' and is currently recovering.", ErrorTag_String[status.error.code]);
+		}
+	}
+	else if ((status.commState & CommReady) != CommReady)
+	{
+		// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
+		if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+			return "Camera is trying to reconnect...";
+		else
+			return "Camera is disconnected";
+	}
+	else if (status.commState == CommMCUReady)
+	{
+		return "Camera is connected and starting up...";
+	}
+	else
+	{
+		assert(status.commState == CommPiReady);
+		if (status.error.recovered && abnormalStreamingState)
+		{
+			return asprintf_s("Camera recovered from error '%s' but is not yet streaming!", ErrorTag_String[status.error.code]);
+		}
+		else if (status.error.recovered && dtMS(status.error.recoverTime, sclock::now()) < 3000)
+		{
+			return asprintf_s("Camera recovered from error '%s'", ErrorTag_String[status.error.code]);
+		}
+		else if (abnormalStreamingState)
+		{ // May happen if controller stopped streaming on it's own and told cameras to stop, too
+			// e.g. when server hung for several seconds in debug
+			return "Camera is not streaming!";
+		}
+		else if (status.error.code != ERROR_NONE)
+		{
+			return asprintf_s("Camera is working properly.\n Last Error was '%s'.", ErrorTag_String[status.error.code]);
+		}
+		else
+		{
+			return "Camera is working properly.";
 		}
 	}
 }
-Color InterfaceState::getStatusColor(const TrackingCameraState &camera)
+
+Color getStatusColor(const TrackingCameraState &camera)
 {
 	ServerState &state = GetState();
 	bool streamingMatch = (state.mode != MODE_Device) || (camera.isStreaming() == state.isStreaming);
 	Color statusColor = { 0, 1, 0, 1.0f };
-	auto error = *camera.state.error.contextualRLock();
+	auto camState = *camera.state.contextualRLock(); // Copy
+	auto &error = camState.error;
 	if (error.encountered)
 		statusColor = { 1, 0, 0, 1.0f };
 	else if (!streamingMatch)
@@ -331,7 +415,8 @@ Color InterfaceState::getStatusColor(const TrackingCameraState &camera)
 	statusColor.a *= 0.5f;
 	return statusColor;
 }
-Color InterfaceState::getStatusColor(const TrackingControllerState &controller)
+
+Color getStatusColor(const TrackingControllerState &controller)
 {
 	Color statusColor = { 0, 1, 0, 1.0f };
 	statusColor.a *= 0.5f;

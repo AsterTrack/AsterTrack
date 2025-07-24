@@ -375,7 +375,9 @@ void DevicesStartStreaming(ServerState &state)
 
 	for (auto &cam : state.cameras)
 	{
-		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming)) continue;
+		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming
+			|| cam->state.contextualRLock()->commState != CommPiReady))
+			continue;
 
 		// Send setup data incase it didn't already happen
 		CameraUpdateSetup(state, *cam);
@@ -509,7 +511,7 @@ void DevicesStopStreaming(ServerState &state)
 
 	// Reset camera device state
 	for (auto &cam : state.cameras)
-		cam->state = {}; // TODO: This also clears camera error state, might not be desired
+		cam->receiving = {};
 }
 
 // ----------------------------------------------------------------------------

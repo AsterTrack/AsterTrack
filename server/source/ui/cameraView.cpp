@@ -327,7 +327,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 				return; // Just removed, but UI hasn't been updated yet
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
-			Color color = GetUI().getStatusColor(*viewIt->second.camera);
+			Color color = getStatusColor(*viewIt->second.camera);
 			visSetupProjection(Eigen::Isometry3f::Identity());
 			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)view.camera->id);
@@ -387,7 +387,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			{ // Return to standby
 				view.camera->sendModeSet(TRCAM_STANDBY);
 			}
-			view.camera->state.background.contextualLock()->tiles.clear();
+			view.camera->receiving.background.contextualLock()->tiles.clear();
 		}
 		if (ImGui::MenuItem("Visual Debug", nullptr, 
 			&visDebug, device && state.isStreaming && !bgCalib))
@@ -647,7 +647,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (RetryButton("Retry"))
 		{
 			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
-			view.camera->state.background.contextualLock()->tiles.clear();
+			view.camera->receiving.background.contextualLock()->tiles.clear();
 		}
 		ImGui::SameLine();
 		if (CheckButton("Accept"))
@@ -660,7 +660,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		{
 			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
 			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			view.camera->state.background.contextualLock()->tiles.clear();
+			view.camera->receiving.background.contextualLock()->tiles.clear();
 		}
 
 		EndViewToolbar();
@@ -920,9 +920,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.imageVis.show && imageFrameState && (!visCamera.image || imageFrameState->ID != visCamera.image->frameID))
 	{ // Got a different camera image to load
-		if (camera.state.latestFrameImage && imageFrameState->ID == camera.state.latestFrameImage->frameID)
+		if (camera.receiving.latestFrameImage && imageFrameState->ID == camera.receiving.latestFrameImage->frameID)
 		{ // Already cached recent frame image
-			visCamera.image = camera.state.latestFrameImage; // new shared_ptr
+			visCamera.image = camera.receiving.latestFrameImage; // new shared_ptr
 		}
 		else
 		{ // Have to load image from JPEG record
@@ -1042,7 +1042,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		// TODO: Fix background calib visualisation, needs inversion of some sort
 		float PixelSizeCur = 8 * (float)viewSize.x()/mode.widthPx * visCamera.view.zoom;
 		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
-		visualisePoints2D(camera.state.background.contextualRLock()->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
+		visualisePoints2D(camera.receiving.background.contextualRLock()->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
 	}
 	else if (visCamera.visMode == VIS_BLOB)
 	{
@@ -1259,7 +1259,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		// Show other blobs next to it normally
 		visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 
-		auto vis_lock = camera.state.visualDebug.contextualRLock();
+		auto vis_lock = camera.receiving.visualDebug.contextualRLock();
 		auto &visual = *vis_lock;
 		if (!visual.hasBlob) return;
 
@@ -1321,7 +1321,7 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 	CameraCalib &calib = camera.pipeline->calib;
 	if (visCamera.visMode == VIS_VISUAL_DEBUG)
 	{ // Zoom into blob and snap to it if it moves off-screen
-		auto vis_lock = camera.state.visualDebug.contextualRLock();
+		auto vis_lock = camera.receiving.visualDebug.contextualRLock();
 		if (vis_lock->hasBlob)
 		{ // Need to move center so that full bounds are visible
 			Eigen::Vector2i center = cam2pix(mode, visCamera.view.center).cast<int>();
@@ -1571,16 +1571,10 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
  */
 static void drawOverlayMessages(CameraView &view, ImRect rect)
 {
-	ServerState &state = GetState();
-	bool device = state.mode == MODE_Device;
-
-	// Check error message
-	auto error = *view.camera->state.error.contextualRLock();
-	bool drawErrorMsg = error.encountered || (error.recovered && dtMS(error.time, sclock::now()) < 3000);
-	// Check streaming button
-	bool drawStreamingBtn = device && state.isStreaming && !error.encountered && !view.camera->isStreaming()
-		&& (!view.camera->hasSetStreaming() || (view.camera->hasSetStreaming() && dtMS(view.camera->modeSet.time, sclock::now()) > 1000));
-	int msgCount = drawErrorMsg + drawStreamingBtn;
+	// Get abnormal state to display
+	bool abnormalStreamingState;
+	std::vector<std::string> status = getAbnormalStatus(*view.camera, abnormalStreamingState);
+	int msgCount = status.size() + abnormalStreamingState;
 	if (msgCount == 0)
 		return;
 
@@ -1592,21 +1586,16 @@ static void drawOverlayMessages(CameraView &view, ImRect rect)
 
 	//LOGC(LInfo, "Drawing %d msgs in window at %.2fx%.2f of size %.2fx%.2f", msgCount, ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowSize().x, ImGui::GetWindowSize().y);
 	int msgIndex = 0;
-	auto drawMessage = [&](ImGuiID id, bool button, const char* fmt, ...)
+	auto drawMessage = [&](ImGuiID id, bool button, const std::string &message)
 	{ // Draw background box and
 		ImGuiContext& g = *ImGui::GetCurrentContext();
-
-		va_list args;
-		va_start(args, fmt);
-		const char* text_start, *text_end;
-		ImFormatStringToTempBufferV(&text_start, &text_end, fmt, args);
-		va_end(args);
 
 		float msgHeight = ImGui::GetFrameHeight();
 		float msgInterval = msgHeight+g.Style.ItemSpacing.y;
 		float msgStackHeight = msgInterval*msgCount - g.Style.ItemSpacing.y;
 		float msgStartY = rect.GetCenter().y - msgStackHeight/2 + msgInterval*msgIndex;
 
+		const char* text_start = message.c_str(), *text_end = message.c_str() + message.size();
 		float msgWidth = ImGui::CalcTextSize(text_start, text_end).x + g.Style.FramePadding.x*2;
 		float msgStartX = rect.GetCenter().x - msgWidth/2;
 
@@ -1636,15 +1625,16 @@ static void drawOverlayMessages(CameraView &view, ImRect rect)
 		return pressed;
 	};
 
-	if (drawErrorMsg)
+	for (int i = 0; i < status.size(); i++)
 	{
-		drawMessage(ImGui::GetID("errorLabel"), false, "%s", ErrorTag_String[error.code]);
+		drawMessage(ImGui::GetID(i), false, status[i]);
 	}
-	if (drawStreamingBtn)
+	if (abnormalStreamingState)
 	{
-		if (drawMessage(ImGui::GetID("streamBtn"), true, "Start Streaming"))
+		const std::string restartStreaming = "Start Streaming";
+		if (drawMessage(ImGui::GetID("streamBtn"), true, restartStreaming))
 		{
-			CameraRestartStreaming(state, view.camera);
+			CameraRestartStreaming(GetState(), view.camera);
 		}
 	}
 

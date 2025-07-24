@@ -1002,8 +1002,8 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 						if (!image) return; // Image jpeg is faulty, don't store record
 
 						// Store as most recent decompressed image
-						cam->state.latestFrameImage = std::move(image);
-						cam->state.latestFrameImageRecord = std::move(imageRecord);
+						cam->receiving.latestFrameImage = std::move(image);
+						cam->receiving.latestFrameImageRecord = std::move(imageRecord);
 
 						SignalCameraRefresh(cam->id);
 					}, frameRecord->cameras[cam->pipeline->index].image); // new shared_ptr
@@ -1330,9 +1330,9 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	for (auto &camera : sync.cameras)
 	{ // Copy over image data received before processing started
 		if (!camera) continue; // Removed while streaming - have to ignore even if data was valid
-		if (camera->state.latestFrameImageRecord && camera->state.latestFrameImageRecord->frameID == frame.ID)
+		if (camera->receiving.latestFrameImageRecord && camera->receiving.latestFrameImageRecord->frameID == frame.ID)
 		{ // May happen if frame processing was unreasonably delayed
-			frameRecord->cameras[camera->pipeline->index].image = camera->state.latestFrameImageRecord;
+			frameRecord->cameras[camera->pipeline->index].image = camera->receiving.latestFrameImageRecord;
 		}
 	}
 

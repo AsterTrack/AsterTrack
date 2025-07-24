@@ -66,7 +66,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				return; // Just removed, but UI hasn't been updated yet
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
-			Color color = GetUI().getStatusColor(*viewIt->second.camera);
+			Color color = getStatusColor(*viewIt->second.camera);
 			visSetupProjection(Eigen::Isometry3f::Identity());
 			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)camera.id);
@@ -180,7 +180,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				const TrackingControllerState &controller = *contIt->get();
 
 				ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
-				Color color = GetUI().getStatusColor(controller);
+				Color color = getStatusColor(controller);
 				visSetupProjection(Eigen::Isometry3f::Identity());
 				visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 			}, (void*)(intptr_t)controller.id);

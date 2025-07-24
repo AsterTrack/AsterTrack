@@ -210,6 +210,17 @@ static const char *ErrorTag_String[ERROR_MAX] =
 	"Camera program exception (pipe)"
 };
 
+enum ControllerCommState {
+	CommNoCon = 0,
+	CommID = 1,
+	CommACK = 2,
+	CommMCU = 4,
+	CommPi = 8,
+	CommReady = CommID | CommACK,
+	CommMCUReady = CommMCU | CommReady,
+	CommPiReady = CommPi | CommReady,
+};
+
 enum FilterSwitchCommand {
 	FILTER_KEEP = 0,
 	FILTER_SWITCH_VISIBLE = 1,

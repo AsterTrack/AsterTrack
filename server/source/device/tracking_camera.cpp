@@ -30,8 +30,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int length)
 {
-	if (state.error.contextualRLock()->encountered)
+	if (state.contextualRLock()->error.encountered)
+	{
+		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
+	}
+	if (state.contextualRLock()->commState != CommPiReady)
+	{
+		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is not started up yet!", id);
+		return false;
+	}
 	if (controller)
 	{
 		return comm_submit_control_data(controller->comm, COMMAND_OUT_SEND_PACKET,
@@ -48,6 +56,11 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 
 bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 {
+	if (state.contextualRLock()->commState != CommPiReady)
+	{
+		LOG(LCameraDevice, LError, "Camera %d requesting mode failed because it has not started up yet!", id);
+		return false;
+	}
 	if (mode != modeSet.mode)
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d requesting mode %x while still waiting on mode %x requested %fms ago!",
@@ -87,20 +100,6 @@ void TrackingCameraState::recvModeSet(uint8_t recvMode)
 	LOG(LCameraDevice, LInfo, "Camera %d entered mode %x!", id, mode);
 }
 
-std::shared_ptr<TrackingCameraState> CameraSetupDevice(ServerState &state, CameraID id)
-{
-	std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, id);
-
-	// Sync setup data
-	CameraUpdateSetup(state, *camera);
-
-	// Make sure secondary features match expected state
-	CameraUpdateStream(*camera);
-	CameraUpdateVis(*camera);
-
-	return camera;
-}
-
 bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera)
 {
 	if (camera.client || camera.controller)
@@ -135,6 +134,11 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because controller is not in streaming mode anymore!", camera->id);
 		return false;
 	}
+	if (camera->state.contextualRLock()->commState != CommPiReady)
+	{
+		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because it has not started up yet!", camera->id);
+		return false;
+	}
 
 	// Send setup data incase it didn't already happen
 	CameraUpdateSetup(state, *camera);
@@ -166,6 +170,7 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 
 void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 {
+	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	CameraConfig &config = state.cameraConfig.configurations[state.cameraConfig.cameraConfigs[device.id]];
 	ConfigPacket packet = {};
 	packet.width = config.width;
@@ -192,6 +197,7 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 }
 bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
 {
+	if (device.state.contextualRLock()->commState != CommPiReady) return false;
 	// Send wireless config to Tracking Camera
 	auto &config = device.config.wireless;
 	std::vector<uint8_t> wireless(config.enabled? 4 : 2);
@@ -224,6 +230,7 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
  */
 static void CameraSendImageRequest(TrackingCameraState &device, uint8_t mode, ImageRequest &request)
 {
+	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	// Send image request to Tracking Camera
 	int len = 1;
 	uint8_t stream[12];
@@ -247,6 +254,7 @@ void CameraUpdateStream(TrackingCameraState &device)
 }
 void CameraUpdateVis(TrackingCameraState &device)
 {
+	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	// Send vis config to Tracking Camera
 	auto &config = device.config.hdmiVis;
 	int len = 1;

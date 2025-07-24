@@ -291,19 +291,19 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			length, portCount, secondsSinceStartup);
 		return false;
 	}
+
 	std::shared_lock dev_lock(state.deviceAccessMutex);
+
+	// Step 1: Check addition or removal of cameras
 	int camsConnected = 0;
 	std::vector<std::pair<int32_t,int>> addedCams, removedCams;
 	for (int i = 0; i < portCount; i++)
 	{
-		// TODO: Change camera iteration packet to include version of cameras? Or implement a separate query?
 		bool existing = controller.cameras.size() > i && controller.cameras[i] != NULL;
 		uint8_t *camData = data + 5+i*7;
-		bool connected = (camData[0] & 0b11) == 0b11;
+		ControllerCommState commState = (ControllerCommState)camData[0];
 		int32_t id = *(int32_t*)(camData+1);
-		bool cameraEnabled = camData[5];
-		bool frameSyncEnabled = camData[6];
-		if (connected)
+		if ((commState&CommReady) == CommReady)
 		{
 			camsConnected++;
 			if (!existing)
@@ -315,24 +315,24 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				addedCams.emplace_back(id, i);
 				removedCams.emplace_back(controller.cameras[i]->id, i);
 			}
-			else
-			{
-				auto error_lock = controller.cameras[i]->state.error.contextualLock();
-				if (error_lock->encountered)
-				{
-					if (dtMS(error_lock->time, sclock::now()) > 50)
-					{ // Might need this overlap protection to prevent race-conditions
-						error_lock->recovered = true;
-						error_lock->encountered = false;
-					}
-				}
-			}
 		}
 		else if (existing)
-		{ // Detach from controller
+		{
+			auto camState = *controller.cameras[i]->state.contextualRLock();
+			if (dtMS(camState.lastConnecting, sclock::now()) < 1000)
+				continue; // Show camera reconnecting message (might be switching between MCU and Pi)
+			if (dtMS(camState.lastConnected, sclock::now()) < 5000)
+				continue; // Show camera lost message
+			if (camState.error.encountered &&
+				dtMS(camState.error.time, sclock::now()) < 10000)
+				continue; // Show camera error message
+			// Might want to further defer removal of errored camera to give it a chance to recover / restart
+			// Detach from controller
 			removedCams.emplace_back(controller.cameras[i]->id, i);
 		}
 	}
+
+	// Step 1: Apply addition or removal of cameras under unique_lock
 	if (controller.cameras.size() != portCount || !addedCams.empty() || !removedCams.empty())
 	{
 		std::unique_lock dev_lock(state.deviceAccessMutex); // controller.cameras, controller.packetState,
@@ -364,41 +364,27 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			}
 			else
 			{ // Detach from controller
-				TrackingCameraState &camera = *controller.cameras[rem.second]; // Direct reference is intentional
-				if (camera.id != rem.first)
-					LOG(LControllerDevice, LError, "Removed camera %d on port %d doesn't match expected removed id %d!", camera.id, rem.first, rem.second);
-				// currently just send a packet to it, so expects prior setup to be intact
-				if (camera.state.error.contextualRLock()->encountered)
-				{ // Might want to defer removal to give it a chance to recover / restart
-					if (dtMS(camera.state.error.contextualRLock()->time, sclock::now()) < 10000)
-						continue; // 10s restart timer
-				}
-				LOG(LDefault, LInfo, "Removed Camera with ID %d from port %d!\n", camera.id, camera.port);
-				camera.controller = NULL;
-				camera.port = -1;
-				controller.cameras[rem.second] = NULL;
-				// state.camera still holds reference, so camera couldn't have been deleted yet
-				if (CameraCheckDisconnected(state, camera))
+				controller.cameras[rem.second]->controller = NULL;
+				controller.cameras[rem.second]->port = -1;
+				if (CameraCheckDisconnected(state, *controller.cameras[rem.second]))
 					camsLost++;
+				controller.cameras[rem.second] = NULL;
+				LOG(LDefault, LInfo, "Removed Camera with ID %d from port %d!\n", rem.first, rem.second);
 			}
 		}
 		for (auto add : addedCams)
 		{ // Genuinely newly connected, not moved
 			camsGained++;
-			std::shared_ptr<TrackingCameraState> camera = CameraSetupDevice(state, add.first);
+			std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, add.first);
 			// Set up connection to controller
-			for (auto &cont : state.controllers)
-			{
-				if (cont.get() == &controller)
-				{
-					camera->controller = cont; // new shared_ptr
-				}
-			}
-			if (!camera->controller)
+			auto contIt = std::find_if(state.controllers.begin(), state.controllers.end(),
+				[&](auto &cont){ return cont.get() == &controller; });
+			if (contIt == state.controllers.end())
 			{
 				LOG(LDefault, LError, "Could not find controller - was it removed already? Missing synchronisation!\n");
 				return false;
 			}
+			camera->controller = *contIt; // new shared_ptr
 			camera->port = add.second;
 			LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", camera->id, camera->port);
 			controller.cameras[add.second] = std::move(camera);
@@ -412,6 +398,42 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected confirmed. Total: %d!\n",
 			camsConnected, portCount, (int)state.cameras.size());
 	}
+
+	// Step 3: Update camera states
+	bool updatedCameras = false;
+	for (int i = 0; i < portCount; i++)
+	{
+		if (!controller.cameras[i]) continue;
+		auto camState = controller.cameras[i]->state.contextualLock();
+		// TODO: Change camera iteration packet to include version of cameras? Or implement a separate query?
+		uint8_t *camData = data + 5+i*7;
+		ControllerCommState commState = (ControllerCommState)camData[0];
+		bool cameraEnabled = camData[5];
+		bool frameSyncEnabled = camData[6];
+		if (commState == CommPiReady)
+		{ // Clear any possible error state
+			if (camState->error.encountered && dtMS(camState->error.time, sclock::now()) > 1000)
+			{ // Might need this overlap protection to prevent race-conditions
+				camState->error.recoverTime = sclock::now();
+				camState->error.recovered = true;
+				camState->error.encountered = false;
+				updatedCameras = true;
+			}
+			if (camState->error.recovered && dtMS(camState->error.recoverTime, sclock::now()) > 10000)
+			{ // Reset recovered state so any future interruptions are not associated with past error we recovered from
+				camState->error.recovered = false;
+			}
+		}
+		if (commState == CommPiReady) camState->hadPiConnected = true;
+		else if (commState == CommMCUReady) camState->hadMCUConnected = true;
+		if ((commState&CommReady) == CommReady) camState->lastConnected = sclock::now();
+		else if (commState != CommNoCon) camState->lastConnecting = sclock::now();
+		if (camState->commState != commState)
+			updatedCameras = true;
+		camState->commState = commState;
+	}
+	if (updatedCameras)
+		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	return true;
 }
 
@@ -453,8 +475,9 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, PacketBlocks 
 
 bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet)
 {
-	TrackingCameraState::Errors error;
+	TrackingCameraState::Errors error = {};
 	error.encountered = true;
+	error.recovered = false;
 	error.time = sclock::now();
 	if (packet.erroneous || packet.data.size() < 2)
 	{
@@ -486,7 +509,7 @@ bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	camera.recvModeSet(TRCAM_STANDBY);
 
 	// Update error state
-	*camera.state.error.contextualLock() = error;
+	camera.state.contextualLock()->error = error;
 
 	if (error.code == ERROR_UNKNOWN)
 	{
@@ -608,7 +631,7 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	}
 
 	{ // Move parsed data to camera state
-		auto visual_lock = camera.state.visualDebug.contextualLock();
+		auto visual_lock = camera.receiving.visualDebug.contextualLock();
 		if (visual_lock->hasBlob && visual_lock->bounds.overlaps(bounds))
 		{ // Overlap, move anchor point with centers (not real centers, both offset by half a pixel)
 			visual_lock->offset += bounds.center<float>() - visual_lock->bounds.center<float>();
@@ -663,7 +686,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 	uint32_t imageHeight = subsample == 0? 0 : imageBounds.extends().y()/subsample;
 
 	// Check parsing state
-	auto &parseImg = camera.state.parsingFrameImage;
+	auto &parseImg = camera.receiving.parsingFrameImage;
 	if ((TruncFrameID)(parseImg.frameID) != packet.header.frameID)
 	{ // Start new frame
 		if (parseImg.received < parseImg.jpeg.size())
@@ -772,8 +795,8 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 			}
 
 			// Store as most recent decompressed image
-			camera->state.latestFrameImage = std::move(image);
-			camera->state.latestFrameImageRecord = std::move(imageRecord);
+			camera->receiving.latestFrameImage = std::move(image);
+			camera->receiving.latestFrameImageRecord = std::move(imageRecord);
 
 			SignalCameraRefresh(camera->id);
 		}, imageRecord); // new shared_ptr
@@ -825,7 +848,7 @@ bool ReadStatPacket(TrackingCameraState &camera, PacketBlocks &packet)
 		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d!\n", (int)packet.data.size(), STAT_PACKET_SIZE);
 		return false;
 	}
-	auto stat_lock = camera.state.statistics.contextualLock();
+	auto stat_lock = camera.receiving.statistics.contextualLock();
 	uint32_t lastStatFrame = stat_lock->header.frame;
 	*stat_lock = parseStatPacket(packet.data.data());
 	auto &s = *stat_lock;
@@ -925,7 +948,7 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	LOG(LCameraDevice, LDebug, "Received a total of %d background tiles! Range %d, %d; Calc offset %.3f, %.3f\n",
 		tileCnt, extendsX, extendsY, offset.x(), offset.y());
 	// Update background tiles
-	auto bg_lock = camera.state.background.contextualLock();
+	auto bg_lock = camera.receiving.background.contextualLock();
 	//bg_lock->tiles.clear();
 	for (int i = 0; i < tileCnt; i++)
 	{

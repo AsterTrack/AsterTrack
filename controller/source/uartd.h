@@ -32,19 +32,8 @@ extern "C"
 
 /* Structures */
 
-enum CommState {
-	CommNoCon = 0,
-	CommID = 1,
-	CommACK = 2,
-	CommMCU = 4,
-	CommPi = 8,
-	CommReady = CommID | CommACK,
-	CommMCUReady = CommMCU | CommReady,
-	CommPiReady = CommPi | CommReady,
-};
-
 typedef struct {
-	enum CommState comm;
+	enum ControllerCommState comm;
 	struct IdentPacket identity;
 
 	// Buffer state

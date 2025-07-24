@@ -123,14 +123,6 @@ struct TrackingCameraState
 	* Receiving state
 	*/
 
-	struct Errors
-	{ // Camera error data sent by the TrackingCamera
-		bool encountered, recovered;
-		ErrorTag code;
-		bool serious;
-		TimePoint_t time;
-	};
-
 	struct VisualDebug
 	{ // Visual Debug data sent by the TrackingCamera
 		bool hasBlob;
@@ -165,17 +157,36 @@ struct TrackingCameraState
 
 	struct
 	{
-		Synchronised<Errors> error = {};
 		Synchronised<VisualDebug> visualDebug = {};
 		Synchronised<BackgroundCalib> background = {};
 		std::shared_ptr<CameraImageRecord> latestFrameImageRecord = nullptr;
 		std::shared_ptr<const CameraImage> latestFrameImage = nullptr;
 		ImageReceiving parsingFrameImage = {};
 		Synchronised<StatPacket> statistics = {};
-	} state = {};
+	} receiving = {};
+
+
+	/**
+	* Camera Comm & Error Status
+	*/
+
+	struct Errors
+	{ // Camera error data sent by the TrackingCamera
+		bool encountered, recovered;
+		ErrorTag code;
+		bool serious;
+		TimePoint_t time, recoverTime;
+	};
+	struct Status
+	{
+		bool hadPiConnected, hadMCUConnected;
+		TimePoint_t lastConnected, lastConnecting;
+		ControllerCommState commState;
+		Errors error;
+	};
+	Synchronised<Status> state = {};
 };
 
-std::shared_ptr<TrackingCameraState> CameraSetupDevice(ServerState &state, CameraID id);
 bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera);
 
 /**

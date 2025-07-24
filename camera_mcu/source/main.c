@@ -118,8 +118,6 @@ static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
 
 static enum CameraMCUFlashConfig InterpretUserFlashConfiguration();
 
-static void SetupUARTEXTI();
-
 // This flag (setup in linker script to be ontop of stack) persists across software resets
 extern int _bflag;
 uint32_t * const BOOTLOADER_FLAG = (uint32_t*) (&_bflag);
@@ -228,12 +226,10 @@ int main(void)
 #endif
 
 #if defined(USE_UART)
-	// Init UART device
-	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
 	// Prepare identification to be sent out over UART
 	uart_set_identification();
-#else
-	SetupUARTEXTI();
+	// Init UART device
+	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
 #endif
 
 #if defined(USE_I2C)
@@ -325,7 +321,7 @@ int main(void)
 
 		now = GetTimePoint();
 
-		/* Indicate UART activity on orange LED */
+		// Indicate UART activity on orange LED
 		if (GetTimeSpanMS(lastMarker, now) < 20)
 			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		else
@@ -339,17 +335,9 @@ int main(void)
 			lastPowerLEDToggle = GetTimePoint();
 			powerLEDToggle = !powerLEDToggle;
 			if (powerLEDToggle)
-			{
 				GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			#if !defined(BOARD_OLD) && !defined(USE_UART)
-				GPIO_SET(GPIOA, GPIO_PIN_9);
-			#endif
-			} else {
+			else
 				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-			#if !defined(BOARD_OLD) && !defined(USE_UART)
-				GPIO_RESET(GPIOA, GPIO_PIN_9);
-			#endif
-			}
 		}
 
 		// TODO: Inconsistent check once lastTimeCheck.ms lapses, will check every 100us within last 10ms, but will not happen normally
@@ -361,7 +349,6 @@ int main(void)
 		// Check all kinds of timeouts >= 50 ms
 
 #if defined(USE_UART)
-#if !defined(BOARD_OLD)
 		// Check identification send timeout
 		static TimePoint lastIdent = 0;
 		if (!piHasUARTControl && GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS)
@@ -371,7 +358,6 @@ int main(void)
 			ReturnToDefaultLEDState(UART_IDENT_INTERVAL_MS);
 			uartd_send(0, ownIdentPacket, sizeof(ownIdentPacket), true);
 		}
-#endif
 
 		// Check UART timeouts
 		if (portStates[0].ready)
@@ -410,15 +396,22 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 				lastMarker = GetTimePoint();
 				return uartd_accept;
 			}
-			WARN_CHARR('/', 'I', 'N', 'K');
+			ERR_STR("#IdentWrongSize:");
 			if (!piHasUARTControl)
 				uartd_nak_int(port);
 			return uartd_reset;
 		}
-		else if (!piHasUARTControl)
-		{ // Invalid packet before identification - only complain when we're in control - otherwise, just accept packets even without identification
-			WARN_CHARR('/', 'I', 'P', 'K', '+', UI8_TO_HEX_ARR(state->header.tag));
-			uartd_nak_int(port);
+		else if (state->header.tag == PACKET_NAK)
+		{
+			WARN_STR("!IdentNAKed:"); 
+			return uartd_reset;
+		}
+		else
+		{ // Invalid packet before identification
+			COMM_STR("!Unexpected:");
+			COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag));
+			if (!piHasUARTControl)
+				uartd_nak_int(port);
 			return uartd_reset;
 		}
 	}
@@ -685,93 +678,4 @@ static enum CameraMCUFlashConfig InterpretUserFlashConfiguration()
 		return MCU_FLASH_BOOT0_PI;
 	}
 	return MCU_FLASH_KEEP;
-}
-
-void SetupUARTEXTI()
-{
-#ifdef BOARD_OLD
-
-	// Init GPIO pins
-	// RX: Floating input
-	LL_GPIO_SetPinMode(GPIOA, GPIO_PIN_15, LL_GPIO_MODE_INPUT);
-	LL_GPIO_SetPinPull(GPIOA, GPIO_PIN_15, LL_GPIO_PULL_NO);
-	LL_GPIO_SetPinSpeed(GPIOA, GPIO_PIN_15, LL_GPIO_SPEED_FREQ_VERY_HIGH);
-
-	// Setup NVIC interrupt handler for EXTI line 9
-	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0)); // Same priority as SOF timer
-	NVIC_EnableIRQ(EXTI4_15_IRQn);
-
-	// Select PB (0x01) for EXTI Line 9 - so PB9
-	EXTI->EXTICR[3] = (EXTI->EXTICR[3] & ~EXTI_EXTICR4_EXTI15_Msk) | (0x00 << EXTI_EXTICR4_EXTI15_Pos);
-
-	// Setup interrupts for EXTI line 9
-	EXTI->RTSR1 |= LL_EXTI_LINE_15; // Set to trigger on rising edge
-	EXTI->IMR1 |= LL_EXTI_LINE_15; // Enable interrupt generation
-
-#else
-	// AFIO
-	RCC->APBENR2 |= RCC_APBENR2_SYSCFGEN;
-	SYSCFG->CFGR1 |= SYSCFG_CFGR1_PA11_RMP | SYSCFG_CFGR1_PA12_RMP;
-
-	// Init GPIO pins
-	// RX: Floating input
-	LL_GPIO_SetPinMode(GPIOA, GPIO_PIN_10, LL_GPIO_MODE_INPUT);
-	LL_GPIO_SetPinPull(GPIOA, GPIO_PIN_10, LL_GPIO_PULL_DOWN);
-	LL_GPIO_SetPinSpeed(GPIOA, GPIO_PIN_10, LL_GPIO_SPEED_FREQ_HIGH);
-
-	// Setup NVIC interrupt handler for EXTI line 9
-	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0)); // Same priority as SOF timer
-	NVIC_EnableIRQ(EXTI4_15_IRQn);
-
-	// Select PB (0x01) for EXTI Line 9 - so PB9
-	EXTI->EXTICR[2] = (EXTI->EXTICR[2] & ~EXTI_EXTICR3_EXTI10_Msk) | (0x00 << EXTI_EXTICR3_EXTI10_Pos);
-
-	// Setup interrupts for EXTI line 9
-	EXTI->RTSR1 |= LL_EXTI_LINE_10; // Set to trigger on rising edge
-	EXTI->IMR1 |= LL_EXTI_LINE_10; // Enable interrupt generation
-
-	// Camera FSIN output
-	LL_GPIO_SetPinMode(GPIOA, GPIO_PIN_9, LL_GPIO_MODE_OUTPUT);
-	LL_GPIO_SetPinOutputType(GPIOA, GPIO_PIN_9, LL_GPIO_OUTPUT_PUSHPULL);
-	LL_GPIO_SetPinSpeed(GPIOA, GPIO_PIN_9, LL_GPIO_SPEED_FREQ_HIGH);
-
-#endif
-}
-
-void EXTI4_15_IRQHandler(void) __IRQ;
-void EXTI4_15_IRQHandler()
-{
-#if defined(BOARD_OLD) && defined(USE_SYNC)
-	if (EXTI->RPR1 & LL_EXTI_LINE_9)
-	{ // Interrupt pending
-
-		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
-		delayUS(FSIN_PULSE_WIDTH_US);
-		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
-
-		// Reset IRQ flag
-		EXTI->RPR1 = LL_EXTI_LINE_9;
-	}
-#endif
-
-#if !defined(USE_UART) && !defined(BOARD_OLD)
-	if (EXTI->RPR1 & LL_EXTI_LINE_10)
-	{ // Interrupt pending
-
-		lastUARTActivity = GetTimePoint();
-
-		// Reset IRQ flag
-		EXTI->RPR1 = LL_EXTI_LINE_10;
-	}
-#endif
-#if !defined(USE_UART) && defined(BOARD_OLD)
-	if (EXTI->RPR1 & LL_EXTI_LINE_15)
-	{ // Interrupt pending
-
-		lastUARTActivity = GetTimePoint();
-
-		// Reset IRQ flag
-		EXTI->RPR1 = LL_EXTI_LINE_15;
-	}
-#endif
 }

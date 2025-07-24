@@ -1273,7 +1273,7 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Identification
 			if (state->header.length == IDENT_PACKET_SIZE)
 				return uartd_accept;
-			ERR_STR("#IdentTooBig:");
+			ERR_STR("#IdentWrongSize:");
 			ERR_CHARR(INT9_TO_CHARR(state->dataPos), '+', INT9999_TO_CHARR(state->header.length));
 			uartd_nak_int(port);
 			return uartd_reset;
@@ -1295,10 +1295,18 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 				return uartd_reset;
 			}
 		}
+		else if (state->header.tag == PACKET_NAK)
+		{
+			COMM_STR("!IdentNAKed:"); 
+			COMM_CHARR(INT9_TO_CHARR(port));
+			return uartd_reset;
+		}
 		else
 		{ // Received an unexpected packet before comm handshake
+			COMM_STR("!Unexpected:");
+			COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag));
 			// Very likely, this controller was reset/restarted
-			// Resset comms and wait for camera to send an ident packet again
+			// Reset comms and wait for camera to send an ident packet again
 			uartd_nak_int(port);
 			return uartd_reset;
 		}

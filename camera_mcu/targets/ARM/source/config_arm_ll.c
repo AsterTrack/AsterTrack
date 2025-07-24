@@ -191,6 +191,23 @@ void Setup_Peripherals()
 #endif
 }
 
+void EXTI4_15_IRQHandler(void) __IRQ;
+void EXTI4_15_IRQHandler()
+{
+#if defined(BOARD_OLD) && defined(USE_SYNC)
+	if (EXTI->RPR1 & LL_EXTI_LINE_9)
+	{ // Interrupt pending
+
+		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		delayUS(FSIN_PULSE_WIDTH_US);
+		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+
+		// Reset IRQ flag
+		EXTI->RPR1 = LL_EXTI_LINE_9;
+	}
+#endif
+}
+
 enum CameraMCUFlashConfig ReadFlashConfiguration()
 {
 	uint32_t optReg = FLASH->OPTR;

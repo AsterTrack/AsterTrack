@@ -269,16 +269,25 @@ void uartd_send_int(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, b
 	}
 	// Could not queue, loosing packet
 	ERR_STR("#UartTXStall");
-	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CFGR1_EN;
+	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
 	UART_IO[port].uart_tx = false; // TODO: Leaving without sending anything, that ok?
 }
 
 inline void uartd_reset_port_int(uint_fast8_t port)
 {
+	// Stop TX & RX DMA
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL &= ~DMA_CONTROL_ENABLE;
+	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
 	while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL & DMA_CONTROL_ENABLE);
+	// Reset port state
 	memset(&portStates[port], 0, sizeof(PortState));
 	portStates[port].bufferPtr = UART_IO[port].rx_buffer;
+	// Reset UART_IO
+	for (int i = 0; i < SZ_TX_QUEUE; i++)
+		UART_IO[port].tx_queue[i].valid = false;
+	UART_IO[port].tx_queue_pos = 0;
+	UART_IO[port].uart_tx = false;
+	// Restart RX DMA
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->COUNTER = UART_RX_BUFFER_SIZE;
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL |= DMA_CONTROL_ENABLE;
 }
@@ -343,10 +352,10 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				state->headerRaw[state->headerPos++] = state->bufferPtr[pos++];
 			if (state->headerPos == 4)
 			{ // Found header of data, handle data next
-				UARTTR_STR("+H");
+				UARTTR_CHARR('+', 'H', ':', UI32_TO_HEX_ARR(*(uint32_t*)state->headerRaw));
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				DEBUG_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
+				UART_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
@@ -470,10 +479,10 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	}
 	if (success)
 	{
-	if (tail == UART_RX_BUFFER_SIZE)
-		state->parsePos = 0;
-	else
-		state->parsePos = tail;
+		if (tail == UART_RX_BUFFER_SIZE)
+			state->parsePos = 0;
+		else
+			state->parsePos = tail;
 	}
 	else
 		uartd_reset_port_int(port);

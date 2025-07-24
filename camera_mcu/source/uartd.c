@@ -18,22 +18,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util.h"
 #include "uartd.h"
+#include "uart_driver.h"
 #include "rgbled.h"
 
 #if defined(STM32G0)
-#include "stm32g0xx_ll_bus.h"
-#include "stm32g0xx_ll_gpio.h"
-#include "stm32g0xx_ll_usart.h"
 #include "stm32g0xx_ll_dma.h"
 #endif
-
-#include <stdint.h>
-#include <string.h>
 
 // Definitions of GPIO Pins / DMA Channels and access so that some descriptive structures (UART_DMA_Setup UART) can be shared
 #include "compat.h"
 
-#include "uart_driver.h"
+#include <stdint.h>
+#include <string.h>
 
 
 /* Variables */
@@ -162,7 +158,7 @@ void uartd_send_int(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, b
 	}
 	// Could not queue, loosing packet
 	ERR_STR("#UartTXStall");
-	LL_DMA_DisableChannel(UART[port].DMA, UART[port].DMA_CH_TX);
+	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
 	UART_IO[port].uart_tx = false; // TODO: Leaving without sending anything, that ok?
 }
 /**
@@ -177,10 +173,19 @@ void uartd_send(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, bool 
 
 inline void uartd_reset_port_int(uint_fast8_t port)
 {
+	// Stop TX & RX DMA
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL &= ~DMA_CONTROL_ENABLE;
+	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
 	while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL & DMA_CONTROL_ENABLE);
+	// Reset port state
 	memset(&portStates[port], 0, sizeof(PortState));
 	portStates[port].bufferPtr = UART_IO[port].rx_buffer;
+	// Reset UART_IO
+	for (int i = 0; i < SZ_TX_QUEUE; i++)
+		UART_IO[port].tx_queue[i].valid = false;
+	UART_IO[port].tx_queue_pos = 0;
+	UART_IO[port].uart_tx = false;
+	// Restart RX DMA
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->COUNTER = UART_RX_BUFFER_SIZE;
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->CONTROL |= DMA_CONTROL_ENABLE;
 }
@@ -209,6 +214,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 	{
 		if (state->inData)
 		{ // Handle data in blocks
+			UARTTR_STR("+D");
 			state->lastComm = start;
 			TimePoint now = GetTimePoint();
 			uint16_t missingSize = state->header.length - state->dataPos;
@@ -220,7 +226,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				uartd_respond resp = impl_callbacks.uartd_handle_data(port, state->bufferPtr+pos, blockSize);
 				if (resp == uartd_reset)
 				{
-					WARN_CHARR('/', 'D', 'P', 'B'); // Data Packet Bad
+					WARN_STR("!UartDataBad");
 					success = false;
 					break;
 				}
@@ -240,15 +246,17 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 		}
 		else if (state->inHeader)
 		{ // Continue to read header
+			UARTTR_STR("P");
 			state->lastComm = start;
 			TimePoint now = GetTimePoint();
 			while (state->headerPos < 4 && pos < end)
 				state->headerRaw[state->headerPos++] = state->bufferPtr[pos++];
 			if (state->headerPos == 4)
 			{ // Found header of data, handle data next
+				UARTTR_CHARR('+', 'H', ':', UI32_TO_HEX_ARR(*(uint32_t*)state->headerRaw));
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				DEBUG_CHARR('<', 'R', 'C', 'V',
+				UART_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
@@ -270,6 +278,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				}
 				else
 				{
+					UARTTR_STR("=");
 					state->dataPos = 0;
 					state->ignoreData = resp == uartd_unknown || resp == uartd_ignore;
 					if (state->header.length > 0)
@@ -291,9 +300,11 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 			pos++;
 			state->headerPtr = state->bufferPtr+pos;
 			state->lastPacketTime = start; // For timesync purposes
+			UARTTR_STR("#");
 		}
 		else if (state->bufferPtr[pos] == UART_TRAILING_BYTE)
 		{ // Trailing bytes are added so that dropped bytes in the packet don't cause them to consume the start of the next packet
+			UARTTR_STR("$");
 			pos++;
 		}
 		else
@@ -341,8 +352,8 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 {
 	PortState *state = &portStates[port];
 
-	UART_CHARR('/', UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail)); 
-	UART_CHARR('+', UI32_TO_HEX_ARR(DMA_CH(UART[port].DMA, UART[port].DMA_CH_RX)->MEM_ADDR), '=', UI32_TO_HEX_ARR((uint32_t)(state->bufferPtr+tail))); 
+	UART_STR("/RX:");
+	UART_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));
 	if (state->parsePos < tail)
 	{ // One continuous range
 		if (!uartd_process_data(port, state->parsePos, tail))

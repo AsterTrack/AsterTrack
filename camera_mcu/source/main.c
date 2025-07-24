@@ -93,6 +93,8 @@ static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 volatile TimePoint lastFilterSwitch;
 volatile TimePoint lastUARTActivity = 0;
 volatile TimePoint lastMarker = 0;
+// TODO: Toggle Pi Power after UART negotiation with CamMCU
+volatile bool piHasPower = true;
 volatile bool piIsBooted;
 volatile bool piHasUARTControl;
 volatile bool piWantsBootloader;
@@ -206,7 +208,7 @@ int main(void)
 			rgbled_transition(LED_FLASH_BOOT0_PI, 10);
 		delayMS(100);
 	}
-	rgbled_transition(LED_STANDBY, 10);
+	rgbled_transition(LED_INITIALISING, 10);
 
 	DEBUG_STR("/START");
 
@@ -262,8 +264,8 @@ int main(void)
 
 		if (piWantsBootloader)
 		{
+			rgbled_transition(LED_BOOTLOADER, 0);
 			delayMS(100);
-			rgbled_transition(LED_ACTIVE, 500);
 			// Set flag that persists the reset to switch to bootloader
 			*BOOTLOADER_FLAG = BOOTLOADER_KEY;
 			NVIC_SystemReset();
@@ -304,7 +306,7 @@ int main(void)
 					GetTimeSinceMS(lastFSStatus) > 500 &&
 					GetTimeSinceMS(lastFilterSwitch) > 1000)
 				{
-					rgbled_transition(piIsBooted? LED_ACTIVE : LED_STANDBY, 500);
+					ReturnToDefaultLEDState(500);
 					showingFSStatus = FILTER_KEEP;
 				}
 			}
@@ -313,12 +315,12 @@ int main(void)
 		/* if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && brightness > 0.01f)
 		{
 			brightness = brightness * 0.8;
-			rgbled_transition_to(RGB_DEFAULT_ON, 0);
+			ReturnToDefaultLED();
 		}
 		else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && brightness < 0.8)
 		{
 			brightness = brightness * 1.25f;
-			rgbled_transition_to(RGB_DEFAULT_ON, 0);
+			ReturnToDefaultLED();
 		} */
 
 		now = GetTimePoint();
@@ -365,6 +367,8 @@ int main(void)
 		if (!piHasUARTControl && GetTimeSpanMS(lastIdent, now) > UART_IDENT_INTERVAL_MS)
 		{ // Send identification packet occasionally 
 			lastIdent = now;
+			rgbled_transition(LED_CONNECTING, 0);
+			ReturnToDefaultLEDState(UART_IDENT_INTERVAL_MS);
 			uartd_send(0, ownIdentPacket, sizeof(ownIdentPacket), true);
 		}
 #endif
@@ -512,6 +516,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 			// Idenfication verified
 			state->ready = true;
 			COMM_CHARR('/', 'I', 'D', 'S');
+			ReturnToDefaultLEDState(100);
 			// Send acknowledgement
 			if (!piHasUARTControl)
 				uartd_ack_int(port);
@@ -523,30 +528,8 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 		if (size >= 1)
 		{
 			uint8_t modePacket = ptr[0];
-			bool streaming = modePacket&TRCAM_FLAG_STREAMING;
-			if (!piIsStreaming && streaming)
-			{ // Requested to enter streaming mode
-				GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				delayUS(100000);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				delayUS(100000);
-				GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				delayUS(100000);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
-				delayUS(100000);
-			}
-			if (piIsStreaming && !streaming)
-			{ // Requested to leave streaming mode
-				GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-				GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-				GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-				delayUS(100000);
-			}
-			piIsStreaming = streaming;
+			piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
+			ReturnToDefaultLEDState(500);
 			// TODO: Get this update from camera_pi directly instead over I2C?
 			// E.g. Errors from camera_pi cannot be read here
 		}
@@ -577,7 +560,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len)
 {
 	piIsBooted = true;
-	rgbled_transition(LED_ACTIVE, 500);
+	ReturnToDefaultLEDState(100);
 
 	switch (command)
 	{
@@ -606,7 +589,7 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
 {
 	piIsBooted = true;
-	rgbled_transition(LED_ACTIVE, 500);
+	ReturnToDefaultLEDState(100);
 
 	switch (command)
 	{
@@ -621,6 +604,20 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 
 
 /* ------ Functional Behaviour ------ */
+
+void ReturnToDefaultLEDState(int timeMS)
+{
+	if (piIsStreaming) // Implies piHasPower && piIsBooted && uartState == UART_CamPi
+		rgbled_animation(&LED_ANIM_STREAMING);
+	else if (piIsBooted) // Implies piHasPower && piIsBooted
+		rgbled_transition(LED_ACTIVE, timeMS);
+	else if (piHasPower)
+		rgbled_animation(&LED_ANIM_BOOTING);
+	else if (portStates[0].ready)
+		rgbled_transition(LED_STANDBY, timeMS);
+	else
+		rgbled_transition(LED_INITIALISING, timeMS);
+}
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 {

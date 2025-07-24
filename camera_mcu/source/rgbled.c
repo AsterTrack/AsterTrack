@@ -144,6 +144,7 @@ static void set_anim_transition()
 void rgbled_animation(struct LED_Animation *anim)
 {
 	if (anim->count == 0) return;
+	if (current_animation == anim) return;
 	rgbled_lock();
 
 	// Reset state

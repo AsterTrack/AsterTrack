@@ -75,15 +75,24 @@ bool rgbled_animating(struct LED_Animation *anim);
  * LED States & Animations
  */
 
-extern uint8_t LED_STANDBY[RGBLED_COUNT*3];
-extern uint8_t LED_ACTIVE[RGBLED_COUNT*3];
 extern uint8_t LED_ALL_OFF[RGBLED_COUNT*3];
+extern uint8_t LED_INITIALISING[RGBLED_COUNT*3];
+extern uint8_t LED_STANDBY[RGBLED_COUNT*3];
+extern uint8_t LED_CONNECTING[RGBLED_COUNT*3];
+extern uint8_t LED_ACTIVE[RGBLED_COUNT*3];
+extern uint8_t LED_UART_ERROR[RGBLED_COUNT*3];
+extern uint8_t LED_ERROR_1[RGBLED_COUNT*3];
+extern uint8_t LED_ERROR_2[RGBLED_COUNT*3];
+extern uint8_t LED_ERROR_3[RGBLED_COUNT*3];
+extern uint8_t LED_ERROR_4[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_INFRARED[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_VISIBLE[RGBLED_COUNT*3];
 extern uint8_t LED_FLASH_DEBUG_SWD[RGBLED_COUNT*3];
 extern uint8_t LED_FLASH_BOOT0_PI[RGBLED_COUNT*3];
 extern uint8_t LED_BOOTLOADER[RGBLED_COUNT*3];
 
+extern struct LED_Animation LED_ANIM_BOOTING;
+extern struct LED_Animation LED_ANIM_STREAMING;
 extern struct LED_Animation LED_ANIM_FLASH_BAD;
 
 // These timings are critical as they influence behaviour and the animation needs to convey that behaviour to the user
@@ -91,6 +100,15 @@ extern struct LED_Animation LED_ANIM_FLASH_BAD;
 #define CHARGE_TIME_MAX_MS 3000
 extern struct LED_Animation LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD;
 extern struct LED_Animation LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI;
+
+
+/**
+ * Functions encoding dynamic LED state
+ * Note: This replaces a proper priority-based animation/state layering system
+ * Essentially allowing for a single top-priority layer overwriting the single bottom-priority layer (default state)
+ */
+
+void ReturnToDefaultLEDState(int timeMS);
 
 #ifdef __cplusplus
 }

@@ -25,13 +25,40 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * 4 3
  */
 
-#define COL_STANDBY 0x22, 0x55, 0x00
+#define COL_OFF 0x00, 0x00, 0x00
+
+uint8_t LED_ALL_OFF[RGBLED_COUNT*3] = {
+	COL_OFF,
+	COL_OFF,
+	COL_OFF,
+	COL_OFF,
+};
+
+#define COL_INITIALISING 0x3D, 0x20, 0x00
+
+uint8_t LED_INITIALISING[RGBLED_COUNT*3] = {
+	COL_INITIALISING,
+	COL_INITIALISING,
+	COL_INITIALISING,
+	COL_INITIALISING,
+};
+
+#define COL_STANDBY 0x20, 0x2F, 0x00
 
 uint8_t LED_STANDBY[RGBLED_COUNT*3] = {
 	COL_STANDBY,
 	COL_STANDBY,
 	COL_STANDBY,
 	COL_STANDBY,
+};
+
+#define COL_CONNECTING 0x22, 0x55, 0xAA
+
+uint8_t LED_CONNECTING[RGBLED_COUNT*3] = {
+	COL_CONNECTING,
+	COL_CONNECTING,
+	COL_CONNECTING,
+	COL_CONNECTING,
 };
 
 #define COL_ACTIVE 0x55, 0xBB, 0x00
@@ -43,11 +70,85 @@ uint8_t LED_ACTIVE[RGBLED_COUNT*3] = {
 	COL_ACTIVE,
 };
 
-uint8_t LED_ALL_OFF[RGBLED_COUNT*3] = {
-	0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00,
+struct LED_Animation LED_ANIM_BOOTING = {
+	.count = 2,
+	.repetitions = -1,
+	.transitions = {
+		{
+			.leds = LED_STANDBY,
+			.time = 500*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 500*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		}
+	}
+};
+
+#define COL_ERROR 0xFF, 0x00, 0x00
+
+uint8_t LED_UART_ERROR[RGBLED_COUNT*3] = {
+	COL_ERROR,
+	COL_ERROR,
+	COL_ERROR,
+	COL_ERROR,
+};
+
+uint8_t LED_ERROR_1[RGBLED_COUNT*3] = {
+	COL_ERROR,
+	COL_OFF,
+	COL_OFF,
+	COL_OFF,
+};
+
+uint8_t LED_ERROR_2[RGBLED_COUNT*3] = {
+	COL_OFF,
+	COL_ERROR,
+	COL_OFF,
+	COL_OFF,
+};
+
+uint8_t LED_ERROR_3[RGBLED_COUNT*3] = {
+	COL_OFF,
+	COL_OFF,
+	COL_ERROR,
+	COL_OFF,
+};
+
+uint8_t LED_ERROR_4[RGBLED_COUNT*3] = {
+	COL_OFF,
+	COL_OFF,
+	COL_OFF,
+	COL_ERROR,
+};
+
+struct LED_Animation LED_ANIM_STREAMING = {
+	.count = 4,
+	.repetitions = -1,
+	.transitions = {
+		{
+			.leds = LED_ACTIVE,
+			.time = 300*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_IMMEDIATE
+		},
+		{
+			.leds = LED_STANDBY,
+			.time = 300*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_STANDBY,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_IMMEDIATE
+		}
+	}
 };
 
 #define COL_INFRARED_ON 0xFF, 0x00, 0xFF

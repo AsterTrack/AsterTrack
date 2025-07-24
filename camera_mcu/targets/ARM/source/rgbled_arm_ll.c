@@ -245,12 +245,19 @@ bool rgbled_abort_wakeup_waiting()
 	return ready;
 }
 
+volatile bool locked = false;
+
 void rgbled_lock()
 {
 	USE_LOCKS();
 	LOCK();
+	// Acts as an assertion. Locks up if assumption fails, in which case, more IRQs use the LEDs than intended
+	while (locked);
+	locked = true;
 	NVIC_DisableIRQ(TIM16_IRQn);
 	NVIC_DisableIRQ(DMA1_Channel1_IRQn);
+	NVIC_DisableIRQ(USART1_IRQn);
+	NVIC_DisableIRQ(DMA1_Channel2_3_IRQn);
 	UNLOCK();
 }
 
@@ -258,8 +265,11 @@ void rgbled_unlock()
 {
 	USE_LOCKS();
 	LOCK();
+	locked = false;
 	NVIC_EnableIRQ(TIM16_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+	NVIC_EnableIRQ(USART1_IRQn);
+	NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
 	UNLOCK();
 }
 

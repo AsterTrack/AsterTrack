@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util.h"
 #include "uartd.h"
+#include "rgbled.h"
 
 #if defined(STM32G0)
 #include "stm32g0xx_ll_bus.h"
@@ -330,6 +331,8 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 	{
 		WARN_STR("+CommReset:");
 		WARN_CHARR(INT9_TO_CHARR(port));
+		rgbled_transition(LED_UART_ERROR, 0);
+		ReturnToDefaultLEDState(100);
 	}
 	return success;
 }

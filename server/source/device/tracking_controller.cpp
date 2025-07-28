@@ -155,8 +155,8 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 	{
 		checkControlRequest(controller, controller.statusReq, "Status", COMMAND_IN_STATUS, 50);
 		checkControlRequest(controller, controller.debugReq, "Debug", COMMAND_IN_DEBUG, 10);
-		checkControlRequest(controller, controller.eventReq, "Event", COMMAND_IN_EVENTS, 100);
-		checkControlRequest(controller, controller.packetReq, "Packet", COMMAND_IN_PACKETS, 100);
+		checkControlRequest(controller, controller.eventReq, "Event", COMMAND_IN_EVENTS, 10);
+		checkControlRequest(controller, controller.packetReq, "Packet", COMMAND_IN_PACKETS, 10);
 	}
 
 	if (!controller.comm->commStreaming)

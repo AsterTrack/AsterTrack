@@ -1337,7 +1337,8 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	}
 
 	// Queue for processing in a separate thread
-	threadPool.push([&](int, std::shared_ptr<FrameRecord> frame){
+	threadPool.push([&](int, std::shared_ptr<FrameRecord> frame)
+	{
 		FetchTrackingIO(GetState());
 
 		auto start = sclock::now();

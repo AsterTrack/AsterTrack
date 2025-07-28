@@ -137,6 +137,48 @@ void fillWirelessStatusPacket(const TrackingCameraState &state, std::vector<uint
 	}
 }
 
+bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length)
+{
+	if (length < 2) return false;
+	if (packet[0] & ~1 || packet[1] & ~1)
+	{
+		printf("Received invalid wifi configuration non-boolean toggles!\n");
+		return false;
+	}
+	if (length < 4)
+	{
+		state.wireless.enabled = packet[0];
+		state.wireless.Server = packet[1];
+		return true;
+	}
+	uint16_t credSize = (packet[2] << 8) | packet[3];
+	if (length != 2+2+credSize)
+	{
+		printf("Received wifi configuration with %d bytes of wpa_supplicant, but packet size was only 4+%d\n",
+			credSize, length-4);
+		return false;
+	}
+	state.wireless.enabled = packet[0];
+	state.wireless.Server = packet[1];
+	printf("Received packet of size %d that set wireless state to %s!\n",
+		length, state.wireless.enabled? "enabled" : "disabled");
+
+	printf("Updating wpa_supplicant with config of size %d!\n", credSize);
+	std::string wpa_supplicant((char*)&packet[4], credSize);
+	// Format check is done by wpa_supplicant itself, cannot do everything
+	std::ofstream("/etc/wpa_supplicant.conf") << wpa_supplicant;
+
+	// TODO: Save to disk once wpa_supplicant parsed and verified?
+
+	state.wireless.dirty = true;
+	if (!state.wireless.updating)
+	{
+		state.wireless.updating = true; // Will be true as long as thread is alive, thread will only close once state not dirty
+		new std::thread(UpdateWirelessStateThread, &state);
+	}
+	return true;
+}
+
 void UpdateWirelessStateThread(TrackingCameraState *state)
 {
 	auto &wireless = state->wireless;

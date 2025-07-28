@@ -116,6 +116,7 @@ inline int comm_read_internal(CommState &comm, uint32_t timeoutUS)
 		}
 		return 0;
 	}
+	proto_clean(comm.protocol, true);
 	num = comm.read(comm.port, &comm.protocol.rcvBuf[comm.protocol.tail], comm.protocol.rcvBuf.size()-comm.protocol.tail);
 	/* if (num > 0)
 	{
@@ -461,38 +462,9 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_CFG_WIFI)
 				{
-					if (proto_fetchCmd(proto) && proto.cmdSz >= 2)
+					if (proto_fetchCmd(proto))
 					{
-						state.wireless.enabled = proto.rcvBuf[proto.cmdPos+0];
-						state.wireless.Server = proto.rcvBuf[proto.cmdPos+1];
-						printf("Received packet of size %d that set wireless state to %s!\n",
-							proto.cmdSz, state.wireless.enabled? "enabled" : "disabled");
-
-						if (state.wireless.enabled && proto.cmdSz > 4)
-						{
-							uint16_t credSize = (proto.rcvBuf[proto.cmdPos+2] << 8) | proto.rcvBuf[proto.cmdPos+3];
-							if (proto.cmdSz == 2+2+credSize)
-							{
-								printf("Updating wpa_supplicant with config of size %d!\n", credSize);
-								std::string wpa_supplicant((char*)&proto.rcvBuf[proto.cmdPos+4], credSize);
-								// Format check is done by wpa_supplicant itself, cannot do everything
-								std::ofstream("/etc/wpa_supplicant.conf") << wpa_supplicant;
-
-								// TODO: Save to disk once wpa_supplicant parsed and verified?
-							}
-							else
-							{
-								printf("Received wifi configuration with %d bytes of wpa_supplicant, but packet size was only 4+%d\n",
-									credSize, proto.cmdSz-4);
-							}
-						}
-
-						state.wireless.dirty = true;
-						if (!state.wireless.updating)
-						{
-							state.wireless.updating = true; // Will be true as long as thread is alive, thread will only close once state not dirty
-							new std::thread(UpdateWirelessStateThread, &state);
-						}
+						parseWirelessConfigPacket(state, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
 					}
 				}
 				else if (proto.header.tag == PACKET_CFG_IMAGE)
@@ -567,8 +539,7 @@ phase_comm:
 
 			// Check timeout
 			// TODO: Add toggle for timeout, not needed for TCP, only for UART
-			int elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(sclock::now() - time_read).count();
-			if (elapsedMS > UART_COMM_TIMEOUT_MS)
+			if (dtMS(time_read, sclock::now()) > UART_COMM_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
 				printf("Ping dropped out, resetting comm!\n");
 				comm_abort(comm);

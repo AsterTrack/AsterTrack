@@ -45,7 +45,7 @@ struct TrackingCameraState;
 enum SyncSource
 {
 	SYNC_NONE,		// Implies camera generates signal itself, actual SOF is guessed
-	SYNC_VIRTUAL,	// Implies there is no cameras
+	SYNC_VIRTUAL,	// Implies there is no cameras in sync group, generating frames merely for other hardware
 	SYNC_INTERNAL,	// Implies controller generates consistent, trusted signal
 	SYNC_EXTERNAL	// Implies sync timing and frameID is externally supllied and could be inconsistent
 };

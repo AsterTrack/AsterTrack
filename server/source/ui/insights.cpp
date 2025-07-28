@@ -1002,7 +1002,6 @@ static bool ShowTrackingControllerPanel()
 		ui.seqEvents->SetViewIntervalUS(controller->sync->contextualRLock()->frameIntervalMS*1000.0f);
 	ImGui::EndDisabled();
 
-	ImGui::BeginDisabled(!controller->comm->commStreaming);
 	if (ImGui::TabItemButton(ui.seqEventsActive? "Disable##Toggle" : "Enable##Toggle", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
 	{
 		ui.seqEventsActive = !ui.seqEventsActive;
@@ -1011,7 +1010,6 @@ static bool ShowTrackingControllerPanel()
 		else
 			comm_submit_control_data(controller->comm, COMMAND_OUT_EVENTS, 0x00, 0, nullptr, 0);
 	}
-	ImGui::EndDisabled();
 
 	/* Show sequencer */
 

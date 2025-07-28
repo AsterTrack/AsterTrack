@@ -27,6 +27,8 @@ bool connectToWifi(std::string &SSID, std::string &IP, std::string &error);
 
 void fillWirelessStatusPacket(const TrackingCameraState &state, std::vector<uint8_t> &packet);
 
+bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length);
+
 void UpdateWirelessStateThread(TrackingCameraState *state);
 
 #endif // WIRELESS_H

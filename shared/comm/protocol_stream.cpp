@@ -113,6 +113,8 @@ bool proto_fetchCmd(ProtocolState &comm)
 	else
 	{ // Move receive head to beginning of buffer to make it easier to parse packet once it does arrive
 		proto_clean(comm, true);
+		if (PACKET_HEADER_SIZE+comm.cmdSz > comm.rcvBuf.size())
+			comm.rcvBuf.resize(PACKET_HEADER_SIZE+comm.cmdSz);
 	}
 	return false;
 }

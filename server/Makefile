@@ -150,13 +150,15 @@ dep = dependencies/sources
 b = build
 o = $(b)/$(COMPILER)-$(mode)
 cflags = -Idependencies/include -Idependencies/sources \
-	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk
+	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk \
+	$(shell pkg-config --cflags dbus-1)	
 cxxflags = $(cstd) $(cflags) -I$(src) -I$(sh) -I$(dep)/imgui -DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion \
 	-D_UNICODE -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
 	-std=c++20 -ffp-contract=fast
-lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
+lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march) \
+	$(shell pkg-config --libs dbus-1)
 
 
 # Define all source files to be compiled
@@ -164,7 +166,8 @@ SERVER_CPP = \
 	app.cpp server.cpp config.cpp simulation.cpp recording.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp \
 	comm/streaming.cpp comm/timesync.cpp \
-	device/tracking_controller.cpp device/tracking_camera.cpp device/parsing.cpp \
+	device/tracking_controller.cpp device/tracking_camera.cpp \
+	device/parsing.cpp device/camera_firmware.cpp \
 	io/vrpn.cpp io/vrpn_imu.cpp \
 	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp imu/remoteIMU.cpp \
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp \
@@ -187,7 +190,8 @@ SERVER_SHARED_C =
 SERVER_DEP_CPP = \
 	recursive_shared_mutex/recursive_shared_mutex.cpp \
 	poselib/p3p_ding.cpp \
-	dbscan/dbscan.cpp
+	dbscan/dbscan.cpp \
+	nativefiledialog-extended/nfd_portal.cpp
 
 SERVER_DEP_C = hidapi/linux/hid.c
 

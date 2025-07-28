@@ -37,6 +37,57 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define STREAM_PACKET_HEADER_SIZE		0
 #define STREAM_PACKET_BLOB_SIZE			6
 
+#define FIRMWARE_PACKET_HEADER			10
+#define FIRMWARE_FILE_HEADER			6
+#define FIRMWARE_MAX_TRANSFER_SIZE		1000000000 // 1GB - for full image sizes. Most FW updates should be 10MB max
+
+enum FirmwareTransferType : uint8_t
+{
+	FW_TX_TYPE_FILE,
+	FW_TX_TYPE_PACKAGE
+};
+
+enum FirmwareStatusType : uint8_t
+{
+	FW_STATUS_UPDATE,
+	FW_STATUS_TRANSFER,
+	FW_STATUS_BLOCK,
+	FW_INQUIRE_UPDATE,
+	FW_INQUIRE_TRANSFER
+};
+
+enum FirmwareTXStatus : uint8_t
+{
+	FW_TX_QUEUED,
+	FW_TX_TRANSFERRING,
+	FW_TX_TRANSFERRED,
+	FW_TX_ERROR
+};
+
+enum FirmwareStatus : uint8_t
+{
+	FW_STATUS_NONE,
+	FW_STATUS_INITIATING,
+	FW_STATUS_INITIATED,
+	FW_STATUS_TRANSFERRING,
+	FW_STATUS_TRANSFERRED,
+	FW_STATUS_REQAPPLY,
+	FW_STATUS_UPDATING,
+	FW_STATUS_UPDATED,
+	FW_STATUS_INVALID,
+	FW_STATUS_FAILEDTRANSFER,
+	FW_STATUS_ISSUE,
+	FW_STATUS_ERROR,
+	FW_STATUS_ABORT,
+	FW_STATUS_MAX
+};
+
+enum FirmwareUpdateFlags : uint8_t
+{
+	FW_FLAGS_NONE = 0,
+	FW_REQUIRE_REBOOT = 1,
+	FW_FLASH_MCU = 2,
+};
 
 static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
 {

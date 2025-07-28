@@ -305,6 +305,8 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LControllerDevice]		= "Ctrl";
 	LogCategoryIdentifiers[LCameraDevice]			= "Cam ";
 	LogCategoryIdentifiers[LCameraEmulation]		= "Emul";
+	LogCategoryIdentifiers[LFirmwareUpdate]			= "FwUp";
+	LogCategoryIdentifiers[LIO]						= "I/O ";
 
 	LogCategoryDescriptions[LDefault] 				= "Default";
 	LogCategoryDescriptions[LGUI] 					= "GUI / Visualisation";
@@ -336,6 +338,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LControllerDevice]		= "Controller Logs";
 	LogCategoryDescriptions[LCameraDevice]			= "Camera Logs";
 	LogCategoryDescriptions[LCameraEmulation]		= "Emulated Blob Detection";
+	LogCategoryDescriptions[LFirmwareUpdate]		= "Firmware Update";
 	LogCategoryDescriptions[LIO]					= "Integrations";
 
 	LogLevelIdentifiers[LTrace]  = "TRACE";

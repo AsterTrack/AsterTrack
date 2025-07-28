@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "server.hpp"
 #include "ui/shared.hpp" // Signals
+#include "camera_firmware.hpp"
 
 #include "comm/usb.hpp"
 
@@ -996,6 +997,16 @@ void ReadCameraPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	case PACKET_BGTILES:
 	{
 		ReadBGTilesPacket(camera, packet);
+		break;
+	}
+	case PACKET_FW_STATUS:
+	{
+		LOG(LFirmwareUpdate, LTrace, "Camera %d received a firmware status packet!", camera.id);
+		if (packet.erroneous) break;
+		if (packet.data.size() < FIRMWARE_PACKET_HEADER) break;
+		if (!camera.firmware) break;
+		auto camStatus = camera.firmware->contextualLock();
+		camStatus->packets.push_back(std::move(packet.data));
 		break;
 	}
 	default:

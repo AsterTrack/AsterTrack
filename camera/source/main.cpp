@@ -263,7 +263,25 @@ int main(int argc, char **argv)
 	// Check MCU presence
 	bool hasMCU = false;
 	if (mcu_init())
+	{
 		hasMCU = mcu_probe();
+		if (!hasMCU && mcu_probe_bootloader())
+		{
+			if (!mcu_verify_program(state.mcuFile))
+			{
+				printf("MCU is bricked with invalid firmware, will re-flash!\n");
+				if (mcu_flash_program(state.mcuFile))
+					printf("Successfully re-flashed MCU in attempt to recover it!\n");
+			}
+			else
+			{
+				printf("MCU is bricked, but firmware has been validated!\n");
+			}
+			// Whether we reflashed it or not, reset it into normal mode and try again
+			mcu_reset();
+			hasMCU = mcu_probe();
+		}
+	}
 	atexit(mcu_cleanup);
 
 	// Init VCSM
@@ -461,13 +479,23 @@ int main(int argc, char **argv)
 					}
 					else if (cin == 'f')
 					{
-						mcu_flash_program("TrackingCamera/TrackingCameraMCU.bin");
+						mcu_flash_program(state.mcuFile);
 					}
 					else if (cin == 'v')
 					{
-						mcu_verify_program("TrackingCamera/TrackingCameraMCU.bin");
+						mcu_verify_program(state.mcuFile);
 					}
 				}
+			}
+
+			if (state.firmware.applyingUpdate)
+			{ // We're supposed to apply a firmware update
+				ApplyFirmwareUpdate(state);
+			}
+
+			if (state.postFirmwareActions != FW_FLAGS_NONE)
+			{ // Apply post-firmware actions like flashing MCU or rebooting
+				PostFirmwareUpdateActions(state);
 			}
 
 			if (state.updateSetupCPU.exchange(false))
@@ -479,7 +507,7 @@ int main(int argc, char **argv)
 
 			if (state.updateMode.exchange(false))
 			{ // Switch to specified mode
-				if (state.newMode.streaming)
+				if (state.newMode.streaming && !state.firmware)
 				{ // Perform actual mode switch (and initialisation) in stream loop
 					state.curMode.streaming = true;
 					state.updateMode = true;

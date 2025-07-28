@@ -54,8 +54,11 @@ gpiod_line_request *line_request;
 
 TimePoint_t lastPing;
 
+std::mutex mcu_mutex;
 std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
+bool mcu_identified;
+bool mcu_active;
 
 static bool i2c_init();
 static bool i2c_probe();
@@ -64,7 +67,7 @@ static void i2c_cleanup();
 static bool gpio_init();
 static void gpio_cleanup();
 
-static void mcu_send_ping();
+static bool mcu_send_ping();
 
 static void mcu_thread();
 
@@ -79,13 +82,17 @@ bool mcu_probe()
 {
 	if (i2c_fd < 0) return false;
 
-	if (!i2c_probe()) return false;
-
-	lastPing = sclock::now();
-	stop_thread = false;
-	mcu_comm_thread = new std::thread(mcu_thread);
-
-	return true;
+	mcu_active = i2c_probe();
+	if (mcu_active)
+	{
+		printf("Verified existance of MCU!\n");
+		lastPing = sclock::now();
+		mcu_identified = true;
+		stop_thread = false;
+		if (!mcu_comm_thread)
+			mcu_comm_thread = new std::thread(mcu_thread);
+	}
+	return mcu_active;
 }
 
 void mcu_cleanup()
@@ -106,9 +113,17 @@ static void mcu_thread()
 {
 	while (!stop_thread.load())
 	{
-		if (dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
+		if (mcu_active && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
 		{
+			std::unique_lock lock(mcu_mutex);
 			mcu_send_ping();
+			lastPing = sclock::now();
+		}
+		if (!mcu_active && dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS)
+		{
+			std::unique_lock lock(mcu_mutex);
+			mcu_active = i2c_probe();
+			printf("Reconnected with MCU!\n");
 			lastPing = sclock::now();
 		}
 
@@ -133,24 +148,43 @@ void mcu_reset()
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 }
 
-void mcu_switch_bootloader()
+bool mcu_probe_bootloader()
 {
-	if (i2c_fd >= 0)
+	if (i2c_fd < 0) return false;
+
+	if (bootloaderGet() == RES_OK || mcu_switch_bootloader())
 	{
+		printf("MCU bootloader was found!\n");
+		mcu_identified = true;
+		return true;
+	}
+	return false;
+}
+
+bool mcu_switch_bootloader()
+{
+	if (i2c_fd >= 0 && mcu_active)
+	{
+		printf("Requesting MCU to switch to bootloader...\n");
+		mcu_active = false;
 		unsigned char REG_ID[1] = { MCU_SWITCH_BOOTLOADER };
 		struct i2c_msg I2C_MSG[] = {
 			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
 		};
 		struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 1 };
 		if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+		{
 			printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
+			if (errno == EBADF) i2c_init();
+			return false;
+		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			return;
+			return true;
 		}
 		else
 			printf("Failed to switch or query the bootloader via I2C message! %d: %s\n", errno, strerror(errno));
@@ -158,6 +192,9 @@ void mcu_switch_bootloader()
 
 	if (gpio_chip)
 	{
+		printf("Resetting MCU with BOOT0 high to switch to bootloader...\n");
+		mcu_active = false;
+
 		// BOOT0, RESET
 		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
 		if (gpiod_line_request_set_values(line_request, values_reset))
@@ -166,32 +203,61 @@ void mcu_switch_bootloader()
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
 		// BOOT0, RESET
-		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-		if (gpiod_line_request_set_values(line_request, values_normal))
+		gpiod_line_value values_boot[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+		if (gpiod_line_request_set_values(line_request, values_boot))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+		// BOOT0, RESET
+		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+		if (gpiod_line_request_set_values(line_request, values_normal))
+			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			return;
+			return true;
 		}
 		else
-			printf("Failed to switch or query the bootloader via GPIO pins! %d: %s\n", errno, strerror(errno));
+		{
+			printf("Failed to switch or query the bootloader via GPIO pins!\n");
+			printf("Perhaps flash configuration (option bytes) were wrong, may need an ST Link to flash it!\n");
+		}
 	}
+	return false;
 }
 
 bool mcu_flash_program(std::string filename)
 {
 	if (i2c_fd < 0) return false;
+
+	//if (bootloaderReleaseMemProtect() == RES_FAIL) return false;
+
 	std::ifstream fs(filename);
 	if (!fs.is_open()) return false;
+	pRESULT ret = RES_OK;
+
+	fs.seekg(0, std::ios::end);
+	std::size_t size = fs.tellg();
+	fs.seekg(0);
+	int pages = size/2048; // 2KB Page size of STM32G0
+	pages = std::min(pages+2, 16);
+
+	for (int i = 0; i < pages; i++)
+	{
+		ret = bootloaderErasePages(i, 1);
+		if (ret == RES_FAIL)
+		{
+			printf("Slave MCU IAP: Failed to erase page\n");
+			return false;
+		}
+		printf("Slave MCU IAP: erased page\n");
+	}
 
 	uint8_t loadAddress[4] = {0x08, 0x00, 0x00, 0x00};
 	uint8_t block[256] = {0};
 	int curr_block = 0, bytes_read = 0;
-	pRESULT ret = RES_OK;
 	while (!fs.eof())
 	{
 		fs.read((char*)block, sizeof(block));
@@ -199,6 +265,8 @@ bool mcu_flash_program(std::string filename)
 		if (bytes_read == 0) break;
 		curr_block++;
 		printf("Slave MCU IAP: Writing block: %d,block size: %d\n", curr_block, bytes_read);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		ret = flashPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
@@ -211,7 +279,6 @@ bool mcu_flash_program(std::string filename)
 		incrementAddress(loadAddress, bytes_read);
 		memset(block, 0xff, bytes_read);
 	}
-	fs.close();
 	if (ret != RES_FAIL)
 		printf("Successfully flashed MCU program!\n");
 	return ret != RES_FAIL;
@@ -235,6 +302,8 @@ bool mcu_verify_program(std::string filename)
 		curr_block++;
 		printf("Slave MCU IAP: Verifying block: %d,block size: %d\n", curr_block, bytes_read);
 
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
 		ret = verifyPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
 			break;
@@ -242,26 +311,33 @@ bool mcu_verify_program(std::string filename)
 		incrementAddress(loadAddress, bytes_read);
 		memset(block, 0xff, bytes_read);
 	}
-	fs.close();
 	if (ret != RES_FAIL)
 		printf("Successfully verified MCU program!\n");
 	return ret != RES_FAIL;
 }
 
-static void mcu_send_ping()
+static bool mcu_send_ping()
 {
-	if (i2c_fd < 0) return;
+	if (i2c_fd < 0) return false;
 	unsigned char REG_ID[1] = { MCU_PING };
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 1 };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
 		printf("Failed to send I2C message to MCU (ping)! %d: %s\n", errno, strerror(errno));
+		if (errno == EBADF) i2c_init();
+		mcu_active = false;
+		return false;
+	}
+	return true;
 }
 
 static bool i2c_init()
 {
+	if (i2c_fd >= 0)
+		close(i2c_fd);
 	i2c_fd = open(i2c_port, O_RDWR);
 	if (i2c_fd < 0)
 	{
@@ -286,18 +362,17 @@ static bool i2c_probe()
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to read MCU ID register! %d: %s\n", errno, strerror(errno));
-		close(i2c_fd);
+		if (errno == EBADF) i2c_init();
 		return false;
 	}
 
 	if (MCU_ID != MCU_I2C_ID)
 	{
 		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_ID, MCU_I2C_ID);
-		close(i2c_fd);
+		if (errno == EBADF) i2c_init();
 		return false;
 	}
 
-	printf("Verified existance of MCU!\n");
 	return true;
 }
 

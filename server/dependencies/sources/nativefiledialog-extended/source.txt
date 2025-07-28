@@ -1,0 +1,8 @@
+https://github.com/btzy/nativefiledialog-extended
+v1.2.1
+
+Extracted relevant files
+Changed include to "nfd.h" instead of <nfd.h> in nfd_glfw3.h
+Changed declaration of nfdwindowhandle_t to give the previously anonymous struct a name:
+    typedef struct nfdwindowhandle {...} nfdwindowhandle_t;
+    This allows for forward declaration of nfdwindowhandle_t

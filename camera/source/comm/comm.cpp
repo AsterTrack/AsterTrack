@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/protocol_stream.hpp"
 #include "timesync.hpp"
 #include "wireless.hpp"
+#include "firmware.hpp"
 
 #include "util/util.hpp"
 
@@ -625,6 +626,34 @@ phase_comm:
 						}
 						else
 							printf("Visualisation disabled!\n");
+					}
+				}
+				else if (proto.header.tag == PACKET_FW_PREPARE)
+				{ // Prepare to receive a firmware file
+					if (proto_fetchCmd(proto) && proto.validChecksum)
+					{
+						SetupFirmwareUpdate(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
+					}
+				}
+				else if (proto.header.tag == PACKET_FW_BLOCK)
+				{ // Prepare to receive a firmware file
+					if (proto_fetchCmd(proto) && proto.validChecksum)
+					{
+						ReceiveFirmwareBlock(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
+					}
+				}
+				else if (proto.header.tag == PACKET_FW_APPLY)
+				{ // Prepare to receive a firmware file
+					if (proto_fetchCmd(proto) && proto.validChecksum)
+					{
+						ReceiveFirmwareApplyRequest(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
+					}
+				}
+				else if (proto.header.tag == PACKET_FW_STATUS)
+				{ // Requesting a status that might have gone lost in transfer, or update cancel request
+					if (proto_fetchCmd(proto) && proto.validChecksum)
+					{
+						ReceiveFirmwareStatus(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
 					}
 				}
 

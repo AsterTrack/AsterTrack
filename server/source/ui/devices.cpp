@@ -25,29 +25,37 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imgui/imgui_onDemand.hpp"
 #include "gl/visualisation.hpp"
 
+// For firmware flashing
+
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
+#include "nativefiledialog-extended/nfd.h"
+#include "nativefiledialog-extended/nfd_glfw3.h"
+
+#include <filesystem>
+
+
 void InterfaceState::UpdateDevices(InterfaceWindow &window)
 {
+	static FirmwareUpdateRef firmwareUpdate;
+	bool firmwareUpdateSetup = false;
+
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
+		// TODO: Could abort firmware update here, but window might be accidentally hidden
 		ImGui::End();
 		return;
 	}
 	ServerState &state = GetState();
 
-	if (state.cameras.empty())
-	{
-		ImGui::End();
-		return;
-	}
-
-	ImGui::TextUnformatted("Largely still placeholder!");
-
 	int pad = 16; // Padding for controllers
 	ImVec2 controllerSize = ImVec2(128, 128);
 	ImVec2 cameraSize = ImVec2(32, 64);
 
-	auto drawCamera = [&](TrackingCameraState &camera, float width)
+	auto drawCamera = [&](std::shared_ptr<TrackingCameraState> &cameraPtr, float width)
 	{
+		TrackingCameraState &camera = *cameraPtr;
 		ImGui::PushID(camera.id);
 		ImVec2 pos = ImGui::GetCursorPos();
 		ImGui::Image(icons().camera, cameraSize);
@@ -97,17 +105,34 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::SameLine();
 		}
 
+		// ID Label
+		if (camera.pipeline)
+			ImGui::Text("#%d (%d)", camera.id, camera.pipeline->index);
+		else
+			ImGui::Text("#%d", camera.id);
+
 		{ // Sync
 			// TODO: Allow detaching from SyncGroup controller is part of via toggle to switch to free-running
 			// This is currently part of camera settings but it should be part of the SyncGroup configuration UI rework
 			if (camera.sync)
 			{
-				ImGui::Text("%dHz", (int)(1000.0f/camera.sync->contextualRLock()->frameIntervalMS));
+				SyncSource source;
+				float intervalMS;
+				{
+					auto sync = camera.sync->contextualRLock();
+					source = sync->source;
+					intervalMS = sync->frameIntervalMS;
+				}
+				if (source == SYNC_NONE)
+					ImGui::Text("%dHz", (int)(1000.0f/intervalMS));
+				else
+					ImGui::Text("%dHz", state.controllerConfig.framerate);
 			}
 			else
 			{
 				ImGui::Text("%dHz", state.controllerConfig.framerate);
 			}
+			ImGui::SameLine();
 		}
 
 		{ // Config
@@ -128,7 +153,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0,0));
 			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0));
 			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
-			if (ImGui::BeginCombo("##Config", asprintf_s("%s##config", getConfigLabel(index).c_str()).c_str()))
+			std::string configPreview = asprintf_s("%s##config", getConfigLabel(index).c_str());
+			if (ImGui::BeginCombo("##Config", configPreview.c_str(), ImGuiComboFlags_WidthFitPreview))
 			{
 				ImGui::PopStyleColor(2);
 				ImGui::PopStyleVar();
@@ -149,6 +175,19 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::PopStyleVar();
 			}
 		}
+
+		// Firmware
+		ImGui::Text("FW");
+		ImGui::SameLine();
+		//ImGui::Text("v1.2.4");
+		//ImGui::SameLine();
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+		ImGui::BeginDisabled(state.isStreaming || firmwareUpdate);
+		if (ImGui::Button("v1.2.4"))
+			camera.selectedForFirmware = !camera.selectedForFirmware;
+		if (camera.selectedForFirmware) firmwareUpdateSetup = true;
+		ImGui::EndDisabled();
+		ImGui::PopStyleVar();
 
 		ImGui::Unindent(bb.GetWidth() + ImGui::GetStyle().ItemInnerSpacing.x);
 
@@ -247,10 +286,17 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		if (!camera->controller)
 			numFreeCameras++;
 	}
-	int freeCols = (int)std::ceil(numFreeCameras/8.0f);
+	// Determine number of rows and cols for ports and free cameras respectively
+	int numRows = 0;
+	for (auto &controller : state.controllers)
+		numRows = std::max<int>(numRows, controller->cameras.size());
+	if (numRows == 0 && numFreeCameras > 0)
+		numRows = std::min(numFreeCameras, 8);
+	int freeCols = numFreeCameras == 0? 0 : (int)std::ceil((float)numFreeCameras/numRows);
+	int numCols = state.controllers.size() + freeCols;
 
-	if (ImGui::BeginTable("Devices", state.controllers.size()+freeCols,
-		ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_BordersInner))
+	if (numCols > 0 && ImGui::BeginTable("Devices", numCols,
+		ImGuiTableFlags_PadOuterX | ImGuiTableFlags_BordersInner))
 	{
 		// Register columns, but without headers
 		for (auto &controller : state.controllers)
@@ -277,37 +323,29 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 
 		int free = 0;
-		for (int r = 0; r < 8; r++)
+		for (int row = 0; row < numRows; row++)
 		{
 			ImGui::TableNextRow();
 			for (auto &controller : state.controllers)
 			{
 				ImGui::TableNextColumn();
-				auto &camera = controller->cameras[r];
-				if (camera)
-				{
-					drawCamera(*camera, ImGui::GetColumnWidth());
-				}
+				if (row >= controller->cameras.size()) continue;
+				if (controller->cameras[row])
+					drawCamera(controller->cameras[row], ImGui::GetColumnWidth());
 				else
-				{
 					ImGui::Image(icons().camera, cameraSize);
-				}
 			}
 			for (int i = 0; i < freeCols; i++)
 			{
 				ImGui::TableNextColumn();
-				if (free >= numFreeCameras)
-				{ // No more to draw
-					ImGui::Image(icons().camera, cameraSize);
-					continue;
-				}
+				if (free >= numFreeCameras) continue;
 				int cnt = 0;
 				for (auto &camera : state.cameras)
 				{
 					if (camera->controller) continue;
 					if (cnt++ == free)
 					{ // Draw next free camera
-						drawCamera(*camera, ImGui::GetColumnWidth());
+						drawCamera(camera, ImGui::GetColumnWidth());
 						free++;
 						break;
 					}
@@ -316,6 +354,128 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 
 		ImGui::EndTable();
+	}
+
+	float minButtonWidth = MinSharedLabelWidth("Close", "Abort", "Select", "Flash");
+	ImVec2 button = SizeWidthDiv4(minButtonWidth);
+	if (firmwareUpdate)
+	{
+		ImGui::SeparatorText("Camera Firmware Update");
+
+		auto status = firmwareUpdate->contextualRLock();
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text("%s", status->text.c_str());
+		SameLineTrailing(button.x);
+		bool ended = status->code == FW_STATUS_UPDATED || status->code == FW_STATUS_ERROR || status->code == FW_STATUS_ABORT;
+		if (ended && ImGui::Button("Close", button))
+		{ // Close or abort firmware update
+			for (auto &camera : state.cameras)
+			{
+				camera->selectedForFirmware = false;
+				camera->firmware = nullptr;
+			}
+			firmwareUpdate = nullptr;
+		}
+		if (!ended && ImGui::Button("Abort", button))
+		{ // Close or abort firmware update
+			status->abort.request_stop();
+		}
+		for (auto &camera : state.cameras)
+		{
+			if (camera->firmware)
+			{
+				auto camStatus = camera->firmware->contextualLock();
+				ImGui::Text("Camera #%d: %s", camera->id, camStatus->text.c_str());
+				/* if (camStatus->code == FW_STATUS_UPDATED)
+				{
+					ImGui::SetCursorPosX(button.x);
+					if (ImGui::Button("Restart", button))
+					{ // Restart somehow? Update auto-restarts for most update types
+					}
+				} */
+			}
+			else if (camera->selectedForFirmware)
+				ImGui::Text("Camera #%d is not part of the firmware update.", camera->id);
+		}
+	}
+	else if (firmwareUpdateSetup)
+	{
+		ImGui::SeparatorText("Camera Firmware Update");
+
+		// Static, shared between firmware flashing popups
+		static std::string firmwareFile = "Firmware File";
+		static std::string selectError;
+		ImGui::AlignTextToFramePadding();
+		if (!selectError.empty())
+			ImGui::Text("%s", selectError.c_str());
+		else
+		{
+			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
+			ImGui::SetItemTooltip("%s", firmwareFile.c_str());
+		}
+		SameLineTrailing(button.x);
+		if (ImGui::Button("Select", button))
+		{
+			threadPool.push([](int id)
+			{
+				if (!NFD_Init())
+				{ // Thread-specific init
+					LOG(LGUI, LError, "Failed to initialise File Picker: %s", NFD_GetError());
+					selectError = NFD_GetError();
+					return;
+				}
+
+				const int filterLen = 2;
+				nfdfilteritem_t filterList[filterLen] = {
+					{"CameraPi Data Tarball", "tgz,tar.gz"},
+					{"CameraMCU Program Binary", "bin"},
+				};
+				nfdchar_t *outPath;
+			#ifdef _WIN32
+				std::string defPath = "Downloads";
+			#else
+				std::string defPath = std::filesystem::current_path();
+			#endif
+				nfdopendialogu8args_t args;
+				args.filterList = filterList;
+				args.filterCount = filterLen;
+				args.defaultPath = defPath.c_str();
+				NFD_GetNativeWindowFromGLFWWindow(GetUI().glfwWindow, &args.parentWindow);
+				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+				if (result == NFD_OKAY)
+				{
+					firmwareFile = outPath;
+					selectError.clear();
+					NFD_FreePath(outPath);
+				}
+				else if (result == NFD_ERROR)
+				{
+					LOG(LGUI, LError, "Failed to use File Picker: %s", NFD_GetError());
+					selectError = NFD_GetError();
+				}
+
+				NFD_Quit();
+
+				GetUI().RequestUpdates();
+			});
+		}
+
+		for (auto &camera : state.cameras)
+		{
+			if (camera->selectedForFirmware)
+				ImGui::Text("Camera #%d set to update", camera->id);
+		}
+
+		if (ImGui::Button("Flash", SizeWidthFull()))
+		{
+			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
+			for (auto &camera : state.cameras)
+			{
+				if (camera->selectedForFirmware)
+					firmwareUpdateCameras.push_back(camera); // new shared_ptr
+			}
+			firmwareUpdate = CamerasFlashFirmwareFile(firmwareUpdateCameras, firmwareFile);
+		}
 	}
 
 	// TODO: List IMU providers and their IMU Devices

@@ -27,12 +27,16 @@ SOFTWARE.
 #define MCU_H
 
 #include <string>
+#include <mutex>
+
+extern std::mutex mcu_mutex;
 
 bool mcu_init();
 bool mcu_probe();
 void mcu_cleanup();
 void mcu_reset();
-void mcu_switch_bootloader();
+bool mcu_probe_bootloader();
+bool mcu_switch_bootloader();
 bool mcu_flash_program(std::string filename);
 bool mcu_verify_program(std::string filename);
 

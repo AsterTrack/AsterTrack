@@ -33,6 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/packet.hpp"
 #include "comm/protocol_stream.hpp"
 #include "comm/timesync.hpp"
+#include "comm/firmware.hpp"
 #include "blob/parameters.hpp"
 
 struct TrackingCameraMode 
@@ -115,7 +116,8 @@ struct TrackingCameraState
 		.strobeLength = 10
 	};
 	// QPU options
-	std::string codeFile = "qpu_blob_tiled_min.bin";
+	std::string codeFile = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
+	std::string mcuFile = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
 	bool enableQPU[12] = { 1,1,1,0, 1,1,0,1, 1,0,1,0 };
 	// TODO: Some QPUs do not work with this qpu code (bug), disable them
 	// Do not waste too much time on this, I already did. These cores don't work with this specific code
@@ -140,6 +142,8 @@ struct TrackingCameraState
 	std::string server_host = "";
 	std::string server_port = "8888";
 	WirelessState wireless = {};
+	FirmwareUpdateState firmware = {};
+	FirmwareUpdateFlags postFirmwareActions = FW_FLAGS_NONE;
 	// Comm Synchronisation
 	std::atomic<bool> updateSetupQPU = { false };
 	std::atomic<bool> updateSetupCPU = { false };

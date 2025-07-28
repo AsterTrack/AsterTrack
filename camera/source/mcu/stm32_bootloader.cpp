@@ -221,15 +221,35 @@ pRESULT bootloaderExtErase(void) {
 }
 pRESULT bootloaderReleaseMemProtect(void) {
 	LogDebugInfo(("Slave MCU IAP: UPROTECT MEMORY"));
+#ifdef USE_NO_STRETCH_COMMANDS
+	uint8_t cmd[] = {0x74, 0x8B};
+#else
 	uint8_t cmd[] = {0x73, 0x8C};
-	if (sendBytesWithAck(cmd, sizeof(cmd), 1, 1000) == RES_OK) {
-		uint8_t tmpData[1];
-		if (platform_read(tmpData, 1) == RES_OK) {
-			return RES_OK;
+#endif
+	if (sendBytesWithAck(cmd, sizeof(cmd), 1, 1000) == RES_FAIL)
+		return RES_FAIL;
+
+	uint8_t tmpData[1];
+	while (true)
+	{
+		pRESULT res = platform_read(tmpData, 1);
+		if (res == RES_OK) {
+			if (tmpData[0] == ACK) {
+				LogDebugInfo(("Slave MCU IAP: Memory Unprotect Success"));
+				return RES_OK;
+			} else if (tmpData[0] == BUSY) {
+				LogDebugInfo(("Slave MCU IAP: Busy unprotecting..."));
+				platform_delay_ms(1);
+			} else {
+				LogDebugInfo(("Slave MCU IAP: Memory Unprotect Failure, code:"));
+				LogDebugInfoHEX(tmpData[0]);
+				return RES_FAIL;
+			}
+		} else {
+			LogDebugInfo(("Slave MCU IAP: Read timeout or insefficient length"));
+			return RES_FAIL;
 		}
 	}
-	LogDebugInfo(("Slave MCU IAP: Timeout, unprotection failed"));
-	return RES_FAIL;
 }
 
 pRESULT bootloaderWrite(void) {
@@ -317,8 +337,8 @@ pRESULT flashPage(const uint8_t *address, const uint8_t *dataBuf, uint16_t len) 
 		tx_data[writeNum + 2] ^= dataBuf[i];
 	}
 
-	bootloaderWrite();
-	loadAddress(address);
+	if (bootloaderWrite() == RES_FAIL) return RES_FAIL;
+	if (loadAddress(address) == RES_FAIL) return RES_FAIL;
 
 	platform_write(tx_data, writeNum + 3);
 
@@ -332,7 +352,7 @@ pRESULT flashPage(const uint8_t *address, const uint8_t *dataBuf, uint16_t len) 
 				return RES_OK;
 			} else if (tmpData[0] == BUSY) {
 				LogDebugInfo(("Slave MCU IAP: Busy writing..."));
-				platform_delay_ms(50);
+				platform_delay_ms(1);
 			} else {
 				LogDebugInfo(("Slave MCU IAP: Flash Failure, code:"));
 				LogDebugInfoHEX(tmpData[0]);

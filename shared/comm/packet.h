@@ -81,6 +81,10 @@ enum PacketTag
 	PACKET_BGTILES,			// Send updated background tiles
 	PACKET_CFG_FILTER,		// Configure filter switcher state
 	PACKET_CFG_SIGNAL,		// Configure state for LED to signal
+	PACKET_FW_PREPARE,		// Prepare firmware update
+	PACKET_FW_BLOCK,		// Send block of a file for firmware update
+	PACKET_FW_STATUS,		// Send status of prior firmware update packet
+	PACKET_FW_APPLY,		// Apply firmware update
 	PACKET_MAX_ID_POSSIBLE = 63
 };
 

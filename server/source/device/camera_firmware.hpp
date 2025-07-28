@@ -16,32 +16,34 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef COMMANDS_H
-#define COMMANDS_H
+#ifndef FIRMWARE_H
+#define FIRMWARE_H
 
-/**
- * This file describes the I2C commands between camera_pi and camera_mcu
-*/
+#include "comm/packet.hpp"
+#include "util/util.hpp"
+#include "util/synchronised.hpp"
 
-#include <stdint.h>
+struct TrackingCameraState; // device/tracking_camera.hpp
 
-#define MCU_I2C_ADDRESS			0x3E	// Max 7Bit (0x7F)
-#define MCU_I2C_ID				0x23
-#define MCU_PROBE_INTERVAL_MS	200
-#define MCU_PING_INTERVAL_MS	100
-#define MCU_COMM_TIMEOUT_MS		250
-
-enum CameraMCUCommand
+struct CameraFirmwareUpdateStatus
 {
-	MCU_CMD_NONE = 0,
-	MCU_REG_ID = 1,
-
-	MCU_PING = 16,
-	MCU_BOOT_FIRST, // Notify Pi is booted and may take time initialising
-	MCU_BOOT,		// Notify Pi is booted even if main program fails to connect
-
-	MCU_COMMANDS = 32,
-	MCU_SWITCH_BOOTLOADER
+	int ID;
+	TimePoint_t lastActivity;
+	std::vector<std::vector<uint8_t>> packets;
+	FirmwareStatus code;
+	std::string text;
 };
 
-#endif // COMMANDS_H
+struct FirmwareUpdateStatus
+{
+	FirmwareStatus code;
+	std::string text;
+	std::stop_source abort;
+};
+
+typedef std::shared_ptr<Synchronised<CameraFirmwareUpdateStatus>> CameraFirmwareUpdateRef;
+typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
+
+FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware);
+
+#endif // FIRMWARE_H

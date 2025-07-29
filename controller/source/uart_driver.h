@@ -56,7 +56,7 @@ struct UART_IO_State {
 	} tx_queue[5];
 	int tx_queue_pos;
 	bool uart_tx;
-	void *rx_alloc;
+	uint8_t rx_alloc[UART_HEADROOM+UART_RX_BUFFER_SIZE];
 	uint8_t *rx_buffer;
 };
 

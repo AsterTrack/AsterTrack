@@ -31,6 +31,7 @@ extern "C"
 #include "uartd.h"			// Dis/EnableUARTInterrupts, UART_BAUD_RATE, UART_TX_BLOCKS, USBD_PACKET_SIZE
 #include "usbd.h" 			// *USBZone, hUSB
 
+#include "usbd_conf.h"
 #include "usb_driver.h"		// Driver specific functions
 
 
@@ -39,7 +40,7 @@ extern "C"
 #define PACKET_BLOCK_SZ				USBD_PACKET_SIZE
 #define MAX_QUEUED_PACKETS			32
 
-#define SHARED_BUF_CNT				6
+#define SHARED_BUF_COUNT			6
 
 #define USB_BYTE_TIME_US 			8/480 // 8Bit / 480Bit/us
 
@@ -122,6 +123,7 @@ typedef struct
 	TimePoint lastSentEnd;		// Timepoint at which it last finished sending
 	TimePoint dueTime;			// Timepoint at which it is expected to start sending next
 
+	uint8_t nullPacketBuffer[USB_PACKET_HEADER];
 	PacketRef nullPacket;
 	volatile PacketRef *sending;
 	//PacketRef *queued; // Unused until double-buffering is used
@@ -129,13 +131,11 @@ typedef struct
 
 typedef struct
 {
-	SharedBuffer *shared;
-	uint16_t sharedCount;
+	__attribute__((aligned(4))) SharedBuffer shared[SHARED_BUF_COUNT];
 
-	Source *sources;
-	uint16_t sourceCount;
+	__attribute__((aligned(4))) Source sources[UART_PORT_COUNT];
 
-	Sink *sinks;
+	__attribute__((aligned(4))) Sink sinks[MAX_EP_COUNT];
 	uint16_t sinkCount;
 
 	PacketRef *packetQueue[MAX_QUEUED_PACKETS];
@@ -200,7 +200,7 @@ static inline void dequeuePacket(Hub *hub, int index)
 
 static uint_fast16_t allocateSharedSpace(Hub *hub, uint_fast16_t size, SharedBuffer **buffer, uint8_t **data)
 {
-	for (int i = 0; i < hub->sharedCount; i++)
+	for (int i = 0; i < SHARED_BUF_COUNT; i++)
 	{
 		// Calculate timing of current sink
 		SharedBuffer *buf = &hub->shared[i];
@@ -228,7 +228,7 @@ static uint_fast16_t allocateSharedSpace(Hub *hub, uint_fast16_t size, SharedBuf
 	{ // Debug why we couldn't allocate shared buffer, this should not happen during normal use
 		ERR_STR("^#SharedFull(");
 		ERR_CHARR(INT999_TO_CHARR(size), ')');
-		for (int i = 0; i < hub->sharedCount; i++)
+		for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		{
 			SharedBuffer *buf = &hub->shared[i];
 			ERR_CHARR('+', INT9_TO_CHARR(i));
@@ -577,9 +577,9 @@ static inline void resetPacketHub(Hub *hub)
 	// Reset sinks and sending state
 	resetSinkStates(hub);
 	// Reset sources and queued packets
-	for (int i = 0; i < hub->sourceCount; i++)
+	for (int i = 0; i < UART_PORT_COUNT; i++)
 		resetSourceState(&hub->sources[i]);
-	for (int i = 0; i < hub->sharedCount; i++)
+	for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		resetPacketRef(&hub->shared[i].packet);
 	hub->packetQueueSz = 0;
 }

@@ -11,7 +11,7 @@ DEBUG_FLASH = 1
 OPT = -O1
 
 # Enables logging at different levels
-LOG_FLAGS = -DENABLE_LOG
+#LOG_FLAGS = -DENABLE_LOG
 # Generous Debug Logging. Don't use at high framerates
 #LOG_FLAGS += -DDEBUG_LOG
 # Additional Information (Incidents that could give context to problems)

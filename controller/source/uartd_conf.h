@@ -35,10 +35,7 @@ extern "C"
 #define UART_RX_BUFFER_SIZE		USBD_PACKET_SIZE*UART_TX_BLOCKS // Technically 1021 since 3bytes of USB Block Header are needed, but no matter
 
 // Needs some headroom to write headers & co. to DMA a PacketRef directly from this buffer
-// USB_PACKET_HEADER: Every USB packet has a counter and timestamp
-// BLOCK_HEADER_SIZE: Block header describing data
-// PACKET_HEADER_SIZE: In case header was split by UART buffer end, will be copied to beginning, too
-#define RX_HEADROOM 			USB_PACKET_HEADER+BLOCK_HEADER_SIZE+PACKET_HEADER_SIZE
+#define UART_HEADROOM 			USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+PACKET_HEADER_SIZE
 
 #ifdef __cplusplus
 }

@@ -30,7 +30,7 @@ extern "C"
 #define UART_PORT_COUNT			1
 
 #define UART_RX_BUFFER_SIZE		1024
-#define RX_HEADROOM 			0
+#define UART_HEADROOM 			0
 
 // UART Timing
 #define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming

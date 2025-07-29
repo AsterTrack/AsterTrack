@@ -218,11 +218,7 @@ void uartd_init(uartd_callbacks callbacks)
 	memset(portStates, 0, sizeof(portStates));
 	for (int i = 0; i < UART_PORT_COUNT; i++)
 	{
-		if (UART_IO[i].rx_alloc)
-			free(UART_IO[i].rx_alloc);
-		UART_IO[i].rx_alloc = aligned_alloc(USB_PACKET_ALIGNMENT+1, RX_HEADROOM+UART_RX_BUFFER_SIZE);
-		UART_IO[i].rx_buffer = (uint8_t*)((uint32_t)UART_IO[i].rx_alloc + RX_HEADROOM);
-		// alignment only matters so that packet beginning at rx_buffer[0] can be sent with allocated headroom, rest will be manually aligned
+		UART_IO[i].rx_buffer = (uint8_t*)((uint32_t)UART_IO[i].rx_alloc + UART_HEADROOM);
 		portStates[i].bufferPtr = UART_IO[i].rx_buffer;
 	}
 

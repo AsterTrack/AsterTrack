@@ -18,11 +18,22 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util.h"
 
+#include "comm/packet.h"
+
+#define USB_HEADROOM 	(USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+2)
+// The +2 is only the have the headroom be a multiple of 4, so the buffer start is also 4-byte aligned
+// That's requried for event code which is writing full uint32_t
+
+#if USB_HEADROOM % 4 != 0
+#error "Debug or Event Buffers not properly aligned!
+#endif
+
 // Events
 #if EVENTLOG
 
 volatile uint_fast16_t eventHead = 0, eventTail = 0, eventSending = 0;
-uint8_t *eventBuffer = NULL;
+__attribute__((aligned(4))) uint8_t eventAlloc[EVENT_BUFFER_SIZE+USB_HEADROOM];
+uint8_t *eventBuffer = eventAlloc+USB_HEADROOM;
 uint8_t eventFilter[CONTROLLER_EVENT_MAX];
 uint8_t eventLogClass = 0;
 
@@ -32,6 +43,7 @@ uint8_t eventLogClass = 0;
 #if LOGGING
 
 volatile uint_fast16_t debugHead = 0, debugTail = 0, debugSending = 0;
-uint8_t *debugBuffer = NULL;
+__attribute__((aligned(4))) uint8_t debugAlloc[DEBUG_BUFFER_SIZE+USB_HEADROOM];
+uint8_t *debugBuffer = debugAlloc+USB_HEADROOM;
 
 #endif

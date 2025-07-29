@@ -48,29 +48,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define WWDG_TIMEOUT			(0x40 | 10)
 
-// Sum up all big memory allocations to make sure the configuration is valid
-#if EVENTLOG
-#define ALLOC_MEMORY_EVENT EVENT_BUFFER_SIZE+DATA_DMA_HEADROOM
-#else
-#define ALLOC_MEMORY_EVENT 0
-#endif
-#if LOGGING
-#define ALLOC_MEMORY_DEBUG DEBUG_BUFFER_SIZE+DATA_DMA_HEADROOM
-#else
-#define ALLOC_MEMORY_DEBUG 0
-#endif
-#define ALLOC_MEMORY_PACKET \
-		+ (RX_HEADROOM+UART_RX_BUFFER_SIZE) * UART_PORT_COUNT \
-		+ (sizeof(Source)+USB_PACKET_HEADER) * UART_PORT_COUNT \
-		+ SHARED_BUF_CNT*sizeof(SharedBuffer) \
-		+ ALLOC_MEMORY_EVENT + ALLOC_MEMORY_DEBUG \
-		+ 10000
-// UART RX Buffers
-// UART packetHub structs
-// Shared packetHub structs
-// Event and Debug buffers
-// Static memory usage (data + bss sections)
-
 
 /* Function Prototypes */
 
@@ -171,10 +148,6 @@ static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 
-// Debug+Event DMA Transfer
-#define DATA_DMA_HEADROOM 	USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+2
-// The +2 is only the have the headroom be a multiple of 4, so the buffer start is also 4-byte aligned
-
 // For sending event and debug logs over interrupt transfers
 #ifdef DEBUG_USE_INT
 PacketRef debugUSBPacket;
@@ -240,20 +213,8 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	
 	//ERR_CHARR('/', 'B', UI32_TO_HEX_ARR(before), 'A', UI32_TO_HEX_ARR(after), 's', UI32_TO_HEX_ARR(start));
 
-	static_assert((ALLOC_MEMORY_PACKET) < 125000);
-
 	//SystemInit(); // Already called in startup code
 	SysTick->CNT = 0; // Reset SysTick to 0 by writing anything
-
-	// Allocate
-#if EVENTLOG
-	eventBuffer = malloc(EVENT_BUFFER_SIZE+DATA_DMA_HEADROOM)+DATA_DMA_HEADROOM;
-#endif
-#if LOGGING
-	debugBuffer = malloc(DEBUG_BUFFER_SIZE+DATA_DMA_HEADROOM)+DATA_DMA_HEADROOM;
-#endif
-	//static_assert(((DATA_DMA_HEADROOM)&USB_PACKET_ALIGNMENT) == 0);
-	// EventLog relies on the buffer being 4-byte aligned, because this chip can only write uint32_t to aligned addresses
 
 	// Base setup
 	Setup_Peripherals();
@@ -606,15 +567,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			stats_reset(&packetLatency);
 			stats_reset(&packetDiff);
 		} */
-
-		// Check blink
-		/* static TimePoint lastBlink = 0;
-		if (now-lastBlink > 2000*TICKS_PER_MS)
-		{ // Test LED and Sync ports
-			LL_GPIO_TogglePin(GPIOC, LL_GPIO_PIN_13); // LED on most boards
-			LL_GPIO_TogglePin(GPIOA, GPIOA_SYNC_PINS);
-			lastBlink = now;
-		} */
 	}
 }
 
@@ -710,36 +662,18 @@ static void cleanSendingState()
 
 static void InitPacketHub()
 {
-	//memset(&packetHub, 0, sizeof(packetHub));
-
 	// Setup shared packets for smaller packets and signals from controller to host
-	if (packetHub.shared)
-		free(packetHub.shared);
-	packetHub.sharedCount = SHARED_BUF_CNT;
-	packetHub.shared = aligned_alloc(4, sizeof(SharedBuffer) * packetHub.sharedCount);
-	memset(packetHub.shared, 0, sizeof(SharedBuffer) * packetHub.sharedCount);
-	for (int i = 0; i < packetHub.sharedCount; i++)
+	memset(packetHub.shared, 0, sizeof(SharedBuffer) * SHARED_BUF_COUNT);
+	for (int i = 0; i < SHARED_BUF_COUNT; i++)
 	{
 		packetHub.shared[i].packet.shared = &packetHub.shared[i];
 		packetHub.shared[i].packet.buffer = packetHub.shared[i].buffer;
 		packetHub.shared[i].packet.isDMASource = false;
-
-		int bufAlign = (intptr_t)(packetHub.shared[i].buffer);
-		bufAlign = bufAlign%4;
-		if (bufAlign != 0)
-		{
-			ERR_STR("#SharedBufAlign:");
-			ERR_CHARR(INT9_TO_CHARR(bufAlign));
-		}
 	}
 
 	// Setup a source structure for each UART port
-	if (packetHub.sources)
-		free(packetHub.sources);
-	packetHub.sourceCount = UART_PORT_COUNT;
-	packetHub.sources = malloc(sizeof(Source) * packetHub.sourceCount);
-	memset(packetHub.sources, 0, sizeof(Source) * packetHub.sourceCount);
-	for (int i = 0; i < packetHub.sourceCount; i++)
+	memset(packetHub.sources, 0, sizeof(Source) * UART_PORT_COUNT);
+	for (int i = 0; i < UART_PORT_COUNT; i++)
 	{
 		packetHub.sources[i].id = i;
 		for (int j = 0; j < UART_TX_BLOCKS; j++)
@@ -748,33 +682,24 @@ static void InitPacketHub()
 
 	// Can't setup sinks yet, follows USB endpoints
 	packetHub.sinkCount = 0;
-	packetHub.sinks = NULL;
 
 	resetPacketHub(&packetHub);
 }
 
 static void SetupPacketHubSinks()
 {
-	if (packetHub.sinks)
-	{
-		for (int i = 0; i < packetHub.sinkCount; i++)
-			free(packetHub.sinks[i].nullPacket.buffer);
-		free(packetHub.sinks);
-	}
 	packetHub.sinkCount = 0;
-	packetHub.sinks = NULL;
 
 	if (usbd_interface == NULL)
 		return;
 
-	packetHub.sinkCount = usbd_interface->epCount;
-	packetHub.sinks = malloc(sizeof(Sink) * packetHub.sinkCount);
+	packetHub.sinkCount = usbd_interface->epCount > MAX_EP_COUNT? MAX_EP_COUNT : usbd_interface->epCount;
 	memset(packetHub.sinks, 0, sizeof(Sink) * packetHub.sinkCount);
 	for (int i = 0; i < packetHub.sinkCount; i++)
 	{
 		packetHub.sinks[i].ep = USBD_EP_INT_IN_ADDR_BASE+i;
 		packetHub.sinks[i].nullPacket.size = USB_PACKET_HEADER;
-		packetHub.sinks[i].nullPacket.buffer = malloc(USB_PACKET_HEADER);
+		packetHub.sinks[i].nullPacket.buffer = packetHub.sinks[i].nullPacketBuffer;
 	}
 }
 
@@ -1009,7 +934,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_IN_PACKETS)
 	{ // Request for camera packets (stored in shared buffers)
 		USBD_STR("+ReqPackets");
-		for (int i = 0; i < packetHub.sharedCount; i++)
+		for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		{
 			SharedBuffer *buf = &packetHub.shared[i];
 			if (buf->packet.queued || buf->packet.writeSet || buf->packet.locked)
@@ -1424,7 +1349,7 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 				if (packetHub.sinks[0].sending)
 					ERR_CHARR(':', INT9999_TO_CHARR(packetHub.sinks[0].sending->size));
 				ERR_CHARR('+', 'S', 'H', 'R', 'D');
-				for (int i = 0; i < packetHub.sharedCount; i++)
+				for (int i = 0; i < SHARED_BUF_COUNT; i++)
 				{
 					SharedBuffer *buf = &packetHub.shared[i];
 					TimeSpan latency = GetTimeSinceUS(buf->packet.latencyTime);

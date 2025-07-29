@@ -117,10 +117,7 @@ void uartd_init(uartd_callbacks callbacks)
 	memset(portStates, 0, sizeof(portStates));
 	for (int i = 0; i < UART_PORT_COUNT; i++)
 	{
-		if (UART_IO[i].rx_alloc)
-			free(UART_IO[i].rx_alloc);
-		UART_IO[i].rx_alloc = malloc(RX_HEADROOM+UART_RX_BUFFER_SIZE);
-		UART_IO[i].rx_buffer = (uint8_t*)UART_IO[i].rx_alloc;
+		UART_IO[i].rx_buffer = (uint8_t*)((uint32_t)UART_IO[i].rx_alloc + UART_HEADROOM);
 		portStates[i].bufferPtr = UART_IO[i].rx_buffer;
 	}
 

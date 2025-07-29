@@ -58,6 +58,8 @@ extern "C"
 #define USBD_HS_EP_INT_IN_SIZE		1024		// Individual packet sizes, maximum for USB HighSpeed Spec
 #define USBD_HS_EP_INT_INTERVAL     125         // Should match bInterval*125
 
+#define MAX_EP_COUNT (USBD_FS_EP_INT_IN_NUM > USBD_HS_EP_INT_IN_NUM? USBD_FS_EP_INT_IN_NUM : USBD_HS_EP_INT_IN_NUM)
+
 #ifdef __cplusplus
 }
 #endif

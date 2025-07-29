@@ -393,7 +393,7 @@ static inline void storeUSBPacketHeader(struct USBPacketHeader header, uint8_t d
 
 #define USB_PACKET_SIZE				1024	// USB 2.0 HS Max packet size for Interrupt/Isochronous transfers
 // USB transfer buffers might need to be aligned
-#define USB_PACKET_ALIGNMENT 		(4-1)	// CH32V307 USB DMA requires 4-byte alignment
+#define USB_PACKET_ALIGNMENT 		(4-1)	// Bytes to allow start address to be 4-byte alignment (e.g. for HW DMA)
 // Packet size that can be sent to host optimally without needless fragmentation
 #define OPT_PACKET_SIZE				(USB_PACKET_SIZE - (USB_PACKET_HEADER + BLOCK_HEADER_SIZE + USB_PACKET_ALIGNMENT + PACKET_HEADER_SIZE + CHECKSUM_SIZE))
 

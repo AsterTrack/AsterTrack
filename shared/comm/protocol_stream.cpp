@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "protocol_stream.hpp"
+#include "uart.h"
 
 #include <cstdio>
 #include <cstring>

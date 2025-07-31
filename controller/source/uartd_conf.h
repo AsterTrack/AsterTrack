@@ -24,7 +24,7 @@ extern "C"
 {
 #endif
 
-#include "comm/packet.h"
+#include "comm/uart.h"
 
 // Amount of UART ports as implemented in uartd
 #define UART_PORT_COUNT			8       // Should match CAM_PORT_COUNT in config.h
@@ -33,9 +33,12 @@ extern "C"
 #define UART_TX_BLOCKS			8
 #define USBD_PACKET_SIZE		1024
 #define UART_RX_BUFFER_SIZE		USBD_PACKET_SIZE*UART_TX_BLOCKS // Technically 1021 since 3bytes of USB Block Header are needed, but no matter
+#define UART_TX_BUFFER_SIZE		1024*8
 
 // Needs some headroom to write headers & co. to DMA a PacketRef directly from this buffer
 #define UART_HEADROOM 			USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+PACKET_HEADER_SIZE
+
+#define UART_RESET_TIMEOUT_MS		20		// Timeout after comm loss (NAK) during which all comms are ignored
 
 #ifdef __cplusplus
 }

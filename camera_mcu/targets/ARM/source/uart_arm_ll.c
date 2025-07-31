@@ -27,10 +27,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "compat.h"
 
 #include "uart_driver.h"
-#include "rgbled.h"
 #include "util.h"
 
 #include <stdint.h>
+
+
+const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
+	{ // UART 1
+	#if defined(BOARD_OLD)
+		.uart = USART2,
+	#else
+		.uart = USART1,
+	#endif
+		.DMA = DMA1,
+		.DMA_CH_RX = DMA_CHANNEL_2,
+		.DMA_CH_TX = DMA_CHANNEL_3,
+	#if defined(BOARD_OLD)
+		.uartIRQ_RX = USART2_IRQn,
+	#else
+		.uartIRQ_RX = USART1_IRQn,
+	#endif
+		.dmaIRQ_RX = DMA1_Channel2_3_IRQn,
+		.dmaIRQ_TX = DMA1_Channel2_3_IRQn,
+	}
+};
+
 
 /* Functions */
 
@@ -179,7 +200,7 @@ void uart_driver_init()
 }
 
 /** Send data over UART port */
-inline void uart_send_dma(uint_fast8_t port, const uint8_t *data, uint_fast16_t len)
+inline void uart_send_dma(uint_fast8_t port, const void *data, uint_fast16_t len)
 {
 	UART_CHARR('/', 'T', 'X', 'D', 'M', 'A');
 	LL_DMA_SetDataLength(UART[port].DMA, UART[port].DMA_CH_TX, len);

@@ -43,7 +43,6 @@ BUILD_DIR = build
 
 C_SOURCES_ARM_LL = \
 source/main.c \
-source/uartd.c \
 source/rgbled.c \
 source/rgbled_anims.c \
 targets/ARM/source/config_arm_ll.c \
@@ -56,7 +55,8 @@ C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL)
 C_SOURCES = $(C_SOURCES_$(DEVICE))
 
 C_SOURCES_SHARED = \
-mcu/util.c
+mcu/util.c \
+mcu/uartd.c
 
 # ----- C includes -----
 
@@ -168,7 +168,7 @@ $(shell mkdir -p $(dir $(OBJECTS)) >/dev/null)
 $(BUILD_DIR)/shared/%.o: ../shared/%.c Makefile
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/shared/$(<:.c=.lst) $< -o $@
 
-$(BUILD_DIR)/%.o: %.c Makefile 
+$(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(<:.c=.lst) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile

@@ -27,9 +27,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdbool.h>
 
-#define UART_BAUD_RATE_SAFE		8000000
-#define UART_BAUD_RATE_MAX		8000000
-
 enum TrCamMode
 {
 	TRCAM_STANDBY					= 0b00000000,
@@ -273,18 +270,6 @@ static inline void storePacketHeader(const struct PacketHeader header, uint8_t d
 	data[2] = ((header.length & 0x0FF00) >> 8);
 	data[3] = ((header.length & 0x000FF));
 };
-
-
-/**
- * Bytes used ahead of and after packets on error-prone, stream-like interfaces (like UART)
- * Leading byte (singular) signals a new packet
- * Trailing bytes (plural) provide buffer to protect following packets
- * - This is relevant when a packet looses a byte, as it would otherwise consume start of the next packet as part of itself
- * - With this, the error will get detected more reliably (not just wrong checksum, but trailing byte), and the next packets are safe
- */
-#define UART_LEADING_BYTE			0b01011011
-#define UART_TRAILING_BYTE			0b10100110
-
 
 /**
  * Checksum used for packets, appended at the end

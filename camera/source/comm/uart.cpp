@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 #include "uart.hpp"
-#include "comm/packet.h"
+#include "comm/uart.h"
 
 //#include <asm/termios.h> // Clashes with ioctl.h
 #include <asm/termbits.h>

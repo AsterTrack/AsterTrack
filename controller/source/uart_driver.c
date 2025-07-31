@@ -28,6 +28,122 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 
+const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
+	{ // UART 1
+		.uart = USART1,
+		.GPIOxTX = GPIOA,
+		.GPIOxRX = GPIOA,
+		.PinTX = GPIO_PIN_9,
+		.PinRX = GPIO_PIN_10,
+		.DMA = DMA1,
+		.DMA_CH_RX = DMA_CHANNEL_5,
+		.DMA_CH_TX = DMA_CHANNEL_4,
+		.uartIRQ_RX = USART1_IRQn,
+		.dmaIRQ_RX = DMA1_Channel5_IRQn,
+		.dmaIRQ_TX = DMA1_Channel4_IRQn,
+		.peripheral = PCLK2, // Only UART1 runs off of PCLK2
+	},
+	{ // UART 2
+		.uart = USART2,
+		.GPIOxTX = GPIOA,
+		.GPIOxRX = GPIOA,
+		.PinTX = GPIO_PIN_2,
+		.PinRX = GPIO_PIN_3,
+		.DMA = DMA1,
+		.DMA_CH_RX = DMA_CHANNEL_6,
+		.DMA_CH_TX = DMA_CHANNEL_7,
+		.uartIRQ_RX = USART2_IRQn,
+		.dmaIRQ_RX = DMA1_Channel6_IRQn,
+		.dmaIRQ_TX = DMA1_Channel7_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 3
+		.uart = USART3,
+		.GPIOxTX = GPIOB,
+		.GPIOxRX = GPIOB,
+		.PinTX = GPIO_PIN_10,
+		.PinRX = GPIO_PIN_11,
+		.DMA = DMA1,
+		.DMA_CH_RX = DMA_CHANNEL_3,
+		.DMA_CH_TX = DMA_CHANNEL_2,
+		.uartIRQ_RX = USART3_IRQn,
+		.dmaIRQ_RX = DMA1_Channel3_IRQn,
+		.dmaIRQ_TX = DMA1_Channel2_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 4
+		.uart = UART4,
+		.GPIOxTX = GPIOC,
+		.GPIOxRX = GPIOC,
+		.PinTX = GPIO_PIN_10,
+		.PinRX = GPIO_PIN_11,
+		.DMA = DMA2,
+		.DMA_CH_RX = DMA_CHANNEL_3,
+		.DMA_CH_TX = DMA_CHANNEL_5,
+		.uartIRQ_RX = UART4_IRQn,
+		.dmaIRQ_RX = DMA2_Channel3_IRQn,
+		.dmaIRQ_TX = DMA2_Channel5_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 5
+		.uart = UART5,
+		.GPIOxTX = GPIOC,
+		.GPIOxRX = GPIOD,
+		.PinTX = GPIO_PIN_12,
+		.PinRX = GPIO_PIN_2,
+		.DMA = DMA2,
+		.DMA_CH_RX = DMA_CHANNEL_2,
+		.DMA_CH_TX = DMA_CHANNEL_4,
+		.uartIRQ_RX = UART5_IRQn,
+		.dmaIRQ_RX = DMA2_Channel2_IRQn,
+		.dmaIRQ_TX = DMA2_Channel4_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 6
+		.uart = UART6,
+		.GPIOxTX = GPIOC,
+		.GPIOxRX = GPIOC,
+		.PinTX = GPIO_PIN_0,
+		.PinRX = GPIO_PIN_1,
+		.DMA = DMA2,
+		.DMA_CH_RX = DMA_CHANNEL_7,
+		.DMA_CH_TX = DMA_CHANNEL_6,
+		.uartIRQ_RX = UART6_IRQn,
+		.dmaIRQ_RX = DMA2_Channel7_IRQn,
+		.dmaIRQ_TX = DMA2_Channel6_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 7
+		.uart = UART7,
+		.GPIOxTX = GPIOC,
+		.GPIOxRX = GPIOC,
+		.PinTX = GPIO_PIN_2,
+		.PinRX = GPIO_PIN_3,
+		.DMA = DMA2,
+		.DMA_CH_RX = DMA_CHANNEL_9,
+		.DMA_CH_TX = DMA_CHANNEL_8,
+		.uartIRQ_RX = UART7_IRQn,
+		.dmaIRQ_RX = DMA2_Channel9_IRQn,
+		.dmaIRQ_TX = DMA2_Channel8_IRQn,
+		.peripheral = PCLK1,
+	},
+	{ // UART 8
+		.uart = UART8,
+		.GPIOxTX = GPIOC,
+		.GPIOxRX = GPIOC,
+		.PinTX = GPIO_PIN_4,
+		.PinRX = GPIO_PIN_5,
+		.DMA = DMA2,
+		.DMA_CH_RX = DMA_CHANNEL_11,
+		.DMA_CH_TX = DMA_CHANNEL_10,
+		.uartIRQ_RX = UART8_IRQn,
+		.dmaIRQ_RX = DMA2_Channel11_IRQn,
+		.dmaIRQ_TX = DMA2_Channel10_IRQn,
+		.peripheral = PCLK1,
+	}
+};
+
+
 /* Functions */
 
 void uart_configure_baudrate(int port, uint32_t baudrate)
@@ -131,7 +247,7 @@ void uart_driver_init()
 }
 
 /** Send data over UART port */
-inline void uart_send_dma(uint_fast8_t port, const uint8_t* data, uint_fast16_t len)
+inline void uart_send_dma(uint_fast8_t port, const void* data, uint_fast16_t len)
 {
 	UART_STR("/TX:");
 	UART_CHARR(UINT999_TO_CHARR(len));

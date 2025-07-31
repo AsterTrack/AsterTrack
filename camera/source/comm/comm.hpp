@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define COMM_H
 
 #include "../state.hpp"
+#include "comm/uart.h"
 
 #include <cstdint>
 #include <vector>
@@ -103,15 +104,9 @@ inline void comm_packet(CommState &comm, PacketHeader header)
 inline void comm_submit(CommState &comm)
 {
 	if (!comm.writing) return;
-	// Trailing bytes are necessary to counter errors on the line
-	// Sometimes, bytes get lost, so the next packet starts a few bytes IN the last, erroneous one
-	// The affected packet has a checksum, but the controller will still consume parts of the next packet
-	// But if a packet has a few trailing bytes, the controller parser can transparently discard those instead
-	// This effectively prevents overlap with the next byte even when a few bytes get lost
-	#define UART_NUM_TRAILING_BYTES 5
-	uint8_t buffer[CHECKSUM_SIZE+UART_NUM_TRAILING_BYTES];
+	uint8_t buffer[CHECKSUM_SIZE+UART_TRAILING_SEND];
 	*((checksum_t*)&buffer[0]) = comm.checksum;
-	for (int i = 0; i < UART_NUM_TRAILING_BYTES; i++)
+	for (int i = 0; i < UART_TRAILING_SEND; i++)
 		buffer[CHECKSUM_SIZE+i] = UART_TRAILING_BYTE;
 	comm.write(comm.port, buffer, sizeof(buffer));
 	comm.submit(comm.port);

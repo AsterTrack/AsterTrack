@@ -24,12 +24,14 @@ extern "C"
 {
 #endif
 
-#include "comm/packet.h"
+#include "comm/uart.h"
 
 // Amount of UART ports as implemented in uartd
 #define UART_PORT_COUNT			1
 
 #define UART_RX_BUFFER_SIZE		1024
+#define UART_TX_BUFFER_SIZE		1024
+
 #define UART_HEADROOM 			0
 
 // UART Timing

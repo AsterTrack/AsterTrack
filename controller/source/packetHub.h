@@ -198,7 +198,7 @@ static inline void dequeuePacket(Hub *hub, int index)
 	UNLOCK();
 }
 
-static uint_fast16_t allocateSharedSpace(Hub *hub, uint_fast16_t size, SharedBuffer **buffer, uint8_t **data)
+static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, SharedBuffer **buffer, uint8_t **data)
 {
 	for (int i = 0; i < SHARED_BUF_COUNT; i++)
 	{
@@ -434,7 +434,7 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 		// If no sink exists, we are not streaming, and we have to put data into shared packets for sending over control
 		SharedBuffer *buf;
 		uint8_t *ptr;
-		uint_fast16_t allocated = allocateSharedSpace(hub, packetSz, &buf, &ptr);
+		uint_fast16_t allocated = allocateSharedUSBSpace(hub, packetSz, &buf, &ptr);
 
 		if (allocated)
 		{

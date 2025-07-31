@@ -51,40 +51,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 static void InitPacketHub();
 static void SetupPacketHubSinks();
 
-// UART Device callbacks
-static uartd_respond uartd_handle_header(uint_fast8_t port);
-static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
-static void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos);
-
 /* Variables */
 
 union VersionDesc version; // Initialised at the beginning
 
 // PacketHub is responsible for distributing data from UART sources to USB sinks
 static Hub packetHub;
-
-// Temp Send Buffer
-static uint8_t sharedSendBuffer[4096];
-static volatile uint16_t sendBufferPos = 0;
-static uint8_t* getSendBuffer(uint8_t len)
-{ // Return a part that hasn't been used recently (might still be used for DMA TX, no hard reinforcement)
-	USE_LOCKS();
-	LOCK();
-	uint8_t *addr;
-	if (sizeof(sharedSendBuffer)-sendBufferPos > len)
-	{
-		addr = &sharedSendBuffer[sendBufferPos];
-		sendBufferPos += len;
-	}
-	else
-	{
-		sendBufferPos = len;
-		addr = sharedSendBuffer;
-	}
-	UNLOCK();
-	return addr;
-}
-
 
 // Stages to start streaming and controller/camera lifetime
 // Stage 1: Open Channels
@@ -119,6 +91,18 @@ static volatile bool enforceTimeSync; // Stage 2
 //	bool PortState::frameSyncEnabled; // Stage 5
 static volatile uint32_t enabledSyncPinsGPIOD; // Stage 5
 
+// Camera state
+typedef struct
+{
+	enum ControllerCommState comm;
+	struct IdentPacket identity;
+
+	// Streaming state
+	bool cameraEnabled; // TODO: Needed? Probably not. But nice to know
+	bool frameSyncEnabled;
+} CameraState;
+CameraState camStates[UART_PORT_COUNT];
+
 // Sync source setup (Stage 3)
 enum FrameSignalSource { FrameSignal_None, FrameSignal_Generating, FrameSignal_External };
 static volatile enum FrameSignalSource frameSignalSource; // Stage 3
@@ -141,7 +125,7 @@ static volatile TimePoint lastIntPacket = 0;
 
 // Fixed UART Messages
 static struct IdentPacket ownIdent;
-static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
+static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 
 // For sending event and debug logs over interrupt transfers
@@ -156,16 +140,16 @@ volatile uint8_t packetSendCounter = 0;
 volatile PacketRef *packetUSBPacket = NULL;
 
 volatile PacketRef *lastSOFPacket = NULL;
+volatile TimePoint lastUARTActivity;
 
 /* Functions */
 
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
-	const struct PacketHeader header = { .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE };
-	ownIdentPacket[0] = UART_LEADING_BYTE;
-	storePacketHeader(header, ownIdentPacket+1);
+	UARTPacketRef *uartIdentPacket = (UARTPacketRef *)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = version };
-	storeIdentPacket(ownIdent, ownIdentPacket+(1+PACKET_HEADER_SIZE));
+	storeIdentPacket(ownIdent, uartIdentPacket->data);
+	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
 static void sendSOFPackets(uint32_t frameID, TimePoint SOF);
@@ -240,7 +224,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	usbd_init();
 
 	// Init UART device
-	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, uartd_handle_packet });
+	uartd_init();
 
 	// System reset
 	//PFIC->SCTLR = 0x8000; // Doesn't work
@@ -359,20 +343,18 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		{ // Enforce a certain density of time syncs with both host and connected cameras
 			
 			// Send Sync Packets to cameras
-			uint8_t syncPacketSz = 1+PACKET_HEADER_SIZE+SYNC_PACKET_SIZE;
-			uint8_t *sendBuffer = getSendBuffer(syncPacketSz);
-			sendBuffer[0] = UART_LEADING_BYTE;
 			const struct PacketHeader header = { .tag = PACKET_SYNC, .length = SYNC_PACKET_SIZE, .frameID = curFrameID };
-			storePacketHeader(header, sendBuffer+1);
-			struct SyncPacket syncPacket = { GetTimePointUS() };
-			storeSyncPacket(syncPacket, sendBuffer+1+PACKET_HEADER_SIZE);
+			UARTPacketRef *packet = allocateUARTPacket(header.length);
+			const struct SyncPacket syncPacket = { GetTimePointUS() };
+			storeSyncPacket(syncPacket, packet->data);
+			finaliseUARTPacket(packet, header);
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
-				if (portStates[i].comm != CommPiReady) continue;
+				if (camStates[i].comm != CommPiReady) continue;
 				TimeSpan timeSinceLastTimeSync = now - portStates[i].lastTimeSync;
 				if (timeSinceLastTimeSync > UART_TIME_SYNC_INTERVAL)
 				{
-					uartd_send(i, sendBuffer, syncPacketSz, true);
+					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SYNC_PACKET_SIZE, false);
 					portStates[i].lastTimeSync = now;
 				}
 			}
@@ -461,7 +443,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		// Check UART timeouts
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i++)
 		{
-			if (portStates[i].comm == CommNoCon) continue;
+			if (camStates[i].comm == CommNoCon) continue;
 			TimeSpan timeSinceLastComm = now - portStates[i].lastComm;
 			if (timeSinceLastComm > UART_COMM_TIMEOUT)
 			{ // Reset Comm after silence
@@ -480,9 +462,9 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		{ // Send ping occasionally
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
-				if ((portStates[i].comm & CommReady) != CommReady)
+				if ((camStates[i].comm & CommReady) != CommReady)
 					continue; // Comms not set up, doesn't need ping
-				if ((portStates[i].comm == CommPiReady) && (enforceTimeSync || frameSignalSource == FrameSignal_Generating))
+				if ((camStates[i].comm == CommPiReady) && (enforceTimeSync || frameSignalSource == FrameSignal_Generating))
 					continue; // Already sending packets regularly, doesn't need ping
 				uartd_send(i, msg_ping, sizeof(msg_ping), true);
 			}
@@ -501,16 +483,15 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				// TODO: Properly reverse all streaming stages. Should be fine, but still unsure.
 
 				// Stage 4&5: Ensure cameras are notified and stop streaming
-				struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
-				uint8_t *sendBuffer = getSendBuffer(1+PACKET_HEADER_SIZE+1);
-				sendBuffer[0] = UART_LEADING_BYTE;
-				storePacketHeader(header, sendBuffer+1);
-				sendBuffer[1+PACKET_HEADER_SIZE] = TRCAM_STANDBY;
+				const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
+				UARTPacketRef *packet = allocateUARTPacket(header.length);
+				packet->data[0] = TRCAM_STANDBY;
+				finaliseUARTPacket(packet, header);
 				for (int i = 0; i < UART_PORT_COUNT; i++)
 				{
-					if (portStates[i].comm == CommPiReady && portStates[i].cameraEnabled)
-						uartd_send(i, sendBuffer, 1+PACKET_HEADER_SIZE+1, false);
-					portStates[i].frameSyncEnabled = false;
+					if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
+						uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
+					camStates[i].frameSyncEnabled = false;
 				}
 
 				// Stage 3: Disable frame sync
@@ -581,7 +562,7 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 	// Allocate space in a shared USB packet
 	SharedBuffer *buffer;
 	uint8_t *ptr;
-	uint_fast16_t allocated = allocateSharedSpace(&packetHub, BLOCK_HEADER_SIZE+SOF_PACKET_SIZE, &buffer, &ptr);
+	uint_fast16_t allocated = allocateSharedUSBSpace(&packetHub, BLOCK_HEADER_SIZE+SOF_PACKET_SIZE, &buffer, &ptr);
 	if (allocated)
 	{ // Successfully allocated
 		//assert(allocated == BLOCK_HEADER_SIZE+SOF_PACKET_SIZE);
@@ -621,17 +602,15 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 		ERR_STR("#FailedSOFAlloc");
 
 	{ // Send SOF Packet to cameras
-		uint8_t sofPacketSz = 1+PACKET_HEADER_SIZE+SOF_PACKET_SIZE;
-		uint8_t *sendBuffer = getSendBuffer(sofPacketSz);
-		sendBuffer[0] = UART_LEADING_BYTE;
 		const struct PacketHeader header = { .tag = PACKET_SOF, .length = SOF_PACKET_SIZE, .frameID = frameID };
-		storePacketHeader(header, sendBuffer+1);
-		storeSOFPacket(sofPacket, sendBuffer+1+PACKET_HEADER_SIZE);
+		UARTPacketRef *packet = allocateUARTPacket(header.length);
+		storeSOFPacket(sofPacket, packet->data);
+		finaliseUARTPacket(packet, header);
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 		{
-			if (portStates[i].comm == CommPiReady)
+			if (camStates[i].comm == CommPiReady)
 			{
-				uartd_send(i, sendBuffer, sofPacketSz, true);
+				uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SOF_PACKET_SIZE, false);
 				portStates[i].lastTimeSync = SOF;
 			}
 		}
@@ -883,17 +862,17 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			int base = 1+i*PORT_STATUS_SIZE;
-			portStatus[base+0] = portStates[i].comm;
-			INFO_CHARR(UI8_TO_HEX_ARR(portStates[i].comm), ':');
-			uint8_t *ID = (uint8_t*)&portStates[i].identity.id;
+			portStatus[base+0] = camStates[i].comm;
+			INFO_CHARR(UI8_TO_HEX_ARR(camStates[i].comm), ':');
+			uint8_t *ID = (uint8_t*)&camStates[i].identity.id;
 			portStatus[base+1] = ID[0];
 			portStatus[base+2] = ID[1];
 			portStatus[base+3] = ID[2];
 			portStatus[base+4] = ID[3];
-			portStatus[base+5] = portStates[i].cameraEnabled;
-			portStatus[base+6] = portStates[i].frameSyncEnabled;
+			portStatus[base+5] = camStates[i].cameraEnabled;
+			portStatus[base+6] = camStates[i].frameSyncEnabled;
 			// Because this does not work on RISC-V... target address is not aligned
-			//*((int32_t*)&buf[base+1]) = portStates[i].identity.id;
+			//*((int32_t*)&buf[base+1]) = camStates[i].identity.id;
 		}
 		usbd->status.data_ptr = buf;
 		usbd->status.data_count = CONTROLLER_STATUS_SIZE+PORTS_STATUS_SIZE;
@@ -981,7 +960,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		frameSignalSource = FrameSignal_None;
 		// Reset Sync Mask implicitly
 		for (int i = 0; i < UART_PORT_COUNT; i++)
-			portStates[i].frameSyncEnabled = false;
+			camStates[i].frameSyncEnabled = false;
 		enabledSyncPinsGPIOD = 0;
 		return usbd_ack;
 	}
@@ -1019,8 +998,8 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		enabledSyncPinsGPIOD = 0;
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			portStates[i].frameSyncEnabled = req->wIndex >> i;
-			if (portStates[i].frameSyncEnabled)
+			camStates[i].frameSyncEnabled = req->wIndex >> i;
+			if (camStates[i].frameSyncEnabled)
 				enabledSyncPinsGPIOD |= GPIOD_SYNC_PIN[i];
 		}
 		return usbd_ack;
@@ -1029,18 +1008,16 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Request to send a packet to cameras
 		CMDD_STR("+SendPkt:");
 		CMDD_CHARR(INT99_TO_CHARR(req->wValue));
-		uint8_t *sendBuffer = getSendBuffer(1+PACKET_HEADER_SIZE+req->wLength);
-		sendBuffer[0] = UART_LEADING_BYTE;
-		struct PacketHeader header = { .tag = req->wValue, .length = req->wLength };
-		storePacketHeader(header, sendBuffer+1);
-		memcpy(sendBuffer+1+PACKET_HEADER_SIZE, req->data, req->wLength);
+		UARTPacketRef *packet = allocateUARTPacket(req->wLength);
+		memcpy(packet->data, req->data, req->wLength);
+		finaliseUARTPacket(packet, (struct PacketHeader){ .tag = req->wValue, .length = req->wLength });
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			if (!((req->wIndex >> i)&1) || (portStates[i].comm & CommReady) != CommReady) continue;
-			uartd_send_int(i, sendBuffer, 1+PACKET_HEADER_SIZE+req->wLength, false);
+			if (!((req->wIndex >> i)&1) || (camStates[i].comm & CommReady) != CommReady) continue;
+			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND+req->wLength, false);
 			if (req->wValue == PACKET_CFG_MODE && req->wLength > 0)
 			{ // Snoop in to check if camera/streaming is enabled
-				portStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;
+				camStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;
 			}
 		}
 		return usbd_ack;
@@ -1051,18 +1028,8 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		int powerTest = -1;
 		switch (req->wValue)
 		{
-			case 0:
-				uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, uartd_handle_packet });
-				break;
-			case 1:
-				// Init port states
-				memset(portStates, 0, sizeof(portStates));
-				for (int i = 0; i < UART_PORT_COUNT; i++)
-				{
-					portStates[i].bufferPtr = UART_IO[i].rx_buffer;
-				}
-
-				uart_driver_init();
+			case 0: case 1:
+				uartd_init();
 				break;
 			case 2:
 				powerTest = 0;
@@ -1181,13 +1148,14 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 
 /* ------ UART Behaviour ------ */
 
-static uartd_respond uartd_handle_header(uint_fast8_t port)
+uartd_respond uartd_handle_header(uint_fast8_t port)
 {
 	TimePoint now = GetTimePoint();
 	PortState *state = &portStates[port];
+	CameraState *cam = &camStates[port];
 	Source *source = &packetHub.sources[port];
 
-	if ((state->comm & CommReady) != CommReady)
+	if ((cam->comm & CommReady) != CommReady)
 	{ // Identification phase
 		if (state->header.tag == PACKET_IDENT)
 		{ // Identification
@@ -1200,9 +1168,9 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 		}
 		else if (state->header.tag == PACKET_ACK)
 		{
-			if ((state->comm&CommReady) == CommID)
+			if ((cam->comm&CommReady) == CommID)
 			{ // Received acknowledgement of own identity
-				state->comm |= CommACK;
+				cam->comm |= CommACK;
 				COMM_STR("/Connected:");
 				COMM_CHARR(INT9_TO_CHARR(port));
 				return uartd_accept;
@@ -1254,8 +1222,8 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 		else if (state->header.tag == PACKET_ERROR)
 		{ // Snoop in, and stop streaming already
 			// If the error is serious, camera software will send a NAK and restart anyways, in which case this is not necessary
-			state->cameraEnabled = false;
-			state->frameSyncEnabled = false;
+			cam->cameraEnabled = false;
+			cam->frameSyncEnabled = false;
 			enabledSyncPinsGPIOD &= ~(GPIOD_SYNC_PIN[port]);
 		}
 
@@ -1295,9 +1263,10 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 		TERR_STR("!UART_HH");
 }
 
-static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
+uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
 	PortState *state = &portStates[port];
+	CameraState *cam = &camStates[port];
 	TimePoint now = GetTimePoint();
 	if (state->header.tag >= PACKET_HOST_COMM)
 	{ // Packet designated for Host
@@ -1397,12 +1366,12 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 				return uartd_reset;
 			}
 			// Idenfication verified
-			state->comm = CommID;
-			state->identity = ident;
+			cam->comm = CommID;
+			cam->identity = ident;
 			if (ident.device == DEVICE_TRCAM)
-				state->comm |= CommPi;
+				cam->comm |= CommPi;
 			else if (ident.device == DEVICE_TRCAM_MCU)
-				state->comm |= CommMCU;
+				cam->comm |= CommMCU;
 			COMM_STR("/Identified:");
 			COMM_CHARR(INT9_TO_CHARR(port));
 			COMM_CHARR('+', UI8_TO_HEX_ARR(ident.device));
@@ -1421,8 +1390,14 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 	}
 }
 
-static void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 {
+
+}
+
+void uartd_handle_reset(uint_fast8_t port)
+{
+	memset(&camStates[port], 0, sizeof(CameraState));
 }
 
 /* ------ INIT Behaviour ------ */
@@ -1516,11 +1491,11 @@ void TIM6_IRQHandler()
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			uint8_t camLEDState = 0b00;
-			if ((portStates[i].comm & CommReady) == CommReady)
+			if ((camStates[i].comm & CommReady) == CommReady)
 			{
 				camLEDState |= 0b01;
 			}
-			if (portStates[i].comm & CommReady)
+			if (camStates[i].comm & CommReady)
 			{
 				TimeSpan timeSinceLastComm = now - portStates[i].lastComm;
 				TimeSpan timeoutBlink = (enforceTimeSync? 50 : 800)*TICKS_PER_MS;

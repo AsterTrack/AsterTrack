@@ -73,7 +73,7 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail);
 
 // Implemented specfically
 void uart_driver_init();
-void uart_send_dma(uint_fast8_t port, const uint8_t* data, uint_fast16_t len);
+void uart_send_dma(uint_fast8_t port, const void* data, uint_fast16_t len);
 void uart_configure_baudrate(int port, uint32_t baudrate);
 
 #ifdef __cplusplus

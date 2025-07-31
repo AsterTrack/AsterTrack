@@ -46,10 +46,6 @@ typedef enum
 
 /* Function Prototypes */
 
-// UART Device callbacks
-static uartd_respond uartd_handle_header(uint_fast8_t port);
-static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
-
 // I2C Driver
 void i2c_driver_init();
 
@@ -57,34 +53,12 @@ void i2c_driver_init();
 
 union VersionDesc version; // Initialised at the beginning
 
-// Temp Send Buffer
-static uint8_t sharedSendBuffer[1024];
-static volatile uint16_t sendBufferPos = 0;
-static uint8_t* getSendBuffer(uint8_t len)
-{ // Return a part that hasn't been used recently (might still be used for DMA TX, no hard reinforcement)
-	USE_LOCKS();
-	LOCK();
-	uint8_t *addr;
-	if (sizeof(sharedSendBuffer)-sendBufferPos > len)
-	{
-		addr = &sharedSendBuffer[sendBufferPos];
-		sendBufferPos += len;
-	}
-	else
-	{
-		sendBufferPos = len;
-		addr = sharedSendBuffer;
-	}
-	UNLOCK();
-	return addr;
-}
-
 // Times for supervision
 TimePoint startup = 0;
 
 // Fixed UART Messages
 static struct IdentPacket ownIdent;
-static uint8_t ownIdentPacket[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
+static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 PortState * const state = &portStates[0];
 
@@ -108,11 +82,10 @@ volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
-	const struct PacketHeader header = { .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE };
-	ownIdentPacket[0] = UART_LEADING_BYTE;
-	storePacketHeader(header, ownIdentPacket+1);
+	UARTPacketRef *uartIdentPacket = (UARTPacketRef *)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = 0, .type = INTERFACE_UART, .version = version };
-	storeIdentPacket(ownIdent, ownIdentPacket+(1+PACKET_HEADER_SIZE));
+	storeIdentPacket(ownIdent, uartIdentPacket->data);
+	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
@@ -218,7 +191,7 @@ int main(void)
 	// Prepare identification to be sent out over UART
 	uart_set_identification();
 	// Init UART device
-	uartd_init((uartd_callbacks){ uartd_handle_header, uartd_handle_data, NULL });
+	uartd_init();
 #endif
 
 #if !defined(USE_UART) || !defined(USE_I2C)
@@ -363,11 +336,11 @@ int main(void)
 			TimeSpan timeSinceLastComm = GetTimeSpanMS(state->lastComm, lastTimeCheck);
 			if (timeSinceLastComm > UART_COMM_TIMEOUT_MS || timeSinceLastComm < -1)
 			{ // Reset Comm after silence
-				EnterUARTZone(); // Mostly for the debug
+				EnterUARTPortZone(0); // Mostly for the debug
 				uartd_nak_int(0);
 				uartd_reset_port_int(0);
 				WARN_CHARR('/', 'T', 'M', 'O'); // TiMeOut
-				LeaveUARTZone();
+				LeaveUARTPortZone(0);
 			}
 		}
 #endif
@@ -376,7 +349,7 @@ int main(void)
 		if (piIsBooted && GetTimeSpanMS(lastPiComm, now) > MCU_COMM_TIMEOUT_MS)
 		{ // Pi stopped corresponding, clear booted flag and take back UART control
 			piIsBooted = false;
-			EnterUARTZone();
+			EnterUARTPortZone(0);
 			uartState = UART_None;
 			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
 			delayUS(1000);
@@ -385,12 +358,12 @@ int main(void)
 			uartd_nak_int(0);
 			delayUS(10000);
 			uartd_reset_port(0);
-			LeaveUARTZone();
+			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
 		}
 		else if (piIsBooted && uartState == UART_CamMCU)
 		{ // Pi started corresponding, hand over UART control automatically
-			EnterUARTZone();
+			EnterUARTPortZone(0);
 			// TODO: Switching UART Control - Properly notify controller of switch
 			//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
 			uartd_nak_int(0);
@@ -398,7 +371,7 @@ int main(void)
 			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
 			uartd_reset_port(0);
 			uartState = UART_CamPi;
-			LeaveUARTZone();
+			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
 		}
 #endif
@@ -408,7 +381,7 @@ int main(void)
 
 /* ------ UART Behaviour ------ */
 
-static uartd_respond uartd_handle_header(uint_fast8_t port)
+uartd_respond uartd_handle_header(uint_fast8_t port)
 {
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
 		return uartd_unknown;
@@ -508,7 +481,7 @@ static uartd_respond uartd_handle_header(uint_fast8_t port)
 	}
 }
 
-static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
+uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
 	if (uartState == UART_None)
 	{
@@ -607,6 +580,17 @@ static uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fas
 		return uartd_unknown;
 	}
 	return uartd_accept;
+}
+
+void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+{
+
+}
+
+void uartd_handle_reset(uint_fast8_t port)
+{
+	rgbled_transition(LED_UART_ERROR, 0);
+	ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
 }
 
 

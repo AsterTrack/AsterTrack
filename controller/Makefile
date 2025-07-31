@@ -61,7 +61,6 @@ BUILD_DIR = build
 C_SOURCES = \
 source/main.c \
 source/usbd.c \
-source/uartd.c \
 source/config.c \
 source/usb_driver.c \
 source/uart_driver.c \
@@ -72,7 +71,8 @@ dependencies/PDlib/source/policy_engine.c \
 ch32v307/source/system_ch32v30x.c
 
 C_SOURCES_SHARED = \
-mcu/util.c
+mcu/util.c \
+mcu/uartd.c
 
 # ----- C includes -----
 

@@ -26,17 +26,18 @@ extern "C"
 
 #include <stdbool.h>
 
-#include "util.h"
-#include "comm/packet.h"
+#include "comm/uart.h"
 #include "uartd_conf.h"
+#include "util.h"
 
 
 /* Structures */
 
 typedef struct {
-
 	// Buffer state
 	uint8_t *bufferPtr;
+	//uint_fast16_t sentPos; // Not used, protection is assumed by large UART buffer, hard to keep track of with shared buffers anyway
+	uint_fast16_t queuedPos;
 	uint_fast16_t parsePos;
 
 	// Parse state
@@ -57,6 +58,16 @@ typedef struct {
 	uint8_t lastAnnounceID;
 	uint8_t lastStreamID;
 
+	// Positions to keep track of which data has been queued and which has been sent/processed
+
+	// queuedPos is set to current parsePos once a packet header is read
+	// Once the UART packet completes (or a 1021-byte block is there) a USB packet is queued and it will be advanced
+	// Thus it will always live within the current packets boundaries
+
+	// sendPos is packet-independent, any data after it should not be overwritten by UART DMA yet
+	// After a USB packet is sent off, it will be advanced to the beginning of the first queued packet that is not sent
+	// Note: Not used, protection is assumed by large UART buffer, hard to keep track of with shared buffers anyway
+
 	// parsePos is the position of first-stage parsing that happens
 } PortState;
 
@@ -68,13 +79,6 @@ typedef enum
 	uartd_unknown	// Ignore any data body (unknown packet)
 } uartd_respond;
 
-typedef struct
-{
-	uartd_respond (*uartd_handle_header)(uint_fast8_t port);
-	uartd_respond (*uartd_handle_data)(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
-	void (*uartd_handle_packet)(uint_fast8_t port, uint_fast16_t endPos);
-} uartd_callbacks;
-
 
 /* Variables */
 
@@ -82,23 +86,25 @@ typedef struct
 extern PortState portStates[UART_PORT_COUNT];
 
 // Predefined messages
-extern uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg_ping[1+PACKET_HEADER_SIZE];
+extern uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
 
 
 /* Functions */
 
-void EnterUARTZone();
-void LeaveUARTZone();
+void DisableUARTInterrupts();
+void EnableUARTInterrupts();
+void EnterUARTPortZone(uint8_t port);
+void LeaveUARTPortZone(uint8_t port);
 
 /**
  * Use within main loop without protections
  */
-void uartd_send(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, bool isOwner);
+void uartd_send(uint_fast8_t port, const void* data, uint_fast16_t len, bool isOwner);
 
 /**
  * Use from within a UART interrupt or an zone/interrupt that can't be preempted by a UART interrupt
  */
-void uartd_send_int(uint_fast8_t port, const uint8_t* data, uint_fast16_t len, bool isOwner);
+void uartd_send_int(uint_fast8_t port, const void* data, uint_fast16_t len, bool isOwner);
 
 /**
  * Use within main loop without protections
@@ -110,7 +116,7 @@ void uartd_reset_port(uint_fast8_t port);
  */
 void uartd_reset_port_int(uint_fast8_t port);
 
-void uartd_init(uartd_callbacks impl_callbacks);
+void uartd_init();
 
 static inline void uartd_ack_int(uint_fast8_t port)
 {
@@ -120,6 +126,11 @@ static inline void uartd_nak_int(uint_fast8_t port)
 {
 	uartd_send_int(port, msg_nak, sizeof(msg_nak), true);
 }
+
+/**
+ * Allocate a temporary buffer for UART use from a shared fifo queue
+ */
+UARTPacketRef* allocateUARTPacket(uint16_t packetLength);
 
 #ifdef __cplusplus
 }

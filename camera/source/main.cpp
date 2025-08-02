@@ -351,6 +351,7 @@ int main(int argc, char **argv)
 
 	// UART communications
 	{ // Init whether used or not, might be enabled later on
+		state.uart.protocol.needsErrorScanning = true;
 		state.uart.port = uart_init(state.serialName);
 		state.uart.start = uart_start;
 		state.uart.stop = uart_stop;
@@ -381,6 +382,7 @@ int main(int argc, char **argv)
 
 	// Server communications
 	{ // Init whether used or not, might be enabled later on
+		state.uart.protocol.needsErrorScanning = false;
 		state.server.port = server_init(state.server_host, state.server_port);
 		state.server.start = server_start;
 		state.server.stop = server_stop;

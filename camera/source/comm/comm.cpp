@@ -30,7 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 // Predefined messages
-static uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg_ping[1+PACKET_HEADER_SIZE];
+static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
 
 // UART Identification and connection
 #define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
@@ -42,15 +42,9 @@ static uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg
 void comm_init()
 {
 	// Init predefined messages
-	msg_ping[0] = UART_LEADING_BYTE;
-	struct PacketHeader header(PACKET_PING, 0);
-	storePacketHeader(header, msg_ping+1);
-	msg_nak[0] = UART_LEADING_BYTE;
-	header.tag = PACKET_NAK;
-	storePacketHeader(header, msg_nak+1);
-	msg_ack[0] = UART_LEADING_BYTE;
-	header.tag = PACKET_ACK;
-	storePacketHeader(header, msg_ack+1);
+	finaliseUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
+	finaliseUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
+	finaliseUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
 }
 
 inline void comm_reset(CommState &comm)
@@ -158,12 +152,11 @@ inline void comm_ACK(CommState &comm)
 static void comm_identify(CommState &comm)
 {
 	if (!comm.started) return;
-	const PacketHeader header(PACKET_IDENT, IDENT_PACKET_SIZE);
-	uint8_t buffer[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
-	buffer[0] = UART_LEADING_BYTE;
-	storePacketHeader(header, buffer+1);
-	storeIdentPacket(comm.ownIdent, buffer+(1+PACKET_HEADER_SIZE));
-	if (comm_write_internal(comm, buffer, sizeof(buffer)))
+	uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
+	UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
+	storeIdentPacket(comm.ownIdent, packet->data);
+	finaliseUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
+	if (comm_write_internal(comm, (uint8_t*)packet, UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE))
 		comm_flush(comm);
 }
 

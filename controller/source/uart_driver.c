@@ -195,17 +195,19 @@ void uart_driver_init()
 
 		// Init UART
 		u.uart->CTLR1 = USART_WordLength_8b | USART_Parity_No | USART_Mode_Tx | USART_Mode_Rx;
+		// For parity:
+		//u.uart->CTLR1 = USART_WordLength_9b | USART_Parity_Even | USART_Mode_Tx | USART_Mode_Rx;
 		u.uart->CTLR2 = USART_StopBits_2;
 		u.uart->CTLR3 = USART_HardwareFlowControl_None;
 		uart_configure_baudrate(i, UART_BAUD_RATE_SAFE);
 		// UART RX Interrupt (IDLE)
 		u.uart->CTLR1 |= USART_CTLR1_IDLEIE;
 		// UART RX Parity Error Interrupt (PEIE)
-		//u.uart->CTLR1 |= USART_CTLR1_PEIE;
+		u.uart->CTLR1 |= USART_CTLR1_PEIE;
 		// Enable UART DMA TX & RX
 		u.uart->CTLR3 |= USART_CTLR3_DMAT | USART_CTLR3_DMAR;
 		// UART RX Error Interrupt (EIE)
-		//u.uart->CTLR3 |= USART_CTLR3_EIE;
+		u.uart->CTLR3 |= USART_CTLR3_EIE;
 
 		// Setup respective DMA Channel for UART RX
 		DMA_CH(u.DMA, u.DMA_CH_RX)->CONTROL = 

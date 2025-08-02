@@ -82,7 +82,7 @@ volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
-	UARTPacketRef *uartIdentPacket = (UARTPacketRef *)ownIdentPacket;
+	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = 0, .type = INTERFACE_UART, .version = version };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
@@ -418,7 +418,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Answer ping to notify of existence
 			uartd_send_int(0, msg_ping, sizeof(msg_ping), true);
 			lastMarker = GetTimePoint();
-			return uartd_ignore;
+			return uartd_accept;
 		}
 		else if (state->header.tag == PACKET_NAK)
 		{

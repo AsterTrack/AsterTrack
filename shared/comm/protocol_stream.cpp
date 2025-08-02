@@ -25,15 +25,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 void proto_clear(ProtocolState &comm)
 {
 	comm.cmdSkip = false;
+	comm.isHeader = false;
 	comm.isCmd = false;
+	comm.cmdEnd = false;
+	comm.cmdErr = false;
 	comm.tail = 0;
 	comm.head = 0;
 	comm.pos = 0;
+	comm.mrk = 0;
 }
 
-/**
- * Clean up past commands from buffer
- */
 void proto_clean(ProtocolState &comm, bool move)
 {
 	int rem = comm.tail - comm.head;
@@ -42,56 +43,198 @@ void proto_clean(ProtocolState &comm, bool move)
 		comm.cmdSkip = false;
 		comm.tail = 0;
 		comm.head = 0;
+		comm.pos = 0;
+		comm.mrk = 0;
 	}
 	else if (rem > 0 && comm.head > 0 && move)
 	{ // Unhandled data waiting, move data ahead in buffer (disallowed if data of current command has to be retained)
 		memmove(comm.rcvBuf.data(), comm.rcvBuf.data()+comm.head, rem);
 		comm.cmdSkip = false;
 		comm.tail = rem;
-		comm.pos = comm.pos-comm.head;
+		if (comm.pos <= comm.head) comm.pos = 0;
+		else comm.pos -= comm.head;
+		if (comm.mrk <= comm.head) comm.mrk = 0;
+		else comm.mrk -= comm.head;
 		comm.head = 0;
 	}
 }
 
+static inline void skipToEnd(ProtocolState &comm, bool error)
+{
+	comm.cmdErr = error;
+	comm.cmdEnd = !error;
+	comm.isCmd = false;
+	comm.isHeader = false;
+}
+
+/**
+ * Find marked bytes (by linux termios option PARMRK) and parse them properly
+ * Input: Data buffer up to dataLen may be parsed, with a desired number of parsed bytes described by parseLen
+ * Output: dataLen is number of bytes consumed, parseLen the number of bytes left. The remainder are undefined (between index parseLen and dataLen)
+ * Returns whether one of the parsed bytes were marked to be erroneous 
+ */
+static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen)
+{
+	bool error = false;
+	int d = 0, p = 0; // Data(read) index, parsed(write) index
+	for (; p < parseLen && d < dataLen; d++, p++)
+	{
+		if (data[d] == 0xFF)
+		{ // Marked
+			if (d+1 >= dataLen)
+			{ // Marked byte inaccessible
+				printf("Received marked byte cut off by data buffer!\n");
+				parseLen = 0; // Essentially delete buffer
+				return true;
+			}
+			if (data[d+1] == 0xFF)
+			{
+				data[p] = data[d+1]; // Copy 0xFF
+				d += 1; // Skip doubled 0xFF
+			}
+			else if (data[d+1] == 0x00)
+			{ // Frame or Parity Error
+				if (d+2 >= dataLen)
+				{ // Marked byte inaccessible
+					printf("Received erroneous marked byte cut off by data buffer!\n");
+					parseLen = 0; // Essentially delete buffer
+					return true;
+				}
+				printf("Detected parity/frame error!\n");
+				error = true;
+				data[p] = data[d+2]; // Copy erroneously read value
+				d += 2; // Skip two preceeding markers
+			}
+			else
+			{ // Should not happen
+				printf("Received invalid marked bytes!\n");
+				error = true;
+				d += 2; // Skip two markers?
+			}
+		}
+		else
+			data[p] = data[d];
+	}
+	dataLen = d;
+	parseLen = p;
+	return error;
+}
+
+/**
+ * Scan the receive buffer for errors until the target bytes have been received
+ * Returns true if bytes up until target have been received successfully
+ * Returns false if there is not enough byzes or an error has been detected (setting cmdErr flag) 
+ */
+static bool scanUntil(ProtocolState &comm, uint32_t target)
+{
+	if (!comm.needsErrorScanning)
+		return target < comm.tail;
+	if (comm.mrk < comm.head) comm.mrk = comm.head;
+	if (target < comm.mrk) return true;
+	unsigned int dataLen = comm.tail-comm.mrk, parseLen = target - comm.mrk;
+	if (scanMarkedBlock(comm.rcvBuf.data()+comm.mrk, dataLen, parseLen))
+	{ // Read length had parity/frame error
+		skipToEnd(comm, true);
+		// Consume parsed bytes up until error
+		comm.head = dataLen;
+		comm.mrk = dataLen;
+		comm.pos = dataLen;
+		return false;
+	}
+	// Move yet unscanned, marked buffer forward (removing space used for marking)
+	memcpy(comm.rcvBuf.data()+comm.mrk+parseLen, comm.rcvBuf.data()+comm.mrk+dataLen, comm.tail-(comm.mrk+dataLen));
+	comm.mrk += parseLen;
+	comm.tail += parseLen-dataLen;
+	return comm.mrk >= target;
+}
+
+/**
+ * Await and consume a block of bytes of at least length min.
+ * Returns false if read bytes have been exhausted, and we need to wait for more
+ * Returns true if a block of at least size min has been found, and comm.head points to the first byte after that block.
+ */
+static inline unsigned int awaitBlockOf(ProtocolState &comm, uint8_t byte, uint8_t min, uint8_t max)
+{
+	while (comm.head < comm.tail && comm.rcvBuf[comm.head] != byte)
+		comm.head++;
+	// Check number of trailing bytes
+	int num = 0;
+	for (; comm.head+num < comm.tail; num++)
+		if (comm.rcvBuf[comm.head+num] != byte)
+			break;
+	if (num < max && comm.head+num == comm.tail)
+	{ // Wait, even if num>min, since we can't confirm the block ends here (unless num >= max)
+		proto_clean(comm, true); // Check if buffer can be reset
+		return 0;
+	}
+	// Move past block
+	comm.head += num;
+	if (num >= min)
+		return num;
+	// Continue searching
+	return awaitBlockOf(comm, byte, min, max);
+}
+
 bool proto_rcvCmd(ProtocolState &comm)
 {
+begin:
 	// Skip when no new data and no existing unhandled data exists
-	if (comm.head+1+PACKET_HEADER_SIZE > comm.tail) return false;
+	if (comm.head >= comm.tail) return false;
 	//printf("Parsing from %d to %d\n", comm.head, comm.tail);
 	if (comm.cmdSkip)
-	{ // Skip stray # incase last header has not been validated
+	{ // Did not signal to fetch full command, skip to end 
 		printf("Skipping header %d!\n", comm.header.tag);
-		comm.head++;
-		comm.isCmd = false;
+		skipToEnd(comm, false);
 	}
 	if (comm.isCmd)
 	{ // If current command exist, make skippable, no further parsing needed
 		comm.cmdSkip = true;
 		return true;
 	}
-	// Locate next command
-	if (comm.rcvBuf[comm.head] != UART_LEADING_BYTE)
-	{ // Skip garbage bytes (should not happen on a clean connection) or UART_TRAILING_BYTEs
-		while (comm.head < comm.tail && comm.rcvBuf[comm.head] != UART_LEADING_BYTE)
-			comm.head++;
-		// If no command is found, clear to reset buffer
-		if (comm.head == comm.tail)
-		{
-			proto_clear(comm);
-			return false;
-		}
-		comm.pos = comm.head;
+	if (comm.cmdErr || comm.cmdEnd)
+	{
+		// Await block of trailing bytes of a given minimum length
+		int numTrailing = awaitBlockOf(comm, UART_TRAILING_BYTE, UART_TRAILING_RECV, UART_TRAILING_SEND);
+		if (numTrailing == 0) return false; // Wait for more bytes
+		// If so, clear flags and search for next command
+		comm.cmdErr = false;
+		comm.cmdEnd = false;
 	}
-	while (comm.head+1 < comm.tail && comm.rcvBuf[comm.head+1] == UART_LEADING_BYTE)
-	{ // Move past variable amount of leading bytes
-		// gotta leave one ahead so we can return and wait for more bytes and still detect the header
-		comm.head++;
+	if (!comm.isHeader)
+	{
+		// Await block of trailing bytes of a given minimum length
+		int numLeading = awaitBlockOf(comm, UART_LEADING_BYTE, UART_LEADING_RECV, UART_LEADING_SEND);
+		if (numLeading == 0) return false; // Wait for more bytes
+		comm.isHeader = true;
 	}
-	// Make sure the full command header is received
-	if (comm.head+1+PACKET_HEADER_SIZE > comm.tail) return false;
-	comm.head++; // Skip last leading byte
+	// Scan full header data for errors encoded with marked bytes
+	int headPosInitial = comm.head;
+	if (!scanUntil(comm, comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE))
+	{
+		if (comm.cmdErr)
+			goto begin; // Header erroneous, skip to end
+		return false; // Wait for more bytes
+	}
+	// Header is fully received, commit to parsing it
+	comm.isHeader = false;
+	if (!verifyHeaderChecksum(comm.rcvBuf.data() + comm.head))
+	{
+		printf("Received header %d with erroneous checksum!\n", comm.header.tag);
+		skipToEnd(comm, true);
+		goto begin; // Header erroneous, skip to end
+	}
 	comm.header = parsePacketHeader(comm.rcvBuf.data() + comm.head);
-	comm.pos = comm.head+PACKET_HEADER_SIZE;
+	unsigned int targetBufferSize = (UART_PACKET_OVERHEAD_SEND+comm.header.length)*3/2;
+	if (targetBufferSize > 10000)
+	{
+		skipToEnd(comm, true);
+		goto begin; // Header erroneous, skip to end
+	}
+	if (comm.rcvBuf.size() < targetBufferSize)
+	{ // Increase buffer size for long packets, accounting for marked bytes and final checksum
+		comm.rcvBuf.resize(targetBufferSize);
+	}
+	comm.pos = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE;
 	comm.cmdSz = comm.header.length;
 	comm.isCmd = true;
 	comm.cmdSkip = true; // If header not validated, will skip
@@ -101,22 +244,19 @@ bool proto_rcvCmd(ProtocolState &comm)
 bool proto_fetchCmd(ProtocolState &comm)
 { // Command ID is valid, wait until it's received in full
 	comm.cmdSkip = false;
-	if (comm.tail >= comm.pos+comm.cmdSz)
-	{ // Received in full
+	unsigned int end = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE+comm.cmdSz+PACKET_CHECKSUM_SIZE;
+	if (scanUntil(comm, end+UART_TRAILING_RECV))
+	{ // Received in full, comm.mrk is now at end
 		comm.cmdPos = comm.pos; // Save data pos
-		comm.pos += comm.cmdSz; // Advance to after command
-		comm.head = comm.pos;	// Also advance to after command
+		comm.pos = end; // Advance to after command
+		comm.head = end; // Also advance to after command
 		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, comm.head, comm.rcvBuf[comm.head-1], comm.rcvBuf[comm.head], comm.rcvBuf[comm.head+1]);
-		proto_clean(comm, false); // Check if buffer can be reset
-		comm.isCmd = false;
+		skipToEnd(comm, false);
 		return true;
 	}
-	else
-	{ // Move receive head to beginning of buffer to make it easier to parse packet once it does arrive
-		proto_clean(comm, true);
-		if (PACKET_HEADER_SIZE+comm.cmdSz > comm.rcvBuf.size())
-			comm.rcvBuf.resize(PACKET_HEADER_SIZE+comm.cmdSz);
-	}
+	// Move receive head to beginning of buffer to make it easier to parse packet once it does arrive
+	// comm.cmdErr may also have been set, and this packet abandoned
+	proto_clean(comm, true);
 	return false;
 }
 
@@ -124,14 +264,15 @@ unsigned int proto_handleCmdBlock(ProtocolState &comm)
 { // Command ID is valid, consider block to be handled
 	comm.cmdSkip = false;
 	unsigned int end = comm.head+PACKET_HEADER_SIZE+comm.cmdSz;
-	unsigned int len = std::min(end, comm.tail) - comm.pos;
+	scanUntil(comm, end);
+	if (comm.cmdErr) return 0;
+	unsigned int len = end - comm.pos;
 	comm.cmdPos = comm.pos; // Save data pos
-	comm.pos += len; // Advance to current read tail
+	comm.pos = end; // Advance to current read tail
 	if (end <= comm.tail)
 	{ // Handle final block of packet
-		comm.head = comm.pos = end;	// Also advance to after command
-		proto_clean(comm, false); // Check if buffer can be reset
-		comm.isCmd = false;
+		comm.head = end; // Also advance to after command
+		skipToEnd(comm, false);
 	}
 	return len;
 }

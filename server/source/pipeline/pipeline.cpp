@@ -124,11 +124,13 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	bool fullyCalibrated = true;
 	for (auto &cam : pipeline.cameras)
 	{
-		cameras.push_back(cam.get());
 		if (cam->calib.invalid())
 			fullyCalibrated = false;
+		if (cam->index >= frame->cameras.size())
+			continue; // May have been added since the frame was recorded
 		auto &record = frame->cameras[cam->index];
 		PreprocessCameraData(cam->calib, record);
+		cameras.push_back(cam.get());
 	}
 	// TODO: Some systems might still break if this subset cameras != pipeline.cameras - verify they work
 	// But they have been designed to support that by using cameras[x]->index for storage

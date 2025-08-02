@@ -38,7 +38,7 @@ extern "C"
 // Needs some headroom to write headers & co. to DMA a PacketRef directly from this buffer
 #define UART_HEADROOM 			USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+PACKET_HEADER_SIZE
 
-#define UART_RESET_TIMEOUT_MS		20		// Timeout after comm loss (NAK) during which all comms are ignored
+#define UART_RESET_TIMEOUT_MS	10		// Timeout after comm loss (NAK) during which all comms are ignored
 
 #ifdef __cplusplus
 }

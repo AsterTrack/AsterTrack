@@ -146,7 +146,7 @@ volatile TimePoint lastUARTActivity;
 
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
-	UARTPacketRef *uartIdentPacket = (UARTPacketRef *)ownIdentPacket;
+	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = version };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
@@ -1274,6 +1274,7 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 		if (state->dataPos == 0)
 		{ // Beginning of buffer, make sure header is prepended
 			// - might not be the case if data starts at beginning of RX buffer (header partly at end of buffer)
+			// also erases the header checksum
 			state->queuedPos = ptr-state->bufferPtr - PACKET_HEADER_SIZE;
 			memcpy(state->bufferPtr+state->queuedPos, state->headerRaw, PACKET_HEADER_SIZE);
 		}

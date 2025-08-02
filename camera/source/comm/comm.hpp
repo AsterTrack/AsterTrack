@@ -70,10 +70,9 @@ inline void comm_write(CommState &comm, const uint8_t *data, uint32_t length)
 
 inline void comm_packet(std::vector<CommState*> &comms, PacketHeader header)
 {
-	uint8_t buffer[1+PACKET_HEADER_SIZE];
-	buffer[0] = UART_LEADING_BYTE;
 	header.length++; // Checksum, transparent
-	storePacketHeader(header, buffer+1);
+	UARTPacketRef packet;
+	writeUARTPacketHeader(&packet, header);
 	for (int i = 0; i < comms.size(); i++)
 	{
 		// Initiate packet
@@ -81,7 +80,7 @@ inline void comm_packet(std::vector<CommState*> &comms, PacketHeader header)
 		comms[i]->writeAccess.lock();
 		comms[i]->writing = true;
 		// Write header
-		int ret = comms[i]->write(comms[i]->port, buffer, sizeof(buffer));
+		int ret = comms[i]->write(comms[i]->port, (uint8_t*)&packet, sizeof(packet));
 		if (ret < 0)
 		{
 			comms[i]->writeAccess.unlock();

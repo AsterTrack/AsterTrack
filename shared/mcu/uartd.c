@@ -181,6 +181,15 @@ void uartd_reset_port(uint_fast8_t port)
 	LeaveUARTPortZone(port);
 }
 
+static inline void skipToEnd(PortState *state)
+{
+	state->searchingEnd = true;
+	state->inHeader = false;
+	state->inData = false;
+	state->numTrailing = 0;
+	state->numLeading = 0;
+}
+
 /** Process received data over UART */
 extern volatile TimePoint lastUARTActivity;
 static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast16_t end)
@@ -215,50 +224,51 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 					success = false;
 					break;
 				}
-				state->ignoreData = resp == uartd_unknown || resp == uartd_ignore;
+				state->ignoreData = resp == uartd_ignore;
 			}
 			pos += blockSize;
-
-			if (complete)
-				uartd_handle_packet(port, pos);
 			state->dataPos += blockSize;
-			state->inData = !complete;
+			if (complete)
+			{
+				uartd_handle_packet(port, pos);
+				skipToEnd(state);
+			}
 			TimeSpan dT = GetTimeSinceUS(now);
 			if (dT > 100)
 			{
 				TERR_STR("!UART_PD_D");
 			}
 		}
-		else if (state->bufferPtr[pos] == UART_LEADING_BYTE)
-		{
-			state->inHeader = true;
-			state->headerPos = 0;
-			pos++;
-			state->headerPtr = state->bufferPtr+pos;
-			state->lastPacketTime = start; // For timesync purposes
-			UARTTR_STR("#");
-		}
 		else if (state->inHeader)
 		{ // Continue to read header
 			UARTTR_STR("P");
 			state->lastComm = start;
 			TimePoint now = GetTimePoint();
-			while (state->headerPos < 4 && pos < end)
+			while (state->headerPos < PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE && pos < end)
 				state->headerRaw[state->headerPos++] = state->bufferPtr[pos++];
-			if (state->headerPos == 4)
+			if (state->headerPos == PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE)
 			{ // Found header of data, handle data next
 				UARTTR_CHARR('+', 'H', ':', UI32_TO_HEX_ARR(*(uint32_t*)state->headerRaw));
+				// TODO: Handle parsing failure due to error more gracefully (e.g. ACK/NAK packets)
+				if (!verifyHeaderChecksum(state->headerRaw))
+				{ // Don't trust packet header, skip to end
+					WARN_STR("!HeaderChecksumWrong");
+					skipToEnd(state);
+					continue;
+				}
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
+				state->verifyChecksum = state->header.tag < PACKET_HOST_COMM;
 				UART_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
 				if (state->header.length > 100000)
-				{ // Just assuming this is an error. CAN happen if wifi on camera is enabled (more UART errors?)
+				{ // Don't trust packet header, skip to end
 					WARN_STR("!UartHeaderOverLength:");
 					WARN_CHARR(INT99999999_TO_CHARR(state->header.length));
-					return false;
+					skipToEnd(state);
+					continue;
 				}
 				received = true;
 
@@ -270,37 +280,69 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 					success = false;
 					break;
 				}
+				else if (resp == uartd_unknown)
+				{ // Don't trust packet header, skip to end
+					WARN_STR("!UartHeaderUnknown");
+					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
+					skipToEnd(state);
+					continue;
+				}
 				else
 				{
 					UARTTR_STR("=");
 					state->dataPos = 0;
-					state->ignoreData = resp == uartd_unknown || resp == uartd_ignore;
+					state->ignoreData = resp == uartd_ignore;
 					if (state->header.length > 0)
 						state->inData = true;
 					else if (!state->ignoreData) // Handle empty packets
 						uartd_handle_data(port, state->bufferPtr+pos, 0);
-					if (resp == uartd_unknown)  // HeaDer Unknown
-						WARN_CHARR('/', INT9_TO_CHARR(port), 'H', 'D', 'U', INT99_TO_CHARR(state->header.tag));
 				}
 			}
 			TimeSpan dT = GetTimeSinceUS(now);
 			if (dT > 100)
 				TERR_STR("!UART_PD_H");
 		}
-		else if (state->bufferPtr[pos] == UART_TRAILING_BYTE)
-		{ // Trailing bytes are added so that dropped bytes in the packet don't cause them to consume the start of the next packet
-			UARTTR_STR("$");
-			pos++;
+		else if (state->searchingEnd)
+		{ // Searching for trailing bytes that mark a packet end
+			if (state->numTrailing < UART_TRAILING_SEND && state->bufferPtr[pos] == UART_TRAILING_BYTE)
+			{
+				state->numTrailing++;
+				pos++;
+			}
+			else if (state->numTrailing < UART_TRAILING_RECV)
+			{ // Not enough, random trailing byte?
+				state->numTrailing = 0;
+				pos++;
+			}
+			else
+			{ // Found end
+				state->numTrailing = 0;
+				state->searchingEnd = false;
+				UARTTR_STR("$");
+			}
 		}
 		else
-		{
-			pos++;
-			noiseData++;
-		}
-		if (noiseData > 0 && (received || state->inData || state->inHeader))
-		{ // At the end of a noise packet, debug noise
-			INFO_CHARR('/', 'N', 'S', 'E', INT999_TO_CHARR(noiseData));
-			noiseData = 0;
+		{ // Searching for leading bytes that mark a packet header
+			if (state->bufferPtr[pos] == UART_LEADING_BYTE)
+			{ // First header byte cannot be leading byte, so search until we find one
+				state->numLeading++;
+				pos++;
+			}
+			else if (state->numLeading < UART_LEADING_RECV)
+			{ // Not enough, random leading byte?
+				state->numLeading = 0;
+				pos++;
+				noiseData++;
+			}
+			else
+			{ // Found first header byte after leading bytes
+				state->numLeading = 0;
+				state->inHeader = true;
+				state->headerPos = 0;
+				state->headerPtr = state->bufferPtr+pos;
+				state->lastPacketTime = start; // For timesync purposes
+				UARTTR_STR("#");
+			}
 		}
 		iterations++;
 	}
@@ -309,9 +351,10 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 		TimeSpan dtUS = GetTimeSinceUS(state->lastComm);
 		DEBUG_CHARR('+', 'T', INT999_TO_CHARR(dtUS), '>');
 	}
-	else if (noiseData > 0)
+	if (noiseData > 0)// && (received || state->inData || state->inHeader))
 	{ // At the end of a noise packet, debug noise
 		INFO_CHARR('/', 'N', 'S', 'E', INT999_TO_CHARR(noiseData));
+		noiseData = 0;
 	}
 	TimeSpan dT = GetTimeSinceUS(start);
 	if (dT > 100)
@@ -390,7 +433,7 @@ UARTPacketRef* allocateUARTPacket(uint16_t packetLength)
 	USE_LOCKS();
 	LOCK();
 	UARTPacketRef *addr;
-	uint8_t align = (UARTPacketBufferPos+UART_LEADING_SEND) & 0b11;
+	uint8_t align = (UARTPacketBufferPos+sizeof(UARTPacketRef)) & 0b11;
 	UARTPacketBufferPos += (4-align) & 0b11;
 	if (sizeof(UARTPacketBuffer)-UARTPacketBufferPos > packetLength)
 	{
@@ -399,7 +442,7 @@ UARTPacketRef* allocateUARTPacket(uint16_t packetLength)
 	}
 	else
 	{
-		align = (4 - (UART_LEADING_SEND & 0b11)) & 0b11;
+		align = (4 - (sizeof(UARTPacketRef) & 0b11)) & 0b11;
 		addr = (UARTPacketRef*)&UARTPacketBuffer[align];
 		UARTPacketBufferPos = align+packetLength;
 	}

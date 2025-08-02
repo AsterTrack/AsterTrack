@@ -121,6 +121,8 @@ void uart_driver_init()
 	// Init UART
 	LL_USART_SetTransferDirection(u.uart, LL_USART_DIRECTION_TX_RX);
 	LL_USART_ConfigCharacter(u.uart, LL_USART_DATAWIDTH_8B, LL_USART_PARITY_NONE, LL_USART_STOPBITS_2);
+	// For parity:
+	//LL_USART_ConfigCharacter(u.uart, LL_USART_DATAWIDTH_9B, LL_USART_PARITY_EVEN, LL_USART_STOPBITS_2);
 	LL_USART_SetHWFlowCtrl(u.uart, LL_USART_HWCONTROL_NONE);
 	//LL_USART_SetTXRXSwap(u.uart, LL_USART_TXRX_STANDARD);
 	//LL_USART_EnableOneBitSamp(u.uart);
@@ -135,6 +137,9 @@ void uart_driver_init()
 	LL_USART_ConfigAsyncMode(u.uart);
 	// UART RX Interrupt (IDLE)
 	LL_USART_EnableIT_IDLE(u.uart);
+	// Parity and Receive Error
+	LL_USART_EnableIT_PE(u.uart);
+	LL_USART_EnableIT_ERROR(u.uart);
 	// Enable UART DMA TX & RX
 	LL_USART_EnableDMAReq_TX(u.uart);
 	LL_USART_EnableDMAReq_RX(u.uart);
@@ -239,6 +244,18 @@ void USART1_IRQHandler()
 	{ // RX IDLE
 		LL_USART_ClearFlag_IDLE(UART[0].uart);
 		uartd_process_port(0, DMA_TAIL(0));
+	}
+	if (LL_USART_IsActiveFlag_NE(UART[0].uart))
+	{ // Noise Error
+		LL_USART_ClearFlag_NE(UART[0].uart);
+	}
+	if (LL_USART_IsActiveFlag_FE(UART[0].uart))
+	{ // Frame Error
+		LL_USART_ClearFlag_FE(UART[0].uart);
+	}
+	if (LL_USART_IsActiveFlag_PE(UART[0].uart))
+	{ // Parity Error
+		LL_USART_ClearFlag_PE(UART[0].uart);
 	}
 }
 void USART2_IRQHandler() __IRQ;

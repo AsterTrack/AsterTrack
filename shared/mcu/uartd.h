@@ -41,12 +41,16 @@ typedef struct {
 	uint_fast16_t parsePos;
 
 	// Parse state
+	int numLeading;
+	int numTrailing;
+	bool searchingEnd;
 	bool inHeader;
 	bool inData;
 	bool ignoreData;
+	bool verifyChecksum;
 	uint8_t *headerPtr;	// Beginning of header in buffer
 	uint_fast8_t headerPos; // Bytes of header that are in headerRaw
-	uint8_t headerRaw[PACKET_HEADER_SIZE]; // Bytes of header to parse
+	uint8_t headerRaw[PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE]; // Bytes of header to parse
 	struct PacketHeader header; // Parsed header
 	uint_fast16_t dataPos; // Position of data in packet
 

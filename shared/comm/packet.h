@@ -286,6 +286,9 @@ typedef uint64_t checksum_t;
 #else
 #error Invalid checksum size!
 #endif
+#define HEADER_CHECKSUM_SIZE 1
+#define PACKET_CHECKSUM_SIZE 0
+
 
 /**
  * Header for blocks within USB packets to assign them to the correct port (camera)
@@ -379,7 +382,7 @@ static inline void storeUSBPacketHeader(struct USBPacketHeader header, uint8_t d
 // USB transfer buffers might need to be aligned
 #define USB_PACKET_ALIGNMENT 		(4-1)	// Bytes to allow start address to be 4-byte alignment (e.g. for HW DMA)
 // Packet size that can be sent to host optimally without needless fragmentation
-#define OPT_PACKET_SIZE				(USB_PACKET_SIZE - (USB_PACKET_HEADER + BLOCK_HEADER_SIZE + USB_PACKET_ALIGNMENT + PACKET_HEADER_SIZE + CHECKSUM_SIZE))
+#define OPT_PACKET_SIZE				(USB_PACKET_SIZE - (USB_PACKET_HEADER + BLOCK_HEADER_SIZE + USB_PACKET_ALIGNMENT + PACKET_HEADER_SIZE + HEADER_CHECKSUM_SIZE + PACKET_CHECKSUM_SIZE))
 
 
 /**

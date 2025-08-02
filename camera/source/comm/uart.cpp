@@ -56,7 +56,8 @@ static void configSerialPort(int uartFD, uint32_t baud)
 	tty.c_lflag &= ~ISIG; // Disable interpretation of INTR, QUIT and SUSP
 
 	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Turn off s/w flow ctrl
-	tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
+	tty.c_iflag &= ~(IGNBRK|BRKINT|IGNPAR|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
+	tty.c_iflag |= PARMRK | INPCK; // Enable marking of bytes with framing/parity errors and breaks with 0xFF00 (0xFF is 0xFFFF)
 
 	tty.c_oflag &= ~OPOST; // Prevent special interpretation of output bytes (e.g. newline chars)
 	tty.c_oflag &= ~ONLCR; // Prevent conversion of newline to carriage return/line feed

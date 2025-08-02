@@ -286,14 +286,7 @@ bool VerifyChecksum(const PacketBlocks &block)
 		checksum += *el;
 	if (checksum != packetChecksum)
 	{
-		if (packetChecksum == UART_TRAILING_BYTE)
-		{ // TODO: Adapt to CHECKSUM_SIZE != 1
-			LOG(LParsing, LWarn, "DROPPING BYTES! Camera checksum is uart trailing byte, likely dropped bytes in uart connection!\n");
-		}
-		else
-		{
-			LOG(LParsing, LWarn, "DIFFERENT CHECKSUM! Camera checksum is %d, received %d!\n", packetChecksum, checksum);
-		}
+		LOG(LParsing, LWarn, "DIFFERENT CHECKSUM! Camera checksum is %d, received %d!\n", packetChecksum, checksum);
 		return false;
 	}
 	return true;

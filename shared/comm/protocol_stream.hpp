@@ -28,16 +28,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct ProtocolState 
 {
-	unsigned int tail;
-	unsigned int head;
-	unsigned int pos;
-	bool isCmd;
+	bool needsErrorScanning = false;
+	unsigned int tail; // Newest byte in buffer
+	unsigned int head; // First unhandled byte or header of current packet
+	unsigned int pos; // First unparsed byte - first data byte of current packet or handled block thereof
+	unsigned int mrk; // First byte not checked for parity/framing errors
+	bool isHeader;
+	bool isCmd; // If we are currently in a packet - head and pos point to header and data respectively
 	bool cmdNAK;
 	bool cmdACK;
 	PacketHeader header;
 	unsigned int cmdSz;
 	unsigned int cmdPos;
-	bool cmdSkip;
+	bool cmdSkip; // Ignore current packet. Requires call to fetchCmd/handleCmdBlock afer rcvCmd returns true to clear the flag
+	bool cmdEnd; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error
+	bool cmdErr; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error
 	std::vector<uint8_t> rcvBuf = std::vector<uint8_t>(1024);
 };
 

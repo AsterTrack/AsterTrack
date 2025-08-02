@@ -276,7 +276,7 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 		// Merge frames, reevaluateMarkerSequences, observe mapping from marker to marker
 		// updateTargetObservations, optimise on subset of frames, realign
 
-	LOGC(LDebug, "Reevaluating marker sequences:")
+	LOGC(LDebug, "Reevaluating marker sequences:");
 
 	// Precalculate marker positions for each frame in linear access vector
 	std::pair<int, int> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
@@ -445,7 +445,7 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 	}
 
 	// Log RMSE of updated markers
-	LOGC(LDebug, "  Initial modifications to sequence assignments:")
+	LOGC(LDebug, "  Initial modifications to sequence assignments:");
 	for (int m = 0; m < target.markers.size(); m++)
 	{
 		if (markerRMSE[m].first != markerSEsum[m].first)
@@ -456,7 +456,7 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 		}
 	}
 
-	LOGC(LDebug, "  Evaluating marker merging based on sequence support:")
+	LOGC(LDebug, "  Evaluating marker merging based on sequence support:");
 
 	// Consider merging markers if their sequences are long enough, non-conflicting, and they all have respectively low RMSE
 	// Start by accumulating sequences that COULD support another marker

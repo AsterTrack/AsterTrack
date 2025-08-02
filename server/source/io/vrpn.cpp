@@ -58,7 +58,7 @@ static inline struct timeval createTimestamp(TimePoint_t time)
 	timestamp.tv_usec = timeUS%1000000;
 	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%ldus)",
 		std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count()/1000.0f,
-		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, diffUS)
+		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, diffUS);
 	return timestamp;
 }
 

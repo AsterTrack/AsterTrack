@@ -418,8 +418,8 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 	if (!updateTargetView())
 		return;
 
-	if (!stopToken.stop_requested()) LOGC(LDebug, "== Finished Calibrating Target View!\n")
-	else LOGC(LDebug, "== Aborted Target View Calibration!\n")
+	if (!stopToken.stop_requested()) LOGC(LDebug, "== Finished Calibrating Target View!\n");
+	else LOGC(LDebug, "== Aborted Target View Calibration!\n");
 }
 
 static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<CameraCalib> &calibs,

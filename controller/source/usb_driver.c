@@ -607,7 +607,7 @@ void usbd_poll(usbd_device *dev)
 						USBHSD->UEP0_RX_CTRL = (USBHSD->UEP0_RX_CTRL & ~USBHS_UEP_R_RES_MASK) | USBHS_UEP_R_RES_ACK;
 						dev->state = usbd_ctl_rxdata; // Expecting more OUT tokens
 
-						USBD_STR("+RXCont:")
+						USBD_STR("+RXCont:");
 						USBD_CHARR(INT999_TO_CHARR(dev->status.data_count_rx));
 					}
 				}

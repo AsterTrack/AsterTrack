@@ -88,7 +88,7 @@ void TrackingCameraState::recvModeSet(uint8_t recvMode)
 	if (modeSet.mode != (TrCamMode)recvMode)
 	{ // Might happen due to error message
 		LOG(LCameraDevice, LWarn, "Camera %d left mode %x and entered mode %x which was not requested (mode %x requested %fms ago)!",
-			id, mode, recvMode, modeSet.mode, dtMS(modeSet.time, sclock::now()))
+			id, mode, recvMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 	}
 	mode = (TrCamMode)recvMode;
 	modeSet.mode = (TrCamMode)recvMode;

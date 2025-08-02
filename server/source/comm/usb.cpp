@@ -238,13 +238,13 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 				//manuallyCancelled++;
 			}
 			else if (ret == LIBUSB_SUCCESS)
-				LOG(LUSB, LTrace, "Control IN transfer %p will be cancelled!", libusb->controlIN[i])
+				LOG(LUSB, LTrace, "Control IN transfer %p will be cancelled!", libusb->controlIN[i]);
 			else
-				LOG(LUSB, LDarn, "Could not cancel control IN transfer %p with code %d!", libusb->controlIN[i], ret)
+				LOG(LUSB, LDarn, "Could not cancel control IN transfer %p with code %d!", libusb->controlIN[i], ret);
 		}
 		else
 		{
-			LOG(LUSB, LTrace, "Control IN transfer %p was not submitted!", libusb->controlIN[i])
+			LOG(LUSB, LTrace, "Control IN transfer %p was not submitted!", libusb->controlIN[i]);
 			if (freeTransfers)
 				libusb_free_transfer(libusb->controlIN[i]);
 		}
@@ -263,13 +263,13 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 				//manuallyCancelled++;
 			}
 			else if (ret == LIBUSB_SUCCESS)
-				LOG(LUSB, LTrace, "Control OUT transfer %p will be cancelled!", libusb->controlOUT[i])
+				LOG(LUSB, LTrace, "Control OUT transfer %p will be cancelled!", libusb->controlOUT[i]);
 			else
-				LOG(LUSB, LDarn, "Could not cancel control OUT transfer %p with code %d!", libusb->controlOUT[i], ret)
+				LOG(LUSB, LDarn, "Could not cancel control OUT transfer %p with code %d!", libusb->controlOUT[i], ret);
 		}
 		else
 		{
-			LOG(LUSB, LTrace, "Control OUT transfer %p was not submitted!", libusb->controlOUT[i])
+			LOG(LUSB, LTrace, "Control OUT transfer %p was not submitted!", libusb->controlOUT[i]);
 			if (freeTransfers)
 				libusb_free_transfer(libusb->controlOUT[i]);
 		}
@@ -279,7 +279,7 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 		std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	if (libusb->controlCancelCounter != expectedCancelled)
 		LOG(LUSB, LWarn, "Could not cleanly cancel control transfers, cancelled %d of %d expected.\n", 
-			libusb->controlCancelCounter.load(), expectedCancelled)
+			libusb->controlCancelCounter.load(), expectedCancelled);
 	if (freeTransfers)
 	{
 		for (int i = 0; i < CTRL_NUM_TRANSFERS; i++)
@@ -316,9 +316,9 @@ static void comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransf
 					manuallyCancelled++;
 				}
 				else if (ret == LIBUSB_SUCCESS)
-					LOG(LUSB, LTrace, "Interrupt transfer %p will be cancelled!\n", libusb->intIN[i][j])
+					LOG(LUSB, LTrace, "Interrupt transfer %p will be cancelled!\n", libusb->intIN[i][j]);
 				else
-					LOG(LUSB, LError, "Failed to cancel interrupt transfer %p with error code %d\n", libusb->intIN[i][j], ret)
+					LOG(LUSB, LError, "Failed to cancel interrupt transfer %p with error code %d\n", libusb->intIN[i][j], ret);
 			}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -326,7 +326,7 @@ static void comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransf
 		std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	if (libusb->intCancelCounter != expectedCancelled)
 		LOG(LUSB, LWarn, "Could not cleanly cancel interrupt transfers, cancelled %d of %d expected, of which %d were forcefully cancelled.\n",
-			libusb->intCancelCounter.load(), expectedCancelled, manuallyCancelled)
+			libusb->intCancelCounter.load(), expectedCancelled, manuallyCancelled);
 	if (freeTransfers)
 	{
 		for (int i = 0; i < INT_NUM_ENDPOINTS; i++)
@@ -370,9 +370,9 @@ std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *libu
 				if (ret != 0)
 				{ // On Windows, this means it's already claimed. On linux, this shouldn't happen
 					if (ret == LIBUSB_ERROR_ACCESS)
-						LOG(LUSB, LError, "Lacking permissions to open controller USB device!\n")
+						LOG(LUSB, LError, "Lacking permissions to open controller USB device!\n");
 					else
-						LOG(LUSB, LError, "Unknown error while trying to open controller USB device!\n")
+						LOG(LUSB, LError, "Unknown error while trying to open controller USB device!\n");
 					continue;
 				}
 				libusb_context->potentialDevices.push_back(devHandle);
@@ -391,22 +391,22 @@ std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *libu
 		{
 			int err = libusb_get_string_descriptor_ascii(*dev, devDesc.iManufacturer, (unsigned char*)strBuf, sizeof(strBuf));
 			if (err <= 0)
-				LOG(LUSB, LError, "Failed to get manufacturer string from potential controller USB device, error code %d\n", err)
+				LOG(LUSB, LError, "Failed to get manufacturer string from potential controller USB device, error code %d\n", err);
 			else if (strcmp((const char*)strBuf, USBD_MANUFACTURER_STRING) == 0)
 			{
 				err = libusb_get_string_descriptor_ascii(*dev, devDesc.iProduct, (unsigned char*)strBuf, sizeof(strBuf));
 				if (err <= 0)
-					LOG(LUSB, LError, "Failed to get product string from potential controller USB device, error code %d\n", err)
+					LOG(LUSB, LError, "Failed to get product string from potential controller USB device, error code %d\n", err);
 				else if (strncmp((const char*)strBuf, USBD_PRODUCT_STRING, sizeof(USBD_PRODUCT_STRING)-1) == 0)
 				{ // Use strncmp to exclude null delimiter -> startsWith
 					dev++;
 					continue;
 				}
 				else
-					LOG(LUSB, LWarn, "USB Device had different product string '%s'! Expected '%s'!\n", strBuf, USBD_PRODUCT_STRING)
+					LOG(LUSB, LWarn, "USB Device had different product string '%s'! Expected '%s'!\n", strBuf, USBD_PRODUCT_STRING);
 			}
 			else
-				LOG(LUSB, LWarn, "USB Device had different manufacturer '%s'! Expected '%s'!\n", strBuf, USBD_MANUFACTURER_STRING)
+				LOG(LUSB, LWarn, "USB Device had different manufacturer '%s'! Expected '%s'!\n", strBuf, USBD_MANUFACTURER_STRING);
 		}
 		else
 			LOG(LUSB, LWarn, "Failed to get device descriptor of potential controller USB device!\n");
@@ -492,9 +492,9 @@ std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *libu
 		else if (speed == LIBUSB_SPEED_FULL)
 			state->isHighSpeed = false;
 		else if (speed == LIBUSB_SPEED_UNKNOWN)
-			LOG(LUSB, LError, "Connected controller has unknown speed!\n")
+			LOG(LUSB, LError, "Connected controller has unknown speed!\n");
 		else
-			LOG(LUSB, LError, "Connected controller has unrecognised speed %d!\n", speed)
+			LOG(LUSB, LError, "Connected controller has unrecognised speed %d!\n", speed);
 
 		libusb->usbAltSetting = -1;
 		libusb->blockTransfers = false;
@@ -947,9 +947,9 @@ static void usbEventHandler(libusb_context_int *libusb)
 	int nc = nice(-40);
 	// Expected to fail without sudo privileges
 	if (errno)
-		LOG(LUSB, LDarn, "Failed to set USB thread nice value to minimum of %d! %s\n", 20-(int)limit.rlim_cur, strerror(errno))
+		LOG(LUSB, LDarn, "Failed to set USB thread nice value to minimum of %d! %s\n", 20-(int)limit.rlim_cur, strerror(errno));
 	else
-		LOG(LUSB, LDarn, "Set USB thread nice value to %d (minimum of %d)!\n", nc, 20-(int)limit.rlim_cur)
+		LOG(LUSB, LDarn, "Set USB thread nice value to %d (minimum of %d)!\n", nc, 20-(int)limit.rlim_cur);
 #endif
 
 	while (libusb->usbEventHandlerRun)

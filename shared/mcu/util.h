@@ -166,18 +166,18 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 }
 
 #define LOG_CHARR(...) \
-{ \
+do { \
 	const char arr[] = { __VA_ARGS__ }; \
 	LOG_BUF(arr, sizeof(arr)); \
-}
+} while(false)
 
 #define LOG_STR(STR) \
-{ \
+do { \
 	const char arr[] = STR; \
 	LOG_BUF(arr, sizeof(arr)-1); \
-}
+} while(false)
 #define LOG_HEX(BUF, SZ) \
-{ \
+do { \
 	char arr[(SZ)*2]; \
 	for (int i = 0; i < (SZ); i++) \
 	{ \
@@ -185,7 +185,7 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 		arr[2*i+1] = hex[((uint8_t*)(BUF))[i] & 0xF]; \
 	} \
 	LOG_BUF(arr, sizeof(arr)); \
-}
+} while(false)
 #define UI32_TO_HEX_ARR(val) UI16_TO_HEX_ARR((val) >> 16), UI16_TO_HEX_ARR((val) & 0xFFFF)
 #define UI16_TO_HEX_ARR(val) UI8_TO_HEX_ARR((val) >> 8), UI8_TO_HEX_ARR((val) & 0xFF)
 #define UI8_TO_HEX_ARR(val) hex[((val) >> 4)&0xF], hex[((val) >> 0)&0xF]
@@ -209,9 +209,9 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 
 #else
 
-#define LOG_CHARR(...) {}
-#define LOG_STR(...) {}
-#define LOG_HEX(...) {}
+#define LOG_CHARR(...) do {} while(false)
+#define LOG_STR(...) do {} while(false)
+#define LOG_HEX(...) do {} while(false)
 
 #endif// Any Log
 
@@ -220,9 +220,9 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 #define DEBUG_STR LOG_STR
 #define DEBUG_HEX LOG_HEX
 #else
-#define DEBUG_CHARR(...) {}
-#define DEBUG_STR(...) {}
-#define DEBUG_HEX(...) {}
+#define DEBUG_CHARR(...) do {} while(false)
+#define DEBUG_STR(...) do {} while(false)
+#define DEBUG_HEX(...) do {} while(false)
 #endif // DEBUG_LOG
 
 #if INFO_LOG
@@ -230,9 +230,9 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 #define INFO_STR LOG_STR
 #define INFO_HEX LOG_HEX
 #else
-#define INFO_CHARR(...) {}
-#define INFO_STR(...) {}
-#define INFO_HEX(...) {}
+#define INFO_CHARR(...) do {} while(false)
+#define INFO_STR(...) do {} while(false)
+#define INFO_HEX(...) do {} while(false)
 #endif // INFO_LOG
 
 #if WARN_LOG
@@ -240,9 +240,9 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 #define WARN_STR LOG_STR
 #define WARN_HEX LOG_HEX
 #else
-#define WARN_CHARR(...) {}
-#define WARN_STR(...) {}
-#define WARN_HEX(...) {}
+#define WARN_CHARR(...) do {} while(false)
+#define WARN_STR(...) do {} while(false)
+#define WARN_HEX(...) do {} while(false)
 #endif // WARN_LOG
 
 #if ERR_LOG
@@ -250,57 +250,57 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 #define ERR_STR LOG_STR
 #define ERR_HEX LOG_HEX
 #else
-#define ERR_CHARR(...) {}
-#define ERR_STR(...) {}
-#define ERR_HEX(...) {}
+#define ERR_CHARR(...) do {} while(false)
+#define ERR_STR(...) do {} while(false)
+#define ERR_HEX(...) do {} while(false)
 #endif // ERR_LOG
 
 #if KERR_LOG
 #define KERR_CHARR LOG_CHARR
 #define KERR_STR LOG_STR
 #else
-#define KERR_CHARR(...) {}
-#define KERR_STR(...) {}
+#define KERR_CHARR(...) do {} while(false)
+#define KERR_STR(...) do {} while(false)
 #endif // KERR_LOG
 
 #if TERR_LOG
 #define TERR_STR LOG_STR
 #define TERR_CHARR LOG_CHARR
 #else
-#define TERR_STR(...) {}
-#define TERR_CHARR(...) {}
+#define TERR_STR(...) do {} while(false)
+#define TERR_CHARR(...) do {} while(false)
 #endif // TERR_LOG
 
 #if TEMP_LOG
 #define TEMP_CHARR LOG_CHARR
 #define TEMP_STR LOG_STR
 #else
-#define TEMP_CHARR(...) {}
-#define TEMP_STR(...) {}
+#define TEMP_CHARR(...) do {} while(false)
+#define TEMP_STR(...) do {} while(false)
 #endif
 
 #if COMM_LOG
 #define COMM_CHARR LOG_CHARR
 #define COMM_STR LOG_STR
 #else
-#define COMM_CHARR(...) {}
-#define COMM_STR(...) {}
+#define COMM_CHARR(...) do {} while(false)
+#define COMM_STR(...) do {} while(false)
 #endif
 
 #if CMDD_LOG
 #define CMDD_CHARR LOG_CHARR
 #define CMDD_STR LOG_STR
 #else
-#define CMDD_CHARR(...) {}
-#define CMDD_STR(...) {}
+#define CMDD_CHARR(...) do {} while(false)
+#define CMDD_STR(...) do {} while(false)
 #endif
 
 #if USBD_LOG
 #define USBD_CHARR LOG_CHARR
 #define USBD_STR LOG_STR
 #else
-#define USBD_CHARR(...) {}
-#define USBD_STR(...) {}
+#define USBD_CHARR(...) do {} while(false)
+#define USBD_STR(...) do {} while(false)
 #endif
 
 #if USBPD_LOG
@@ -308,43 +308,43 @@ static void LOG_BUF(const void *buffer, uint_fast16_t size)
 #define USBPD_CHARR LOG_CHARR
 #define USBPD_STR LOG_STR
 #else
-#define USBPD_BUF(...) {}
-#define USBPD_CHARR(...) {}
-#define USBPD_STR(...) {}
+#define USBPD_BUF(...) do {} while(false)
+#define USBPD_CHARR(...) do {} while(false)
+#define USBPD_STR(...) do {} while(false)
 #endif
 
 #if UART_LOG
 #define UART_CHARR LOG_CHARR
 #define UART_STR LOG_STR
 #else
-#define UART_CHARR(...) {}
-#define UART_STR(...) {}
+#define UART_CHARR(...) do {} while(false)
+#define UART_STR(...) do {} while(false)
 #endif
 
 #if UART_TRACE
 #define UARTTR_CHARR LOG_CHARR
 #define UARTTR_STR LOG_STR
 #else
-#define UARTTR_CHARR(...) {}
-#define UARTTR_STR(...) {}
+#define UARTTR_CHARR(...) do {} while(false)
+#define UARTTR_STR(...) do {} while(false)
 #endif
 
 #if SOFD_LOG
 #define SOFD_CHARR LOG_CHARR
 #else
-#define SOFD_CHARR(...) {}
+#define SOFD_CHARR(...) do {} while(false)
 #endif
 
 #if OVFL_LOG
 #define OVFL_CHARR LOG_CHARR
 #else
-#define OVFL_CHARR(...) {}
+#define OVFL_CHARR(...) do {} while(false)
 #endif
 
 #if BLKF_LOG
 #define BLKF_CHARR LOG_CHARR
 #else
-#define BLKF_CHARR(...) {}
+#define BLKF_CHARR(...) do {} while(false)
 #endif
 
 
@@ -541,19 +541,19 @@ static void LOG_EVT_DATA(uint64_t d, uint_fast8_t id)
 #define LOG_EVT_USB(...) { if (eventLogClass == 2) LOG_EVT(__VA_ARGS__); }
 #define LOG_EVT_STR(...) { if (eventLogClass == 3) LOG_EVT(__VA_ARGS__); }
 #define LOG_EVT_SET(...) { if (eventLogClass == 4) LOG_EVT(__VA_ARGS__); }
-//#define LOG_EVT_INT(...) {}
-//#define LOG_EVT_USB(...) {}
-//#define LOG_EVT_STR(...) {}
+//#define LOG_EVT_INT(...) do {} while(false)
+//#define LOG_EVT_USB(...) do {} while(false)
+//#define LOG_EVT_STR(...) do {} while(false)
 
 #else
 
-#define LOG_EVT(...) {}
-#define LOG_EVT_DATA(...) {}
+#define LOG_EVT(...) do {} while(false)
+#define LOG_EVT_DATA(...) do {} while(false)
 
-#define LOG_EVT_INT(...) {}
-#define LOG_EVT_USB(...) {}
-#define LOG_EVT_STR(...) {}
-#define LOG_EVT_SET(...) {}
+#define LOG_EVT_INT(...) do {} while(false)
+#define LOG_EVT_USB(...) do {} while(false)
+#define LOG_EVT_STR(...) do {} while(false)
+#define LOG_EVT_SET(...) do {} while(false)
 
 #endif // EVENTLOG
 

@@ -123,38 +123,7 @@ extern uint32_t LogLevelHexColors[LMaxLevel];
 #define SHOULD_LOGC(LEVEL) SHOULD_LOG(CurrentLogCategory, LEVEL)
 #define SHOULD_LOGCL() SHOULD_LOG(CurrentLogCategory, CurrentLogLevel)
 
-#define LOG(CATEGORY, LEVEL, ...) { \
-	if (SHOULD_LOG(CATEGORY, LEVEL)) \
-		PrintLog(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
-}
-
-#define LOGC(LEVEL, ...) { \
-	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
-		PrintLog(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
-}
-
-#define LOGL(CATEGORY, ...) { \
-	if (SHOULD_LOG(CATEGORY, CurrentLogLevel)) \
-		PrintLog(CATEGORY, CurrentLogLevel, CurrentLogContext, __VA_ARGS__); \
-}
-
-#define LOGCL(...) { \
-	if (SHOULD_LOG(CurrentLogCategory, CurrentLogLevel)) \
-		PrintLog(CurrentLogCategory, CurrentLogLevel, CurrentLogContext, __VA_ARGS__); \
-}
-
-#define LOGCONTC(LEVEL, ...) { \
-	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
-		PrintLog(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
-}
-
-#define LOGCONT(CATEGORY, LEVEL, ...) { \
-	if (SHOULD_LOG(CATEGORY, LEVEL)) \
-		PrintLogCont(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
-}
-
-
-/* #define LOG(CATEGORY, LEVEL, ...) do { \
+#define LOG(CATEGORY, LEVEL, ...) do { \
 	if (SHOULD_LOG(CATEGORY, LEVEL)) \
 		PrintLog(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
 } while(false)
@@ -182,7 +151,7 @@ extern uint32_t LogLevelHexColors[LMaxLevel];
 #define LOGCONT(CATEGORY, LEVEL, ...) do { \
 	if (SHOULD_LOG(CATEGORY, LEVEL)) \
 		PrintLogCont(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
-} while(false) */
+} while(false)
 
 struct ScopedLogCategory
 {

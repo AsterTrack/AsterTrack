@@ -341,7 +341,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			if (!controller.ports.empty())
 			{
 				LOG(LControllerDevice, LError, "Controller status packet reports port count %d when previously %d where reported! "
-					"This is not allowed!\n", portCount, (int)controller.ports.size())
+					"This is not allowed!\n", portCount, (int)controller.ports.size());
 				return false;
 			}
 			controller.cameras.resize(portCount);

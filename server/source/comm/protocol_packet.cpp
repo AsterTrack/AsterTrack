@@ -24,6 +24,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp" // shortDiff, printBuffer
 #include "util/log.hpp"
 
+#include <cstring>
+
 /**
  * Breaks up out-of-order USB Packets into blocks and reassembles them into packets in order
  */
@@ -43,9 +45,9 @@ struct BlockDistComp
 	BlockDistComp(uint8_t curID) { id = curID; }
 	bool operator() (const PacketBlocks& b1, const PacketBlocks& b2)
 	{ 
-			return shortDiff<uint8_t, int>(b1.nextBlockID, id, 128, BLOCK_ID_SIGNAL) 
-				 > shortDiff<uint8_t, int>(b2.nextBlockID, id, 128, BLOCK_ID_SIGNAL);
-		}
+		return shortDiff<uint8_t, int>(b1.nextBlockID, id, 128, BLOCK_ID_SIGNAL) 
+				> shortDiff<uint8_t, int>(b2.nextBlockID, id, 128, BLOCK_ID_SIGNAL);
+	}
 };
 
 

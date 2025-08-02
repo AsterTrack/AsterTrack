@@ -102,9 +102,10 @@ LDSCRIPT = $(LDSCRIPT_$(DEVICE))
 # BUILD TOOLS
 #######################################
 
-TOOL_PATH=/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/
-#TOOL_PATH=/opt/gcc-arm-none-eabi-10.3-2021.10/bin/
-TOOL_PREFIX = $(TOOL_PATH)arm-none-eabi-
+TOOL_PATH=/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi
+#TOOL_PATH=/opt/gcc-arm-none-eabi-10.3-2021.10
+TOOL_PREFIX = $(TOOL_PATH)/bin/arm-none-eabi-
+TOOL_INCLUDE = -I$(TOOL_PATH)/arm-none-eabi/include -I$(TOOL_PATH)/lib/gcc/arm-none-eabi/*/include
 
 CC = $(TOOL_PREFIX)gcc
 LD = $(CC)
@@ -129,6 +130,7 @@ endif
 
 COMMON_FLAGS = -Wall -fdata-sections -ffunction-sections -funsigned-char
 #COMMON_FLAGS += -flto=auto
+COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
 
 # Add debug options
 ifeq ($(DEBUG_FLASH), 1)

@@ -28,6 +28,7 @@ extern "C"
 
 #include "comm/packet.h"
 #include "uartd_conf.h"
+#include "util.h"
 
 
 /* Structures */

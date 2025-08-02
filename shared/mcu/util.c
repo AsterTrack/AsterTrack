@@ -29,7 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #endif
 
 // Events
-#if EVENTLOG
+#if defined(ENABLE_EVENTS)
 
 volatile uint_fast16_t eventHead = 0, eventTail = 0, eventSending = 0;
 __attribute__((aligned(4))) uint8_t eventAlloc[EVENT_BUFFER_SIZE+USB_HEADROOM];
@@ -40,7 +40,7 @@ uint8_t eventLogClass = 0;
 #endif
 
 // Debug
-#if LOGGING
+#if defined(ENABLE_LOG)
 
 volatile uint_fast16_t debugHead = 0, debugTail = 0, debugSending = 0;
 __attribute__((aligned(4))) uint8_t debugAlloc[DEBUG_BUFFER_SIZE+USB_HEADROOM];

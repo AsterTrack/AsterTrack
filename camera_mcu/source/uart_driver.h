@@ -24,10 +24,16 @@ extern "C"
 {
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
+#if defined(STM32G0)
+#include "stm32g0xx.h"
+#elif defined(CH32V3)
+#include "ch32v30x.h"
+#endif
 
 #include "uartd_conf.h"
+
+#include <stdint.h>
+#include <stdbool.h>
 
 
 /* Structures */

@@ -24,8 +24,6 @@ extern "C"
 {
 #endif
 
-#include "usb_std.h"
-
 // Freely provided VID/PID under conditions of unique identification. Thanks! https://github.com/obdev/v-usb/blob/master/usbdrv/USB-IDs-for-free.txt
 #define USBD_VID					5824		// 0x16C0
 #define USBD_PID					1500		// 0x05DC

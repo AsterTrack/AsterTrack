@@ -23,12 +23,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp"
 
-#include <fstream>
 #include <thread>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <unistd.h>
 
 // Predefined messages

@@ -10,6 +10,10 @@
 	"settings": {
 		"codechecker.backend.compilationDatabasePath": "${workspaceFolder}/build/compile_commands.json",
 		"codechecker.analyze.arguments": "--config ${workspaceFolder}/.vscode/codechecker.json",
-		"codechecker.analyze.runOnSave": false
+		"codechecker.analyze.runOnSave": false,
+		"clangd.arguments": [
+			"--compile-commands-dir=${workspaceFolder}/../server/build",
+	   		"--header-insertion=never"
+		]
 	}
 }

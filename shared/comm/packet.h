@@ -26,7 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h> // memcpy
 
 #define UART_BAUD_RATE_SAFE		8000000
 #define UART_BAUD_RATE_MAX		8000000

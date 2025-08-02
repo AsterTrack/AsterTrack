@@ -16,21 +16,17 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "ch32v30x_rcc.h"
+#include "ch32v30x.h"
 #include "ch32v30x_gpio.h"
-#include "ch32v30x_dma.h"
+#include "compat.h"
 
 #include "util.h"
 #include "packetHub.h"
 #include "uartd.h"
-#include "uart_driver.h"	// UART[] access
+#include "uart_driver.h"
 #include "usbd.h"
 #include "usbd_conf.h"
-#include "compat.h"
 #include "config.h"
-#include "pd_driver.h"
-
-#include <math.h>
 
 
 /* Defines */
@@ -232,7 +228,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	// Initialise version
 	version = GetVersion(0, 0, 0);
 
-#if EVENTLOG
+#if defined(ENABLE_EVENTS)
 	for (int i = 0; i < CONTROLLER_EVENT_MAX; i++)
 		eventFilter[i] = 0; // Disable all by default
 #endif
@@ -382,7 +378,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			}
 		}
 
-#if LOGGING && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
 		if (commChannelsOpen)
 		{ // Setup real-time transfers to use
 			EnterPacketHubZone();
@@ -417,7 +413,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			LeavePacketHubZone();
 		}
 #endif
-#if EVENTLOG && defined(EVENT_USE_INT)
+#if defined(ENABLE_EVENTS) && defined(EVENT_USE_INT)
 		if (commChannelsOpen)
 		{ // Setup real-time transfers to use
 			EnterPacketHubZone();
@@ -645,12 +641,12 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 static void cleanSendingState()
 {
 	// Reset packet-specific sending states - they expect a callback and would get stuck otherwise
-#if LOGGING && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
 	if (debugUSBPacket.queued || debugUSBPacket.writeSet)
 		debugSending = debugTail;
 	resetPacketRef(&debugUSBPacket);
 #endif
-#if EVENTLOG && defined(EVENT_USE_INT)
+#if defined(ENABLE_EVENTS) && defined(EVENT_USE_INT)
 	if (eventUSBPacket.queued || eventUSBPacket.writeSet)
 		eventSending = eventTail;
 	resetPacketRef(&eventUSBPacket);
@@ -751,7 +747,7 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 		lastSOFPacket = NULL;
 	}
 
-#if LOGGING && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
 	if (sink->sending == &debugUSBPacket)
 	{
 		if (success)
@@ -760,7 +756,7 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 			debugSending = debugTail;
 	}
 #endif
-#if EVENTLOG && defined(EVENT_USE_INT)
+#if defined(ENABLE_EVENTS) && defined(EVENT_USE_INT)
 	if (sink->sending == &eventUSBPacket)
 	{
 		if (success)
@@ -836,7 +832,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 
 	if (req->bRequest == COMMAND_IN_DEBUG)
 	{ // Request for debug data
-#if LOGGING
+#if defined(ENABLE_LOG)
 		USBD_STR("+Debug");
 		if (debugTail == debugSending)
 		{
@@ -865,7 +861,6 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Request to report controller status
 		USBD_STR("+Iterate");
 		uint8_t *buf = (uint8_t*)&usbd->status.data_buf[sizeof(usbd_ctlreq)];
-		uint16_t packetSize = 0;
 	
 		// Controller status
 		const int CONTROLLER_STATUS_SIZE = 4;
@@ -907,7 +902,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_IN_EVENTS)
 	{ // Request for event data
 		USBD_STR("+Event");
-#if EVENTLOG
+#if defined(ENABLE_EVENTS)
 		if (eventTail == eventSending)
 		{
 			eventSending = eventSending+1; // "Lock" as quickly as possible
@@ -1104,7 +1099,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		}
 		return usbd_ack;
 	}
-#if EVENTLOG
+#if defined(ENABLE_EVENTS)
 	else if (req->bRequest == COMMAND_OUT_EVENTS)
 	{ // Set events to log
 		CMDD_STR("+EventLog");
@@ -1132,7 +1127,7 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 	{
 		if (req->bRequest == COMMAND_IN_DEBUG)
 		{ // Request for debug data
-	#if LOGGING
+	#if defined(ENABLE_LOG)
 			if (success)
 				debugTail = debugSending;
 			else
@@ -1145,7 +1140,7 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 		}
 		else if (req->bRequest == COMMAND_IN_EVENTS)
 		{ // Request for event data
-	#if EVENTLOG
+	#if defined(ENABLE_EVENTS)
 			if (success)
 			{
 				eventTail = eventSending;

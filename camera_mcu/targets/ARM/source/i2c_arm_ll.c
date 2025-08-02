@@ -25,10 +25,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/commands.h"
 #include "config_impl.h"
-#include "util.h"
 
 #include <stdint.h>
-#include <assert.h>
 
 /* Timing register value is computed with the STM32CubeMX Tool,
 * Fast Mode @400kHz with I2CCLK = 64 MHz,

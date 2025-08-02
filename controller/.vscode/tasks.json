@@ -27,7 +27,20 @@
 			"label": "Build CH32V307 Controller",
 			"type": "shell",
 			"group": "build",
-			"command": "make"
+			"command": "mkdir",
+			"args": [
+				"-p", "build", "&",
+				"bear", "--output", "build/compile_commands.json", "--append", "--",
+				"make", "-j", "$(nproc", "--ignore=2)", "&&",
+				"sed", 
+						"-e", "'s/-march=rv32imac_zicsr/--target=riscv32/g'", 
+						"-e", "'s/-mabi=ilp32/-std=c11/g'",
+						"-e", "'s/-msmall-data-limit=8//g'",
+						"-e", "'s/-mno-save-restore//g'",
+						"-i", "build/compile_commands.json",
+				// Sadly, "make --dry-run", does not work, it intercepts commands
+			],
+			"runOptions": { "reevaluateOnRerun": false }
 		},
 		{
 			"label": "Build CH32V307 Configuration Program",
@@ -67,13 +80,13 @@
 			]
 		},
 	],
-    "inputs": [
-        {
-            "id": "buildType",
-            "description": "Build Type:",
-            "default": "release",
-            "type": "pickString",
-            "options": [ "release", "debug" ]
-        }
-    ]
+	"inputs": [
+		{
+			"id": "buildType",
+			"description": "Build Type:",
+			"default": "release",
+			"type": "pickString",
+			"options": [ "release", "debug" ]
+		}
+	]
 }

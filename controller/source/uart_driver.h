@@ -24,11 +24,14 @@ extern "C"
 {
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
+#if defined(CH32V3)
+#include "ch32v30x.h"
+#endif
 
 #include "uartd_conf.h"
-#include "compat.h"
+
+#include <stdint.h>
+#include <stdbool.h>
 
 
 /* Structures */

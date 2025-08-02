@@ -110,8 +110,9 @@ LDSCRIPT_Config = ch32v307/link_CH32V307VCTx_config.ld
 # Newest version from xPack
 # https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/tag/v12.2.0-1
 #-march=rv32imac_zicsr
-TOOL_PATH=/opt/riscv-none-elf-gcc-xpack-12-2/bin/
-TOOL_PREFIX = $(TOOL_PATH)riscv-none-elf-
+TOOL_PATH=/opt/riscv-none-elf-gcc-xpack-12-2
+TOOL_PREFIX = $(TOOL_PATH)/bin/riscv-none-elf-
+TOOL_INCLUDE = -I$(TOOL_PATH)/riscv-none-elf/include -I$(TOOL_PATH)/lib/gcc/riscv-none-elf/*/include
 
 # Older 8.2.0 version from xPack
 # https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/tag/v8.2.0-3.1
@@ -141,6 +142,7 @@ MCU = -march=rv32imac_zicsr -mabi=ilp32
 
 COMMON_FLAGS = -Wall -fdata-sections -ffunction-sections -funsigned-char
 COMMON_FLAGS += -msmall-data-limit=8 -mno-save-restore -fmessage-length=0 -flto=auto
+COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
 
 # Add debug options
 ifeq ($(DEBUG_FLASH), 1)

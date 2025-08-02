@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <string>
 #include <cstdint>
-#include <vector>
 #include <queue>
 #include <atomic>
 #include <mutex>

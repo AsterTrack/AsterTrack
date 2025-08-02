@@ -7,13 +7,13 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 */
 
-#include "usb_driver.h"
-#include "usb_std.h"
-#include "util.h"
-
 #include "ch32v30x_rcc.h"
 #include "ch32v30x_gpio.h"
 #include "compat.h"
+
+#include "usb_driver.h"
+#include "usb_std.h"
+#include "util.h"
 
 
 /* Defines */
@@ -207,6 +207,7 @@ static uint16_t get_serialno_desc(void *buffer) {
 static usbd_respond std_control(usbd_device *dev, usbd_ctlreq *req)
 {
 	usbd_respond res = usbd_fail;
+	uint8_t ep = dev->ctl_setup.wIndex&0x7;
 	switch (dev->ctl_setup.bmRequestType & (USB_REQ_TYPE | USB_REQ_RECIPIENT))
 	{
 	case USB_REQ_STANDARD | USB_REQ_DEVICE:
@@ -310,7 +311,6 @@ static usbd_respond std_control(usbd_device *dev, usbd_ctlreq *req)
 		}
 		break;
 	case USB_REQ_STANDARD | USB_REQ_ENDPOINT:
-		uint8_t ep = dev->ctl_setup.wIndex&0x7;
 		switch (dev->ctl_setup.bRequest)
 		{
 		case USB_STD_SET_FEATURE:

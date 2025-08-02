@@ -352,7 +352,7 @@ RV_STATIC_INLINE uint8_t NVIC_EncodePriority(uint8_t PriorityGroup, uint8_t Pree
 __attribute__( ( always_inline ) ) RV_STATIC_INLINE void __WFI(void)
 {
   NVIC->SCTLR &= ~(1<<3);	// wfi
-  asm volatile ("wfi");
+  __asm__ volatile ("wfi");
 }
 
 /*********************************************************************
@@ -369,8 +369,8 @@ __attribute__( ( always_inline ) ) RV_STATIC_INLINE void __WFE(void)
   t = NVIC->SCTLR;
   NVIC->SCTLR |= (1<<3)|(1<<5);		// (wfi->wfe)+(__sev)
   NVIC->SCTLR = (NVIC->SCTLR & ~(1<<5)) | ( t & (1<<5));
-  asm volatile ("wfi");
-  asm volatile ("wfi");
+  __asm__ volatile ("wfi");
+  __asm__ volatile ("wfi");
 }
 
 /*********************************************************************

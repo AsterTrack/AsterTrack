@@ -16,20 +16,12 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "util.h"
+#include "stm32g0xx_ll_dma.h"
+#include "compat.h"
+
 #include "uartd.h"
 #include "uart_driver.h"
 #include "rgbled.h"
-
-#if defined(STM32G0)
-#include "stm32g0xx_ll_dma.h"
-#endif
-
-// Definitions of GPIO Pins / DMA Channels and access so that some descriptive structures (UART_DMA_Setup UART) can be shared
-#include "compat.h"
-
-#include <stdint.h>
-#include <string.h>
 
 
 /* Variables */

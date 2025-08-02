@@ -16,11 +16,11 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "compat.h" // __IRQ;
+
 #include "usbd.h"
 // Configuration and descriptors of USB device
 #include "usbd_desc.h"
-
-#include "compat.h" // __IRQ;
 
 /* How it works (USB 2.0 HS on CH32V307):
 One or more interrupt endpoints (1024 bytes each)

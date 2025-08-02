@@ -19,10 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pd_driver.h"
 #include "util.h"
 
-#include "ch32v30x_gpio.h"
-
-#include "compat.h"
-
 /* #include "uartd.h"
 
 #include "ch32v30x_usart.h"

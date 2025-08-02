@@ -1,0 +1,2 @@
+Diagnostics:
+  Suppress: [ int-to-pointer-cast, pointer-to-int-cast, ignored-attributes, anyx86_interrupt_attribute, absolute-value ]

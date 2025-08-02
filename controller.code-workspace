@@ -7,5 +7,10 @@
 			"path": "shared"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"clangd.arguments": [
+			"--compile-commands-dir=${workspaceFolder}/../controller/build",
+	   		"--header-insertion=never"
+		]
+	}
 }

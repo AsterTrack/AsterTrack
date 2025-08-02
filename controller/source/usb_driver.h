@@ -10,11 +10,8 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #ifndef __USB_DRIVER_H
 #define __USB_DRIVER_H
 
-#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-
-#include "util.h"
 
 #include "ch32v30x.h"
 #include "ch32v30x_usb.h"
@@ -104,8 +101,8 @@ typedef struct
 {
 	usbd_status status;
 	enum usbd_ctl_state state;
-	usbd_ctlreq ctl_setup;
 	bool ep_set[16];
+	usbd_ctlreq ctl_setup;
 } usbd_device;
 
 

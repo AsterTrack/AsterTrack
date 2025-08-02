@@ -7,5 +7,10 @@
 			"path": "shared"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"clangd.arguments": [
+			"--compile-commands-dir=${workspaceFolder}/../camera_mcu/build",
+	   		"--header-insertion=never"
+		]
+	}
 }

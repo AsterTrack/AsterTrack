@@ -16,19 +16,10 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "util.h"
-#include "uartd.h"
-
-#include "ch32v30x_gpio.h"
-#include "ch32v30x_usart.h"
 #include "ch32v30x_dma.h"
-
-#include <stdint.h>
-#include <string.h>
-
-// Definitions of GPIO Pins / DMA Channels and access so that some descriptive structures (UART_DMA_Setup UART) can be shared
 #include "compat.h"
 
+#include "uartd.h"
 #include "uart_driver.h"
 
 

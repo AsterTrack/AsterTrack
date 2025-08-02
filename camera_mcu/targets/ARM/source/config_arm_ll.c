@@ -23,8 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g0xx_ll_gpio.h"
 //#include "stm32g0xx_ll_wwdg.h"
 //#include "stm32g0xx_ll_pwr.h"
-#include "stm32g0xx_ll_exti.h"
-#include "stm32g0xx_ll_tim.h"
+//#include "stm32g0xx_ll_exti.h"
+//#include "stm32g0xx_ll_tim.h"
 #endif
 
 #include "config_impl.h"

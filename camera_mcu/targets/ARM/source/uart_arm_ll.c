@@ -24,16 +24,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g0xx_ll_rcc.h"
 #include "stm32g0xx_ll_system.h"
 #endif
+#include "compat.h"
 
 #include "uart_driver.h"
-#include "config_impl.h"
+#include "rgbled.h"
 #include "util.h"
 
 #include <stdint.h>
-#include <string.h>
-
-// Definitions of GPIO Pins / DMA Channels and access so that some descriptive structures (UART_DMA_Setup UART) can be shared
-#include "compat.h"
 
 /* Functions */
 

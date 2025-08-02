@@ -202,7 +202,7 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 #define UART4	((USART_TypeDef *)(USART3_BASE + 0x0400U))
 #endif
 
-#if defined(CH32V307)
+#if defined(__CH32V30x_H)
 
 #define TIM_SR(TIM) TIM->INTFR
 
@@ -219,7 +219,7 @@ static inline void StopTimer(TIM_TypeDef *TIM)
 	TIM->CTLR1 &= ~TIM_CEN;
 }
 
-#else
+#elif defined(STM32F1xx_LL_TIM_H) | defined(__STM32F3xx_LL_TIM_H) | defined(STM32G0xx_LL_TIM_H)
 
 #define TIM_SR(TIM) TIM->SR
 #define TIM_UIF TIM_SR_UIF

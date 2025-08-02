@@ -116,8 +116,7 @@ static inline uint32_t __get_GINTEN()
 
 #include <string.h>
 
-#define LOGGING defined(ENABLE_LOG)
-#if LOGGING
+#if defined(ENABLE_LOG)
 
 #define DEBUG_BUFFER_SIZE (1<<14)
 extern volatile uint_fast16_t debugHead, debugTail, debugSending;
@@ -493,8 +492,7 @@ static inline __attribute__((always_inline)) void delayMS(uint16_t ms)
 }
 
 
-#define EVENTLOG defined(ENABLE_EVENTS)
-#if EVENTLOG
+#if defined(ENABLE_EVENTS)
 
 #define EVENT_BUFFER_SIZE	(1<<12)
 #define EVENT_BYTE_SIZE		4 // uint32_t

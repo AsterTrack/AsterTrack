@@ -20,17 +20,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #if defined(STM32G0)
 #include "stm32g030xx.h"
 #include "stm32g0xx_ll_gpio.h"
-#include "stm32g0xx_ll_exti.h"
-#include "stm32g0xx_ll_rcc.h"
-//#include "stm32g0xx_ll_wwdg.h"
 #endif
+#include "compat.h"
 
 #include "util.h"
 #include "uartd.h"
 #include "rgbled.h"
 #include "comm/commands.h"
-
-#include "compat.h"
 #include "config_impl.h"
 
 

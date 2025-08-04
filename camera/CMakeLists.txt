@@ -51,6 +51,8 @@ set(SOURCES
 	../shared/comm/protocol_stream.cpp
 	../shared/blob/refinement.cpp
 	../shared/blob/blob.cpp
+	../shared/hash/crc32.cpp
+	../shared/hash/sha256.cpp
 )
 set(LIBRARIES
 	m dl pthread atomic

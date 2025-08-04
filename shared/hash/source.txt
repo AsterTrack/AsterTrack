@@ -1,0 +1,5 @@
+https://github.com/stbrumme/hash-library
+commit d389d18
+
+Renamed headers to hpp
+Changed crc32.cpp to precompute lookup table at compile time

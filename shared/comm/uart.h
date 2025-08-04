@@ -54,23 +54,30 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
+#pragma pack(push, 1)
 typedef struct
 {
 	uint8_t start[UART_LEADING_SEND];
-	uint8_t header[PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE];
+	uint8_t header[PACKET_HEADER_SIZE];
+	uint8_t headerChecksum[HEADER_CHECKSUM_SIZE];
 	uint8_t data[];
 } UARTPacketRef;
+#pragma pack(pop)
 
 
 /* Functions */
 
-
 static inline void calculateHeaderChecksum(uint8_t header[PACKET_HEADER_SIZE], uint8_t checksum[HEADER_CHECKSUM_SIZE])
 {
 	if (HEADER_CHECKSUM_SIZE == 1)
-	{ // Old simple checksum
-		for (int i = 0; i < 4; i++)
-			checksum[0] += header[i];
+	{ // 8bit fletcher checksum
+		uint16_t accum1 = 0, accum2 = 0;
+		for (int i = 0; i < PACKET_HEADER_SIZE; i++)
+			accum2 += accum1 += header[i];
+		// Sadly, on rv32imac, this is an actual division operation, so use modulo 16
+		//accum1 %= 15; accum2 %= 15;
+		accum1 &= 0xF; accum2 &= 0xF;
+		checksum[0] = (accum2 << 4) + accum1;
 	}
 }
 
@@ -86,50 +93,42 @@ static inline bool verifyHeaderChecksum(uint8_t header[PACKET_HEADER_SIZE+HEADER
     return true;
 }
 
+static inline void calculateDirectPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
+{
+	if (PACKET_CHECKSUM_SIZE == 4)
+	{ // Fletcher-32 - derived
+		uint16_t accum1 = 0, accum2 = 0;
+		for (int i = 0; i < length; i++)
+			accum2 += accum1 += data[i];
+		checksum[0] = accum1 & 0xFF;
+		checksum[1] = accum1 >> 8;
+		checksum[2] = accum2 & 0xFF;
+		checksum[3] = accum2 >> 8;
+	}
+}
+
 static inline void writeUARTPacketHeader(UARTPacketRef *packet, struct PacketHeader header)
 {
 	for (int i = 0; i < UART_LEADING_SEND; i++)
 		packet->start[i] = UART_LEADING_BYTE;
 	storePacketHeader(header, packet->header);
 	for (int i = 0; i < HEADER_CHECKSUM_SIZE; i++)
-		packet->header[PACKET_HEADER_SIZE+i] = 0;
-	calculateHeaderChecksum(packet->header, packet->header+PACKET_HEADER_SIZE);
-}
-
-static inline void calculatePacketChecksum(uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
-{
-	if (PACKET_CHECKSUM_SIZE == 1)
-	{ // Old simple checksum
-		for (int i = 0; i < length; i++)
-			checksum[0] += data[i];
-	}
-	if (PACKET_CHECKSUM_SIZE == 2)
-	{
-		uint16_t accum[2] = { checksum[0], checksum[1] };
-		for (int i = 0; i < length; i++)
-		{ // TODO: Proper CRC
-			accum[0] += data[i];
-			accum[0] += accum[0] >> 8;
-			accum[1] += accum[0];
-		}
-		checksum[0] = accum[0];
-		checksum[1] = accum[1];
-	}
+		packet->headerChecksum[i] = 0;
+	calculateHeaderChecksum(packet->header, packet->headerChecksum);
 }
 
 static inline void writeUARTPacketEnd(UARTPacketRef *packet, uint16_t dataLength)
 {
-	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
-		packet->data[dataLength+i] = 0;
-	calculatePacketChecksum(packet->data, dataLength, packet->data+dataLength);
 	for (int i = 0; i < UART_TRAILING_SEND; i++)
 		packet->data[dataLength+PACKET_CHECKSUM_SIZE+i] = UART_TRAILING_BYTE;
 }
 
-static inline void finaliseUARTPacket(void *packet, struct PacketHeader header)
+static inline void finaliseDirectUARTPacket(void *packet, struct PacketHeader header)
 {
-	writeUARTPacketHeader((UARTPacketRef*)packet, header);
-	writeUARTPacketEnd((UARTPacketRef*)packet, header.length);
+	UARTPacketRef *ref = (UARTPacketRef*)packet;
+	writeUARTPacketHeader(ref, header);
+	calculateDirectPacketChecksum(ref->data, header.length, ref->data+header.length);
+	writeUARTPacketEnd(ref, header.length);
 }
 
 #endif // UART_PROTOCOL_H

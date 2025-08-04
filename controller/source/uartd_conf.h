@@ -38,6 +38,11 @@ extern "C"
 // Needs some headroom to write headers & co. to DMA a PacketRef directly from this buffer
 #define UART_HEADROOM 			USB_PACKET_HEADER+BLOCK_HEADER_SIZE+USB_PACKET_ALIGNMENT+PACKET_HEADER_SIZE
 
+// Size temporary buffer for receiving packets addressed at the MCU, not the Host
+// Only Ident packet has any meaningful amount of data
+#define UART_TEMP_PACKET_BUF 32
+
+// UART Timing
 #define UART_RESET_TIMEOUT_MS	10		// Timeout after comm loss (NAK) during which all comms are ignored
 
 #ifdef __cplusplus

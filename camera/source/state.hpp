@@ -46,7 +46,6 @@ struct CommState
 {
 	std::mutex writeAccess;
 	bool enabled = false, started = false, ready = false, writing = false;
-	uint8_t checksum;
 	ProtocolState protocol = {};
 	IdentPacket ownIdent = {};
 	IdentPacket expIdent = {};

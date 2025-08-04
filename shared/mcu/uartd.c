@@ -85,7 +85,7 @@ inline void LeaveUARTPortZone(uint8_t port)
 
 uartd_respond uartd_handle_header(uint_fast8_t port);
 uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
-void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos);
+uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos);
 void uartd_handle_reset(uint_fast8_t port);
 
 
@@ -95,9 +95,9 @@ void uartd_handle_reset(uint_fast8_t port);
 void uartd_init()
 {
 	// Init predefined messages
-	finaliseUARTPacket(msg_ping, (struct PacketHeader){ .tag = PACKET_PING, .length = 0 });
-	finaliseUARTPacket(msg_nak, (struct PacketHeader){ .tag = PACKET_NAK, .length = 0 });
-	finaliseUARTPacket(msg_ack, (struct PacketHeader){ .tag = PACKET_ACK, .length = 0 });
+	finaliseDirectUARTPacket(msg_ping, (struct PacketHeader){ .tag = PACKET_PING, .length = 0 });
+	finaliseDirectUARTPacket(msg_nak, (struct PacketHeader){ .tag = PACKET_NAK, .length = 0 });
+	finaliseDirectUARTPacket(msg_ack, (struct PacketHeader){ .tag = PACKET_ACK, .length = 0 });
 
 	// Init port states
 	memset(portStates, 0, sizeof(portStates));
@@ -192,7 +192,7 @@ static inline void skipToEnd(PortState *state)
 
 /** Process received data over UART */
 extern volatile TimePoint lastUARTActivity;
-static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast16_t end)
+static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast16_t end)
 {
 	TimePoint start = GetTimePoint();
 	// TODO: Log fracturing of packets when spearate comm_write are used instead of a block-write. Not optimal.
@@ -201,7 +201,8 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 	lastUARTActivity = GetTimePoint();
 	PortState *state = &portStates[port];
 	static int noiseData = 0;
-	bool received = false, success = true;
+	bool received = false;
+	uartd_respond resp = uartd_ignore;
 	int iterations = 0;
 	uint_fast16_t pos = begin;
 	while (pos < end)
@@ -211,28 +212,33 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 			UARTTR_STR("+D");
 			state->lastComm = start;
 			TimePoint now = GetTimePoint();
-			uint16_t missingSize = state->header.length - state->dataPos;
+			uint16_t missingSize = state->header.length + PACKET_CHECKSUM_SIZE - state->dataPos;
 			uint16_t blockSize = end - pos;
 			bool complete = blockSize >= missingSize;
 			if (complete) blockSize = missingSize;
 			if (!state->ignoreData)
 			{
-				uartd_respond resp = uartd_handle_data(port, state->bufferPtr+pos, blockSize);
-				if (resp == uartd_reset)
+				resp = uartd_handle_data(port, state->bufferPtr+pos, blockSize);
+				if (resp == uartd_reset || resp == uartd_reset_nak)
 				{
 					WARN_STR("!UartDataBad");
-					success = false;
 					break;
 				}
 				state->ignoreData = resp == uartd_ignore;
 			}
 			pos += blockSize;
 			state->dataPos += blockSize;
-			if (complete)
+			if (complete && !state->ignoreData)
 			{
-				uartd_handle_packet(port, pos);
-				skipToEnd(state);
+				resp = uartd_handle_packet(port, pos);
+				if (resp == uartd_reset || resp == uartd_reset_nak)
+				{
+					WARN_STR("!UartPacketBad");
+					break;
+				}
 			}
+			if (complete)
+				skipToEnd(state);
 			TimeSpan dT = GetTimeSinceUS(now);
 			if (dT > 100)
 			{
@@ -258,7 +264,6 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				}
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				state->verifyChecksum = state->header.tag < PACKET_HOST_COMM;
 				UART_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
@@ -272,12 +277,11 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 				}
 				received = true;
 
-				uartd_respond resp = uartd_handle_header(port);
+				resp = uartd_handle_header(port);
 				if (resp == uartd_reset)
 				{ // Bad state, reset port
 					WARN_STR("!UartHeaderBad");
 					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
-					success = false;
 					break;
 				}
 				else if (resp == uartd_unknown)
@@ -366,12 +370,7 @@ static bool uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast
 	{
 		TERR_CHARR('/', 'I', 'T', INT99999999_TO_CHARR(iterations));
 	}
-	if (!success)
-	{
-		WARN_STR("+CommReset:");
-		WARN_CHARR(INT9_TO_CHARR(port));
-	}
-	return success;
+	return resp;
 }
 
 void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
@@ -385,10 +384,10 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 
 	UART_STR("/RX:");
 	UART_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));
-	bool success = true;
+	uartd_respond resp = uartd_ignore;
 	if (state->parsePos < tail)
 	{ // One continuous range
-		success = uartd_process_data(port, state->parsePos, tail);
+		resp = uartd_process_data(port, state->parsePos, tail);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
 		if (dT > 100)
@@ -396,31 +395,37 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	}
 	else if (state->parsePos > tail)
 	{ // Two ranges, at start and end of ringbuffer
-		success = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE);
+		resp = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
 		if (dT > 100)
 			TERR_STR("!UART_PP_2.1");
-		if (success && tail > 0)
+		if (resp != uartd_reset && resp != uartd_reset_nak && tail > 0)
 		{
 			TimePoint now = GetTimePoint();
 			state->parsePos = 0;
-			success = uartd_process_data(port, 0, tail);
+			resp = uartd_process_data(port, 0, tail);
 
 			dT = GetTimeSinceUS(now);
 			if (dT > 100)
 				TERR_STR("!UART_PP_2.2");
 		}
 	}
-	if (success)
+	if (resp == uartd_reset)
+		uartd_reset_port_int(port);
+	else if (resp == uartd_reset_nak)
+	{
+		uartd_reset_port_int(port); // Interrupts and clears TX
+		delayUS(10);
+		uart_send_dma(port, msg_nak, sizeof(msg_nak));
+	}
+	else
 	{
 		if (tail == UART_RX_BUFFER_SIZE)
 			state->parsePos = 0;
 		else
 			state->parsePos = tail;
 	}
-	else
-		uartd_reset_port_int(port);
 
 	TimeSpan dT = GetTimeSinceUS(state->lastComm);
 	if (dT > 100)

@@ -37,6 +37,7 @@ struct ProtocolState
 	bool isCmd; // If we are currently in a packet - head and pos point to header and data respectively
 	bool cmdNAK;
 	bool cmdACK;
+	bool validChecksum;
 	PacketHeader header;
 	unsigned int cmdSz;
 	unsigned int cmdPos;
@@ -56,7 +57,5 @@ void proto_clean(ProtocolState &comm, bool move=false);
 bool proto_rcvCmd(ProtocolState &comm);
 
 bool proto_fetchCmd(ProtocolState &comm);
-
-unsigned int proto_handleCmdBlock(ProtocolState &comm);
 
 #endif // PROTOCOL_STREAM_H

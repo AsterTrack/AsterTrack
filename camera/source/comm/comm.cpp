@@ -42,9 +42,115 @@ static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_
 void comm_init()
 {
 	// Init predefined messages
-	finaliseUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
-	finaliseUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
-	finaliseUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
+	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
+	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
+	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
+}
+
+struct PacketSendingHandle
+{
+	int interfaces;
+	int sentSize;
+	int totalSize;
+	CRC32 crc;
+};
+
+void* comm_packet(CommList comms, PacketHeader header)
+{
+	if (header.tag < PACKET_HOST_COMM)
+	{
+		printf("Attempting to send packet %d to MCU using methods intended for Host comm!\n", header.tag);
+		return nullptr;
+	}
+	// Prepare packet start
+	UARTPacketRef packet;
+	writeUARTPacketHeader(&packet, header);
+	// Send out packet start
+	int numWriting = 0;
+	for (int i = 0; i < comms.cnt; i++)
+	{
+		CommState &comm = *comms.arr[i];
+		// Initiate packet
+		if (!comm.ready) continue;
+		comm.writeAccess.lock();
+		comm.writing = true;
+		// Write header
+		int ret = comm.write(comm.port, (uint8_t*)&packet, sizeof(packet));
+		if (ret < 0)
+		{
+			comm.writeAccess.unlock();
+			comm_close(*comms.arr[i]);
+			continue;
+		}
+		comm.writing = true;
+		numWriting++;
+	}
+	if (numWriting > 0)
+	{ // Store ongoing checksum calculation data in handle - may be share among multiple CommStates
+		PacketSendingHandle *handle = new PacketSendingHandle();
+		handle->interfaces = numWriting;
+		handle->totalSize = header.length;
+		handle->sentSize = 0;
+		handle->crc.reset();
+		return handle;
+	}
+	return nullptr;
+}
+
+void comm_write(CommList comms, void *packet, const uint8_t *data, uint32_t length)
+{
+	if (!packet) return; // No CommState is sending
+	PacketSendingHandle *handle = (PacketSendingHandle*)packet;
+	if (handle->interfaces == 0) return; // No CommState is sending anymore
+	// Update checksum of block
+	if (PACKET_CHECKSUM_SIZE == 4)
+		handle->crc.add(data, length);
+	handle->sentSize += length;
+	// Send out packet block
+	for (int i = 0; i < comms.cnt; i++)
+	{
+		CommState &comm = *comms.arr[i];
+		if (!comm.writing) continue;
+		int ret = comm.write(comm.port, data, length);
+		if (ret < 0)
+		{
+			comm.writing = false;
+			comm.writeAccess.unlock();
+			comm_close(comm);
+			handle->interfaces--;
+		}
+	}
+}
+
+void comm_submit(CommList comms, void *packet)
+{
+	if (!packet) return; // No CommState is sending
+	PacketSendingHandle *handle = (PacketSendingHandle*)packet;
+	if (handle->interfaces == 0) return; // No CommState is sending anymore
+	assert (handle->sentSize == handle->totalSize);
+	// Prepare packet end (see writeUARTPacketEnd)
+	uint8_t buffer[PACKET_CHECKSUM_SIZE+UART_TRAILING_SEND];
+	if (handle->totalSize > 0)
+		handle->crc.getHash(buffer);
+	for (int i = 0; i < UART_TRAILING_SEND; i++)
+		buffer[PACKET_CHECKSUM_SIZE+i] = UART_TRAILING_BYTE;
+	// Send out packet end
+	for (int i = 0; i < comms.cnt; i++)
+	{
+		CommState &comm = *comms.arr[i];
+		if (!comm.writing) continue;
+		if (handle->totalSize > 0)
+			comm.write(comm.port, buffer, sizeof(buffer));
+		else // Skip packet checksum
+		 	comm.write(comm.port, buffer+PACKET_CHECKSUM_SIZE, sizeof(buffer)-PACKET_CHECKSUM_SIZE);
+		comm.submit(comm.port);
+		comm.writing = false;
+		comm.writeAccess.unlock();
+		handle->interfaces--;
+	}
+	if (handle->interfaces != 0)
+		printf("Packet handle had comm num of %d after submission!\n", handle->interfaces);
+	delete handle;
 }
 
 inline void comm_reset(CommState &comm)
@@ -155,7 +261,7 @@ static void comm_identify(CommState &comm)
 	uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 	UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
 	storeIdentPacket(comm.ownIdent, packet->data);
-	finaliseUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
+	finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
 	if (comm_write_internal(comm, (uint8_t*)packet, UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE))
 		comm_flush(comm);
 }
@@ -242,7 +348,7 @@ phase_identification:
 				{
 					if (proto_fetchCmd(proto))
 					{ // Received full identification command (implicit acknowledgement of own identification)
-						bool correct = proto.cmdSz == IDENT_PACKET_SIZE;
+						bool correct = proto.cmdSz == IDENT_PACKET_SIZE && proto.validChecksum;
 						if (correct)
 						{
 							IdentPacket rcvIdent = parseIdentPacket(proto.rcvBuf.data()+proto.cmdPos);
@@ -348,7 +454,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_SYNC)
 				{ // Received sync packet
-					if (proto_fetchCmd(proto) && proto.cmdSz >= SYNC_PACKET_SIZE)
+					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= SYNC_PACKET_SIZE)
 					{
 						struct SyncPacket sync = parseSyncPacket(&proto.rcvBuf[proto.cmdPos]);
 						std::unique_lock lock(state.sync.access);
@@ -359,7 +465,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_SOF)
 				{ // Received sof packet
-					if (proto_fetchCmd(proto) && proto.cmdSz >= SOF_PACKET_SIZE)
+					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= SOF_PACKET_SIZE)
 					{
 						struct SOFPacket sync = parseSOFPacket(&proto.rcvBuf[proto.cmdPos]);
 						std::unique_lock lock(state.sync.access);
@@ -415,7 +521,7 @@ phase_comm:
 				} */
 				else if (proto.header.tag == PACKET_CFG_SETUP)
 				{ // Received setup packet
-					if (proto_fetchCmd(proto) && proto.cmdSz >= CONFIG_PACKET_SIZE)
+					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= CONFIG_PACKET_SIZE)
 					{
 						ConfigPacket packet = parseConfigPacket(&proto.rcvBuf[proto.cmdPos]);
 						printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %c, strobe? %c (%d)\n",
@@ -429,7 +535,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_CFG_MODE)
 				{ // Mode set
-					if (proto_fetchCmd(proto) && proto.cmdSz >= 1)
+					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= 1)
 					{
 						uint8_t modePacket = proto.rcvBuf[proto.cmdPos];
 						TrackingCameraMode newMode = {};
@@ -453,14 +559,14 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_CFG_WIFI)
 				{
-					if (proto_fetchCmd(proto))
+					if (proto_fetchCmd(proto) && proto.validChecksum)
 					{
 						parseWirelessConfigPacket(state, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
 					}
 				}
 				else if (proto.header.tag == PACKET_CFG_IMAGE)
 				{
-					if (proto_fetchCmd(proto) && proto.cmdSz >= 1)
+					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= 1)
 					{
 						ImageStreamState stream = {};
 						stream.enabled = proto.rcvBuf[proto.cmdPos+0] != 0;
@@ -504,7 +610,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_CFG_VIS)
 				{
-					if (proto_fetchCmd(proto))
+					if (proto_fetchCmd(proto) && proto.validChecksum)
 					{
 						state.visualisation.enabled = proto.rcvBuf[proto.cmdPos+0];
 						if (state.visualisation.enabled)

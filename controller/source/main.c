@@ -96,6 +96,8 @@ typedef struct
 {
 	enum ControllerCommState comm;
 	struct IdentPacket identity;
+	uint8_t packetBuffer[UART_TEMP_PACKET_BUF];
+	uint16_t packetSize;
 
 	// Streaming state
 	bool cameraEnabled; // TODO: Needed? Probably not. But nice to know
@@ -126,7 +128,6 @@ static volatile TimePoint lastIntPacket = 0;
 // Fixed UART Messages
 static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
-static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
 
 // For sending event and debug logs over interrupt transfers
 #ifdef DEBUG_USE_INT
@@ -149,7 +150,7 @@ static void uart_set_identification()
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = version };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
-	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
+	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
 static void sendSOFPackets(uint32_t frameID, TimePoint SOF);
@@ -341,22 +342,24 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 
 		if (enforceTimeSync)
 		{ // Enforce a certain density of time syncs with both host and connected cameras
-			
+
 			// Send Sync Packets to cameras
-			const struct PacketHeader header = { .tag = PACKET_SYNC, .length = SYNC_PACKET_SIZE, .frameID = curFrameID };
-			UARTPacketRef *packet = allocateUARTPacket(header.length);
-			const struct SyncPacket syncPacket = { GetTimePointUS() };
-			storeSyncPacket(syncPacket, packet->data);
-			finaliseUARTPacket(packet, header);
+			UARTPacketRef *packet = NULL;
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
 				if (camStates[i].comm != CommPiReady) continue;
 				TimeSpan timeSinceLastTimeSync = now - portStates[i].lastTimeSync;
-				if (timeSinceLastTimeSync > UART_TIME_SYNC_INTERVAL)
+				if (timeSinceLastTimeSync < UART_TIME_SYNC_INTERVAL) continue;
+				if (!packet)
 				{
-					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SYNC_PACKET_SIZE, false);
-					portStates[i].lastTimeSync = now;
+					const struct PacketHeader header = { .tag = PACKET_SYNC, .length = SYNC_PACKET_SIZE, .frameID = curFrameID };
+					packet = allocateUARTPacket(header.length);
+					const struct SyncPacket syncPacket = { GetTimePointUS() };
+					storeSyncPacket(syncPacket, packet->data);
+					finaliseDirectUARTPacket(packet, header);
 				}
+				uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SYNC_PACKET_SIZE, false);
+				portStates[i].lastTimeSync = now;
 			}
 		}
 
@@ -464,8 +467,8 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			{
 				if ((camStates[i].comm & CommReady) != CommReady)
 					continue; // Comms not set up, doesn't need ping
-				if ((camStates[i].comm == CommPiReady) && (enforceTimeSync || frameSignalSource == FrameSignal_Generating))
-					continue; // Already sending packets regularly, doesn't need ping
+				if ((camStates[i].comm == CommPiReady) && frameSignalSource == FrameSignal_Generating && (now - portStates[i].lastComm) < UART_PING_INTERVAL)
+					continue; // Already sending packets regularly, and camera is sending streaming-related packets back, doesn't need ping
 				uartd_send(i, msg_ping, sizeof(msg_ping), true);
 			}
 			lastPing = now;
@@ -486,7 +489,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
 				UARTPacketRef *packet = allocateUARTPacket(header.length);
 				packet->data[0] = TRCAM_STANDBY;
-				finaliseUARTPacket(packet, header);
+				finaliseDirectUARTPacket(packet, header);
 				for (int i = 0; i < UART_PORT_COUNT; i++)
 				{
 					if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
@@ -605,7 +608,7 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 		const struct PacketHeader header = { .tag = PACKET_SOF, .length = SOF_PACKET_SIZE, .frameID = frameID };
 		UARTPacketRef *packet = allocateUARTPacket(header.length);
 		storeSOFPacket(sofPacket, packet->data);
-		finaliseUARTPacket(packet, header);
+		finaliseDirectUARTPacket(packet, header);
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 		{
 			if (camStates[i].comm == CommPiReady)
@@ -1007,15 +1010,17 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_OUT_SEND_PACKET)
 	{ // Request to send a packet to cameras
 		CMDD_STR("+SendPkt:");
-		CMDD_CHARR(INT99_TO_CHARR(req->wValue));
-		UARTPacketRef *packet = allocateUARTPacket(req->wLength);
-		memcpy(packet->data, req->data, req->wLength);
-		finaliseUARTPacket(packet, (struct PacketHeader){ .tag = req->wValue, .length = req->wLength });
+		CMDD_CHARR(INT99_TO_CHARR(req->wValue), ':', INT99_TO_CHARR(req->wValue));
+		uint16_t packetLen = req->wLength - PACKET_CHECKSUM_SIZE;
+		UARTPacketRef *packet = allocateUARTPacket(packetLen);
+		writeUARTPacketHeader(packet, (struct PacketHeader){ .tag = req->wValue, .length = packetLen });
+		memcpy(packet->data, req->data, packetLen + PACKET_CHECKSUM_SIZE); // Copy data and checksum
+		writeUARTPacketEnd(packet, packetLen);
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			if (!((req->wIndex >> i)&1) || (camStates[i].comm & CommReady) != CommReady) continue;
-			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND+req->wLength, false);
-			if (req->wValue == PACKET_CFG_MODE && req->wLength > 0)
+			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND+packetLen, false);
+			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
 				camStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;
 			}
@@ -1163,8 +1168,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 				return uartd_accept;
 			ERR_STR("#IdentWrongSize:");
 			ERR_CHARR(INT9_TO_CHARR(state->dataPos), '+', INT9999_TO_CHARR(state->header.length));
-			uartd_nak_int(port);
-			return uartd_reset;
+			return uartd_reset_nak;
 		}
 		else if (state->header.tag == PACKET_ACK)
 		{
@@ -1179,8 +1183,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 			{
 				COMM_STR("!PrematureACK:");
 				COMM_CHARR(INT9_TO_CHARR(port));
-				uartd_nak_int(port);
-				return uartd_reset;
+				return uartd_reset_nak;
 			}
 		}
 		else if (state->header.tag == PACKET_NAK)
@@ -1195,8 +1198,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 			COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag));
 			// Very likely, this controller was reset/restarted
 			// Reset comms and wait for camera to send an ident packet again
-			uartd_nak_int(port);
-			return uartd_reset;
+			return uartd_reset_nak;
 		}
 	}
 
@@ -1231,7 +1233,12 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		initSourcePackets(source);
 		return uartd_accept;
 	}
-	else if (state->header.tag == PACKET_PING)
+
+	// Handle packets designated for MCU
+	// If they are header-only (zero-size), handle here
+	// Else, handle in uartd_handle_packet
+
+	if (state->header.tag == PACKET_PING)
 	{ // Ping response, last comm time is updated
 		return uartd_ignore;
 	}
@@ -1255,7 +1262,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		return uartd_reset;
 	}
 	else
-	{
+	{ // Shouldn't happen
 		return uartd_unknown;
 	}
 	TimeSpan dT = GetTimeSinceUS(now);
@@ -1270,65 +1277,36 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	TimePoint now = GetTimePoint();
 	if (state->header.tag >= PACKET_HOST_COMM)
 	{ // Packet designated for Host
-		//TEMP_CHARR('+', 'D', INT999_TO_CHARR(size));
 		if (state->dataPos == 0)
-		{ // Beginning of buffer, make sure header is prepended
-			// - might not be the case if data starts at beginning of RX buffer (header partly at end of buffer)
-			// also erases the header checksum
-			state->queuedPos = ptr-state->bufferPtr - PACKET_HEADER_SIZE;
+		{ // Beginning of buffer, make sure header is prepended immediately before
+			state->queuedPos = (ptr-state->bufferPtr) - PACKET_HEADER_SIZE;
 			memcpy(state->bufferPtr+state->queuedPos, state->headerRaw, PACKET_HEADER_SIZE);
 		}
-		TimeSpan dT = GetTimeSinceUS(now);
-		if (dT > 100)
-			TERR_STR("!UART_HD_0");
-		uint_fast16_t end = (ptr-state->bufferPtr)+size;
-		uint16_t remSize = end - state->queuedPos;
-		bool completed = state->dataPos+size == state->header.length;
+		uint_fast16_t end = (ptr-state->bufferPtr) + size;
+		uint16_t remSize = end - state->queuedPos; // Size remaining to be sent
+		uint16_t expSize = state->header.length > 0? state->header.length+PACKET_CHECKSUM_SIZE : 0;
+		bool completed = state->dataPos+size == expSize;
 		bool endOfBuf = end == UART_RX_BUFFER_SIZE;
-		//TEMP_CHARR('!', INT99999_TO_CHARR(state->queuedPos));
-		if (endOfBuf)
-			TEMP_CHARR('/', 'E', 'O', 'B');
-		if (!completed)
-			TEMP_CHARR('/', 'I', 'N', 'C');
-		if (remSize != state->dataPos+size+PACKET_HEADER_SIZE)
-		{
-			TEMP_CHARR('/', 'C', 'N', 'T', INT9999_TO_CHARR(remSize), ':', INT99999_TO_CHARR(state->queuedPos), '-', INT99999_TO_CHARR(end));
+		{ // Temp debug
+			if (completed) TEMP_STR("/Last:");
+			else TEMP_STR("/Cont:");
+			if (endOfBuf) TEMP_STR("+EOB");
+			TEMP_CHARR('+', INT9999_TO_CHARR(size), '=', INT9999_TO_CHARR(remSize), ':', INT99999_TO_CHARR(state->queuedPos), '-', INT99999_TO_CHARR(end));
 		}
-		bool finishData = completed || endOfBuf;
 		uint_fast16_t fullPacketSize = USBD_PACKET_SIZE-USB_PACKET_HEADER-BLOCK_HEADER_SIZE;
-		int iterations = 0;
-		while (remSize > 0 && (finishData || remSize >= fullPacketSize))
-		{
-			if (iterations > 0)
-			{
-				TEMP_CHARR('+', 'T', 'D', INT9999_TO_CHARR(remSize));
-			}
+		while (remSize > 0 && (completed || endOfBuf || remSize >= fullPacketSize))
+		{ // Need to send a block to host
 			uint16_t handled = remSize;
 			handleSourceData(&packetHub, &packetHub.sources[port], state->bufferPtr+state->queuedPos, &remSize);
 			handled -= remSize;
-			//TEMP_CHARR('+', 'B', INT999_TO_CHARR(handled), '/', INT999_TO_CHARR(remSize+handled));
+			TEMP_CHARR('+', 'B', INT999_TO_CHARR(handled), '/', INT999_TO_CHARR(remSize+handled));
 			if (handled == 0)
 			{ // Failed to queue data, can't handle packet
 				ERR_CHARR('!', 'O', 'V', 'F');
-				/* ERR_CHARR('+', packetHub.sinks[0].sending? 'S' : 'F');
-				if (packetHub.sinks[0].sending)
-					ERR_CHARR(':', INT9999_TO_CHARR(packetHub.sinks[0].sending->size));
-				ERR_CHARR('+', 'S', 'H', 'R', 'D');
-				for (int i = 0; i < SHARED_BUF_COUNT; i++)
-				{
-					SharedBuffer *buf = &packetHub.shared[i];
-					TimeSpan latency = GetTimeSinceUS(buf->packet.latencyTime);
-					ERR_CHARR('-', UI8_TO_HEX_ARR((uint8_t)&buf->packet), 'S', INT9999_TO_CHARR(buf->packet.size), 'L', INT999_TO_CHARR(latency/100), '=', buf->packet.writeSet? 'W' : 'N', buf->packet.queued? 'Q' : 'N');
-
-				} */
 				return uartd_ignore;
 			}
 			state->queuedPos += handled;
-			iterations++;
-			//TEMP_CHARR('+', 'R', INT99999_TO_CHARR(state->queuedPos));
 		}
-		//TimeSpan dtUS = GetTimeSinceUS(state->lastComm);
-		//TEMP_CHARR('+', 'T', INT99_TO_CHARR(dtUS), '>');
 
 		if (endOfBuf)
 		{
@@ -1336,53 +1314,21 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 			//TEMP_CHARR('+', 'R', 'S', 'T', 'Q');
 		}
 
-		dT = GetTimeSinceUS(now);
-		if (dT > 100)
-			TERR_STR("!UART_HD_1");
-		return uartd_accept;
-	}
-	else if (state->header.tag == PACKET_IDENT)
-	{ // Identification
-		memcpy(rcvIdentPacket+state->dataPos, ptr, size);
-		if (state->dataPos+size == IDENT_PACKET_SIZE)
-		{ // Received full identification, check
-			struct IdentPacket ident = parseIdentPacket(rcvIdentPacket);
-			if ((ident.device != DEVICE_TRCAM && ident.device != DEVICE_TRCAM_MCU) || ident.type != INTERFACE_UART)
-			{ // Ident packet was plain wrong
-				WARN_STR("!IdentFail:");
-				WARN_CHARR(INT9_TO_CHARR(port));
-				WARN_CHARR('+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
-				uartd_nak_int(port);
-				return uartd_reset;
-			}
-			if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
-			{ // TODO: Deal with versions, controller should be able to update older versions anyway
-				WARN_STR("!VersionMismatch:");
-				WARN_CHARR(INT9_TO_CHARR(port));
-				WARN_STR("+Cont:v");
-				WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
-				WARN_STR("+Cam:v");
-				WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
-				uartd_nak_int(port);
-				return uartd_reset;
-			}
-			// Idenfication verified
-			cam->comm = CommID;
-			cam->identity = ident;
-			if (ident.device == DEVICE_TRCAM)
-				cam->comm |= CommPi;
-			else if (ident.device == DEVICE_TRCAM_MCU)
-				cam->comm |= CommMCU;
-			COMM_STR("/Identified:");
-			COMM_CHARR(INT9_TO_CHARR(port));
-			COMM_CHARR('+', UI8_TO_HEX_ARR(ident.device));
-			// Send own identification in response
-			uartd_send_int(port, ownIdentPacket, sizeof(ownIdentPacket), true);
-		}
-
 		TimeSpan dT = GetTimeSinceUS(now);
 		if (dT > 100)
-			TERR_STR("!UART_HD_I");
+			TERR_STR("!UART_HD");
+		return uartd_accept;
+	}
+
+	// Copy packet (which may be split by UART receive buffer end) to temporary buffer
+	// The MCU only ever receives small packets that are not addressed to Host
+	if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF || state->dataPos+size > UART_TEMP_PACKET_BUF)
+		return uartd_ignore;	
+	memcpy(cam->packetBuffer+state->dataPos, ptr, size);
+	cam->packetSize = state->dataPos+size;
+
+	if (state->header.tag == PACKET_IDENT)
+	{ // Identification
 		return uartd_accept;
 	}
 	else
@@ -1391,9 +1337,89 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	}
 }
 
-void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 {
+	PortState *state = &portStates[port];
+	CameraState *cam = &camStates[port];
+	TimePoint now = GetTimePoint();
 
+	if (state->header.tag >= PACKET_HOST_COMM)
+	{ // Already sent all data to host
+		return uartd_accept;
+	}
+
+	// Verify direct checksum
+	cam->packetSize -= PACKET_CHECKSUM_SIZE;
+	uint8_t checksum[PACKET_CHECKSUM_SIZE];
+	calculateDirectPacketChecksum(cam->packetBuffer, cam->packetSize, checksum);
+	bool correctChecksum = true;
+	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+	{
+		if (checksum[i] != cam->packetBuffer[cam->packetSize+i])
+		{
+			WARN_STR("!PacketChecksum:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
+			correctChecksum = false;
+			break;
+		}
+	}
+
+	if (state->header.tag == PACKET_IDENT)
+	{ // Identification
+		if ((cam->comm & CommReady) == CommReady)
+		{ // Why are we here?
+			return uartd_reset_nak;
+		}
+		if (!correctChecksum)
+		{
+			return uartd_reset_nak;
+		}
+		if (cam->packetSize < IDENT_PACKET_SIZE)
+		{
+			WARN_STR("!IdentSmall:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', INT99_TO_CHARR(state->header.length), '+', INT99_TO_CHARR(cam->packetSize));
+			return uartd_reset_nak;
+		}
+		// Received full identification, check
+		struct IdentPacket ident = parseIdentPacket(cam->packetBuffer);
+		if ((ident.device != DEVICE_TRCAM && ident.device != DEVICE_TRCAM_MCU) || ident.type != INTERFACE_UART)
+		{ // Ident packet was plain wrong
+			WARN_STR("!IdentFail:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
+			return uartd_reset_nak;
+		}
+		if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
+		{ // TODO: Deal with versions, controller should be able to update older versions anyway
+			WARN_STR("!VersionMismatch:");
+			WARN_CHARR(INT9_TO_CHARR(port));
+			WARN_STR("+Cont:v");
+			WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
+			WARN_STR("+Cam:v");
+			WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
+			return uartd_reset_nak;
+		}
+		// Idenfication verified
+		cam->comm = CommID;
+		cam->identity = ident;
+		if (ident.device == DEVICE_TRCAM)
+			cam->comm |= CommPi;
+		else if (ident.device == DEVICE_TRCAM_MCU)
+			cam->comm |= CommMCU;
+		COMM_STR("/Identified:");
+		COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device));
+		// Send own identification in response
+		uartd_send_int(port, ownIdentPacket, sizeof(ownIdentPacket), true);
+
+		TimeSpan dT = GetTimeSinceUS(now);
+		if (dT > 100)
+			TERR_STR("!UART_HD_I");
+		return uartd_accept;
+	}
+
+	// Should not arrive here
+	WARN_STR("/UART_HP_UNKNOWN:");
+	WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
+	return uartd_accept;
 }
 
 void uartd_handle_reset(uint_fast8_t port)

@@ -637,7 +637,6 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			if (!VerifyChecksum(packet))
 				packet.erroneous = true;
-			packet.data.resize(packet.header.length-CHECKSUM_SIZE);
 			if (packet.header.isStreamPacket())
 			{
 				auto cameraFrame = ReadStreamingPacket(*camera, packet);

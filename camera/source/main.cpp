@@ -79,7 +79,7 @@ static void setConsoleRawMode();
 static TrackingCameraState state = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
-std::vector<CommState*> comms;
+CommList comms;
 static std::thread *uartThread;
 static std::thread *serverThread;
 ErrorTag error = ERROR_NONE;
@@ -94,6 +94,7 @@ static struct
 	std::vector<uint8_t> data;
 	int sendProgress;
 	uint8_t ID;
+	PacketTag tag;
 } largePacket;
 // Keeping track of frame buffers
 static std::mutex frameAccess;
@@ -175,11 +176,11 @@ bool handleError(std::string backtrace = "")
 	if (comm_anyEnabled(comms))
 	{
 		bool serious = error != ERROR_GCS_TIMEOUT;
-		comm_packet(comms, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
-		comm_write(comms, (uint8_t*)&error, 1);
-		comm_write(comms, (uint8_t*)&serious, 1);
-		comm_write(comms, (uint8_t*)backtrace.data(), backtrace.size());
-		comm_submit(comms);
+		void *packet = comm_packet(comms, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
+		comm_write(comms, packet, (uint8_t*)&error, 1);
+		comm_write(comms, packet, (uint8_t*)&serious, 1);
+		comm_write(comms, packet, (uint8_t*)backtrace.data(), backtrace.size());
+		comm_submit(comms, packet);
 		comm_flush(comms);
 		if (!serious)
 			return false;
@@ -376,13 +377,13 @@ int main(int argc, char **argv)
 	if (state.uart.enabled)
 	{
 		uartThread = new std::thread(CommThread, &state.uart, &state);
-		comms.push_back(&state.uart);
+		comms.arr[comms.cnt++] = &state.uart;
 		printf("Initiating UART connection...\n");
 	}
 
 	// Server communications
 	{ // Init whether used or not, might be enabled later on
-		state.uart.protocol.needsErrorScanning = false;
+		state.server.protocol.needsErrorScanning = false;
 		state.server.port = server_init(state.server_host, state.server_port);
 		state.server.start = server_start;
 		state.server.stop = server_stop;
@@ -407,7 +408,7 @@ int main(int argc, char **argv)
 	if (state.server.enabled)
 	{
 		serverThread = new std::thread(CommThread, &state.server, &state);
-		comms.push_back(&state.server);
+		comms.arr[comms.cnt++] = &state.server;
 		printf("Initiating server connection...\n");
 	}
 
@@ -488,9 +489,9 @@ int main(int argc, char **argv)
 				// No change, but need to notify host anyway
 				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
 				uint8_t mode = (uint8_t)TRCAM_STANDBY;
-				comm_packet(comms, PacketHeader(PACKET_MODE, 1));
-				comm_write(comms, &mode, 1);
-				comm_submit(comms);
+				void *packet = comm_packet(comms, PacketHeader(PACKET_MODE, 1));
+				comm_write(comms, packet, &mode, 1);
+				comm_submit(comms, packet);
 			}
 
 			if (state.wireless.needsStatusPacket)
@@ -839,7 +840,8 @@ int main(int argc, char **argv)
 				auto waitForFrame = [&]() -> bool
 				{
 					// Wait for a frame to be received in the VideoCore
-					TimePoint_t waitStart = sclock::now();
+					TimePoint_t waitStart = sclock::now(), errorSent;
+					bool sentTimeoutError = false;
 					while (gcs_waitForFrameBuffer(gcs, 1000) == 0 && !abortStreaming)
 					{
 						if (needsComms && !comm_anyReady(comms))
@@ -852,13 +854,18 @@ int main(int argc, char **argv)
 							break;
 						}
 						long waitTimeUS = dtUS(waitStart, sclock::now());
-						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 50 : 10))
+						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 100 : 10) && (!sentTimeoutError || dtMS(errorSent, sclock::now()) > 1000))
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
 								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
+							errorSent = sclock::now();
+							sentTimeoutError = true;
 							error = ERROR_GCS_TIMEOUT;
-							abortStreaming = true;
-							break;
+							if (handleError())
+							{
+								abortStreaming = true;
+								break;
+							}
 						}
 					}
 					return abortStreaming;
@@ -1319,9 +1326,9 @@ int main(int argc, char **argv)
 				// Notify host of mode change
 				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
 				uint8_t mode = (uint8_t)state.newModeRaw;
-				comm_packet(comms, PacketHeader(PACKET_MODE, 1));
-				comm_write(comms, &mode, 1);
-				comm_submit(comms);
+				void *packet = comm_packet(comms, PacketHeader(PACKET_MODE, 1));
+				comm_write(comms, packet, &mode, 1);
+				comm_submit(comms, packet);
 
 				if (!state.curMode.streaming)
 				{
@@ -1357,8 +1364,8 @@ int main(int argc, char **argv)
 			} */
 			
 			// Announce to controller that frame is being processed
-			comm_packet(comms, PacketHeader(PACKET_FRAME_SIGNAL, 0, curFrame->ID&0xFF));
-			comm_submit(comms);
+			void *packet = comm_packet(comms, PacketHeader(PACKET_FRAME_SIGNAL, 0, curFrame->ID&0xFF));
+			comm_submit(comms, packet);
 
 			// Allow sending from now until processing is expected to end, at which point we need to send the results with low latency
 			bytesSentAccum += sendLargePacketData(state, avgTimes.cpu-200);
@@ -1526,11 +1533,11 @@ int main(int argc, char **argv)
 					{ // Create mask report
 						TimePoint_t t0 = sclock::now();
 
-						comm_packet(comms, PacketHeader(PACKET_BGTILES, bgTiles.size()+2));
+						void *packet = comm_packet(comms, PacketHeader(PACKET_BGTILES, bgTiles.size()+2));
 						Vector2<uint8_t> extends = (layout.validMaskRect.extends()/8).cast<uint8_t>();
-						comm_write(comms, extends.data(), 2);
-						comm_write(comms, (uint8_t*)bgTiles.data(), bgTiles.size());
-						comm_submit(comms);
+						comm_write(comms, packet, extends.data(), 2);
+						comm_write(comms, packet, (uint8_t*)bgTiles.data(), bgTiles.size());
+						comm_submit(comms, packet);
 						//comm_flush(comms);
 						bytesSentAccum += 2+bgTiles.size();
 
@@ -1544,7 +1551,7 @@ int main(int argc, char **argv)
 				TimePoint_t t0 = sclock::now();
 
 				int reportLength = STREAM_PACKET_HEADER_SIZE + STREAM_PACKET_BLOB_SIZE * clusters.size();
-				comm_packet(comms, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF));
+				void *packet = comm_packet(comms, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF));
 
 				// Send blob individually
 				/* uint16_t blobData[3]; // uint32_t blobData;
@@ -1597,10 +1604,10 @@ int main(int argc, char **argv)
 				}
 
 				// Send blob report
-				comm_write(comms, packetBuffer.data(), packetBuffer.size());
+				comm_write(comms, packet, packetBuffer.data(), packetBuffer.size());
 
 				// Submit
-				comm_submit(comms);
+				comm_submit(comms, packet);
 				//comm_flush(comms);
 
 				bytesSentAccum += packetBuffer.size();
@@ -1648,7 +1655,7 @@ int main(int argc, char **argv)
 
 					// Write header
 					int packetLength = metaSize + imgSize + bitSize + ptSize;
-					comm_packet(comms, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF));
+					void *packet = comm_packet(comms, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF));
 
 					// Write metadata
 					uint16_t *metaData = (uint16_t*)packetBuffer.data();
@@ -1660,14 +1667,14 @@ int main(int argc, char **argv)
 					metaData[5] = (uint16_t)(((double)blob.centroid.y()+0.5) * 65536 / state.camera.height);
 					metaData[6] = (uint16_t)((double)blob.size * 65536 / 256);
 					metaData[7] = (edgeRefined.size() & 0xFFFF);
-					comm_write(comms, (uint8_t*)metaData, metaSize);
+					comm_write(comms, packet, (uint8_t*)metaData, metaSize);
 
 					// Read out image data from bounds
 					for (int y = 0; y < extends.y(); y++)
 					{
 						int imgPos = y*extends.x();
 						int ptrPos = (bounds.minY+y)*srcStride + bounds.minX;
-						comm_write(comms, curFrame->memory + ptrPos, extends.x());
+						comm_write(comms, packet, curFrame->memory + ptrPos, extends.x());
 					}
 					
 					// Write bit buf
@@ -1679,7 +1686,7 @@ int main(int argc, char **argv)
 						int pos = pt.y()*extends.x() + pt.x();
 						bitBuf[pos/8] |= 1 << (pos % 8);
 					}
-					comm_write(comms, bitBuf, bitSize);
+					comm_write(comms, packet, bitBuf, bitSize);
 					
 					// Write points
 					uint8_t *ptBuf = packetBuffer.data();
@@ -1695,13 +1702,13 @@ int main(int argc, char **argv)
 						ptBuf[i*3+1] = (dat >> 8)&0xFF;
 						ptBuf[i*3+2] = (dat >> 0)&0xFF;
 					} */
-					comm_write(comms, ptBuf, ptSize);
+					comm_write(comms, packet, ptBuf, ptSize);
 
 					//printf("Selected blob %d of size %d = %dx%d (%d, %d, %d, %d) with %d points, size %f, as debug target! Total report length is %d!\n",
 					//	maxInd, maxSz, extends.x(), extends.y(), blob.bounds.minX, blob.bounds.minY, blob.bounds.maxX, blob.bounds.maxY, blob.ptCnt, blob.centroid.S, blobPayloadLength);
 
 					// Send blob report
-					comm_submit(comms);
+					comm_submit(comms, packet);
 					//comm_flush(comms);
 
 					bytesSentAccum += metaSize + imgSize + bitSize + ptSize;
@@ -1710,8 +1717,8 @@ int main(int argc, char **argv)
 				else 
 				{ // Write empty packet
 					TimePoint_t t0 = sclock::now();
-					comm_packet(comms, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF));
-					comm_submit(comms);
+					void *packet = comm_packet(comms, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF));
+					comm_submit(comms, packet);
 					//comm_flush(comms);
 					curTimes.send += dtUS(t0, sclock::now());
 				}
@@ -1824,22 +1831,22 @@ int main(int argc, char **argv)
 
 				if (comm_anyReady(comms))
 				{
-					StatPacket packet;
-					packet.header.frame = numFrames;
-					packet.header.deltaUS = deltaUS;
-					packet.header.tempSOC = temperature/10; // Not accurate to a thousands anyway, more a tenth
-					packet.header.skipTrigger = std::min(255, skip_count_trigger);
-					packet.header.skipCPU = std::min(255, skip_count_cpu);
-					packet.header.skipQPU = std::min(255, skip_count_qpu);
-					packet.times = avgTimes;
-					packet.incidents = incidents;
+					StatPacket stats;
+					stats.header.frame = numFrames;
+					stats.header.deltaUS = deltaUS;
+					stats.header.tempSOC = temperature/10; // Not accurate to a thousands anyway, more a tenth
+					stats.header.skipTrigger = std::min(255, skip_count_trigger);
+					stats.header.skipCPU = std::min(255, skip_count_cpu);
+					stats.header.skipQPU = std::min(255, skip_count_qpu);
+					stats.times = avgTimes;
+					stats.incidents = incidents;
 					// Write byte representation
 					uint8_t statPacket[STAT_PACKET_SIZE];
-					storeStatPacket(packet, statPacket);
+					storeStatPacket(stats, statPacket);
 					// Send packet
-					comm_packet(comms, PacketHeader(PACKET_STAT, sizeof(statPacket)));
-					comm_write(comms, statPacket, sizeof(statPacket));
-					comm_submit(comms);
+					void *packet = comm_packet(comms, PacketHeader(PACKET_STAT, sizeof(statPacket)));
+					comm_write(comms, packet, statPacket, sizeof(statPacket));
+					comm_submit(comms, packet);
 				}
 
 				if (state.writeStatLogs)
@@ -2032,10 +2039,10 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 	{ // Prefer to send larger packets over server to not disrupt low latency communications
 		*(uint32_t*)&frameImage.header[4] = 0;
 		*(uint32_t*)&frameImage.header[8] = frameImage.image.size();
-		comm_packet(state.server, PacketHeader(PACKET_IMAGE, sizeof(frameImage.header)+jpegData.size(), frame.ID));
-		comm_write(state.server, frameImage.header, sizeof(frameImage.header));
-		comm_write(state.server, jpegData.data(), jpegData.size());
-		comm_submit(state.server);
+		void *packet = comm_packet(state.server, PacketHeader(PACKET_IMAGE, sizeof(frameImage.header)+jpegData.size(), frame.ID));
+		comm_write(state.server, packet, frameImage.header, sizeof(frameImage.header));
+		comm_write(state.server, packet, jpegData.data(), jpegData.size());
+		comm_submit(state.server, packet);
 	}
 	else */
 	{ // Tell main thread to interleave sending large data in between frames
@@ -2043,6 +2050,7 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 		largePacket.sendProgress = 0;
 		largePacket.sending = true;
 		largePacket.ID = frame.ID;
+		largePacket.tag = PACKET_IMAGE;
 	}
 
 	TimePoint_t t3 = sclock::now();
@@ -2062,9 +2070,9 @@ static void sendWirelessStatusPacket(const TrackingCameraState &state)
 		return;
 	std::vector<uint8_t> statusPacket;
 	fillWirelessStatusPacket(state, statusPacket);
-	comm_packet(comms, PacketHeader(PACKET_WIRELESS, statusPacket.size()));
-	comm_write(comms, statusPacket.data(), statusPacket.size());
-	comm_submit(comms);
+	void *packet = comm_packet(comms, PacketHeader(PACKET_WIRELESS, statusPacket.size()));
+	comm_write(comms, packet, statusPacket.data(), statusPacket.size());
+	comm_submit(comms, packet);
 }
 
 static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
@@ -2103,10 +2111,10 @@ static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
 	assert(largePacket.sendProgress < largePacket.data.size());
 	*(uint32_t*)&largePacket.header[4] = largePacket.sendProgress;
 	*(uint32_t*)&largePacket.header[8] = numBytes;
-	comm_packet(comm, PacketHeader(PACKET_IMAGE, sizeof(largePacket.header)+numBytes, largePacket.ID));
-	comm_write(comm, largePacket.header, sizeof(largePacket.header));
-	comm_write(comm, largePacket.data.data()+largePacket.sendProgress, numBytes);
-	comm_submit(comm);
+	void *packet = comm_packet(comm, PacketHeader(largePacket.tag, sizeof(largePacket.header)+numBytes, largePacket.ID));
+	comm_write(comm, packet, largePacket.header, sizeof(largePacket.header));
+	comm_write(comm, packet, largePacket.data.data()+largePacket.sendProgress, numBytes);
+	comm_submit(comm, packet);
 	largePacket.sendProgress += numBytes;
 	if (largePacket.sendProgress == largePacket.data.size())
 		largePacket.sending = false;

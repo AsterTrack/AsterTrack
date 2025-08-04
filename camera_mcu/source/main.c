@@ -59,8 +59,13 @@ TimePoint startup = 0;
 // Fixed UART Messages
 static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
-static uint8_t rcvIdentPacket[IDENT_PACKET_SIZE];
+
+// UART receive state
 PortState * const state = &portStates[0];
+struct {
+	uint8_t packetBuffer[UART_TEMP_PACKET_BUF];
+	uint16_t packetSize;
+} receive;
 
 // camera_mcu state
 volatile TimePoint lastFilterSwitch;
@@ -85,7 +90,7 @@ static void uart_set_identification()
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
 	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = 0, .type = INTERFACE_UART, .version = version };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
-	finaliseUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
+	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
@@ -384,7 +389,7 @@ int main(void)
 uartd_respond uartd_handle_header(uint_fast8_t port)
 {
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
-		return uartd_unknown;
+		return uartd_ignore;
 
 	if (uartState == UART_None)
 	{
@@ -418,7 +423,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Answer ping to notify of existence
 			uartd_send_int(0, msg_ping, sizeof(msg_ping), true);
 			lastMarker = GetTimePoint();
-			return uartd_accept;
+			return uartd_ignore;
 		}
 		else if (state->header.tag == PACKET_NAK)
 		{
@@ -432,11 +437,24 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 			uartd_nak_int(port);
 			return uartd_reset;
 		}
+		else if (state->header.tag == PACKET_SYNC)
+		{ // Received sync packet
+			return uartd_accept;
+		}
 		return uartd_unknown;
 	}
 	// else assert(uartState == UART_CamPi);
 
-	if (state->header.tag == PACKET_SOF)
+	if (state->header.tag == PACKET_PING)
+	{ // Pi will answer ping to notify of existence
+		lastMarker = GetTimePoint();
+		return uartd_ignore;
+	}
+	else if (state->header.tag == PACKET_SYNC)
+	{ // Received sync packet
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_SOF)
 	{ // Received sof packet
 		lastMarker = GetTimePoint();
 
@@ -448,143 +466,139 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 		return uartd_accept;
 	}
-	else if (state->header.tag == PACKET_SYNC)
-	{ // Received sync packet
+	else if (state->header.tag == PACKET_CFG_MODE)
+	{
 		return uartd_accept;
 	}
-	else if (state->header.tag == PACKET_PING)
+	else if (state->header.tag == PACKET_CFG_FILTER)
 	{
-		// Pi will answer ping to notify of existence
-		lastMarker = GetTimePoint();
-		return uartd_ignore;
-	}
-	else if (state->header.tag == PACKET_NAK)
-	{
-		WARN_CHARR('/', 'N', 'A', 'K');
-		// Pi has to handle NAK
-		return uartd_ignore;
-	}
-	else if (state->header.tag == PACKET_ACK)
-	{ // Redundant ACK
-		WARN_CHARR('/', 'A', 'C', 'K');
-		return uartd_ignore;
-	}
-	else if (state->header.tag == PACKET_IDENT)
-	{ // Redundant identification
-		WARN_CHARR('/', 'I', 'R', 'D');
-		// Pi has to handle Ident
-		return uartd_ignore;
+		return uartd_accept;
 	}
 	else
-	{
-		return uartd_unknown;
+	{ // May have been intended for camera_pi
+		return uartd_ignore;
 	}
 }
 
 uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
-	if (uartState == UART_None)
+	// Copy packet (which may be split by UART receive buffer end) to temporary buffer
+	// The MCU only ever receives small packets that are not addressed to Host
+	if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF || state->dataPos+size > UART_TEMP_PACKET_BUF)
+		return uartd_ignore;	
+	memcpy(receive.packetBuffer+state->dataPos, ptr, size);
+	receive.packetSize = state->dataPos+size;
+}
+
+uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+{
+	PortState *state = &portStates[port];
+
+	// Verify direct checksum
+	receive.packetSize -= PACKET_CHECKSUM_SIZE;
+	uint8_t checksum[PACKET_CHECKSUM_SIZE];
+	calculateDirectPacketChecksum(receive.packetBuffer, receive.packetSize, checksum);
+	bool correctChecksum = true;
+	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 	{
-		if (state->header.tag == PACKET_IDENT)
-		{ // Identification
-			memcpy(rcvIdentPacket+state->dataPos, ptr, size);
-			if (state->dataPos+size == IDENT_PACKET_SIZE)
-			{ // Received identification, check
-				struct IdentPacket ident = parseIdentPacket(rcvIdentPacket);
-				if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
-				{ // Ident packet was plain wrong
-					WARN_STR("!IdentFail:");
-					WARN_CHARR(INT9_TO_CHARR(port));
-					WARN_CHARR('+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
-					uartd_nak_int(port);
-					return uartd_reset;
-				}
-				if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
-				{ // TODO: Deal with versions
-					WARN_STR("!VersionMismatch:");
-					WARN_CHARR(INT9_TO_CHARR(port));
-					WARN_STR("+Cont:v");
-					WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
-					WARN_STR("+Cam:v");
-					WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
-					uartd_nak_int(port);
-					return uartd_reset;
-				}
-				// Idenfication verified
-				uartState = UART_CamMCU;
-				controllerIdentity = ident;
-				COMM_CHARR('/', 'I', 'D', 'S');
-				ReturnToDefaultLEDState(100);
-				// Send acknowledgement
-				uartd_ack_int(port);
-			}
-			return uartd_accept;
+		if (checksum[i] != receive.packetBuffer[receive.packetSize+i])
+		{
+			WARN_STR("!PacketChecksum:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
+			correctChecksum = false;
+			rgbled_transition(LED_UART_ERROR, 0);
+			ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
+			break;
 		}
+	}
+
+	if (state->header.tag == PACKET_IDENT)
+	{ // Identification
+		if (uartState != UART_None)
+		{ // Why are we here?
+			return uartd_ignore;
+		}
+		if (!correctChecksum)
+		{
+			return uartd_reset_nak;
+		}
+		if (receive.packetSize < IDENT_PACKET_SIZE)
+		{
+			WARN_STR("!IdentSmall:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', INT99_TO_CHARR(state->header.length), '+', INT99_TO_CHARR(receive.packetSize));
+			return uartd_reset_nak;
+		}
+		// Received full identification, check
+		struct IdentPacket ident = parseIdentPacket(receive.packetBuffer);
+		if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
+		{ // Ident packet was plain wrong
+			WARN_STR("!IdentFail:");
+			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
+			return uartd_reset_nak;
+		}
+		if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
+		{ // TODO: Deal with versions, controller should be able to update older versions anyway
+			WARN_STR("!VersionMismatch:");
+			WARN_CHARR(INT9_TO_CHARR(port));
+			WARN_STR("+Cont:v");
+			WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
+			WARN_STR("+Cam:v");
+			WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
+			return uartd_reset_nak;
+		}
+		// Idenfication verified
+		uartState = UART_CamMCU;
+		controllerIdentity = ident;
+		COMM_CHARR('/', 'I', 'D', 'S');
+		ReturnToDefaultLEDState(100);
+		// Send acknowledgement
+		uartd_ack_int(port);
+		return uartd_accept;
+	}
+
+	if (!correctChecksum)
 		return uartd_ignore;
+
+	if (state->header.tag == PACKET_SYNC)
+	{ // Received sync packet
+		return uartd_accept;
 	}
-
-	if (uartState == UART_CamPi)
-	{ // Only handle the following when CamPi has control
-
-		if (state->header.tag == PACKET_SOF)
-		{
-			if (state->header.frameID != (state->lastAnnounceID+1)%256)
-				WARN_CHARR('/', 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
-			state->lastAnnounceID = state->header.frameID;
-			/* struct SOFPacket sync = parseSOFPacket(&proto.rcvBuf[proto.cmdPos]);
-			std::unique_lock lock(state.sync.access);
-			if (dtUS(state.sync.time.lastTime, sclock::now()) > 1000000)
-				ResetTimeSync(state.sync.time);
-			TimePoint_t SOF = UpdateTimeSync(state.sync.time, sync.timeUS, 1<<24, time_read);
-			state.sync.frameSOFs.emplace(sync.frameID, SOF); */
-
-			//state->lastPacketTime;
-			return uartd_accept;
-		}
-		else if (state->header.tag == PACKET_CFG_MODE)
-		{
-			if (size >= 1)
-			{
-				uint8_t modePacket = ptr[0];
-				piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
-				ReturnToDefaultLEDState(500);
-				// TODO: Get this update from camera_pi directly instead over I2C?
-				// E.g. Errors from camera_pi cannot be read here
-			}
-			return uartd_accept;
-		}
-	}
-
-	// Always handle the following, whether CamPi or CamMCU has control
-	if (state->header.tag == PACKET_CFG_FILTER)
+	else if (state->header.tag == PACKET_SOF)
 	{
-		if (size >= 1)
+		if (state->header.frameID != (state->lastAnnounceID+1)%256)
+			WARN_CHARR('/', 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
+		state->lastAnnounceID = state->header.frameID;
+		
+		// Already set camera FSIN
+
+		//state->lastPacketTime;
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_CFG_MODE)
+	{
+		if (receive.packetSize >= 1)
 		{
-			uint8_t filterState = (enum FilterSwitchCommand)ptr[0];
+			uint8_t modePacket = receive.packetBuffer[0];
+			piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
+			ReturnToDefaultLEDState(500);
+			// TODO: Get this update from camera_pi directly instead over I2C?
+			// E.g. Errors from camera_pi cannot be read here
+		}
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_CFG_FILTER)
+	{
+		if (receive.packetSize >= 1)
+		{
+			uint8_t filterState = (enum FilterSwitchCommand)receive.packetBuffer[0];
 			if (filterState == FILTER_SWITCH_VISIBLE || filterState == FILTER_SWITCH_INFRARED)
 				UpdateFilterSwitcher(filterState);
 		}
 		return uartd_accept;
 	}
-	else if (state->header.tag == PACKET_CFG_SIGNAL)
-	{
-		// TODO: Set state for LEDs to signal, e.g. focus/selection in host UI, or calibration quality, etc.
-		return uartd_accept;
-	}
-	else if (state->header.tag == PACKET_SYNC)
-	{ // Received sync packet
-		//state->lastPacketTime;
-	}
-	else
-	{
-		return uartd_unknown;
-	}
-	return uartd_accept;
-}
 
-void uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
-{
-
+	// Shouldn't happen
+	return uartd_unknown;
 }
 
 void uartd_handle_reset(uint_fast8_t port)

@@ -32,9 +32,38 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "packet.h"
 #include "blob/parameters.hpp"
+#include "hash/crc32.hpp"
 
 #define STREAM_PACKET_HEADER_SIZE		0
 #define STREAM_PACKET_BLOB_SIZE			6
+
+
+static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
+{
+	if (PACKET_CHECKSUM_SIZE == 1)
+	{ // Old simple checksum
+		for (int i = 0; i < length; i++)
+			checksum[0] += data[i];
+	}
+	if (PACKET_CHECKSUM_SIZE == 2)
+	{
+		uint16_t accum[2] = { checksum[0], checksum[1] };
+		for (int i = 0; i < length; i++)
+		{ // TODO: Proper CRC
+			accum[0] += data[i];
+			accum[0] += accum[0] >> 8;
+			accum[1] += accum[0];
+		}
+		checksum[0] = accum[0];
+		checksum[1] = accum[1];
+	}
+	if (PACKET_CHECKSUM_SIZE == CRC32::HashBytes)
+	{ // Use proper CRC32 for forwarded (camera<->host) packets
+		CRC32 crc;
+		crc.add(data, length);
+		crc.getHash(checksum);
+	}
+}
 
 
 /**

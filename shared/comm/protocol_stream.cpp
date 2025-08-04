@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "protocol_stream.hpp"
+#include "packet.hpp"
 #include "uart.h"
 
 #include <cstdio>
@@ -46,7 +47,7 @@ void proto_clean(ProtocolState &comm, bool move)
 		comm.pos = 0;
 		comm.mrk = 0;
 	}
-	else if (rem > 0 && comm.head > 0 && move)
+	else if (rem > 0 && comm.head > 10 && move)
 	{ // Unhandled data waiting, move data ahead in buffer (disallowed if data of current command has to be retained)
 		memmove(comm.rcvBuf.data(), comm.rcvBuf.data()+comm.head, rem);
 		comm.cmdSkip = false;
@@ -252,27 +253,28 @@ bool proto_fetchCmd(ProtocolState &comm)
 		comm.head = end; // Also advance to after command
 		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, comm.head, comm.rcvBuf[comm.head-1], comm.rcvBuf[comm.head], comm.rcvBuf[comm.head+1]);
 		skipToEnd(comm, false);
+
+		// Verify packet checksum
+		uint8_t *packetChecksum = comm.rcvBuf.data()+comm.cmdPos+comm.cmdSz;
+		uint8_t checksum[PACKET_CHECKSUM_SIZE];
+		if (comm.header.tag < PACKET_HOST_COMM)
+			calculateDirectPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
+		else
+			calculateForwardPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
+		comm.validChecksum = true;
+		for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+		{
+			if (checksum[i] != packetChecksum[i])
+			{
+				printf("Fully received packet %d of size %d but checksum does not match!\n", comm.header.tag, comm.header.length);
+				comm.validChecksum = false;
+				break;
+			}
+		}
 		return true;
 	}
 	// Move receive head to beginning of buffer to make it easier to parse packet once it does arrive
 	// comm.cmdErr may also have been set, and this packet abandoned
 	proto_clean(comm, true);
 	return false;
-}
-
-unsigned int proto_handleCmdBlock(ProtocolState &comm)
-{ // Command ID is valid, consider block to be handled
-	comm.cmdSkip = false;
-	unsigned int end = comm.head+PACKET_HEADER_SIZE+comm.cmdSz;
-	scanUntil(comm, end);
-	if (comm.cmdErr) return 0;
-	unsigned int len = end - comm.pos;
-	comm.cmdPos = comm.pos; // Save data pos
-	comm.pos = end; // Advance to current read tail
-	if (end <= comm.tail)
-	{ // Handle final block of packet
-		comm.head = end; // Also advance to after command
-		skipToEnd(comm, false);
-	}
-	return len;
 }

@@ -37,6 +37,8 @@ struct PacketBlocks
 	uint8_t nextBlockID;
 	uint32_t readLength;
 	std::vector<uint8_t> data;
+	uint8_t checksumBuf[PACKET_CHECKSUM_SIZE];
+	uint8_t checksumSize;
 	bool ignored, erroneous;
 };
 
@@ -69,7 +71,7 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 void ResetPacketPort(PacketProtocolPort &port);
 
 /**
- * Calculate the checksum of size CHECKSUM_SIZE and returns whether it matches the packet tail
+ * Calculate the checksum and returns whether it matches the packets received checksum
  */
 bool VerifyChecksum(const PacketBlocks &block);
 

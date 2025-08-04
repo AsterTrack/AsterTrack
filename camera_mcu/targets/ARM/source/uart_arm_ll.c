@@ -199,7 +199,7 @@ void uart_driver_init()
 
 	while(!LL_USART_IsActiveFlag_REACK(u.uart)
 #if !defined(BOARD_OLD)
-	|| !LL_USART_IsActiveFlag_TEACK(u.uart)
+		|| !LL_USART_IsActiveFlag_TEACK(u.uart)
 #endif
 	){}
 }
@@ -216,8 +216,7 @@ inline void uart_send_dma(uint_fast8_t port, const void *data, uint_fast16_t len
 static inline bool uart_flush_TX(int port)
 {
 	LL_DMA_DisableChannel(UART[port].DMA, UART[port].DMA_CH_TX);
-	while (LL_DMA_IsEnabledChannel(UART[port].DMA, UART[port].DMA_CH_TX))
-		;
+	while (LL_DMA_IsEnabledChannel(UART[port].DMA, UART[port].DMA_CH_TX));
 	__disable_irq();
 	for (int i = 0; i < sizeof(UART_IO[port].tx_queue) / sizeof(UART_IO[port].tx_queue[0]); i++)
 	{

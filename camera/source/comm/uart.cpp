@@ -36,7 +36,7 @@ SOFTWARE.
 #include <cstring>
 
 // Set the properties needed for the UART port
-static void configSerialPort(int uartFD, uint32_t baud)
+static void configSerialPort(int uartFD, uint32_t baud, bool markErrors)
 {
 	struct termios2 tty = {};
 
@@ -56,8 +56,9 @@ static void configSerialPort(int uartFD, uint32_t baud)
 	tty.c_lflag &= ~ISIG; // Disable interpretation of INTR, QUIT and SUSP
 
 	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Turn off s/w flow ctrl
-	tty.c_iflag &= ~(IGNBRK|BRKINT|IGNPAR|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
-	tty.c_iflag |= PARMRK | INPCK; // Enable marking of bytes with framing/parity errors and breaks with 0xFF00 (0xFF is 0xFFFF)
+	tty.c_iflag &= ~(IGNBRK|BRKINT|IGNPAR|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
+	if (markErrors)
+		tty.c_iflag |= PARMRK | INPCK; // Enable marking of bytes with framing/parity errors and breaks with 0xFF00 (0xFF is 0xFFFF)
 
 	tty.c_oflag &= ~OPOST; // Prevent special interpretation of output bytes (e.g. newline chars)
 	tty.c_oflag &= ~ONLCR; // Prevent conversion of newline to carriage return/line feed
@@ -107,7 +108,7 @@ bool uart_start(void *port)
 		printf("Error: Can't open UART port %s! (%i: %s)\n", uart.port.c_str(), errno, strerror(errno));
 		return false;
 	}
-	configSerialPort(uart.fd, uart.baudrate);
+	configSerialPort(uart.fd, uart.baudrate, true);
 	return true;
 }
 

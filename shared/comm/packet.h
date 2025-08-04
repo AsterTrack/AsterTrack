@@ -234,6 +234,20 @@ enum CameraMCUFlashConfig {
 
 
 /**
+ * Checksum size used for packet header during UART comms
+ */
+#define HEADER_CHECKSUM_SIZE 1
+
+/**
+ * Checksum sizes used for packet data
+ * Packet checksum has a fixed size, but may differ based on packet
+ * Forwarded packets (camera<->host) use CRC32
+ * Direct packets (camera<->controller) use Fletcher-32
+ */
+#define PACKET_CHECKSUM_SIZE 4
+
+
+/**
  * Header for full packets (for controller-camera and server-camera communication)
  */
 struct PacketHeader
@@ -270,24 +284,6 @@ static inline void storePacketHeader(const struct PacketHeader header, uint8_t d
 	data[2] = ((header.length & 0x0FF00) >> 8);
 	data[3] = ((header.length & 0x000FF));
 };
-
-/**
- * Checksum used for packets, appended at the end
- */
-#define CHECKSUM_SIZE 				1
-#if CHECKSUM_SIZE == 1
-typedef uint8_t checksum_t;
-#elif CHECKSUM_SIZE == 2
-typedef uint16_t checksum_t;
-#elif CHECKSUM_SIZE == 4
-typedef uint32_t checksum_t;
-#elif CHECKSUM_SIZE == 8
-typedef uint64_t checksum_t;
-#else
-#error Invalid checksum size!
-#endif
-#define HEADER_CHECKSUM_SIZE 1
-#define PACKET_CHECKSUM_SIZE 0
 
 
 /**

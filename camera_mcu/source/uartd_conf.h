@@ -34,6 +34,10 @@ extern "C"
 
 #define UART_HEADROOM 			0
 
+// Size temporary buffer for receiving packets addressed at the MCU, not the Host
+// Only Ident packet has any meaningful amount of data
+#define UART_TEMP_PACKET_BUF 32
+
 // UART Timing
 #define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
 #define UART_IDENT_STARTUP_DELAY_MS 50		// Delay after startup before first ident packet is sent to the controller

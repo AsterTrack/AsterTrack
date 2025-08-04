@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "protocol_packet.hpp"
 
+#include "comm/packet.hpp"
 #include "util/util.hpp" // shortDiff, printBuffer
 #include "util/log.hpp"
 
@@ -160,7 +161,7 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 		int latestDiff = shortDiff<uint8_t, int>(port.latestBlockID, header.blockID, 128, BLOCK_ID_SIGNAL);
 		if (latestDiff > 0) port.latestBlockID = header.blockID;
 
-		auto packet = port.packets.end();
+		auto packetIt = port.packets.end();
 		uint32_t posD = pos, lenD = header.size;
 		if (header.isFirstPacketBlock)
 		{
@@ -172,24 +173,24 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 			port.packets.emplace_back(
 				parsePacketHeader(data+pos),
 				header.blockID, header.blockID, 0);
-			packet = std::prev(port.packets.end());
-			packet->data.resize(packet->header.length);
+			packetIt = std::prev(port.packets.end());
+			packetIt->data.resize(packetIt->header.length);
 			LOG(LProtocol, LTrace, "BLOCK %d (%d): New packet %d of size %d!\n",
-				header.blockID, header.size, packet->header.tag, packet->header.length);
+				header.blockID, header.size, packetIt->header.tag, packetIt->header.length);
 			if (onPacketHeader)
-				onPacketHeader(userData, header.portNr, *packet);
+				onPacketHeader(userData, header.portNr, *packetIt);
 			posD += PACKET_HEADER_SIZE;
 			lenD -= PACKET_HEADER_SIZE;
 		}
 		else
 		{ // Find matching packet
-			for (packet = port.packets.begin(); packet != port.packets.end(); packet++)
+			for (packetIt = port.packets.begin(); packetIt != port.packets.end(); packetIt++)
 			{
-				if (packet->nextBlockID == header.blockID)
+				if (packetIt->nextBlockID == header.blockID)
 					break;
 			}
 
-			if (packet == port.packets.end())
+			if (packetIt == port.packets.end())
 			{ // Out-of-order packet, has to wait for prior blocks
 				int oldSize = port.oooBlocks.size();
 				while (port.oooBlocks.size() <= port.oooCount)
@@ -207,35 +208,53 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 			else
 			{
 				LOG(LProtocol, LTrace, "BLOCK %d (%d): Continuation for packet tagged %d\n",
-					header.blockID, header.size, packet->header.tag);
+					header.blockID, header.size, packetIt->header.tag);
 			}
 		}
 
-		memcpy(&packet->data[packet->readLength], &data[posD], std::min(lenD, packet->header.length-packet->readLength));
-		packet->readLength += lenD;
-		packet->nextBlockID = (packet->nextBlockID + 1) % BLOCK_ID_SIGNAL;
-		if (lenD > 0)
+		auto &packet = *packetIt;
+
+		auto packetReadBlock = [&](uint8_t *data, uint32_t len)
 		{
+			uint32_t lenR = std::min<uint32_t>(len, packet.header.length-packet.readLength);
+			if (lenR == 0)
+			{
+				packet.nextBlockID = (packet.nextBlockID + 1) % BLOCK_ID_SIGNAL;
+				return;
+			}
+			memcpy(&packet.data[packet.readLength], data, lenR);
 			if (onPacketBlock)
-				onPacketBlock(userData, header.portNr, *packet, &data[posD], lenD);
-		}
+				onPacketBlock(userData, header.portNr, *packetIt, &packet.data[packet.readLength], lenR);
+			if (lenR < lenD)
+			{ // Data beyond packet size
+				uint8_t lenC = lenD-lenR;
+				if (lenC > PACKET_CHECKSUM_SIZE-packet.checksumSize)
+				{
+					LOG(LProtocol, LDarn, "BLOCK %d (%d): Had %d more bytes than packet length, more than checksum size of %d!\n",
+						header.blockID, header.size, packet.checksumSize+lenC, PACKET_CHECKSUM_SIZE);
+					lenC = PACKET_CHECKSUM_SIZE-packet.checksumSize;
+				}
+				memcpy(&packet.checksumBuf[packet.checksumSize], &data[lenR], lenC);
+				packet.checksumSize += lenC;
+			}
+			packet.readLength += lenR;
+			packet.nextBlockID = (packet.nextBlockID + 1) % BLOCK_ID_SIGNAL;
+		};
+
+		packetReadBlock(&data[posD], lenD);
 
 		// Try to find next blocks in buffer in case they came out of order
 		for (auto oooBlock = port.oooBlocks.begin(); oooBlock != port.oooBlocks.end();)
 		{
-			if (packet->readLength >= packet->header.length) break; // Packet doesn't expect any further blocks
+			if (packet.readLength >= packet.header.length) break; // Packet doesn't expect any further blocks
 			if (oooBlock->first < 0) break; // Dormant blocks at the end
-			if (oooBlock->first != packet->nextBlockID)
+			if (oooBlock->first != packet.nextBlockID)
 			{
 				oooBlock++;
 				continue;
 			}
 			// Read block
-			memcpy(&packet->data[packet->readLength], &data[posD], std::min(lenD, packet->header.length-packet->readLength));
-			packet->readLength += oooBlock->second.size();
-			packet->nextBlockID = (packet->nextBlockID + 1) % BLOCK_ID_SIGNAL;
-			if (onPacketBlock)
-				onPacketBlock(userData, header.portNr, *packet, oooBlock->second.data(), oooBlock->second.size());
+			packetReadBlock(oooBlock->second.data(), oooBlock->second.size());
 			// Consume oooBlock. move it to the end for future use
 			LOG(LProtocol, LDebug, "   Consumed follow-up block %d from ooo-queue, %d remaining\n", oooBlock->first, port.oooCount-1);
 			port.oooCount--;
@@ -245,18 +264,18 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 			oooBlock = port.oooBlocks.begin();
 		}
 
-		if (packet->readLength > packet->header.length)
+		if (packet.readLength > packet.header.length)
 		{
 			LOG(LProtocol, LWarn, "Already received more bytes (%d) than packet header announced (%d) with recent block with %d bytes of data!\n",
-				packet->readLength, packet->header.length, lenD);
+				packet.readLength, packet.header.length, lenD);
 		}
-		if (packet->readLength >= packet->header.length)
+		if (packet.readLength >= packet.header.length)
 		{
 			LOG(LProtocol, LTrace, "FINISHED packet %d of %d bytes, header block %d, ending block %d\n",
-				packet->header.tag, packet->readLength, packet->headerBlockID, packet->nextBlockID);
+				packet.header.tag, packet.readLength, packet.headerBlockID, packet.nextBlockID);
 			if (onPacketDone)
-				onPacketDone(userData, header.portNr, *packet);
-			port.packets.erase(packet);
+				onPacketDone(userData, header.portNr, *packetIt);
+			port.packets.erase(packetIt);
 		}
 
 		pos += header.size;
@@ -274,20 +293,23 @@ void ResetPacketPort(PacketProtocolPort &port)
 	port.packets.clear();
 }
 
-bool VerifyChecksum(const PacketBlocks &block)
+bool VerifyChecksum(const PacketBlocks &packet)
 {
-	if (block.data.size() <= CHECKSUM_SIZE)
-		return true;
-	checksum_t *begin = (checksum_t*)block.data.data();
-	checksum_t *end = (checksum_t*)(block.data.data()+block.data.size())-1;
-	checksum_t checksum = 0;
-	checksum_t packetChecksum = *end;
-	for (auto el = begin; el != end; el++)
-		checksum += *el;
-	if (checksum != packetChecksum)
+	if (packet.checksumSize == 0) return true;
+	if (packet.checksumSize != PACKET_CHECKSUM_SIZE)
 	{
-		LOG(LParsing, LWarn, "DIFFERENT CHECKSUM! Camera checksum is %d, received %d!\n", packetChecksum, checksum);
+		LOG(LParsing, LWarn, "MISSING OR CORRUPTED CHECKSUM! Have %d bytes of checksum, expected %d!\n", packet.checksumSize, PACKET_CHECKSUM_SIZE);
 		return false;
+	}
+	uint8_t checksum[PACKET_CHECKSUM_SIZE];
+	calculateForwardPacketChecksum(packet.data.data(), packet.data.size(), checksum);
+	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+	{
+		if (checksum[i] != packet.checksumBuf[i])
+		{
+			LOG(LParsing, LWarn, "DIFFERENT CHECKSUM! Packet %d had wrong checksum of size %d\n", packet.header.tag, PACKET_CHECKSUM_SIZE);
+			return false;
+		}
 	}
 	return true;
 }

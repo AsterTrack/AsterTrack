@@ -74,7 +74,7 @@ struct TrackingCameraState
 	inline bool hasSetStreaming() const { return (modeSet.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 	inline bool isStreaming() const { return (mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 
-	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length);
+	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length, bool writeChecksum);
 	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
 	void recvModeSet(uint8_t mode);
 

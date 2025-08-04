@@ -5,6 +5,7 @@ mkdir -p build/mcu
 mkdir -p build/blob
 mkdir -p build/camera
 mkdir -p build/vcsm
+mkdir -p build/hash
 
 /usr/bin/gcc -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -Wall -std=gnu17 -O1 -o build/qpu/mailbox.c.o -c source/qpu/mailbox.c
 /usr/bin/gcc -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -Wall -std=gnu17 -O1 -o build/qpu/qpu_base.c.o -c source/qpu/qpu_base.c
@@ -23,6 +24,8 @@ mkdir -p build/vcsm
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/detection.cpp.o -c source/blob/detection.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/refinement.cpp.o -c ../shared/blob/refinement.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/blob/blob.cpp.o -c ../shared/blob/blob.cpp
+/usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/hash/crc32.cpp.o -c ../shared/hash/crc32.cpp
+/usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/hash/sha256.cpp.o -c ../shared/hash/sha256.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/main.cpp.o -c source/main.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/camera/gcs_v4l2.cpp.o -c source/camera/gcs_v4l2.cpp
 /usr/bin/g++ -DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -std=c++17 -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1 -o build/vcsm/vcsm.cpp.o -c source/vcsm/vcsm.cpp

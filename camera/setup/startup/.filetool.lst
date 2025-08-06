@@ -1,0 +1,6 @@
+opt
+home
+etc/group
+etc/gshadow
+etc/passwd
+etc/shadow

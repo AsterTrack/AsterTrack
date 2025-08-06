@@ -1,6 +1,6 @@
 trap "exit 1" SIGINT RETURN
 
-if [[ -z "$DEVICE_PATH" || -z "$DATA_FILE" ]]; then
+if [[ -z "$DEVICE_PATH" || -z "$MOUNT_DATA" ]]; then
 	echo "Do not call this script directly, variables and parameters are missing!"
 	return 1
 fi
@@ -23,10 +23,8 @@ if [[ -b $PARTITION_DATA ]]; then
 	umount -q -f $PARTITION_DATA
 fi
 
-# Ensure we have a download folder
-if [[ ! -d $DOWNLOAD_PATH ]]; then
-	mkdir $DOWNLOAD_PATH
-fi
+# Ensure required folders exist
+mkdir -p $DOWNLOAD_PATH
 
 IMAGE_PATH="$DOWNLOAD_PATH/piCore-$VERSION_SPECIFIC.img"
 if [[ ! -f $IMAGE_PATH ]]; then
@@ -130,16 +128,16 @@ fi
 trap "umount -q -f $MOUNT_BOOT && umount -q -f $MOUNT_DATA && echo 'Unmounting TCE and Boot partition...' && exit 1" SIGINT RETURN
 
 # Extract default mydata (user files) here to edit
-if [[ -f $TCE_PATH/$DATA_FILE_DEFAULT ]]; then
+if [[ -f $TCE_PATH/mydata.tgz ]]; then
 	rm -rf $DATA_PATH
 	mkdir $DATA_PATH
-	tar --numeric-owner -xzpf $TCE_PATH/$DATA_FILE_DEFAULT -C $DATA_PATH
+	tar --numeric-owner -xzpf $TCE_PATH/mydata.tgz -C $DATA_PATH
 	USER=$(who am i | awk '{print $1}')
 	chown -R $USER $DATA_PATH
 	chmod -R 775 $DATA_PATH
 	chmod -R 600 $DATA_PATH/usr/local/etc/ssh
 else
-	echo "No $DATA_FILE_DEFAULT in the TCE partition! Need template in $DATA_PATH folder!"
+	echo "No mydata.tgz in the TCE partition! Need template in $DATA_PATH folder!"
 	if [[ ! -d $DATA_PATH ]]; then
 		echo "No template folder $DATA_PATH found!"
 		return 1
@@ -201,176 +199,67 @@ init_uart_clock=144000000
 dtparam=i2c_arm=on,i2c_arm_baudrate=400000
 " >> $MOUNT_BOOT/config.txt
 
+# Copy backup to package path
+cp $MOUNT_BOOT/config.txt $STORAGE_PATH/config.txt
+
 #echo "console=tty1 root=/dev/ram0 elevator=deadline rootwait quiet nortc loglevel=3 noembed nozswap" > $MOUNT_BOOT/cmdline.txt
 
-# Copy bootsync with ID generation
-cat "$SCRIPTS_PATH/bootsync.sh" > "$DATA_PATH/opt/bootsync.sh"
-if [[ $? != 0 ]] then
-	echo "Failed to configure piCore!"
-	return 1
-fi
+# Copy startup scripts
+cp $STARTUP_PATH/* "$DATA_PATH/opt/"
+cp $STARTUP_PATH/.filetool.lst "$DATA_PATH/opt/"
 
-# Setup bootlocal
-echo "#!/bin/sh" > "$DATA_PATH/opt/bootlocal.sh"
-echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-echo "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" >> "$DATA_PATH/opt/bootlocal.sh"
-echo "" >> "$DATA_PATH/opt/bootlocal.sh"
+# Copy scripts for program interaction and building
+cp $SCRIPTS_PATH/* "$BUILD_PATH/"
 
-# Adjust realtime scheduler settings
-# Allow for realtime threads to take 100% of CPU time (default: Interrupts of 50ms every 1000ms)
-# Currently not relevant since no realtime threads are used
-echo "# Allow for realtime threads to take 100% of CPU time" >> "$DATA_PATH/opt/bootlocal.sh"
-echo "echo -1 > /proc/sys/kernel/sched_rt_runtime_us" >> "$DATA_PATH/opt/bootlocal.sh"
-echo "" >> "$DATA_PATH/opt/bootlocal.sh"
 
-# Create swap on first boot and then reboot
-if [[ $CREATE_SWAP = "True" ]]; then
-	echo "# Ensure swap partition exists and is used (requires reboot after first creation)" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_BUILD_PATH/swap_part.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_BUILD_PATH/swap_on.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-fi
+echo "Copying program and sources..."
 
-if [[ $INSTALL_SOURCES = "True" ]]; then
-	echo "Copying sources..."
-
-	mkdir -p $BUILD_PATH/sources/camera
-
-	# Download TrackingCamera sources if not provided
-	if [[ ! -d "$TRCAM_PATH" ]]; then
-		TRCAM_PATH=../..
-	fi
-
-	# Copy TrackingCamera sources
-	cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera/
-	cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera/
-	cp -r $TRCAM_PATH/shared $BUILD_PATH/sources/
-	cp -r $TRCAM_PATH/camera/qpu_programs $BUILD_PATH/sources/camera/
-	cp -r $TRCAM_PATH/camera/licenses $BUILD_PATH/sources/camera/
-	cp $TRCAM_PATH/camera/LICENSE $BUILD_PATH/sources/camera/
-	cp $TRCAM_PATH/camera/README.md $BUILD_PATH/sources/camera/
-	cp $TRCAM_PATH/camera/CMakeLists.txt $BUILD_PATH/sources/camera/
-
-	# Download and copy vc4asm sources
-	if [[ ! -d "$DOWNLOAD_PATH/vc4asm" ]]; then
-		echo "Downloading vc4asm..."
-		wget -q --show-progress $VC4ASM_URL -O "$DOWNLOAD_PATH/vc4asm.zip"
-		if [[ ! -f "$DOWNLOAD_PATH/vc4asm.zip" ]]; then
-			echo "Failed to download vc4asm sources!"
-			return 1
-		fi
-		if [[ -d "$DOWNLOAD_PATH/vc4asm" ]]; then
-			rm -r "$DOWNLOAD_PATH/vc4asm"
-		fi
-		unzip -q "$DOWNLOAD_PATH/vc4asm.zip" -d "$DOWNLOAD_PATH/vc4asm"
-		rm "$DOWNLOAD_PATH/vc4asm.zip"
-		subdir=$(ls "$DOWNLOAD_PATH/vc4asm")
-		mv $DOWNLOAD_PATH/vc4asm/$subdir/* "$DOWNLOAD_PATH/vc4asm"
-		mv $DOWNLOAD_PATH/vc4asm/$subdir/.* "$DOWNLOAD_PATH/vc4asm" > /dev/null 2>&1 # Hidden files, but includes ignore . and ..
-		rmdir "$DOWNLOAD_PATH/vc4asm/$subdir"
-	fi
-
-	# Copy vc4asm sources
-	cp -r "$DOWNLOAD_PATH/vc4asm" $BUILD_PATH/sources
-
-	# Copy build scripts
-	cp "$SCRIPTS_PATH/build_release.sh" $BUILD_PATH
-	chmod +x "$BUILD_PATH/build_release.sh"
-	cp "$SCRIPTS_PATH/build_debug.sh" $BUILD_PATH
-	chmod +x "$BUILD_PATH/build_debug.sh"
-	cp "$SCRIPTS_PATH/swap_part.sh" $BUILD_PATH
-	chmod +x "$BUILD_PATH/swap_part.sh"
-	cp "$SCRIPTS_PATH/swap_on.sh" $BUILD_PATH
-	chmod +x "$BUILD_PATH/swap_on.sh"
-
-	# Autorun build script
-	if [[ $AUTO_BUILD = "True" ]]; then
-		echo "# Automatically build and save, blocking" >> "$DATA_PATH/opt/bootlocal.sh"
-		echo "$DEV_BUILD_PATH/build_release.sh 1> $DEV_BUILD_PATH/build.log 2> $DEV_BUILD_PATH/build.err" >> "$DATA_PATH/opt/bootlocal.sh"
-		echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-		if [[ $SHUTDOWN_AFTER_BUILD = "True" ]]; then
-			echo "# Automatically shutdown after building" >> "$DATA_PATH/opt/bootlocal.sh"
-			echo "poweroff" >> "$DATA_PATH/opt/bootlocal.sh"
-			echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-		fi
-	fi
-
-	# Copy vc4asm build if it exists
-	if [[ -f "$STORAGE_PATH/vc4asm" ]]; then
-		mkdir -p "$DATA_PATH/usr/local/bin"
-		cp "$STORAGE_PATH/vc4asm" "$DATA_PATH/usr/local/bin"
+if [[ $FORCE_BUILD != "True" ]]; then
+	# Copy existing TrackingCamera build if it exists
+	if [[ -d "$STORAGE_PATH/TrackingCamera" ]]; then
+		cp -r $STORAGE_PATH/TrackingCamera $BUILD_PATH/
 	fi
 fi
 
-# Copy existing TrackingCamera build if it exists
-if [[ -d "$STORAGE_PATH/TrackingCamera" ]]; then
-	cp -r $STORAGE_PATH/TrackingCamera $BUILD_PATH
+# Always copy sources, in case we're running a dev image
+mkdir -p $BUILD_PATH/sources/camera
+
+# Download TrackingCamera sources if not provided
+if [[ ! -d "$TRCAM_PATH" ]]; then
+	TRCAM_PATH=../..
 fi
 
-if [[ $SETUP_SSH = "True" ]]; then
-	echo "Setting up SSH..."
+# Copy TrackingCamera sources
+cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera/
+cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera/
+cp -r $TRCAM_PATH/shared $BUILD_PATH/sources/
+cp -r $TRCAM_PATH/camera/qpu_programs $BUILD_PATH/sources/camera/
+cp -r $TRCAM_PATH/camera/licenses $BUILD_PATH/sources/camera/
+cp $TRCAM_PATH/camera/LICENSE $BUILD_PATH/sources/camera/
+cp $TRCAM_PATH/camera/README.md $BUILD_PATH/sources/camera/
+cp $TRCAM_PATH/camera/CMakeLists.txt $BUILD_PATH/sources/camera/
 
-	# Set hostname
-	sed -i "s|#MARKER$|sethostname $HOSTNAME\n#MARKER|" "$DATA_PATH/opt/bootsync.sh"
-
-	# Copy ssh keygen & start script
-	cp "$SCRIPTS_PATH/ssh.sh" $HOME_PATH
-
-	# Generate / fetch SSH keys and start OpenSSH
-	echo "# Generate / fetch SSH keys" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_HOME_PATH/ssh.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-	#if [[ $AUTOCONNECT_WIFI = "True" ]]; then
-	#	echo "$DEV_HOME_PATH/ssh.sh start &" >> "$DATA_PATH/opt/bootlocal.sh"
-	#else
-	#	echo "$DEV_HOME_PATH/ssh.sh &" >> "$DATA_PATH/opt/bootlocal.sh"
-	#fi
-	echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-fi
-
-if [[ $AUTOCONNECT_WIFI = "True" ]]; then
-	echo "Setting up wifi autoconnect..."
-
-	# Set hostname
-	sed -i "s|#MARKER$|sethostname $HOSTNAME\n#MARKER|" "$DATA_PATH/opt/bootsync.sh"
-
-	# Copy wifi credentials if exists
-	if [[ -f $WIFI_DB ]]; then
-		cp $WIFI_DB $HOME_PATH
+# Download and copy vc4asm sources
+if [[ ! -d "$DOWNLOAD_PATH/vc4asm" ]]; then
+	echo "Downloading vc4asm..."
+	wget -q --show-progress $VC4ASM_URL -O "$DOWNLOAD_PATH/vc4asm.zip"
+	if [[ ! -f "$DOWNLOAD_PATH/vc4asm.zip" ]]; then
+		echo "Failed to download vc4asm sources!"
+		return 1
 	fi
-
-	echo "# Start OpenSSH server" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "/usr/local/etc/init.d/openssh start" >> "$DATA_PATH/opt/bootlocal.sh"
-
-	# Copy improved wifi script (can connect to best known network)
-	cp "$SCRIPTS_PATH/wifi.sh" $HOME_PATH
-
-	# Start dbus and avahi for zeroconf (broadcasting hostname)
-	echo "# Start dbus and avahi for zeroconf (broadcasting hostname)" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "/usr/local/etc/init.d/dbus start" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "/usr/local/etc/init.d/avahi start" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "sed -i 's|files dns$|files mdns4_minimal [NOTFOUND=return] dns|' '/etc/nsswitch.conf'" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-
-	# Autoconnect to best known wifi
-	echo "# Autoconnect to best known wifi" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_HOME_PATH/wifi.sh -b &" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "" >> "$DATA_PATH/opt/bootlocal.sh"
+	if [[ -d "$DOWNLOAD_PATH/vc4asm" ]]; then
+		rm -r "$DOWNLOAD_PATH/vc4asm"
+	fi
+	unzip -q "$DOWNLOAD_PATH/vc4asm.zip" -d "$DOWNLOAD_PATH/vc4asm"
+	rm "$DOWNLOAD_PATH/vc4asm.zip"
+	subdir=$(ls "$DOWNLOAD_PATH/vc4asm")
+	mv $DOWNLOAD_PATH/vc4asm/$subdir/* "$DOWNLOAD_PATH/vc4asm"
+	mv $DOWNLOAD_PATH/vc4asm/$subdir/.* "$DOWNLOAD_PATH/vc4asm" > /dev/null 2>&1 # Hidden files, but includes ignore . and ..
+	rmdir "$DOWNLOAD_PATH/vc4asm/$subdir"
 fi
 
-# Enable i2c
-echo "/sbin/modprobe i2c-dev" >> "$DATA_PATH/opt/bootlocal.sh"
-echo "" >> "$DATA_PATH/opt/bootlocal.sh"
-
-# Copy scripts for manual start/stop of program (after e.g. SSH login)
-cp "$SCRIPTS_PATH/stop.sh" $BUILD_PATH
-cp "$SCRIPTS_PATH/run.sh" $BUILD_PATH
-cp "$SCRIPTS_PATH/run_log.sh" $BUILD_PATH
-
-# Autorun tracking camera program
-if [[ $AUTORUN = "True" ]]; then
-	echo "cd $DEV_BUILD_PATH" >> "$DATA_PATH/opt/bootlocal.sh"
-	echo "$DEV_BUILD_PATH/run_log.sh" >> "$DATA_PATH/opt/bootlocal.sh"
-fi
+# Copy vc4asm sources
+cp -r "$DOWNLOAD_PATH/vc4asm" $BUILD_PATH/sources
 
 
 # Save data to device
@@ -379,15 +268,40 @@ echo "Packing data..."
 
 chown -R root $DATA_PATH
 chmod -R 777 $DATA_PATH
-chmod -R 600 $DATA_PATH/usr/local/etc/ssh
 
+CWD=$(pwd)
 pushd $DATA_PATH > /dev/null # because tar is a terribly inconsistent command
-tar -czpf $TCE_PATH/$DATA_FILE --numeric-owner *
+tar -czpf $CWD/$STORAGE_PATH/mydata.tgz --numeric-owner *
 popd > /dev/null
 
 chown -R $USER $DATA_PATH
 chmod -R 775 $DATA_PATH
-chmod -R 600 $DATA_PATH/usr/local/etc/ssh
+
+# Change permissions of package data (mydata.tgz and config.txt)
+chown $USER $STORAGE_PATH/mydata.tgz $STORAGE_PATH/config.txt
+chmod 775 $STORAGE_PATH/mydata.tgz $STORAGE_PATH/config.txt
+
+# Write packed data to device
+cp $STORAGE_PATH/mydata.tgz $TCE_PATH/
+
+# Copy existing TrackingCameraMCU build if it exists
+if [[ -f "$STORAGE_PATH/TrackingCameraMCU.bin" ]]; then
+	cp $STORAGE_PATH/TrackingCameraMCU.bin $TCE_PATH/
+fi
+
+if [[ $AUTOCONNECT_WIFI = "True" ]]; then
+	if [[ -f $STORAGE_PATH/wifi.db ]]; then
+		echo "Setting up wifi credentials to enable autoconnect..."
+		cp $STORAGE_PATH/wifi.db $MOUNT_DATA/
+	else
+		echo "Cannot setup wifi autoconnect, missing wifi credentials!"
+	fi
+fi
+
+if [[ $ENABLE_LOGGING = "True" ]]; then
+	touch $MOUNT_DATA/log
+fi
+
 
 echo "Installing dependencies..."
 

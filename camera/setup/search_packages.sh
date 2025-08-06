@@ -4,7 +4,7 @@ SEARCH_QUERY=$1
 REPO_ID=$2
 DOWNLOAD_PATH=$3
 
-if [[ $SEARCH_QUERY = *"h"* ]]; then
+if [[ $SEARCH_QUERY = "help" || $SEARCH_QUERY = "h" ]]; then
 	echo "Usage: sudo search_packages.sh SEARCH_QUERY REPO_ID [DOWNLOAD_PATH]
 	SEARCH_QUERY: grep formatted term to search for in packages filetree
     REPO_ID: id of repository, e.g. '13.x/armv6' from http://www.tinycorelinux.net/13.x/armv6/tcz

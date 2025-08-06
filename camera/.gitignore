@@ -11,3 +11,4 @@ setup/storage
 setup/data
 setup/download
 setup/*.img
+setup/search_repo_*

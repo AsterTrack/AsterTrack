@@ -26,8 +26,11 @@ cleanup() {
 }
 
 checkroot
-read TCUSER < /etc/sysconfig/tcuser
-DB=/home/"$TCUSER"/wifi.db
+DB=/mnt/mmcblk0p2/wifi.db
+if [[ ! -f $DB ]]; then
+	read TCUSER < /etc/sysconfig/tcuser
+	DB=/home/"$TCUSER"/wifi.db
+fi
 PTMP=/tmp/wpa.$$
 WPADRV=$(cat /etc/sysconfig/wifi-wpadrv)
 export WPADRV

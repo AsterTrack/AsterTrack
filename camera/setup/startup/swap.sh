@@ -3,10 +3,6 @@
 if [[ ! -b "/dev/mmcblk0p3" ]]; then
     echo "Creating swap partition!"
     sudo fdisk /dev/mmcblk0 << EOF
-p
-d
-3
-p
 n
 p
 3
@@ -26,5 +22,6 @@ EOF
     #    echo "Failed to create swap partition! Continuing without..."
     #fi
 else
-    echo "Already have a partition 3 to use for swap!"
+    sudo mkswap /dev/mmcblk0p3
+    sudo swapon /dev/mmcblk0p3
 fi

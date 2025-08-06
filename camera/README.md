@@ -44,8 +44,7 @@ Feel free to check `setup_image.sh` to check what each image type does exactly.
 There are more tools at your disposal:
 - `./data_read.sh /dev/XXXXXX` will read the user data from the SD card into the `data` folder, which includes the configuration and environment as set up by the scripts as well as the home directory with build artifacts and logs.
 - `./data_write.sh /dev/XXXXXX` will update the user data on the SD card from the `data` folder, which allows you to manually edit it easily without dealing with piCores packed user data file.
-- `./storage_update.sh` will read the build artifacts and wifi credentials from the `data` folder (read using `data_read`) and store it in `storage`. These will be automatically setup in future image builds.
-- `./storage_apply.sh` will write the build artifacts and wifi credentials stored in `storage` into the `data` folder for you to write to the SD with `data_write`.
+- `./data_extract.sh` will read the build artifacts from the `data` folder (read using `data_read`) and store it in `storage`. These will be automatically setup in future image builds.
 
 The `storage/wifi.db` is root-protected by default and stores wifi credentials for automatic connection (currently only on `dev-single` images).
 Each line stores one known network: `<SSID> <Password> WPA` where SSID is space-escaped (e.g. "My\ Home\ Network"). <br>

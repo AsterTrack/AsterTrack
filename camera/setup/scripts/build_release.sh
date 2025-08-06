@@ -25,11 +25,10 @@ echo "Building TrackingCamera!"
 mkdir -p sources/camera/build
 cd sources/camera/build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j 1
+make -j 2
 # Can't use more cores as main.cpp already uses more than 300MB of RAM
 # Together with the base usage, it already completely bogs down the system and requires swap to work
-cp TrackingCamera_armv6l ../../../TrackingCamera/
-cp TrackingCamera_armv7l ../../../TrackingCamera/
+cp TrackingCamera_* ../../../TrackingCamera/
 cp qpu_blob_tiled_min.bin ../../../TrackingCamera/
 
 cd ../../..

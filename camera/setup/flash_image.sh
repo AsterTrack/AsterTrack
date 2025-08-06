@@ -35,4 +35,5 @@ umount -q $DEVICE_PATH
 
 echo "Flashing image..."
 
-sudo dd if=$IMAGE_FILE of=$DEVICE_PATH bs=4M status=progress
+# Flash with sync - may decrease performance (though blocksize is large) but allows for progress reporting
+sudo dd if=$IMAGE_FILE of=$DEVICE_PATH bs=4M status=progress oflag=sync

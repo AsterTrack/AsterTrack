@@ -221,34 +221,51 @@ enum CameraMCUFlashConfig ReadFlashConfiguration()
 		return MCU_FLASH_UNKNOWN;
 }
 
-void SetFlashConfiguration(enum CameraMCUFlashConfig config)
+enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config)
 {
 	enum CameraMCUFlashConfig currentConfig = ReadFlashConfiguration();
 	if (config == MCU_FLASH_KEEP || currentConfig == config)
 	{ // No need to configure
-
-		// Lock FLASH->CR for this boot
-		FLASH->KEYR = 0x11111111;
-		FLASH->KEYR = 0x11111111;
-
-		// Lock Options for this boot
-		FLASH->OPTKEYR = 0x11111111;
-		FLASH->OPTKEYR = 0x11111111;
-
-		return;
+		// Lock Flash and Options for this boot
+		FLASH->CR = 0xC0000000 | FLASH_CR_LOCK | FLASH_CR_OPTLOCK;
+		return MCU_FLASH_KEEP;
 	}
+
+	if (config != MCU_FLASH_DEBUG_SWD && config != MCU_FLASH_BOOT0_PI)
+		return MCU_FLASH_KEEP;
 
 	// Update configuration
 
-	// Unlock FLASH->CR
-	FLASH->KEYR = 0x45670123;
-	FLASH->KEYR = 0xCDEF89AB;
+	if (FLASH->CR & FLASH_CR_LOCK)
+	{
+		// Unlock FLASH->CR
+		FLASH->KEYR = 0x45670123U;
+		FLASH->KEYR = 0xCDEF89ABU;
 
-	// Unlock Options
-	FLASH->OPTKEYR = 0x08192A3B;
-	FLASH->OPTKEYR = 0x4C5D6E7F;
+		if (FLASH->CR & FLASH_CR_LOCK)
+			return MCU_FLASH_ERROR;
+	}
+	if (FLASH->CR & FLASH_CR_OPTLOCK)
+	{
+		// Unlock Options
+		FLASH->OPTKEYR = 0x08192A3BU;
+		FLASH->OPTKEYR = 0x4C5D6E7FU;
 
-	// Default OPTR: 0xDFFFE1AA 
+		if (FLASH->CR & FLASH_CR_OPTLOCK)
+			return MCU_FLASH_ERROR;
+	}
+
+	__disable_irq();
+
+	#define FLASH_SR_ERRORS (FLASH_SR_OPERR  | FLASH_SR_PROGERR | FLASH_SR_WRPERR | \
+							FLASH_SR_PGAERR | FLASH_SR_SIZERR  | FLASH_SR_PGSERR |  \
+							FLASH_SR_MISERR | FLASH_SR_FASTERR |   \
+							FLASH_SR_OPTVERR);
+
+	// Clear error status
+	FLASH->SR |= FLASH_SR_ERRORS;
+
+	// Default OPTR: 0xDFFFE1AA
 	if (config == MCU_FLASH_DEBUG_SWD)
 	{
 		// Set Default:
@@ -256,7 +273,7 @@ void SetFlashConfiguration(enum CameraMCUFlashConfig config)
 		// - nBOOT_SEL = 1	(use nBOOT0 bit instead of BOOT0 pin)
 		// - nBOOT0 = 1		(boot into main flash)
 		// Always boot into Main Flash, BOOT0 pin is not used - so SWD works and can flash (BOOT0 and SWCLK share pin PA14)
-		FLASH->OPTR =  0xDFFFE1AA;
+		FLASH->OPTR = 0xDFFFE1AA;
 	}
 	else if (config == MCU_FLASH_BOOT0_PI)
 	{
@@ -277,17 +294,17 @@ void SetFlashConfiguration(enum CameraMCUFlashConfig config)
 	// Wait for write to finish
 	while (FLASH->SR & FLASH_SR_BSY1);
 
-	// Could load option bytes from flash back to register to check
-	FLASH->CR = 0xC0000000 | FLASH_CR_OBL_LAUNCH;
-	while (FLASH->CR & FLASH_CR_OBL_LAUNCH);
-	// TODO: Assert
+	uint32_t error = FLASH->SR & FLASH_SR_ERRORS;
 
 	// Lock Options and FLASH->CR again
-	FLASH->CR = 0xC0000000 | FLASH_CR_LOCK | FLASH_CR_OPTLOCK;
+	FLASH->CR = FLASH_CR_LOCK | FLASH_CR_OPTLOCK;
 
-	// Restart MCU
-	SCB->AIRCR = (0x05FA << SCB_AIRCR_VECTKEY_Pos) | (1 << SCB_AIRCR_SYSRESETREQ_Pos);
-	while(1) {}
+	__enable_irq();
+
+	if (error)
+		return MCU_FLASH_ERROR;
+
+	return config;
 }
 
 void SwitchToBootloader()

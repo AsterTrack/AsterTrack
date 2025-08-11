@@ -52,7 +52,7 @@ uint8_t LED_STANDBY[RGBLED_COUNT*3] = {
 	COL_STANDBY,
 };
 
-#define COL_CONNECTING 0x22, 0x55, 0xAA
+#define COL_CONNECTING 0x22, 0x55, 0x66
 
 uint8_t LED_CONNECTING[RGBLED_COUNT*3] = {
 	COL_CONNECTING,
@@ -71,17 +71,27 @@ uint8_t LED_ACTIVE[RGBLED_COUNT*3] = {
 };
 
 struct LED_Animation LED_ANIM_BOOTING = {
-	.count = 2,
+	.count = 4,
 	.repetitions = -1,
 	.transitions = {
 		{
 			.leds = LED_STANDBY,
-			.time = 500*TICKS_PER_MS,
+			.time = 50*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		},
 		{
 			.leds = LED_ACTIVE,
-			.time = 500*TICKS_PER_MS,
+			.time = 450*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 50*TICKS_PER_MS,
+			.mode = INTER_IMMEDIATE
+		},
+		{
+			.leds = LED_STANDBY,
+			.time = 450*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}
 	}
@@ -125,17 +135,17 @@ uint8_t LED_ERROR_4[RGBLED_COUNT*3] = {
 };
 
 struct LED_Animation LED_ANIM_STREAMING = {
-	.count = 4,
+	.count = 5,
 	.repetitions = -1,
 	.transitions = {
 		{
 			.leds = LED_ACTIVE,
-			.time = 300*TICKS_PER_MS,
+			.time = 50*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		},
 		{
 			.leds = LED_ACTIVE,
-			.time = 200*TICKS_PER_MS,
+			.time = 150*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
 		},
 		{
@@ -147,6 +157,11 @@ struct LED_Animation LED_ANIM_STREAMING = {
 			.leds = LED_STANDBY,
 			.time = 200*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 300*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
 		}
 	}
 };
@@ -215,17 +230,17 @@ uint8_t LED_FLASH_BAD_PHASE_2[RGBLED_COUNT*3] = {
 };
 
 struct LED_Animation LED_ANIM_FLASH_BAD = {
-	.count = 4,
+	.count = 5,
 	.repetitions = -1,
 	.transitions = {
 		{
 			.leds = LED_FLASH_BAD_PHASE_1,
-			.time = 300*TICKS_PER_MS,
+			.time = 50*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		},
 		{
 			.leds = LED_FLASH_BAD_PHASE_1,
-			.time = 200*TICKS_PER_MS,
+			.time = 150*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
 		},
 		{
@@ -237,7 +252,12 @@ struct LED_Animation LED_ANIM_FLASH_BAD = {
 			.leds = LED_FLASH_BAD_PHASE_2,
 			.time = 200*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
-		}
+		},
+		{
+			.leds = LED_FLASH_BAD_PHASE_1,
+			.time = 300*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
 	}
 };
 
@@ -285,12 +305,12 @@ struct LED_Animation LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI = {
 		},
 		{
 			.leds = LED_FLASH_CHARGE_TOP_BOOT0_PI,
-			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS)/2*TICKS_PER_MS,
+			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS-100)*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
 		},
 		{
 			.leds = LED_FLASH_CHARGE_FAIL,
-			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS)*TICKS_PER_MS,
+			.time = 200*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}
 	}
@@ -312,12 +332,46 @@ struct LED_Animation LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD = {
 		},
 		{
 			.leds = LED_FLASH_CHARGE_BOT_DEBUG_SWD,
-			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS)/2*TICKS_PER_MS,
+			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS-100)*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
 		},
 		{
 			.leds = LED_FLASH_CHARGE_FAIL,
-			.time = (CHARGE_TIME_MAX_MS-CHARGE_TIME_MIN_MS)*TICKS_PER_MS,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		}
+	}
+};
+
+struct LED_Animation LED_ANIM_FLASH_SWITCH_BOOT0_PI = {
+	.count = 2,
+	.repetitions = -1,
+	.transitions = {
+		{
+			.leds = LED_FLASH_CHARGE_TOP_BOOT0_PI,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_FLASH_BAD_PHASE_1,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		}
+	}
+};
+
+struct LED_Animation LED_ANIM_FLASH_SWITCH_DEBUG_SWD = {
+	.count = 2,
+	.repetitions = -1,
+	.transitions = {
+		{
+			.leds = LED_FLASH_CHARGE_BOT_DEBUG_SWD,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_FLASH_BAD_PHASE_2,
+			.time = 200*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}
 	}

@@ -95,7 +95,7 @@ static void uart_set_identification()
 
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
 
-static enum CameraMCUFlashConfig InterpretUserFlashConfiguration();
+static bool ApplyUserFlashConfiguration();
 
 // This flag (setup in linker script to be ontop of stack) persists across software resets
 extern int _bflag;
@@ -110,7 +110,6 @@ int main(void)
 		// Switching now right after boot is a lot easier than mid-program
 		SwitchToBootloader();
 		// We should never get here
-		rgbled_animation(&LED_ANIM_FLASH_BAD);
 		while (true);
 	}
 	*BOOTLOADER_FLAG = 0;
@@ -135,24 +134,10 @@ int main(void)
 	mcuFlashConfig = ReadFlashConfiguration();
 	if (mcuFlashConfig == MCU_FLASH_UNKNOWN || mcuFlashConfig == MCU_FLASH_ERROR)
 	{ // Invalid state, signal error state, and allow user to select a state to enter
-		bool waitClearButtons = false;
 		while (true)
 		{ // Give user the option to pick boot/flashing configuration
-			if (GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
-				waitClearButtons = false;
-			if (!waitClearButtons)
-			{
-				enum CameraMCUFlashConfig config = InterpretUserFlashConfiguration();
-				if (config == MCU_FLASH_USER_ABORTED)
-					waitClearButtons = true;
-				else if (config != MCU_FLASH_KEEP)
-				{
-					SetFlashConfiguration(config);
-					mcuFlashConfig = config;
-					delayMS(1000);
-					break;
-				}
-			}
+			ApplyUserFlashConfiguration();
+			// Will restart on successful change, so loop 
 
 			if (!rgbled_animating(&LED_ANIM_FLASH_BAD))
 				rgbled_animation(&LED_ANIM_FLASH_BAD);
@@ -161,29 +146,14 @@ int main(void)
 		}
 	}
 	else
-	{
-		// Read buttons on boot to give user options to enable/disable SWD for debug
-		enum CameraMCUFlashConfig config = InterpretUserFlashConfiguration();
-		if (config == MCU_FLASH_USER_ABORTED)
-		{ // Flash animation if button is kept held from boot, but don't give another chance to change config this boot
-			rgbled_animation(&LED_ANIM_FLASH_BAD);
-			while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN));
-		}
-		else if (config != MCU_FLASH_KEEP)
-		{
-			SetFlashConfiguration(config);
-			mcuFlashConfig = config;
-			delayMS(1000);
-		}
-
+	{ // Check for a button pressed on boot
+		ApplyUserFlashConfiguration();
+		// May restart if proper button procedure was followed
 	}
-	if (true)
-	{ // Flash current flash config
-		if (mcuFlashConfig == MCU_FLASH_DEBUG_SWD)
-			rgbled_transition(LED_FLASH_DEBUG_SWD, 10);
-		else if (mcuFlashConfig == MCU_FLASH_BOOT0_PI)
-			rgbled_transition(LED_FLASH_BOOT0_PI, 10);
-		delayMS(100);
+	if (mcuFlashConfig == MCU_FLASH_DEBUG_SWD)
+	{ // Flash LED to signal non-standard flash config
+		rgbled_transition(LED_FLASH_DEBUG_SWD, 10);
+		delayMS(200);
 	}
 	rgbled_transition(LED_INITIALISING, 10);
 
@@ -233,6 +203,7 @@ int main(void)
 
 		if (piWantsBootloader)
 		{
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
 			rgbled_transition(LED_BOOTLOADER, 0);
 			delayMS(100);
 			// Set flag that persists the reset to switch to bootloader
@@ -742,4 +713,37 @@ static enum CameraMCUFlashConfig InterpretUserFlashConfiguration()
 		return MCU_FLASH_BOOT0_PI;
 	}
 	return MCU_FLASH_KEEP;
+}
+
+static bool ApplyUserFlashConfiguration()
+{
+	enum CameraMCUFlashConfig config = InterpretUserFlashConfiguration();
+	if (config == MCU_FLASH_USER_ABORTED)
+	{
+		rgbled_animation(&LED_ANIM_FLASH_BAD);
+		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN));
+	}
+	else if (config != MCU_FLASH_KEEP)
+	{
+		enum CameraMCUFlashConfig status = SetFlashConfiguration(config);
+		if (status != MCU_FLASH_KEEP)
+		{ // Option Bytes changed, gotta restart
+			if (status == MCU_FLASH_ERROR)
+				rgbled_animation(&LED_ANIM_FLASH_BAD);
+			else if (status == MCU_FLASH_BOOT0_PI)
+				rgbled_animation(&LED_ANIM_FLASH_SWITCH_BOOT0_PI);
+			else if (status == MCU_FLASH_DEBUG_SWD)
+				rgbled_animation(&LED_ANIM_FLASH_SWITCH_DEBUG_SWD);
+			delayMS(2000);
+
+			// Normal restart, but this won't actually reload option bytes for next boot
+			//SCB->AIRCR = (0x05FA << SCB_AIRCR_VECTKEY_Pos) | (1 << SCB_AIRCR_SYSRESETREQ_Pos);
+
+			// Restart and load option bytes from flash back to register
+			FLASH->CR = FLASH_CR_OBL_LAUNCH;
+		}
+		mcuFlashConfig = config;
+		return true;
+	}
+	return false;
 }

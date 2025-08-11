@@ -100,6 +100,8 @@ extern struct LED_Animation LED_ANIM_FLASH_BAD;
 #define CHARGE_TIME_MAX_MS 3000
 extern struct LED_Animation LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD;
 extern struct LED_Animation LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI;
+extern struct LED_Animation LED_ANIM_FLASH_SWITCH_DEBUG_SWD;
+extern struct LED_Animation LED_ANIM_FLASH_SWITCH_BOOT0_PI;
 
 
 /**

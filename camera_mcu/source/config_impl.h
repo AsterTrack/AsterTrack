@@ -138,7 +138,7 @@ const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
 void Setup_Peripherals();
 
 enum CameraMCUFlashConfig ReadFlashConfiguration();
-void SetFlashConfiguration(enum CameraMCUFlashConfig config);
+enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config);
 
 void SwitchToBootloader();
 

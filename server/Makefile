@@ -283,6 +283,7 @@ all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static 
 .PHONY: copybinaries
 copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
 	@cp -u $(usblibs) "$(b)/"
+	@rm $(b)/astertrack-static $(b)/astertrack-server $(b)/astertrack-interface.so
 	@cp $(o)/astertrack-static $(b)/astertrack-static
 	@cp $(o)/astertrack-server $(b)/astertrack-server
 	@cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so

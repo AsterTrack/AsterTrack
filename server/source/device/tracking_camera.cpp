@@ -48,7 +48,7 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 			calculateForwardPacketChecksum(data, length-PACKET_CHECKSUM_SIZE, data+length-PACKET_CHECKSUM_SIZE);
 		else // We should not be sending these packets, but do allow for it
 			calculateDirectPacketChecksum(data, length-PACKET_CHECKSUM_SIZE, data+length-PACKET_CHECKSUM_SIZE);
-		LOG(LCameraDevice, LInfo, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(data+length-PACKET_CHECKSUM_SIZE));
+		LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(data+length-PACKET_CHECKSUM_SIZE));
 	}
 	if (controller)
 	{

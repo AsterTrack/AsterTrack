@@ -942,13 +942,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				pipeline.tracking.asyncDetectionStop = {};
 				pipeline.tracking.asyncDetectTargetID = dormant.id;
 				threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
-					std::vector<CameraCalib> calibs, std::vector<std::vector<int>> detectionPoints2D,
+					std::vector<CameraCalib> &calibs, std::vector<std::vector<int>> &detectionPoints2D,
 					bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget dormant)
 				{ // Working with copy of dormant tracker
 					detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
 						useProbe, focus, pos, probeCount, std::move(dormant));
 					pipeline.tracking.asyncDetection = false;
-				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, detectionPoints2DAsync,
+				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, std::move(calibs), std::move(detectionPoints2DAsync),
 					useProbe, focusCamera, cluster.center, config.probeCount, dormant);
 			}
 			else

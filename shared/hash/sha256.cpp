@@ -344,7 +344,7 @@ void SHA256::processBuffer()
   if (paddedLength < BlockSize)
     addLength = m_buffer + paddedLength;
   else
-    addLength = extra + paddedLength - BlockSize;
+    addLength = extra + (paddedLength - BlockSize);
 
   // must be big endian
   *addLength++ = (unsigned char)((msgBits >> 56) & 0xFF);

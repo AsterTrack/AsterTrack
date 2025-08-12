@@ -210,6 +210,14 @@ static inline float LineWidthRemaining()
 	auto window = ImGui::GetCurrentWindowRead();
 	return window->WorkRect.GetWidth() - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x);
 }
+template<typename... STRING>
+static inline float MinSharedLabelWidth(STRING... labels)
+{
+	float max = 0.0f;
+	for (const auto &label : {labels...})
+		max = std::max(max, ImGui::CalcTextSize(label).x);
+	return max;
+}
 
 /*
  * Subdivided sizes in line space
@@ -219,13 +227,13 @@ static inline ImVec2 SizeWidthFull()
 {
 	return ImVec2(LineWidth(), ImGui::GetFrameHeight());
 }
-static inline ImVec2 SizeWidthDiv2()
+static inline ImVec2 SizeWidthDiv2(float minWidth = 0.0f)
 {
-	return ImVec2((LineWidth() - ImGui::GetStyle().ItemSpacing.x*1)/2, ImGui::GetFrameHeight());
+	return ImVec2(std::max(minWidth, (LineWidth() - ImGui::GetStyle().ItemSpacing.x*1)/2), ImGui::GetFrameHeight());
 }
-static inline ImVec2 SizeWidthDiv3()
+static inline ImVec2 SizeWidthDiv3(float minWidth = 0.0f)
 {
-	return ImVec2((LineWidth() - ImGui::GetStyle().ItemSpacing.x*2)/3, ImGui::GetFrameHeight());
+	return ImVec2(std::max(minWidth, (LineWidth() - ImGui::GetStyle().ItemSpacing.x*2)/3), ImGui::GetFrameHeight());
 }
 /**
  * Two parts of a 3-wise split line.
@@ -246,9 +254,9 @@ static inline ImVec2 SizeWidthDiv3_Div2()
 	size.x = (size.x - ImGui::GetStyle().ItemSpacing.x)/2;
 	return size;
 }
-static inline ImVec2 SizeWidthDiv4()
+static inline ImVec2 SizeWidthDiv4(float minWidth = 0.0f)
 {
-	return ImVec2((LineWidth() - ImGui::GetStyle().ItemSpacing.x*3)/4, ImGui::GetFrameHeight());
+	return ImVec2(std::max(minWidth, (LineWidth() - ImGui::GetStyle().ItemSpacing.x*3)/4), ImGui::GetFrameHeight());
 }
 /**
  * Two parts of a 4-wise split line.

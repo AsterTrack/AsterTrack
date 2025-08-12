@@ -761,7 +761,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 		imageRecord->jpeg = std::move(parseImg.jpeg);
 
 		// Asnynchronously decompress camera image record
-		threadPool.push([&camera](int, std::shared_ptr<CameraImageRecord> imageRecord)
+		threadPool.push([&camera](int, std::shared_ptr<CameraImageRecord> &imageRecord)
 		{
 			auto image = decompressCameraImageRecord(imageRecord);
 			if (!image) return; // Image jpeg is faulty, don't store record
@@ -799,7 +799,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 			camera->receiving.latestFrameImageRecord = std::move(imageRecord);
 
 			SignalCameraRefresh(camera->id);
-		}, imageRecord); // new shared_ptr
+		}, std::move(imageRecord));
 
 		return true;
 	}

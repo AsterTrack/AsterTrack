@@ -296,7 +296,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	std::shared_lock dev_lock(state.deviceAccessMutex);
 
 	// Step 1: Check addition or removal of cameras
-	int camsConnected = 0;
+	int camsConnected = 0, camsConnecting = 0;
 	std::vector<std::pair<int32_t,int>> addedCams, removedCams;
 	for (int i = 0; i < portCount; i++)
 	{
@@ -306,12 +306,17 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		int32_t id = *(int32_t*)(camData+1);
 		if ((commState&CommReady) == CommReady)
 		{
-			camsConnected++;
+			if (commState == CommPiReady)
+				camsConnected++;
+			else if (commState == CommMCUReady)
+				camsConnecting++;
+			if (id == 0) continue;
+			// Cannot add camera without knowing its ID
 			if (!existing)
 			{ // Setup new tracking camera
 				addedCams.emplace_back(id, i);
 			}
-			else if (controller.cameras[i]->id != id)
+			else if (id != 0 && controller.cameras[i]->id != id)
 			{ // Shouldn't happen, but let's be safe
 				addedCams.emplace_back(id, i);
 				removedCams.emplace_back(controller.cameras[i]->id, i);
@@ -390,14 +395,14 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", camera->id, camera->port);
 			controller.cameras[add.second] = std::move(camera);
 		}
-		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected. Total: Lost %d and gained %d cameras, %d connected!\n",
-			camsConnected, portCount, camsLost, camsGained, (int)state.cameras.size());
+		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting. Total: Lost %d and gained %d cameras, %d connected!\n",
+			camsConnected, portCount, camsConnecting, camsLost, camsGained, (int)state.cameras.size());
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
 	else
 	{
-		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected confirmed. Total: %d!\n",
-			camsConnected, portCount, (int)state.cameras.size());
+		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting. Total: %d!\n",
+			camsConnected, portCount, camsConnecting, (int)state.cameras.size());
 	}
 
 	// Step 3: Update camera states

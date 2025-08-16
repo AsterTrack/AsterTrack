@@ -71,7 +71,7 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 		LOG(LCameraDevice, LError, "Camera %d requesting mode failed because it has not started up yet!", id);
 		return false;
 	}
-	if (mode != modeSet.mode)
+	if (mode != modeSet.mode && dtMS(modeSet.time, sclock::now()) > 500)
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d requesting mode %x while still waiting on mode %x requested %fms ago!",
 			id, setMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));

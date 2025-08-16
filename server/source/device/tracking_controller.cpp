@@ -371,7 +371,7 @@ void DevicesStartStreaming(ServerState &state)
 	}
 
 	// Give controllers some time to establish a time sync, not strictly needed
-	//std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 	for (auto &cam : state.cameras)
 	{
@@ -471,15 +471,6 @@ void DevicesStopStreaming(ServerState &state)
 	}
 	TimePoint_t modeSetTimeout = sclock::now() + std::chrono::milliseconds(100);
 
-	// Communicate with controllers to prepare to stop streaming
-	for (auto &controller : state.controllers)
-	{
-		// Request to stop triggering new frames
-		comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_RESET, 0x00, 0);
-		// Request to disable time sync
-		comm_submit_control_data(controller->comm, COMMAND_OUT_TIME_SYNC, false, 0);
-	}
-
 	for (auto &cam : state.cameras)
 	{ // Wait for cameras to send mode change packets to signal they are ready to receive frame syncs
 		while (sclock::now() < modeSetTimeout && cam->mode != cam->modeSet.mode)
@@ -490,6 +481,18 @@ void DevicesStopStreaming(ServerState &state)
 		// If this cameras mode hasn't changed yet, it will have to finish configuring it's streaming state later
 		cam->modeSet.handleIndividually = false;
 	}
+
+	// Communicate with controllers to prepare to stop streaming
+	for (auto &controller : state.controllers)
+	{
+		// Request to stop triggering new frames
+		comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_RESET, 0x00, 0);
+		// Request to disable time sync
+		comm_submit_control_data(controller->comm, COMMAND_OUT_TIME_SYNC, false, 0);
+	}
+
+	// Delay a bit to give last packets a chance to be sent
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 	// Communicate with controllers to close comm channels
 	for (auto &controller : state.controllers)

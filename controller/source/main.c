@@ -1277,6 +1277,11 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	TimePoint now = GetTimePoint();
 	if (state->header.tag >= PACKET_HOST_COMM)
 	{ // Packet designated for Host
+		if (GetTimeSpanMS(lastUSBPacket, now) > 2000)
+		{ // Packet for host, but host doesn't seem to be connected
+			resetPacketHub(&packetHub);
+			return uartd_ignore;
+		}
 		if (state->dataPos == 0)
 		{ // Beginning of buffer, make sure header is prepended immediately before
 			state->queuedPos = (ptr-state->bufferPtr) - PACKET_HEADER_SIZE;

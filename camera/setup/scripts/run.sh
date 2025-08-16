@@ -1,7 +1,9 @@
 #!/bin/sh
 
+cd /home/tc
+
 ARCH=$(uname -m)
-ID=$(cat /mnt/mmcblk0p2/id | od -N 4 -A n -t d4)
+ID=$(cat /mnt/mmcblk0p2/config/id | od -N 4 -A n -t d4)
 LOGPATH=/home/tc/trcam.log
 
 while :
@@ -13,7 +15,7 @@ do
         echo "===================================" | tee $LOGPATH
         echo "Tracking Program exited, restarting" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
-        if [[ -f /mnt/mmcblk0p2/log ]]; then
+        if [[ -f /mnt/mmcblk0p2/config/log ]]; then
                 [ -f /mnt/mmcblk0p2/trcam.log  ] && sudo mv /mnt/mmcblk0p2/trcam.log /mnt/mmcblk0p2/trcam.log.last
                 sudo mv $LOGPATH /mnt/mmcblk0p2/trcam.log
                 echo 3 | sudo tee /proc/sys/vm/drop_caches

@@ -19,16 +19,37 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef WIRELESS_H
 #define WIRELESS_H
 
-#include "../state.hpp"
+#include "comm/packet.hpp"
+#include "util/util.hpp"
 
-void disconnectWifi();
+#include <cstdint>
+#include <string>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <vector>
 
-bool connectToWifi(std::string &SSID, std::string &IP, std::string &error);
+struct WirelessState
+{
+	std::thread *monitorThread;
+    std::mutex mutex;
+	std::atomic<bool> monitor;
+    WirelessConfig config, changed;
+	WirelessConfigStatus wifi, ssh, server;
+	bool updateConfig, sendStatus;
+    TimePoint_t lastStatus, lastCheck;
+	std::string SSID, IP, error;
+};
 
-void fillWirelessStatusPacket(const TrackingCameraState &state, std::vector<uint8_t> &packet);
+struct TrackingCameraState;
+
+
+void initWirelessMonitor(TrackingCameraState &state);
+
+void stopWirelessMonitor(TrackingCameraState &state);
+
+void fillWirelessStatusPacket(TrackingCameraState &state, std::vector<uint8_t> &packet);
 
 bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length);
-
-void UpdateWirelessStateThread(TrackingCameraState *state);
 
 #endif // WIRELESS_H

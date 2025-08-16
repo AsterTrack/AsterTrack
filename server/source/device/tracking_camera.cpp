@@ -211,28 +211,32 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
 {
 	if (device.state.contextualRLock()->commState != CommPiReady) return false;
 	// Send wireless config to Tracking Camera
-	auto &config = device.config.wireless;
-	std::vector<uint8_t> wireless((config.enabled? 4 : 2) + PACKET_CHECKSUM_SIZE);
-	wireless[0] = config.enabled;
-	wireless[1] = config.Server;
-	if (config.enabled)
-	{
-		uint16_t credSize = state.wpa_supplicant_conf.size();
-		if (credSize > 2000)
-		{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE
-			// Implement feedback on failure in UI
-			LOG(LGUI, LWarn, "wpa_supplicant is too long to send over control transfers!");
-			credSize = 0;
-			return false;
-		}
-		wireless[2] = credSize >> 8;
-		wireless[3] = credSize & 0xFF;
-		wireless.reserve(2+2+credSize+PACKET_CHECKSUM_SIZE);
-		wireless.insert(wireless.end(), state.wpa_supplicant_conf.begin(), state.wpa_supplicant_conf.begin()+credSize);
+	auto &wireless = device.config.wireless;
+
+	WirelessActions actions = WIRELESS_ACTIONS_NONE;
+
+	bool sendCreds = wireless.config & WIRELESS_CONFIG_WIFI; // Or credentials should be stored, etc.
+	std::size_t credSize = sendCreds? state.wpa_supplicant_conf.size() : 0;
+	if (credSize > 2000)
+	{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE
+		// Implement feedback on failure in UI
+		LOG(LGUI, LWarn, "wpa_supplicant is too long to send over control transfers!");
+		/*
+		credSize = 0;
+		return false; */
 	}
-	config.updating = true; // Awaiting a status packet to notify server of actual state
-	config.failed = false; // Clear past failure
-	device.sendPacket(PACKET_CFG_WIFI, wireless.data(), wireless.size(), true);
+	std::vector<uint8_t> packet(WIRELESS_PACKET_HEADER + credSize + PACKET_CHECKSUM_SIZE);
+	packet[0] = wireless.config;
+	packet[1] = actions;
+	packet[2] = credSize >> 8;
+	packet[3] = credSize & 0xFF;
+	// 4 free byte for future use
+	if (credSize > 0)
+		memcpy(packet.data()+WIRELESS_PACKET_HEADER, state.wpa_supplicant_conf.data(), credSize);
+
+	wireless.sendTime = sclock::now();
+	wireless.error.clear(); // Clear past failure
+	device.sendPacket(PACKET_CFG_WIFI, packet.data(), packet.size(), true);
 	return true;
 }
 /**

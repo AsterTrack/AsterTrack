@@ -3,18 +3,11 @@
 # Ensure swap partition exists and is used (requires reboot after first creation)
 /opt/swap.sh
 
-if [[ -f /mnt/mmcblk0p2/wifi.db ]]; then
-	# Autoconnect to best known wifi
-	/opt/wifi.sh -b &
-	# Ensure timesync
-	#ntpdate -b pool.ntp.org # This only runs once
-	ntpd --panicgate pool.ntp.org # Keeps daemon alive
-fi
+# Setup and connect wifi if configured
+/opt/wifi.sh &
 
-if [[ -f /usr/local/etc/init.d/openssh ]]; then
-	# Setup and start OpenSSH
-	/opt/ssh.sh
-fi
+# Setup and start OpenSSH if configured
+/opt/ssh.sh
 
 if [[ -f /usr/local/etc/init.d/avahi ]]; then
 	# Start dbus and avahi for zeroconf (broadcasting hostname)
@@ -33,11 +26,12 @@ echo -1 > /proc/sys/kernel/sched_rt_runtime_us
 /sbin/modprobe i2c-dev
 
 # Make sure we have a valid ID
-if [[ "$(</mnt/mmcblk0p2/id wc -c)" != 4 ]]; then
-	sudo dd if=/dev/urandom of=/mnt/mmcblk0p2/id bs=1 count=4
+IDPATH=/mnt/mmcblk0p2/config/id
+if [[ "$(<$IDPATH wc -c)" != 4 ]]; then
+	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
 fi
-while [ "$(cat /mnt/mmcblk0p2/id | od -N 4 -A n -t d4)" == 0 ]; do
-	sudo dd if=/dev/urandom of=/mnt/mmcblk0p2/id bs=1 count=4
+while [ "$(cat $IDPATH | od -N 4 -A n -t d4)" == 0 ]; do
+	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
 done
 
 if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then
@@ -45,5 +39,4 @@ if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then
 	/home/tc/build_release.sh 1> /mnt/mmcblk0p2/build.log 2> /mnt/mmcblk0p2/build.err
 fi
 
-cd /home/tc
 /home/tc/run.sh

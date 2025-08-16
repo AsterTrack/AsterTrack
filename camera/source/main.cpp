@@ -150,7 +150,7 @@ inline static void printIncidents(StatPacket::Incidents::Stat &stat, const char 
 
 static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream);
 
-static void sendWirelessStatusPacket(const TrackingCameraState &state);
+static void sendWirelessStatusPacket(TrackingCameraState &state);
 static int sendLargePacketData(TrackingCameraState &state, int commTimeUS);
 
 /* Functions */
@@ -433,6 +433,14 @@ int main(int argc, char **argv)
 	bool needsComms = comm_anyEnabled(comms);
 
 
+	// ---- Wireless ----
+
+	initWirelessMonitor(state);
+	atexit([]{ // Close at exit
+		stopWirelessMonitor(state);
+	});
+
+
 	// ---- Start Loop ----
 
 	bool running = true; // Only for interactive operation
@@ -522,9 +530,10 @@ int main(int argc, char **argv)
 				comm_submit(comms, packet);
 			}
 
-			if (state.wireless.needsStatusPacket)
+			if (state.wireless.sendStatus)
 			{ // Notify host of wireless status
-				state.wireless.needsStatusPacket = false;
+				state.wireless.sendStatus = false;
+				state.wireless.lastStatus = sclock::now();
 				sendWirelessStatusPacket(state);
 			}
 		}
@@ -1942,9 +1951,10 @@ int main(int argc, char **argv)
 			}
 
 			// Another low-priority packet, send after frame streaming is done, but not when a stat packet is sent to keep line clear
-			else if (state.wireless.needsStatusPacket)
+			else if (state.wireless.sendStatus)
 			{
-				state.wireless.needsStatusPacket = false;
+				state.wireless.sendStatus = false;
+				state.wireless.lastStatus = sclock::now();
 				sendWirelessStatusPacket(state);
 			}
 
@@ -2092,7 +2102,7 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 	return true;
 }
 
-static void sendWirelessStatusPacket(const TrackingCameraState &state)
+static void sendWirelessStatusPacket(TrackingCameraState &state)
 {
 	if (!comm_anyReady(comms))
 		return;

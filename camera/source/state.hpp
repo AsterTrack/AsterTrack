@@ -34,6 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/protocol_stream.hpp"
 #include "comm/timesync.hpp"
 #include "comm/firmware.hpp"
+#include "comm/wireless.hpp"
 #include "blob/parameters.hpp"
 
 struct TrackingCameraMode 
@@ -83,16 +84,6 @@ struct ImageStreamState
 	uint8_t subsampling;
 	uint8_t jpegQuality;
 	uint16_t frame; // Either interval, or 8bits of past frameID to send
-};
-
-struct WirelessState
-{
-	bool enabled;
-	bool SSH, Server;
-	// Actual reported state:
-	bool dirty, updating, needsStatusPacket;
-	bool connected, failed;
-	std::string SSID, IP, error;
 };
 
 struct TrackingCameraState

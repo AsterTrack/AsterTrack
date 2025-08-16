@@ -17,21 +17,55 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "wireless.hpp"
+#include "../state.hpp"
 
 #include "util/util.hpp"
 #include "util/system.hpp"
 
 #include <thread>
 #include <fstream>
+#include <filesystem>
 
-void disconnectWifi()
+static const std::filesystem::path configPath("/mnt/mmcblk0p2/config");
+
+static bool hasWifiHardware()
 {
-	std::system("ifconfig wlan0 down");
-	std::system("pkill wpa_supplicant");
-	std::system("pkill udhcpc");
+	return std::system("iwconfig wlan0 2>&1 | grep -q 'No such device'") != 0;
 }
 
-bool connectToWifi(std::string &SSID, std::string &IP, std::string &error)
+static bool isWifiSetup()
+{
+	return std::filesystem::exists("/usr/local/sbin/wpa_supplicant");
+}
+
+static bool isWifiBlocked()
+{
+	return std::filesystem::exists(configPath / "disallow_wifi");
+}
+
+static bool isWifiEnabled()
+{
+	return std::system("pidof wpa_supplicant") == 0;
+}
+
+static bool isWifiConnected()
+{
+	return std::system("iwconfig wlan0 | grep -q Not-Associated") != 0;
+}
+
+static bool reassignIP()
+{
+	return std::system("udhcpc -n -i wlan0 -x hostname:$(hostname -s) -F $(hostname -s) 2>&1 > /dev/null") == 0;
+}
+
+static void disconnectWifi()
+{
+	std::system("pkill wpa_supplicant");
+	std::system("pkill udhcpc");
+	std::system("ifconfig wlan0 down");
+}
+
+static bool reconnectWifi(std::string &error)
 {
 	printf("Connecting to wifi...\n");
 
@@ -39,20 +73,10 @@ bool connectToWifi(std::string &SSID, std::string &IP, std::string &error)
 	std::ifstream("/etc/sysconfig/wifi-wpadrv") >> WPADRV;
 	printf("Read wifi-wpadrv as '%s'\n", WPADRV.c_str());
 
-	bool hasDevice = std::system("iwconfig wlan0 2>&1 | grep -q 'No such device'") != 0;
-	if (!hasDevice)
-	{
-		error = "Device wlan0 not set up!";
-		printf("%s\n", error.c_str());
-		return false;
-	}
-
-	std::string hostname = exec("hostname -s");
-	printf("Read hostname as '%s'\n", hostname.c_str());
-	fflush(stdout);
-
 	// Disconnect first
 	disconnectWifi();
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 	int ret = std::system("wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf -B");
 	if (ret)
@@ -62,183 +86,276 @@ bool connectToWifi(std::string &SSID, std::string &IP, std::string &error)
 		return false;
 	}
 	printf("Triggered wpa_supplicant update!\n");
-	fflush(stdout);
+	return true;
+}
 
-	bool associated = false;
-	for (int i = 0; i < 40; i++)
-	{
-		associated = std::system("iwconfig wlan0 | grep -q Not-Associated") != 0;
-		if (associated) break;
-		printf(".");
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
-	}
-	printf("\n");
-	if (!associated)
-	{
-		error = asprintf_s("Failed to associate with network!");
-		printf("%s\n", error.c_str());
-		return false;
-	}
-	fflush(stdout);
-
-	SSID = exec("iwconfig wlan0 | awk '/ESSID/ {gsub(\"ESSID:\", \"\", $4); gsub(/\"/, \"\", $4); print $4} '");
+static void getWirelessStatus(std::string &SSID, std::string &IP)
+{
+	SSID = exec("iwgetid -r");
 	if (SSID.size() > 32) // Should not happen, not allowed
 		printf("Associated with wifi '%s', too long for real SSID!\n", SSID.c_str());
 	else
 		printf("Associated with wifi '%s'!\n", SSID.c_str());
 
-	printf("Requesting IP from AP via DHCP!\n");
-	fflush(stdout);
-	ret = std::system(asprintf_s("udhcpc -n -i wlan0 -x hostname:%s -F %s 2>&1 > /dev/null", hostname.c_str(), hostname.c_str()).c_str());
-	if (ret)
+	std::string IPs = exec("awk '/32 host/ { print i } {i=$2}' /proc/net/fib_trie");
+
+	std::stringstream ss(IPs);
+    while (std::getline(ss, IP, '\n'))
 	{
-		error = asprintf_s("Failed to request IP from AP!");
-		printf("%s\n", error.c_str());
-		return false;
+		if (IP.compare("127.0.0.1") != 0)
+			break;
 	}
-
-	IP = exec("ifconfig wlan0 | awk '/inet addr/ {gsub(\"addr:\", \"\", $2); print $2}'");
-	printf("Got IP address %s!\n", IP.c_str());
-
-	std::system("/usr/local/etc/init.d/openssh start");
-
-	return true;
 }
 
-void fillWirelessStatusPacket(const TrackingCameraState &state, std::vector<uint8_t> &packet)
+static void WirelessMonitorThread(TrackingCameraState *state);
+
+void initWirelessMonitor(TrackingCameraState &state)
 {
-	packet.resize(state.wireless.connected? 4 : (state.wireless.failed? 3 : 2));
-	packet[0] = state.wireless.connected? 2 : (state.wireless.failed? 1 : 0);
-	packet[1] = state.server.enabled? (state.server.ready? 2 : 1) : 0;
-	if (state.wireless.connected)
-	{
-		uint8_t SSIDLen = state.wireless.SSID.size() > 32? 32 : state.wireless.SSID.size();
-		uint8_t IPLen = state.wireless.IP.size() > 15? 15 : state.wireless.IP.size(); // 4*3+3 = 15
-		packet[2] = SSIDLen;
-		packet[3] = IPLen;
-		packet.reserve(2+2+SSIDLen+IPLen); // No string null-termination
-		packet.insert(packet.end(), state.wireless.SSID.begin(), state.wireless.SSID.begin()+SSIDLen);
-		packet.insert(packet.end(), state.wireless.IP.begin(), state.wireless.IP.begin()+IPLen);
+	if (!hasWifiHardware()) return;
+	if (!isWifiSetup()) return;
+	if (isWifiBlocked()) return;
 
-		printf("Sending wireless status packet of size %d, with %d bytes SSID and %d bytes IP!\n", (int)packet.size(), SSIDLen, IPLen);
-	}
-	else if (state.wireless.failed)
-	{
-		uint8_t errorLen = state.wireless.error.size() > 128? 128 : state.wireless.error.size();
-		packet[2] = errorLen;
-		packet.reserve(2+1+errorLen); // No string null-termination
-		packet.insert(packet.end(), state.wireless.error.begin(), state.wireless.error.begin()+errorLen);
+	if (isWifiEnabled())
+		state.wireless.config = (WirelessConfig)(WIRELESS_CONFIG_WIFI | WIRELESS_CONFIG_SSH);
 
-		printf("Sending wireless status packet of size %d, with %d bytes error string!\n", (int)packet.size(), errorLen);
-	}
-	else
+	state.wireless.monitor = true;
+	if (!state.wireless.monitorThread)
+		state.wireless.monitorThread = new std::thread(WirelessMonitorThread, &state);
+}
+
+void stopWirelessMonitor(TrackingCameraState &state)
+{
+	state.wireless.monitor = false;
+	if (state.wireless.monitorThread && state.wireless.monitorThread->joinable())
+		state.wireless.monitorThread->join();
+}
+
+void fillWirelessStatusPacket(TrackingCameraState &state, std::vector<uint8_t> &packet)
+{
+	WirelessState &wireless = state.wireless;
+	std::unique_lock lock(wireless.mutex);
+
+	uint8_t errorLen = std::min<std::size_t>(255, wireless.error.size());
+	uint8_t SSIDLen = 0, IPLen = 0;
+	if (wireless.wifi == WIRELESS_STATUS_CONNECTED)
 	{
-		printf("Sending wireless status packet of size %d!\n", (int)packet.size());
+		SSIDLen = std::min<std::size_t>(255, wireless.SSID.size());
+		IPLen = std::min<std::size_t>(15, wireless.IP.size());
 	}
+
+	packet.resize(WIRELESS_PACKET_HEADER + errorLen + SSIDLen + IPLen);
+	packet[0] = wireless.wifi;
+	packet[1] = wireless.ssh;
+	packet[2] = wireless.server;
+	// 2 free byte for future use
+	packet[5] = errorLen;
+	packet[6] = SSIDLen;
+	packet[7] = IPLen;
+
+	uint8_t *ptr = packet.data() + WIRELESS_PACKET_HEADER;
+	if (errorLen > 0)
+		memcpy(ptr, wireless.error.data(), errorLen);
+	ptr += errorLen;
+	if (SSIDLen > 0)
+		memcpy(ptr, wireless.SSID.data(), SSIDLen);
+	ptr += SSIDLen;
+	if (IPLen > 0)
+		memcpy(ptr, wireless.IP.data(), IPLen);
+
+	wireless.error.clear();
 }
 
 bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length)
 {
-	if (length < 2) return false;
-	if (packet[0] & ~1 || packet[1] & ~1)
-	{
-		printf("Received invalid wifi configuration non-boolean toggles!\n");
-		return false;
-	}
-	if (length < 4)
-	{
-		state.wireless.enabled = packet[0];
-		state.wireless.Server = packet[1];
-		return true;
-	}
+	printf("Received wifi configuration packet of size %d\n", length);
+	WirelessState &wireless = state.wireless;
+	if (length < 8) return false;
+	WirelessConfig config = (WirelessConfig)packet[0];
+	WirelessActions actions = (WirelessActions)packet[1];
 	uint16_t credSize = (packet[2] << 8) | packet[3];
-	if (length != 2+2+credSize)
+	// 4 free bytes for future use
+	if (length < WIRELESS_PACKET_HEADER+credSize)
 	{
-		printf("Received wifi configuration with %d bytes of wpa_supplicant, but packet size was only 4+%d\n",
-			credSize, length-4);
+		printf("Received wifi configuration with %d additional bytes of wpa_supplicant, but packet size was only %d\n",
+			credSize, length);
+		wireless.error = "Invalid packet!";
+		wireless.lastStatus = sclock::now();
+		wireless.sendStatus = true;
 		return false;
 	}
-	state.wireless.enabled = packet[0];
-	state.wireless.Server = packet[1];
-	printf("Received packet of size %d that set wireless state to %s!\n",
-		length, state.wireless.enabled? "enabled" : "disabled");
 
-	printf("Updating wpa_supplicant with config of size %d!\n", credSize);
-	std::string wpa_supplicant((char*)&packet[4], credSize);
-	// Format check is done by wpa_supplicant itself, cannot do everything
-	std::ofstream("/etc/wpa_supplicant.conf") << wpa_supplicant;
+	std::unique_lock lock(wireless.mutex);
 
-	// TODO: Save to disk once wpa_supplicant parsed and verified?
+	// Allow some actions to configure the image even when wifi is blocked for some reason
 
-	state.wireless.dirty = true;
-	if (!state.wireless.updating)
+	if (credSize > 0)
 	{
-		state.wireless.updating = true; // Will be true as long as thread is alive, thread will only close once state not dirty
-		new std::thread(UpdateWirelessStateThread, &state);
+		printf("Received wpa_supplicant of size %d!\n", credSize);
+		std::string wpa_supplicant((char*)&packet[WIRELESS_PACKET_HEADER], credSize);
+		// Format check is done by wpa_supplicant itself, cannot do everything
+		std::ofstream("/etc/wpa_supplicant.conf") << wpa_supplicant;
 	}
+
+	if (actions & WIRELESS_STORE_CREDS)
+	{
+		std::filesystem::copy("/etc/wpa_supplicant.conf", configPath / "wpa_supplicant.conf");
+	}
+
+	if (actions & WIRELESS_CLEAR_CREDS)
+	{
+		std::filesystem::remove(configPath / "wpa_supplicant.conf");
+	}
+
+	if (actions & WIRELESS_ENABLE_AUTOCONNECT)
+	{
+		std::ofstream(configPath / "wireless_autoconnect");
+	}
+
+	if (actions & WIRELESS_DISABLE_AUTOCONNECT)
+	{
+		std::filesystem::remove(configPath / "wireless_autoconnect");
+	}
+
+	// Check if wifi is blocked / unavailable
+
+	if (!hasWifiHardware())
+	{
+		wireless.error = "No Wifi hardware!";
+		wireless.wifi = wireless.ssh = wireless.server = WIRELESS_STATUS_ERROR;
+		wireless.lastStatus = sclock::now();
+		wireless.sendStatus = true;
+		return false;
+	}
+	if (!isWifiSetup())
+	{
+		wireless.error = "Non-Wifi image!";
+		wireless.wifi = wireless.ssh = wireless.server = WIRELESS_STATUS_ERROR;
+		wireless.lastStatus = sclock::now();
+		wireless.sendStatus = true;
+		return false;
+	}
+	if (isWifiBlocked())
+	{
+		wireless.error = "Wifi is blocked!";
+		wireless.wifi = wireless.ssh = wireless.server = WIRELESS_STATUS_ERROR;
+		wireless.lastStatus = sclock::now();
+		wireless.sendStatus = true;
+		return false;
+	}
+
+	// Only set blocked status now to allow final configuration change
+
+	if (actions & WIRELESS_DISALLOW_WIFI_PERMANENTLY)
+	{
+		std::ofstream(configPath / "disallow_wifi");
+	}
+
+	if (actions & WIRELESS_DISALLOW_SSH_PERMANENTLY)
+	{
+		std::ofstream(configPath / "disallow_ssh");
+	}
+
+	if (wireless.config != config)
+	{ // Apply configuration change
+		wireless.changed = (WirelessConfig)(wireless.config ^ config);
+		if (credSize > 0)
+			wireless.changed = (WirelessConfig)(wireless.changed | WIRELESS_CONFIG_WIFI);
+		wireless.config = config;
+		wireless.updateConfig = true;
+		printf("Received packet of size %d that set wireless state to %s!\n",
+			length, config & WIRELESS_CONFIG_WIFI? "enabled" : "disabled");
+	}
+
 	return true;
 }
 
-void UpdateWirelessStateThread(TrackingCameraState *state)
+static void WirelessMonitorThread(TrackingCameraState *state)
 {
-	auto &wireless = state->wireless;
-	wireless.updating = true; // Should already be set by spawner
-	while (wireless.dirty)
+	WirelessState &wireless = state->wireless;
+	bool sendStatus = true;
+	wireless.lastStatus = sclock::now();
+	while (wireless.monitor)
 	{
-		wireless.dirty = false; // could do atomic exchange but don't expect this to change often
-
-		if (wireless.enabled)
+		if (wireless.changed)
 		{
-			std::string SSID, IP, error;
-			wireless.connected = connectToWifi(SSID, IP, error);
-			if (wireless.connected)
+			std::unique_lock lock(wireless.mutex);
+
+			if (wireless.changed & WIRELESS_CONFIG_WIFI)
 			{
-				wireless.SSID = std::move(SSID);
-				wireless.IP = std::move(IP);
-				wireless.failed = false;
+				if (wireless.config & WIRELESS_CONFIG_WIFI)
+				{
+					if (reconnectWifi(wireless.error))
+						wireless.wifi = WIRELESS_STATUS_ENABLED;
+					else
+						wireless.wifi = WIRELESS_STATUS_ERROR;
+				}
+				else if (!(wireless.config & WIRELESS_CONFIG_WIFI))
+				{
+					disconnectWifi();
+					wireless.wifi = WIRELESS_STATUS_DISABLED;
+				}
+			}
+
+			if (wireless.config & WIRELESS_CONFIG_SSH)
+			{
+				if (!std::filesystem::exists(configPath / "disallow_ssh"))
+				{
+					std::system("/usr/local/etc/init.d/openssh start");
+					wireless.ssh = WIRELESS_STATUS_ENABLED;
+				}
+				else
+					wireless.ssh = WIRELESS_STATUS_ERROR;
 			}
 			else
 			{
-				wireless.error = std::move(error);
-				wireless.failed = true;
-				continue;
+				std::system("/usr/local/etc/init.d/openssh stop");
+				wireless.ssh = WIRELESS_STATUS_DISABLED;
+			}
+
+			// TODO: Explicitly start/stop server
+			wireless.server = WIRELESS_STATUS_DISABLED;
+			if ((wireless.config & WIRELESS_CONFIG_SERVER) && !state->server.enabled)
+			{
+				/* serverThread = new std::thread(CommThread, &state.server, &state);
+				comms.push_back(&state.server);
+				printf("Initiating server connection...\n"); */
+			}
+			else if (!(wireless.config & WIRELESS_CONFIG_SERVER) && state->server.enabled)
+			{
+				/* state.server.enabled = false;
+				if (serverThread && serverThread->joinable())
+					serverThread->join();
+				delete serverThread; */
+			}
+
+			wireless.changed = WIRELESS_CONFIG_NONE;
+			sendStatus = true;
+		}
+
+		if ((wireless.config & WIRELESS_CONFIG_WIFI) && wireless.wifi != WIRELESS_STATUS_CONNECTED &&
+			dtMS(wireless.lastCheck, sclock::now()) > 500)
+		{
+			wireless.lastCheck = sclock::now();
+			if (isWifiConnected())
+			{
+				reassignIP(); // May block for a second or so
+				wireless.wifi = WIRELESS_STATUS_CONNECTED;
+				getWirelessStatus(wireless.SSID, wireless.IP);
+				sendStatus = true;
 			}
 		}
-		else
+
+		if (sendStatus || dtMS(wireless.lastStatus, sclock::now()) > 1000)
 		{
-			disconnectWifi();
-			wireless.failed = false;
-			wireless.connected = false;
-			continue;
+			// Tell main thread to send a wireless status packet
+			// Safe to do here, but don't want to send a packet right before streaming packets are sent
+			wireless.lastStatus = sclock::now();
+			wireless.sendStatus = true;
+			sendStatus = false;
 		}
 
-		assert(wireless.connected);
-
-		// TODO: Explicitly start/stop server
-		if (wireless.Server && !state->server.enabled)
-		{
-			/* serverThread = new std::thread(CommThread, &state.server, &state);
-			comms.push_back(&state.server);
-			printf("Initiating server connection...\n"); */
-		}
-		else if (!wireless.Server && state->server.enabled)
-		{
-			/* state.server.enabled = false;
-			if (serverThread && serverThread->joinable())
-				serverThread->join();
-			delete serverThread; */
-		}
-
-		printf("Successfully connected, checking for new packet...\n");
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
-
-	// Tell comm threads to not rely on this thread, dirty will not be checked anymore
-	// if they need to update wirelessm, they need to spawn a new thread
-	wireless.updating = false;
-
-	// Tell main thread to send a wireless status packet
-	// Safe to do here, but don't want to send a packet right before streaming packets are sent
-	wireless.needsStatusPacket = true;
 
 	printf("Done, requesting wireless status packet!\n");
 }

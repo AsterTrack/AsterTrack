@@ -85,24 +85,23 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::Indent(bb.GetWidth() + ImGui::GetStyle().ItemInnerSpacing.x);
 
 		auto &wireless = camera.config.wireless;
-		if (wireless.connected)
-		{
+		if (wireless.wifiStatus == WIRELESS_STATUS_CONNECTED)
+		{ // Have to manually add frame padding
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
 			ImGui::Image(icons().wireless, ImVec2(ImGui::GetFontSize()*6/5, ImGui::GetFontSize()));
 			if (ImGui::BeginItemTooltip())
 			{
-				ImGui::Text("On wireless network '%s' with IP %s", wireless.SSID.c_str(), wireless.IP.c_str());
-				if (wireless.ServerStatus && camera.client && camera.client->ready)
+				ImGui::Text("Camera is connected to wireless network '%s' with IP '%s'", wireless.SSID.c_str(), wireless.IP.c_str());
+				if (wireless.serverStatus == WIRELESS_STATUS_ENABLED || wireless.serverStatus == WIRELESS_STATUS_CONNECTED)
 				{
-					ImGui::Text("The server is running and connected.");
-				}
-				else if (wireless.ServerStatus)
-				{
-					ImGui::Text("The server is running but not connected.");
+					if (camera.client && camera.client->ready)
+						ImGui::Text("The server is running and connected.");
+					else
+						ImGui::Text("The server is running but not connected.");
 				}
 				ImGui::EndTooltip();
 			}
-			ImGui::SameLine();
+			ImGui::SameLine(0.0f, ImGui::GetStyle().FramePadding.x + ImGui::GetStyle().ItemSpacing.x);
 		}
 
 		// ID Label

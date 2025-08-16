@@ -103,13 +103,12 @@ struct TrackingCameraState
 
 	struct Wireless
 	{ // Wireless configuration
-		bool enabled;
-		bool Server;
+		WirelessConfig config = WIRELESS_CONFIG_SSH;
 		// Actual reported state:
-		bool updating;
-		bool connected, failed;
-		bool ServerStatus;
+		WirelessConfigStatus wifiStatus, sshStatus, serverStatus;
 		std::string SSID, IP, error;
+		TimePoint_t sendTime;
+		TimePoint_t errorTime;
 	};
 
 	struct 

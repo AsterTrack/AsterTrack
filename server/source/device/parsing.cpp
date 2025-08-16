@@ -891,48 +891,39 @@ bool ReadStatPacket(TrackingCameraState &camera, PacketBlocks &packet)
 bool ReadWirelessPacket(TrackingCameraState &camera, PacketBlocks &packet)
 {
 	if (packet.erroneous) return false;
-	if (packet.data.size() < 2) return false;
+	if (packet.data.size() < WIRELESS_PACKET_HEADER) return false;
+	auto &wireless = camera.config.wireless;
+
 	std::vector<uint8_t> &data = packet.data;
-	auto &config = camera.config.wireless;
-	config.updating = false;
-	config.connected = data[0] == 2;
-	config.failed = data[0] == 1;
-	config.ServerStatus = data[1];
-	if (config.connected)
+	bool newlyConnected = wireless.wifiStatus != WIRELESS_STATUS_CONNECTED;
+	wireless.wifiStatus = (WirelessConfigStatus)data[0];
+	wireless.sshStatus = (WirelessConfigStatus)data[1];
+	wireless.serverStatus = (WirelessConfigStatus)data[2];
+	// 2 free byte for future use
+	uint8_t errorLen = data[5];
+	uint8_t SSIDLen = data[6];
+	uint8_t IPLen = data[7];
+
+	uint8_t *ptr = data.data() + WIRELESS_PACKET_HEADER;
+	if (errorLen > 0)
 	{
-		if (data.size() < 4)
-		{
-			LOG(LCameraDevice, LWarn, "Wireless status packet was 'connected' but only %d bytes!", (int)data.size());
-			return false;
-		}
-		uint8_t SSIDLen = data[2];
-		uint8_t IPLen = data[3];
-		if (data.size() < 4+SSIDLen+IPLen)
-		{
-			LOG(LCameraDevice, LWarn, "Wireless status packet contained SSID of length %d and IP of length %d, but packet was only 4+%d bytes!",
-				SSIDLen, IPLen, (int)data.size());
-			return false;
-		}
-		config.SSID = std::string((char*)&data[4], SSIDLen);
-		config.IP = std::string((char*)&data[4+SSIDLen], IPLen);
-		LOG(LCameraDevice, LInfo, "Camera %d connected to wireless network '%s' with IP %s!",
-			camera.id, config.SSID.c_str(), config.IP.c_str());
+		wireless.error = std::string((char*)ptr, errorLen);
+		wireless.errorTime = sclock::now();
+		ptr += errorLen;
 	}
-	else if (config.failed)
+	if (SSIDLen > 0)
 	{
-		if (data.size() < 4)
-		{
-			LOG(LCameraDevice, LWarn, "Wireless status packet was 'failed' but only %d bytes!", (int)data.size());
-			return false;
-		}
-		uint8_t errorLen = data[2];
-		config.error = std::string((char*)&data[3], errorLen);
-		LOG(LCameraDevice, LInfo, "Camera %d failed to connect to wireless network: '%s'", camera.id, config.error.c_str());
-	}
-	else if (!config.connected)
+		wireless.SSID = std::string((char*)ptr, SSIDLen);
+		wireless.errorTime = sclock::now();
+		ptr += SSIDLen;
+	} else if (newlyConnected) wireless.IP.clear();
+	if (IPLen > 0)
 	{
-		LOG(LCameraDevice, LInfo, "Camera %d is disconnected from wireless networks!", camera.id);
-	}
+		wireless.IP = std::string((char*)ptr, IPLen);
+		wireless.errorTime = sclock::now();
+		ptr += IPLen;
+	} else if (newlyConnected) wireless.IP.clear();
+
 	SignalServerEvent(EVT_UPDATE_INTERFACE);
 	return true;
 }

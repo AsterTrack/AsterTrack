@@ -411,10 +411,6 @@ phase_comm:
 
 		ResetTimeSync(state.sync.time);
 
-		// Notify host of wireless status
-		if (state.wireless.enabled && !state.wireless.updating)
-			state.wireless.needsStatusPacket = true;
-
 		time_start = sclock::now();
 
 		time_read = sclock::now();

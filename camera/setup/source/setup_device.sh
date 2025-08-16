@@ -221,15 +221,13 @@ if [[ $FORCE_BUILD != "True" ]]; then
 	fi
 fi
 
-# Always copy sources, in case we're running a dev image
-mkdir -p $BUILD_PATH/sources/camera
-
 # Download TrackingCamera sources if not provided
 if [[ ! -d "$TRCAM_PATH" ]]; then
 	TRCAM_PATH=../..
 fi
 
 # Copy TrackingCamera sources
+mkdir -p $BUILD_PATH/sources/camera
 cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera/
 cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera/
 cp -r $TRCAM_PATH/shared $BUILD_PATH/sources/
@@ -289,17 +287,21 @@ if [[ -f "$STORAGE_PATH/TrackingCameraMCU.bin" ]]; then
 	cp $STORAGE_PATH/TrackingCameraMCU.bin $TCE_PATH/
 fi
 
+# Configure behaviour of image
+mkdir -p $MOUNT_DATA/config/
+
 if [[ $AUTOCONNECT_WIFI = "True" ]]; then
-	if [[ -f $STORAGE_PATH/wifi.db ]]; then
+	if [[ -f $STORAGE_PATH/wpa_supplicant.conf ]]; then
 		echo "Setting up wifi credentials to enable autoconnect..."
-		cp $STORAGE_PATH/wifi.db $MOUNT_DATA/
+		cp $STORAGE_PATH/wpa_supplicant.conf $MOUNT_DATA/config/
+		touch $MOUNT_DATA/config/wireless_autoconnect
 	else
 		echo "Cannot setup wifi autoconnect, missing wifi credentials!"
 	fi
 fi
 
 if [[ $ENABLE_LOGGING = "True" ]]; then
-	touch $MOUNT_DATA/log
+	touch $MOUNT_DATA/config/log
 fi
 
 

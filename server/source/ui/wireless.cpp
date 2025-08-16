@@ -49,15 +49,52 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 
 	BeginSection("Wireless Cameras");
 
-	if (ImGui::BeginTable("WirelessCameras", 5,
+	if (ImGui::BeginTable("WirelessCameras", 4,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 	{
-		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+		ImVec2 iconSize(ImGui::GetFontSize()*6/5,ImGui::GetFontSize());
+		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize.x);
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthStretch, 1);
-		ImGui::TableSetupColumn("SSID", ImGuiTableColumnFlags_WidthStretch, 1);
-		ImGui::TableSetupColumn("IP", ImGuiTableColumnFlags_WidthStretch, 1);
+		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 2);
 		ImGui::TableSetupColumn("##Server", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 
+		auto toggleAllConfigFlags = [&](WirelessConfig flag)
+		{
+			WirelessConfig toggle = flag;
+			for (auto &camera : state.cameras)
+				if (camera->config.wireless.config & flag)
+					toggle = WIRELESS_CONFIG_NONE;
+			for (auto &camera : state.cameras)
+			{
+				if ((camera->config.wireless.config & flag) != toggle)
+				{
+					camera->config.wireless.config = (WirelessConfig)((camera->config.wireless.config & ~flag) | toggle);
+					CameraUpdateWireless(state, *camera);
+				}
+			}
+		};
+		auto toggleOneConfigFlags = [&](const char* str_id, ImTextureID active, ImTextureID inactive,
+			TrackingCameraState::Wireless &wireless, WirelessConfig flag, WirelessConfigStatus status)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0,0));
+			bool set = wireless.config & flag;
+			bool stat = status == WIRELESS_STATUS_ENABLED || status == WIRELESS_STATUS_CONNECTED;
+			ImGui::BeginDisabled(set != stat && dtMS(wireless.sendTime, sclock::now()) < 1000);
+			bool changed = ImGui::ImageButton(str_id, stat? active : inactive, iconSize);
+			if (changed)
+			{
+				if (stat)
+					wireless.config = (WirelessConfig)(wireless.config & ~flag);
+				else
+					wireless.config = (WirelessConfig)(wireless.config | flag);
+			}
+			ImGui::EndDisabled();
+			ImGui::PopStyleVar();
+			ImGui::PopStyleColor();
+			return changed;
+		};
+	
 		// Draw headers automatically
 		//ImGui::TableHeadersRow();
 		{ // Draw headers manually with icons and interaction to toggle columns as a whole
@@ -74,35 +111,20 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::SameLine();
 				ImGui::TableHeader(ImGui::TableGetColumnName(index));
 			};
-			auto toggleColumnProperties = [&](bool &(*getProperty)(TrackingCameraState::Wireless &wireless), bool def = true)
-			{
-				bool toggle = def;
-				for (auto &camera : state.cameras)
-					if (getProperty(camera->config.wireless) == def)
-						toggle = !def;
-				for (auto &camera : state.cameras)
-				{
-					if (getProperty(camera->config.wireless) != toggle)
-					{
-						getProperty(camera->config.wireless) = toggle;
-						CameraUpdateWireless(state, *camera);
-					}
-				}
-			};
 			// Wireless toggle column header
 			ImVec2 iconSize(ImGui::GetFontSize()*6/5,ImGui::GetFontSize());
 			iconHeader(0, icons().wireless, iconSize);
 			if (ImGui::IsItemClicked())
-				toggleColumnProperties([](TrackingCameraState::Wireless &wireless) -> bool& { return wireless.enabled; }, true);
-			for (int i = 1; i < 4; i++)
+				toggleAllConfigFlags(WIRELESS_CONFIG_WIFI);
+			for (int i = 1; i < 3; i++)
 			{ // Three normal headers
 				ImGui::TableSetColumnIndex(i);
 				ImGui::TableHeader(ImGui::TableGetColumnName(i));
 			}
 			// Server toggle column header
-			iconHeader(4, icons().server, iconSize);
+			iconHeader(3, icons().server, iconSize);
 			if (ImGui::IsItemClicked())
-				toggleColumnProperties([](TrackingCameraState::Wireless &wireless) -> bool& { return wireless.Server; }, true);
+				toggleAllConfigFlags(WIRELESS_CONFIG_SERVER);
 		}
 
 		for (auto &camera : state.cameras)
@@ -112,44 +134,36 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 			ImGui::PushID(camera->id); // Required to differentiate controls in multiple rows
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			{
-				ImGui::BeginDisabled(config.updating);
-				changed |= ImGui::Checkbox("##Wireless", &config.enabled);
-				ImGui::EndDisabled();
-				//if (config.updating)
-					// TODO: Display loading icon while camera is connecting to wireless network?
-			}
+			changed |= toggleOneConfigFlags("##Wireless", icons().wireless, icons().controller, config, WIRELESS_CONFIG_WIFI, config.wifiStatus);
 			ImGui::TableNextColumn();
 			{
-				ImGui::AlignTextToFramePadding();
 				ImGui::Text("%d", camera->id);
 			}
 			ImGui::TableNextColumn();
 			{
-				ImGui::AlignTextToFramePadding();
-				if (config.updating && config.enabled && !config.connected)
+				bool hasError = !config.error.empty() && 
+					(config.wifiStatus & (WIRELESS_STATUS_DISABLED | WIRELESS_STATUS_ERROR) || dtMS(config.errorTime, sclock::now()) > 4000);
+				if (hasError)
+					ImGui::Text("%s", config.error.c_str());
+				else if (config.wifiStatus == WIRELESS_STATUS_ENABLED)
 					ImGui::TextUnformatted("Connecting...");
-				else if (config.updating)
-					ImGui::TextUnformatted("Updating...");
-				else if (config.failed)
-					ImGui::Text("Failed: '%s", config.error.c_str());
-				else if (config.connected)
-					ImGui::Text("%s", config.SSID.c_str());
+				else if (config.wifiStatus == WIRELESS_STATUS_CONNECTED)
+					ImGui::Text("%s", config.IP.c_str());
 				else
 					ImGui::TextUnformatted("Not connected.");
+	
+				if (config.wifiStatus == WIRELESS_STATUS_ENABLED)
+					ImGui::SetItemTooltip("Wifi is enabled, but not connected yet.");
+				else if (config.wifiStatus == WIRELESS_STATUS_CONNECTED)
+					ImGui::SetItemTooltip("Camera is connected to network '%s' with IP '%s'", config.SSID.c_str(), config.IP.c_str());
+				else if (config.wifiStatus == WIRELESS_STATUS_ERROR)
+					ImGui::SetItemTooltip("Camera either does not have packages requried for wireless, or it has been configured to block wireless connections!");
+				else if (config.wifiStatus == WIRELESS_STATUS_DISABLED)
+					ImGui::SetItemTooltip("Wifi is disabled.");
+				
 			}
 			ImGui::TableNextColumn();
-			if (config.connected)
-			{
-				ImGui::AlignTextToFramePadding();
-				ImGui::Text("%s", config.IP.c_str());
-			}
-			ImGui::TableNextColumn();
-			{
-				ImGui::BeginDisabled(!config.connected);
-				changed |= ImGui::Checkbox("##Server", &config.Server);
-				ImGui::EndDisabled();
-			}
+			changed |= toggleOneConfigFlags("##Server", icons().server, icons().controller, config, WIRELESS_CONFIG_SERVER, config.serverStatus);
 			/* bool select = selectedCamera == camera;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				selectedCamera = camera; */

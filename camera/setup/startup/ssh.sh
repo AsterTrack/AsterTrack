@@ -1,5 +1,13 @@
 #!/bin/sh
 
+if [[ -f /mnt/mmcblk0p2/config/disallow_wifi ]]; then
+	exit 1
+fi
+
+if [[ -f /mnt/mmcblk0p2/config/disallow_ssh ]]; then
+	exit 1
+fi
+
 if [[ ! -f /usr/local/etc/init.d/openssh ]]; then
 	exit 1
 fi
@@ -15,24 +23,17 @@ ALGORITHMS="rsa dsa ecdsa ed25519"
 for ALG in $ALGORITHMS; do
 	KEY=$SSH_STORE/ssh_host_${ALG}_key
 
+	# Generate SSH keys if not available
+	if [[ ! -f $KEY || ! -f $KEY.pub ]]; then
+		ssh-keygen -t ${ALG} -N "" -f $KEY
+	fi
+
 	# Make keys accessible for OpenSSH (could also link)
-	if [[ -f $KEY && -f $KEY.pub ]]; then
-		cp $KEY $SSH_DIR
-		cp $KEY.pub $SSH_DIR
-	fi
+	cp $KEY $SSH_DIR
+	cp $KEY.pub $SSH_DIR
 done
 
-# Start OpenSSH to generate keys (blocking)
-/usr/local/etc/init.d/openssh start
-
-# Ensure the stored keys are the same
-for ALG in $ALGORITHMS; do
-	KEY=ssh_host_${ALG}_key
-	# Only write to SD if keys changed (or don't exist)
-	if !cmp --silent -- "$SSH_DIR/$KEY" "$SSH_STORE/$KEY"; then
-		cp $SSH_DIR/$KEY $SSH_STORE
-	fi
-	if ! cmp --silent -- "$SSH_DIR/$KEY.pub" "$SSH_STORE/$KEY.pub"; then
-		cp $SSH_DIR/$KEY.pub $SSH_STORE
-	fi
-done
+if [[ -f /mnt/mmcblk0p2/config/wireless_autoconnect ]]; then
+	# Start OpenSSH
+	/usr/local/etc/init.d/openssh start
+fi

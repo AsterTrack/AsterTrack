@@ -172,22 +172,21 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 			if (tracker.imuState != TrackerInertialState::NO_IMU)
 			{
-				ImVec2 iconSize(ImGui::GetTextLineHeight()*6/5, ImGui::GetTextLineHeight());
-				SameLineTrailing(iconSize.x);
+				SameLineTrailing(iconSize().x);
 				ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
 				if (tracker.imuState == TrackerInertialState::IMU_CALIBRATING)
 				{
-					ImGui::Image(icons().frameHDMI, iconSize);
+					ImGui::Image(icons().imu_calib, iconSize());
 					ImGui::SetItemTooltip("Calibrating with %dHz sample rate", (int)tracker.imuSampleRate.floating);
 				}
 				else if (tracker.imuState == TrackerInertialState::IMU_TRACKING)
 				{
-					ImGui::Image(icons().frameWireless, iconSize);
+					ImGui::Image(icons().imu_track, iconSize());
 					ImGui::SetItemTooltip("Tracking with %dHz sample rate", (int)tracker.imuSampleRate.floating);
 				}
 				else if (tracker.imuState == TrackerInertialState::IMU_LOST)
 				{
-					ImGui::Image(icons().detach, iconSize);
+					ImGui::Image(icons().imu_lost, iconSize());
 					ImGui::SetItemTooltip("No IMU samples received for %.1fs", tracker.imuSampleAgo);
 				}
 			}

@@ -316,8 +316,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 
 	BeginViewToolbar();
 
-	ImVec2 iconSize(ImGui::GetFontSize()*6/5, ImGui::GetFontSize());
-	if (ImGui::ImageButton("Orbit", icons().visual, iconSize))
+	if (ImGui::ImageButton("Orbit", icons().orbit, iconSize()))
 	{
 		view3D.orbit = !view3D.orbit;
 	}

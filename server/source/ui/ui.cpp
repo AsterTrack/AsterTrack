@@ -539,26 +539,34 @@ bool InterfaceState::Init()
 		return (ImTextureID)(intptr_t)tex;
 	};
 
+	#define ICON_LOAD(NAME) \
+		lightModeIcons.NAME = loadIcon("resources/" #NAME ".png"); \
+		darkModeIcons.NAME = loadIcon("resources/" #NAME "_d.png"); \
+
 	if (std::filesystem::exists("resources/"))
 	{
-		lightModeIcons.wireless = loadIcon("resources/wireless.png");
-		lightModeIcons.server = loadIcon("resources/server.png");
-		lightModeIcons.frameWireless = loadIcon("resources/frame_wireless.png");
-		lightModeIcons.frameHDMI = loadIcon("resources/frame_hdmi.png");
-		lightModeIcons.visual = loadIcon("resources/visual.png");
-		lightModeIcons.detach = loadIcon("resources/detach.png");
-		lightModeIcons.context = loadIcon("resources/dots.png");
-		lightModeIcons.controller = loadIcon("resources/controller.png");
-		lightModeIcons.camera = loadIcon("resources/camera.png");
-		darkModeIcons.wireless = loadIcon("resources/wireless_d.png");
-		darkModeIcons.server = loadIcon("resources/server_d.png");
-		darkModeIcons.frameWireless = loadIcon("resources/frame_wireless_d.png");
-		darkModeIcons.frameHDMI = loadIcon("resources/frame_hdmi_d.png");
-		darkModeIcons.visual = loadIcon("resources/visual_d.png");
-		darkModeIcons.detach = loadIcon("resources/detach_d.png");
-		darkModeIcons.context = loadIcon("resources/dots_d.png");
-		darkModeIcons.controller = loadIcon("resources/controller_d.png");
-		darkModeIcons.camera = loadIcon("resources/camera_d.png");
+		ICON_LOAD(frame_wireless)
+		ICON_LOAD(frame_hdmi)
+		ICON_LOAD(visual)
+		ICON_LOAD(mode)
+
+		ICON_LOAD(orbit)
+		ICON_LOAD(detach)
+		ICON_LOAD(vdots)
+
+		ICON_LOAD(controller)
+		ICON_LOAD(camera)
+
+		ICON_LOAD(imu_calib)
+		ICON_LOAD(imu_track)
+		ICON_LOAD(imu_lost)
+
+		ICON_LOAD(wireless)
+		ICON_LOAD(no_wireless)
+		ICON_LOAD(server)
+		ICON_LOAD(no_server)
+		ICON_LOAD(ssh)
+		ICON_LOAD(no_ssh)
 	}
 	else if (std::filesystem::exists("../resources/"))
 	{

@@ -290,12 +290,11 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	 * Camera View Toolbars
 	 */
 
-	ImVec2 iconSize(ImGui::GetTextLineHeight()*6/5, ImGui::GetTextLineHeight());
 	BeginViewToolbar();
 
 	if (!view.isDetached)
 	{ // Show detach button and title within view
-		if (ImGui::ImageButton("DetachView", darkModeIcons.detach, iconSize))
+		if (ImGui::ImageButton("DetachView", darkModeIcons.detach, iconSize()))
 		{
 			view.isDetached = true;
 			cameraGridDirty = true;
@@ -313,8 +312,9 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	{ // Show device status icons
 
 		// Show camera streaming reliability icon
+		ImVec2 statusSize(ImGui::GetTextLineHeight(), ImGui::GetTextLineHeight());
 		OnDemandItem *icon = AddOnDemandIcon("StreamingIcon", 
-			iconSize+ImGui::GetStyle().FramePadding*2, ImVec2(iconSize.y, iconSize.y), 
+			iconSize()+ImGui::GetStyle().FramePadding*2, statusSize, 
 			[](const ImDrawList* dl, const ImDrawCmd* dc)
 		{
 			OnDemandItem &render = *static_cast<OnDemandItem*>(dc->UserCallbackData);
@@ -363,10 +363,10 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 
 	// Right-aligned bar of 2 buttons
-	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize), 2)));
+	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize()), 2)));
 
 	// One Dropdown for modes the camera can be in:
-	if (BeginIconDropdown("Mode", darkModeIcons.visual, iconSize, ImGuiComboFlags_PopupAlignLeft))
+	if (BeginIconDropdown("Mode", darkModeIcons.mode, iconSize(), ImGuiComboFlags_PopupAlignLeft))
 	{
 		// TODO: Allow these buttons to start streaming for individual cameras? Not sure
 		// Would need to properly set up sync groups if not done already (also see "Start Streaming" button that has to do something similar)
@@ -415,7 +415,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	ImGui::SameLine();
 
 	// One Dropdown for all toggles for camera visualisation
-	if (BeginIconDropdown("Toggle", darkModeIcons.context, iconSize, ImGuiComboFlags_PopupAlignLeft))
+	if (BeginIconDropdown("Toggle", darkModeIcons.vdots, iconSize(), ImGuiComboFlags_PopupAlignLeft))
 	{
 		ImGui::MenuItem("Rotate 180", nullptr, &view.vis.view.rotate180);
 
@@ -487,7 +487,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		// Size the resolution level slider
 		ImGui::SameLine();
 		float labelWidth = ImGui::CalcTextSize("1XXXxXXX, XX (XXkb)").x;
-		float sizeRight = labelWidth + ImGui::GetFrameHeight() + 2*ImGui::GetStyle().ItemSpacing.x; // GetIconWidth(iconSize)
+		float sizeRight = labelWidth + ImGui::GetFrameHeight() + 2*ImGui::GetStyle().ItemSpacing.x; // GetIconWidth(iconSize())
 		ImGui::SetNextItemWidth(LineWidthRemaining() - sizeRight);
 
 		// Select quality level

@@ -20,7 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "device/tracking_camera.hpp"
 
-void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
+void InterfaceState::
+UpdateWirelessSetup(InterfaceWindow &window)
 {
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
@@ -52,8 +53,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 	if (ImGui::BeginTable("WirelessCameras", 4,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 	{
-		ImVec2 iconSize(ImGui::GetFontSize()*6/5,ImGui::GetFontSize());
-		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize.x);
+		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthStretch, 1);
 		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 2);
 		ImGui::TableSetupColumn("##Server", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
@@ -81,7 +81,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 			bool set = wireless.config & flag;
 			bool stat = status == WIRELESS_STATUS_ENABLED || status == WIRELESS_STATUS_CONNECTED;
 			ImGui::BeginDisabled(set != stat && dtMS(wireless.sendTime, sclock::now()) < 1000);
-			bool changed = ImGui::ImageButton(str_id, stat? active : inactive, iconSize);
+			bool changed = ImGui::ImageButton(str_id, stat? active : inactive, iconSize());
 			if (changed)
 			{
 				if (stat)
@@ -112,8 +112,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::TableHeader(ImGui::TableGetColumnName(index));
 			};
 			// Wireless toggle column header
-			ImVec2 iconSize(ImGui::GetFontSize()*6/5,ImGui::GetFontSize());
-			iconHeader(0, icons().wireless, iconSize);
+			iconHeader(0, icons().wireless, iconSize());
 			if (ImGui::IsItemClicked())
 				toggleAllConfigFlags(WIRELESS_CONFIG_WIFI);
 			for (int i = 1; i < 3; i++)
@@ -122,7 +121,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::TableHeader(ImGui::TableGetColumnName(i));
 			}
 			// Server toggle column header
-			iconHeader(3, icons().server, iconSize);
+			iconHeader(3, icons().server, iconSize());
 			if (ImGui::IsItemClicked())
 				toggleAllConfigFlags(WIRELESS_CONFIG_SERVER);
 		}
@@ -134,7 +133,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 			ImGui::PushID(camera->id); // Required to differentiate controls in multiple rows
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			changed |= toggleOneConfigFlags("##Wireless", icons().wireless, icons().controller, config, WIRELESS_CONFIG_WIFI, config.wifiStatus);
+			changed |= toggleOneConfigFlags("##Wireless", icons().wireless, icons().no_wireless, config, WIRELESS_CONFIG_WIFI, config.wifiStatus);
 			ImGui::TableNextColumn();
 			{
 				ImGui::Text("%d", camera->id);
@@ -163,7 +162,7 @@ void InterfaceState::UpdateWirelessSetup(InterfaceWindow &window)
 				
 			}
 			ImGui::TableNextColumn();
-			changed |= toggleOneConfigFlags("##Server", icons().server, icons().controller, config, WIRELESS_CONFIG_SERVER, config.serverStatus);
+			changed |= toggleOneConfigFlags("##Server", icons().server, icons().no_server, config, WIRELESS_CONFIG_SERVER, config.serverStatus);
 			/* bool select = selectedCamera == camera;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				selectedCamera = camera; */

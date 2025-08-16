@@ -68,7 +68,11 @@ static inline InterfaceState &GetUI() { return *InterfaceInstance; }
 
 struct IconSet
 {
-	ImTextureID wireless, server, frameWireless, frameHDMI, visual, detach, context, controller, camera;
+	ImTextureID frame_wireless, frame_hdmi, visual, mode;
+	ImTextureID orbit, detach, vdots;
+	ImTextureID controller, camera;
+	ImTextureID imu_calib, imu_track, imu_lost;
+	ImTextureID wireless, no_wireless, server, no_server, ssh, no_ssh;
 };
 
 struct InterfaceWindow
@@ -327,6 +331,7 @@ public:
 	bool isDarkMode = true;
 	IconSet lightModeIcons, darkModeIcons;
 	IconSet &icons() { return isDarkMode? darkModeIcons : lightModeIcons; }
+	ImVec2 iconSize() { return ImVec2(ImGui::GetFontSize()*6/5, ImGui::GetFontSize()); }
 
 	// Window state
 	ImGuiID dockspaceID;

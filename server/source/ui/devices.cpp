@@ -204,8 +204,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		float colX = ImGui::GetCursorPosX() + ImGui::GetTextLineHeight()*2.0f;
 
 		{ // Status
-			ImVec2 iconSize(ImGui::GetTextLineHeight(), ImGui::GetTextLineHeight());
-			OnDemandItem *icon = AddOnDemandIcon("icon", iconSize, iconSize, [](const ImDrawList* dl, const ImDrawCmd* dc)
+			ImVec2 statusSize(ImGui::GetTextLineHeight(), ImGui::GetTextLineHeight());
+			OnDemandItem *icon = AddOnDemandIcon("icon", statusSize, statusSize, [](const ImDrawList* dl, const ImDrawCmd* dc)
 			{
 				OnDemandItem &render = *static_cast<OnDemandItem*>(dc->UserCallbackData);
 				int id = (int)(intptr_t)render.userData;

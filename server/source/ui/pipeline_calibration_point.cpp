@@ -26,7 +26,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	ImVec2 ButtonSize = ImVec2(std::min(100.0f, SizeWidthDiv3().x), ImGui::GetFrameHeight());
+	ImVec2 ButtonSize = SizeWidthDiv3();
 
 	BeginSection("Camera Calibration");
 	{
@@ -110,7 +110,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	ImVec2 ButtonSize = ImVec2(std::min(100.0f, SizeWidthDiv3().x), ImGui::GetFrameHeight());
+	ImVec2 ButtonSize = SizeWidthDiv3();
 
 	BeginSection("Marker Observations");
 	ImGui::Checkbox("Record Observations", &pipeline.recordSequences);
@@ -344,21 +344,15 @@ void InterfaceState::UpdatePipelinePointCalib()
 
 	BeginSection("Room Calibration (?)");
 	ImGui::SetItemTooltip("After above calibration, the room rotation and scale is still undetermined.\n"
-		"You need to specify some points on the floor plane with known distances to fix these.\n"
+		"You need to specify at least 3 points on the floor plane with known distances to fix these.\n"
 		"Currently the interface is rough, it expects exactly one marker in the tracking volume at a time. \n"
 		"You will be able to select markers through the 3D View in the future.");
 
 	auto &roomCalib = ptCalib.room;
 	ImGui::BeginDisabled(ptCalib.control.running() || calibState.numUncalibrated || calibState.relUncertain);
 
-	std::string label;
-	if (roomCalib.floorPoints.size() < 3)
-		label = asprintf_s("%d floor points, need 3 or more", (int)roomCalib.floorPoints.size());
-	else
-	 	label = asprintf_s("%d floor points - distance of 1-2 is %.2fmm", (int)roomCalib.floorPoints.size(),
-			(roomCalib.floorPoints[0].pos-roomCalib.floorPoints[1].pos).norm()*1000);
 	ImGui::AlignTextToFramePadding();
-	ImGui::TextUnformatted(label.c_str());
+	ImGui::Text("%d floor points", (int)roomCalib.floorPoints.size());
 	SameLineTrailing(GetBarWidth(ImGui::GetFrameHeight(), 2));
 	if (ImGui::Button("-", ImVec2(ImGui::GetFrameHeight(), 0)))
 	{
@@ -381,22 +375,29 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::SetItemTooltip("Put a Marker on the ground, and push this button to record it over the period of one second.");
 	ImGui::EndDisabled();
 
-	ScalarInput<float>("Distance 1-2", "mm", &roomCalib.distance12, 1.0f, 5000.0f, 1, 1000);
-	ImGui::SetItemTooltip("Distance between the first two points, used to calibrate scale. In millimeter.");
+	ScalarInput<float>("Distance 1-2", "mm", &roomCalib.distance12, 1.0f, 5000.0f, 1, 1000, "%.1f");
+	if (ImGui::BeginItemTooltip())
+	{
+		ImGui::TextUnformatted("Distance between the first two points, used to calibrate scale.");
+		if (roomCalib.floorPoints.size() >= 2)
+			ImGui::Text("With the current scale, they are %.2fmm apart.",
+				(roomCalib.floorPoints[0].pos-roomCalib.floorPoints[1].pos).norm()*1000);
+		ImGui::EndTooltip();
+	}
 
-	ImGui::SetCursorPosX(GetRightAlignedCursorPos(SizeWidthDiv3_2().x));
-	if (ImGui::Button("Calibrate Floor", SizeWidthDiv3_2()))
+	ImGui::BeginDisabled(roomCalib.floorPoints.size() < 3);
+	if (ImGui::Button("Calibrate Floor", SizeWidthFull()))
 	{
 		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(200));
 		if (pipeline_lock.owns_lock())
 			CalibrateRoom(pipeline);
 	}
 	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
+	ImGui::EndDisabled();
 
 	static float floorHeight = -1.0f;
-	ScalarInput<float>("Floor Height", "mm", &floorHeight, -5000.0f, 5000.0f, 1, 1000);
-	ImGui::SetCursorPosX(GetRightAlignedCursorPos(SizeWidthDiv3_2().x));
-	if (ImGui::Button("Add to Floor", SizeWidthDiv3_2()))
+	ScalarInput<float>("Floor Height", "mm", &floorHeight, -5000.0f, 5000.0f, 1, 1000, "%.1f");
+	if (ImGui::Button("Add to Floor", SizeWidthFull()))
 	{
 		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
 		if (pipeline_lock.owns_lock())

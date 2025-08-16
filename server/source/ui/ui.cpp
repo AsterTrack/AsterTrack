@@ -66,8 +66,11 @@ struct wl_resource;
 
 InterfaceState *InterfaceInstance;
 
-const long targetIntervalUS = 1000000/60; // glfwSwapBuffer will further limit it to display refresh rate
+const int maxRefreshRateHz = 60; // This is further limited to display refresh rate
+const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 50.0f/1000.0f
 
+const long minIntervalUS = 1000000/maxRefreshRateHz;
+const double waitIntervalS = 1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz;
 
 /* Function prototypes */
 
@@ -145,8 +148,8 @@ EXPORT bool _InterfaceThread()
 
 		// Wait a minimum amount to limit maximum refresh rate
 		long curIntervalUS = dtUS(ui.renderTime, sclock::now());
-		if (curIntervalUS < targetIntervalUS)
-			std::this_thread::sleep_for(std::chrono::microseconds(targetIntervalUS-curIntervalUS));
+		if (curIntervalUS < minIntervalUS)
+			std::this_thread::sleep_for(std::chrono::microseconds(minIntervalUS-curIntervalUS));
 
 		// Wait for input events or update/render requests while updating general state
 		glfwPollEvents();
@@ -154,8 +157,13 @@ EXPORT bool _InterfaceThread()
 		while (!ui.requireRender && ui.requireUpdates == 0
 			&& ImGui::GetCurrentContext()->InputEventsQueue.empty())
 		{ // This timeout greatly influences idle power consumption
-			glfwWaitEventsTimeout(50.0f/1000.0f);
+			glfwWaitEventsTimeout(waitIntervalS);
 			ui.GeneralUpdate();
+			if (minRefreshRateHz > 0)
+			{ // Force a render if we want a minimum refresh rate
+				ui.requireUpdates = std::max(ui.requireUpdates, 1);
+				break;
+			}
 		}
 		if (!ImGui::GetCurrentContext()->InputEventsQueue.empty())
 			ui.requireUpdates = std::max(ui.requireUpdates, 3);
@@ -191,7 +199,7 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 	// Check render time
 	auto now = sclock::now();
-	if (dtUS(ui.renderTime, now) < targetIntervalUS) return;
+	if (dtUS(ui.renderTime, now) < waitIntervalS) return;
 	ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
 	ui.renderTime = now;
 

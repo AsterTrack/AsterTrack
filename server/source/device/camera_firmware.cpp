@@ -515,11 +515,7 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 		camStatus->lastActivity = sclock::now();
 		camState.lastRequest = sclock::now();
 	}
-	if (!camStatus->packets.empty())
-	{
-		camStatus->packets.clear();
-		SignalServerEvent(EVT_UPDATE_INTERFACE);
-	}
+	camStatus->packets.clear();
 	if (!abort)
 	{ // Check for activity timeout
 		abort = true;

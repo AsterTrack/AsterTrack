@@ -78,16 +78,27 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			visSetupProjection(Eigen::Isometry3f::Identity());
 			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)camera.id);
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::TextUnformatted(getStatusText(camera).c_str());
+			ImGui::EndTooltip();
+		}
 
 		// Detail text
 		//pos.x = bb.Max.x + ImGui::GetStyle().ItemInnerSpacing.x;
 		ImGui::SetCursorPos(pos);
 		ImGui::Indent(bb.GetWidth() + ImGui::GetStyle().ItemInnerSpacing.x);
 
+		// ID Label
+		if (camera.pipeline)
+			ImGui::Text("#%d (%d)", camera.id, camera.pipeline->index);
+		else
+			ImGui::Text("#%d", camera.id);
+
 		auto &wireless = camera.config.wireless;
 		if (wireless.wifiStatus == WIRELESS_STATUS_CONNECTED)
 		{ // Have to manually add frame padding
-			ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
+			ImGui::SameLine();
 			ImGui::Image(icons().wireless, ImVec2(ImGui::GetFontSize()*6/5, ImGui::GetFontSize()));
 			if (ImGui::BeginItemTooltip())
 			{
@@ -101,14 +112,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				}
 				ImGui::EndTooltip();
 			}
-			ImGui::SameLine(0.0f, ImGui::GetStyle().FramePadding.x + ImGui::GetStyle().ItemSpacing.x);
 		}
-
-		// ID Label
-		if (camera.pipeline)
-			ImGui::Text("#%d (%d)", camera.id, camera.pipeline->index);
-		else
-			ImGui::Text("#%d", camera.id);
 
 		{ // Sync
 			// TODO: Allow detaching from SyncGroup controller is part of via toggle to switch to free-running

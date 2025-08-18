@@ -100,8 +100,17 @@ static inline StatDistf calculateCorrespondenceStats(const Range<VecIt> &rangesA
 	for (auto itA = rangesA.start, itB = rangesB.start; itA != rangesA.end && itB != rangesB.end; itA++, itB++)
 	{
 		float error = itB->homogeneous().transpose() * FM * itA->homogeneous();
-		assert(!std::isnan(error));
+		if (std::isnan(error) || std::isinf(error))
+		{
+			LOG(LSequence, LWarn, "Had NAN/INF error during correspondence check!");
+			return {};
+		}
 		errorStats.update(std::abs(error));
+	}
+	if (errorStats.num > 0 && errorStats.avg == 0)
+	{
+		LOG(LSequence, LWarn, "Had 0 total error during correspondence check!");
+		return {};
 	}
 	return errorStats;
 }
@@ -254,7 +263,8 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			// Calculate new fundamental matrix from sequence overlap
 			FundamentalMatrix FMseq = {};
 			float confidence = calculateFundamentalMatrix<float>(FMseq, rangesA, rangesB);
-			assert(FMseq.stats.num == overlap.length);
+			if (FMseq.stats.num < params.correspondences.minOverlap)
+				continue;
 
 			// Check for basic correspondence
 			if (confidence < params.correspondences.minConfidence)
@@ -316,6 +326,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			errorAvg += corr.stats.avg;
 			assert(!std::isnan(errorAvg));
 			assert(!std::isnan(correspondingWeight) && !std::isnan(discreditingWeight));
+			assert(!std::isinf(correspondingWeight) && !std::isinf(discreditingWeight));
 		}
 		errorAvg /= marker.cameras.size();
 

@@ -216,6 +216,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 	{
 		LOGC(LWarn, "Error Vector has NaNs!\n");
 		LOGC(LWarn, "Error Vector size: %d, tri point count: %d!\n", (int)errorVec.size(), (int)errorTerm.m_data->points.points.size());
+		return {};
 	}
 
 	// Calculate outlier limit

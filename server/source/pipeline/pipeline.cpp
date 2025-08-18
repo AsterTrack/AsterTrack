@@ -376,6 +376,13 @@ static void UpdateCalibrationRelation(CameraSystemCalibration &calibration, cons
 	// Determine fundamental matrix from calibration
 	FundamentalMatrix FM = {};
 	FM.matrix = calculateFundamentalMatrix<float>(calibA, calibB);
+	Eigen::JacobiSVD<Eigen::Matrix3f> svd(FM.matrix);
+	if (svd.rank() < 2)
+	{ // Not a valid FM
+		LOG(LPipeline, LWarn, "Existing camera relation %d-%d is invalid with rank %d < 2! Discarding!", calibA.index, calibB.index, (int)svd.rank());
+		return;
+	}
+
 	FM.precalculated = true;
 
 	// Calculate full error stats

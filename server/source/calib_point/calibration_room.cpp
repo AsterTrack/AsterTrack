@@ -110,6 +110,11 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
 		} */
 		for (auto &sample : point.samples)
 		{
+			if (std::isnan(errorVec(index)))
+			{
+				index++;
+				continue;
+			}
 			cameraTotalCounts[sample.camera]++;
 			cameraErrorsTotal(sample.camera) += errorVec(index)*errorVec(index);
 			// Update bucket
@@ -162,6 +167,8 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
 		{
 			auto &sample = point.samples[s];
 			Scalar error = errorVec(index + s);
+			if (std::isnan(error))
+				isOutlierForce = true;
 			if (error > outlierLimit)
 				isOutlier = true;
 			if (error > outlierLimitForce)
@@ -382,6 +389,8 @@ bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc
 	int unchangedCameras = 0;
 	for (int c = 0; c < calibsSrc.size(); c++)
 	{
+		if (!calibsSrc[c].valid())
+			continue;
 		// Guess scale by relation to other cameras
 		std::vector<Eigen::Vector<Scalar,1>> scaleGuesses;
 		for (int cc = 0; cc < calibsSrc.size(); cc++)
@@ -397,7 +406,10 @@ bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc
 			float scale = 0.0f;
 			for (int i : scaleGroups.front())
 				scale += scaleGuesses[i](0);
-			scaleGuesses = { Eigen::Vector<Scalar,1>(scale/scaleGroups.front().size()) };
+			scale /= scaleGroups.front().size();
+			if (scale < 0.001f || scale > 10000.0f)
+				continue;
+			scaleGuesses = { Eigen::Vector<Scalar,1>(scale) };
 		}
 		LOG(LPointCalib, LTrace, "Finding corrective transform for camera %d, %d scale guesses (after %d groups)",
 			c, (int)scaleGuesses.size(), (int)scaleGroups.size());

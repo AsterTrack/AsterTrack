@@ -325,13 +325,13 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
 {
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
-	// TODO: Nothing in the following code actually handles invalid calibrations - not serious, still needs fixing
 
 	ObsData data;
 	{ // Copy data
 		auto obs_lock = pipeline.seqDatabase.contextualRLock();
 		addTriangulatableObservations(data.points, obs_lock->markers, 0, obs_lock->lastRecordedFrame);
 	}
+	*pipeline.obsDatabase.contextualLock() = data;
 
 	if (errorMaps)
 	{

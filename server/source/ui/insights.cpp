@@ -852,10 +852,7 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 
 		if (!ui.seqTarget || ui.seqTarget->needsUpdate(visTarget))
 		{ // Need to update/recreate sequence
-			std::vector<CameraCalib> calibs;
-			for (const auto &cam : pipeline.cameras)
-				calibs.push_back(cam->calib);
-			ui.seqTarget = make_opaque<TargetViewSequence>(visTarget, ui.visState, calibs);
+			ui.seqTarget = make_opaque<TargetViewSequence>(visTarget, ui.visState, pipeline.getCalibs());
 
 			// Keep zoom intact
 			ui.seqTarget->framePixelWidthTarget = targetViewZoom;

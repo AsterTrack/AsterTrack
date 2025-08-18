@@ -49,7 +49,7 @@ void ResetPointCalibration(PipelineState &pipeline)
 	pipeline.pointCalib.planned = false;
 	pipeline.pointCalib.settings = {};
 	pipeline.pointCalib.state = {};
-	pipeline.pointCalib.room.floorPoints.clear();
+	pipeline.pointCalib.room.contextualLock()->floorPoints.clear();
 }
 
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
@@ -77,20 +77,21 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	// TODO: Room calibration should be considered largely untested since it hasn't been used in a while
 	// Need to improve experience / instructions, visualise points on the floor, account for physical marker sizes, etc.
-	if (!ptCalib.room.floorPoints.empty() && ptCalib.room.floorPoints.back().sampling)
+	auto roomCalib = ptCalib.room.contextualLock();
+	if (!roomCalib->floorPoints.empty() && roomCalib->floorPoints.back().sampling)
 	{
-		auto &point = ptCalib.room.floorPoints.back();
+		auto &point = roomCalib->floorPoints.back();
 		if (pipeline.tracking.triangulations3D.empty())
 		{
 			LOG(LPointCalib, LDebug, "No markers visible to calibrate floor point!\n");
-			ptCalib.room.floorPoints.pop_back();
+			roomCalib->floorPoints.pop_back();
 		}
 		else
 		{
 			TriangulatedPoint tri;
 			if (point.sampleCount == 0)
 			{
-				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)ptCalib.room.floorPoints.size());
+				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)roomCalib->floorPoints.size());
 				tri = pipeline.tracking.triangulations3D.front();
 			}
 			else
@@ -121,17 +122,17 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 			if (point.sampleCount > 1000 || (point.sampleCount > 300 && point.startObservation-frame->num > 100))
 			{
-				LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", (int)ptCalib.room.floorPoints.size(), point.sampleCount);
+				LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", (int)roomCalib->floorPoints.size(), point.sampleCount);
 				point.sampling = false;
 				point.confidence = 10;
 			}
 		}
 	}
-	if (ptCalib.room.floorPoints.size() >= 2)
+	if (roomCalib->floorPoints.size() >= 2)
 	{ // Keep these invariant to potential calibration changes
 		// TODO: Consider updating these only when calibration changes occur - similar to UpdateCalibrationRelations
 		auto calibs = pipeline.getCalibs();
-		for (auto &floorPoint : pipeline.pointCalib.room.floorPoints)
+		for (auto &floorPoint : roomCalib->floorPoints)
 			floorPoint.update(calibs);
 	}
 }
@@ -202,8 +203,6 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		return;
 	}
 
-	std::shared_lock shared_lock(pipeline->pipelineLock);
-
 	{ // Copy point data into observation database (for future continuous calibration)
 		auto db_lock = pipeline->obsDatabase.contextualLock();
 		db_lock->points = std::move(pointData.points);
@@ -217,13 +216,10 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		ptCalib.state.errors = updateReprojectionErrors(*db_lock, calibs);
 	}
 
-	{ // Update calibration
-		std::unique_lock pipeline_lock(pipeline->pipelineLock);
-		AdoptNewCalibrations(*pipeline, calibs, true);
-	}
-	SignalCameraCalibUpdate(calibs);
-
+	// Update calibration
+	AdoptNewCalibrations(*pipeline, calibs, true);
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
+	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LInfo, "== Done Reconstructing Calibration!\n");
 
@@ -303,10 +299,8 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 			LOGC(LWarn, "Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n",
 				ptCalib.state.numSteps, errors.mean, errors.stdDev, errors.max);
 
-		{ // Update calibration
-			std::unique_lock pipeline_lock(pipeline->pipelineLock);
-			AdoptNewCalibrations(*pipeline, calibs, true);
-		}
+		// Update calibration
+		AdoptNewCalibrations(*pipeline, calibs, true);
 		SignalCameraCalibUpdate(calibs);
 
 		if (errors.max > errors.mean + params.outliers.sigma.trigger*errors.stdDev)
@@ -369,28 +363,19 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	{ // Replace shared point data with new subset used for calibration
 		auto db_lock = pipeline->obsDatabase.contextualLock();
 		db_lock->points = std::move(pointData.points);
-		// TODO: Clear up seqDatabase and obsDatabase relation for initial point calib and future cont calib
-		// Keep newer points and update errors?
-		// Only other source is continuous calibration in the future
-		// Point calibration already only adds to obsDatabase in batches whenever a thread is instructed, reading from seqDatabase
-		// Potentially get continuous calib to iteratively add data from seqDatabase to obsDatabase and then always use that as data source?
 	}
 
-	{ // Update calibration
-		std::unique_lock pipeline_lock(pipeline->pipelineLock);
-		AdoptNewCalibrations(*pipeline, calibs, true);
-	}
-	SignalCameraCalibUpdate(calibs);
-
+	// Update calibration
+	AdoptNewCalibrations(*pipeline, calibs, true);
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
+	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LDebug, "=======================\n");
 }
 
-bool CalibrateRoom(PipelineState &pipeline)
+bool CalibrateRoom(PipelineState &pipeline, PipelineState::RoomCalib &roomCalib)
 {
-	auto &ptCalib = pipeline.pointCalib;
-	if (ptCalib.room.floorPoints.size() < 3)
+	if (roomCalib.floorPoints.size() < 3)
 	{
 		LOG(LPointCalib, LDebug, "Could not calibrate floor!\n");
 		return false;
@@ -400,13 +385,13 @@ bool CalibrateRoom(PipelineState &pipeline)
 
 	// Re-evaluate positions incase calibration changed since observation
 	auto calibs = pipeline.getCalibs();
-	for (auto &point : ptCalib.room.floorPoints)
+	for (auto &point : roomCalib.floorPoints)
 		point.update(calibs);
 
 	// Estimate a transform to align floor plane to points with correct scale
 	Eigen::Matrix3d roomOrientation;
 	Eigen::Affine3d roomTransform;
-	int pointCount = estimateFloorTransform<double>(ptCalib.room.floorPoints, ptCalib.room.distance12, roomOrientation, roomTransform);
+	int pointCount = estimateFloorTransform<double>(roomCalib.floorPoints, roomCalib.distance12, roomOrientation, roomTransform);
 	if (pointCount > 0)
 	{
 		LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
@@ -437,6 +422,7 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 			ApplyTransformation(calibs, roomOrientation, roomTransform);
 	}
 
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	for (auto &cam : pipeline.cameras)
 	{
 		cam->calibBackup = cam->calib; // Create backup

@@ -949,13 +949,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.imageVis.show && visCamera.imageVis.texID > 0 && visCamera.image)
 	{ // Display in appropriate part of the frame
-		if (visCamera.imageVis.undistort && camera.pipeline->calib.valid())
+		if (visCamera.imageVis.undistort && calib.valid())
 		{ // Use special shader that undistorts and correctly positions image
 			//showGrayscaleFrameUndistorted(vis.imageVis.texID, vis.image->boundsRel,
-			//	camera.pipeline->mode, camera.pipeline->calib, vis.calibration.undistortMapScale,
+			//	mode, calib, vis.calibration.undistortMapScale,
 			//	Color{1,1,1,0}, 1.0f, visState.image.brightness, visState.image.contrast);
 			showGrayscaleFrameUndistorted(visCamera.imageVis.texID, visCamera.calibration.undistortionTexID,
-				visCamera.image->boundsRel, camera.pipeline->mode, visCamera.calibration.undistortMapScale,
+				visCamera.image->boundsRel, mode, visCamera.calibration.undistortMapScale,
 				Color{1,1,1,0}, 1.0f, visState.image.brightness, visState.image.contrast);
 		}
 		else
@@ -1206,13 +1206,14 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				visualisePoints2D(obs_lock->ptsInactive.begin(), obs_lock->ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 			}
 
-			if (!pipeline.pointCalib.room.floorPoints.empty())
+			auto room = pipeline.pointCalib.room.contextualRLock();
+			if (!room->floorPoints.empty())
 			{ // TODO: Accessing pipeline in vis without lock
 				visSetupCamera(postProjMat, calib);
 				thread_local std::vector<VisPoint> markerPoints;
 				markerPoints.clear();
 				Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
-				for (auto &pt : pipeline.pointCalib.room.floorPoints)
+				for (auto &pt : room->floorPoints)
 				{
 					if (pt.sampleCount > 3)
 						markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);

@@ -806,10 +806,10 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		thread_local std::vector<VisPoint> markerPoints;
 		markerPoints.clear();
 
-		if (!pipeline.pointCalib.room.floorPoints.empty())
 		{
+			auto room = pipeline.pointCalib.room.contextualRLock();
 			Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
-			for (auto &pt : pipeline.pointCalib.room.floorPoints)
+			for (auto &pt : room->floorPoints)
 			{
 				if (pt.sampleCount > 3)
 					markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);

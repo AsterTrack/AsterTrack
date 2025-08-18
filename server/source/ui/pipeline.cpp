@@ -323,13 +323,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					OptimisationOptions options(false, true, false, false, false);
 					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
-					{ // Update calibration
-						std::unique_lock pipeline_lock(pipeline.pipelineLock);
-						AdoptNewCalibrations(pipeline, calibs, true);
-					}
+					// Update calibration
+					AdoptNewCalibrations(pipeline, calibs, true);
+					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), data);
 					SignalCameraCalibUpdate(calibs);
-
-					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), lastError, data.getValidSamples());
 
 				}, *db_lock);
 			}

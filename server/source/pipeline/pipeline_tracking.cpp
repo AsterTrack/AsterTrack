@@ -393,12 +393,10 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
 
-	{ // Finally, no more frames to catch up on, register as new tracked target
-		std::unique_lock pipeline_lock(pipeline.pipelineLock);
-		int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
-		assert(erased == 1);
-		pipeline.tracking.trackedTargets.push_back(std::move(tracker));
-	}
+	// Finally, no more frames to catch up on, register as new tracked target
+	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
+	assert(erased == 1);
+	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 	SignalTrackerDetected(tracker.id);
 	return true;
 }
@@ -407,10 +405,8 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
-	std::vector<CameraCalib> calibs(pipeline.cameras.size());
+	std::vector<CameraCalib> calibs = pipeline.getCalibs();
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
-	for (int c = 0; c < pipeline.cameras.size(); c++)
-		calibs[c]= pipeline.cameras[c]->calib;
 
 	auto framesRecord = pipeline.record.frames.getView<false>();
 	frameStart = std::max<unsigned int>(framesRecord.beginIndex(), frameStart-3);
@@ -1016,7 +1012,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib, TargetDetectionConfig detectionConfig)
 {
-	std::unique_lock lock (pipeline.pipelineLock);
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
 		if (tracker.id != ID) continue;
@@ -1038,7 +1034,7 @@ void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, Target
 
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size)
 {
-	std::unique_lock lock (pipeline.pipelineLock);
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
 	for (auto &tracker : pipeline.tracking.trackedMarkers)
 	{
 		if (tracker.id != ID) continue;
@@ -1058,7 +1054,7 @@ void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float 
 
 bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock pipeline_lock(pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
 	OrphanIMU(pipeline, imu);
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
@@ -1099,7 +1095,7 @@ bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int tracke
 
 void DisassociateIMU(PipelineState &pipeline, int trackerID)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock pipeline_lock(pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
 	std::shared_ptr<IMU> imu = nullptr;
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 	{
@@ -1142,8 +1138,8 @@ void DisassociateIMU(PipelineState &pipeline, int trackerID)
 
 void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-	
+	std::unique_lock pipeline_lock(pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
+
 	// Disconnect
 	for (auto &tracker : pipeline.tracking.trackedTargets)
 		if (tracker.inertial.imu == imu) tracker.inertial = {};

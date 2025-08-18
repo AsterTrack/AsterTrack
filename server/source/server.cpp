@@ -258,7 +258,7 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	auto cam = std::find_if(state.pipeline.cameras.begin(), state.pipeline.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.pipeline.cameras.end())
 		return *cam;
-	std::unique_lock pipeline_lock(state.pipeline.pipelineLock); // cameras
+	std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
 
 	std::shared_ptr<CameraPipeline> camera = std::make_shared<CameraPipeline>();
 	camera->id = id;
@@ -900,7 +900,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
 
-		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/frameRecordReplayPos
+		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/GenerateSimulationData
 		std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
 		if (state->mode == MODE_Simulation)
 		{

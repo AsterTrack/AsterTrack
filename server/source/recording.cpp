@@ -127,7 +127,6 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	{ // Overwrite any calibrations
 		std::vector<CameraCalib> cameraCalibs;
 		parseCameraCalibrations(recordEntries.calib, cameraCalibs);
-		std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
 		AdoptNewCalibrations(state.pipeline, cameraCalibs, false);
 	}
 }

@@ -98,9 +98,11 @@ struct CameraPipeline
  */
 struct PipelineState
 {
+	// Lock for any actions conflicting with active frame processing
 	recursive_shared_mutex pipelineLock;
 
-	// This is only a hint and UI state
+	// Phase describing which parts of the pipeline are active
+	// In the future, this should be controlled by hints (e.g. automatically start calibrating unknown point clusters)
 	std::atomic<enum PipelinePhase> phase = PHASE_Idle;
 
 	// Cameras
@@ -116,14 +118,15 @@ struct PipelineState
 	// Management of calibration of the camera system as a whole
 	SynchronisedS<CameraSystemCalibration> calibration;
 
-	// Frames
-	TrackingRecord record = {};
-	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true, keepInternalData = true;
-	// TODO: Periodically cull_front+delete_culled to free old frame records
+	// Record of frames (input and tracking) and IMU data
+	// TODO: Periodically cull record to free ancient FrameRecords and IMU samples
 	// Various calibration routines might need access to older frame records in the queue
 	// So targetViews and all of TargetAssembly needs to be respected and/or similarly managed
 	// Same for obsDatabase if there is any expectation of e.g. being able to access the blob value of any one sample
 	// Recent ones might still be referenced for rendering and detection
+	// Culling can be achieved for both frames and IMU samples with cull_front+delete_culled
+	TrackingRecord record = {};
+	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true, keepInternalData = true;
 	std::atomic<long> frameNum = -1; // The latest fully processed frame
 
 	// Recorded 2D sequences, used for both point calib and target calib
@@ -132,6 +135,9 @@ struct PipelineState
 	SequenceParameters sequenceParams = {}; // Parameters for 2D sequence algorithm
 
 	// Shared database of observations (both points and targets) for continuous optimisation and related algorithms
+	// TODO: Clear up seqDatabase and obsDatabase relation for initial point calib and future continuous calib
+	// Point calibration currently only replaces obsDatabase whenever a thread is instructed, reading from seqDatabase
+	// Potentially get continuous calib to iteratively add data from seqDatabase to obsDatabase and then always use that as data source?
 	Synchronised<ObsData> obsDatabase;
 
 	// Params for tracking and related algorithms
@@ -160,6 +166,11 @@ struct PipelineState
 	} tracking = {};
 
 	// Point calibration state
+	struct RoomCalib
+	{
+		std::vector<StaticPointSamples<double>> floorPoints;
+		float distance12 = 1.0f; // In m
+	};
 	struct
 	{
 		PointCalibParameters params;
@@ -180,11 +191,7 @@ struct PipelineState
 			bool complete = false;
 		} state = {};
 		// Room parameters
-		struct
-		{
-			std::vector<StaticPointSamples<double>> floorPoints;
-			float distance12 = 1.0f; // In m
-		} room = {};
+		Synchronised<RoomCalib> room;
 	} pointCalib = {};
 
 	// Target calibration state
@@ -289,7 +296,7 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 /**
  * Calibrate the room coordinate system given a number of floor points and scale for reference (pipeline state)
  */
-bool CalibrateRoom(PipelineState &pipeline);
+bool CalibrateRoom(PipelineState &pipeline, PipelineState::RoomCalib &roomCalib);
 
 /**
  * Updates pipeline cameras with given calibrations

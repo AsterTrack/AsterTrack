@@ -64,9 +64,11 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		bool updateDevice = false; // Need to update devices with new configuration if it changed
 
 		BeginSection("Camera");
+		ImGui::BeginDisabled(state.isStreaming);
 		updateDevice |= ScalarInput2<int>("Resolution", "", &config.width, &config.height, 64, 9999);
 		// Synchronised toggle to attach or detach it from it's host controllers framerate
 		updateDevice |= CheckboxInput("Synchronised", &config.synchronised);
+		ImGui::EndDisabled();
 		if (!config.synchronised)
 		{ // Show framerate field, but cannot set it yet
 			ImGui::BeginDisabled(true);
@@ -196,7 +198,6 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		if (updateDevice && state.mode == MODE_Device)
 		{
 			LOG(LGUI, LDebug, "Updating setup with new values!\n");
-			std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
 			for (auto &cam : state.cameras)
 			{
 				auto cfgMap = state.cameraConfig.cameraConfigs.find(cam->id);
@@ -205,7 +206,11 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 				auto &cfg = state.cameraConfig.configurations[cfgMap->second];
 				if (cfgMap->second != configIndex && !(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
 					continue;
-				cam->pipeline->mode = getCameraMode(state, cam->id);
+				auto mode = getCameraMode(state, cam->id);
+				if (state.isStreaming)
+					assert(cam->pipeline->mode.widthPx == mode.widthPx && cam->pipeline->mode.heightPx == mode.heightPx);
+				else
+					cam->pipeline->mode = mode;
 				CameraUpdateSetup(state, *cam);
 			}
 			// TODO:: Implement UI for assigning controllers and their cameras to sync groups

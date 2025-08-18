@@ -227,7 +227,7 @@ struct FrameRecord
 	FrameID ID; // Might be externally provided and not continuous, and might conflict between SyncGroups
 	unsigned int num; // Guaranteed to be continuous (in what?) - used only by pipeline for internal processing
 
-	// TODO: How to handle two synced groups of cameras, what is a "frame" there?
+	// TODO: How to handle two separately synced groups of cameras, what is a "frame" there?
 	// Use expected sync time to pre-assign num so that missing frames are apparent?
 	// What if expected time of SyncGroups is so close together that a distinct num is not reliable?
 	// -> merge SyncGroups for those cases and wait for all cameras? Could yield better results anyway
@@ -236,8 +236,6 @@ struct FrameRecord
 	// However, in the future, external sync protocols might introduce non-predictable frameIDs, though they probably should always be monotonic
 	// Maybe controllers will have a separate syncID that is predictable, and frameRecords use that, allowing us to find the frameRecords faster
 	// Then frameID can be anything a potential external sync protocol wants it to be
-
-	// Needs adjustment in server::ProcessStreamFrame too, where num is currently enforced to be equal to ID
 
 	TimePoint_t time; // Synced real time
 	bool finishedProcessing;
@@ -248,8 +246,7 @@ struct FrameRecord
 	// Tracking results
 	std::vector<TrackerRecord> trackers;
 	// TODO: Track individual large markers (4/4)
-	// Either store in tracker record with negative ID
-	// Or here in separate records
+	// Either store in tracker record or here in separate records
 	std::vector<Eigen::Vector3f> triangulations;
 	// TODO: Properly integrate triangulation records (1/3)
 

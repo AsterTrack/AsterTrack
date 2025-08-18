@@ -72,6 +72,9 @@ struct CameraSystemCalibration
 {
 	EpipolarCameras relations;
 
+	// TODO: Store CameraCalibrations here, too, in line with pipeline camera indices
+	// Then use this to work on, until finally AdoptNewCalibrations will copy it into cameras
+
 	// TODO: Handle calibrations better
 	// -> Keep running error
 	// -> Handle trust (and loosing trust) in Fundamental Matrices of Sequence2D

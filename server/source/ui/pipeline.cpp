@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "calib_target/assembly.hpp"
 
 #include "ui/system/vis.hpp"
+#include "point/sequences2D.hpp"
 #include "point/sequence_data.inl"
 #include "calib/camera_system.inl"
 
@@ -60,34 +61,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		if (calibState.relUncertain && ImGui::Button("Assume calibrations to be valid", SizeWidthFull()))
 		{ // Skip manual verification (by providing samples) and instead write bogus values
-			{
-				auto lastFrame = pipeline.seqDatabase.contextualRLock()->lastRecordedFrame;
-				auto calib_lock = pipeline.calibration.contextualLock();
-				for (int i = 1; i < pipeline.cameras.size(); i++)
-				{
-					if (pipeline.cameras[i]->calib.invalid())
-						continue;
-					for (int j = 0; j < i; j++)
-					{
-						if (pipeline.cameras[j]->calib.invalid())
-							continue;
-						auto &FMcand = calib_lock->relations.getFMEntry(i, j);
-						if (FMcand.candidates.empty())
-						{
-							FMcand.candidates.push_back({});
-							FMcand.candidates.front().matrix = calculateFundamentalMatrix<float>(pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
-							FMcand.candidates.front().precalculated = true;
-						}
-						auto &FM = FMcand.getBestCandidate();
-						FM.floatingTrust = 6000.0f;
-						FM.lastTrustUpdate = lastFrame;
-						FM.lastCalculation = lastFrame;
-						FM.stats.num = 6000;
-						FM.stats.avg = 0.01f;
-						FM.stats.M2 = 0.02f*0.02f*FM.stats.num;
-					}
-				}
-			}
+			AssumeCalibrationsValid(pipeline, *pipeline.calibration.contextualLock());
 			UpdateCalibrations();
 		}
 	}

@@ -365,9 +365,9 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 	{ // Potentially discard primary if it's not advantaged over secondary
 		bool advantaged = sec.getValue() > (pri.getValue() + params.correspondences.errorUncertainty) * params.correspondences.minPrimAdvantage;
 
-		LOGC(LTrace,
-		"Had competing potential correspondences for temporary sequence (GT %d) with primary error %f (support %d) and secondary error %f (support %d)%s", 
-			tmpSeq.lastGTMarker, pri.value, pri.weight, sec.value, sec.weight, advantaged? " - advantaged" : "");
+		LOGC(LDebug,
+		"Had competing potential correspondences for temporary sequence (GT %d) with primary value %f (error %f, support %d) and secondary value %f, (error %f, support %d)%s", 
+			tmpSeq.lastGTMarker, pri.getValue()*1000, pri.value, pri.weight, sec.getValue()*1000, sec.value, sec.weight, advantaged? " - advantaged" : " - not advantaged");
 
 		if (checkGT)
 		{ // Debug correspondence competition
@@ -455,7 +455,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				FMnew.stats = corr.stats;
 				FMnew.firstFrame = tmpSeq.startFrame;
 				FMnew.lastFrame = tmpSeq.lastFrame();
-				//FMnew.floatingTrust = pri.weight; // Too uncertain
+				FMnew.floatingTrust = corr.stats.num / corr.fitError;
 				fmEntry.candidates.push_back(FMnew);
 
 				LOGC(LInfo, "  Added new FM candidate for (%d-%d) %d/%d with error %.4f +- %f across %d observations",
@@ -467,7 +467,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				auto oldStats = FMex.stats;
 				FMex.stats.merge(corr.stats);
 				FMex.lastFrame = tmpSeq.lastFrame();
-				FMex.floatingTrust += pri.weight; // fitError for range * range length (minus discrediting fitError * lenght)
+				FMex.floatingTrust += corr.stats.num / corr.fitError;
 				LOGC(LDebug, "  Updated FM (%d-%d) candidate %d/%d from error %.4f +- %.4f with error %.4f +- %.4f to error %.4f +- %.4f across %d observations",
 					cameraIndex, c, corr.supportingFM+1, (int)fmEntry.candidates.size(),
 						oldStats.avg, oldStats.stdDev(),
@@ -1062,6 +1062,12 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 	return triggerConfidenceCheck;
 }
 
+void updateTrustFromEpipolarStats(const SequenceAquisitionParameters &params, FundamentalMatrix &FM)
+{
+	float fitError = getFitError(params, FM.stats);
+	FM.floatingTrust = FM.stats.num / fitError;
+}
+
 void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, bool confidenceCheck)
 {
 	if ((curFrame % 100) == 0)
@@ -1132,6 +1138,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 
 					FM.matrix = FMnew.matrix;
 					FM.stats = FMnew.stats;
+					FM.floatingTrust = FM.floatingTrust; // TODO: Update?
 					FM.lastCalculation = curFrame;
 				}
 
@@ -1168,10 +1175,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 		}
 	}
 
-	std::vector<float> errors;
-	errors.reserve(sequences.temporary.size());
-	std::vector<float> relativeErrors;
-	relativeErrors.reserve(sequences.temporary.size());
+	std::vector<float> errors, relativeErrors;
 	for (int m = sequences.markers.size()-1; m >= 0; m--)
 	{
 		MarkerSequences &marker = sequences.markers[m];
@@ -1203,7 +1207,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 				float error = std::abs(seqJ.back().points.back().homogeneous().transpose() * FM.matrix * seqI.back().points.back().homogeneous());
 				float fitError = getFitError(params, FM, error);
 				FM.stats.update(error);
-				FM.floatingTrust += fitError;
+				FM.floatingTrust += 1 / fitError;
 				FM.lastFrame = curFrame;
 
 				// Determine if correspondence is broken

@@ -24,6 +24,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/debugging.hpp" // Provide controls here, even if it's not technically restricted to simulation mode
 
+static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, long num)
+{
+	{ // Try current record
+		auto framesRecord = state.pipeline.record.frames.getView();
+		if (num < framesRecord.size() && framesRecord[num])
+			return framesRecord[num];
+	}
+	{ // Try stored record
+		auto framesStored = state.stored.frames.getView();
+		if (num < framesStored.size() && framesStored[num])
+			return framesStored[num];
+	}
+	return nullptr;
+}
+
 void InterfaceState::UpdateControl(InterfaceWindow &window)
 {
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
@@ -189,22 +204,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simAdvance = 0;
 				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
-				std::shared_ptr<FrameRecord> frame = nullptr;
-				auto framesRecord = pipeline.record.frames.getView();
-				if (frameJumpTarget < framesRecord.size() && framesRecord[frameJumpTarget])
-					frame = framesRecord[frameJumpTarget];
-				else
-				{ // Try initialising with stored record
-					auto framesStored = state.stored.frames.getView();
-					if (frameJumpTarget < framesStored.size())
-						frame = framesStored[frameJumpTarget];
-				}
+				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, frameJumpTarget);
 				if (frame)
-				{
-					for (int f = frameJumpTarget; f < framesRecord.endIndex(); f++)
-						if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 					AdoptFrameRecordState(pipeline, *frame);
-				}
 				// Continue advancing
 				state.simAdvance = prevState;
 				state.simAdvance.notify_all();
@@ -385,21 +387,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				// Ensure we have decent parameters
 				pipeline.params.detect.useAsyncDetection = false;
 				// Instruct pipeline to process given frame range
-				int frameJumpTarget = range.begin-1;
-				// Jump to frame after last frame has been processed
-				std::shared_ptr<FrameRecord> frame = nullptr;
-				auto framesRecord = pipeline.record.frames.getView();
-				if (frameJumpTarget < framesRecord.size() && framesRecord[frameJumpTarget])
-					frame = framesRecord[frameJumpTarget];
-				else
-				{ // Try initialising with stored record
-					auto framesStored = state.stored.frames.getView();
-					if (frameJumpTarget < framesStored.size())
-						frame = framesStored[frameJumpTarget];
-				}
+				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, range.begin-1);
 				if (!frame) continue;
-				for (int f = frameJumpTarget; f < range.end && f < framesRecord.endIndex(); f++)
-					if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 				AdoptFrameRecordState(pipeline, *frame);
 				// Quickly advance through frame range
 				state.simAdvanceQuickly = true;
@@ -411,7 +400,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (stop_token.stop_requested()) break;
 				if (state.simAdvance.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
-				framesRecord = pipeline.record.frames.getView(); // New view
+				auto framesRecord = pipeline.record.frames.getView();
 				auto begin = framesRecord.pos(range.begin), end = framesRecord.pos(range.end);
 				FrameRange::Results results = {};
 				LOG(LGUI, LDebug, "Updating range from frame %d - %d", range.begin, range.end);

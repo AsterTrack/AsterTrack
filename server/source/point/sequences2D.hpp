@@ -37,4 +37,6 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 
 void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, bool confidenceCheck);
 
+void updateTrustFromEpipolarStats(const SequenceAquisitionParameters &params, FundamentalMatrix &FM);
+
 #endif // POINT_SEQUENCES_2D_H

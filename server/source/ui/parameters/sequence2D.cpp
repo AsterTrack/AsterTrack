@@ -107,7 +107,7 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ScalarProperty<float>("Minimum Supporting Weight", "", &setting.correspondences.minWeight, &standard.correspondences.minWeight, 0, 1000, 10);
 			ScalarProperty<float>("Maximum Discrediting Weight", "%", &setting.correspondences.maxDiscrediting, &standard.correspondences.maxDiscrediting, 0, 100, 1, 100, "%.0f");
 			ScalarProperty<float>("Primary Advantage", "", &setting.correspondences.minPrimAdvantage, &standard.correspondences.minPrimAdvantage, 0, 10, 0.1f);
-			ScalarProperty<float>("Uncertainty", "", &setting.correspondences.errorUncertainty, &standard.correspondences.errorUncertainty, 0, 1000, 0.01f);
+			ScalarProperty<float>("Uncertainty", "", &setting.correspondences.errorUncertainty, &standard.correspondences.errorUncertainty, 0, 1000, 0.01f, 1000);
 
 			BeginSection("with existing FM");
 			ScalarProperty<float>("Selecting Fit Deviation", "o", &setting.FM.FitSeqSigmaSelect, &standard.FM.FitSeqSigmaSelect, 0, 10, 0.1f);

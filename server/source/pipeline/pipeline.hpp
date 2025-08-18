@@ -315,11 +315,13 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 
 void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps = true);
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, OptErrorRes error, unsigned int num);
+void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations);
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences);
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences, int camIndex);
+
+void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibration &calibration);
 
 /**
  * Determine affine transformation between current calibration and ground truth from simulation setup

@@ -613,6 +613,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		}
 
 		bool imusRegistered = false;
+		IMUDeviceList removedIMUs, addedIMUs;
 		{ // Fetch new state from IMUs
 			auto imuLock = state->imuProviders.contextualLock();
 			int updatedDevices = 0;
@@ -629,35 +630,37 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					imusRegistered = true;
 				imuProvider++;
 			}
-			if (!addedIMUs.empty() || !removedIMUs.empty())
-			{
-				SignalPipelineUpdate();
-				std::unique_lock pipeline_lock(state->pipeline.pipelineLock);
+		}
+		if (!addedIMUs.empty() || !removedIMUs.empty())
+			threadPool.push([](int, IMUDeviceList &removedIMUs, IMUDeviceList &addedIMUs){
+				ServerState &state = GetState();
+				// In threadPool so we're not blocking (waiting for frame processing) in device supervisor thread
+				std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
 				for (auto &imuDevice : addedIMUs)
 				{
 					if (!imuDevice || imuDevice->index >= 0) continue;
 					// TODO: Handle receiver replugging, should probably detect IMU as the same
 					// Either replace existing (Probably move old samples in to new IMU?)
 					// Or just add new and replace any tracking references
-					//auto ex = std::find_if(state->pipeline.record.imus.begin(), state->pipeline.record.imus.end(),
+					//auto ex = std::find_if(state.pipeline.record.imus.begin(), state.pipeline.record.imus.end(),
 					//	[&](auto &i){ return i->id == imu->id; });
-					//if (ex != state->pipeline.record.imus.end())
+					//if (ex != state.pipeline.record.imus.end())
 					// Else just add to imu record
-					imuDevice->index = state->pipeline.record.imus.size();
+					imuDevice->index = state.pipeline.record.imus.size();
 					auto imu = std::static_pointer_cast<IMU>(imuDevice);
-					state->pipeline.record.imus.push_back(imu); // new shared_ptr
-					if (state->isStreaming)
+					state.pipeline.record.imus.push_back(imu); // new shared_ptr
+					if (state.isStreaming)
 					{
-						auto trackerConfig = std::find_if(state->trackerConfigs.begin(), state->trackerConfigs.end(),
+						auto trackerConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 							[&](auto &cfg){ return cfg.imuIdent == imu->id; });
-						if (trackerConfig != state->trackerConfigs.end())
+						if (trackerConfig != state.trackerConfigs.end())
 						{
-							AssociateIMU(state->pipeline, imu, trackerConfig->id, trackerConfig->imuCalib);
+							AssociateIMU(state.pipeline, imu, trackerConfig->id, trackerConfig->imuCalib);
 							trackerConfig->imu = imu;
 						}
 						else
 						{
-							OrphanIMU(state->pipeline, imu); // new shared_ptr
+							OrphanIMU(state.pipeline, imu); // new shared_ptr
 							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
 						}
 					}
@@ -666,8 +669,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				{
 					// TODO: Handle removal of IMUs - currently just ignored, and trackers using them will just not get any updates, which is fine
 				}
-			}
-		}
+				SignalPipelineUpdate();
+			}, std::move(addedIMUs), std::move(removedIMUs));
 
 		// Intermittendly check Tracking IO
 		CheckTrackingIO(*state);

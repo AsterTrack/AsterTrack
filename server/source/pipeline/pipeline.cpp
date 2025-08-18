@@ -222,10 +222,14 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
-	{ // Initialise the given frame in case it hasn't been replayed yet
+	{
 		auto framesRecord = pipeline.record.frames.getView();
+		// Initialise the given frame in case it hasn't been replayed yet
 		if (framesRecord.size() <= frameRecord.num || !framesRecord[frameRecord.num] || framesRecord[frameRecord.num].get() != &frameRecord)
 			pipeline.record.frames.insert(frameRecord.num, std::make_shared<FrameRecord>(frameRecord));
+		// Reset processing state of any later frame
+		for (int f = frameRecord.num; f < framesRecord.endIndex(); f++)
+			if (framesRecord[f]) framesRecord[f]->finishedProcessing = false;
 	}
 	pipeline.frameNum = frameRecord.num; // Next frame will be processed
 
@@ -341,7 +345,71 @@ void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
 	}
 }
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, OptErrorRes error, unsigned int num)
+static void CalculateFMStats(FundamentalMatrix &FM, const ObsData &data, const CameraCalib &calibA, const CameraCalib &calibB)
+{
+	for (auto &point : data.points.points)
+	{
+		uint8_t found = 0;
+		Eigen::Vector2f ptA, ptB;
+		for (auto &sample : point.samples)
+		{
+			if (sample.camera == calibA.index)
+				ptA = sample.point;
+			else if (sample.camera == calibB.index)
+				ptB = sample.point;
+			else continue;
+			found++;
+		}
+		if (found < 2) continue;
+		float error = ptB.homogeneous().transpose() * FM.matrix * ptA.homogeneous();
+		FM.stats.update(std::abs(error));
+	}
+	// TODO: Expand this to target observations?
+}
+
+static void CalculateFMStats(FundamentalMatrix &FM, const SequenceData &sequences, const CameraCalib &calibA, const CameraCalib &calibB)
+{
+	handleSharedObservations(sequences.markers, 0, sequences.lastRecordedFrame, calibA.index, calibB.index,
+		[&FM](int marker, auto itA, auto itB, int frame, int length) {
+			for (int i = 0; i < length; ++i, ++itA, ++itB)
+			{
+				float error = itB->homogeneous().transpose() * FM.matrix * itA->homogeneous();
+				FM.stats.update(std::abs(error));
+			}
+		});
+}
+
+template<typename DATA>
+static void UpdateCalibrationRelation(const SequenceParameters &params, CameraSystemCalibration &calibration, const DATA &data, const CameraCalib &calibA, const CameraCalib &calibB)
+{
+	assert(calibA.index >= 0 && calibB.index >= 0);
+	assert(calibA.index > calibB.index);
+
+	// Determine fundamental matrix from calibration
+	FundamentalMatrix FM = {};
+	FM.matrix = calculateFundamentalMatrix<float>(calibA, calibB);
+	FM.precalculated = true;
+	Eigen::JacobiSVD<Eigen::Matrix3f> svd(FM.matrix);
+	if (svd.rank() < 2)
+	{ // Not a valid FM
+		LOG(LPipeline, LWarn, "Existing camera relation %d-%d is invalid with rank %d < 2! Discarding!", calibA.index, calibB.index, (int)svd.rank());
+		return;
+	}
+
+	// Calculate full error stats
+	// TODO: Respect start (and end?) frame for which calibration is valid
+	// E.g. might be triggered after a disruption, at which point prior samples should be ignored
+	// For that, add validStart to CameraSystemCalibration and pass to calculation
+	CalculateFMStats(FM, data, calibA, calibB);
+
+	// Update trust based on the calculated errors
+	updateTrustFromEpipolarStats(params.get(1), FM);
+
+	// Set as precalculated FM
+	calibration.relations.setFundamentalMatrix(calibA.index, calibB.index, FM);
+}
+
+void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations)
 {
 	for (int i = 1; i < pipeline.cameras.size(); i++)
 	{
@@ -351,52 +419,9 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 		{
 			if (pipeline.cameras[j]->calib.invalid())
 				continue;
-			// Determine fundamental matrix from calibration
-			FundamentalMatrix FM = {};
-			FM.matrix = calculateFundamentalMatrix<float>(pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
-			FM.precalculated = true;
-			FM.stats.avg = error.mean;
-			FM.stats.num = num;
-			FM.stats.max = error.max;
-			FM.stats.M2 = error.stdDev*error.stdDev*num;
-			calibration.relations.setFundamentalMatrix(i, j, FM);
+			UpdateCalibrationRelation(pipeline.sequenceParams, calibration, observations, pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
 		}
 	}
-}
-
-static void UpdateCalibrationRelation(CameraSystemCalibration &calibration, const SequenceData &sequences, const CameraCalib &calibA, const CameraCalib &calibB)
-{
-	assert(calibA.index > calibB.index);
-	assert(calibA.index >= 0);
-	assert(calibB.index >= 0);
-
-	// TODO: Respect start (and end?) frame for which calibration is valid
-	// E.g. might be triggered after a disruption, at which point prior samples should be ignored
-
-	// Determine fundamental matrix from calibration
-	FundamentalMatrix FM = {};
-	FM.matrix = calculateFundamentalMatrix<float>(calibA, calibB);
-	Eigen::JacobiSVD<Eigen::Matrix3f> svd(FM.matrix);
-	if (svd.rank() < 2)
-	{ // Not a valid FM
-		LOG(LPipeline, LWarn, "Existing camera relation %d-%d is invalid with rank %d < 2! Discarding!", calibA.index, calibB.index, (int)svd.rank());
-		return;
-	}
-
-	FM.precalculated = true;
-
-	// Calculate full error stats
-	handleSharedObservations(sequences.markers, 0, sequences.lastRecordedFrame, calibA.index, calibB.index,
-		[&FM](int marker, auto itA, auto itB, int frame, int length) {
-			for (int i = 0; i < length; ++i, ++itA, ++itB)
-			{
-				float error = itB->homogeneous().transpose() * FM.matrix * itA->homogeneous();
-				FM.stats.update(std::abs(error));
-			}
-		});
-
-	// Set as precalculated FM
-	calibration.relations.setFundamentalMatrix(calibA.index, calibB.index, FM);
 }
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences)
@@ -409,7 +434,7 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 		{
 			if (pipeline.cameras[j]->calib.invalid())
 				continue;
-			UpdateCalibrationRelation(calibration, sequences, pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
+			UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
 		}
 	}
 }
@@ -422,13 +447,42 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 	{
 		if (pipeline.cameras[j]->calib.invalid())
 			continue;
-		UpdateCalibrationRelation(calibration, sequences, pipeline.cameras[camIndex]->calib, pipeline.cameras[j]->calib);
+		UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[camIndex]->calib, pipeline.cameras[j]->calib);
 	}
 	for (int j = camIndex+1; j < pipeline.cameras.size(); j++)
 	{
 		if (pipeline.cameras[j]->calib.invalid())
 			continue;
-		UpdateCalibrationRelation(calibration, sequences, pipeline.cameras[j]->calib, pipeline.cameras[camIndex]->calib);
+		UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[j]->calib, pipeline.cameras[camIndex]->calib);
+	}
+}
+
+void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibration &calibration)
+{
+	long frame = pipeline.frameNum;
+	for (int i = 1; i < pipeline.cameras.size(); i++)
+	{
+		if (pipeline.cameras[i]->calib.invalid())
+			continue;
+		for (int j = 0; j < i; j++)
+		{
+			if (pipeline.cameras[j]->calib.invalid())
+				continue;
+			auto &FMcand = calibration.relations.getFMEntry(i, j);
+			if (FMcand.candidates.empty())
+			{
+				FMcand.candidates.push_back({});
+				FMcand.candidates.front().matrix = calculateFundamentalMatrix<float>(pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
+				FMcand.candidates.front().precalculated = true;
+			}
+			auto &FM = FMcand.getBestCandidate();
+			FM.lastTrustUpdate = frame;
+			FM.lastCalculation = frame;
+			FM.stats.num = 6000;
+			FM.stats.avg = 0.01f;
+			FM.stats.M2 = 0.02f*0.02f*FM.stats.num;
+			updateTrustFromEpipolarStats(pipeline.sequenceParams.get(1), FM);
+		}
 	}
 }
 

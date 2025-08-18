@@ -186,7 +186,7 @@ enum ErrorTag
 	ERROR_MAX
 };
 
-static const char *ErrorTag_String[ERROR_MAX] = 
+__attribute__((used)) static const char *ErrorTag_String[ERROR_MAX] = 
 {
 	"No Error",
 	"Unknown Error",

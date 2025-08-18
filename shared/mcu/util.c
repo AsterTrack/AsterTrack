@@ -25,7 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // That's requried for event code which is writing full uint32_t
 
 #if USB_HEADROOM % 4 != 0
-#error "Debug or Event Buffers not properly aligned!
+#error "Debug or Event Buffers not properly aligned!"
 #endif
 
 // Events

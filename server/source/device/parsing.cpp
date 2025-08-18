@@ -446,6 +446,8 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, PacketBlocks &packet)
 {
 	CameraFrameRecord frame = {};
+	if (packet.erroneous)
+		return frame;
 
 	// Determine packet structure
 	const int blobEncSize = 6;

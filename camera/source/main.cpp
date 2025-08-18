@@ -169,7 +169,7 @@ static void LeaveStreamingState()
 	state.imageRequests = {};
 }
 
-bool handleError(std::string backtrace = "")
+bool handleError(bool NAK = true, std::string backtrace = "")
 {
 	if (error < ERROR_MAX)
 		fprintf(stderr, "Encountered Error %d: %s!\n", (int)error, ErrorTag_String[(int)error]);
@@ -182,14 +182,8 @@ bool handleError(std::string backtrace = "")
 		comm_write(comms, packet, (uint8_t*)backtrace.data(), backtrace.size());
 		comm_submit(comms, packet);
 		comm_flush(comms);
-		if (!serious)
-			return false;
-		/* if (numFrames-lastErrorFrames >= 10)
-		{ // Keep application going, try again
-			lastErrorFrames = numFrames;
-			return false;
-		} */
-		comm_NAK(comms);
+		if (NAK)
+			comm_NAK(comms);
 	}
 	return true;
 }
@@ -231,7 +225,7 @@ void crash_handler(int signal)
 			error = ERROR_EXCEPTION_UNKNOWN;
 			break;
 	}
-	if (handleError(btstr))
+	if (handleError(true, btstr))
 		exit(error);
 }
 
@@ -891,14 +885,16 @@ int main(int argc, char **argv)
 							break;
 						}
 						long waitTimeUS = dtUS(waitStart, sclock::now());
-						if (waitTimeUS > 1000000/state.camera.fps * (qpu_it < 10? 100 : 10) && (!sentTimeoutError || dtMS(errorSent, sclock::now()) > 1000))
+						long waitFrames = waitTimeUS*state.camera.fps/1000000;
+						if (waitFrames > (qpu_it < 10? 100 : 10) && (!sentTimeoutError || dtMS(errorSent, sclock::now()) > 1000))
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
 								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
 							errorSent = sclock::now();
 							sentTimeoutError = true;
 							error = ERROR_GCS_TIMEOUT;
-							if (handleError())
+							handleError(false);
+							if (waitFrames > 100)
 							{
 								abortStreaming = true;
 								break;
@@ -1011,6 +1007,8 @@ int main(int argc, char **argv)
 					//  - Throw frames away or assume continous anyway?
 					// With that, search for the next best frame fitting our frame timing model
 					// Then update our frame timing model with delay from SOF packet to receiving camera frame
+					// TODO: Improve. Still yields wrong result. Make use of continuity of frames?
+					// Sometimes, large amounts of SOF packets are dropped (at least for pi, perhaps not for mcu)
 					bool logCase = false;
 					while (!state.sync.frameSOFs.empty())
 					{

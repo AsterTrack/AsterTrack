@@ -30,7 +30,7 @@ extern "C"
 
 #define CAM_PORT_COUNT			8       // Should match UART_PORT_COUNT in uartd_conf.h
 
-static uint32_t GPIOD_SYNC_PIN[CAM_PORT_COUNT] = {
+__attribute__((used)) static uint32_t GPIOD_SYNC_PIN[CAM_PORT_COUNT] = {
 	GPIO_PIN_8, GPIO_PIN_9, GPIO_PIN_10, GPIO_PIN_11, GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_13, GPIO_PIN_12
 };
 

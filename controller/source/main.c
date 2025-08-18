@@ -38,7 +38,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define USB_TIME_SYNC_INTERVAL	1*TICKS_PER_MS			// Minimum interval used for time sync with host (needs to be as accurate as possible)
 #define USB_COMM_TIMEOUT		200*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
-#define USB_COMM_TIMEOUT_STR	20*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
+#define USB_COMM_TIMEOUT_STR	50*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
 
 #define SYNC_PULSE_WIDTH_US		10
 
@@ -85,6 +85,7 @@ static Hub packetHub;
 
 
 // Controller state
+static volatile bool hostConnected; // Stage 0
 static volatile bool commChannelsOpen; // Stage 1
 static volatile bool enforceTimeSync; // Stage 2
 //	bool PortState::cameraEnabled; // Stage 4
@@ -474,50 +475,70 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			lastPing = now;
 		}
 
-		if (commChannelsOpen)
-		{
-			TimeSpan inactive = now-lastUSBPacket;
-			if (inactive > USB_COMM_TIMEOUT || (enforceTimeSync && inactive > USB_COMM_TIMEOUT_STR))
-			{ // Not connected anymore, Configurator possibly crashed / stalled
-				// -> In streaming mode, interrupt endpoints are used
-				// -> If it was still connected, at least USB hardware would check and accept packets
-				EnterPacketHubZone();
+		TimeSpan inactive = now-lastUSBPacket;
+		if (hostConnected && enforceTimeSync && inactive > USB_COMM_TIMEOUT_STR)
+		{ // Not connected anymore, Configurator possibly crashed / stalled
+			// -> In streaming mode, interrupt endpoints are used
+			// -> If it was still connected, at least USB hardware would check and accept packets
+			EnterPacketHubZone();
 
-				// TODO: Properly reverse all streaming stages. Should be fine, but still unsure.
+			// TODO: Properly reverse all streaming stages. Should be fine, but still unsure.
 
-				// Stage 4&5: Ensure cameras are notified and stop streaming
-				const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
-				UARTPacketRef *packet = allocateUARTPacket(header.length);
-				packet->data[0] = TRCAM_STANDBY;
-				finaliseDirectUARTPacket(packet, header);
-				for (int i = 0; i < UART_PORT_COUNT; i++)
-				{
-					if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
-						uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
-					camStates[i].frameSyncEnabled = false;
-				}
-
-				// Stage 3: Disable frame sync
-				curFrameID = 0;
-				enabledSyncPinsGPIOD = 0;
-				SYNC_Reset();
-				if (frameSignalSource == FrameSignal_Generating)
-					StopTimer(TIM3);
-				frameSignalSource = FrameSignal_None;
-
-				// Stage 2: Disable time sync
-				enforceTimeSync = false;
-
-				// Stage 1: Close comm channels
-				//commChannelsOpen = false; // Cannot disable, still set by interface
-				
-				// This won't be reset if interface isn't unset first, so clear now
-				cleanSendingState();
-				resetPacketHub(&packetHub);
-
-				LeavePacketHubZone();
-				ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
+			// Stage 4&5: Ensure cameras are notified and stop streaming
+			const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
+			UARTPacketRef *packet = allocateUARTPacket(header.length);
+			packet->data[0] = TRCAM_STANDBY;
+			packet->data[1] = 0xD2;
+			packet->data[2] = 0x02;
+			packet->data[3] = 0xEF;
+			packet->data[4] = 0x8D;
+			writeUARTPacketHeader(packet, header);
+			writeUARTPacketEnd(packet, header.length);
+			for (int i = 0; i < UART_PORT_COUNT; i++)
+			{
+				if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
+					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
+				camStates[i].frameSyncEnabled = false;
 			}
+
+			// Stage 3: Disable frame sync
+			enabledSyncPinsGPIOD = 0;
+			/* curFrameID = 0;
+			SYNC_Reset();
+			if (frameSignalSource == FrameSignal_Generating)
+				StopTimer(TIM3);
+			frameSignalSource = FrameSignal_None; */
+
+			// Stage 2: Disable time sync
+			//enforceTimeSync = false;
+
+			// Stage 1: Close comm channels
+			//commChannelsOpen = false; // Cannot disable, still set by interface
+
+			hostConnected = false;
+			LeavePacketHubZone();
+
+			delayMS(10);
+			
+			EnterPacketHubZone();
+			// This won't be reset if interface isn't unset first, so clear now
+			cleanSendingState();
+			resetPacketHub(&packetHub);
+
+			LeavePacketHubZone();
+			ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
+		}
+		else if (hostConnected && !commChannelsOpen && inactive > USB_COMM_TIMEOUT)
+		{ // Not connected anymore, Configurator possibly crashed / stalled
+			EnterPacketHubZone();
+
+			// This won't be reset if interface isn't unset first, so clear now
+			cleanSendingState();
+			resetPacketHub(&packetHub);
+			hostConnected = false;
+
+			LeavePacketHubZone();
+			ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
 		}
 
 		/* static TimePoint lastPDTimer = 0;
@@ -800,7 +821,20 @@ void usbd_set_interface(uint8_t interface)
 void usbd_close_interface()
 { // Callback from usb class implementation
 	CMDD_STR("+CloseInterface");
-	commChannelsOpen = false;
+
+	enabledSyncPinsGPIOD = 0;
+	curFrameID = 0;
+	SYNC_Reset();
+	if (frameSignalSource == FrameSignal_Generating)
+		StopTimer(TIM3);
+	frameSignalSource = FrameSignal_None;
+
+	// Stage 2: Disable time sync
+	enforceTimeSync = false;
+
+	// Stage 1: Close comm channels
+	commChannelsOpen = false; // Cannot disable, still set by interface
+
 	cleanSendingState();
 	resetSinkStates(&packetHub);
 	SetupPacketHubSinks();
@@ -811,6 +845,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 {  // Callback from usb class implementation
 	// Check req->bRequest, req->wIndex and req->wValue for handling
 	lastUSBPacket = GetTimePoint();
+	hostConnected = true;
 
 	if (req->bRequest == COMMAND_IN_DEBUG)
 	{ // Request for debug data
@@ -946,6 +981,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 { // Callback from usb class implementation
 	// Handle data in req->data of length req->wLength
 	lastUSBPacket = GetTimePoint();
+	hostConnected = true;
 
 	if (req->bRequest == COMMAND_OUT_TIME_SYNC)
 	{ // Stage 2; Request to set time sync enforcement
@@ -1010,7 +1046,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_OUT_SEND_PACKET)
 	{ // Request to send a packet to cameras
 		CMDD_STR("+SendPkt:");
-		CMDD_CHARR(INT99_TO_CHARR(req->wValue), ':', INT99_TO_CHARR(req->wValue));
+		CMDD_CHARR(INT99_TO_CHARR(req->wValue), ':', INT99_TO_CHARR(req->wLength));
 		uint16_t packetLen = req->wLength - PACKET_CHECKSUM_SIZE;
 		UARTPacketRef *packet = allocateUARTPacket(packetLen);
 		writeUARTPacketHeader(packet, (struct PacketHeader){ .tag = req->wValue, .length = packetLen });

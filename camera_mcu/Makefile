@@ -8,7 +8,7 @@ TARGET = TrackingCameraMCU
 # Worst case, you may still be able to use SWD if booting with Boot0 active
 DEBUG_FLASH = 1
 # Optimisation level, O0 for debugging, O3 for release
-OPT = -O1
+OPT = -O3
 
 # Enables logging at different levels
 #LOG_FLAGS = -DENABLE_LOG

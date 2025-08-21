@@ -258,9 +258,11 @@ int main(int argc, char **argv)
 	bool hasMCU = false;
 	if (mcu_init())
 	{
+		std::unique_lock lock(mcu_mutex);
 		hasMCU = mcu_probe();
 		if (!hasMCU && mcu_probe_bootloader())
 		{
+			hasMCU = true;
 			if (!mcu_verify_program(state.mcuFile))
 			{
 				printf("MCU is bricked with invalid firmware, will re-flash!\n");
@@ -273,8 +275,20 @@ int main(int argc, char **argv)
 			}
 			// Whether we reflashed it or not, reset it into normal mode and try again
 			mcu_reset();
-			hasMCU = mcu_probe();
+			if (!mcu_probe())
+			{
+				printf("Failed to reconnect to the MCU!\n");
+				if (mcu_probe_bootloader())
+					printf("MCU is still in the bootloader!\n");
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				mcu_reset();
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				if (!mcu_probe())
+					printf("Still can't reconnect to the MCU after further reset!\n");
+			}
 		}
+		if (hasMCU)
+			mcu_monitor();
 	}
 	atexit(mcu_cleanup);
 

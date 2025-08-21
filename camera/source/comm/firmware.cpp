@@ -424,7 +424,17 @@ void PostFirmwareUpdateActions(TrackingCameraState &state)
 			}
 			else printf("Will not flash MCU, already flashed with firmware!\n");
 			mcu_reset();
-			mcu_probe();
+			if (!mcu_probe())
+			{
+				printf("Failed to reconnect to the MCU!\n");
+				if (mcu_probe_bootloader())
+					printf("MCU is still in the bootloader!\n");
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				mcu_reset();
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				if (!mcu_probe())
+					printf("Still can't reconnect to the MCU after further reset!\n");
+			}
 		}
 		else
 			printf("Cannot flash MCU, failed to switch to the bootloader!\n");

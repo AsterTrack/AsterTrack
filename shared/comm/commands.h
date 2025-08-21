@@ -27,7 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define MCU_I2C_ADDRESS			0x3E	// Max 7Bit (0x7F)
 #define MCU_I2C_ID				0x23
-#define MCU_PROBE_INTERVAL_MS	200
+#define MCU_PROBE_INTERVAL_MS	1000
 #define MCU_PING_INTERVAL_MS	100
 #define MCU_COMM_TIMEOUT_MS		250
 

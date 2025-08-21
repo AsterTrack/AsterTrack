@@ -52,11 +52,11 @@ gpiod_line_config *line_config;
 gpiod_line_settings *line_boot0, *line_reset;
 gpiod_line_request *line_request;
 
-TimePoint_t lastPing;
 
 std::mutex mcu_mutex;
 std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
+TimePoint_t lastPing;
 bool mcu_identified;
 bool mcu_active;
 
@@ -85,14 +85,18 @@ bool mcu_probe()
 	mcu_active = i2c_probe();
 	if (mcu_active)
 	{
-		printf("Verified existance of MCU!\n");
-		lastPing = sclock::now();
 		mcu_identified = true;
-		stop_thread = false;
-		if (!mcu_comm_thread)
-			mcu_comm_thread = new std::thread(mcu_thread);
+		printf("Verified existance of MCU!\n");
 	}
 	return mcu_active;
+}
+
+void mcu_monitor()
+{
+	lastPing = sclock::now();
+	stop_thread = false;
+	if (!mcu_comm_thread)
+		mcu_comm_thread = new std::thread(mcu_thread);
 }
 
 void mcu_cleanup()
@@ -122,9 +126,15 @@ static void mcu_thread()
 		if (!mcu_active && dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS)
 		{
 			std::unique_lock lock(mcu_mutex);
-			mcu_active = i2c_probe();
-			printf("Reconnected with MCU!\n");
 			lastPing = sclock::now();
+			mcu_active = i2c_probe();
+			if (mcu_active)
+				printf("Reconnected with MCU!\n");
+			else if (mcu_probe_bootloader())
+			{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader?
+				printf("MCU is in the bootloader!\n");
+				mcu_reset();
+			}
 		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -140,12 +150,14 @@ void mcu_reset()
 	if (gpiod_line_request_set_values(line_request, values_reset))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 	// BOOT0, RESET
 	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 	if (gpiod_line_request_set_values(line_request, values_normal))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
 
 bool mcu_probe_bootloader()

@@ -33,6 +33,7 @@ extern std::mutex mcu_mutex;
 
 bool mcu_init();
 bool mcu_probe();
+void mcu_monitor();
 void mcu_cleanup();
 void mcu_reset();
 bool mcu_probe_bootloader();

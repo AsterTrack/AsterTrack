@@ -29,7 +29,7 @@ extern unsigned int i2c_fd;
 
 #define USE_NO_STRETCH_COMMANDS	// Choose commands that 
 
-#define ENABLE_DEBUG_LOG
+//#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 static void LogDebugInfo(const char *log) { printf("%s\n", log); }
 static void LogDebugInfoHEX(const uint8_t log) { printf("%x\n", log); }

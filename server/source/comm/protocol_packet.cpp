@@ -217,17 +217,16 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 		auto packetReadBlock = [&](uint8_t *data, uint32_t len)
 		{
 			uint32_t lenR = std::min<uint32_t>(len, packet.header.length-packet.readLength);
-			if (lenR == 0)
+			if (lenR > 0)
 			{
-				packet.nextBlockID = (packet.nextBlockID + 1) % BLOCK_ID_SIGNAL;
-				return;
+				memcpy(&packet.data[packet.readLength], data, lenR);
+				if (onPacketBlock)
+					onPacketBlock(userData, header.portNr, *packetIt, &packet.data[packet.readLength], lenR);
+				packet.readLength += lenR;
 			}
-			memcpy(&packet.data[packet.readLength], data, lenR);
-			if (onPacketBlock)
-				onPacketBlock(userData, header.portNr, *packetIt, &packet.data[packet.readLength], lenR);
-			if (lenR < lenD)
+			uint8_t lenC = len - lenR;
+			if (lenC > 0)
 			{ // Data beyond packet size
-				uint8_t lenC = lenD-lenR;
 				if (lenC > PACKET_CHECKSUM_SIZE-packet.checksumSize)
 				{
 					LOG(LProtocol, LDarn, "BLOCK %d (%d): Had %d more bytes than packet length, more than checksum size of %d!\n",
@@ -237,7 +236,6 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 				memcpy(&packet.checksumBuf[packet.checksumSize], &data[lenR], lenC);
 				packet.checksumSize += lenC;
 			}
-			packet.readLength += lenR;
 			packet.nextBlockID = (packet.nextBlockID + 1) % BLOCK_ID_SIGNAL;
 		};
 
@@ -264,12 +262,7 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 			oooBlock = port.oooBlocks.begin();
 		}
 
-		if (packet.readLength > packet.header.length)
-		{
-			LOG(LProtocol, LWarn, "Already received more bytes (%d) than packet header announced (%d) with recent block with %d bytes of data!\n",
-				packet.readLength, packet.header.length, lenD);
-		}
-		if (packet.readLength >= packet.header.length)
+		if (packet.readLength == packet.header.length && (packet.header.length == 0 || packet.checksumSize == PACKET_CHECKSUM_SIZE))
 		{
 			LOG(LProtocol, LTrace, "FINISHED packet %d of %d bytes, header block %d, ending block %d\n",
 				packet.header.tag, packet.readLength, packet.headerBlockID, packet.nextBlockID);

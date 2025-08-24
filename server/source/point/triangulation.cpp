@@ -135,7 +135,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	// Merge possible intersections between three rays
 	std::vector<Intersection*> mergers;
 	std::vector<Intersection*> potentialMergers;
-	std::vector<BlobIndex> ixBlobs(camCount);
+	std::vector<BlobIndex> ixBlobs(camCount, InvalidBlob);
 	for (int i = 0; i < intersections.size(); i++)
 	{
 		Intersection *ix = &intersections[i];
@@ -188,7 +188,8 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 		}
 
-		LOGC(LDebug, "------ Intersections %d on rays %d %d %d!\n", i, ix->blobs[0], ix->blobs[1], ix->blobs[2]);
+		if (cameras.size() >= 3)
+			LOGC(LDebug, "------ Intersections %d on rays %d %d %d!\n", i, ix->blobs[0], ix->blobs[1], ix->blobs[2]);
 		LOGC(LTrace, "Potential mergers: ");
 		for (int j = 0; j < potentialMergers.size(); j++)
 			LOGCONTC(LTrace, "%d - ", IXNUM(potentialMergers[j]));
@@ -269,7 +270,8 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 						rayIxCnt[j][mergers[i]->blobs[j]]--;
 			// Add merged intersection
 			for (int i = 0; i < camCount; i++)
-				rayIxCnt[i][ixBlobs[i]]++;
+				if (ixBlobs[i] != InvalidBlob)
+					rayIxCnt[i][ixBlobs[i]]++;
 			// Update intersection count
 			ixCnt = ixCnt-mergers.size()+1;
 

@@ -136,7 +136,7 @@ void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return;
 	}
 #endif
@@ -211,7 +211,7 @@ void parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return;
 	}
 #endif
@@ -364,7 +364,7 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return;
 	}
 #endif
@@ -612,7 +612,7 @@ void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConf
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return;
 	}
 #endif
@@ -876,7 +876,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return frameOffset;
 	}
 #endif
@@ -1122,7 +1122,7 @@ void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return;
 	}
 #endif
@@ -1289,7 +1289,7 @@ SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return sequences;
 	}
 #endif
@@ -1481,7 +1481,7 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return views;
 	}
 #endif
@@ -1546,7 +1546,7 @@ bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base)
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
 		return false;
 	}
 #endif
@@ -1663,7 +1663,7 @@ bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCal
 #ifndef JSON_NOEXCEPTION
 	catch(json::exception e)
 	{
-		LOG(LDefault, LWarn, "Failed to fully parse OBJ file %s!", path.c_str())
+		LOG(LDefault, LWarn, "Failed to fully parse OBJ file %s!", path.c_str());
 		fs.close();
 		return false;
 	}

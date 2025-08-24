@@ -65,8 +65,8 @@ namespace ImSequencer
       bool ret = false;
       ImGuiIO& io = ImGui::GetIO();
       ImGuiStyle& style = ImGui::GetStyle();
-      int cx = (int)(io.MousePos.x);
-      int cy = (int)(io.MousePos.y);
+      int cx = ImToInt(io.MousePos.x);
+      int cy = ImToInt(io.MousePos.y);
       int legendWidth = 200;
 
       static int movingEntry = -1;
@@ -172,7 +172,7 @@ namespace ImSequencer
          scrollBarMax = ImGui::GetItemRectMax();
       }
 
-      sequence->visibleFrameCount = (int)floorf(sequenceRect.GetWidth() / sequence->framePixelWidth);
+      sequence->visibleFrameCount = ImToInt(floorf(sequenceRect.GetWidth() / sequence->framePixelWidth));
 
       /* Interaction */
 
@@ -212,7 +212,7 @@ namespace ImSequencer
       if (MovingCurrentFrame)
       {
          if (frameCount)
-            *currentFrame = (int)((io.MousePos.x - topRect.Min.x) / sequence->framePixelWidth) + firstFrameUsed;
+            *currentFrame = ImToInt((io.MousePos.x - topRect.Min.x) / sequence->framePixelWidth) + firstFrameUsed;
          if (!io.MouseDown[0])
             MovingCurrentFrame = false;
       }

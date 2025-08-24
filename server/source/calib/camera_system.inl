@@ -31,74 +31,65 @@ inline float FundamentalMatrix::updateTrust(int frame, float decayRate)
 	return floatingTrust;
 }
 
-inline EpipolarCameras::FMEntry &EpipolarCameras::getFMEntry(int camA, int camB)
+inline const EpipolarCameras::FMEntry &EpipolarCameras::getFMEntry(int camA, int camB) const
 {
-	assert(camA != camB);
-	if (camA < camB) std::swap(camA, camB);
-	while (FMStore.size() <= camA)
-	{ // Make sure camera exists
-		FMStore.push_back({});
-		FMStore.back().resize(FMStore.size()-1);
-	}
+	assert(camA > camB);
+	assert(FMStore.size() > camA);
+	assert(FMStore[camA].size() > camB);
 	return FMStore[camA][camB];
 }
 
-inline const EpipolarCameras::FMEntry *EpipolarCameras::getFMEntry(int camA, int camB) const
+inline EpipolarCameras::FMEntry &EpipolarCameras::getFMEntry(int camA, int camB)
 {
-	assert(camA != camB);
-	if (camA < camB) std::swap(camA, camB);
-	if (FMStore.size() > camA)
-		return &FMStore[camA][camB];
-	return nullptr;
+	assert(camA > camB);
+	assert(FMStore.size() > camA);
+	assert(FMStore[camA].size() > camB);
+	return FMStore[camA][camB];
 }
 
-inline bool EpipolarCameras::getFundamentalMatrix(int camA, int camB, FundamentalMatrix &fundamentalMatrix)
+inline const bool EpipolarCameras::getFundamentalMatrix(int camA, int camB, FundamentalMatrix &fundamentalMatrix) const
 {
+	bool flipped = camA < camB;
+	if (flipped) std::swap(camA, camB);
+	if (FMStore.size() <= camA || FMStore[camA].size() <= camB) return false;
 	const auto &entry = getFMEntry(camA, camB);
-	if (entry.candidates.empty())
-		return false;
+	if (entry.candidates.empty()) return false;
 	fundamentalMatrix = entry.getBestCandidate();
-	if (camA < camB) fundamentalMatrix.matrix.transposeInPlace();
+	if (flipped) fundamentalMatrix.matrix.transposeInPlace();
 	return true;
 }
 
 inline void EpipolarCameras::setFundamentalMatrix(int camA, int camB, FundamentalMatrix fundamentalMatrix)
 {
-	if (camA < camB) fundamentalMatrix.matrix.transposeInPlace();
+	if (camA < camB)
+	{
+		fundamentalMatrix.matrix.transposeInPlace();
+		std::swap(camA, camB);
+	}
 	auto &entry = getFMEntry(camA, camB);
 	entry.candidates = { fundamentalMatrix };
 }
 
-inline const FundamentalMatrix &EpipolarCameras::FMEntry::getBestCandidate() const
+inline int EpipolarCameras::FMEntry::getBestCandidateIndex() const
 {
 	assert(!candidates.empty());
 	int best = 0;
-	float trust = candidates.front().floatingTrust;
 	for (int i = 1; i < candidates.size(); i++)
 	{
-		if (candidates[i].floatingTrust > trust)
-		{
+		if (candidates[i].floatingTrust > candidates[best].floatingTrust)
 			best = i;
-			trust = candidates[i].floatingTrust;
-		}
 	}
-	return candidates[best];
+	return best;
+}
+
+inline const FundamentalMatrix &EpipolarCameras::FMEntry::getBestCandidate() const
+{
+	return candidates[getBestCandidateIndex()];
 }
 
 inline FundamentalMatrix &EpipolarCameras::FMEntry::getBestCandidate()
 {
-	assert(!candidates.empty());
-	int best = 0;
-	float trust = candidates.front().floatingTrust;
-	for (int i = 1; i < candidates.size(); i++)
-	{
-		if (candidates[i].floatingTrust > trust)
-		{
-			best = i;
-			trust = candidates[i].floatingTrust;
-		}
-	}
-	return candidates[best];
+	return candidates[getBestCandidateIndex()];
 }
 
 #endif // CAMERA_SYSTEM_INL

@@ -443,6 +443,7 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 {
 	if (pipeline.cameras[camIndex]->calib.invalid())
 		return;
+	calibration.verifyCameraCount(pipeline.cameras.size());
 	for (int j = 0; j < camIndex; j++)
 	{
 		if (pipeline.cameras[j]->calib.invalid())

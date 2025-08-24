@@ -114,8 +114,13 @@ void InterfaceState::UpdateCalibrations()
 		{
 			if (pipeline.cameras[j]->calib.invalid())
 				continue;
+			if (calib_lock->relations.FMStore.size() < std::min(i, j))
+			{
+				state.relCertain++;
+				continue;
+			}
 			auto FMcand = calib_lock->relations.getFMEntry(i, j);
-			if (!FMcand || FMcand->candidates.empty() || FMcand->getBestCandidate().floatingTrust < minTrust)
+			if (FMcand.candidates.empty() || FMcand.getBestCandidate().floatingTrust < minTrust)
 				state.relUncertain++;
 			else
 				state.relCertain++;

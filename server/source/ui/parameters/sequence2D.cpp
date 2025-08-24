@@ -104,6 +104,8 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 		{
 			ImGui::PushID("Cor");
 
+			ScalarProperty<float>("Trust Base for Supporting", "", &setting.correspondences.TrustBaseSupporting, &standard.correspondences.TrustBaseSupporting, 0, 10000, 10);
+			ScalarProperty<float>("Trust Base for Discrediting", "", &setting.correspondences.TrustBaseDiscrediting, &standard.correspondences.TrustBaseDiscrediting, 0, 10000, 10);
 			ScalarProperty<float>("Minimum Supporting Weight", "", &setting.correspondences.minWeight, &standard.correspondences.minWeight, 0, 1000, 10);
 			ScalarProperty<float>("Maximum Discrediting Weight", "%", &setting.correspondences.maxDiscrediting, &standard.correspondences.maxDiscrediting, 0, 100, 1, 100, "%.0f");
 			ScalarProperty<float>("Primary Advantage", "", &setting.correspondences.minPrimAdvantage, &standard.correspondences.minPrimAdvantage, 0, 10, 0.1f);

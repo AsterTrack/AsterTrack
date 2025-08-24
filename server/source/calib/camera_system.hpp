@@ -53,15 +53,16 @@ struct EpipolarCameras
 	{
 		std::vector<FundamentalMatrix> candidates;
 
+		inline int getBestCandidateIndex() const;
 		inline const FundamentalMatrix &getBestCandidate() const;
 		inline FundamentalMatrix &getBestCandidate();
 	};
 
 	std::vector<std::vector<FMEntry>> FMStore;
 
-	inline EpipolarCameras::FMEntry &getFMEntry(int cam1, int cam2);
-	inline const EpipolarCameras::FMEntry *getFMEntry(int camA, int camB) const;
-	inline bool getFundamentalMatrix(int camA, int camB, FundamentalMatrix &fundamentalMatrix);
+	inline const EpipolarCameras::FMEntry &getFMEntry(int camA, int camB) const;
+	inline EpipolarCameras::FMEntry &getFMEntry(int camA, int camB);
+	inline const bool getFundamentalMatrix(int camA, int camB, FundamentalMatrix &fundamentalMatrix) const;
 	inline void setFundamentalMatrix(int camA, int camB, FundamentalMatrix fundamentalMatrix);
 };
 

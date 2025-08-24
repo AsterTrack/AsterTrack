@@ -299,6 +299,37 @@ void handleSharedObservations(const std::vector<MarkerSequences> &markers, int s
 }
 
 /**
+ * Calls the handleShared function for shared ranges between observations of markerA in cameraA and observations of markerB in cameraB
+ */
+void handleSharedObservations(const MarkerSequences &markerA, const MarkerSequences &markerB, int startFrame, int endFrame, int camA, int camB,
+	const std::function<void(CameraSequences::range_iterator, CameraSequences::range_iterator, int, int)> &handleShared)
+{
+	if (markerA.cameras.size() <= camA) return;
+	if (markerB.cameras.size() <= camB) return;
+	const CameraSequences &cameraA = markerA.cameras[camA], &cameraB = markerB.cameras[camB];
+	auto itA = cameraA.upper(startFrame), itB = cameraB.upper(startFrame);
+	auto endA = cameraA.upper(endFrame), endB = cameraB.upper(endFrame);
+
+	while (itA < endA && itB < endB)
+	{
+		// Advance to next overlap
+		while (itA < endA && itA.frame() < itB.frame())
+			itA += std::min(itB.frame()-itA.frame(), itA.rangeLength()+1);
+		if (itA >= endA) break;
+		while (itB < endB && itB.frame() < itA.frame())
+			itB += std::min(itA.frame()-itB.frame(), itB.rangeLength()+1);
+		if (itB >= endB) break;
+			// Check if there was an overlap in the last few sequences checked
+		if (itA.frame() != itB.frame()) continue;
+		// Calculate length of overlap
+		int overlapLength = std::min(std::min(itA.rangeLength(), itB.rangeLength()), endFrame-itA.frame());
+		handleShared(itA.rangeStart(), itB.rangeStart(), itA.frame(), overlapLength);
+		itA += overlapLength;
+		itB += overlapLength;
+	}
+}
+
+/**
  * Checks for any overlap in the [camera, time] domain.
  * If there is, one camera observe each marker as a distinct sequence at some point, and the markers are distinct.
  * Returns the first frame that overlaps, or -1 if they don't overlap

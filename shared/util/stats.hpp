@@ -37,7 +37,7 @@ enum StatOptions
 {
 	StatFloating = 1,
 	StatExtremas = 2,
-	StatDistribution = 3,
+	StatDistribution = 4,
 };
 
 template<typename Scalar = float, int Options = 0>
@@ -46,8 +46,8 @@ struct StatValue
 	Scalar sum, avg, floating, M2, min, max;
 	int num, floatCount;
 
-	StatValue() = default;
-	StatValue(int floatingCount) : floatCount(floatingCount) {}
+	StatValue() { reset(); };
+	StatValue(int floatingCount) : floatCount(floatingCount) { reset(); }
 
 	/**
 	 * Updates the given statistical value with a new value
@@ -56,7 +56,7 @@ struct StatValue
 	{
 		if (num == 0)
 		{
-			reset();
+			avg = val; // For M2 calculation
 			if constexpr ((Options & StatExtremas) == StatExtremas)
 			{
 				min = val;
@@ -89,26 +89,25 @@ struct StatValue
 		}
 	}
 
-	inline Scalar variance() const { return num == 0? 0.0f : M2/num; }
+	inline Scalar variance() const { return num < 2? 0.0f : M2/(num-1); }
 	inline Scalar stdDev() const { return std::sqrt(variance()); }
 
 	template<int O>
 	inline void merge(StatValue<Scalar, O> &o)
 	{
+		if (o.num == 0) return;
+		if (num == 0)
+		{
+			*this = o;
+			return;
+		}
 		int total = num + o.num;
 		float fac = 1.0f/total;
 		float cAvg = (avg*num + o.avg*o.num) * fac;
 		if constexpr ((Options & StatDistribution) == StatDistribution && (O & StatDistribution) == StatDistribution)
 		{
-			if (num > 0 && o.num > 0)
-			{
-				float dAvg1 = (avg-cAvg), dAvg2 = (o.avg-cAvg);
-				M2 = num * std::sqrt(fac *
-					( M2*M2/num + dAvg1*dAvg1*num
-					+ o.M2*o.M2/o.num + dAvg2*dAvg2*o.num));
-			}
-			else if (o.num > 0)
-				M2 = o.M2;
+			float dAvg1 = (avg-cAvg), dAvg2 = (o.avg-cAvg);
+			M2 = M2 + dAvg1*dAvg1*num + o.M2 + dAvg2*dAvg2*o.num;
 		}
 		num = total;
 		sum += o.sum;

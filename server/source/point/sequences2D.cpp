@@ -51,6 +51,14 @@ typedef MatchCandidates<PtSeqMatch, MatchCandidate<bool>> PtMatchCandidates;
 /* Function Prototypes */
 
 /**
+ * Match both markers against each other to check if they can be merged
+ * Calculates stats of pairwise checks of overlapping observations
+ */
+static void calculateMarkerMatchStats(const SequenceAquisitionParameters &params, const CameraSystemCalibration &calibration,
+		const MarkerSequences &markerA, const MarkerSequences &markerB,
+		StatDistf &stats, float &fitError, float &supportingWeight, float &discreditingWeight);
+
+/**
  * Returns the overlap between a sequence seqT and relevant sequences of a marker observed by a camera
  */
 static OverlapRange getOverlappingObservations(const CameraSequences &camera, const PointSequence &seqT, std::vector<Eigen::Vector2f> &pointsC, std::vector<Eigen::Vector2f> &pointsT);
@@ -92,6 +100,11 @@ static inline float getFitError(const SequenceAquisitionParameters &params, Stat
 	return (newFMErrors.avg + newFMErrors.stdDev()*params.FM.FitNewSigma) / params.FM.UpperError;
 }
 
+static inline float getTrustFactor(float trust, float base)
+{ // Fit of a new FM calculated on a small range of samples
+	return std::max( 0.1f, 1 + std::log(trust / base));
+}
+
 static inline StatDistf calculateCorrespondenceStats(const Range<VecIt> &rangesA, const Range<VecIt> &rangesB, const Eigen::Matrix3f &FM)
 { // Verify correspondence with fundamental matrix
 	// TODO: Could do this more efficiently than the iterative Welford algorithm, whether that's relevant to runtime, idk
@@ -127,16 +140,19 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 
 	struct CorrespondenceSupport
 	{
-		StatDistf stats = {};
-		float fitError = 0.0f;
-		int supportingFM = -1;
-		Eigen::Matrix3f FM;
+		StatDistf stats;
+		float fitError;
+		float trust; // Trust of primary FM
+		int existingFM; // Index of existing FM (either primary or marked for merging)
+		bool testedNewFM; // Is primary FM existing or new?
+		Eigen::Matrix3f newFM; // Potentially newly calculated FM to support correspondence
 
-		CorrespondenceSupport() {}
-		CorrespondenceSupport(StatDistf &Stats, float Error, int FMex)
-			: stats(Stats), fitError(Error), supportingFM(FMex) {}
-		CorrespondenceSupport(StatDistf &Stats, float Error, Eigen::Matrix3f FMmat)
-			: stats(Stats), fitError(Error), supportingFM(-1), FM(FMmat) {}
+		CorrespondenceSupport()
+			: stats{}, fitError(0.0f), existingFM(-1), testedNewFM(false) {}
+		CorrespondenceSupport(StatDistf &Stats, float Error, int FMex, float FMtrust)
+			: stats(Stats), fitError(Error), trust(FMtrust), existingFM(FMex), testedNewFM(false) {}
+		CorrespondenceSupport(StatDistf &Stats, float Error, Eigen::Matrix3f FMmat, int FMmerge)
+			: stats(Stats), fitError(Error), trust(100), existingFM(FMmerge), testedNewFM(true), newFM(FMmat) {}
 	};
 
 	int GTOverlap = 0, GTOverlapVerifiable = 0;
@@ -176,7 +192,9 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 
 			// Get existing fundamental matrix
 			bool flipFM = cameraIndex < c;
-			auto &fmEntry = calibration.relations.getFMEntry(cameraIndex, c);
+			int camA = flipFM? c : cameraIndex;
+			int camB = flipFM? cameraIndex : c;
+			auto &fmEntry = calibration.relations.getFMEntry(camA, camB);
 			if (fmEntry.candidates.empty() && maxOverlapLength < params.correspondences.minOverlap)
 				continue; // Need minimum to calculate new fundamental matrix
 			// Assume trust has been managed externally (recent update, best candidate in front)
@@ -199,9 +217,9 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				Eigen::Matrix3f matrixEx = flipFM? FMex.matrix.transpose() : FMex.matrix;
 				auto errorEx = calculateCorrespondenceStats(rangesA, rangesB, matrixEx);
 				float fitError = getFitError(params, FMex, errorEx);
-				correspondence[c] = CorrespondenceSupport(errorEx, fitError, 0);
-				LOGC(LTrace, "      Trusted FM candidate had %f support for correspondence with error %f+-%f and weight %d",
-					1.0f/fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
+				correspondence[c] = CorrespondenceSupport(errorEx, fitError, 0, fmEntry.candidates.front().floatingTrust);
+				LOGC(LTrace, "      Trusted FM candidate had %f fit error for correspondence with error %f+-%f and weight %d",
+					fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
 				// TODO: Early discard if a trusted FM discredits correspondence
 				continue;
 			}
@@ -221,8 +239,8 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				auto errorEx = calculateCorrespondenceStats(rangesA, rangesB, matrixEx);
 				candidate.value = errorEx.avg;
 				candidate.context = { getFitError(params, FMex, errorEx), errorEx };
-				LOGC(LTrace, "        Existing FM Candidate %d (%d samples) had %f support for correspondence with error %f+-%f and weight %d",
-					i, FMex.stats.num, 1.0f/candidate.context.fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
+				LOGC(LTrace, "        Existing FM Candidate %d (%d samples) had %f fit error for correspondence with error %f+-%f and weight %d",
+					i, FMex.stats.num, candidate.context.fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
 				recordMatchCandidate(correspondenceCandidates, candidate).index = i;
 			}
 			// TODO: Give preference to first (most confident) one to not encourage divergent, but similar FMs?
@@ -230,7 +248,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			auto &bestCorr = correspondenceCandidates.matches[0];
 			if (bestCorr.index >= 0)
 			{ // Found an FM candidate supporting this correspondence
-				correspondence[c] = CorrespondenceSupport(bestCorr.context.dist, bestCorr.context.fitError, bestCorr.index);
+				correspondence[c] = CorrespondenceSupport(bestCorr.context.dist, bestCorr.context.fitError, bestCorr.index, fmEntry.candidates[bestCorr.index].floatingTrust);
 				if (bestCorr.context.fitError < 1.0f)
 				{ // Found an FM candidate supporting this correspondence
 					LOGC(!checkGT || GTshouldMatch? LTrace : LDarn,
@@ -243,7 +261,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			}
 			if (GTshouldMatch && !fmEntry.candidates.empty())
 			{
-				LOGC(LDarn, "      Found no supporting FM among %d for GT correspondence! Best had %f support for correspondence error %f+-%f",
+				LOGC(LDarn, "      Found no supporting FM among %d for GT correspondence! Best had %f fit error for correspondence with error %f+-%f",
 					(int)fmEntry.candidates.size(), bestCorr.context.fitError, bestCorr.context.dist.avg, bestCorr.context.dist.stdDev());
 			}
 
@@ -297,20 +315,26 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 						cameraIndex, c, FMseq.stats.avg, params.correspondences.maxError, FMseq.stats.num, confidence);
 				continue;
 			}
+			float fitError = getFitError(params, FMseq.stats);
 			LOGC(checkGT && !GTshouldMatch? LDarn : LDebug,
-				"      New FM (%d-%d) confirms correspondence with %f error over %d points and confidence %f!", 
-				cameraIndex, c, FMseq.stats.avg, FMseq.stats.num, confidence);
+				"      New FM (%d-%d) confirms correspondence with %f error (fit error %f) over %d points and confidence %f!", 
+				cameraIndex, c, FMseq.stats.avg, fitError, FMseq.stats.num, confidence);
+
+			// If existing best FM is close enough, it may just be slighly off
+			// In that case, if the correspondence is accepted, merge FMs instead of creating a new candidate
+			int mergeFM = -1;
+			if (bestCorr.index >= 0 && bestCorr.context.fitError < 5)
+				mergeFM = bestCorr.index;
 
 			// Add new FM supporting this correspondence, if it is accepted, the FM will be taken on as a candidate
-			float fitError = getFitError(params, FMseq.stats);
-			correspondence[c] = CorrespondenceSupport(FMseq.stats, fitError, FMseq.matrix);
+			correspondence[c] = CorrespondenceSupport(FMseq.stats, fitError, FMseq.matrix, mergeFM);
 		}
 
 		GTOverlapVerifiable += GTMarkerOverlapVerifiable;
 		GTOverlap += GTMarkerOverlap;
 
 		LOGC(LTrace, "    Summary of best correspondence clues to marker %d from relevant cameras:", m);
-		float correspondingWeight = 0.0f, discreditingWeight = 0.0f;
+		float supportingWeight = 0.0f, discreditingWeight = 0.0f;
 		float errorAvg = 0.0f;
 		for (int c = 0; c < marker.cameras.size(); c++)
 		{
@@ -318,48 +342,58 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			auto &corr = correspondence[c];
 			if (corr.stats.num == 0) continue;
 			// Camera had clues supporting or discrediting correspondence
-			LOGC(LTrace, "      Camera %d fit error for correspondence to marker %d is %f along %d frames!", c, m, corr.fitError, corr.stats.num);
 			if (corr.fitError > 1.0f)
-				discreditingWeight += corr.stats.num * corr.fitError;
+			{ // Existing FM discrediting this
+				assert(!corr.testedNewFM);
+				float trustFactor = getTrustFactor(corr.trust, params.correspondences.TrustBaseDiscrediting);
+				float weight = corr.stats.num * (corr.fitError - 1) * trustFactor;
+				LOGC(LTrace, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - discrediting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
+				discreditingWeight += weight;
+			}
 			else
-				correspondingWeight += corr.stats.num / corr.fitError;
+			{
+				float trustFactor = getTrustFactor(corr.trust, params.correspondences.TrustBaseSupporting);
+				float weight = corr.stats.num * (1 / corr.fitError - 1) * trustFactor;
+				LOGC(LTrace, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - supporting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
+				supportingWeight += weight;
+			}
 			errorAvg += corr.stats.avg;
 			assert(!std::isnan(errorAvg));
-			assert(!std::isnan(correspondingWeight) && !std::isnan(discreditingWeight));
-			assert(!std::isinf(correspondingWeight) && !std::isinf(discreditingWeight));
+			assert(!std::isnan(supportingWeight) && !std::isnan(discreditingWeight));
+			assert(!std::isinf(supportingWeight) && !std::isinf(discreditingWeight));
 		}
 		errorAvg /= marker.cameras.size();
 
-		assert(!std::isnan(errorAvg));
-		assert(!std::isnan(correspondingWeight) && !std::isnan(discreditingWeight));
-		if (correspondingWeight < params.correspondences.minWeight || correspondingWeight*params.correspondences.maxDiscrediting <= discreditingWeight)
+		if (supportingWeight < params.correspondences.minWeight || supportingWeight*params.correspondences.maxDiscrediting <= discreditingWeight)
 		{ // Not corresponding
 			if (GTshouldMatch && GTMarkerOverlap > params.correspondences.minOverlap)
-			{
 				LOGC(LDarn, "    Failed to add correct correspondence candidate for marker %d with error %f and %f discrediting, %f supporting it! Had %d total overlaps, %d verifiable",
-					m, errorAvg, discreditingWeight, correspondingWeight, GTMarkerOverlap, GTMarkerOverlapVerifiable);
-			}
+					m, errorAvg, discreditingWeight, supportingWeight, GTMarkerOverlap, GTMarkerOverlapVerifiable);
+			else
+				LOGC(LTrace, "      Deemed NOT corresponding to marker %d with error %f and %f discrediting, %f supporting it!",
+					m, errorAvg, discreditingWeight, supportingWeight);
 			continue;
 		}
 
 		if (checkGT && !GTshouldMatch)
 		{
 			LOGC(LDarn, "    Incorrectly added wrong correspondence candidate for marker %d with error %f and %f discrediting, %f supporting it!", 
-				m, errorAvg, discreditingWeight, correspondingWeight);
+				m, errorAvg, discreditingWeight, supportingWeight);
 		}
 		else
 		{
 			LOGC(LDebug, "    Added correspondence candidate for marker %d with error %f and %f discrediting, %f supporting it!", 
-				m, errorAvg, discreditingWeight, correspondingWeight);
+				m, errorAvg, discreditingWeight, supportingWeight);
 		}
 
 		WeightedMatch<std::vector<CorrespondenceSupport>> match = 
-			{ false, m, errorAvg, (int)(correspondingWeight-discreditingWeight), std::move(correspondence) };
+			{ false, m, errorAvg, (int)(supportingWeight-discreditingWeight), std::move(correspondence) };
 		recordMatchCandidate(correspondenceCandidates, match);
 	}
 
 	auto &pri = correspondenceCandidates.matches[0];
 	auto &sec = correspondenceCandidates.matches[1];
+	bool mergeMarkers = false;
 
 	if (sec.index >= 0)
 	{ // Potentially discard primary if it's not advantaged over secondary
@@ -391,8 +425,23 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			}
 		}
 
+		if (!advantaged && canProveMarkerDistinct(sequences.markers[pri.index], sequences.markers[sec.index]) >= 0)
+		{
+			LOGC(LDebug, "    Competing markers are definitively distinct, cannot assume correspondence!");
+			return -1;
+		}
 		if (!advantaged)
-			pri.index = -1;
+		{ // Try merging
+			StatDistf stats = {};
+			float fitError, supportingWeight, discreditingWeight;
+			calculateMarkerMatchStats(params, calibration, sequences.markers[pri.index], sequences.markers[sec.index],
+				stats, fitError, supportingWeight, discreditingWeight);
+			LOGC(LDebug, "    Competing markers are matching with fit error %f, supporting %f and discrediting %f, with error %f+-%f across %d overlapping frames",
+				fitError, supportingWeight, discreditingWeight, stats.avg, stats.stdDev(), stats.num);
+			if (supportingWeight < params.correspondences.minWeight || supportingWeight*params.correspondences.maxDiscrediting <= discreditingWeight)
+				return -1;
+			mergeMarkers = true;
+		}
 	}
 
 	if (checkGT && pri.index >= 0)
@@ -431,27 +480,19 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 
 		// Check what FMs supported correspondence and add to their trust
 		auto &correspondence = pri.context;
-		float correspondingWeight = 0.0f, discreditingWeight = 0.0f;
 		for (int c = 0; c < correspondence.size(); c++)
 		{
 			auto &corr = correspondence[c];
 			if (corr.stats.num <= 0) continue;
 
-			// Only pass supporting matches, and recalculate support, may use to not accept correspondence
-			if (corr.fitError > 1.0f)
-			{
-				discreditingWeight += corr.stats.num * corr.fitError;
-				continue;
-			}
-			else if (corr.supportingFM >= 0)
-				correspondingWeight += corr.stats.num / corr.fitError;
-
-			auto &fmEntry = calibration.relations.getFMEntry(cameraIndex, c);
-			if (corr.supportingFM < 0)
+			bool flipFM = cameraIndex < c;
+			int camA = flipFM? c : cameraIndex;
+			int camB = flipFM? cameraIndex : c;
+			auto &fmEntry = calibration.relations.getFMEntry(camA, camB);
+			if (corr.testedNewFM && corr.existingFM < 0)
 			{ // Add new FM candidate
 				FundamentalMatrix FMnew = {};
-				bool flipFM = cameraIndex < c;
-				FMnew.matrix = flipFM? corr.FM.transpose() : corr.FM;
+				FMnew.matrix = flipFM? corr.newFM.transpose() : corr.newFM;
 				FMnew.stats = corr.stats;
 				FMnew.firstFrame = tmpSeq.startFrame;
 				FMnew.lastFrame = tmpSeq.lastFrame();
@@ -461,25 +502,82 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				LOGC(LInfo, "  Added new FM candidate for (%d-%d) %d/%d with error %.4f +- %f across %d observations",
 					cameraIndex, c, (int)fmEntry.candidates.size(), (int)fmEntry.candidates.size(), FMnew.stats.avg, FMnew.stats.stdDev(), FMnew.stats.num);
 			}
+			else if (corr.testedNewFM && corr.existingFM >= 0)
+			{
+				auto &FM = fmEntry.candidates[corr.existingFM];
+
+				// Gather all data for which FM claims to be valid for (may end before curFrame - then don't recalculate)
+				std::vector<Eigen::Vector2f> pointsA, pointsB;
+				int pointCount = getSharedObservations(sequences.markers, FM.firstFrame, FM.lastFrame+1, camA, camB, pointsA, pointsB);
+				LOGC(LTrace, "Found a total of %d point correspondences!\n", pointCount);
+
+				// Calculate fundamental matrix using shared observations
+				FundamentalMatrix FMnew = {};
+				Range<VecIt> rangesA = { pointsA.begin(), pointsA.end(), pointCount};
+				Range<VecIt> rangesB = { pointsB.begin(), pointsB.end(), pointCount};
+				float confidence = calculateFundamentalMatrix<float>(FMnew, rangesA, rangesB);
+				FMnew.floatingTrust = pointCount / getFitError(params, FMnew.stats);
+
+				if (confidence < params.correspondences.minConfidence)
+				{ // Confidence way too low
+					LOGC(LDarn, "    Tried to update relation (%d, %d) fundamental matrix with %d points (prev %d), but only has confidence %f (< %f) with error %f+-%f", 
+						camA, camB, FMnew.stats.num, FM.stats.num, confidence, params.correspondences.minConfidence, FMnew.stats.avg, FMnew.stats.stdDev());
+					continue;
+				}
+				else if (FMnew.stats.avg+FMnew.stats.stdDev() > params.correspondences.maxError)
+				{ // Error way too high
+					LOGC(LDarn, "    Tried to update relation (%d, %d) fundamental matrix with %d points (prev %d), but only has confidence %f with error %f+-%f (> %f)", 
+						camA, camB, FMnew.stats.num, FM.stats.num, confidence, FMnew.stats.avg, FMnew.stats.stdDev(), params.correspondences.maxError);
+					continue;
+				}
+
+				LOGC(LDebug, "    Updated relation (%d, %d) fundamental matrix with %d points (prev %d), has confidence %f with error %f+-%f - estimated trust %f, floating %f", 
+					camA, camB, FMnew.stats.num, FM.stats.num, confidence, FMnew.stats.avg, FMnew.stats.stdDev(), FMnew.floatingTrust, FM.floatingTrust);
+
+				FM.matrix = FMnew.matrix;
+				FM.stats = FMnew.stats;
+				FM.floatingTrust = FM.floatingTrust; // TODO: Update?
+				FM.lastCalculation = tmpSeq.lastFrame();
+			}
 			else
 			{ // Merge stats into FM candidate
-				FundamentalMatrix &FMex = fmEntry.candidates[corr.supportingFM];
+				FundamentalMatrix &FMex = fmEntry.candidates[corr.existingFM];
 				auto oldStats = FMex.stats;
 				FMex.stats.merge(corr.stats);
 				FMex.lastFrame = tmpSeq.lastFrame();
 				FMex.floatingTrust += corr.stats.num / corr.fitError;
 				LOGC(LDebug, "  Updated FM (%d-%d) candidate %d/%d from error %.4f +- %.4f with error %.4f +- %.4f to error %.4f +- %.4f across %d observations",
-					cameraIndex, c, corr.supportingFM+1, (int)fmEntry.candidates.size(),
+					cameraIndex, c, corr.existingFM+1, (int)fmEntry.candidates.size(),
 						oldStats.avg, oldStats.stdDev(),
 						corr.stats.avg, corr.stats.stdDev(),
 						FMex.stats.avg, FMex.stats.stdDev(), FMex.stats.num);
 			}
 		}
 
-		/* if (correspondingWeight < opt.minNewCorrespondenceWeight || correspondingWeight <= discreditingWeight*10)
+		/* if (pri.weight < opt.minNewCorrespondenceWeight)
 		{ // May decide to evaluate differently if the FMs are new and not add the correspondence, but that makes it quite difficult for calibration
 			pri.index = -1;
 		} */
+	}
+
+	if (mergeMarkers)
+	{
+		int tgt = std::min(pri.index, sec.index), src = std::max(pri.index, sec.index);
+		 LOGC(LDarn, "    Merging marker %d into %d!", src, tgt);
+		MarkerSequences &markerTgt = sequences.markers[tgt];
+		MarkerSequences &markerSrc = sequences.markers[src];
+		for (int c = 0; c < markerTgt.cameras.size(); c++)
+		{
+			for (auto &seq : markerSrc.cameras[c].sequences)
+			{
+				seq.marker = tgt;
+				markerTgt.cameras[c].sequences.push_back(std::move(seq));
+			}
+			std::sort(markerTgt.cameras[c].sequences.begin(), markerTgt.cameras[c].sequences.end(), 
+				[](PointSequence &s1, PointSequence &s2) { return s1.startFrame < s2.startFrame; });
+		}
+		sequences.markers.erase(sequences.markers.begin() + src);
+		return tgt;
 	}
 
 	return pri.index;
@@ -1064,8 +1162,10 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 
 void updateTrustFromEpipolarStats(const SequenceAquisitionParameters &params, FundamentalMatrix &FM)
 {
-	float fitError = getFitError(params, FM.stats);
-	FM.floatingTrust = FM.stats.num / fitError;
+	if (FM.stats.num == 0)
+		FM.floatingTrust = 0;
+	else
+		FM.floatingTrust = FM.stats.num / getFitError(params, FM.stats);
 }
 
 void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, bool confidenceCheck)
@@ -1119,6 +1219,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 					Range<VecIt> rangesA = { pointsA.begin(), pointsA.end(), pointCount};
 					Range<VecIt> rangesB = { pointsB.begin(), pointsB.end(), pointCount};
 					float confidence = calculateFundamentalMatrix<float>(FMnew, rangesA, rangesB);
+					FMnew.floatingTrust = pointCount / getFitError(params, FMnew.stats);
 
 					if (confidence < params.correspondences.minConfidence)
 					{ // Confidence way too low
@@ -1133,8 +1234,8 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 						continue;
 					}
 
-					LOGC(LTrace, "    Updated relation (%d, %d) fundamental matrix with %d points (prev %d), has confidence %f with error %f+-%f", 
-						i, j, FMnew.stats.num, FM.stats.num, confidence, FMnew.stats.avg, FMnew.stats.stdDev());
+					LOGC(LTrace, "    Updated relation (%d, %d) fundamental matrix with %d points (prev %d), has confidence %f with error %f+-%f - estimated trust %f, existing %f", 
+						i, j, FMnew.stats.num, FM.stats.num, confidence, FMnew.stats.avg, FMnew.stats.stdDev(), FMnew.floatingTrust, FM.floatingTrust);
 
 					FM.matrix = FMnew.matrix;
 					FM.stats = FMnew.stats;
@@ -1207,7 +1308,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 				float error = std::abs(seqJ.back().points.back().homogeneous().transpose() * FM.matrix * seqI.back().points.back().homogeneous());
 				float fitError = getFitError(params, FM, error);
 				FM.stats.update(error);
-				FM.floatingTrust += 1 / fitError;
+				FM.floatingTrust += 1 / std::max(fitError, 0.1f);
 				FM.lastFrame = curFrame;
 
 				// Determine if correspondence is broken
@@ -1255,34 +1356,49 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 }
 
 /**
- * Returns a normalisation matrix to normalise the given point sequence by centering and scaling to a distance of sqrt(2)
+ * Match both markers against each other to check if they can be merged
+ * Calculates stats of pairwise checks of overlapping observations
  */
-template<typename Scalar, typename PointIterator>
-static Eigen::Matrix<Scalar,3,3> getPointNormalisation(const Range<PointIterator> &sequence)
+static void calculateMarkerMatchStats(const SequenceAquisitionParameters &params, const CameraSystemCalibration &calibration,
+		const MarkerSequences &markerA, const MarkerSequences &markerB,
+		StatDistf &stats, float &fitError, float &supportingWeight, float &discreditingWeight)
 {
-	static_assert(std::is_same<
-		typename std::iterator_traits<PointIterator>::value_type, 
-		typename Eigen::Matrix<Scalar,2,1>>::value, "Must be a 2D point iterator!");
+	fitError = 1.0f;
+	supportingWeight = discreditingWeight = 0.0f;
+	for (int a = 0; a < markerA.cameras.size(); a++)
+	{
+		for (int b = 0; b < markerB.cameras.size(); b++)
+		{
+			if (a == b) continue;
+			FundamentalMatrix FM;
+			if (!calibration.relations.getFundamentalMatrix(a, b, FM))
+				continue;
+			StatDistf relStats = {};
+			handleSharedObservations(markerA, markerB, 0, INT_MAX, a, b,
+				[&](auto itA, auto itB, int frame, int length) {
+				for (int i = 0; i < length; ++i, ++itA, ++itB)
+				{
+					float error = itB->homogeneous().transpose() * FM.matrix * itA->homogeneous();
+					relStats.update(std::abs(error));
+				}
+			});
 
-	// Find Center
-	Eigen::Matrix<Scalar,2,1> center = Eigen::Matrix<Scalar,2,1>::Zero();
-	for (auto it = sequence.start; it != sequence.end; it++)
-		center += it->template cast<Scalar>();
-	center /= sequence.length;
-
-	// Find average distance
-	Scalar scale = 0;
-	for (auto it = sequence.start; it != sequence.end; it++)
-		scale += (it->template cast<Scalar>() - center).norm();
-	scale /= sequence.length;
-
-	// Build isotropic scale factor
-	scale = std::sqrt((Scalar)2.0)/scale;
-
-	// Build normalisation transformations
-	Eigen::Matrix<Scalar,3,3> T = Eigen::DiagonalMatrix<Scalar,3>(scale,scale,(Scalar)1.0);
-	T.template block<2,1>(0, 2) = -center * scale;
-	return T;
+			if (relStats.num == 0) continue;
+			stats.merge(relStats);
+			float fE = getFitError(params, FM, relStats);
+			fitError += fE;
+			if (fE >= 1.0)
+			{
+				float trustFactor = getTrustFactor(FM.floatingTrust, params.correspondences.TrustBaseDiscrediting);
+				discreditingWeight += relStats.num * (fE - 1) * trustFactor;
+			}
+			else
+			{
+				float trustFactor = getTrustFactor(FM.floatingTrust, params.correspondences.TrustBaseSupporting);
+				supportingWeight += relStats.num * (1 / fE - 1) * trustFactor;
+			}
+		}
+	}
 }
 
 /**
@@ -1312,6 +1428,37 @@ static OverlapRange getOverlappingObservations(const CameraSequences &camera, co
 	}
 
 	return totalOverlap;
+}
+
+/**
+ * Returns a normalisation matrix to normalise the given point sequence by centering and scaling to a distance of sqrt(2)
+ */
+template<typename Scalar, typename PointIterator>
+static Eigen::Matrix<Scalar,3,3> getPointNormalisation(const Range<PointIterator> &sequence)
+{
+	static_assert(std::is_same<
+		typename std::iterator_traits<PointIterator>::value_type, 
+		typename Eigen::Matrix<Scalar,2,1>>::value, "Must be a 2D point iterator!");
+
+	// Find Center
+	Eigen::Matrix<Scalar,2,1> center = Eigen::Matrix<Scalar,2,1>::Zero();
+	for (auto it = sequence.start; it != sequence.end; it++)
+		center += it->template cast<Scalar>();
+	center /= sequence.length;
+
+	// Find average distance
+	Scalar scale = 0;
+	for (auto it = sequence.start; it != sequence.end; it++)
+		scale += (it->template cast<Scalar>() - center).norm();
+	scale /= sequence.length;
+
+	// Build isotropic scale factor
+	scale = std::sqrt((Scalar)2.0)/scale;
+
+	// Build normalisation transformations
+	Eigen::Matrix<Scalar,3,3> T = Eigen::DiagonalMatrix<Scalar,3>(scale,scale,(Scalar)1.0);
+	T.template block<2,1>(0, 2) = -center * scale;
+	return T;
 }
 
 /**

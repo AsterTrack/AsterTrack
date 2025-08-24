@@ -59,6 +59,12 @@ void handleSharedObservations(const std::vector<MarkerSequences> &markers, int s
 	const std::function<void(int, CameraSequences::range_iterator, CameraSequences::range_iterator, int, int)> &handleShared);
 
 /**
+ * Calls the handleShared function for shared ranges between observations of markerA in cameraA and observations of markerB in cameraB
+ */
+void handleSharedObservations(const MarkerSequences &markerA, const MarkerSequences &markerB, int startFrame, int endFrame, int camA, int camB,
+	const std::function<void(CameraSequences::range_iterator, CameraSequences::range_iterator, int, int)> &handleShared);
+
+/**
  * Checks for any overlap in the [camera, time] domain.
  * If there is, one camera observe each marker as a distinct sequence at some point, and the markers are distinct.
  * Returns the first frame that overlaps, or -1 if they don't overlap

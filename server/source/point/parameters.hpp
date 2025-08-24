@@ -58,6 +58,8 @@ struct SequenceAquisitionParameters
 	} FM;
 
 	struct {
+		float TrustBaseSupporting;
+		float TrustBaseDiscrediting;
 		// Limits for correspondence verification
 		float minWeight;
 		float maxDiscrediting;
@@ -103,8 +105,8 @@ struct SequenceParameters
 		stableSequenceDelay,
 		{
 			1000,
-			0.2f,
-			5000.0f,
+			0.6f,
+			10000.0f,
 			0.00001f,
 			3,
 			0,
@@ -113,12 +115,14 @@ struct SequenceParameters
 		},
 		{
 			100,
-			0.1f,
+			1000,
+			100,
+			0.3f,
 			2,
 			0.00005f,
 			stableSequenceDelay,
 			0.05f,
-			20,
+			5,
 		},
 	};
 
@@ -154,6 +158,8 @@ struct SequenceParameters
 			4,
 		},
 		{
+			5000,
+			5000,
 			100,
 			0.1f,
 			2,

@@ -110,9 +110,10 @@ void InterfaceState::UpdatePipelineObservationSection()
 	ImVec2 ButtonSize = SizeWidthDiv3();
 
 	BeginSection("Marker Observations");
-	ImGui::Checkbox("Record Observations", &pipeline.recordSequences);
+	ImGui::Checkbox("Record", &pipeline.recordSequences);
 	ImGui::SetItemTooltip("Record visible markers into observations as continous sequences.");
-	ImGui::TextUnformatted(calibSamples.contextualRLock()->c_str());
+	ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x*2);
+	ImGui::Text("%s", calibSamples.contextualRLock()->c_str());
 
 	if (ImGui::Button("Clear", ButtonSize))
 	{
@@ -320,20 +321,27 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::Indent();
 	{
 		auto &opt = ptCalib.settings.options;
-		opt.groupedIntrinsics = false;
-		ImGui::Checkbox("Transform", &opt.position);
+		ImGui::Checkbox("Pos", &opt.position);
 		opt.rotation = opt.position;
 		ImGui::SameLine();
 		ImGui::Checkbox("Lens", &opt.focalLen);
 		opt.principal = opt.focalLen;
-		ImGui::Text("Distortion Order:");
+		ImGui::SetItemTooltip("Calibrate basic lens parameters like focal length and principal point");
 		ImGui::SameLine();
-		ImGui::Checkbox("2nd", &opt.distk1);
-		opt.distk2 = opt.distk1;
+		ImGui::Checkbox("Align", &opt.tangential);
+		ImGui::SetItemTooltip("Enable tangential distortion estimation.\nCalibrates for misalignment of sensor and lens plane.");
+
+		ImGui::Checkbox("Share Distortions", &opt.sharedRadial);
+		ImGui::SetItemTooltip("Assume all cameras have the same radial distortion. This may speed up initial optimisation.\n"
+			"It does not share parameters compensating for installation like focal length, principal point and tangential distortion.");
 		ImGui::SameLine();
-		ImGui::Checkbox("5th", &opt.distk3);
-		opt.distp1 = opt.distk3;
-		opt.distp2 = opt.distk3;
+		ImGui::Text("Order %d", opt.radial);
+		ImGui::SameLine();
+		if (ImGui::Button("-", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+			opt.radial--;
+		ImGui::SameLine();
+		if (ImGui::Button("+", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+			opt.radial++;
 	}
 	ImGui::Unindent();
 	ImGui::EndDisabled();

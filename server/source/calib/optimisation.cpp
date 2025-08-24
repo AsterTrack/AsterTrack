@@ -106,11 +106,6 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 	// Create error stats
 	VectorX<Scalar> errorVec(errorTerm.values());
 	errorTerm.calculateError(camerasInternal, errorVec);
-	if (errorVec.hasNaN())
-	{
-		LOGC(LWarn, "Error Vector has NaNs!\n");
-		LOGC(LWarn, "Error Vector size: %d, tri point count: %d!\n", (int)errorVec.size(), (int)errorTerm.m_data->points.points.size());
-	}
 
 	// Calculate outlier limit
 	OptErrorRes errors = logErrorStats("    Errors Unfiltered", errorVec, 0, removedOutlierCount);
@@ -162,8 +157,6 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 	for (int c = 0; c < cameraCalibs.size(); c++)
 		LOGCL("        Camera %d has %fpx RMSE reprojection error from %d inlier blobs!\n",
 			c, std::sqrt(cameraErrors(c)/cameraBlobCounts[c])*PixelFactor, cameraBlobCounts[c]);
-	if (std::isnan(errors.mean) || std::isnan(errors.stdDev) || std::isnan(errors.max))
-		LOGCL("Error result has NaNs: (%f, %f, %f)\n", errors.mean, errors.stdDev, errors.max);
 
 	return errors;
 }
@@ -212,15 +205,10 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 	// Create error stats
 	VectorX<Scalar> errorVec(errorTerm.values());
 	errorTerm.calculateError(camerasInternal, errorVec);
-	if (errorVec.hasNaN())
-	{
-		LOGC(LWarn, "Error Vector has NaNs!\n");
-		LOGC(LWarn, "Error Vector size: %d, tri point count: %d!\n", (int)errorVec.size(), (int)errorTerm.m_data->points.points.size());
-		return {};
-	}
 
 	// Calculate outlier limit
 	auto errors = logErrorStats("    Error Total", errorVec, 0);
+	if (std::isnan(errors.mean)) return {};
 	Scalar errorMax = errors.max;
 	//Scalar outlierMax = errors.mean + outlierSigma*errors.stdDev;
 
@@ -325,6 +313,12 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
 	}
+	{
+		VectorX<ScalarInternal> errorVec(errorTerm.values());
+		errorTerm.calculateError(camerasInternal, errorVec);
+		auto errors = logErrorStats("    Error Before", errorVec, 0);
+		if (std::isnan(errors.mean)) return {};
+	}
 
 	// Create initial parameter vector
 	VectorX<ScalarInternal> calibParams(errorTerm.m_paramCount);
@@ -359,6 +353,15 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		if constexpr (Options & OptTgtMotionOpt)
 			errorTerm.updateTargetMotions(data); // TODO: Use camera norms, currently incompatible with normaliseScale
 	};
+
+	readFromParameters();
+
+	{
+		VectorX<ScalarInternal> errorVec(errorTerm.values());
+		errorTerm.calculateError(camerasInternal, errorVec);
+		auto errors = logErrorStats("    Error Parsed", errorVec, 0);
+		if (std::isnan(errors.mean)) return {};
+	}
 
 	typedef std::conditional_t<(Options & OptSparse) == OptSparse, 
 		Eigen::LevenbergMarquardtSparse<ReprojectionError<ScalarInternal, Options>, ScalarInternal>,

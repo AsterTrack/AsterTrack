@@ -39,8 +39,9 @@ struct OptimisationOptions
 	// Camera Intrinsics
 	bool focalLen;
 	bool principal;
-	bool distk1, distk2, distp1, distp2, distk3;
-	bool groupedIntrinsics;
+	bool tangential;
+	int radial;
+	bool sharedRadial;
 	// Normalisation
 	bool normalisePos, normaliseScale;
 	// Outliers
@@ -49,8 +50,8 @@ struct OptimisationOptions
 	OptimisationOptions(bool tgt = false, bool extr = true, bool intr = true, bool dist = true, bool norm = true)
 		: motion(tgt), structure(tgt),
 		position(extr), rotation(extr), focalLen(intr), principal(intr),
-		distk1(dist), distk2(dist), distp1(dist), distp2(dist), distk3(dist), 
-		groupedIntrinsics(false), 
+		tangential(dist), radial(dist? 3 : 0), 
+		sharedRadial(false), 
 		normalisePos(norm), normaliseScale(norm),
 		ignoreOutliers(true)
 	{}

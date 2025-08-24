@@ -40,21 +40,13 @@ void InterfaceState::UpdateSequences(bool reset)
 		// Not synchronised, but can read it here since it's only updated in UpdateIncrementalObservationVis before this
 		auto &obsVis = visState.incObsUpdate;
 
-		int min2DPoints = INT32_MAX, total2DPoints = 0;
-		int min2DIndex = -1;
+		int total2DPoints = 0;
 		for (int c = 0; c < pipeline.cameras.size(); c++)
-		{
 			total2DPoints += obsVis.cameraTriObservations[c];
-			if (min2DPoints > obsVis.cameraTriObservations[c])
-			{
-				min2DPoints = obsVis.cameraTriObservations[c];
-				min2DIndex = c;
-			}
-		}
 		if (obsVis.markerCount == 0)
-			*calibSamples.contextualLock() = std::string("No calibration samples.");
+			*calibSamples.contextualLock() = std::string("No Samples");
 		else // Note: point count includes unstable, min2DPoints doesn't
-			*calibSamples.contextualLock() = std::string(asprintf_s("%d samples, least: %d (Camera %d)", total2DPoints, min2DPoints, pipeline.cameras[min2DIndex]->id));
+			*calibSamples.contextualLock() = std::string(asprintf_s("%d samples", total2DPoints));
 
 		return;
 	}

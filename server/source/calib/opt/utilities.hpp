@@ -26,9 +26,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 typedef CVScalar ScalarInternal;
 
-static inline int numInt(const OptimisationOptions &opt) { return opt.focalLen + (opt.distk1 + opt.distk2 + opt.distp1 + opt.distp2 + opt.distk3) + opt.principal*2; }
-static inline int numExt(const OptimisationOptions &opt) { return 3 * (opt.position + opt.rotation); }
-static inline int numCamParams(const OptimisationOptions &opt, int cams) { return numInt(opt) * (opt.groupedIntrinsics? 1 : cams) + numExt(opt) * cams; }
+static inline int numCamParams(const OptimisationOptions &opt, int cams)
+{
+	int extCam = 3 * (opt.position + opt.rotation);
+	int intCam = opt.focalLen + (opt.tangential? 2 : 0) + (opt.principal? 2 : 0);
+	int shared = opt.radial * (opt.sharedRadial? 1 : cams);
+	return (extCam + intCam) * cams + shared;
+}
 static inline int numTgtStruct(const OptimisationOptions &opt, const ObsTarget& tgt) { return opt.structure? tgt.markers.size()*3 : 0; }
 static inline int numTgtMotion(const OptimisationOptions &opt, const ObsTarget& tgt) { return opt.motion? tgt.frames.size()*6 : 0; }
 static inline int numTgt(const OptimisationOptions &opt, const ObsTarget& tgt) { return (opt.motion? tgt.frames.size()*6 : 0) + (opt.structure? tgt.markers.size()*3 : 0); }
@@ -77,38 +81,64 @@ static inline std::pair<Vector3<Scalar>, Scalar> setCameraNorms(std::vector<Came
 template<typename Scalar = ScalarInternal>
 static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &cameras, const OptimisationOptions &opt, const Eigen::Ref<const VectorX<Scalar>> &calibParams)
 {
-	int intrinsics = numInt(opt), extrinsics = numExt(opt);
+	int index = 0;
+
+	if (opt.sharedRadial && opt.radial > 0)
+	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
+		for (int c = 0; c < cameras.size(); c++)
+		{
+			int i = index;
+			if (opt.radial >= 1)
+				cameras[c].distortion.k1 = calibParams(i++);
+			else
+				cameras[c].distortion.k1 = 0;
+			if (opt.radial >= 2)
+				cameras[c].distortion.k2 = calibParams(i++);
+			else
+				cameras[c].distortion.k2 = 0;
+			if (opt.radial >= 3)
+				cameras[c].distortion.k3 = calibParams(i++);
+			else 
+				cameras[c].distortion.k3 = 0;
+		}
+		index += opt.radial;
+	}
+
 	for (int c = 0; c < cameras.size(); c++)
 	{
-		int index = 0;
-		if (!opt.groupedIntrinsics)
-			index = intrinsics * c;
 		if (opt.focalLen)
 		{
 			cameras[c].f = calibParams(index++);
 			cameras[c].fInv = 1.0/cameras[c].f;
 		}
-		if (opt.distk1)
-			cameras[c].distortion.k1 = calibParams(index++);
-		if (opt.distk2)
-			cameras[c].distortion.k2 = calibParams(index++);
-		if (opt.distp1)
-			cameras[c].distortion.p1 = calibParams(index++);
-		if (opt.distp2)
-			cameras[c].distortion.p2 = calibParams(index++);
-		if (opt.distk3)
-			cameras[c].distortion.k3 = calibParams(index++);
 		if (opt.principal)
 		{
 			cameras[c].principalPoint.x() = calibParams(index++);
 			cameras[c].principalPoint.y() = calibParams(index++);
 		}
+		if (opt.tangential)
+		{
+			cameras[c].distortion.p1 = calibParams(index++);
+			cameras[c].distortion.p2 = calibParams(index++);
+		}
+		if (opt.sharedRadial || opt.radial == 0)
+			continue;
+		if (opt.radial >= 1)
+			cameras[c].distortion.k1 = calibParams(index++);
+		else
+			cameras[c].distortion.k1 = 0;
+		if (opt.radial >= 2)
+			cameras[c].distortion.k2 = calibParams(index++);
+		else
+			cameras[c].distortion.k2 = 0;
+		if (opt.radial >= 3)
+			cameras[c].distortion.k3 = calibParams(index++);
+		else 
+			cameras[c].distortion.k3 = 0;
 	}
 
-	int base = intrinsics * (opt.groupedIntrinsics ? 1 : cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
-		int index = base + extrinsics * c;
 		if (opt.position)
 		{
 			cameras[c].transform.translation() = calibParams.template segment<3>(index);
@@ -126,36 +156,52 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 template<typename Scalar = ScalarInternal>
 static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>> &cameras, const OptimisationOptions &opt, Eigen::Ref<VectorX<Scalar>> calibParams)
 {
-	int intrinsics = numInt(opt), extrinsics = numExt(opt);
+	int index = 0;
+	calibParams.setZero();
+
+	if (opt.sharedRadial && opt.radial > 0)
+	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
+		for (int c = 0; c < cameras.size(); c++)
+		{
+			int i = index;
+			if (opt.radial >= 1)
+				calibParams(i++) += cameras[c].distortion.k1;
+			if (opt.radial >= 2)
+				calibParams(i++) += cameras[c].distortion.k2;
+			if (opt.radial >= 3)
+				calibParams(i++) += cameras[c].distortion.k3;
+		}
+		for (int i = index; i < index+opt.radial; i++)
+			calibParams(i) /= cameras.size();
+		index += opt.radial;
+	}
+
 	for (int c = 0; c < cameras.size(); c++)
 	{
-		int index = 0;
-		if (!opt.groupedIntrinsics)
-			index = intrinsics * c;
 		if (opt.focalLen)
 			calibParams(index++) = cameras[c].f;
-		if (opt.distk1)
-			calibParams(index++) = cameras[c].distortion.k1;
-		if (opt.distk2)
-			calibParams(index++) = cameras[c].distortion.k2;
-		if (opt.distp1)
-			calibParams(index++) = cameras[c].distortion.p1;
-		if (opt.distp2)
-			calibParams(index++) = cameras[c].distortion.p2;
-		if (opt.distk3)
-			calibParams(index++) = cameras[c].distortion.k3;
 		if (opt.principal)
 		{
 			calibParams(index++) = cameras[c].principalPoint.x();
 			calibParams(index++) = cameras[c].principalPoint.y();
 		}
+		if (opt.tangential)
+		{
+			calibParams(index++) = cameras[c].distortion.p1;
+			calibParams(index++) = cameras[c].distortion.p2;
+		}
+		if (opt.sharedRadial || opt.radial == 0)
+			continue;
+		if (opt.radial >= 1)
+			calibParams(index++) = cameras[c].distortion.k1;
+		if (opt.radial >= 2)
+			calibParams(index++) = cameras[c].distortion.k2;
+		if (opt.radial >= 3)
+			calibParams(index++) = cameras[c].distortion.k3;
 	}
 
-	int base = intrinsics * (opt.groupedIntrinsics ? 1 : cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
-		int index = base + extrinsics * c;
-
 		if (opt.position)
 		{
 			calibParams.template segment<3>(index) = cameras[c].transform.translation();
@@ -247,6 +293,12 @@ static OptErrorRes logErrorStats(const char* label, VectorX<Scalar> &errorVec, i
 {
 	if (errorVec.size() == 0)
 		return {};	
+
+	if (errorVec.hasNaN())
+	{
+		LOGC(LWarn, "%s: Error contains NANs!\n", label);
+		return { NAN, NAN, NAN, NAN };
+	}
 
 	OptErrorRes error = getErrorStats(errorVec, outliers);
 

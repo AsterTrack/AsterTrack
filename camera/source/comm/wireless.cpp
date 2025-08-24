@@ -273,6 +273,7 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 {
 	WirelessState &wireless = state->wireless;
 	bool sendStatus = true;
+	bool needIP = false;
 	wireless.lastStatus = sclock::now();
 	while (wireless.monitor)
 	{
@@ -288,6 +289,7 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 						wireless.wifi = WIRELESS_STATUS_ENABLED;
 					else
 						wireless.wifi = WIRELESS_STATUS_ERROR;
+					needIP = true;
 				}
 				else if (!(wireless.config & WIRELESS_CONFIG_WIFI))
 				{
@@ -338,8 +340,9 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 			wireless.lastCheck = sclock::now();
 			if (isWifiConnected())
 			{
-				reassignIP(); // May block for a second or so
 				wireless.wifi = WIRELESS_STATUS_CONNECTED;
+				if (needIP)	reassignIP(); // May block for a second or so
+				needIP = false;
 				getWirelessStatus(wireless.SSID, wireless.IP);
 				sendStatus = true;
 			}

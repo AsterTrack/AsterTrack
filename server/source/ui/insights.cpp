@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp" // TargetView
 #include "calib/obs_data.hpp"
 
+#include "point/sequence_data.inl"
+
 #include "device/tracking_controller.hpp"
 #include "comm/usb.hpp"
 
@@ -194,7 +196,169 @@ public:
 				marker.colorBand[i+1], marker.colorBand[i]);
 			if (marker.observations[i] > 1)
 			{
-				Color mix = lerp({ 1, 1, 0, 1 }, { 0, 1, 1, 1 }, (marker.observations[i]-1)/3);
+				Color mix = lerp({ 1, 1, 0, 1 }, { 0, 1, 1, 1 }, (marker.observations[i]-1)/3.0f);
+				ImVec2 mid(min.x, rc.Max.y - 5);
+				draw_list->AddRectFilled(mid, max, IM_COL32(mix.r*255, mix.g*255, mix.b*255, mix.a*255));
+			}
+		}
+		draw_list->PopClipRect();
+	}
+};
+
+
+struct Marker2DSequence : public ImSequencer::SequenceInterface
+{
+private:
+	VisualisationState *m_vis;
+	int state;
+
+	struct MarkerSequence
+	{
+		int index;
+		int frameStart, frameEnd;
+		std::vector<unsigned int> colorBand;
+		std::vector<float> rawErrors;
+		std::vector<int> observations;
+	};
+	std::vector<MarkerSequence> m_markers;
+
+public:
+	int m_start;
+	int lastFrame, markerCount;
+	std::pair<int,int> totalFrameRange;
+
+	bool needsUpdate(const SequenceData &sequence)
+	{
+		return lastFrame != sequence.lastRecordedFrame || markerCount != sequence.markers.size();
+	}
+
+	Marker2DSequence(const SequenceData &sequence, VisualisationState &visState, const CameraSystemCalibration &calib)
+		: m_vis(&visState)
+	{
+		//if (m_view)
+		//	state = m_view->calibrated? m_view->calibration->contextualRLock()->numSteps : -1;
+		lastFrame = sequence.lastRecordedFrame;
+		markerCount = sequence.markers.size();
+		int camCount = sequence.temporary.size();
+		//m_markers.reserve(sequence.markers.size() * camCount);
+		m_markers.resize(sequence.markers.size());
+		totalFrameRange = { lastFrame, lastFrame };
+		for (int i = 0; i < sequence.markers.size(); i++)
+		{
+			auto frameRange = sequence.markers[i].getFrameRange();
+			int frameCount = frameRange.second - frameRange.first;
+			totalFrameRange.first = std::min(totalFrameRange.first, frameRange.first);
+			//std::vector<MarkerSequences> markerSeq(camCount);
+			auto &marker = m_markers[i];
+			marker.index = i;
+			marker.frameStart = frameRange.first;
+			marker.frameEnd = frameRange.second;
+			marker.colorBand.clear();
+			marker.colorBand.resize(frameCount, IM_COL32(0, 0, 0, 0));
+			marker.rawErrors.clear();
+			marker.rawErrors.resize(frameCount);
+			marker.observations.clear();
+			marker.observations.resize(frameCount);
+
+			std::map<int, int> frameMap;
+			getObservationFrameMap(sequence.markers[i], frameMap, frameRange.first, frameRange.second);
+			handleMappedSequences(sequence.markers[i], frameMap, [&]
+				(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
+			{
+				for (int p = 0; p < seq.length(); p++)
+				{
+					int index = seq.startFrame + p - marker.frameStart;
+					marker.observations[index]++;
+					marker.colorBand[index] = IM_COL32(0.1*255, 0.3*255, 0.4*255, 0.8*255);
+				}
+			});
+
+			getTriangulationFrameMap(sequence.markers[i], frameMap, frameRange.first, frameRange.second);
+			handleMappedSequences(sequence.markers[i], frameMap, [&]
+				(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
+			{
+				for (int p = 0; p < seq.length(); p++)
+				{
+					int index = seq.startFrame + p - marker.frameStart;
+					// Determine new color
+					Color mix = lerp({ 0.1, 0.3, 0.4, 0.8}, { 0.1, 1.0, 0.2, 1.0 }, (float)(marker.observations[index]-1) / camCount);
+					marker.colorBand[index] = IM_COL32(mix.r*255, mix.g*255, mix.b*255, mix.a*255);
+				}
+			});
+		}
+
+		m_start = totalFrameRange.first;
+		drawSequenceBars = false;
+	}
+
+	virtual int GetFrameMin() const { return totalFrameRange.first; }
+	virtual int GetFrameMax() const { return totalFrameRange.second-1; }
+	virtual int GetItemCount() const { return markerCount; }
+	virtual int GetItemTypeCount() const { return 1; }
+	virtual const char* GetItemTypeName(int typeIndex) const { return ""; }
+	virtual const char* GetItemLabel(int index) const
+	{
+		static char tmps[512];
+		const MarkerSequence &marker = m_markers[index];
+		/* int frame = GetUI().visState.targetCalib.frameIdx;
+		float curSampleError = -1.0f;
+		if (marker.frameStart <= frame && marker.frameEnd >= frame)
+			curSampleError = marker.rawErrors[frame-marker.frameStart];
+		if (curSampleError >= 0.0f) // Marker visible in current frame
+			snprintf(tmps, sizeof(tmps), "Marker %d (%.2fpx)", index, curSampleError*PixelFactor);
+		else */
+		snprintf(tmps, sizeof(tmps), "Marker %d", index);
+		return tmps;
+	}
+
+	virtual void Get(int index, int** start, int** end, int* type, unsigned int* color)
+	{
+		MarkerSequence& marker = m_markers[index];
+		if (color)
+			*color = IM_COL32(0x80, 0x80, 0xDD, 0xFF);
+		if (start)
+			*start = &marker.frameStart;
+		if (end)
+			*end = &marker.frameEnd;
+		if (type)
+			*type = 0;
+	}
+
+	virtual void DoubleClick(int index)
+	{
+		m_vis->target.markerSelect[index] = !m_vis->target.markerSelect[index];
+	}
+
+	virtual void CustomDrawCompact(int index, ImDrawList* draw_list, const ImRect& rc, const ImRect& clippingRect)
+	{
+		MarkerSequence &marker = m_markers[index];
+		if (marker.colorBand.size() < 2) return;
+		float dx = (rc.Max.x - rc.Min.x)/(totalFrameRange.second-totalFrameRange.first);
+		draw_list->PushClipRect(clippingRect.Min, clippingRect.Max, true);
+		{ // Draw begin cap
+			ImVec2 min(rc.Min.x + dx * (marker.frameStart - 1.5f), rc.Min.y + 5);
+			ImVec2 max(min.x + dx, rc.Max.y - 3);
+			draw_list->AddRectFilledMultiColor(min, max,
+				IM_COL32(0,0,0,0), marker.colorBand.front(),
+				marker.colorBand.front(), IM_COL32(0,0,0,0));
+		}
+		{ // Draw end cap
+			ImVec2 min(rc.Min.x + dx * (marker.frameStart + marker.colorBand.size() - 1.5f), rc.Min.y + 5);
+			ImVec2 max(min.x + dx, rc.Max.y - 3);
+			draw_list->AddRectFilledMultiColor(min, max,
+				marker.colorBand.back(), IM_COL32(0,0,0,0),
+				IM_COL32(0,0,0,0), marker.colorBand.back());
+		}
+		for (int i = 0; i < marker.colorBand.size()-1; i++)
+		{
+			ImVec2 min(rc.Min.x + dx * (marker.frameStart + i - 0.5f), rc.Min.y + 5);
+			ImVec2 max(min.x + dx, rc.Max.y - 3);
+			draw_list->AddRectFilledMultiColor(min, max,
+				marker.colorBand[i], marker.colorBand[i+1],
+				marker.colorBand[i+1], marker.colorBand[i]);
+			if (marker.observations[i] > 1)
+			{
+				Color mix = lerp({ 1, 1, 0, 1 }, { 0, 1, 1, 1 }, (marker.observations[i]-1)/3.0f);
 				ImVec2 mid(min.x, rc.Max.y - 5);
 				draw_list->AddRectFilled(mid, max, IM_COL32(mix.r*255, mix.g*255, mix.b*255, mix.a*255));
 			}
@@ -403,6 +567,8 @@ public:
 
 template<> void OpaqueDeleter<TargetViewSequence>::operator()(TargetViewSequence* ptr) const
 { delete ptr; }
+template<> void OpaqueDeleter<Marker2DSequence>::operator()(Marker2DSequence* ptr) const
+{ delete ptr; }
 template<> void OpaqueDeleter<TrackingControllerEventSequence>::operator()(TrackingControllerEventSequence* ptr) const
 { delete ptr; }
 
@@ -410,6 +576,8 @@ static bool ShowTrackingPanel();
 static void CleanTrackingPanel();
 static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget);
 static void CleanTargetCalibrationPanel();
+static bool ShowSequencePanel();
+static void CleanSequencePanel();
 static bool ShowTrackingControllerPanel();
 static void CleanTrackingControllerPanel();
 static bool ShowTimingPanel();
@@ -430,6 +598,8 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 			CleanTrackingControllerPanel();
 		else if (lastPanel == 4)
 			CleanTimingPanel();
+		else if (lastPanel == 6)
+			CleanSequencePanel();
 		lastPanel = curPanel;
 	};
 	if (!ImGui::Begin(window.title.c_str(), &window.open) ||
@@ -461,17 +631,24 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 		}
 	}
 
+	if (ImGui::BeginTabItem("Sequences"))
+	{
+		if (ShowSequencePanel())
+			curPanel = 3;
+		ImGui::EndTabItem();
+	}
+
 	if (state.mode == MODE_Device && !state.controllers.empty() && ImGui::BeginTabItem("Tracking Controller"))
 	{
 		if (ShowTrackingControllerPanel())
-			curPanel = 3;
+			curPanel = 4;
 		ImGui::EndTabItem();
 	}
 
 	if (state.mode == MODE_Device && ImGui::BeginTabItem("Timing"))
 	{
 		if (ShowTimingPanel())
-			curPanel = 4;
+			curPanel = 5;
 		ImGui::EndTabItem();
 	}
 
@@ -883,6 +1060,48 @@ static void CleanTargetCalibrationPanel()
 		ui.seqTarget = nullptr;
 	}
 	lastTargetTab = nullptr;
+}
+
+static bool ShowSequencePanel()
+{
+	InterfaceState &ui = GetUI();
+	ServerState &state = GetState();
+	PipelineState &pipeline = state.pipeline;
+
+	static float sequenceZoom = 10.0f;
+
+	static bool followFrame = true;
+	ImGui::Checkbox("Auto-Size", &followFrame);
+
+	if (!ui.seqMarker || ui.seqMarker->needsUpdate(*pipeline.seqDatabase.contextualRLock()))
+	{ // Need to update/recreate sequence
+		auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::wlock(pipeline.seqDatabase));
+		ui.seqMarker = make_opaque<Marker2DSequence>(*std::get<1>(lock), ui.visState, *std::get<0>(lock));
+
+		// Keep zoom intact
+		ui.seqMarker->framePixelWidthTarget = sequenceZoom;
+		ui.seqMarker->framePixelWidth = sequenceZoom;
+	}
+	if (followFrame)
+	{
+		ui.seqMarker->framePixelWidthTarget = ui.seqMarker->framePixelWidth =
+			(float)(ImGui::GetContentRegionAvail().x - 200 - 36) // Why -36? Idk ImSequencer is weird
+				/ (ui.seqMarker->GetFrameMax() - ui.seqMarker->GetFrameMin());
+	}
+	sequenceZoom = ui.seqMarker->framePixelWidthTarget;
+
+	int curFrame = pipeline.frameNum;
+	ImSequencer::Sequencer(ui.seqMarker.get(), &curFrame, nullptr, nullptr, &ui.seqMarker->m_start, ImSequencer::SEQUENCER_EDIT_NONE);
+
+	return true;
+}
+static void CleanSequencePanel()
+{
+	InterfaceState &ui = GetUI();
+	if (ui.seqMarker)
+	{
+		ui.seqMarker = nullptr;
+	}
 }
 
 const static char* lastControllerTab = nullptr;

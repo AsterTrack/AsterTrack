@@ -49,6 +49,7 @@ struct TrackingCameraState; // device/tracking_camera.hpp
 struct TrackingControllerState; // device/tracking_controller.hpp
 struct CameraConfig; // config.hpp
 struct TargetViewSequence; // insights.hpp
+struct Marker2DSequence; // insights.hpp
 struct TrackingControllerEventSequence; // insights.hpp
 struct TargetView; // calib_target/assembly.hpp
 struct TargetAssemblyStage; // calib_target/assembly.hpp
@@ -362,6 +363,7 @@ public:
 
 	// Sequences state
 	opaque_ptr<TargetViewSequence> seqTarget = NULL;
+	opaque_ptr<Marker2DSequence> seqMarker = NULL;
 	opaque_ptr<TrackingControllerEventSequence> seqEvents = NULL;
 	bool seqEventsActive = false;
 	long seqJumpToFrame = -1;

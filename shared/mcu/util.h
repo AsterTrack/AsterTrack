@@ -118,6 +118,13 @@ static inline uint32_t __get_GINTEN()
 
 #if defined(ENABLE_LOG)
 
+#if defined(LOG_USE_SDI)
+void SDI_Enable();
+bool SDI_ProbeAttached();
+bool SDI_Busy();
+bool SDI_Write(uint8_t *buf, uint_fast16_t size);
+#endif
+
 #define DEBUG_BUFFER_SIZE (1<<14)
 extern volatile uint_fast16_t debugHead, debugTail, debugSending;
 extern uint8_t *debugBuffer; // [DEBUG_BUFFER_SIZE];

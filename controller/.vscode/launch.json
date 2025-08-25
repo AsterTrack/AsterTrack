@@ -6,8 +6,7 @@
     "configurations": [
        { // For linux only as of now
             // Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
-            // To build OpenOCD on linux from git, follow instructions and build with "./configure --enable-stlink"
-            // Also test arm-none-eabi-gdb separately if all dependencies are there in case cortex-debug doesn't work
+            // REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
             "name": "JTAG DEBUGGING CH32V307",
             "cwd": "${workspaceFolder}",
             "executable": "./build/TrackingController.elf",
@@ -36,15 +35,14 @@
                 "monitor halt",
                 //"continue",
             ],
-            "preRestartCommands": [
+            "preResetCommands": [
                 "enable breakpoint",
                 "monitor reset halt",
             ]
-       }
+       },
        { // For linux only as of now
             // Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
-            // To build OpenOCD on linux from git, follow instructions and build with "./configure --enable-stlink"
-            // Also test arm-none-eabi-gdb separately if all dependencies are there in case cortex-debug doesn't work
+            // REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
             "name": "JTAG DEBUGGING CH32V307 Config",
             "cwd": "${workspaceFolder}",
             "executable": "./build/configurator.elf",
@@ -67,7 +65,7 @@
                 "-d",
                 "${workspaceFolder}"
             ],
-            "preRestartCommands": [
+            "preResetCommands": [
                 "set mem inaccessible-by-default off",
                 "set architecture riscv:rv32",
                 "load",

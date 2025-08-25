@@ -131,7 +131,7 @@ static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 
 // For sending event and debug logs over interrupt transfers
-#ifdef DEBUG_USE_INT
+#ifdef LOG_USE_INT
 PacketRef debugUSBPacket;
 #endif
 #ifdef EVENT_USE_INT
@@ -219,6 +219,10 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		eventFilter[i] = 0; // Disable all by default
 #endif
 
+#if defined(ENABLE_LOG) && defined(LOG_USE_SDI)
+	SDI_Enable();
+#endif
+
 	// Init Packet hub (distributing incoming UART packages to USB endpoints)
 	InitPacketHub();
 
@@ -294,6 +298,26 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			LeavePacketHubZone();
 		}
 
+#if defined(ENABLE_LOG) && defined(LOG_USE_SDI)
+		if (SDI_ProbeAttached() && !SDI_Busy())
+		{
+			int pos = debugTail;
+			int size = debugHead - pos;
+			if (size != 0 && debugTail == debugSending)
+			{
+				debugSending = debugSending+1; // "Lock" as quickly as possible
+				if (size < 0) size = DEBUG_BUFFER_SIZE-pos;
+				if (size > 7) size = 7;
+				debugSending = (pos+size) % DEBUG_BUFFER_SIZE;
+				if (SDI_Write(debugBuffer+pos, size))
+					debugTail = debugSending;
+				else
+					debugSending = debugTail;
+			}
+		}
+//#endif
+#endif
+
 		now = GetTimePoint();
 		static TimePoint lastTimeMicroCheck = 0;
 		if (now-lastTimeMicroCheck < 100*TICKS_PER_US)
@@ -364,7 +388,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			}
 		}
 
-#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(LOG_USE_INT)
 		if (commChannelsOpen)
 		{ // Setup real-time transfers to use
 			EnterPacketHubZone();
@@ -644,7 +668,7 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 static void cleanSendingState()
 {
 	// Reset packet-specific sending states - they expect a callback and would get stuck otherwise
-#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(LOG_USE_INT)
 	if (debugUSBPacket.queued || debugUSBPacket.writeSet)
 		debugSending = debugTail;
 	resetPacketRef(&debugUSBPacket);
@@ -750,7 +774,7 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 		lastSOFPacket = NULL;
 	}
 
-#if defined(ENABLE_LOG) && defined(DEBUG_USE_INT)
+#if defined(ENABLE_LOG) && defined(LOG_USE_INT)
 	if (sink->sending == &debugUSBPacket)
 	{
 		if (success)
@@ -849,7 +873,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 
 	if (req->bRequest == COMMAND_IN_DEBUG)
 	{ // Request for debug data
-#if defined(ENABLE_LOG)
+#if defined(ENABLE_LOG) && defined(LOG_USE_CTRL)
 		USBD_STR("+Debug");
 		if (debugTail == debugSending)
 		{
@@ -919,7 +943,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_IN_EVENTS)
 	{ // Request for event data
 		USBD_STR("+Event");
-#if defined(ENABLE_EVENTS)
+#if defined(ENABLE_EVENTS) && defined(EVENT_USE_CTRL)
 		if (eventTail == eventSending)
 		{
 			eventSending = eventSending+1; // "Lock" as quickly as possible
@@ -1135,7 +1159,7 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 	{
 		if (req->bRequest == COMMAND_IN_DEBUG)
 		{ // Request for debug data
-	#if defined(ENABLE_LOG)
+	#if defined(ENABLE_LOG) && defined(LOG_USE_CTRL)
 			if (success)
 				debugTail = debugSending;
 			else
@@ -1148,7 +1172,7 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 		}
 		else if (req->bRequest == COMMAND_IN_EVENTS)
 		{ // Request for event data
-	#if defined(ENABLE_EVENTS)
+	#if defined(ENABLE_EVENTS) && defined(EVENT_USE_CTRL)
 			if (success)
 			{
 				eventTail = eventSending;

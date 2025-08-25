@@ -13,8 +13,11 @@ LOG_FLAGS =
 
 # Enables logging at different levels
 LOG_FLAGS += -DENABLE_LOG
-LOG_FLAGS += -DDEBUG_USE_INT
+LOG_FLAGS += -DLOG_USE_CTRL
+LOG_FLAGS += -DLOG_USE_INT
+#LOG_FLAGS += -DLOG_USE_SDI
 LOG_FLAGS += -DENABLE_EVENTS
+LOG_FLAGS += -DEVENT_USE_CTRL
 LOG_FLAGS += -DEVENT_USE_INT
 # Generous Debug Logging. Don't use at high framerates
 #LOG_FLAGS += -DDEBUG_LOG

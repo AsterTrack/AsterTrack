@@ -873,8 +873,8 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 
 	if (req->bRequest == COMMAND_IN_DEBUG)
 	{ // Request for debug data
+		USBC_STR("+Debug");
 #if defined(ENABLE_LOG) && defined(LOG_USE_CTRL)
-		USBD_STR("+Debug");
 		if (debugTail == debugSending)
 		{
 			debugSending = debugSending+1; // "Lock" as quickly as possible
@@ -900,7 +900,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	}
 	else if (req->bRequest == COMMAND_IN_STATUS)
 	{ // Request to report controller status
-		USBD_STR("+Iterate");
+		USBC_STR("+Iterate");
 		uint8_t *buf = (uint8_t*)&usbd->status.data_buf[sizeof(usbd_ctlreq)];
 	
 		// Controller status
@@ -942,7 +942,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	}
 	else if (req->bRequest == COMMAND_IN_EVENTS)
 	{ // Request for event data
-		USBD_STR("+Event");
+		USBC_STR("+Event");
 #if defined(ENABLE_EVENTS) && defined(EVENT_USE_CTRL)
 		if (eventTail == eventSending)
 		{
@@ -969,7 +969,7 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	}
 	else if (req->bRequest == COMMAND_IN_PACKETS)
 	{ // Request for camera packets (stored in shared buffers)
-		USBD_STR("+ReqPackets");
+		USBC_STR("+ReqPackets");
 		for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		{
 			SharedBuffer *buf = &packetHub.shared[i];
@@ -1176,12 +1176,12 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 			if (success)
 			{
 				eventTail = eventSending;
-				USBD_STR("+EVT_Success");
+				USBC_STR("+EVT_Success");
 			}
 			else
 			{
 				eventSending = eventTail;
-				USBD_STR("!EVT_Failure");
+				USBC_STR("!EVT_Failure");
 			}
 	#endif
 		}
@@ -1193,12 +1193,12 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 				{
 					resetPacketRef(packetUSBPacket);
 					packetSendCounter++;
-					USBD_STR("+PKT_Success");
+					USBC_STR("+PKT_Success");
 				}
 				else
 				{
 					packetUSBPacket->writeSet = false;
-					USBD_STR("!PKT_Failure");
+					USBC_STR("!PKT_Failure");
 				}
 			}
 			packetUSBPacket = NULL;

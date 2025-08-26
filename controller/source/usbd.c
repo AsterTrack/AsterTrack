@@ -217,7 +217,7 @@ usbd_respond class_impl_control(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Standard Get Interface Request (for alternative interrupt transfer)
 		usbd->status.data_ptr = &usbd_interface_index;
 		usbd->status.data_count = 1;
-		USBD_STR("+GetInterface");
+		USBC_STR("+GetInterface");
 		return usbd_ack;
 	}
 
@@ -226,7 +226,7 @@ usbd_respond class_impl_control(usbd_device *usbd, usbd_ctlreq *req)
 		&& req->bRequest == USB_STD_SET_INTERFACE
 		&& req->wIndex == USBD_INTERFACE_ID)
 	{ // Standard Set Interface Request (to set to alternative interrupt transfer)
-		USBD_STR("+SetInterface");
+		USBC_STR("+SetInterface");
 		return class_impl_setinterface(usbd, req->wValue);
 	}
 
@@ -235,7 +235,7 @@ usbd_respond class_impl_control(usbd_device *usbd, usbd_ctlreq *req)
 		&& req->bRequest == WCID_VENDOR_CODE
 		&& req->wIndex == 0x0004)
 	{ // WCID compatible ID request (part of WinUSB support for windows)
-		USBD_STR("+WCID");
+		USBC_STR("+WCID");
 		usbd->status.data_ptr = (void*)&WCID_CompatID_Desc;
 		usbd->status.data_count = sizeof(WCID_CompatID_Desc);
 		return usbd_ack;

@@ -155,7 +155,7 @@ bool usbd_ep_set_dma(usbd_device *dev, uint8_t ep, uint8_t *buf, uint16_t len)
 	ep = ep&0xF;
 	if (dev->ep_set[ep])
 	{
-		ERR_STR("#EpSet");
+		ERR_STR("\n#EpSet");
 		return false;
 	}
 	LOG_EVT_USB(CONTROLLER_EVENT_USB_DATA_TX, true);
@@ -271,7 +271,7 @@ static usbd_respond std_control(usbd_device *dev, usbd_ctlreq *req)
 			}
 			else
 			{
-				USBD_STR("!RepeatAddress");
+				USBD_STR("\n!RepeatAddress");
 			}
 			// Set later once transfer is acknowledged
 			break;
@@ -388,15 +388,14 @@ void usbd_poll(usbd_device *dev)
 			uint8_t ep = usbStatus & USBHS_UIS_ENDP_MASK;
 			if (ep == 0)
 			{
-				USBD_STR("^CtrlSent:");
-				USBD_CHARR(INT999_TO_CHARR(USBHSD->UEP0_TX_LEN));
-				//USBD_CHARR('/', 'T', 'I', INT99_TO_CHARR(USBHSD->UEP0_TX_LEN), 'R', INT999_TO_CHARR(dev->status.data_count));
+				USBD_STR("\nSend:");
+				USBD_CHARR(INT9999_TO_CHARR(USBHSD->UEP0_TX_LEN));
 				if (dev->status.data_count == 0 && dev->status.data_sending != dev->status.ep0size)
 				{ // Done with Control IN transfer (TX)
 
 					if (dev->state == usbd_ctl_statusout)
 					{ // Sent out a ZLP as positive statusout packet
-						USBD_STR("+SentStatusOut");
+						USBD_STR("+ACK");
 
 						if ((dev->ctl_setup.bmRequestType & USB_REQ_TYPE) == USB_REQ_STANDARD
 						 && (dev->ctl_setup.bmRequestType & USB_REQ_RECIPIENT) == USB_REQ_DEVICE
@@ -413,19 +412,19 @@ void usbd_poll(usbd_device *dev)
 					}
 					else if (dev->state == usbd_ctl_txdata)
 					{ // Send out a data packet
-						USBD_STR("+TXDone");
-						//USBD_CHARR(':', UI8_TO_HEX_ARR(usbStatus));
+						USBD_STR("+Done");
+						USBD_CHARR(':', UI8_TO_HEX_ARR(usbStatus));
 						dev->state = usbd_ctl_statusin; // Expecting OUT token for statusin phase, receiving a valid ZLP would be a positive status packet
 					}
 					else if (dev->state == usbd_ctl_statusin)
 					{ // Duplicate event after the last TXDone whenever the transfer involved multiple data packets
-						KERR_STR("!RepeatTX");
-						//USBD_CHARR(':', UI8_TO_HEX_ARR(usbStatus));
+						KERR_STR("\n!RepeatTX");
+						KERR_CHARR(':', UI8_TO_HEX_ARR(usbStatus));
 					}
 					else
 					{ // Invalid state
-						ERR_STR("#TX0What:");
-						USBD_CHARR(UI8_TO_HEX_ARR(dev->state));
+						ERR_STR("\n#TX0What:");
+						ERR_CHARR(UI8_TO_HEX_ARR(dev->state));
 						USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_RES_STALL;
 						break;
 					}
@@ -444,14 +443,14 @@ void usbd_poll(usbd_device *dev)
 					{ // Not sure what this means
 						// TODO: May have to retransmit the last packet?
 						// We know how much to retrace from dev->status.data_sending
-						ERR_STR("#NAK");
+						ERR_STR("\n#TNAK");
 						USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_RES_STALL;
 						break;
 					}
 
 					if (dev->state != usbd_ctl_txdata)
 					{ // Invalid State
-						ERR_STR("#TXWhat:");
+						ERR_STR("\n#TXWhat:");
 						USBD_CHARR(UI8_TO_HEX_ARR(dev->state));
 						USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_RES_STALL;
 						break;
@@ -461,10 +460,10 @@ void usbd_poll(usbd_device *dev)
 					{ // Need to send another ZLP to signal that this is the end
 						// Since (dev->status.data_sending == dev->status.ep0size)
 						// Just sent a full packet so host needs to know if this is the end of it
-						USBD_STR("+TXZLP:");
+						USBD_STR("+ZLP:");
 					}
 					else
-						USBD_STR("+TXCont:");
+						USBD_STR("+Cont:");
 
 					uint16_t len = dev->status.data_count >= dev->status.ep0size? dev->status.ep0size : dev->status.data_count;
 					USBHSD->UEP0_DMA = (uint16_t)(intptr_t)dev->status.data_ptr;
@@ -482,7 +481,7 @@ void usbd_poll(usbd_device *dev)
 				{
 					if ((usbStatus & USBHS_UIS_IS_NAK) == USBHS_UIS_IS_NAK)
 					{
-						KERR_STR("!IntTxNAK");
+						KERR_STR("\n!IntTxNAK");
 						LOG_EVT_USB(CONTROLLER_EVENT_USB_DATA_TX, false);
 						EP_TX_CTRL(ep) = (EP_TX_CTRL(ep) & ~USBHS_UEP_T_RES_MASK) | USBHS_UEP_T_RES_NAK;
 						EP_TX_CTRL(ep) ^= USBHS_UEP_T_TOG_DATA1;
@@ -500,7 +499,7 @@ void usbd_poll(usbd_device *dev)
 				}
 				else
 				{
-					ERR_STR("#SentEPInvalid:");
+					ERR_STR("\n#SentEPInvalid:");
 					USBD_CHARR(INT99_TO_CHARR(ep));
 					if (ep > 0 && ep < 16)
 						EP_TX_CTRL(ep) = (EP_TX_CTRL(ep) & ~USBHS_UEP_T_RES_MASK) | USBHS_UEP_T_RES_STALL;
@@ -515,18 +514,17 @@ void usbd_poll(usbd_device *dev)
 			uint16_t rxLen = USBHSD->RX_LEN;
 			if (ep == 0)
 			{
-				USBD_STR("^CtrlRecv");
+				USBD_STR("\nRecv");
 				if ((usbStatus & USBHS_UIS_IS_NAK) == USBHS_UIS_IS_NAK)
 				{ // Not sure what this means
-					ERR_STR("#NAK");
+					ERR_STR("\n#NAK");
 					break; // TODO: Remove or handle
 				}
 				if (rxLen == 0)
 				{
-
 					if (dev->state != usbd_ctl_statusin)
 					{
-						ERR_STR("#RX0What:");
+						ERR_STR("\n#RX0What:");
 						USBD_CHARR(UI8_TO_HEX_ARR(dev->state));
 						USBHSD->UEP0_RX_CTRL = USBHS_UEP_R_RES_STALL;
 						break;
@@ -545,9 +543,11 @@ void usbd_poll(usbd_device *dev)
 				}
 				else
 				{
+					USBD_CHARR(':', INT999_TO_CHARR(rxLen));
+
 					if ((usbStatus & USBHS_UIS_TOG_OK) == 0)
 					{
-						ERR_STR("#NOTOK:");
+						ERR_STR("\n#NOTOK:");
 						USBD_CHARR(INT999_TO_CHARR(rxLen), '/', INT999_TO_CHARR(dev->status.data_count_rx));
 						// Ignore packet, USB HW should have already responded with a NAK, packet will be retried later
 						break;
@@ -555,28 +555,25 @@ void usbd_poll(usbd_device *dev)
 
 					if (dev->state != usbd_ctl_rxdata)
 					{
-						ERR_STR("#RXWhat:");
-						USBD_CHARR(UI8_TO_HEX_ARR(dev->state), ':', INT999_TO_CHARR(rxLen), '/', INT999_TO_CHARR(dev->status.data_count_rx));
+						ERR_STR("\n#RXWhat:");
+						USBD_CHARR(UI8_TO_HEX_ARR(dev->state), ':', INT999_TO_CHARR(rxLen), '/', INT9999_TO_CHARR(dev->status.data_count_rx));
 						break;
 					}
-
-					USBD_STR("+RXData:");
-					USBD_CHARR(INT999_TO_CHARR(rxLen), '/', INT999_TO_CHARR(dev->status.data_count_rx));
 
 					dev->status.data_count_rx -= rxLen;
 					if (dev->status.data_count_rx < 0)
 					{
-						ERR_STR("#RXOverLength");
+						ERR_STR("\n#RXOverLength");
 						dev->status.data_count_rx = 0;
 					}
 					if (dev->status.data_count_rx == 0)
 					{ // Finished RX transfer
-						USBD_STR("+RXDone");
+						USBD_STR("+Done");
 						usbd_respond res = class_impl_control(dev, (usbd_ctlreq *)dev->status.data_buf);
 
 						if (res == usbd_fail)
 						{ // Stall in response to statusout to signal RX had an issue
-							ERR_STR("#Invalid");
+							ERR_STR("\n#Invalid");
 							USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_STALL; // Signals error occurred
 							//USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_NAK; // Signals still processing
 							// TODO: Test
@@ -591,7 +588,7 @@ void usbd_poll(usbd_device *dev)
 						}
 						else 
 						{ // Send zero-length packet in response to statusout to signal RX was ok
-							USBD_STR("+SendingZLP");
+							USBD_STR("+ZLP");
 							USBHSD->UEP0_TX_LEN = 0;
 							USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_ACK; // Status always uses DATA1
 							dev->state = usbd_ctl_statusout; // Expecting IN token for statusout phase, send ZLP as positive status packet
@@ -607,14 +604,14 @@ void usbd_poll(usbd_device *dev)
 						USBHSD->UEP0_RX_CTRL = (USBHSD->UEP0_RX_CTRL & ~USBHS_UEP_R_RES_MASK) | USBHS_UEP_R_RES_ACK;
 						dev->state = usbd_ctl_rxdata; // Expecting more OUT tokens
 
-						USBD_STR("+RXCont:");
-						USBD_CHARR(INT999_TO_CHARR(dev->status.data_count_rx));
+						USBD_STR("+Cont:");
+						USBD_CHARR(INT9999_TO_CHARR(dev->status.data_count_rx));
 					}
 				}
 			}
 			else
 			{
-				USBD_STR("^TokenOUT:");
+				USBD_STR("\nTokenOUT:");
 				if (USBHSD->ENDP_CONFIG & (1 << (ep+8)))
 				{
 					//USBD_CHARR('+', 'R', 'X', 'E', 'P', INT99_TO_CHARR(ep));
@@ -628,14 +625,14 @@ void usbd_poll(usbd_device *dev)
 					}
 					else
 					{
-						KERR_STR("#IsoRXNotOK");
+						KERR_STR("\n#IsoRXNotOK");
 						if (ep > 0 && ep < 16)
 							EP_RX_CTRL(ep) = (EP_RX_CTRL(ep) & ~USBHS_UEP_R_RES_MASK) | USBHS_UEP_R_RES_STALL;
 					}
 				}
 				else
 				{
-					ERR_STR("#RecvEPNotExist:");
+					ERR_STR("\n#RecvEPNotExist:");
 					USBD_CHARR(INT99_TO_CHARR(ep));
 					if (ep > 0 && ep < 16)
 						EP_RX_CTRL(ep) = (EP_RX_CTRL(ep) & ~USBHS_UEP_R_RES_MASK) | USBHS_UEP_R_RES_STALL;
@@ -651,7 +648,8 @@ void usbd_poll(usbd_device *dev)
 		}
 		default:
 		{
-			ERR_CHARR('!', 'U', 'T', 'K', UI8_TO_HEX_ARR(usbStatus));
+			ERR_STR("\n!UTK");
+			ERR_CHARR(':', UI8_TO_HEX_ARR(usbStatus));
 			break;
 		}
 		}
@@ -663,7 +661,9 @@ void usbd_poll(usbd_device *dev)
 
 		if (dev->state != usbd_ctl_idle)
 		{ // Another control transfer must've gotten interrupted, have to accept this new one
-			ERR_CHARR('^', '!', 'I', 'n', 't', INT9_TO_CHARR((uint8_t)dev->state));
+			// This should not happen anymore, if this pops up again, something broke
+			ERR_STR("\n#CtrlInt");
+			ERR_CHARR(':', INT9_TO_CHARR((uint8_t)dev->state));
 
 			if (dev->state != usbd_ctl_statusout && dev->state != usbd_ctl_statusin)
 			{ // Set negative resolution for still ongoing transfers
@@ -682,7 +682,7 @@ void usbd_poll(usbd_device *dev)
 		dev->status.data_count_rx = 0;
 
 		LOG_EVT_USB(CONTROLLER_EVENT_USB_CONTROL, true);
-		USBD_STR("^Setup");
+		USBD_STR("\nSetup");
 
 		// Reset state
 		USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_NAK;
@@ -695,7 +695,7 @@ void usbd_poll(usbd_device *dev)
 		if ((dev->ctl_setup.bmRequestType & USB_REQ_DIRECTION) == USB_REQ_HOSTTODEV)
 		{ // Host to Device, always accept and handle once all data is there
 
-			USBD_STR("+CtrlOUT");
+			USBD_STR("+OUT");
 
 			if (dev->ctl_setup.wLength == 0)
 			{ // No data, just setup header
@@ -708,12 +708,12 @@ void usbd_poll(usbd_device *dev)
 					USBHSD->UEP0_TX_LEN = 0;
 					USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_ACK;
 					dev->state = usbd_ctl_statusout; // Expecting IN token for statusout phase, send ZLP as positive status packet
-					USBD_STR("+SendingZLP");
+					USBD_STR("+ZLP");
 				}
 				else
 				{
-					KERR_STR("#Fail-ReqType:");
-					KERR_CHARR(UI8_TO_HEX_ARR(dev->ctl_setup.bmRequestType));
+					KERR_STR("\n#FailedReqToDev");
+					KERR_CHARR('+', UI8_TO_HEX_ARR(dev->ctl_setup.bmRequestType));
 					//USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_RES_STALL; // Signals error occured
 					//USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_NAK; // Signals still processing
 					//dev->state = usbd_ctl_idle;
@@ -725,7 +725,7 @@ void usbd_poll(usbd_device *dev)
 			}
 			else if (dev->ctl_setup.wLength > dev->status.data_maxsize)
 			{ // Can't read full data, stall
-				ERR_STR("#RXTooLong:");
+				ERR_STR("\n#RXTooLong:");
 				USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_STALL;
 				USBHSD->UEP0_RX_CTRL = USBHS_UEP_R_TOG_DATA1 | USBHS_UEP_R_RES_STALL;
 				dev->state = usbd_ctl_idle;
@@ -733,8 +733,8 @@ void usbd_poll(usbd_device *dev)
 			}
 			else 
 			{ // Ready to receive data of Control OUT transfer
-				USBD_STR("+ExpectingData:");
-				USBD_CHARR(INT999_TO_CHARR(dev->ctl_setup.wLength));
+				USBD_STR("+RX:");
+				USBD_CHARR(INT9999_TO_CHARR(dev->ctl_setup.wLength));
 
 				USBHSD->UEP0_DMA += sizeof(usbd_ctlreq); // Write data after header
 				USBHSD->UEP0_RX_CTRL = USBHS_UEP_R_TOG_DATA1 | USBHS_UEP_R_RES_ACK;
@@ -745,7 +745,7 @@ void usbd_poll(usbd_device *dev)
 		else 
 		{ // Device to Host, handle setup header to gather data to send, or deny
 
-			USBD_STR("+CtrlIN");
+			USBD_STR("+IN");
 
 			// Check custom control handling first
 			res = class_impl_control(dev, (usbd_ctlreq *)dev->status.data_buf);
@@ -757,7 +757,7 @@ void usbd_poll(usbd_device *dev)
 
 			if (res == usbd_fail)
 			{ // Request not supported, stall TX
-				ERR_STR("#FailStall:");
+				ERR_STR("\n#FailStall:");
 				USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_STALL;
 
 				// Prepare RX for setup
@@ -779,14 +779,17 @@ void usbd_poll(usbd_device *dev)
 			}
 			else
 			{ // Transmit data in response to future IN tokens
-				USBD_CHARR('+', 'T', 'X', ':', INT999_TO_CHARR(dev->status.data_count), '/', INT999_TO_CHARR(dev->ctl_setup.wLength));
+				USBD_STR("+TX");
+				USBD_CHARR(':', INT9999_TO_CHARR(dev->status.data_count));
 
 				// Limit size if required
+				uint16_t orig = dev->status.data_count;
 				if (dev->status.data_count > dev->ctl_setup.wLength)
 					dev->status.data_count = dev->ctl_setup.wLength;
 				if (dev->status.data_count > dev->status.data_maxsize)
 					dev->status.data_count = dev->status.data_maxsize;
-				USBD_CHARR('=', INT999_TO_CHARR(dev->status.data_count));
+				if (orig != dev->status.data_count)
+					USBD_CHARR('!', INT9999_TO_CHARR(dev->status.data_count));
 				
 				// USB DMA can only access addresses in SRAM and needs them to be 4-byte aligned
 				/* if (((uint32_t)dev->status.data_ptr)&USB_PACKET_ALIGNMENT)
@@ -811,9 +814,8 @@ void usbd_poll(usbd_device *dev)
 				dev->status.data_ptr += len;
 				dev->status.data_count -= len;
 				dev->status.data_sending = len;
-				USBD_CHARR('>', INT999_TO_CHARR(len));
 				if (dev->status.data_count > 0)
-					USBD_STR("+TBD");
+					USBD_STR("+Cont");
 
 				dev->state = usbd_ctl_txdata; // Expect IN tokens to send that data
 			}
@@ -839,7 +841,7 @@ void usbd_poll(usbd_device *dev)
 	if (USBHSD->INT_FG & USBHS_UIF_FIFO_OV)
 	{ // Fifo Overflow is not supported
 		USBHSD->INT_FG = USBHS_UIF_FIFO_OV; // Clear flag
-		ERR_STR("!FifoOverflow");
+		ERR_STR("\n!FifoOverflow");
 	}
 	/* if (USBHSD->INT_FG)
 	{ // Next interrupt was already loaded

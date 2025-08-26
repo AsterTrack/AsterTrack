@@ -226,7 +226,7 @@ static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, Shared
 	}
 
 	{ // Debug why we couldn't allocate shared buffer, this should not happen during normal use
-		ERR_STR("^#SharedFull(");
+		ERR_STR("\n#SharedFull(");
 		ERR_CHARR(INT999_TO_CHARR(size), ')');
 		for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		{

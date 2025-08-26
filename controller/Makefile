@@ -37,8 +37,10 @@ LOG_FLAGS += -DKERR_LOG
 LOG_FLAGS += -DCOMM_LOG
 # Command Debug Log
 LOG_FLAGS += -DCMDD_LOG
-# USB Hardware Debug Log
+# USB Driver Debug Log
 #LOG_FLAGS += -DUSBD_LOG
+# USB Class Debug Log
+#LOG_FLAGS += -DUSBC_LOG
 # USB PD Debug Log
 #LOG_FLAGS += -DUSBPD_LOG
 #LOG_FLAGS += -DPD_CAPS

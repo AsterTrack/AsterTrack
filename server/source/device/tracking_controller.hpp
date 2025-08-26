@@ -54,6 +54,7 @@ struct TrackingControllerState
 
 	// Cameras connected to it
 	std::vector<std::shared_ptr<TrackingCameraState>> cameras;
+	int newCamerasConnecting;
 
 	// USB device comms
 	std::shared_ptr<USBCommState> comm;

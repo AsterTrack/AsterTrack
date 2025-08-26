@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/usb.hpp"
 
+#include "ui/shared.hpp"
 #include "util/log.hpp"
 
 #define USB_PACKET_QUEUE // Keep USB thread free for timing by queuing packets for device thread to parse
@@ -134,6 +135,9 @@ void DisconnectController(ServerState &state, TrackingControllerState &controlle
 	// Remove controller
 	auto c = std::find_if(state.controllers.begin(), state.controllers.end(), [&controller](const auto &c) { return *c == controller; });
 	state.controllers.erase(c);
+
+	// May not have been called if controller had only connecting cameras
+	SignalServerEvent(EVT_UPDATE_CAMERAS);
 
 	// Stop streaming if there are no cameras left
 	if (state.cameras.empty() && state.isStreaming)

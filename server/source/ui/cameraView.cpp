@@ -54,7 +54,7 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera);
 
-static void drawOverlayMessages(CameraView &view, ImRect rect);
+static bool drawOverlayMessage(ImRect rect, int index, int count, ImGuiID id, bool button, const std::string &message);
 
 static CameraVisMode getVisMode(CameraView &view)
 {
@@ -71,6 +71,21 @@ static CameraVisMode getVisMode(CameraView &view)
 	if (view.camera->hasSetMode(TRCAM_MODE_VISUAL))
 		return VIS_VISUAL_DEBUG;
 	return VIS_BLOB;
+}
+
+void InterfaceState::ShowConnectingCameraUI(int index)
+{
+	// TODO: Rework connecting cameras (2/2)
+	// This is only for cameras that we KNOW are there, but we don't know their persistent ID yet
+	// Currently, all connecting cameras with unknown IDs (e.g. 0) would appear as one and the same, and we'd get a garbage camera in pipeline
+	// So until we make the MCU (which communicates while Pi is starting) aware of the ID of the Pi, do this temporarily
+	// Not super easy to both make MCU ID-aware, make 100% sure Pi that is booting will use the same ID, and keep backwards compatibility to cameras without MCU
+
+	ImRect rect = ImGui::GetCurrentWindowRead()->InnerRect;
+	// Black background
+	ImGui::RenderFrame(rect.Min, rect.Max, IM_COL32(0,0,0,255), false, 0);
+	// Single message
+	drawOverlayMessage(rect, 0, 1, ImGui::GetID("Connecting"), false, "Camera is connected and starting up...");
 }
 
 void InterfaceState::UpdateCameraUI(CameraView &view)
@@ -690,7 +705,28 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		}
 	}
 
-	drawOverlayMessages(view, rect);
+	
+	// Get abnormal state to display
+	bool abnormalStreamingState;
+	std::vector<std::string> status = getAbnormalStatus(*view.camera, abnormalStreamingState);
+	int msgCount = status.size() + abnormalStreamingState;
+	if (msgCount)
+	{
+		//LOGC(LInfo, "Drawing %d msgs in window at %.2fx%.2f of size %.2fx%.2f", msgCount, ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowSize().x, ImGui::GetWindowSize().y);
+		int msgIndex = 0;
+		for (int i = 0; i < status.size(); i++)
+		{
+			drawOverlayMessage(rect, msgIndex++, msgCount, ImGui::GetID(i), false, status[i]);
+		}
+		if (abnormalStreamingState)
+		{
+			const std::string restartStreaming = "Start Streaming";
+			if (drawOverlayMessage(rect, msgIndex++, msgCount, ImGui::GetID("streamBtn"), true, restartStreaming))
+			{
+				CameraRestartStreaming(GetState(), view.camera);
+			}
+		}
+	}
 
 	/**
 	 * State Update
@@ -1554,77 +1590,53 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 }
 
 /**
- * Show error messages
+ * Show an overlay message or button in the center of the given rect, in position index of count
  */
-static void drawOverlayMessages(CameraView &view, ImRect rect)
-{
-	// Get abnormal state to display
-	bool abnormalStreamingState;
-	std::vector<std::string> status = getAbnormalStatus(*view.camera, abnormalStreamingState);
-	int msgCount = status.size() + abnormalStreamingState;
-	if (msgCount == 0)
-		return;
+static bool drawOverlayMessage(ImRect rect, int index, int count, ImGuiID id, bool button, const std::string &message)
+{ // Draw background box and
+	ImGuiContext& g = *ImGui::GetCurrentContext();
 
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 10));
-	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10);
+	// Modify Frame Layout
+	ImVec2 FramePadding =  ImVec2(10, 10);
+	float FrameRounding = 10;
+
+	float msgHeight = g.FontSize + FramePadding.y * 2;
+	float msgInterval = msgHeight+g.Style.ItemSpacing.y;
+	float msgStackHeight = msgInterval*count - g.Style.ItemSpacing.y;
+	float msgStartY = rect.GetCenter().y - msgStackHeight/2 + msgInterval*index;
+
+	const char* text_start = message.c_str(), *text_end = message.c_str() + message.size();
+	float msgWidth = ImGui::CalcTextSize(text_start, text_end).x + FramePadding.x*2;
+	float msgStartX = rect.GetCenter().x - msgWidth/2;
+
+	ImVec2 msgStart(msgStartX, msgStartY);
+	ImVec2 msgSize(msgWidth, msgHeight);
+	//LOGC(LInfo, "Drawing msg %d at %.2fx%.2f of size %.2fx%.2f", index, msgStartX, msgStartY, msgWidth, msgHeight);
+
+	const ImRect bb(msgStartX, msgStartY, msgStartX+msgWidth, msgStartY+msgHeight);
+	ImGui::ItemSize(msgSize, FramePadding.y);
+	if (!ImGui::ItemAdd(bb, id))
+		return false;
+
+	bool hovered = false, held = false, pressed = false;
+	if (button)
+	{
+		pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held, 0);
+	}
+
+	// Modify Frame Style
 	auto frameBG = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
 	frameBG.w *= 0.5f;
 	ImGui::PushStyleColor(ImGuiCol_FrameBg, frameBG);
 
-	//LOGC(LInfo, "Drawing %d msgs in window at %.2fx%.2f of size %.2fx%.2f", msgCount, ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowSize().x, ImGui::GetWindowSize().y);
-	int msgIndex = 0;
-	auto drawMessage = [&](ImGuiID id, bool button, const std::string &message)
-	{ // Draw background box and
-		ImGuiContext& g = *ImGui::GetCurrentContext();
+	// Render
+	const ImU32 bg_col = ImGui::GetColorU32(button? ((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button) : ImGuiCol_FrameBg);
+	const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+	ImGui::RenderNavCursor(bb, id);
+	ImGui::RenderFrame(bb.Min, bb.Max, bg_col, true, FrameRounding);
+	ImGui::RenderText(bb.Min+FramePadding, text_start, text_end, false);
 
-		float msgHeight = ImGui::GetFrameHeight();
-		float msgInterval = msgHeight+g.Style.ItemSpacing.y;
-		float msgStackHeight = msgInterval*msgCount - g.Style.ItemSpacing.y;
-		float msgStartY = rect.GetCenter().y - msgStackHeight/2 + msgInterval*msgIndex;
-
-		const char* text_start = message.c_str(), *text_end = message.c_str() + message.size();
-		float msgWidth = ImGui::CalcTextSize(text_start, text_end).x + g.Style.FramePadding.x*2;
-		float msgStartX = rect.GetCenter().x - msgWidth/2;
-
-		ImVec2 msgStart(msgStartX, msgStartY);
-		ImVec2 msgSize(msgWidth, msgHeight);
-		//LOGC(LInfo, "Drawing msg %d at %.2fx%.2f of size %.2fx%.2f", msgIndex, msgStartX, msgStartY, msgWidth, msgHeight);
-
-		msgIndex++;
-
-		const ImRect bb(msgStartX, msgStartY, msgStartX+msgWidth, msgStartY+msgHeight);
-		ImGui::ItemSize(msgSize, g.Style.FramePadding.y);
-		if (!ImGui::ItemAdd(bb, id))
-			return false;
-
-		bool hovered = false, held = false, pressed = false;
-		if (button)
-		{
-			pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held, 0);
-		}
-
-		// Render
-		const ImU32 bg_col = ImGui::GetColorU32(button? ((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button) : ImGuiCol_FrameBg);
-		const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
-		ImGui::RenderNavCursor(bb, id);
-		ImGui::RenderFrame(bb.Min, bb.Max, bg_col, true, g.Style.FrameRounding);
-		ImGui::RenderText(bb.Min+g.Style.FramePadding, text_start, text_end, false);
-		return pressed;
-	};
-
-	for (int i = 0; i < status.size(); i++)
-	{
-		drawMessage(ImGui::GetID(i), false, status[i]);
-	}
-	if (abnormalStreamingState)
-	{
-		const std::string restartStreaming = "Start Streaming";
-		if (drawMessage(ImGui::GetID("streamBtn"), true, restartStreaming))
-		{
-			CameraRestartStreaming(GetState(), view.camera);
-		}
-	}
-
+	// Reset Frame Style
 	ImGui::PopStyleColor(1);
-	ImGui::PopStyleVar(2);
+	return pressed;
 }

@@ -296,7 +296,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	std::shared_lock dev_lock(state.deviceAccessMutex);
 
 	// Step 1: Check addition or removal of cameras
-	int camsConnected = 0, camsConnecting = 0;
+	int camsConnected = 0, camsConnecting = 0, newCamsConnecting = 0;
 	std::vector<std::pair<int32_t,int>> addedCams, removedCams;
 	for (int i = 0; i < portCount; i++)
 	{
@@ -310,6 +310,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				camsConnected++;
 			else if (commState == CommMCUReady)
 				camsConnecting++;
+			if (id == 0 && !existing) newCamsConnecting++;
 			if (id == 0) continue;
 			// Cannot add camera without knowing its ID
 			if (!existing)
@@ -395,15 +396,23 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", camera->id, camera->port);
 			controller.cameras[add.second] = std::move(camera);
 		}
-		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting. Total: Lost %d and gained %d cameras, %d connected!\n",
-			camsConnected, portCount, camsConnecting, camsLost, camsGained, (int)state.cameras.size());
+		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: Lost %d and gained %d cameras, %d connected!\n",
+			camsConnected, portCount, camsConnecting, newCamsConnecting, camsLost, camsGained, (int)state.cameras.size());
+		SignalServerEvent(EVT_UPDATE_CAMERAS);
+	}
+	else if (controller.newCamerasConnecting != newCamsConnecting)
+	{
+		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: %d!\n",
+			camsConnected, portCount, camsConnecting, newCamsConnecting, (int)state.cameras.size());
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
 	else
 	{
-		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting. Total: %d!\n",
-			camsConnected, portCount, camsConnecting, (int)state.cameras.size());
+		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: %d!\n",
+			camsConnected, portCount, camsConnecting, newCamsConnecting, (int)state.cameras.size());
 	}
+	// TODO: Rework connecting cameras (1/2)
+	controller.newCamerasConnecting = newCamsConnecting;
 
 	// Step 3: Update camera states
 	bool updatedCameras = false;

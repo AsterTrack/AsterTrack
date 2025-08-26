@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui.hpp"
 
+#include "device/tracking_controller.hpp"
 #include "device/tracking_camera.hpp"
 
 #include "imgui/imgui_onDemand.hpp"
@@ -30,17 +31,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 void InterfaceState::UpdateCameras()
 {
 	ServerState &state = GetState();
-	if (state.cameras.empty())
+	std::shared_lock dev_lock(state.deviceAccessMutex); // cameras
+
+	// Check for change in connecting cameras
+	int connecting = 0;
+	for (auto &controller : state.controllers)
+		connecting += controller->newCamerasConnecting;
+	if (connecting != camerasConnecting)
 	{
-		if (!cameraViews.empty())
-			ResetCameras();
-		return;
+		camerasConnecting = connecting;
+		cameraGridDirty = true;
 	}
+
+	// Check for new cameras added
 	for (auto &cam : state.cameras)
 	{
 		if (cameraViews.find(cam->id) == cameraViews.end())
 		{ // Add new camera
-			std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 			CameraView view = {};
 			view.camera = cam; // new shared_ptr
 			if (cam->pipeline)
@@ -51,40 +58,28 @@ void InterfaceState::UpdateCameras()
 			cameraGridDirty = true;
 		}
 	}
+
+	// Check for existing cameras removed
 	for (auto view = cameraViews.begin(); view != cameraViews.end();)
 	{
 		auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [&view](const auto &c) { return c->id == view->first; });
 		if (cam == state.cameras.end())
 		{ // Remove old camera view
-			std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
+			if (view->second.isDetached)
+			{
+				ImGuiWindow* imguiWindow = ImGui::FindWindowByName(view->second.ImGuiTitle.c_str());
+				if (imguiWindow)
+					ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, 0);
+				ImGui::SetTabItemClosed(view->second.ImGuiTitle.c_str());
+			}
 			view = cameraViews.erase(view);
 			cameraGridDirty = true;
 		}
 		else view++;
 	}
+
 	if (cameraGridDirty)
 		RequestUpdates(2);
-}
-
-void InterfaceState::ResetCameras()
-{
-	// Close all camera frames
-	for (auto it = cameraViews.begin(); it != cameraViews.end();)
-	{
-		if (it->second.isDetached)
-		{
-			ImGuiWindow* imguiWindow = ImGui::FindWindowByName(it->second.ImGuiTitle.c_str());
-			if (imguiWindow)
-				ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, 0);
-			ImGui::SetTabItemClosed(it->second.ImGuiTitle.c_str());
-			it++;
-		}
-		else
-			it = cameraViews.erase(it);
-	}
-
-	// Update UI
-	RequestUpdates();
 }
 
 void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
@@ -164,6 +159,22 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 		}
 		ImGui::EndChild();
 	}
+	for (int i = 0; i < camerasConnecting; i++)
+	{
+		int gridIndex = cameraViews.size() + i;
+		int gridX = gridIndex % gridColumns;
+		int gridY = gridIndex / gridColumns;
+		if (gridX != 0) ImGui::SameLine(0);
+		ImGui::PushID(gridIndex);
+		if (ImGui::BeginChild("Connecting Camera", gridCellSize, true, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+		{
+			ImGui::PopStyleVar();
+			ShowConnectingCameraUI(i);
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, gridSpacing);
+		}
+		ImGui::EndChild();
+		ImGui::PopID();
+	}
 
 	ImGui::PopStyleVar(); // Spacing between camera views
 
@@ -229,6 +240,7 @@ bool InterfaceState::UpdateCameraGrid()
 	for (auto &view : cameraViews)
 		if (!view.second.isDetached)
 			gridCnt++;
+	gridCnt += camerasConnecting;
 
 	if (gridCnt == 0)
 		return false;
@@ -357,6 +369,8 @@ bool InterfaceState::UpdateCameraGrid()
 		viewIt.second.resized = true;
 		g++;
 	}
+	gridColumns = grid.x();
+	gridCellSize = ImVec2(view.x(), view.y());
 
 	return scrollbarHorizontal;
 }

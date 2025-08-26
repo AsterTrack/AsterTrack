@@ -152,21 +152,6 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::EndMenu();
 	}
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
-	if (ImGui::BeginMenu("Device"))
-	{
-		if (state.mode == MODE_Device)
-		{
-			if (ImGui::MenuItem("Disonnect###DeviceToggle"))
-				StopDeviceMode(state);
-		}
-		else
-		{
-			if (ImGui::MenuItem("Connect###DeviceToggle", nullptr, nullptr, state.mode == MODE_None))
-				StartDeviceMode(state);
-		}
-		ImGui::EndMenu();
-	}
-	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 
 	bool cachePaths = false;
 	static bool cachingRecordEntries = false;
@@ -236,6 +221,22 @@ void InterfaceState::UpdateMainMenuBar()
 	{
 		ImGui::PushStyleColor(ImGuiCol_Button, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_Button), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
+
+		if (state.mode == MODE_Device)
+		{
+			if (ImGui::Button("Disonnect###DeviceToggle"))
+				StopDeviceMode(state);
+			ImGui::SetItemTooltip("Disconnect from AsterTrack hardware.");
+		}
+		else
+		{
+			ImGui::BeginDisabled(state.mode != MODE_None);
+			if (ImGui::Button("Connect###DeviceToggle"))
+				StartDeviceMode(state);
+			ImGui::EndDisabled();
+			ImGui::SetItemTooltip("Probe for and connect to AsterTrack hardware.");
+		}
+		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 
 		ImGui::BeginDisabled(state.mode == MODE_None);
 		if (ImGui::Button(state.isStreaming? "Stop Streaming###Streaming" : "Start Streaming###Streaming"))

@@ -343,6 +343,9 @@ public:
 
 	// Camera Views state
 	std::map<CameraID, CameraView> cameraViews;
+	int camerasConnecting = 0;
+	int gridColumns;
+	ImVec2 gridCellSize;
 	bool cameraGridDirty = false;
 
 	// 3D View state
@@ -413,6 +416,7 @@ public:
 	void UpdateCameraViews(InterfaceWindow &window);
 		void UpdateDetachedCameraView(CameraView &camera);
 		void UpdateCameraUI(CameraView &camera);
+		void ShowConnectingCameraUI(int index);
 		bool UpdateCameraGrid();
 	void UpdateVisualisationSettings(InterfaceWindow &window);
 

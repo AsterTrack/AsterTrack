@@ -50,13 +50,13 @@ UpdateWirelessSetup(InterfaceWindow &window)
 
 	BeginSection("Wireless Cameras");
 
-	if (ImGui::BeginTable("WirelessCameras", 4,
+	if (ImGui::BeginTable("WirelessCameras", 3,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 	{
 		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthStretch, 1);
 		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 2);
-		ImGui::TableSetupColumn("##Server", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+		//ImGui::TableSetupColumn("##Server", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 
 		auto toggleAllConfigFlags = [&](WirelessConfig flag)
 		{
@@ -115,15 +115,15 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			iconHeader(0, icons().wireless, iconSize());
 			if (ImGui::IsItemClicked())
 				toggleAllConfigFlags(WIRELESS_CONFIG_WIFI);
-			for (int i = 1; i < 3; i++)
-			{ // Three normal headers
+			for (int i = 1; i < 2; i++)
+			{ // Normal headers
 				ImGui::TableSetColumnIndex(i);
 				ImGui::TableHeader(ImGui::TableGetColumnName(i));
 			}
 			// Server toggle column header
-			iconHeader(3, icons().server, iconSize());
+			/* iconHeader(3, icons().server, iconSize());
 			if (ImGui::IsItemClicked())
-				toggleAllConfigFlags(WIRELESS_CONFIG_SERVER);
+				toggleAllConfigFlags(WIRELESS_CONFIG_SERVER); */
 		}
 
 		for (auto &camera : state.cameras)
@@ -136,7 +136,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			changed |= toggleOneConfigFlags("##Wireless", icons().wireless, icons().no_wireless, config, WIRELESS_CONFIG_WIFI, config.wifiStatus);
 			ImGui::TableNextColumn();
 			{
-				ImGui::Text("%d", camera->id);
+				ImGui::Text("%d (%d)", camera->id, camera->pipeline->index);
 			}
 			ImGui::TableNextColumn();
 			{
@@ -161,8 +161,8 @@ UpdateWirelessSetup(InterfaceWindow &window)
 					ImGui::SetItemTooltip("Wifi is disabled.");
 				
 			}
-			ImGui::TableNextColumn();
-			changed |= toggleOneConfigFlags("##Server", icons().server, icons().no_server, config, WIRELESS_CONFIG_SERVER, config.serverStatus);
+			/* ImGui::TableNextColumn();
+			changed |= toggleOneConfigFlags("##Server", icons().server, icons().no_server, config, WIRELESS_CONFIG_SERVER, config.serverStatus); */
 			/* bool select = selectedCamera == camera;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				selectedCamera = camera; */

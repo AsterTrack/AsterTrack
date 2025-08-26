@@ -132,6 +132,12 @@ EXPORT bool _InterfaceThread()
 		ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
 		ui.renderTime = now;
 
+		if (ui.cameraListDirty)
+			ui.UpdateCameras();
+
+		if (ui.calibrationsDirty)
+			ui.UpdateCalibrations();
+
 		// Update/render UI as requested
 		if (ui.requireUpdates)
 		{ // ImGui UI needs updates
@@ -740,14 +746,15 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			GetUI().recordSectionStart = -1;
 			break;
 		case EVT_UPDATE_CAMERAS:
-			GetUI().UpdateCameras();
+			GetUI().cameraListDirty = true;
+			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_OBSERVATIONS:
 			GetUI().visState.incObsUpdate.dirty = true;
 			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_CALIBS:
-			GetUI().UpdateCalibrations();
+			GetUI().calibrationsDirty = true;
 			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_EVENTS:

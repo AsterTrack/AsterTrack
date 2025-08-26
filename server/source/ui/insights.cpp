@@ -1497,8 +1497,6 @@ static bool ShowTimingPanel()
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
 
-	std::unique_lock dev_lock(state.deviceAccessMutex);
-
 	static const char* typeLabel;
 	if (timeType < 0) typeLabel = "Select Type";
 	const char* timeTypeSelection[] = { "TimeSync", "Latency" };
@@ -1619,7 +1617,6 @@ static bool ShowTimingPanel()
 }
 static void CleanTimingPanel()
 {
-	std::unique_lock dev_lock(GetState().deviceAccessMutex);
 	for (auto &controller : GetState().controllers)
 		controller->timingRecord.clear();
 	for (auto &imu : GetState().pipeline.record.imus)

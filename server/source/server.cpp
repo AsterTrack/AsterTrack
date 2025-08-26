@@ -1351,8 +1351,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		if (GetState().mode == MODE_None)
 			return;
 
-		std::shared_lock dev_lock(GetState().deviceAccessMutex);
-
 		PushTrackingIO(GetState(), frame);
 
 		for (int c = 0; c < frame->cameras.size(); c++)

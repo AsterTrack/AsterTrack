@@ -30,6 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateCameras()
 {
+	cameraListDirty = false;
 	ServerState &state = GetState();
 	std::shared_lock dev_lock(state.deviceAccessMutex); // cameras
 

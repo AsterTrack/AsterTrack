@@ -104,7 +104,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		CameraID id = (CameraID)(intptr_t)render.userData;
 
 		// Get camera from id (to make sure it's still valid)
-		std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 		auto viewIt = GetUI().cameraViews.find(id);
 		if (viewIt == GetUI().cameraViews.end())
 			return; // Just removed, but UI hasn't been updated yet
@@ -336,7 +335,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			CameraID id = (CameraID)(intptr_t)render.userData;
 
 			// Get camera from id (to make sure it's still valid)
-			std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 			auto viewIt = GetUI().cameraViews.find(id);
 			if (viewIt == GetUI().cameraViews.end())
 				return; // Just removed, but UI hasn't been updated yet

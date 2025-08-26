@@ -346,7 +346,9 @@ public:
 	int camerasConnecting = 0;
 	int gridColumns;
 	ImVec2 gridCellSize;
+	bool cameraListDirty = false;
 	bool cameraGridDirty = false;
+	bool calibrationsDirty = false;
 
 	// 3D View state
 	View3D view3D = {};

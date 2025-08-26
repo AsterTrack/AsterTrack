@@ -448,7 +448,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		camState->commState = commState;
 	}
 	if (updatedCameras)
-		SignalServerEvent(EVT_UPDATE_CAMERAS);
+		SignalServerEvent(EVT_UPDATE_INTERFACE);
 	return true;
 }
 

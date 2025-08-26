@@ -661,7 +661,6 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			else
 			{
-				std::shared_lock dev_lock(packetState.state->deviceAccessMutex);
 				ReadCameraPacket(*camera, packet);
 			}
 		});

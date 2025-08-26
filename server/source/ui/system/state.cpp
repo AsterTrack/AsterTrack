@@ -86,10 +86,9 @@ void InterfaceState::UpdateSequences(bool reset)
 
 void InterfaceState::UpdateCalibrations()
 { // Check how many cameras are calibrated, and whether their calibration has been verified
-
-	// Warning: May not be in UI thread right now
-	auto state = calibState;
-	state = {}; // Minor attempt to make it thread-safe
+	calibrationsDirty = false;
+	auto &state = calibState;
+	state = {};
 
 	PipelineState &pipeline = GetState().pipeline;
 	auto minTrust = pipeline.sequenceParams.get(1).FM.ConfidentMinTrust;
@@ -118,7 +117,6 @@ void InterfaceState::UpdateCalibrations()
 				state.relCertain++;
 		}
 	}
-	calibState = state;
 
 	// Tell visualisation to update precalculated calibration data
 	for (auto &cam : cameraViews)

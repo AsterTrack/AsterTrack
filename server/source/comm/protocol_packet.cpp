@@ -17,7 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 //#define LOG_MAX_LEVEL LTrace
-//#define LOG_MAX_LEVEL LDarn // Even Debug is too much for the log files when it's a realtime system
 
 #include "protocol_packet.hpp"
 
@@ -106,7 +105,7 @@ static void ClearStalePackets(std::vector<PacketProtocolPort> &ports, void *user
 				if (oooBlock->first < 0) break; // Dormant blocks at the end
 				if (shortDiff<uint8_t, int>((uint8_t)oooBlock->first, port.latestBlockID, 128, BLOCK_ID_SIGNAL) >= staleLimit)
 				{ // Delete stale block
-					LOG(LProtocol, LDarn, "Discarding ooo block %d after %d arrived!\n", oooBlock->first, port.latestBlockID);
+					LOG(LProtocol, LWarn, "Discarding ooo block %d after %d arrived!\n", oooBlock->first, port.latestBlockID);
 					oooBlock = port.oooBlocks.erase(oooBlock);
 					port.oooCount--;
 					break;
@@ -200,7 +199,7 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 				oooBlock->second.resize(header.size);
 				memcpy(oooBlock->second.data(), &data[pos], header.size);
 				pos += header.size;
-				LOG(LProtocol, LDarn, "BLOCK %d (%d): Potential ooo block, added to queue in pos %d, grown from size %d to %d!\n",
+				LOG(LProtocol, LDebug, "BLOCK %d (%d): Potential ooo block, added to queue in pos %d, grown from size %d to %d!\n",
 					header.blockID, header.size, port.oooCount, oldSize, (int)port.oooBlocks.size());
 				port.oooCount++;
 				continue;
@@ -244,7 +243,8 @@ void HandlePacketBlocks(std::vector<PacketProtocolPort> &ports, uint8_t *data, i
 		// Try to find next blocks in buffer in case they came out of order
 		for (auto oooBlock = port.oooBlocks.begin(); oooBlock != port.oooBlocks.end();)
 		{
-			if (packet.readLength >= packet.header.length) break; // Packet doesn't expect any further blocks
+			if (packet.readLength == packet.header.length && (packet.header.length == 0 || packet.checksumSize == PACKET_CHECKSUM_SIZE))
+				break; // Packet doesn't expect any further blocks
 			if (oooBlock->first < 0) break; // Dormant blocks at the end
 			if (oooBlock->first != packet.nextBlockID)
 			{
@@ -299,8 +299,8 @@ bool VerifyChecksum(const PacketBlocks &packet)
 	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 	{
 		if (checksum[i] != packet.checksumBuf[i])
-		{
-			LOG(LParsing, LWarn, "DIFFERENT CHECKSUM! Packet %d had wrong checksum of size %d\n", packet.header.tag, PACKET_CHECKSUM_SIZE);
+		{ // Fault is currently almost certainly UART
+			LOG(LParsing, LDarn, "DIFFERENT CHECKSUM! Packet %d had wrong checksum of size %d\n", packet.header.tag, PACKET_CHECKSUM_SIZE);
 			return false;
 		}
 	}

@@ -201,7 +201,7 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 		TimePoint_t s2 = sclock::now();
 		if (dtUS(s0, s2) > 2000)
 		{
-			LOG(LParsing, LDarn, "Parsing %d usb packets accumulated over %.2fms took %.2fms of processing plus %ldus of dequeing!",
+			LOG(LParsing, LDarn, "Parsing %d usb packets accumulated over %.2fms took %.2fms of processing plus %ldus of dequeuing!",
 				(int)packets.size(), accumMS, dtMS(s1, s2), dtUS(s0,s1));
 		}
 		//if (dtUS(start, s2) > 5000)
@@ -352,6 +352,8 @@ void DevicesStartStreaming(ServerState &state)
 		{
 			LOG(LControllerDevice, LInfo, "Opened comm channels to controller %d!\n", controller->id);
 			controller->endpoints.resize(controller->comm->streamingEndpoints.load()+1);
+			for (auto &ep : controller->endpoints)
+				ep.lastReceived = sclock::now();
 		}
 	}
 
@@ -372,6 +374,9 @@ void DevicesStartStreaming(ServerState &state)
 
 			LOG(LControllerDevice, LInfo, "Requesting to start time sync with controller %d!\n", controller->id);
 		}
+
+		for (auto &ep : controller->endpoints)
+			ep.lastReceived = sclock::now();
 	}
 
 	// Give controllers some time to establish a time sync, not strictly needed
@@ -615,10 +620,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (packet.header.isStreamPacket())
 			{ // Update statistics of streaming packet
 				if (!RegisterStreamBlock(*camera->sync->contextualLock(), camera->syncIndex, packet.header.frameID))
-				{
-					LOG(LParsing, LError, "---- Received stream block for non-existant frame %d or unregistered stream packet!\n", packet.header.frameID);
 					packet.ignored = true;
-				}
 			}
 		},
 		[](void *userData, int port, PacketBlocks &packet) { // onPacketDone
@@ -647,12 +649,18 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (packet.header.isStreamPacket())
 			{
 				auto cameraFrame = ReadStreamingPacket(*camera, packet);
+				int blobCount = cameraFrame.rawPoints2D.size();
 				auto sync_lock = camera->sync->contextualLock();
-				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), false);
+				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
 				if (frame)
 				{ // Packet existed for frame
-					LOG(LStreaming, LTrace, "Camera %d (Port %d) fully transmitted stream packet %d for frame %d (%d)!\n",
-						camera->id, port, packet.header.tag, frame->ID, frame->ID&0xFF);
+					LOG(LStreaming, LTrace, "Camera %d (Port %d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
+						camera->id, port, packet.header.tag, frame->ID, frame->ID&0xFF, blobCount);
+					if (frame->previouslyProcessed)
+					{
+						LOG(LStreaming, LTrace, "---- Camera %d finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
+							camera->id, frame->ID, blobCount, dtMS(frame->SOF, sclock::now()), dtMS(frame->lastProcessed, sclock::now()));
+					}
 				}
 				else
 				{
@@ -857,7 +865,7 @@ static void checkControlRequest(TrackingControllerState &controller, TrackingCon
 	else if (request.transfer >= 0 && deltaT > 20)
 	{ // Just waiting longer since it probably indicates an error with the controller and we don't want to spam the log
 		// But libusb will timeout the transfer before anyway
-		LOG(LUSB, LWarn, "Controller didn't respond to control transfer %d (%s) in %fms, cancelling!\n",
+		LOG(LUSB, LDarn, "Controller didn't respond to control transfer %d (%s) in %fms, cancelling!\n",
 			request.transfer.load(), label, deltaT);
 		comm_cancel_control_request(controller.comm, request.transfer);
 		request.transfer = -1;
@@ -865,7 +873,7 @@ static void checkControlRequest(TrackingControllerState &controller, TrackingCon
 	}
 	else if (request.transfer >= 0 && deltaT > 10 && !request.stalling)
 	{ // Over 10ms to answer transfer is very odd
-		LOG(LUSB, LWarn, "Controller didn't respond to control transfer %d (%s) in %fms!\n",
+		LOG(LUSB, LDarn, "Controller didn't respond to control transfer %d (%s) in %fms!\n",
 			request.transfer.load(), label, deltaT);
 		request.stalling = true;
 	}

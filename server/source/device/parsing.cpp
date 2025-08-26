@@ -281,7 +281,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		// E.g. if this is right after streaming started, but controller hasn't been fully instructed yet
 		// However there is a valid use case, e.g. when host dropped out (lagged, went to sleep, etc.)
 		// The controller has a timeout so it might silently stop streaming in these cases, which to the host is unexpected once it wakes up
-		LOG(LControllerDevice, LWarn, "Erroneous state! %sstreaming, state: comm channels %s, time sync %s, %ssyncing cameras!\n",
+		LOG(LControllerDevice, LDarn, "Potentially erroneous state! %sstreaming, state: comm channels %s, time sync %s, %ssyncing cameras!\n",
 			state.isStreaming? "" : "not ", commChannelsOpen? "open" : "closed", enforceTimeSync? "on" : "off", (frameSignalExt || frameSignalGen)? "" : "not ");
 	}
 	float secondsSinceStartup = ((data[1] << 00) | (data[2] << 1) | (data[3] << 2)) / 1000.0f;
@@ -724,7 +724,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 	if (packet.erroneous)
 	{ // If a single packet is erronous (e.g. checksum failed), the image cannot be recovered currently
-		LOG(LParsing, LWarn, "Camera %d received erroneous packet with block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
+		LOG(LParsing, LDarn, "Camera %d received erroneous packet with block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
 		parseImg.erroneous = true;
 	}
@@ -785,6 +785,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 			std::shared_lock device_lock(GetState().deviceAccessMutex);
 			auto camera = GetCamera(GetState(), imageRecord->cameraID);
+			if (!camera) return; // Camera has been disconnected
 
 			if (GetState().pipeline.keepFrameImages)
 			{ // Store compressed image record in frameRecord for later use

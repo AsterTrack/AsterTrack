@@ -62,7 +62,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	float axisCount = std::pow(probeCount, 0.3334f);
 	gen.rollAxisShells = std::max<int>(1, std::floor(axisCount));
 	gen.shellPoints = probeCount/gen.rollAxisShells;
-	LOG(LDetection2D, LInfo, "Probing %d rotations, %d on the sphere with %d rotation shells (%f equal split)",
+	LOG(LDetection2D, LDebug, "Probing %d rotations, %d on the sphere with %d rotation shells (%f equal split)",
 		probeCount, gen.shellPoints, gen.rollAxisShells, axisCount);
 
 	std::vector<Eigen::Quaternionf> rotations(gen.rollAxisShells*gen.shellPoints);
@@ -80,8 +80,6 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 
 	if (stopToken.stop_requested())
 		return {};
-
-	LOG(LDetection2D, LDebug, "Starting detection using %d rotations!", (int)rotations.size());
 
 	// Evaluate all possible combinations
 	std::vector<std::pair<int,float>> itResults(rotations.size(), { 0, std::numeric_limits<float>::max() });
@@ -185,7 +183,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 		if (res.first < params.probe.minObs) break;
 		if (res.second >= params.probe.errorInitialMax)
 		{
-			LOG(LDetection2D, LDebug, "    Discarded: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
+			LOG(LDetection2D, LTrace, "    Discarded: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
 			continue;
 		}
 		LOG(LDetection2D, LDebug, "    Best: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
@@ -200,7 +198,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 				prevErrors.samples, prevErrors.mean * PixelFactor, newErrors.samples, newErrors.mean * PixelFactor);
 		}
 		else
-			LOGC(LDarn, "          Failed to optimise pose of %d points!\n", prevErrors.samples);
+			LOGC(LDebug, "          Failed to optimise pose of %d points!\n", prevErrors.samples);
 
 		candResults[index] = { targetMatch2D.error.samples, targetMatch2D.error.mean };
 		candMatches[index] = std::move(targetMatch2D);

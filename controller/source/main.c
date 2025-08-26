@@ -37,8 +37,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define UART_TIME_SYNC_INTERVAL	10*TICKS_PER_MS			// Minimum interval used for time sync with Tracking Cameras (doesn't need to be super accurate)
 
 #define USB_TIME_SYNC_INTERVAL	1*TICKS_PER_MS			// Minimum interval used for time sync with host (needs to be as accurate as possible)
+#define USB_STALL_TIMEOUT		10*TICKS_PER_MS			// Timeout at which we attempt to unstall a sink
 #define USB_COMM_TIMEOUT		200*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
-#define USB_COMM_TIMEOUT_STR	50*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
+#define USB_COMM_TIMEOUT_STR	200*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
 
 #define SYNC_PULSE_WIDTH_US		10
 
@@ -289,7 +290,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			if (diff != 1)
 			{
 				ERR_STR("#DROPPED_SOF:");
-				ERR_CHARR(INT99_TO_CHARR(diff-1));
+				ERR_CHARR(INT99999_TO_CHARR(diff-1));
 			}
 
 			sendSOFPackets(cachedFrameID, cachedSOF);
@@ -317,7 +318,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 
 		now = GetTimePoint();
 		static TimePoint lastTimeMicroCheck = 0;
-		if (now-lastTimeMicroCheck < 100*TICKS_PER_US)
+		if (now-lastTimeMicroCheck < 200*TICKS_PER_US)
 			continue;
 		lastTimeMicroCheck = now;
 
@@ -339,26 +340,52 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			// Especially on low framerates or when a lot of endpoints are configured but rarely used
 			for (uint_fast8_t i = 0; i < packetHub.sinkCount; i++)
 			{
-				TimeSpan timeSinceLastComm = now - packetHub.sinks[i].lastSentEnd;
+				Sink *sink = &packetHub.sinks[i];
+				TimeSpan timeSinceLastComm = now - sink->lastSentEnd;
+				if (timeSinceLastComm < USB_TIME_SYNC_INTERVAL)
+					continue;
 				static TimeSpan lastOverflow;
-				if (timeSinceLastComm > USB_TIME_SYNC_INTERVAL && !packetHub.sinks[i].sending)
+				static TimeSpan lastUnstall;
+				if (!sink->sending)
 				{ // Set sending. Empty package still gives a sent callback for timing
 					EnterPacketHubZone();
-					if (setSinkSending(&packetHub, &packetHub.sinks[i], NULL))
-						lastOverflow = timeSinceLastComm;
+					if (!sink->sending)
+					{
+						USBP_STR("+Z");
+						if (setSinkSending(&packetHub, sink, NULL))
+							lastOverflow = timeSinceLastComm;
+					}
 					LeavePacketHubZone();
 				}
-				else if (timeSinceLastComm - lastOverflow > USB_TIME_SYNC_INTERVAL)
-				{ // Set sending. Empty package still gives a sent callback for timing
+				else if (timeSinceLastComm > USB_STALL_TIMEOUT)
+				{ // Exceeded stall timeout, try to unstall.
+					if ((now - lastUnstall) > USB_STALL_TIMEOUT)
+					{
+						lastUnstall = now;
+						USBP_STR("|");
+						KERR_CHARR('/', 'U', 'N', 'S', 'T', 'L', '0'+i);
+						// Attempt to unstall
+						EnterPacketHubZone();
+						PacketRef *packet = (PacketRef *)sink->sending;
+						unstallSink(sink);
+						//if (packet && packet != &sink->nullPacket)
+						//	queuePacket(&packetHub, packet); 
+						setSinkSending(&packetHub, sink, packet);
+						LeavePacketHubZone();
+					}
+				}
+				else if (timeSinceLastComm - lastOverflow > USB_TIME_SYNC_INTERVAL*2)
+				{ // Missed another time sync period, seems we are stalled.
 					lastOverflow = timeSinceLastComm;
-					KERR_CHARR('/', 'S', 'T', 'L', '0'+i, packetHub.sinks[i].sending? 'S' : 'N');
+					USBP_STR("=");
+					KERR_CHARR('/', 'S', 'T', 'L', '0'+i);
 				}
 			}
 		}
 
 		now = GetTimePoint();
 		static TimePoint lastTimeSendCheck = 0;
-		if (now-lastTimeSendCheck < 1000 * TICKS_PER_US)
+		if (now-lastTimeSendCheck < 2000 * TICKS_PER_US)
 			continue;
 		lastTimeSendCheck = now;
 
@@ -526,6 +553,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			// Stage 3: Disable frame sync
 			enabledSyncPinsGPIOD = 0;
 			/* curFrameID = 0;
+			cachedFrameID = 0;
 			SYNC_Reset();
 			if (frameSignalSource == FrameSignal_Generating)
 				StopTimer(TIM3);
@@ -623,10 +651,14 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 
 		LOG_EVT_SET(CONTROLLER_EVENT_USB_QUEUE_SOF, true);
 
+		USBP_STR("+F");
+		USBP_CHARR(INT9_TO_CHARR(buffer->index));
 		if (!buffer->packet.queued)
 		{
 			EnterPacketHubZone();
-			bool success = queuePacket(&packetHub, &buffer->packet);
+			bool success = true;
+			if (!buffer->packet.queued)
+				success = queuePacket(&packetHub, &buffer->packet);
 			LeavePacketHubZone();
 			if (!success)
 			{
@@ -780,6 +812,15 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 		lastSOFPacket = NULL;
 	}
 
+		USBP_STR("+T");
+	if (sink->sending->shared)
+	{
+		USBP_CHARR(INT9_TO_CHARR(sink->sending->shared->index));
+	}
+
+	// NOTE: success = false does NOT mean it has not sent, sadly
+	// USB stack just got a NAK, which does happen
+
 #if defined(ENABLE_LOG) && defined(LOG_USE_INT)
 	if (sink->sending == &debugUSBPacket)
 	{
@@ -812,7 +853,10 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 
 	// Update sink state
 	sink->sending = NULL;
-	sink->counter++;
+		sink->counter++;
+
+	if (packetHub.sharedStallTimeout)
+		packetHub.sharedStallTimeout--;
 
 	// Select next packet from queue
 	bool sending = false;
@@ -826,6 +870,8 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 			break;
 		}
 	}
+	if (!sending)
+		USBP_STR("\n");
 	if (!sending && packetHub.packetQueueSz > 0)
 	{
 		WARN_STR("!NoSend-QueueHas:");
@@ -854,6 +900,7 @@ void usbd_close_interface()
 
 	enabledSyncPinsGPIOD = 0;
 	curFrameID = 0;
+	cachedFrameID = 0;
 	SYNC_Reset();
 	if (frameSignalSource == FrameSignal_Generating)
 		StopTimer(TIM3);
@@ -979,7 +1026,6 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 			USBC_STR("!ReqNotResolved");
 		USBC_STR("+ReqPackets");
 
-		bool sending = false;
 		for (int i = 0; i < packetHub.packetQueueSz; i++)
 		{
 			PacketRef *packet = packetHub.packetQueue[i];
@@ -1069,6 +1115,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		SYNC_Reset();
 		SYNC_Output_Init();
 		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
+		cachedFrameID = 0;
 		frameSignalSource = FrameSignal_Generating;
 		return usbd_ack;
 	}
@@ -1211,11 +1258,15 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 				{
 					resetPacketRef(packetUSBPacket);
 					packetSendCounter++;
+					if (packetHub.sharedStallTimeout)
+						packetHub.sharedStallTimeout--;
 					USBC_STR("+PKT_Success");
 				}
 				else
 				{
 					packetUSBPacket->writeSet = false;
+					USBP_STR("+R");
+					USBP_CHARR(INT9_TO_CHARR(packetUSBPacket->shared->index));
 					queuePacket(&packetHub, (PacketRef*)packetUSBPacket);
 					USBC_STR("!PKT_Failure");
 				}
@@ -1338,7 +1389,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		COMM_STR("!StrayIdent:");
 		COMM_CHARR(INT9_TO_CHARR(port));
 		COMM_STR("+Reset");
-		return uartd_reset;
+		return uartd_reset_nak;
 	}
 	else
 	{ // Shouldn't happen

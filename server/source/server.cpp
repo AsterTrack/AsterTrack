@@ -680,10 +680,17 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		if (state->isStreaming)
 			MaintainStreamState(*state->stream.contextualLock());
 		TimePoint_t s1 = sclock::now();
-		if (dtUS(s0, s1) > 2000)
+		if (dtUS(s0, s1) > 500)
 		{
-			LOG(LParsing, LDarn, "Maintaining stream state took %.2fms!",
-				dtMS(s0,s1));
+			long numFrames = 0;
+			auto stream = state->stream.contextualRLock();
+			for (int s = 0; s < stream->syncGroups.size(); s++)
+			{
+				auto sync = stream->syncGroups[s]->contextualRLock();
+				numFrames += sync->frames.size();
+			}
+			LOG(LParsing, LDarn, "Maintaining stream state took %.2fms! Keeping track of %ld frames",
+				dtMS(s0,s1), numFrames);
 		}
 
 		// TODO: Consider pushing new state from IMUs to IO if no frame was finished in a bit
@@ -1238,7 +1245,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	{ // Implies this if the final time this frame is processed
 		// Also the only time it's processed if all cameras sent streaming packets on time
 
-		// TODO: Record into frameRecords anyway for later processing
 
 		if (frame.outdated)
 		{ // Implies future frames were already complete and fully processed
@@ -1262,6 +1268,8 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	{ // Realtime processing currently cannot handle the same frame twice
 		// Optimally, we could retrace and improve tracking with new data
 		// Especially if tracking was lost
+
+		// TODO: Record into frameRecords anyway for recording
 		return;
 	}
 	// Follow up with realtime processing
@@ -1269,7 +1277,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	{ // Should not happen because it should have gotten a premature processing
 		// Except at the very beginning where premature processing conditions have not yet initialised
 		if (frame.ID > 50)
-			LOG(LStreaming, LDebug, "--------- Frame ID %d (%d) processing is outdated!\n", frame.ID, frame.ID&0xFF);
+			LOG(LStreaming, LDarn, "--------- Frame ID %d (%d) processing is outdated!\n", frame.ID, frame.ID&0xFF);
 		// TODO: If latency stdDev is ridiculously large, this might be true even later
 		// for frames that had missing packets and were only prematurely processed very late
 		return;
@@ -1277,7 +1285,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 
 	if (premature)
 	{ // Implies incomplete, WILL be called another time, either once complete or when discarded
-		LOG(LStreaming, LDebug, "Frame %d (%d) has %d/%d cameras completed when prematurely processed!\n", frame.ID, frame.ID&0xFF, frame.completed, frame.expecting);
+		LOG(LStreaming, LDarn, "Frame %d (%d) has %d/%d cameras completed when prematurely processed!\n", frame.ID, frame.ID&0xFF, frame.completed, frame.expecting);
 		for (auto &camera : sync.cameras)
 		{
 			if (!camera) continue; // Removed while streaming

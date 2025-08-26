@@ -362,7 +362,11 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 	if (!frame->cameras[index].announced)
 	{ // Missed Announcement
 		LOG(LStreaming, LDarn, "Camera received streaming packet header for frame %d but it wasn't announced!\n", frame->ID);
-		return nullptr;
+		// The stream processing might not be waiting for this frame, but we may still process it
+		// Just because the announcement packet had e.g. a wrong checksum, doesn't make the streaming data invalid
+		//return nullptr;
+		frame->expecting++;
+		frame->cameras[index].announced = true;
 	}
 	if (frame->cameras[index].receiving)
 	{ // Duplicate packet from past frame?
@@ -395,25 +399,24 @@ SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameI
 	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
 	if (!frame)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received complete streaming packet for frame %d but frame wasn't recorded at all!\n", EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d(%d) but frame wasn't recorded at all!\n", EstimateFullFrameID(sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received streaming packet block for frame %d but it wasn't announced and header wasn't received!\n", frame->ID);
-		frame->cameras[index].announced = true;
+		LOG(LStreaming, LWarn, "Camera received streaming packet block for frame %d(%d) but it wasn't announced and header wasn't received!\n", frame->ID, frameID);
+		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received streaming packet block for frame %d but header wasn't received!\n", frame->ID);
-		frame->cameras[index].receiving = true;
+		LOG(LStreaming, LWarn, "Camera received streaming packet block for frame %d(%d) but header wasn't received!\n", frame->ID, frameID);
+		return nullptr;
 	}
 	if (frame->finallyProcessed)
 	{ // Probably delayed block so frame was processed without this camera
-		LOG(LStreaming, LWarn, "Registering new block for camera %d when frame %d(%d) is already finally processed!",
-			sync.cameras[index]->id, frame->ID, frameID);
-		return nullptr;
+		LOG(LStreaming, LDarn, "Registering new block for camera %d %.2fms into frame %d(%d) after it was already finally processed %.2fms ago!",
+			sync.cameras[index]->id, dtMS(frame->SOF, sclock::now()), frame->ID, frameID, dtMS(frame->lastProcessed, sclock::now()));
 	}
 	// TODO: Reenable assert(!frame->finallyProcessed); - it should hold true, but doesn't always
 	frame->lastBlock = sclock::now();
@@ -436,13 +439,13 @@ SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrame
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received complete streaming packet for frame %d but it wasn't announced and header wasn't received!\n", frame->ID);
-		frame->cameras[index].announced = true;
+		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d but it wasn't announced and header wasn't received!\n", frame->ID);
+		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received complete streaming packet for frame %d but header wasn't received!\n", frame->ID);
-		frame->cameras[index].receiving = true;
+		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d but header wasn't received!\n", frame->ID);
+		return nullptr;
 	}
 	frame->cameras[index].complete = true;
 	frame->cameras[index].erroneous = erroneous;
@@ -450,7 +453,7 @@ SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrame
 	frame->completed++;
 	if (frame->completed > frame->expecting)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "ERROR: Frame %d (%d) has %d packets marked completed but %d announced!\n",
+		LOG(LStreaming, LWarn, "ERROR: Frame %d (%d) has %d packets marked completed but %d announced!\n",
 			frame->ID, frameID, frame->completed, frame->expecting);
 	}
 	return frame;
@@ -481,6 +484,7 @@ void MaintainStreamState(StreamState &state)
 			{
 				assert(!frame->finallyProcessed);
 				ProcessStreamFrame(*sync, *frame, premature);
+				frame->lastProcessed = sclock::now();
 				frame->previouslyProcessed = true;
 				frame->dataProcessed = true; // Reset dirty flag
 				frame->finallyProcessed = !premature;
@@ -505,7 +509,7 @@ void MaintainStreamState(StreamState &state)
 					float deltaT = dtMS(sync->lastStatUpdate, sclock::now());
 					LOG(LStreaming, LInfo, "Group %d: Frame Rate: %.2f / Latency %.2fms +-%.2fms - Max %.2fms\n",
 						s, sync->frameProcessedCount/deltaT*1000.0f, sync->latency.avg, sync->latency.stdDev(), sync->latency.max);
-					LOG(LStreaming, LInfo, "    After %d processed frames: %d delayed, %d eventually outdated, caused by packets: missing %d, erroneous %d\n",
+					LOG(LStreaming, LInfo, "    After %d processed frames: %d delayed, %d eventually outdated, caused by packets: incomplete %d, erroneous %d\n",
 						sync->frameProcessedCount, sync->frameDelayedCount, sync->frameOutdatedCount,
 						sync->packetMissingCount, sync->packetErroneousCount);
 					sync->frameProcessedCount = 0;
@@ -538,9 +542,14 @@ void MaintainStreamState(StreamState &state)
 			}
 			if (frame->finallyProcessed)
 			{
-				LOG(LStreaming, LError, "For some reason, already finallyProcessed with prev: %d, new data? %d", frame->previouslyProcessed? 1 : 0, frame->dataProcessed? 1 : 0);
+				if (frame->completed == frame->expecting)
+					LOG(LStreaming, LDarn, "Finally ending completed frame %d (%d) after %.2fms, when already finally processed %.2fms ago!\n", frame->ID, frame->ID&0xFF, frameMS, dtMS(frame->lastProcessed, sclock::now()));
+				else
+					LOG(LStreaming, LDarn, "Received new data after frame was already finally processed, ignoring!");
+				frame->dataProcessed = true; // Just to not print this message repeatedly
+				frame++;
+				continue;
 			}
-			assert(!frame->finallyProcessed);
 			if (frame->expecting == 0)
 			{ // Nothing arrived yet
 				frame++;
@@ -557,7 +566,10 @@ void MaintainStreamState(StreamState &state)
 			}
 			if (frame->completed == frame->expecting)
 			{ // Fully finished frame, and no new delayed frame announcements are expected
-				LOG(LStreaming, frame->previouslyProcessed? LDebug : LTrace, "- Ending completed frame %d (%d) after %.2fms!\n", frame->ID, frame->ID&0xFF, frameMS);
+				if (frame->previouslyProcessed)
+					LOG(LStreaming, LDarn, "Finally ending completed frame %d (%d) after %.2fms after initial processing!\n", frame->ID, frame->ID&0xFF, frameMS);
+				else
+				 	LOG(LStreaming, LTrace, "- Ending completed frame %d (%d) after %.2fms!\n", frame->ID, frame->ID&0xFF, frameMS);
 				assert(!frame->finallyProcessed);
 				registerFrameEnd(true);
 				processFrame(false);

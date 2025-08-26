@@ -317,6 +317,14 @@ do { \
 #define USBC_STR(...) do {} while(false)
 #endif
 
+#if USBP_LOG
+#define USBP_CHARR LOG_CHARR
+#define USBP_STR LOG_STR
+#else
+#define USBP_CHARR(...) do {} while(false)
+#define USBP_STR(...) do {} while(false)
+#endif
+
 #if USBPD_LOG
 #define USBPD_BUF LOG_BUF
 #define USBPD_CHARR LOG_CHARR

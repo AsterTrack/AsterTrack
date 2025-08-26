@@ -712,7 +712,7 @@ void usbd_poll(usbd_device *dev)
 				}
 				else
 				{
-					KERR_STR("\n#FailedReqToDev");
+					KERR_STR("\n!FailedReqToDev");
 					KERR_CHARR('+', UI8_TO_HEX_ARR(dev->ctl_setup.bmRequestType));
 					//USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_RES_STALL; // Signals error occured
 					//USBHSD->UEP0_TX_CTRL = USBHS_UEP_T_TOG_DATA1 | USBHS_UEP_T_RES_NAK; // Signals still processing

@@ -196,7 +196,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 {
 	TimePoint start = GetTimePoint();
 	// TODO: Log fracturing of packets when spearate comm_write are used instead of a block-write. Not optimal.
-	UART_CHARR('+', 'B', INT999_TO_CHARR(begin), '>', INT999_TO_CHARR(end));
+	UARTTR_CHARR('+', 'B', INT999_TO_CHARR(begin), '>', INT999_TO_CHARR(end));
 
 	lastUARTActivity = GetTimePoint();
 	PortState *state = &portStates[port];
@@ -264,7 +264,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 				}
 				state->inHeader = false;
 				state->header = parsePacketHeader(state->headerRaw);
-				UART_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
+				UART_CHARR('\n', '<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 					'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
 					//'+', 'T', INT99_TO_CHARR(state->lastComm.ms), ':', INT999_TO_CHARR(state->lastComm.us)
 				);
@@ -382,33 +382,28 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 		return;
 	}
 
-	UART_STR("/RX:");
-	UART_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));
+	UARTTR_STR("/RX:");
+	UARTTR_CHARR(UI16_TO_HEX_ARR(state->parsePos), ':', UI16_TO_HEX_ARR(tail));
+	uint32_t len = 0;
 	uartd_respond resp = uartd_ignore;
 	if (state->parsePos < tail)
 	{ // One continuous range
-		resp = uartd_process_data(port, state->parsePos, tail);
+		len = tail-state->parsePos;
 
-		TimeSpan dT = GetTimeSinceUS(state->lastComm);
-		if (dT > 100)
-			TERR_STR("!UART_PP_1");
+		resp = uartd_process_data(port, state->parsePos, tail);
 	}
 	else if (state->parsePos > tail)
 	{ // Two ranges, at start and end of ringbuffer
+		len = UART_RX_BUFFER_SIZE+tail-state->parsePos;
+
 		resp = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
-		if (dT > 100)
-			TERR_STR("!UART_PP_2.1");
 		if (resp != uartd_reset && resp != uartd_reset_nak && tail > 0)
 		{
 			TimePoint now = GetTimePoint();
 			state->parsePos = 0;
 			resp = uartd_process_data(port, 0, tail);
-
-			dT = GetTimeSinceUS(now);
-			if (dT > 100)
-				TERR_STR("!UART_PP_2.2");
 		}
 	}
 	if (resp == uartd_reset)
@@ -428,8 +423,11 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	}
 
 	TimeSpan dT = GetTimeSinceUS(state->lastComm);
-	if (dT > 100)
-		TERR_STR("!UART_PP");
+	if (dT > 200 || (dT > 50 && dT*5 > len) )
+	{
+		TERR_STR(")Proc");
+		TERR_CHARR(':', UINT9999_TO_CHARR(len), ':', UINT9999_TO_CHARR(dT));
+	}
 }
 
 UARTPacketRef* allocateUARTPacket(uint16_t packetLength)

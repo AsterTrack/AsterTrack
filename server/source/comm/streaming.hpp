@@ -73,6 +73,7 @@ struct SyncedFrame
 
 	// Processing state
 	bool outdated = false;
+	TimePoint_t lastProcessed;
 	bool previouslyProcessed = false; // For premature processing
 	bool dataProcessed = true; // For premature processing, acts as dirty flag
 	bool finallyProcessed = false; // For processing after frame ended for delayed packets

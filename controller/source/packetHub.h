@@ -40,7 +40,7 @@ extern "C"
 #define PACKET_BLOCK_SZ				USBD_PACKET_SIZE
 #define MAX_QUEUED_PACKETS			32
 
-#define SHARED_BUF_COUNT			6
+#define SHARED_BUF_COUNT			20
 
 #define USB_BYTE_TIME_US 			8/480 // 8Bit / 480Bit/us
 
@@ -101,6 +101,7 @@ struct SharedBuffer
 {
 	TimePoint writeTime;
 
+	int index;
 	PacketRef packet;
 	__attribute__((aligned(4))) uint8_t buffer[PACKET_BLOCK_SZ];
 };
@@ -140,6 +141,8 @@ typedef struct
 
 	PacketRef *packetQueue[MAX_QUEUED_PACKETS];
 	uint8_t packetQueueSz;
+
+	int sharedStallTimeout;
 } Hub;
 
 
@@ -190,6 +193,12 @@ static inline void dequeuePacket(Hub *hub, int index)
 		return;
 	}
 
+	if (hub->packetQueue[index]->shared)
+	{
+		USBP_STR("+D");
+		USBP_CHARR(INT9_TO_CHARR(hub->packetQueue[index]->shared->index));
+	}
+
 	USE_LOCKS();
 	LOCK();
 	hub->packetQueue[index]->queued = false;
@@ -226,6 +235,7 @@ static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, Shared
 		return size;
 	}
 
+	if (hub->sharedStallTimeout == 0)
 	{ // Debug why we couldn't allocate shared buffer, this should not happen during normal use
 		ERR_STR("\n#SharedFull(");
 		ERR_CHARR(INT999_TO_CHARR(size), ')');
@@ -269,6 +279,8 @@ static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, Shared
 			unlockPacket(&buf->packet);
 		}
 	}
+	else ERR_STR("+Full");
+	hub->sharedStallTimeout = 20;
 
 	// Could not allocate shared buffer space
 	*buffer = NULL;
@@ -292,8 +304,6 @@ static inline bool setSinkSending(Hub *hub, Sink *sink, PacketRef *packet)
 	}
 	if (packet == NULL)
 	{
-		if (sink->sending == &sink->nullPacket)
-			return true; // Already done
 		packet = &sink->nullPacket;
 	}
 	else
@@ -323,11 +333,7 @@ static inline bool setSinkSending(Hub *hub, Sink *sink, PacketRef *packet)
 		storeBlockHeader(packet->writeBlockHeader, packet->buffer+USB_PACKET_HEADER);
 
 	// Make sure again, in barrier, that we can send
-	if (sink->sending == &sink->nullPacket)
-	{ // Is null packet being overwritten
-		LOG_EVT_SET(CONTROLLER_EVENT_USB_SENDING_NULL, false);
-	}
-	else if (packet == &sink->nullPacket)
+	if (packet == &sink->nullPacket)
 	{ // Is null packet being set
 		LOG_EVT_SET(CONTROLLER_EVENT_USB_SENDING_NULL, true);
 	}
@@ -355,6 +361,13 @@ static inline bool setSinkSending(Hub *hub, Sink *sink, PacketRef *packet)
 	sink->sending = packet;
 	packet->sendingTime = GetTimePoint();
 	UNLOCK();
+
+	USBP_STR("+S");
+	if (packet->shared)
+	{
+		USBP_CHARR(INT9_TO_CHARR(packet->shared->index));
+	}
+
 	//ERR_CHARR('>', INT999_TO_CHARR(packet->buffer[0]), ':', INT999_TO_CHARR(packet->size));
 	if (sink->counter != counter)
 	{
@@ -410,6 +423,13 @@ static bool queuePacket(Hub *hub, PacketRef *packet)
 	hub->packetQueue[hub->packetQueueSz] = packet;
 	hub->packetQueueSz++;
 	UNLOCK();
+
+	if (packet->shared)
+	{
+		USBP_STR("+Q");
+		USBP_CHARR(INT9_TO_CHARR(packet->shared->index));
+	}
+
 	return true;
 }
 
@@ -448,6 +468,8 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 			unlockPacket(&buf->packet);
 			buf->writeTime = GetTimePoint();
 
+			USBP_STR("+W");
+			USBP_CHARR(INT9_TO_CHARR(buf->index));
 			if (!buf->packet.queued)
 			{ // Queue shared buffer packet
 				if (!queuePacket(hub, &buf->packet))
@@ -520,6 +542,7 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 	TEMP_CHARR('/', 'D', 'M', INT9999_TO_CHARR(packetSz), ':', INT9999_TO_CHARR(dataSz));
 	TEMP_CHARR('+', UI32_TO_HEX_ARR((uint32_t)data), ':', UI32_TO_HEX_ARR((uint32_t)(data+*size)));
 
+	USBP_STR("+P");
 	if (!queuePacket(hub, ref))
 		ERR_STR("#FailedSourceQueue");
 
@@ -553,19 +576,30 @@ static inline void resetSourceState(Source *source)
 		resetPacketRef(&source->packets[i]);
 }
 
-static inline void resetSinkStates(Hub *hub)
+static inline void unstallSink(Sink *sink)
 {
 	// Clear send buffers and sending state
+	usbd_ep_reset_dma(&hUSB, sink->ep);
+	if (sink->sending)
+		sink->sending->writeSet = false;
+	sink->sending = NULL;
+}
+
+static inline void resetSinkState(Sink *sink)
+{
+	// Clear send buffers and sending state
+	usbd_ep_reset_dma(&hUSB, sink->ep);
+	if (sink->sending)
+		sink->sending->writeSet = false;
+	sink->sending = NULL;
+	sink->counter = 0;
+	resetPacketRef(&sink->nullPacket);
+}
+
+static inline void resetSinkStates(Hub *hub)
+{
 	for (int i = 0; i < hub->sinkCount; i++)
-	{
-		Sink *sink = &hub->sinks[i];
-		usbd_ep_reset_dma(&hUSB, sink->ep);
-		if (sink->sending)
-			sink->sending->writeSet = false;
-		sink->sending = NULL;
-		sink->counter = 0;
-		resetPacketRef(&sink->nullPacket);
-	}
+		resetSinkState(&hub->sinks[i]);
 }
 
 static inline void resetPacketHub(Hub *hub)
@@ -576,8 +610,12 @@ static inline void resetPacketHub(Hub *hub)
 	for (int i = 0; i < UART_PORT_COUNT; i++)
 		resetSourceState(&hub->sources[i]);
 	for (int i = 0; i < SHARED_BUF_COUNT; i++)
+	{
 		resetPacketRef(&hub->shared[i].packet);
+		hub->shared[i].index = i;
+	}
 	hub->packetQueueSz = 0;
+	hub->sharedStallTimeout = 0;
 }
 
 

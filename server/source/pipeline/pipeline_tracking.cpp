@@ -326,17 +326,17 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			for (auto &trackRecord : frameRecord.trackers)
 			{
 				if (trackRecord.id != tracker.id) continue;
-				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
+				LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
 			TrackerRecord &trackRecord = retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
 			if (!trackRecord.result.isTracked())
 			{ // Don't record as real loss since this is retroactive
-				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
+				LOG(LDetection2D, LDarn, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
 					frame->num, tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 				return false;
 			}
-			LOG(LDetection2D, LDebug, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
+			LOG(LDetection2D, LTrace, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
 				frame->num, tracker.target.match2D.error.mean*PixelFactor, tracker.target.match2D.error.samples);
 			lastTimestamp = frameRecord.time;
 			if (stopToken.stop_requested())
@@ -346,7 +346,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		frameIndex = frameRecordIt.index()-1;
 	}
 
-	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to snapshot, syncing with realtime!\n", (int)frameIndex);
+	LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to snapshot, syncing with realtime!\n", (int)frameIndex);
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	if (stopToken.stop_requested())
@@ -370,18 +370,18 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			for (auto &trackRecord : frameRecord.trackers)
 			{
 				if (trackRecord.id != tracker.id) continue;
-				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
+				LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
 
 			TrackerRecord &trackRecord = retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
 			if (!trackRecord.result.isTracked())
 			{ // Don't record as real loss since this is retroactive
-				LOG(LDetection2D, LInfo, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
+				LOG(LDetection2D, LDarn, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
 					frame->num, tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 				return false;
 			}
-			LOG(LDetection2D, LDebug, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
+			LOG(LDetection2D, LTrace, "    Detection - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
 				frame->num, tracker.target.match2D.error.mean*PixelFactor, tracker.target.match2D.error.samples);
 			lastTimestamp = frameRecord.time;
 			if (stopToken.stop_requested())
@@ -391,7 +391,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		frameIndex = frameRecordIt.index()-1;
 	}
 
-	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
+	LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
 
 	// Finally, no more frames to catch up on, register as new tracked target
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
@@ -774,7 +774,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					{ // Make sure no async detection of this target is ongoing
 						if (pipeline.tracking.asyncDetection && pipeline.tracking.asyncDetectTargetID == dormant.id)
 						{
-							LOG(LDetection2D, LDarn, "    Interrupting async detection because tracker has been found!\n");
+							LOG(LDetection2D, LDebug, "    Interrupting async detection because tracker has been found!\n");
 							pipeline.tracking.asyncDetectionStop.request_stop();
 						}
 					}

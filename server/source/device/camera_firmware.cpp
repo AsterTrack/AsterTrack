@@ -105,9 +105,9 @@ struct FirmwareUpdatePlan
  * Firmware update configuration
  */
 
-const uint16_t BLOCK_SIZE = 1000; // Limited by CTRL_TRANSFER_SIZE = 1024
-const uint16_t SEND_INTERVAL_MS = 20;
-const uint16_t MAX_SEND_AT_ONCE = 1;
+const uint16_t BLOCK_SIZE = 1000; // Limited by CTRL_TRANSFER_SIZE = 2045
+const uint16_t SEND_INTERVAL_MS = 5;
+const uint16_t MAX_SEND_AT_ONCE = 2;
 const uint16_t MAX_WAITING_COUNT = 10;
 
 
@@ -210,7 +210,6 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 		*(uint8_t*)(ptr+1) = (uint8_t)transfer.type;
 		*(uint32_t*)(ptr+2) = transfer.data.size();
 		ptr += FIRMWARE_FILE_HEADER;
-		LOG(LFirmwareUpdate, LInfo, "    Transfer size %d", (int)transfer.data.size());
 		memcpy(ptr, transfer.SHA256, SHA256::HashBytes);
 		ptr += SHA256::HashBytes;
 		if (!transfer.sign.empty())
@@ -240,12 +239,14 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 	status->lastActivity = sclock::now();
 	if (success)
 	{
+		LOG(LFirmwareUpdate, LInfo, "Requesting firmware update from camera %d...", camState.camera->id);
 		status->text = asprintf_s("Requesting firmware update...");
 		status->code = FW_STATUS_INITIATING;
 	}
 	else
 	{
-		status->text = asprintf_s("Failed to send firmware update rqeuest!");
+		LOG(LFirmwareUpdate, LWarn, "Failed to send firmware update request to camera %d!", camState.camera->id);
+		status->text = asprintf_s("Failed to send firmware update request!");
 		status->code = FW_STATUS_ERROR;
 	}
 	return success;
@@ -354,7 +355,7 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 
 	if (ID != update.ID)
 	{
-		LOG(LFirmwareUpdate, LWarn, "Received status packet with invalid firmware ID!");
+		LOG(LFirmwareUpdate, LWarn, "Received status packet with invalid firmware ID %d != %d!", ID, update.ID);
 		return true;
 	}
 
@@ -363,7 +364,8 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		switch ((FirmwareStatus)status)
 		{
 		case FW_STATUS_INITIATED:
-		{ // Camera rejected update during transfer (perhaps wrong transfer SHA256 despite correct blocks)
+		{ // Camera accepted firmware update request and is ready to receive transfers
+			LOG(LFirmwareUpdate, LInfo, "Camera %d accepted firmware update request, ready to transfer!", camState.camera->id);
 			camStatus.text = asprintf_s("Transferring firmware update...");
 			camStatus.code = FW_STATUS_INITIATED;
 			return true;
@@ -482,7 +484,8 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		if (camTXStatus.blocks[block].result != FW_TX_TRANSFERRED)
 		{
 			if (txStatus == FW_TX_TRANSFERRED)
-				LOG(LFirmwareUpdate, LTrace, "Confirmed successful transfer of block %d for transfer %d!!", block, index);
+				LOG(LFirmwareUpdate, LTrace, "Confirmed successful transfer of block %d for transfer %d! aftter %.1fms!",
+					block, index,  dtMS(camTXStatus.blocks[block].sentTime, sclock::now()));
 			else if (txStatus == FW_TX_ERROR)
 				LOG(LFirmwareUpdate, LDarn, "Failed to transfer block %d for transfer %d, need to retransmit!", block, index);
 			else
@@ -543,7 +546,7 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 			abort = !CameraApplyFirmwareUpdate(update, camState);
 		else if (camState.status == FW_STATUS_UPDATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
 			abort = !CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
-		else if (dtMS(camState.lastRequest, sclock::now()) > 2000)
+		else if (camState.status != FW_STATUS_NONE && camState.status != FW_STATUS_INITIATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
 		{ // This one is not required, just to prevent a timeout in cameras that are waiting to apply the update if some cameras take significantly longer
 			abort = !CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
 		}
@@ -578,6 +581,7 @@ static void SwitchToTransfer(FirmwareUpdatePlan &update, FirmwareTransfer &trans
 		CameraShowTransferStatus(*camStatus, camTXStatus, transfer);
 	}
 	auto status = update.status->contextualLock();
+	LOG(LFirmwareUpdate, LInfo, "Starting firmware transfer %d/%d", transfer.index+1, (int)update.transfers.size());
 	status->text = asprintf_s("Firmware transfer %d/%d", transfer.index+1, (int)update.transfers.size());
 	status->code = FW_STATUS_TRANSFERRING;
 }
@@ -659,7 +663,9 @@ static void HandleFirmwareTransfer(FirmwareUpdatePlan &update, FirmwareTransfer 
 				continue;
 			}
 			if (block.result == FW_TX_TRANSFERRING)
-				LOG(LFirmwareUpdate, LDarn, "Re-transmiting transfer %d's block %d after no response for %.2fms!", transfer.index, b, dtMS(block.sentTime, sclock::now()));
+				LOG(LFirmwareUpdate, LDarn, "Re-transmiting transfer %d's block %d to camera %d after no response for %.2fms!", transfer.index, b, camTXStatus.camera->id, dtMS(block.sentTime, sclock::now()));
+			else
+			 	LOG(LFirmwareUpdate, LTrace, "Transmiting transfer %d's block %d to camera %d!", transfer.index, b, camTXStatus.camera->id);
 			// Send block to camera
 			camerasSendTX.push_back(i);
 			camTXStatus.lastRequest = sclock::now();
@@ -715,6 +721,7 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 			{
 				auto status = camState.camera->firmware->contextualLock();
 				if (camState.status != FW_STATUS_INITIATED) continue;
+				LOG(LFirmwareUpdate, LInfo, "Setting up firmware transfers for camera %d!", camState.camera->id);
 				status->code = FW_STATUS_TRANSFERRING;
 				status->lastActivity = sclock::now();
 				// Enter transfers that camera needs

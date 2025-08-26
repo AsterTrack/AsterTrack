@@ -253,7 +253,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 
 	// Start of main loop
 	TimePoint lastLoopIT = GetTimePoint();
-	TimePoint lastTimeCheck = GetTimePoint();
 
 	// TODO: Use USBHS_UMS_SIE_FREE in USBHSD->MIS_ST to know if a transfer is currently ongoing?
 	while (1)
@@ -293,9 +292,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				ERR_CHARR(INT99_TO_CHARR(diff-1));
 			}
 
-			EnterPacketHubZone();
 			sendSOFPackets(cachedFrameID, cachedSOF);
-			LeavePacketHubZone();
 		}
 
 #if defined(ENABLE_LOG) && defined(LOG_USE_SDI)
@@ -462,9 +459,10 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 #endif
 
 		now = GetTimePoint();
-		if (now-lastTimeCheck < 20*TICKS_PER_MS)
+		static TimePoint lastTimeoutCheck = 0;
+		if (now-lastTimeoutCheck < 20*TICKS_PER_MS)
 			continue;
-		lastTimeCheck = now;
+		lastTimeoutCheck = now;
 
 		// Check all kinds of timeouts
 
@@ -619,15 +617,18 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 		storeBlockHeader(header, ptr);
 		storeSOFPacket(sofPacket, ptr+BLOCK_HEADER_SIZE);
 
-		unlockPacket(&buffer->packet);
 		buffer->writeTime = GetTimePoint();
 		lastSOFPacket = &buffer->packet;
+		unlockPacket(&buffer->packet);
 
 		LOG_EVT_SET(CONTROLLER_EVENT_USB_QUEUE_SOF, true);
 
 		if (!buffer->packet.queued)
 		{
-			if (!queuePacket(&packetHub, &buffer->packet))
+			EnterPacketHubZone();
+			bool success = queuePacket(&packetHub, &buffer->packet);
+			LeavePacketHubZone();
+			if (!success)
 			{
 				ERR_STR("#FailedSOFQueue");
 			}
@@ -759,8 +760,13 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 	{
 		LOG_EVT_STR(CONTROLLER_EVENT_DATA_OUT, true);
 
-		/* TimeSpan latency = GetTimeSpanUS(sink->sending->latencyTime, now);
-		stats_update(&packetLatency, latency); */
+		TimeSpan latency = GetTimeSpanUS(sink->sending->latencyTime, now);
+		if (latency > 1000)
+		{
+			WARN_STR("!IntTTS:");
+			WARN_CHARR(INT99999_TO_CHARR(latency));
+		}
+		//stats_update(&packetLatency, latency);
 
 		LOG_EVT_SET(CONTROLLER_EVENT_USB_SENDING_PACKET, false);
 	}
@@ -969,27 +975,39 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	}
 	else if (req->bRequest == COMMAND_IN_PACKETS)
 	{ // Request for camera packets (stored in shared buffers)
+		if (packetUSBPacket)
+			USBC_STR("!ReqNotResolved");
 		USBC_STR("+ReqPackets");
-		for (int i = 0; i < SHARED_BUF_COUNT; i++)
+
+		bool sending = false;
+		for (int i = 0; i < packetHub.packetQueueSz; i++)
 		{
-			SharedBuffer *buf = &packetHub.shared[i];
-			if (buf->packet.queued || buf->packet.writeSet || buf->packet.locked)
-				continue;
-			if (buf->packet.size <= USB_PACKET_HEADER)
-				continue;
-			USE_LOCKS();
-			LOCK();
-			if (buf->packet.queued || buf->packet.writeSet || buf->packet.locked)
-			{
-				UNLOCK();
+			PacketRef *packet = packetHub.packetQueue[i];
+			if (packet->locked)
+			{ // May theoretically happen if shared packet is re-locked to put additional data in despite being queued (but not in first position)
+				ERR_STR("!SENDING_PACKET_LOCKED");
 				continue;
 			}
-			buf->packet.writeSet = true;
-			UNLOCK();
-			storeUSBPacketHeader((struct USBPacketHeader){ packetSendCounter, 0 }, buf->buffer);
-			usbd->status.data_ptr = (void*)buf->buffer;
-			usbd->status.data_count = buf->packet.size;
-			packetUSBPacket = &buf->packet;
+			if (packet->writeSet)
+			{ // Should not happen
+				ERR_STR("!SENDING_ALREADY_SET");
+				continue;
+			}
+			storeUSBPacketHeader((struct USBPacketHeader){ packetSendCounter, 0 }, packet->buffer);
+			// Mark packet buffer to be sent
+			packet->writeSet = true;
+			packet->sendingTime = GetTimePoint();
+			packetUSBPacket = packet;
+			usbd->status.data_ptr = (void*)packet->buffer;
+			usbd->status.data_count = packet->size;
+
+			dequeuePacket(&packetHub, i);
+			TimeSpan latency = GetTimeSpanUS(packet->latencyTime, GetTimePoint());
+			if (latency > 50000)
+			{
+				TERR_STR("!CtrlTTS:");
+				TERR_CHARR(INT999999_TO_CHARR(latency));
+			}
 			return usbd_ack;
 		}
 		usbd->status.data_ptr = (void*)0;
@@ -1198,6 +1216,7 @@ void usbd_control_resolution(usbd_device *usbd, usbd_ctlreq *req, bool success)
 				else
 				{
 					packetUSBPacket->writeSet = false;
+					queuePacket(&packetHub, (PacketRef*)packetUSBPacket);
 					USBC_STR("!PKT_Failure");
 				}
 			}

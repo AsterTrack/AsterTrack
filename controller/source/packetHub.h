@@ -180,7 +180,7 @@ static inline void unlockPacket(PacketRef *packet)
 }
 
 /**
- * Dequeue packet from packet queue
+ * Dequeue packet from packet queue - only call from interrupts that can't be preempted by other PacketHub interrupts
  */
 static inline void dequeuePacket(Hub *hub, int index)
 {
@@ -189,6 +189,7 @@ static inline void dequeuePacket(Hub *hub, int index)
 		ERR_STR("#DequeueOOR");
 		return;
 	}
+
 	USE_LOCKS();
 	LOCK();
 	hub->packetQueue[index]->queued = false;
@@ -298,7 +299,7 @@ static inline bool setSinkSending(Hub *hub, Sink *sink, PacketRef *packet)
 	else
 	{ // Validate packet
 		if (packet->locked)
-		{ // Should not happen
+		{ // May theoretically happen if shared packet is re-locked to put additional data in despite being queued (but not in first position)
 			ERR_STR("!SENDING_PACKET_LOCKED");
 			return false;
 		}
@@ -352,13 +353,13 @@ static inline bool setSinkSending(Hub *hub, Sink *sink, PacketRef *packet)
 	usbd_ep_set_dma(&hUSB, sink->ep, packet->buffer, packet->size);
 	packet->writeSet = true;
 	sink->sending = packet;
+	packet->sendingTime = GetTimePoint();
 	UNLOCK();
 	//ERR_CHARR('>', INT999_TO_CHARR(packet->buffer[0]), ':', INT999_TO_CHARR(packet->size));
 	if (sink->counter != counter)
 	{
 		WARN_STR("!CounterAdv");
 	}
-	packet->sendingTime = GetTimePoint();
 	//sink->dueTime = lastSOF+XXX
 	return true;
 }
@@ -374,11 +375,6 @@ static bool queuePacket(Hub *hub, PacketRef *packet)
 	{ // Should not happen
 		WARN_STR("!QUEUE_ALREADY_WRITING");
 		return true;
-	}
-	if (hub->sinkCount == 0)
-	{ // Cannot send anything right now
-		ERR_STR("!QUEUE_NO_SINKS");
-		return false;
 	}
 
 	packet->latencyTime = GetTimePoint();
@@ -452,7 +448,7 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 			unlockPacket(&buf->packet);
 			buf->writeTime = GetTimePoint();
 
-			if (hub->sinkCount > 0 && !buf->packet.queued)
+			if (!buf->packet.queued)
 			{ // Queue shared buffer packet
 				if (!queuePacket(hub, &buf->packet))
 					ERR_STR("#FailedSourceSharedQueue");

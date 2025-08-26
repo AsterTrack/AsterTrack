@@ -43,8 +43,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * USB Communication for input from cameras
  */
 
-#define CTRL_TRANSFER_SIZE		1024	// Max control transfer size - limited by libusb to 4096 due to several OS limitations
- 										// Control transfers may be transferred with multiple control transfers, but this is currently buggy on the CH32V307
+#define CTRL_TRANSFER_SIZE		2045	// Max total control transfer size (made up of multiple 64 byte transfers)
+										// limited by libusb to 4096 due to several OS limitations
+ 										// limited by CH32V307 to 2045 due to MAX_LEN register being 11bit (and 2046 and 2047 crashing the host)
 
 #define INT_TRANSFER_SIZE		1024
 #define INT_NUM_ENDPOINTS		8		// Maximum number of interrupt endpoints supported for an alternate setting

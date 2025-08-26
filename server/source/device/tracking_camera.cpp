@@ -221,9 +221,8 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
 	{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE
 		// Implement feedback on failure in UI
 		LOG(LGUI, LWarn, "wpa_supplicant is too long to send over control transfers!");
-		/*
 		credSize = 0;
-		return false; */
+		return false;
 	}
 	std::vector<uint8_t> packet(WIRELESS_PACKET_HEADER + credSize + PACKET_CHECKSUM_SIZE);
 	packet[0] = wireless.config;

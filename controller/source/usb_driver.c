@@ -378,7 +378,6 @@ void usbd_poll(usbd_device *dev)
 {
 	if (USBHSD->INT_FG & USBHS_UIF_TRANSFER)
 	{
-		USBHSD->INT_FG = USBHS_UIF_TRANSFER; // Clear flag first thing
 		uint8_t usbStatus = USBHSD->INT_ST;
 		switch (usbStatus & USBHS_UIS_TOKEN_MASK)
 		{
@@ -516,9 +515,10 @@ void usbd_poll(usbd_device *dev)
 			{
 				USBD_STR("\nRecv");
 				if ((usbStatus & USBHS_UIS_IS_NAK) == USBHS_UIS_IS_NAK)
-				{ // Not sure what this means
-					ERR_STR("\n#NAK");
-					break; // TODO: Remove or handle
+				{ // TODO: Figure out what NAK during receive means - it's usually accompannied by bad TOG_OK
+					// May have to do with time spent in usbd_poll? Adding logging (even via SDI) causes many more to appear
+					ERR_STR("\n#RNAK");
+					//break; // Stopping here breaks control flow hardware expects
 				}
 				if (rxLen == 0)
 				{
@@ -546,11 +546,11 @@ void usbd_poll(usbd_device *dev)
 					USBD_CHARR(':', INT999_TO_CHARR(rxLen));
 
 					if ((usbStatus & USBHS_UIS_TOG_OK) == 0)
-					{
+					{ // TODO: Figure out how to avoid this - usually happens after a RNAK
 						ERR_STR("\n#NOTOK:");
-						USBD_CHARR(INT999_TO_CHARR(rxLen), '/', INT999_TO_CHARR(dev->status.data_count_rx));
-						// Ignore packet, USB HW should have already responded with a NAK, packet will be retried later
-						break;
+						ERR_CHARR(INT999_TO_CHARR(rxLen), '/', INT9999_TO_CHARR(dev->status.data_count_rx), '\n');
+						// USB HW should have already responded with a NAK, packet will be retried later
+						//break; // Stopping here breaks control flow hardware expects
 					}
 
 					if (dev->state != usbd_ctl_rxdata)
@@ -560,12 +560,13 @@ void usbd_poll(usbd_device *dev)
 						break;
 					}
 
-					dev->status.data_count_rx -= rxLen;
-					if (dev->status.data_count_rx < 0)
+					if (dev->status.data_count_rx < rxLen)
 					{
 						ERR_STR("\n#RXOverLength");
 						dev->status.data_count_rx = 0;
 					}
+					else
+						dev->status.data_count_rx -= rxLen;
 					if (dev->status.data_count_rx == 0)
 					{ // Finished RX transfer
 						USBD_STR("+Done");
@@ -653,11 +654,10 @@ void usbd_poll(usbd_device *dev)
 			break;
 		}
 		}
+		USBHSD->INT_FG = USBHS_UIF_TRANSFER; // Clear flag
 	}
 	if (USBHSD->INT_FG & USBHS_UIF_SETUP_ACT)
 	{ // Setup token on ep0 - initiating a new control transfer
-
-		USBHSD->INT_FG = USBHS_UIF_SETUP_ACT; // Clear flag first thing
 
 		if (dev->state != usbd_ctl_idle)
 		{ // Another control transfer must've gotten interrupted, have to accept this new one
@@ -820,6 +820,7 @@ void usbd_poll(usbd_device *dev)
 				dev->state = usbd_ctl_txdata; // Expect IN tokens to send that data
 			}
 		}
+		USBHSD->INT_FG = USBHS_UIF_SETUP_ACT; // Clear flag
 	}
 	if (USBHSD->INT_FG & USBHS_UIF_ISO_ACT)
 	{

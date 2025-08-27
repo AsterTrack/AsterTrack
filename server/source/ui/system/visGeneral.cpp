@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime) const
+VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime, int focusCamera) const
 {
 	VisFrameLock snapshot = {};
 	snapshot.target = lockVisTarget();
@@ -45,18 +45,23 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 			return snapshot;
 		}
 		snapshot.frameIt = snapshot.frames.pos(frame);
+		assert(snapshot.frameIt->get()->finishedProcessing);
 		snapshot.isRealtimeFrame = false;
 	}
 	else
 	{ // Visualise most recent frame
 		for (int i = 0; i < 50; i++)
 		{ // Find latest processed frame
-			if (*snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing) break;
+			if (!*snapshot.frameIt || !snapshot.frameIt->get()->finishedProcessing);
+			else if (focusCamera >= 0 && snapshot.frameIt->get()->cameras[focusCamera].rawPoints2D.empty());
+			else break;
 			if (snapshot.frameIt == snapshot.frames.begin()) break;
 			snapshot.frameIt--;
 		}
 	}
 	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
+	if (snapshot.hasFrame && focusCamera >= 0 && snapshot.frameIt->get()->cameras[focusCamera].rawPoints2D.empty())
+		snapshot.hasFrame = false;
 	return snapshot;
 }
 

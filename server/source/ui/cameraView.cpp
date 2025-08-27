@@ -878,7 +878,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Prepare frame to visualise
 	 */
-	auto visFrame = visState.lockVisFrame(pipeline);
+	auto visFrame = visState.lockVisFrame(pipeline, true, camera.pipeline->index);
 	if (!visFrame || visFrame.frameIt->get()->cameras.size() <= camera.pipeline->index)
 	{
 		drawWithoutFrame();
@@ -930,8 +930,10 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 	}
 	// Gather further frame data
-	assert(visFrame.hasFrame && visFrame.frameIt.accessible() && *visFrame.frameIt);
+	assert(visFrame.hasFrame);
+	assert(visFrame.frameIt.accessible() && *visFrame.frameIt);
 	std::shared_ptr<const FrameRecord> frame = *visFrame.frameIt; // new shared_ptr
+	assert(frame->finishedProcessing);
 	auto &camFrame = frame->cameras[camera.pipeline->index];
 	PipelinePhase phase = pipeline.phase.load();
 

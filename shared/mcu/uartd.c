@@ -280,6 +280,12 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 				resp = uartd_handle_header(port);
 				if (resp == uartd_reset)
 				{ // Bad state, reset port
+					WARN_STR("!UartNaked");
+					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
+					break;
+				}
+				else if (resp == uartd_reset_nak)
+				{ // Bad state, reset port
 					WARN_STR("!UartHeaderBad");
 					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
 					break;

@@ -337,15 +337,18 @@ int main(void)
 			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
 		}
-		else if (piIsBooted && uartState == UART_CamMCU)
+		else if (piIsBooted)
 		{ // Pi started corresponding, hand over UART control automatically
 			EnterUARTPortZone(0);
-			// TODO: Switching UART Control - Properly notify controller of switch
-			//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
-			uartd_nak_int(0);
-			delayUS(10000);
+			if (uartState == UART_CamMCU)
+			{
+				// TODO: Switching UART Control - Properly notify controller of switch
+				//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
+				uartd_nak_int(0);
+				delayUS(10000);
+				uartd_reset_port(0);
+			}
 			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
-			uartd_reset_port(0);
 			uartState = UART_CamPi;
 			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);

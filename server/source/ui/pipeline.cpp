@@ -341,6 +341,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
 							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
 						lastIt = pclock::now();
+
+						LOGCL("Applying to targets!");
+
+						// Update Targets
+						for (auto &tgtNew : data.targets)
+						{
+							for (auto &tracker : state.trackerConfigs)
+							{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
+								if (tracker.id != tgtNew.targetID) continue;
+								// Copy and update target calibration
+								TargetCalibration3D calib = tracker.calib;
+								calib.markers = finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post);
+								calib.updateMarkers();
+								// Signal server to update calib
+								SignalTargetCalibUpdate(tgtNew.targetID, calib);
+								break;
+							}
+						}
+
 						return numSteps++ < maxSteps;
 					};
 
@@ -355,42 +374,26 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					OptimisationOptions options(true, false, false, false, false);
 					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
-					LOGCL("Done optimising! Applying to targets!");
-
-					// Update Targets
-					for (auto &tgtNew : data.targets)
-					{
-						for (auto &tracker : state.trackerConfigs)
-						{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
-							if (tracker.id != tgtNew.targetID) continue;
-							// Copy and update target calibration
-							TargetCalibration3D calib = tracker.calib;
-							calib.markers = finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post);
-							calib.updateMarkers();
-							// Signal server to update calib
-							SignalTargetCalibUpdate(tgtNew.targetID, calib);
-							break;
-						}
-					}
+					LOGCL("Done optimising! Applying to database1");
 
 					{ // Update Targets in Database
 						auto db_lock = pipeline.obsDatabase.contextualLock();
-						for (auto &tgtNew : data.targets)
+						for (auto &tgtOpt : data.targets)
 						{
-							for (auto &tgtOld : db_lock->targets)
+							for (auto &tgtDB : db_lock->targets)
 							{
-								if (std::abs(tgtOld.targetID) != std::abs(tgtNew.targetID)) continue;
-								tgtOld.markers = tgtNew.markers;
-								auto frameIt = tgtNew.frames.begin();
-								for (auto &frame : tgtOld.frames)
+								if (std::abs(tgtDB.targetID) != std::abs(tgtOpt.targetID)) continue;
+								tgtDB.markers = tgtOpt.markers;
+								auto frameOpt = tgtOpt.frames.begin();
+								for (auto &frameDB : tgtDB.frames)
 								{
-									while (frameIt != tgtNew.frames.end() && frameIt->frame < frame.frame)
-										frameIt++;
-									while (frameIt == tgtNew.frames.end()) break;
-									assert (frameIt->frame == frame.frame);
+									while (frameOpt != tgtOpt.frames.end() && frameOpt->frame < frameDB.frame)
+										frameOpt++;
+									if (frameOpt == tgtOpt.frames.end()) break;
+									assert (frameOpt->frame == frameDB.frame);
 									// Apply new outliers, new pose, and error
-									tgtOld.outlierSamples += frameIt->samples.size() - frame.samples.size();
-									*frameIt = std::move(frame);
+									tgtDB.outlierSamples += frameDB.samples.size() - frameOpt->samples.size();
+									frameDB = std::move(*frameOpt);
 								}
 								break;
 							}

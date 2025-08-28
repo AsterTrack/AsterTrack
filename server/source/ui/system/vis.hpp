@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct VisTargetLock
 {
+	std::shared_ptr<TargetAssemblyBase> editRef;
 	SynchronisedS<ObsTarget>::ConstLockedPtr target_lock;
 	Synchronised<ObsData>::ConstLockedPtr db_lock;
 	const ObsTarget *obs = nullptr;

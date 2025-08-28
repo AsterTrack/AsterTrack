@@ -29,6 +29,7 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	VisTargetLock state = {};
 	if (targetCalib.edit)
 	{
+		state.editRef = targetCalib.edit;
 		state.obs = &targetCalib.edit->target;
 		state.calib = &targetCalib.edit->targetCalib;
 		state.hasPose = true;

@@ -51,6 +51,7 @@ static void assureValidView(CameraVisState &visCamera, const CameraMode &mode);
 static Eigen::Isometry3f generateProjectionMatrix(CameraVisState &visCamera, const CameraMode &mode);
 static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calibHost, const CameraCalib &calib, const CameraMode &mode,
 	std::vector<VisPoint> &fullBorder, std::vector<VisPoint> &usedBorder);
+static void calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera);
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera);
 
@@ -761,25 +762,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	{
 		if (!visCamera.calibration.precalculated)
 		{
-			visCamera.view.camZoom = updateUndistortedBorders(visCamera, calib, calib, mode, visCamera.calibration.fullBorder, visCamera.calibration.usedBorder);
-			// Update a map from undistorted to distorted
-			// Maximum iterations should only ever be necessary in very distorted areas, tolerance is the real threshold
-			// But a few highly distorted areas can tank performance, resulting in lags, so hope this is fine
-			// Currently, everything <10ms, so all good
-			int tgtSize = 150, tgtHeight = std::ceil(tgtSize*mode.aspect);
-			int width = tgtSize/visCamera.view.camZoom, height = tgtHeight/visCamera.view.camZoom;
-			thread_local std::vector<Eigen::Vector2f> undistortionTex;
-			undistortionTex.clear();
-			undistortionTex.resize(width*height);
-			for (int y = 0; y < height; y++)
-				for (int x = 0; x < width; x++)
-				{
-					Eigen::Vector2f pos(((x+0.5f)*2.0f-width)/tgtSize, ((y+0.5f)*2.0f-height)/tgtSize);
-					undistortionTex[y*width + x] = distortPointUnstable(calib, pos, 100, 0.05f*PixelSize);
-				}
-			loadVectorField(visCamera.calibration.undistortionTexID, undistortionTex, width, height);
-			visCamera.calibration.undistortMapScale = Eigen::Vector2f((float)width/tgtSize, (float)height/tgtSize);
-			visCamera.calibration.precalculated = true;
+			calculateCameraDistortionMap(camera, visCamera);
 		}
 	}
 	else
@@ -1552,6 +1535,36 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 	}
 	return 1.0f / maxZoom;
 }
+
+#pragma GCC push_options
+#pragma GCC optimize ("-O3")
+
+static void __attribute__ ((optimize("3"))) calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera)
+{
+	CameraMode &mode = camera.pipeline->mode;
+	CameraCalib &calib = camera.pipeline->calib;
+	visCamera.view.camZoom = updateUndistortedBorders(visCamera, calib, calib, mode, visCamera.calibration.fullBorder, visCamera.calibration.usedBorder);
+	// Update a map from undistorted to distorted
+	// Maximum iterations should only ever be necessary in very distorted areas, tolerance is the real threshold
+	// But a few highly distorted areas can tank performance, resulting in lags, so hope this is fine
+	// Currently, everything <10ms, so all good
+	int tgtSize = 150, tgtHeight = std::ceil(tgtSize*mode.aspect);
+	int width = tgtSize/visCamera.view.camZoom, height = tgtHeight/visCamera.view.camZoom;
+	thread_local std::vector<Eigen::Vector2f> undistortionTex;
+	undistortionTex.clear();
+	undistortionTex.resize(width*height);
+	for (int y = 0; y < height; y++)
+		for (int x = 0; x < width; x++)
+		{
+			Eigen::Vector2f pos(((x+0.5f)*2.0f-width)/tgtSize, ((y+0.5f)*2.0f-height)/tgtSize);
+			undistortionTex[y*width + x] = distortPointUnstable(calib, pos, 100, 0.05f*PixelSize);
+		}
+	loadVectorField(visCamera.calibration.undistortionTexID, undistortionTex, width, height);
+	visCamera.calibration.undistortMapScale = Eigen::Vector2f((float)width/tgtSize, (float)height/tgtSize);
+	visCamera.calibration.precalculated = true;
+}
+
+#pragma GCC pop_options
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera)
 { // Adapt requested image to zoomed view

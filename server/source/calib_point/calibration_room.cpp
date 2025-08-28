@@ -389,17 +389,20 @@ bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc
 	int unchangedCameras = 0;
 	for (int c = 0; c < calibsSrc.size(); c++)
 	{
-		if (!calibsSrc[c].valid())
-			continue;
+		if (!calibsSrc[c].valid()) continue;
+		if (!calibsTgt[c].valid()) continue;
 		// Guess scale by relation to other cameras
 		std::vector<Eigen::Vector<Scalar,1>> scaleGuesses;
 		for (int cc = 0; cc < calibsSrc.size(); cc++)
 		{
 			if (c == cc) continue;
+			if (!calibsSrc[cc].valid()) continue;
+			if (!calibsTgt[cc].valid()) continue;
 			float distSrc = (calibsSrc[c].transform.translation() - calibsSrc[cc].transform.translation()).norm();
 			float distTgt = (calibsTgt[c].transform.translation() - calibsTgt[cc].transform.translation()).norm();
 			scaleGuesses.push_back(Eigen::Vector<Scalar,1>(distSrc/distTgt));
 		}
+		if (scaleGuesses.empty()) continue;
 		auto scaleGroups = dbscan<1,double,int>(scaleGuesses, 0.01, 2);
 		if (!scaleGroups.empty())
 		{ // Found agreeing scales, take scale with most agreements as only guess
@@ -413,7 +416,6 @@ bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc
 		}
 		LOG(LPointCalib, LTrace, "Finding corrective transform for camera %d, %d scale guesses (after %d groups)",
 			c, (int)scaleGuesses.size(), (int)scaleGroups.size());
-
 
 		for (auto scale : scaleGuesses)
 		{

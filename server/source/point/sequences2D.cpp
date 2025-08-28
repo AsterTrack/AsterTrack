@@ -839,7 +839,12 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		}
 		else
 		{
-			maxDistSq = params.maxAcceleration*params.maxAcceleration;
+			// Can only allow max acceleration if were actually sure this is an active marker
+			// Else noise just jumps around and never becomes inactive
+			if (m < 0 && seq.length() < params.minInactivityLength)
+				maxDistSq = params.maxInactivityMovement * params.maxInactivityMovement;
+			else
+			 	maxDistSq = params.maxAcceleration*params.maxAcceleration;
 			if (seq.points.size() > 1)
 				projPos = seq.points.back() + (seq.points.end()[-1] - seq.points.end()[-2]) * passedFrames;
 			else
@@ -872,7 +877,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		Eigen::Vector2f avgDiff = seq.points.back()-seq.avgPos;
 		seq.avgPos += avgDiff/params.minInactivityLength/2; // Make it slower to adapt
 		if (seq.inactiveLength > 0) return (int)seq.points.size(); // Already marked inactive
-		if (seq.points.size() < params.minInactivityLength) return 0; // Not enough data yet	
+		if (seq.points.size() < params.minInactivityLength) return 0; // Not enough data yet
 		if (avgDiff.squaredNorm() > maxInactivityMovementSq) return 0;
 
 		//float var = 0.0f, maxSq = 0.0;
@@ -1070,7 +1075,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		{ // Temporary sequence was interrupted, and don't need to wait for resolveCorrespondence
 			if (tmpSeq.isInactive() || tmpSeq.length() < params.minSequenceLength)
 			{
-				if (tmpSeq.length() > 2)
+				if (tmpSeq.length() > 10)
 					LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d INTERRUPTED (%d limit, inactive? %c)",
 						cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length(), params.minSequenceLength, tmpSeq.isInactive()? 'y' : 'n');
 				temporaries.erase(temporaries.begin()+t--);
@@ -1093,7 +1098,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 				cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length());
 		}
 
-		forceCheck |= (curFrame-tmpSeq.startFrame) >= params.sequenceCorrespondenceLength;
+		forceCheck |= tmpSeq.length() >= params.sequenceCorrespondenceLength;
 		if (!tmpSeq.isInactive() && forceCheck)
 		{ // Check at stable boundary to get maximum length of temporary
 			// Need to call resolveCorresponce on sequences consistently by first frame

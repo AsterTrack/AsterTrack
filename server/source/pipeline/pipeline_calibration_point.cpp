@@ -419,7 +419,12 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		Eigen::Matrix3d roomOrientation;
 		Eigen::Affine3d roomTransform;
 		if (transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
-			ApplyTransformation(calibs, roomOrientation, roomTransform);
+		{
+			if (roomOrientation.hasNaN() || roomTransform.matrix().hasNaN())
+				LOG(LPointCalib, LError, "Transferring room calibration resulted in NAN transforms despite succeeding!");
+			else
+				ApplyTransformation(calibs, roomOrientation, roomTransform);
+		}
 	}
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);

@@ -242,12 +242,19 @@ public:
 		int camCount = sequence.temporary.size();
 		//m_markers.reserve(sequence.markers.size() * camCount);
 		m_markers.resize(sequence.markers.size());
+
 		totalFrameRange = { lastFrame, lastFrame };
 		for (int i = 0; i < sequence.markers.size(); i++)
 		{
 			auto frameRange = sequence.markers[i].getFrameRange();
-			int frameCount = frameRange.second - frameRange.first;
 			totalFrameRange.first = std::min(totalFrameRange.first, frameRange.first);
+		}
+		m_start = totalFrameRange.first;
+
+		for (int i = 0; i < sequence.markers.size(); i++)
+		{
+			auto frameRange = sequence.markers[i].getFrameRange();
+			int frameCount = frameRange.second - frameRange.first;
 			//std::vector<MarkerSequences> markerSeq(camCount);
 			auto &marker = m_markers[i];
 			marker.index = i;
@@ -285,9 +292,11 @@ public:
 					marker.colorBand[index] = IM_COL32(mix.r*255, mix.g*255, mix.b*255, mix.a*255);
 				}
 			});
+
+			marker.frameStart -= m_start;
+			marker.frameEnd -= m_start;
 		}
 
-		m_start = totalFrameRange.first;
 		drawSequenceBars = false;
 	}
 

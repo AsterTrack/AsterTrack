@@ -244,7 +244,7 @@ struct VisualisationState
 		int pointsStable = 0, pointsUnstable = 0;
 		std::vector<int> cameraTriObservations;
 		int markerCount = 0; // To check if observations were cleared
-		bool dirty = false;
+		bool reset = false;
 	} incObsUpdate;
 
 	// Visualisation of reference points in virtual space

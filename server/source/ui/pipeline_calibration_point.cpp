@@ -49,10 +49,15 @@ void InterfaceState::UpdatePipelineCalibSection()
 		}
 		else if (calibState.numUncalibrated == 0 && visState.incObsUpdate.markerCount > 0)
 		{
-			ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
-				errors.mean*PixelFactor,
-				errors.stdDev*PixelFactor,
-				errors.max*PixelFactor);
+			if (std::isnan(errors.mean) || std::isinf(errors.mean))
+			{
+				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
+					errors.mean*PixelFactor,
+					errors.stdDev*PixelFactor,
+					errors.max*PixelFactor);
+			}
+			else
+				ImGui::TextUnformatted("Unable to check calibration errors!");
 		}
 		else if (calibState.numUncalibrated == 0)
 			ImGui::TextUnformatted("No data to check calibration against!");
@@ -413,6 +418,28 @@ void InterfaceState::UpdatePipelinePointCalib()
 		}
 	}
 	ImGui::SetItemTooltip("Adjust the height of the floor-plane.");
+
+	if (ImGui::Button("Flip Vertically", SizeWidthFull()))
+	{
+		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(100));
+		if (pipeline_lock.owns_lock())
+		{
+			Eigen::Matrix3d orientation = Eigen::Quaterniond::FromTwoVectors(-Eigen::Vector3d::UnitZ(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+			for (auto &camera : pipeline.cameras)
+			{
+				camera->calibBackup = camera->calib;
+				camera->calib.transform.linear() = orientation * camera->calib.transform.linear();
+				camera->calib.transform.translation() = orientation * camera->calib.transform.translation();
+				camera->calib.UpdateDerived();
+			}
+
+			// Re-evaluate positions incase calibration changed since observation
+			auto calibs = pipeline.getCalibs();
+			for (auto &point : roomCalib->floorPoints)
+				point.update(calibs);
+		}
+	}
+	ImGui::SetItemTooltip("Flip the cameras along the floor plane in case they are below it..");
 
 	if (ImGui::Button("Undo Once", SizeWidthFull()))
 	{ // TODO: Disable this button if floor is not calibrated yet (or a new calibration exists)

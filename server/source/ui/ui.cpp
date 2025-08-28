@@ -70,7 +70,7 @@ const int maxRefreshRateHz = 60; // This is further limited to display refresh r
 const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 50.0f/1000.0f
 
 const long minIntervalUS = 1000000/maxRefreshRateHz;
-const double waitIntervalS = 1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz;
+const double waitIntervalS = minRefreshRateHz? (1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz) : (0.1f);
 
 /* Function prototypes */
 
@@ -373,7 +373,7 @@ void InterfaceState::GeneralUpdate()
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{
 		static TimePoint_t lastObservationUpdate;
-		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.dirty)
+		if (dtMS(lastObservationUpdate, sclock::now()) > 50 || visState.incObsUpdate.reset)
 		{
 			lastObservationUpdate = sclock::now();
 			UpdateSequences();
@@ -610,7 +610,7 @@ bool InterfaceState::Init()
 	windows[WIN_TARGETS] = InterfaceWindow("Targets", &InterfaceState::UpdateTargets, false);
 	// Device mode
 	windows[WIN_DEVICES] = InterfaceWindow("Devices", &InterfaceState::UpdateDevices, false);
-	windows[WIN_CAMERA_SETTINGS] = InterfaceWindow("Camera Settings", &InterfaceState::UpdateCameraSettings, true);
+	windows[WIN_CAMERA_SETTINGS] = InterfaceWindow("Camera Settings", &InterfaceState::UpdateCameraSettings, false);
 	windows[WIN_WIRELESS] = InterfaceWindow("Wireless Setup", &InterfaceState::UpdateWirelessSetup, false);
 	// Parameters
 	windows[WIN_SEQUENCE_PARAMS] = InterfaceWindow("Sequence2D Params", &InterfaceState::UpdateSequenceParameters, false);
@@ -750,7 +750,7 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_OBSERVATIONS:
-			GetUI().visState.incObsUpdate.dirty = true;
+			GetUI().visState.incObsUpdate.reset = true;
 			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_CALIBS:

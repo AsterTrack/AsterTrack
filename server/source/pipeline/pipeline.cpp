@@ -149,7 +149,7 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	// Point calibration should also be mostly implicit (see below)
 	// Sequence2D should then only run when explicitly requested by camera calibration UI or target calibration 
 
-	if (pipeline.recordSequences)
+	if (pipeline.recordSequences && pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target)
 	{ // Recording sequences is desired by point or target calibration
 
 		auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::wlock(pipeline.seqDatabase));

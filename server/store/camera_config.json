@@ -12,8 +12,8 @@
             "label": "",
             "resolutionX": 1280,
             "resolutionY": 800,
-            "shutterSpeed": 52,
-            "strobeLength": 149,
+			"shutterSpeed": 20,
+			"strobeLength": 55,
             "strobeOffset": 0,
             "synchronised": true
         }

@@ -71,12 +71,12 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 		LOG(LCameraDevice, LError, "Camera %d requesting mode failed because it has not started up yet!", id);
 		return false;
 	}
-	if (mode != modeSet.mode && dtMS(modeSet.time, sclock::now()) > 500)
+	/* if (mode != modeSet.mode && dtMS(modeSet.time, sclock::now()) < 500)
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d requesting mode %x while still waiting on mode %x requested %fms ago!",
 			id, setMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 		return false;
-	}
+	} */
 	if (modeSet.mode == setMode)
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d already requested mode %x %fms ago!",
@@ -97,11 +97,11 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 void TrackingCameraState::recvModeSet(uint8_t recvMode)
 {
 	bool toggleStreaming = (mode & TRCAM_FLAG_STREAMING) != (recvMode & TRCAM_FLAG_STREAMING);
-	if (modeSet.mode != (TrCamMode)recvMode)
+	/* if (modeSet.mode != (TrCamMode)recvMode)
 	{ // Might happen due to error message
 		LOG(LCameraDevice, LWarn, "Camera %d left mode %x and entered mode %x which was not requested (mode %x requested %fms ago)!",
 			id, mode, recvMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
-	}
+	} */
 	mode = (TrCamMode)recvMode;
 	modeSet.mode = (TrCamMode)recvMode;
 	if (toggleStreaming && modeSet.handleIndividually)

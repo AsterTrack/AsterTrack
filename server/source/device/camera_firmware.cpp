@@ -496,7 +496,9 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 			CameraShowTransferStatus(camStatus, camTXStatus, transfer);
 		}
 		else
-			LOG(LFirmwareUpdate, LWarn, "Received redundant status %d for block %d of transfer %d!!", status, block, index);
+		{ // Status packet might have gotten extremely delayed
+			LOG(LFirmwareUpdate, LDarn, "Received redundant status %d for block %d of transfer %d!!", status, block, index);
+		}
 		return true;
 	}
 
@@ -657,7 +659,7 @@ static void HandleFirmwareTransfer(FirmwareUpdatePlan &update, FirmwareTransfer 
 			auto &block = camTXStatus.blocks[b];
 			if (block.result == FW_TX_TRANSFERRED) continue;
 			earliestBlock = std::min(earliestBlock, b);
-			if (block.result == FW_TX_TRANSFERRING && dtMS(block.sentTime, sclock::now()) < 100)
+			if (block.result == FW_TX_TRANSFERRING && dtMS(block.sentTime, sclock::now()) < 200)
 			{ // Still waiting for block status
 				awaitingBlockStatus = true;
 				continue;
@@ -830,7 +832,7 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	}
 
 	// Begin to build update plan
-	FirmwareUpdatePlan update;
+	FirmwareUpdatePlan update = {};
 	update.status = updateStatus;
 	update.abort = updateStatus->contextualLock()->abort.get_token();
 	update.flags = FW_FLAGS_NONE;

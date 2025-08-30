@@ -756,21 +756,24 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			{
 				if (frame->cameras.size() >= cameras.size())
 					return frameOffset;
-				if (!jsCamera.contains("blobs")) continue;
-				if (!jsCamera["blobs"].is_array()) continue;
-				auto &jsBlobs = jsCamera["blobs"];
 
 				frame->cameras.push_back({});
 				auto &camera = frame->cameras.back();
-				camera.rawPoints2D.reserve(jsBlobs.size());
-				camera.properties.reserve(jsBlobs.size());
 
-				for (auto &jsBlob : jsBlobs)
+				camera.received = jsCamera.contains("blobs") && jsCamera["blobs"].is_array();
+				if (camera.received)
 				{
-					camera.rawPoints2D.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
-					camera.properties.emplace_back(
-						jsBlob["s"].get<float>(),
-						jsBlob.contains("v")? jsBlob["v"].get<float>() : 1000);
+					auto &jsBlobs = jsCamera["blobs"];
+					camera.rawPoints2D.reserve(jsBlobs.size());
+					camera.properties.reserve(jsBlobs.size());
+
+					for (auto &jsBlob : jsBlobs)
+					{
+						camera.rawPoints2D.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
+						camera.properties.emplace_back(
+							jsBlob["s"].get<float>(),
+							jsBlob.contains("v")? jsBlob["v"].get<float>() : 1000);
+					}
 				}
 
 				if (!jsCamera.contains("image")) continue;
@@ -939,17 +942,20 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 		for (auto &camera : frame.cameras)
 		{
 			json jsCamera;
-			jsCamera["blobs"] = json::array();
-			json &jsBlobs = jsCamera["blobs"];
-			assert(camera.rawPoints2D.size() == camera.properties.size());
-			for (int b = 0; b < camera.rawPoints2D.size(); b++)
+			if (camera.received)
 			{
-				json jsBlob;
-				jsBlob["x"] = camera.rawPoints2D[b].x();
-				jsBlob["y"] = camera.rawPoints2D[b].y();
-				jsBlob["s"] = camera.properties[b].size;
-				jsBlob["v"] = camera.properties[b].value;
-				jsBlobs.push_back(std::move(jsBlob));
+				jsCamera["blobs"] = json::array();
+				json &jsBlobs = jsCamera["blobs"];
+				assert(camera.rawPoints2D.size() == camera.properties.size());
+				for (int b = 0; b < camera.rawPoints2D.size(); b++)
+				{
+					json jsBlob;
+					jsBlob["x"] = camera.rawPoints2D[b].x();
+					jsBlob["y"] = camera.rawPoints2D[b].y();
+					jsBlob["s"] = camera.properties[b].size;
+					jsBlob["v"] = camera.properties[b].value;
+					jsBlobs.push_back(std::move(jsBlob));
+				}
 			}
 			if (camera.image)
 			{

@@ -52,14 +52,14 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 		for (int i = 0; i < 50; i++)
 		{ // Find latest processed frame
 			if (!*snapshot.frameIt || !snapshot.frameIt->get()->finishedProcessing);
-			else if (focusCamera >= 0 && snapshot.frameIt->get()->cameras[focusCamera].rawPoints2D.empty());
+			else if (focusCamera >= 0 && !snapshot.frameIt->get()->cameras[focusCamera].received);
 			else break;
 			if (snapshot.frameIt == snapshot.frames.begin()) break;
 			snapshot.frameIt--;
 		}
 	}
 	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
-	if (snapshot.hasFrame && focusCamera >= 0 && snapshot.frameIt->get()->cameras[focusCamera].rawPoints2D.empty())
+	if (snapshot.hasFrame && focusCamera >= 0 && !snapshot.frameIt->get()->cameras[focusCamera].received)
 		snapshot.hasFrame = false;
 	return snapshot;
 }

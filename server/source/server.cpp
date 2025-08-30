@@ -695,6 +695,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 
 		// TODO: Consider pushing new state from IMUs to IO if no frame was finished in a bit
 
+		if (!state->isStreaming)
+			UpdatePipelineStatus(state->pipeline);
+
 		if (!state->isStreaming && !imusRegistered)
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 		else if (!state->isStreaming)
@@ -882,12 +885,14 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		if (!state->isStreaming)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			UpdatePipelineStatus(pipeline);
 			continue;
 		}
 
 		if (dbg_isBreaking.load())
 		{ // Algorithm hit breakpoint, wait for it to continue
 			dbg_isBreaking.wait(true);
+			// TODO: Somehow call UpdatePipelineStatus regularly while halted to update background thread status
 		}
 
 		if (!state->isStreaming || stop_token.stop_requested())

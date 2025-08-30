@@ -45,7 +45,6 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 			return snapshot;
 		}
 		snapshot.frameIt = snapshot.frames.pos(frame);
-		assert(snapshot.frameIt->get()->finishedProcessing);
 		snapshot.isRealtimeFrame = false;
 	}
 	else

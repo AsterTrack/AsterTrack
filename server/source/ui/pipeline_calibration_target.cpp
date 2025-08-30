@@ -21,6 +21,83 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
 
+// This is just a cached value to reduce the amount sequences needs to be saved/loaded
+static int savedSequencesLastFrame = 0;
+
+static void ensureSequencesSaved(const PipelineState &pipeline, const SequenceData &sequences)
+{
+	if (savedSequencesLastFrame != sequences.lastRecordedFrame)
+	{
+		savedSequencesLastFrame = sequences.lastRecordedFrame;
+		// Copy camera ids
+		std::vector<int> cameraIDs;
+		for (auto &cam : pipeline.cameras)
+			cameraIDs.push_back(cam->id);
+		// Write accompanying sequences
+		dumpSequenceDatabase("dump/target_calib_sequences.json", sequences, cameraIDs);
+	}
+}
+
+static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
+{
+	if (savedSequencesLastFrame == 0 || savedSequencesLastFrame > sequences.lastRecordedFrame)
+	{
+		std::vector<int> cameraIDs;
+		SequenceData loadedSequences = parseSequenceDatabase("dump/target_calib_sequences.json", cameraIDs);
+		bool valid = cameraIDs.size() == pipeline.cameras.size();
+		if (valid)
+		{
+			std::vector<int> camMap(cameraIDs.size(), -1);
+			for (auto &cam : pipeline.cameras)
+			{
+				bool found = false;
+				for (int c = 0; c < cameraIDs.size(); c++)
+				{
+					if (cameraIDs[c] == cam->id)
+					{
+						camMap[c] = cam->index;
+						found = true;
+						break;
+					}
+				}
+				if (!found) valid = false;
+			}
+		}
+		if (!valid)
+		{
+			LOG(LTargetCalib, LError, "Cameras mismatch those in the accompanying sequence database - perhaps you loaded the wrong recording?");
+			return false;
+		}
+		sequences = std::move(loadedSequences);
+		savedSequencesLastFrame = sequences.lastRecordedFrame;
+		if (GetState().mode == MODE_Replay && pipeline.frameNum == -1)
+		{ // Automatically load stored frames into current record if we haven't already started playback
+			ServerState &state = GetState();
+			std::unique_lock pipeline_lock(pipeline.pipelineLock);
+			auto storedFrames = state.stored.frames.getView();
+			LOG(LTargetCalib, LInfo, "Automatically 'replaying' %d stored frames for loaded data!", (int)storedFrames.size());
+			state.recording.replayTime = sclock::now();
+			for (auto record : storedFrames)
+			{
+				std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
+				frameRecord->num = record->num;
+				frameRecord->ID = record->ID;
+				frameRecord->time = state.recording.replayTime + (record->time - state.recording.replayTime);
+				frameRecord->cameras = record->cameras;
+				pipeline.record.frames.insert(record->num, std::move(frameRecord));
+			}
+		}
+		else
+			LOG(LTargetCalib, LInfo, "Relying on existing frames records to cover loaded data!");
+		if (GetState().mode == MODE_Replay && pipeline.record.frames.getView().size() < sequences.lastRecordedFrame)
+		{ // Check that the frames are actually covering the loaded sequences
+			LOG(LTargetCalib, LError, "Current frames aren't covering loaded data fully! Either recording mismatches or you started playback but didn't wait for it to finish!");
+			return false;
+		}
+	}
+	return true;
+}
+
 void InterfaceState::UpdatePipelineTargetCalib()
 {
 	ServerState &state = GetState();
@@ -74,25 +151,31 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		ImGui::SameLine();
 		if (ImGui::Button("Save##Observations", SizeWidthDiv3()))
 		{
-			dumpTargetViewRecords("dump/targetViewsDebug.json", *pipeline.targetCalib.views.contextualRLock());
+			dumpTargetViewRecords("dump/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
+			// Make sure the relevant sequence data is saved alongside
+			ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock());
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Observations", SizeWidthDiv3()))
 		{
-			auto views_lock = pipeline.targetCalib.views.contextualLock();
-			*views_lock = parseTargetViewRecords("dump/targetViewsDebug.json", pipeline.record.frames);
-			for (auto &view : *views_lock)
+			// Check if we need to load sequence database from checkpoint, too
+			if (checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
 			{
-				{ // Fill target observations and calculate errors
-					auto view_lock = view->target.contextualLock();
-					updateTargetObservations(*view_lock, pipeline.seqDatabase.contextualRLock()->markers);
-					view->state.errors = getTargetErrorDist(pipeline.getCalibs(), *view_lock);
+				auto views_lock = pipeline.targetCalib.views.contextualLock();
+				*views_lock = parseTargetViewRecords("dump/target_calib_views.json", pipeline.record.frames);
+				for (auto &view : *views_lock)
+				{
+					{ // Fill target observations and calculate errors
+						auto view_lock = view->target.contextualLock();
+						updateTargetObservations(*view_lock, pipeline.seqDatabase.contextualRLock()->markers);
+						view->state.errors = getTargetErrorDist(pipeline.getCalibs(), *view_lock);
+					}
+					// Also start optimisation
+					view->settings.typeFlags = 0b10; // Optimise only
+					view->settings.maxSteps = view->state.numSteps + pipeline.targetCalib.params.view.initialOptLimit;
+					view->settings.tolerances = pipeline.targetCalib.params.view.initialOptTolerance;
+					view->planned = true;
 				}
-				// Also start optimisation
-				view->settings.typeFlags = 0b10; // Optimise only
-				view->settings.maxSteps = view->state.numSteps + pipeline.targetCalib.params.view.initialOptLimit;
-				view->settings.tolerances = pipeline.targetCalib.params.view.initialOptTolerance;
-				view->planned = true;
 			}
 		}
 	}
@@ -106,7 +189,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		ImGui::TableSetupColumn("Markers");
 		ImGui::TableSetupColumn("Samples");
-		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_PreferSortAscending, 2.0f);
 		ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		ImGui::TableHeadersRow();
 
@@ -553,12 +636,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 			ImGui::EndDisabled();
 
-			// Show sequences of selected markers
-			int selSeq = visState.targetCalib.selectedSequence;
-			visState.targetCalib.selectedSequence = -1;
-			visState.targetCalib.highlightedSequence = -1;
+			// Show observations of selected markers
+			int selObs = visState.targetCalib.selectedObservation;
+			visState.targetCalib.selectedObservation = -1;
+			visState.targetCalib.highlightedObservation = -1;
 			if (selectCnt > 0 && selectCnt <= 2 &&
-				ImGui::BeginTable("Sequences Table", 1))
+				ImGui::BeginTable("Observations Table", 1))
 			{
 				for (auto map = editTarget->target.markerMap.begin(); map != editTarget->target.markerMap.end();)
 				{
@@ -570,7 +653,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					ImGui::PushID(map->first);
 					ImGui::TableNextRow();
 					ImGui::TableNextColumn();
-					ImGui::Text("Sequence %d -> Marker %d", map->first, map->second);
+					ImGui::Text("Observation %d -> Marker %d", map->first, map->second);
 
 					if (selectCnt == 2)
 					{ // Button to swap marker assignment
@@ -584,28 +667,28 @@ void InterfaceState::UpdatePipelineTargetCalib()
 								map->second = markerA;
 							if (!std::any_of(editTarget->target.markerMap.begin(), editTarget->target.markerMap.end(),
 								[&](auto &m){ return m.second == oldMarker; }))
-							{ // Erase marker completely if it has no other sequence
+							{ // Erase marker completely if it has no other observation
 								eraseMarker(oldMarker);
 							}
 							editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 						}
 					}
 
-					// Select and highlight sequence
+					// Select and highlight observation
 					ImGui::SameLine();
-					bool selected = selSeq == map->first;
+					bool selected = selObs == map->first;
 					ImGui::Selectable("", &selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
 					if (ImGui::IsItemHovered())
-						visState.targetCalib.highlightedSequence = map->first;
+						visState.targetCalib.highlightedObservation = map->first;
 					if (selected)
-						visState.targetCalib.selectedSequence = selSeq = map->first;
+						visState.targetCalib.selectedObservation = selObs = map->first;
 					
 					// Button to delete
 					SameLineTrailing(ImGui::GetFrameHeight());
 					bool del = CrossButton("Del");
 					if (del)
 					{ // Perform deletion
-						// Clear observations of sequence
+						// Clear observation from marker
 						for (auto &frame : editTarget->target.frames)
 						{
 							for (auto sampleIt = frame.samples.begin(); sampleIt != frame.samples.end();)
@@ -618,18 +701,18 @@ void InterfaceState::UpdatePipelineTargetCalib()
 								else sampleIt++;
 							}
 						}
-						// No way to know how many outliers were in that sequence to remove from outlierSamples
-						// Delete sequence association
+						// No way to know how many outliers were in that observation to remove from outlierSamples
+						// Delete association to observation
 						int oldMarker = map->second;
 						map = editTarget->target.markerMap.erase(map);
 						if (!std::any_of(editTarget->target.markerMap.begin(), editTarget->target.markerMap.end(),
 							[&](auto &m){ return m.second == oldMarker; }))
-						{ // Erase marker completely if it has no other sequence
+						{ // Erase marker completely if it has no other observation
 							eraseMarker(oldMarker);
 						}
-						// Clean sequences
-						if (visState.targetCalib.highlightedSequence == map->first) visState.targetCalib.highlightedSequence = -1;
-						if (selSeq == map->first) visState.targetCalib.selectedSequence = selSeq = -1;
+						// Clear references to observation
+						if (visState.targetCalib.highlightedObservation == map->first) visState.targetCalib.highlightedObservation = -1;
+						if (selObs == map->first) visState.targetCalib.selectedObservation = selObs = -1;
 						editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
 					}
 					else
@@ -645,8 +728,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			if (ImGui::Button("Discard##Edit", SizeWidthDiv3()))
 			{
 				visState.targetCalib.edit = nullptr;
-				visState.targetCalib.selectedSequence = -1;
-				visState.targetCalib.highlightedSequence = -1;
+				visState.targetCalib.selectedObservation = -1;
+				visState.targetCalib.highlightedObservation = -1;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Apply##Edit", SizeWidthDiv3()))
@@ -655,8 +738,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(*editTarget), STAGE_EDITED, 1, "Edited"));
 				visState.targetCalib.edit = nullptr;
-				visState.targetCalib.selectedSequence = -1;
-				visState.targetCalib.highlightedSequence = -1;
+				visState.targetCalib.selectedObservation = -1;
+				visState.targetCalib.highlightedObservation = -1;
 			}
 		}
 		
@@ -778,22 +861,27 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Load Last", SizeWidthDiv3()))
 			{
-				const char* obsPathFmt = "dump/assembly_stage_%d.json";
-				std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt));
-				TargetAssemblyBase base;
-				bool success = parseTargetAssemblyStage(obsPath, base);
-				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
-				stages_lock->clear();
-				visState.targetCalib.stage = nullptr;
-				if (success)
+				// Check if we need to load sequence database from checkpoint, too
+				if (checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
 				{
-					LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
-						(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
-					auto obs_lock = pipeline.seqDatabase.contextualRLock();
-					updateTargetObservations(base.target, obs_lock->markers);
-					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-					base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
-					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
+					// Load assembly stage checkpoint
+					const char* obsPathFmt = "dump/assembly_stage_%d.json";
+					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt));
+					TargetAssemblyBase base;
+					bool success = parseTargetAssemblyStage(obsPath, base);
+					auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
+					stages_lock->clear();
+					visState.targetCalib.stage = nullptr;
+					if (success)
+					{
+						LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
+							(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
+						auto obs_lock = pipeline.seqDatabase.contextualRLock();
+						updateTargetObservations(base.target, obs_lock->markers);
+						base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
+						base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+						stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
+					}
 				}
 			}
 		}
@@ -813,9 +901,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			if (ImGui::Button("Target", SizeWidthDiv3()))
 			{
 				// Find max occupied target id (excluding testing markers because they are negative)
-				int id = -1;
+				int id = 0;
 				for (auto &tracker : state.trackerConfigs)
-					id = std::min(id, tracker.id);
+					id = std::max(id, tracker.id);
 				id++;
 				std::string label = std::string("Target ID ") + (char)((int)'0' + id);
 				// Take latest assembly stage
@@ -836,6 +924,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				const char* obsPathFmt = "dump/assembly_stage_%d.json";
 				std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
 				dumpTargetAssemblyStage(obsPath, getSelectedStage()->base);
+				// Make sure the relevant sequence data is saved alongside
+				ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock());
 			}
 
 			ImGui::EndDisabled();

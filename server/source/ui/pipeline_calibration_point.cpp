@@ -57,7 +57,13 @@ void InterfaceState::UpdatePipelineCalibSection()
 					errors.max*PixelFactor);
 			}
 			else
+			{
 				ImGui::TextUnformatted("Unable to check calibration errors!");
+				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max",
+					errors.mean*PixelFactor,
+					errors.stdDev*PixelFactor,
+					errors.max*PixelFactor);
+			}
 		}
 		else if (calibState.numUncalibrated == 0)
 			ImGui::TextUnformatted("No data to check calibration against!");

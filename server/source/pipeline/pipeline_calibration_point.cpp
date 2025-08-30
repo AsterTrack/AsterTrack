@@ -52,9 +52,14 @@ void ResetPointCalibration(PipelineState &pipeline)
 	pipeline.pointCalib.room.contextualLock()->floorPoints.clear();
 }
 
-void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
+void UpdatePointCalibrationStatus(PipelineState &pipeline)
 {
 	auto &ptCalib = pipeline.pointCalib;
+
+	std::vector<CameraPipeline*> cameras;
+	cameras.reserve(pipeline.cameras.size());
+	for (auto &cam : pipeline.cameras)
+		cameras.push_back(cam.get());
 
 	if (ptCalib.control.running())
 	{
@@ -74,6 +79,13 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			ptCalib.control.thread = new std::thread(ThreadCalibrationOptimisation, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
 		SignalPipelineUpdate();
 	}
+}
+
+void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame)
+{
+	auto &ptCalib = pipeline.pointCalib;
+
+	UpdatePointCalibrationStatus(pipeline);
 
 	// TODO: Room calibration should be considered largely untested since it hasn't been used in a while
 	// Need to improve experience / instructions, visualise points on the floor, account for physical marker sizes, etc.

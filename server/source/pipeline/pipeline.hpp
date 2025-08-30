@@ -244,11 +244,13 @@ void ResetPipelineData(PipelineState &pipeline);
 // Calibration
 void InitPointCalibration(PipelineState &pipeline);
 void ResetPointCalibration(PipelineState &pipeline);
+void UpdatePointCalibrationStatus(PipelineState &pipeline);
 void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame);
 
 // Target Calibration
 void InitTargetCalibration(PipelineState &pipeline);
 void ResetTargetCalibration(PipelineState &pipeline);
+void UpdateTargetCalibrationStatus(PipelineState &pipeline);
 void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, unsigned int frameNum);
 
 // General Tracking
@@ -264,6 +266,11 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> newFrame
 void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record);
 
 void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record);
+
+/**
+ * Updates status of e.g. calibration background tasks in the absence of new frames
+ */
+void UpdatePipelineStatus(PipelineState &pipeline);
 
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord);

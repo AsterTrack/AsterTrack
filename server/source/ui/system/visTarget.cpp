@@ -308,7 +308,7 @@ void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, cons
 		for (auto &sample : frame.samples)
 		{
 			Eigen::Vector2f point = undistortPoint(calibs[sample.camera], sample.point);
-			bool seqHighlight = visState.targetCalib.highlightedSequence == sample.marker;
+			bool seqHighlight = visState.targetCalib.highlightedObservation == sample.marker;
 			Ray3f ray = castRay<float>(point, calibs[sample.camera]);
 			int m = visTarget.obs->markerMap.at(sample.marker);
 			float len = seqHighlight? length*2 : length;

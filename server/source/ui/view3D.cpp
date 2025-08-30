@@ -419,8 +419,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			visualiseRays(camera->calib, frame.cameras[camera->index].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
 	}
 
-	if (visState.show3DClusters && visFrame)
-	{
+	if (visState.show3DClusters && visFrame && visFrame.isRealtimeFrame)
+	{ // Only for realtime frames (e.g. no inspecting frames in target calib later)
 		thread_local std::vector<VisModel> clusters;
 		clusters.clear();
 		for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
@@ -458,13 +458,13 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			visualiseVisTargetObsCameraRays(pipeline.getCalibs(), visState, visFrame.target);
 		}
 
-		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.targetCalib.selectedSequence >= 0)
+		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.targetCalib.selectedObservation >= 0)
 		{ // Draw all observation rays of a selected sequence
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
-			if (obs_lock->markers.size() > visState.targetCalib.selectedSequence)
+			if (obs_lock->markers.size() > visState.targetCalib.selectedObservation)
 			{
-				auto &seq = obs_lock->markers[visState.targetCalib.selectedSequence];
-				visualiseMarkerSequenceRays(pipeline.getCalibs(), visFrame.target, seq, visState.targetCalib.selectedSequence);
+				auto &seq = obs_lock->markers[visState.targetCalib.selectedObservation];
+				visualiseMarkerSequenceRays(pipeline.getCalibs(), visFrame.target, seq, visState.targetCalib.selectedObservation);
 			}
 		}
 

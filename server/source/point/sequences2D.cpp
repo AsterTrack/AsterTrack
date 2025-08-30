@@ -577,6 +577,13 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				[](PointSequence &s1, PointSequence &s2) { return s1.startFrame < s2.startFrame; });
 		}
 		sequences.markers.erase(sequences.markers.begin() + src);
+		for (int m = src; m < sequences.markers.size(); m++)
+		{
+			MarkerSequences &marker = sequences.markers[m];
+			for (int c = 0; c < marker.cameras.size(); c++)
+				for (auto &seq : marker.cameras[c].sequences)
+					seq.marker = m;
+		}
 		return tgt;
 	}
 

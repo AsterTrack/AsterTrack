@@ -223,7 +223,7 @@ struct VisualisationState
 	{
 		// Currently edited assembly stage
 		std::shared_ptr<TargetAssemblyBase> edit = nullptr;
-		int highlightedSequence = -1, selectedSequence = -1;
+		int highlightedObservation = -1, selectedObservation = -1;
 		// Selection of existing target views or assembly stages
 		std::shared_ptr<TargetView> view = nullptr;
 		std::shared_ptr<TargetAssemblyStage> stage = nullptr;

@@ -68,6 +68,53 @@ void ResetTargetCalibration(PipelineState &pipeline)
 	pipeline.targetCalib.aquisition.contextualLock()->reset();
 }
 
+void UpdateTargetCalibrationStatus(PipelineState &pipeline)
+{
+	auto &tgtCalib = pipeline.targetCalib;
+
+	std::vector<CameraPipeline*> cameras;
+	cameras.reserve(pipeline.cameras.size());
+	for (auto &cam : pipeline.cameras)
+		cameras.push_back(cam.get());
+
+	for (auto &view : *tgtCalib.views.contextualRLock())
+	{
+		if (view->control.running())
+		{
+			if (view->control.finished)
+			{
+				view->control.stop();
+				SignalPipelineUpdate();
+			}
+		}
+		else if (view->planned)
+		{
+			view->planned = false;
+			view->control.init();
+			view->control.thread = new std::thread(ThreadCalibrationTargetView, view->control.stop_source.get_token(), &pipeline, cameras, view);
+			SignalPipelineUpdate();
+		}
+	}
+
+	{
+		if (tgtCalib.assembly.control.running())
+		{
+			if (tgtCalib.assembly.control.finished)
+			{
+				tgtCalib.assembly.control.stop();
+				SignalPipelineUpdate();
+			}
+		}
+		else if (tgtCalib.assembly.planned)
+		{
+			tgtCalib.assembly.planned = false;
+			tgtCalib.assembly.control.init();
+			tgtCalib.assembly.control.thread = new std::thread(ThreadCalibrationTarget, tgtCalib.assembly.control.stop_source.get_token(), &pipeline, cameras);
+			SignalPipelineUpdate();
+		}
+	}
+}
+
 void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, unsigned int frameNum)
 {
 	auto &tgtCalib = pipeline.targetCalib;
@@ -125,42 +172,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 		// Consider similar multimodal feedback to user for point calibration 
 	}
 
-	for (auto &view : *tgtCalib.views.contextualRLock())
-	{
-		if (view->control.running())
-		{
-			if (view->control.finished)
-			{
-				view->control.stop();
-				SignalPipelineUpdate();
-			}
-		}
-		else if (view->planned)
-		{
-			view->planned = false;
-			view->control.init();
-			view->control.thread = new std::thread(ThreadCalibrationTargetView, view->control.stop_source.get_token(), &pipeline, cameras, view);
-			SignalPipelineUpdate();
-		}
-	}
-
-	{
-		if (tgtCalib.assembly.control.running())
-		{
-			if (tgtCalib.assembly.control.finished)
-			{
-				tgtCalib.assembly.control.stop();
-				SignalPipelineUpdate();
-			}
-		}
-		else if (tgtCalib.assembly.planned)
-		{
-			tgtCalib.assembly.planned = false;
-			tgtCalib.assembly.control.init();
-			tgtCalib.assembly.control.thread = new std::thread(ThreadCalibrationTarget, tgtCalib.assembly.control.stop_source.get_token(), &pipeline, cameras);
-			SignalPipelineUpdate();
-		}
-	}
+	UpdateTargetCalibrationStatus(pipeline);
 }
 
 // Update data of tgtGT to newly projected GT data, used for debugging in simulation
@@ -709,7 +721,7 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 
 		// Merge frames with enough observations
 		int prevFrames = base.frames.size();
-		auto insIt = std::upper_bound(base.frames.begin(), base.frames.end(), view.frames.front(),
+		auto insIt = std::lower_bound(base.frames.begin(), base.frames.end(), view.frames.front(),
 			[&](auto &a, auto &b){ return a.frame < b.frame; });
 		for (auto &frame : view.frames)
 		{

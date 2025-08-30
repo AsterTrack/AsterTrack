@@ -217,6 +217,23 @@ void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record)
 	}
 }
 
+/**
+ * Updates status of e.g. calibration background tasks in the absence of new frames
+ */
+void UpdatePipelineStatus(PipelineState &pipeline)
+{
+	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+
+	if (pipeline.phase == PHASE_Calibration_Point)
+	{
+		UpdatePointCalibrationStatus(pipeline);
+	}
+	else if (pipeline.phase == PHASE_Calibration_Target)
+	{
+		UpdateTargetCalibrationStatus(pipeline);
+	}
+}
+
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord)
 {

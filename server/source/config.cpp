@@ -1468,7 +1468,7 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 
 			std::shared_ptr<TargetView> tgtView = std::make_shared<TargetView>();
 			tgtView->state.calibrated = true;
-			tgtView->selected = true;
+			tgtView->selected = view.contains("selected")? view["selected"].get<bool>() : true;
 			tgtView->id = views.size();
 			tgtView->beginFrame = target.frames.front().frame;
 			tgtView->endFrame = target.frames.back().frame;
@@ -1504,10 +1504,9 @@ void dumpTargetViewRecords(const std::string &path, const std::vector<std::share
 
 	for (const auto &tgtView : views)
 	{
-		if (!tgtView->state.calibrated || !tgtView->selected) continue;
-		
 		json view;
 		storeOptTarget(view, *tgtView->target.contextualRLock());
+		view["selected"] = tgtView->selected;
 		file["views"].push_back(std::move(view));
 	}
 

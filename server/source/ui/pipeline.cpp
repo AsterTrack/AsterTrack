@@ -66,6 +66,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		}
 	}
 
+	ImGui::BeginDisabled(state.mode == MODE_None);
+
 	BeginSection("Phase");
 
 	const PipelinePhase phaseMap[] = { PHASE_Idle, PHASE_Automatic, PHASE_Calibration_Point, PHASE_Calibration_Target, PHASE_Tracking };
@@ -88,6 +90,13 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		pipeline.phase = PHASE_Idle;
 	}
 	EndSection();
+
+	ImGui::EndDisabled();
+	if (state.mode == MODE_None)
+	{
+		ImGui::End();
+		return;
+	}
 
 	ImVec2 ButtonSize = ImVec2(std::min(100.0f, SizeWidthDiv3().x), ImGui::GetFrameHeight());
 

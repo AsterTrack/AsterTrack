@@ -609,6 +609,8 @@ void visualisePoints2D(it_type pts_begin, it_type pts_end, Color color, float si
 }
 template void visualisePoints2D(BlockedVector<Eigen::Vector2f>::const_iterator pts_begin, BlockedVector<Eigen::Vector2f>::const_iterator pts_end, Color color, float size, float depth, bool round);
 template void visualisePoints2D(std::vector<Eigen::Vector2f>::const_iterator pts_begin, std::vector<Eigen::Vector2f>::const_iterator pts_end, Color color, float size, float depth, bool round);
+template void visualisePoints2D(BlockedVector<Eigen::Vector2f>::iterator pts_begin, BlockedVector<Eigen::Vector2f>::iterator pts_end, Color color, float size, float depth, bool round);
+template void visualisePoints2D(std::vector<Eigen::Vector2f>::iterator pts_begin, std::vector<Eigen::Vector2f>::iterator pts_end, Color color, float size, float depth, bool round);
 
 
 void updatePixelVBO(unsigned int &VBO, const std::vector<uint8_t> &pixels2D, Eigen::Vector2i sizeImg, Eigen::Vector2f center, float pixelStride, float pixelSize, Color colorA, Color colorB, float depth)

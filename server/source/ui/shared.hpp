@@ -34,7 +34,6 @@ enum ServerEvents : uint8_t {
 	EVT_STOP_STREAMING,
 	EVT_DEVICE_DISCONNECT,
 	EVT_UPDATE_CAMERAS,
-	EVT_UPDATE_OBSERVATIONS,
 	EVT_UPDATE_CALIBS,
 	EVT_UPDATE_EVENTS,
 	EVT_UPDATE_INTERFACE
@@ -45,6 +44,7 @@ typedef void (*SignalShouldClose_t)();
 typedef void (*SignalLogUpdate_t)();
 typedef void (*SignalCameraRefresh_t)(CameraID);
 typedef void (*SignalPipelineUpdate_t)();
+typedef void (*SignalObservationReset_t)(long firstFrame);
 typedef void (*SignalServerEvent_t)(ServerEvents);
 
 }
@@ -59,6 +59,7 @@ extern SignalShouldClose_t SignalInterfaceShouldClose;	// Signal: Server -> UI
 extern SignalLogUpdate_t SignalLogUpdate;				// Signal: Server -> UI
 extern SignalCameraRefresh_t SignalCameraRefresh;		// Signal: Server -> UI
 extern SignalPipelineUpdate_t SignalPipelineUpdate;		// Signal: Pipeline -> UI
+extern SignalObservationReset_t SignalObservationReset;	// Signal: Pipeline -> UI
 extern SignalServerEvent_t SignalServerEvent;			// Signal: Server -> UI
 
 #endif // UI_SIGNALS_H

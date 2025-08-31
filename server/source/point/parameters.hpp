@@ -73,6 +73,10 @@ struct SequenceAquisitionParameters
 		int minOverlap; // Overlap (samples) for one correspondence check between cameras
 		float maxError; // Has to deal with uncorrected distorted sequences
 		float minConfidence;
+		// Merge markers if correspondence allows for both
+		// While it allows for error correction for initial calibration
+		// it may be less comservative than proper correspondence testing and thus bad for target calibration
+		bool allowMarkerMerging;
 	} correspondences;
 };
 
@@ -123,6 +127,7 @@ struct SequenceParameters
 			stableSequenceDelay,
 			0.05f,
 			5,
+			true,
 		},
 	};
 
@@ -167,6 +172,7 @@ struct SequenceParameters
 			stableSequenceDelay,
 			0.01f,
 			10,
+			true,
 		},
 	};
 

@@ -19,6 +19,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "util/matching.hpp"
 #include "util/eigenalg.hpp"
 
+#include "ui/shared.hpp"
 #include "util/util.hpp" // TimePoint_t
 
 #include <iterator>
@@ -430,7 +431,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			LOGC(LDebug, "    Competing markers are definitively distinct, cannot assume correspondence!");
 			return -1;
 		}
-		if (!advantaged)
+		if (!advantaged && params.correspondences.allowMarkerMerging)
 		{ // Try merging
 			StatDistf stats = {};
 			float fitError, supportingWeight, discreditingWeight;
@@ -563,7 +564,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 	if (mergeMarkers)
 	{
 		int tgt = std::min(pri.index, sec.index), src = std::max(pri.index, sec.index);
-		 LOGC(LDarn, "    Merging marker %d into %d!", src, tgt);
+		LOGC(LDarn, "    Merging marker %d into %d!", src, tgt);
 		MarkerSequences &markerTgt = sequences.markers[tgt];
 		MarkerSequences &markerSrc = sequences.markers[src];
 		for (int c = 0; c < markerTgt.cameras.size(); c++)
@@ -576,6 +577,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			std::sort(markerTgt.cameras[c].sequences.begin(), markerTgt.cameras[c].sequences.end(), 
 				[](PointSequence &s1, PointSequence &s2) { return s1.startFrame < s2.startFrame; });
 		}
+		long resetAfterFrame = std::max(markerTgt.getFrameRange().first, markerSrc.getFrameRange().first);
 		sequences.markers.erase(sequences.markers.begin() + src);
 		for (int m = src; m < sequences.markers.size(); m++)
 		{
@@ -584,6 +586,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				for (auto &seq : marker.cameras[c].sequences)
 					seq.marker = m;
 		}
+		SignalObservationReset(resetAfterFrame);
 		return tgt;
 	}
 

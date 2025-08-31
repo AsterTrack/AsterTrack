@@ -289,7 +289,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 	if (visState.showMarkerTrails)
 	{
-		displaySceneLabels(view.vis.observations.contextualLock()->labels);
+		displaySceneLabels(view.vis.observations.labels);
 	}
 	if (state.pipeline.phase == PHASE_Tracking && visState.tracking.debug.frameNum > 0 && visState.tracking.debugMatchingState)
 	{
@@ -1061,10 +1061,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 			if (visState.showMarkerTrails && visFrame.isRealtimeFrame)
 			{ // Only works with current frame, not past frames
-				auto obs_lock = visCamera.observations.contextualRLock();
-				visualisePoints2D(obs_lock->ptsUnstable.begin(), obs_lock->ptsUnstable.end(), Color{ 0.4f, 0.4f, 1.0f, 0.2f }, 3.0f*pixelRatio);
-				visualisePoints2D(obs_lock->ptsTemp.begin(), obs_lock->ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
-				visualisePoints2D(obs_lock->ptsInactive.begin(), obs_lock->ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsUnstable.begin(), visCamera.observations.ptsUnstable.end(), Color{ 0.4f, 0.4f, 1.0f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsTemp.begin(), visCamera.observations.ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsInactive.begin(), visCamera.observations.ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 			}
 		}
 
@@ -1218,11 +1217,10 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			}
 			else
 			{
-				auto obs_lock = visCamera.observations.contextualRLock();
-				visualisePoints2D(obs_lock->ptsStable.begin(), obs_lock->ptsStable.end(), Color{ 1.0f, 1.0f, 1.0f, 0.2f }, 3.0f*pixelRatio);
-				visualisePoints2D(obs_lock->ptsUnstable.begin(), obs_lock->ptsUnstable.end(), Color{ 0.4f, 0.4f, 1.0f, 0.2f }, 3.0f*pixelRatio);
-				visualisePoints2D(obs_lock->ptsTemp.begin(), obs_lock->ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
-				visualisePoints2D(obs_lock->ptsInactive.begin(), obs_lock->ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsStable.begin(), visCamera.observations.ptsStable.end(), Color{ 1.0f, 1.0f, 1.0f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsUnstable.begin(), visCamera.observations.ptsUnstable.end(), Color{ 0.4f, 0.4f, 1.0f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsTemp.begin(), visCamera.observations.ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
+				visualisePoints2D(visCamera.observations.ptsInactive.begin(), visCamera.observations.ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 			}
 
 			auto room = pipeline.pointCalib.room.contextualRLock();

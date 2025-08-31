@@ -54,6 +54,7 @@ SignalShouldClose_t SignalInterfaceShouldClose;
 SignalLogUpdate_t SignalLogUpdate;
 SignalCameraRefresh_t SignalCameraRefresh;
 SignalPipelineUpdate_t SignalPipelineUpdate;
+SignalObservationReset_t SignalObservationReset;
 SignalServerEvent_t SignalServerEvent;
 
 #ifdef INTERFACE_LINKED
@@ -63,6 +64,7 @@ extern "C" {
 	void _SignalLogUpdate();
 	void _SignalCameraRefresh(CameraID id);
 	void _SignalPipelineUpdate();
+	void _SignalObservationReset(long firstFrame);
 	void _SignalServerEvent(ServerEvents event);
 }
 static inline bool AssumeInterface()
@@ -72,6 +74,7 @@ static inline bool AssumeInterface()
 	SignalLogUpdate = (SignalLogUpdate_t)&_SignalLogUpdate;
 	SignalCameraRefresh = (SignalCameraRefresh_t)&_SignalCameraRefresh;
 	SignalPipelineUpdate = (SignalPipelineUpdate_t)&_SignalPipelineUpdate;
+	SignalObservationReset = (SignalObservationReset_t)&_SignalObservationReset;
 	SignalServerEvent = (SignalServerEvent_t)&_SignalServerEvent;
 	return true;
 }
@@ -89,6 +92,7 @@ static inline void UnlinkInterface(void *uidl = nullptr)
 	SignalLogUpdate = [](){};
 	SignalCameraRefresh = [](CameraID){};
 	SignalPipelineUpdate = [](){};
+	SignalObservationReset = [](long){};
 	SignalServerEvent = [](ServerEvents){};
 #ifdef ALLOW_DYNAMIC_LINKING
 	if (uidl) dlclose(uidl);
@@ -102,8 +106,9 @@ static inline bool LinkInterface(void *uidl)
 	SignalLogUpdate = (SignalLogUpdate_t)dlsym(uidl, "_SignalLogUpdate");
 	SignalCameraRefresh = (SignalCameraRefresh_t)dlsym(uidl, "_SignalCameraRefresh");
 	SignalPipelineUpdate = (SignalPipelineUpdate_t)dlsym(uidl, "_SignalPipelineUpdate");
+	SignalObservationReset = (SignalObservationReset_t)dlsym(uidl, "_SignalObservationReset");
 	SignalServerEvent = (SignalServerEvent_t)dlsym(uidl, "_SignalServerEvent");
-	return InterfaceThread && SignalInterfaceShouldClose && SignalLogUpdate && SignalCameraRefresh && SignalPipelineUpdate && SignalServerEvent;
+	return InterfaceThread && SignalInterfaceShouldClose && SignalLogUpdate && SignalCameraRefresh && SignalPipelineUpdate && SignalObservationReset && SignalServerEvent;
 #else
 	return true;
 #endif

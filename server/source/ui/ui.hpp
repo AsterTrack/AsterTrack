@@ -242,9 +242,10 @@ struct VisualisationState
 		// And read by UI right after
 		int frameStable = 0; // Last time the stable list was updated
 		int pointsStable = 0, pointsUnstable = 0;
+		std::map<int, int> frameIndices;
 		std::vector<int> cameraTriObservations;
 		int markerCount = 0; // To check if observations were cleared
-		bool reset = false;
+		long resetFirstFrame = -1;
 	} incObsUpdate;
 
 	// Visualisation of reference points in virtual space
@@ -523,15 +524,15 @@ struct CameraVisState
 		Eigen::Vector2f undistortMapScale;
 	} calibration = {};
 
-	struct ObservationVis
-	{ // Exclusively updated externally
+	struct
+	{
+		std::map<int, int> frameIndices;
 		BlockedVector<Eigen::Vector2f> ptsStable;
 		std::vector<Eigen::Vector2f> ptsUnstable;
 		std::vector<Eigen::Vector2f> ptsTemp;
 		std::vector<Eigen::Vector2f> ptsInactive;
 		std::vector<SceneLabel> labels;
-	};
-	SynchronisedS<ObservationVis> observations = {};
+	} observations = {};
 
 	struct {
 		bool show;

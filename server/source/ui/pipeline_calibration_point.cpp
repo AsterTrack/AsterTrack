@@ -214,7 +214,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 			auto &obsCmp = visState.observations.savedObs.back();
 			obsCmp.visPoints.resize(pipeline.cameras.size());
 			for (auto &cam : pipeline.cameras)
-				obsCmp.visPoints[cam->index] = cameraViews.at(cam->id).vis.observations.contextualRLock()->ptsStable;
+				obsCmp.visPoints[cam->index] = cameraViews.at(cam->id).vis.observations.ptsStable;
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
 			obsCmp.markerCount = obs_lock->markers.size();
 			obsCmp.obsCount = 0;

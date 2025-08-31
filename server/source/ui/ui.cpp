@@ -373,7 +373,7 @@ void InterfaceState::GeneralUpdate()
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{
 		static TimePoint_t lastObservationUpdate;
-		if (dtMS(lastObservationUpdate, sclock::now()) > 50 || visState.incObsUpdate.reset)
+		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.resetFirstFrame >= 0)
 		{
 			lastObservationUpdate = sclock::now();
 			UpdateSequences();
@@ -719,6 +719,14 @@ EXPORT void _SignalPipelineUpdate()
 	GetUI().RequestUpdates();
 }
 
+EXPORT void _SignalObservationReset(long firstFrame = 0)
+{
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
+		return; // UI not initialised
+	GetUI().visState.incObsUpdate.resetFirstFrame = firstFrame;
+	GetUI().RequestUpdates();
+}
+
 EXPORT void _SignalServerEvent(ServerEvents event)
 {
 	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
@@ -747,10 +755,6 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			break;
 		case EVT_UPDATE_CAMERAS:
 			GetUI().cameraListDirty = true;
-			GetUI().RequestUpdates();
-			break;
-		case EVT_UPDATE_OBSERVATIONS:
-			GetUI().visState.incObsUpdate.reset = true;
 			GetUI().RequestUpdates();
 			break;
 		case EVT_UPDATE_CALIBS:

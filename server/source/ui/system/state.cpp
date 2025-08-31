@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 void InterfaceState::UpdateSequences(bool reset)
 {
 	PipelineState &pipeline = GetState().pipeline;
-	if (reset) visState.incObsUpdate.reset = true;
+	if (reset) visState.incObsUpdate.resetFirstFrame = 0;
 	if (pipeline.phase == PHASE_Calibration_Point)
 	{
 		// Do incremental update of all observation stats and visualisations
@@ -76,8 +76,7 @@ void InterfaceState::UpdateSequences(bool reset)
 			for (auto &map : cameraViews)
 			{
 				int index = map.second.camera->pipeline->index;
-				auto obs_lock = map.second.vis.observations.contextualLock();
-				std::move(std::begin(labels[index]), std::end(labels[index]), std::back_inserter(obs_lock->labels));
+				std::move(std::begin(labels[index]), std::end(labels[index]), std::back_inserter(map.second.vis.observations.labels));
 			}
 
 		}
@@ -137,23 +136,54 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 	// Or only be able to update affected markers, requiring storing separate observations for each marker (yikes)
 	// Probably best: Store indices every 100 frames (for the last 10000 frames) to be able to jump back to a "checkpoint"
 	//if (inc.markerCount != 0 && markerCount == 0 && !inc.reset)
-	if (markerCount < inc.markerCount && !inc.reset)
+	if (markerCount < inc.markerCount && inc.resetFirstFrame < 0)
 	{
 		//assert(inc.dirty);
 		LOG(LGUI, LWarn, "Incremental observation visualisation hadn't been notified of a reset in observations!");
-		inc.reset = true;
+		inc.resetFirstFrame = 0;
 	}
-	if (inc.reset)
+	if (inc.resetFirstFrame >= 0)
 	{ // Clear state
-		LOGC(LInfo, "Resetting incremental observation vis!");
-		inc.reset = false;
-		inc.cameraTriObservations.clear();
-		inc.pointsStable = 0;
-		for (auto &map : cameraViews)
+		if (inc.resetFirstFrame == 0)
 		{
-			map.second.vis.observations.contextualLock()->ptsStable.clear();
+			LOG(LGUI, LDebug, "Resetting incremental observation completely!");
+			inc.cameraTriObservations.clear();
+			inc.pointsStable = 0;
+			for (auto &map : cameraViews)
+			{
+				map.second.vis.observations.frameIndices.clear();
+				map.second.vis.observations.ptsStable.clear();
+			}
+			inc.frameStable = 0;
 		}
-		inc.frameStable = 0;
+		else
+		{ // Find [frame, index] checkpoint where frame < inc.resetAfterFrame and reset to it (or (0,0))
+			for (auto &map : cameraViews)
+			{
+				auto reset = map.second.vis.observations.frameIndices.lower_bound(inc.resetFirstFrame);
+				std::size_t prevSize = map.second.vis.observations.ptsStable.size();
+				if (reset == map.second.vis.observations.frameIndices.begin())
+					map.second.vis.observations.ptsStable.clear();
+				else
+					map.second.vis.observations.ptsStable.resize(std::prev(reset)->second);
+				inc.cameraTriObservations[map.second.camera->pipeline->index] -= prevSize - map.second.vis.observations.ptsStable.size();
+			}
+			auto reset = inc.frameIndices.lower_bound(inc.resetFirstFrame+1);
+			if (reset == inc.frameIndices.end() || reset == inc.frameIndices.begin())
+			{
+				LOG(LGUI, LDebug, "Resetting visualisation back to frame 0 from frame %d because there was no checkpoint going back before %ld", inc.frameStable, inc.resetFirstFrame);
+				inc.pointsStable = 0;
+				inc.frameStable = 0;
+			}
+			else
+			{
+				reset = std::prev(reset);
+				LOG(LGUI, LDebug, "Resetting visualisation back to frame %d from frame %d, intended to go back before frame %ld", reset->first, inc.frameStable, inc.resetFirstFrame);
+				inc.pointsStable = reset->second;
+				inc.frameStable = reset->first;
+			}
+		}
+		inc.resetFirstFrame = -1;
 	}
 	inc.markerCount = markerCount;
 
@@ -181,10 +211,16 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		for (auto &map : cameraViews)
 		{
 			int index = map.second.camera->pipeline->index;
-			auto obs_lock = map.second.vis.observations.contextualLock();
 			for (Eigen::Vector2f &pt : newPointsStable[index])
-				obs_lock->ptsStable.push_back(pt);
+				map.second.vis.observations.ptsStable.push_back(pt);
+			map.second.vis.observations.frameIndices[curStableFrame] = map.second.vis.observations.ptsStable.size();
+			while (map.second.vis.observations.frameIndices.size() > 50)
+				map.second.vis.observations.frameIndices.erase(map.second.vis.observations.frameIndices.begin());
 		}
+		inc.frameIndices[curStableFrame] = inc.pointsStable;
+		while (inc.frameIndices.size() > 50)
+			inc.frameIndices.erase(inc.frameIndices.begin());
+		LOG(LGUI, LTrace, "Registering checkpoint at frame %d!", curStableFrame);
 		inc.frameStable = curStableFrame;
 	}
 	{ // Recreate unstable points completely (all before curStableFrame will have moved to stable)
@@ -236,10 +272,9 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		for (auto &map : cameraViews)
 		{
 			int index = map.second.camera->pipeline->index;
-			auto obs_lock = map.second.vis.observations.contextualLock();
-			obs_lock->ptsUnstable = std::move(newPointsUnstable[index]);
-			obs_lock->ptsTemp = std::move(newPointsTemporary[index]);
-			obs_lock->ptsInactive = std::move(newPointsInactive[index]);
+			map.second.vis.observations.ptsUnstable = std::move(newPointsUnstable[index]);
+			map.second.vis.observations.ptsTemp = std::move(newPointsTemporary[index]);
+			map.second.vis.observations.ptsInactive = std::move(newPointsInactive[index]);
 		}
 	}
 	{
@@ -280,8 +315,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		for (auto &map : cameraViews)
 		{
 			int index = map.second.camera->pipeline->index;
-			auto obs_lock = map.second.vis.observations.contextualLock();
-			obs_lock->labels = std::move(labels[index]);
+			map.second.vis.observations.labels = std::move(labels[index]);
 		}
 	}
 }

@@ -124,6 +124,8 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ScalarProperty<float>("Minimum Confidence", "", &setting.correspondences.minConfidence, &standard.correspondences.minConfidence, 0, 1000);
 			ScalarProperty<float>("Selecting Fit Deviation", "o", &setting.FM.FitNewSigma, &standard.FM.FitNewSigma, 0, 10, 0.1f);
 			ImGui::SetItemTooltip("Selects the error value of a sequence as avg + sigma deviation when for judging a brand new Fundamental Matrix.");
+			BooleanProperty("Allow Marker Merging", &setting.correspondences.allowMarkerMerging, &standard.correspondences.allowMarkerMerging);
+			ImGui::SetItemTooltip("Merge markers if correspondence matches two different markers closely. Less conservative than normal correspondence matching.");
 			EndSection();
 
 			ImGui::PopID();

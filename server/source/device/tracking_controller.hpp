@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef TRACKING_CONTROLLER_H
 #define TRACKING_CONTROLLER_H
 
+#include "controller_firmware.hpp"
 #include "comm/packet.h"
 #include "comm/protocol_packet.hpp" // PacketProtocolState
 #include "comm/timesync.hpp" // TimeSync
@@ -99,6 +100,10 @@ struct TrackingControllerState
 	BlockedQueue<ControllerEventLog, 4096> eventLog;
 	// TimeSync and Latency Log
 	TimingRecord timingRecord;
+
+	// Firmware update
+	bool selectedForFirmware;
+	ControllerFirmwareUpdateRef firmware;
 };
 static bool operator==(const TrackingControllerState& a, const TrackingControllerState& b) { return &a == &b; }
 

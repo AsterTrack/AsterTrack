@@ -16,34 +16,25 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef CAMERA_FIRMWARE_H
-#define CAMERA_FIRMWARE_H
+#ifndef CONTROLLER_FIRMWARE_H
+#define CONTROLLER_FIRMWARE_H
 
-#include "comm/packet.hpp"
-#include "util/util.hpp"
 #include "util/synchronised.hpp"
 
-struct TrackingCameraState; // device/tracking_camera.hpp
+struct TrackingControllerState; // device/tracking_controller.hpp
 
-struct CameraFirmwareUpdateStatus
+struct ControllerFirmwareUpdateStatus
 {
-	int ID;
-	TimePoint_t lastActivity;
-	std::vector<std::vector<uint8_t>> packets;
-	FirmwareStatus code;
-	std::string text;
-};
-
-struct FirmwareUpdateStatus
-{
-	FirmwareStatus code;
+	bool complete;
+	bool success;
+	int progress;
+	int size;
 	std::string text;
 	std::stop_source abort;
 };
 
-typedef std::shared_ptr<Synchronised<CameraFirmwareUpdateStatus>> CameraFirmwareUpdateRef;
-typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
+typedef std::shared_ptr<Synchronised<ControllerFirmwareUpdateStatus>> ControllerFirmwareUpdateRef;
 
-FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware);
+ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<TrackingControllerState> controller, std::string firmware);
 
-#endif // CAMERA_FIRMWARE_H
+#endif // CONTROLLER_FIRMWARE_H

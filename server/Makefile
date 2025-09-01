@@ -167,7 +167,7 @@ SERVER_CPP = \
 	comm/usb.cpp comm/protocol_packet.cpp \
 	comm/streaming.cpp comm/timesync.cpp \
 	device/tracking_controller.cpp device/tracking_camera.cpp \
-	device/parsing.cpp device/camera_firmware.cpp \
+	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp \
 	io/vrpn.cpp io/vrpn_imu.cpp \
 	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp imu/remoteIMU.cpp \
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp \

@@ -5,6 +5,9 @@ compile_commands.json
 
 # Build systems
 build/
+debian-external/
+debian-internal/
+debootstrap/
 
 # Temporary Outputs
 log.txt

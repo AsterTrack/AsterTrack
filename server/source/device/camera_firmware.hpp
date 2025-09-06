@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp"
 #include "util/synchronised.hpp"
 
+#include <vector>
+
 struct TrackingCameraState; // device/tracking_camera.hpp
 
 struct CameraFirmwareUpdateStatus

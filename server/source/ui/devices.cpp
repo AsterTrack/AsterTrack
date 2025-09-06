@@ -374,7 +374,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	{
 		ImGui::SeparatorText("Camera Firmware Update");
 
-		auto status = cameraFWUpdateState->contextualRLock();
+		auto status = cameraFWUpdateState->contextualLock();
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", status->text.c_str());
 		SameLineTrailing(button.x);

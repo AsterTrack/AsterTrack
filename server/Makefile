@@ -21,37 +21,50 @@ endif
 # v4 is even better but too recent so we're compiling sensitive functions for x86-64-v4 with multi-target
 march = -march=x86-64-v3
 
+ifneq ($(SYS_ROOT),)
+	ENV_PREFIX=EXT-
+	cenv = --sysroot=$(SYS_ROOT)
+	exec = sudo chroot $(SYS_ROOT) env PATH=/usr/local/sbin:/usr/sbin:/usr/local/bin:/usr/bin bash -c
+	ldconfig = $(exec) 'ldconfig -p'
+	idbus = $(shell $(exec) 'pkg-config --cflags dbus-1' | sed 's/-I/-I$(SYS_ROOT)/g')
+else
+	ldconfig = ldconfig -p
+	idbus = $(shell pkg-config --cflags dbus-1)
+endif
+
 # Set compiler and options used
 ifeq ($(COMPILER), clang-libc)
 # clang compiler
 CXX=clang++
 CC=clang
-LD=ld.lld
+LD=clang++
 # clang libraries (libc++ + libomp)
 cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -lc++ -fopenmp=libomp
+lstd = -lc++ -fopenmp=libomp # --rtlib=compiler-rt -lunwind
 lto = -flto=thin
-ldstd =
-else ifeq ($(COMPILER), clang-gnu)
+else ifeq ($(COMPILER), clang-std)
 # clang compiler
 CXX=clang++
 CC=clang
-LD=ld.lld
+LD=clang++
 # gnu libraries (libstdc++ + libgomp)
 cstd = -stdlib=libstdc++ -fopenmp=libgomp -Wno-gcc-compat
-lstd = -lstdc++ -fopenmp=libgomp
+lstd = -lstdc++ -fopenmp=libgomp --rtlib=libgcc -latomic
 lto = -flto=thin
-ldstd =
 else ifeq ($(COMPILER), gcc)
 # gcc compiler
 CXX=g++
 CC=gcc
 LD=gcc
 # gnu libraries (libstdc++ + libgomp)
-cstd += -fopenmp -finline-limit=1000000
-lstd += -lgomp
+cstd = -fopenmp -finline-limit=1000000
+lstd = -latomic -lgomp
 lto = -flto=auto
-ldstd = -lstdc++exp
+ifeq "$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 14)" "1"
+	lstd += -lstdc++exp
+else
+	lstd += -lstdc++
+endif
 endif
 
 
@@ -60,6 +73,7 @@ ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto)
+cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 lmode = $(lto)
 mode = release
 
@@ -68,6 +82,7 @@ else ifeq ($(BUILD_TYPE), release-native)
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
 cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto)
+cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 lmode = $(lto)
 march = -march=native -mtune=native
 mode = release-native
@@ -77,6 +92,7 @@ else ifeq ($(BUILD_TYPE), release-verify)
 cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace
 ifneq '' '$(findstring clang,$(CC))' # clang
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 else # gcc - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG
 endif
@@ -86,12 +102,14 @@ mode = release-verify
 else ifeq ($(BUILD_TYPE), sanitize-thread)
 # Super slow (?), can verify no data races exist
 cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=thread
+cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=thread
 mode = sanitize-thread
 
 else ifeq ($(BUILD_TYPE), sanitize-memory)
 # Super slow (?), can verify no memory is used uninitialised
 cmode = -O1 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=memory
+cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=memory
 mode = sanitize-memory
 
@@ -100,6 +118,7 @@ else ifeq ($(BUILD_TYPE), sanitize-address)
 cmode = -O1 -g -fno-omit-frame-pointer -fsanitize=address
 ifneq '' '$(findstring clang,$(CC))' # clang
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 else # gcc - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG
 endif
@@ -109,6 +128,7 @@ mode = sanitize-address
 else ifeq ($(BUILD_TYPE), debug)
 # Slow, for step-through debug
 cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -DEIGEN_NO_DEBUG
+cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=address
 mode = debug
 
@@ -119,10 +139,10 @@ cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
 ifneq '' '$(findstring clang,$(CC))' # clang
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
-	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS -D_LIBCPP_ENABLE_DEBUG_MODE
+	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
 else # gcc - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_BACKTRACE
-	lmode += -lstdc++exp
 endif
 mode = super-debug
 
@@ -133,10 +153,10 @@ cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
 ifneq '' '$(findstring clang,$(CC))' # clang
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
-	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS -D_LIBCPP_ENABLE_DEBUG_MODE
+	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
 else # gcc - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_BACKTRACE
-	lmode += -lstdc++exp
 endif
 mode = super-verify
 
@@ -148,17 +168,16 @@ src = source
 sh = ../shared
 dep = dependencies/sources
 b = build
-o = $(b)/$(COMPILER)-$(mode)
-cflags = -Idependencies/include -Idependencies/sources \
-	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk \
-	$(shell pkg-config --cflags dbus-1)	
-cxxflags = $(cstd) $(cflags) -I$(src) -I$(sh) -I$(dep)/imgui -DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
+o = $(b)/$(ENV_PREFIX)$(COMPILER)-$(mode)
+cflags = $(cenv) -Idependencies/include -Idependencies/sources \
+	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus)
+cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
+	-DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion \
 	-D_UNICODE -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
 	-std=c++20 -ffp-contract=fast
-lflags = -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march) \
-	$(shell pkg-config --libs dbus-1)
+lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 
 
 # Define all source files to be compiled
@@ -190,8 +209,7 @@ SERVER_SHARED_C =
 SERVER_DEP_CPP = \
 	recursive_shared_mutex/recursive_shared_mutex.cpp \
 	poselib/p3p_ding.cpp \
-	dbscan/dbscan.cpp \
-	nativefiledialog-extended/nfd_portal.cpp
+	dbscan/dbscan.cpp
 
 SERVER_DEP_C = hidapi/linux/hid.c
 
@@ -222,7 +240,8 @@ INTERFACE_DEP_CPP = \
 	imgui/misc/cpp/imgui_stdlib.cpp \
 	imgui/imgui_demo.cpp \
 	imguizmo/ImSequencer.cpp \
-	implot/implot.cpp implot/implot_items.cpp implot/implot_demo.cpp
+	implot/implot.cpp implot/implot_items.cpp implot/implot_demo.cpp \
+	nativefiledialog-extended/nfd_portal.cpp
 
 INTERFACE_DEP_C = GL/glew.c stb/stb_image.c
 
@@ -245,11 +264,11 @@ usblibs = $(libdir)/libusb/libusb-1.0.so.0
 vrpnlibs = $(libdir)/vrpn/libvrpn.a $(libdir)/vrpn/libquat.a
 glfwlibs = $(libdir)/libglfw3.a
 trackerlibs = -ludev
-server_libs = $(usblibs) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg -latomic
-interface_libs = $(glfwlibs)
+server_libs = $(usblibs) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg
+interface_libs = $(glfwlibs) -ldbus-1
 
 # Run prechecks before starting compilation
-checkLibs := $(shell ldconfig -p | grep libturbojpeg > /dev/null 2>&1; echo $$?)
+checkLibs := $(shell $(ldconfig) | grep libturbojpeg > /dev/null 2>&1; echo $$?)
 ifneq ($(checkLibs),0)
   $(error Turbojpeg library not found, make sure to install it systemwide)
 endif
@@ -287,10 +306,12 @@ all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static 
 .PHONY: copybinaries
 copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
 	@cp -u $(usblibs) "$(b)/"
-	@rm $(b)/astertrack-static $(b)/astertrack-server $(b)/astertrack-interface.so
-	@cp $(o)/astertrack-static $(b)/astertrack-static
+	@-rm -f $(b)/astertrack-static
+	@-rm -f $(b)/astertrack-server
+	@-rm -f $(b)/astertrack-interface.so
 	@cp $(o)/astertrack-server $(b)/astertrack-server
 	@cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so
+	@-test -f $(o)/astertrack-static && cp $(o)/astertrack-static $(b)/astertrack-static
 
 
 # May prefix this before each target to measure compile times
@@ -324,17 +345,17 @@ OBJECTS_STATIC = $(subst $(o)/app.obj,$(o)/app-static.obj,$(OBJECTS_SERVER)) $(O
 $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
 $(o)/astertrack-static: $(OBJECTS_STATIC)
-	$(CXX) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
+	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
 
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
 $(o)/astertrack-server: $(OBJECTS_SERVER)
-	$(CXX) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
+	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
 
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
 $(o)/astertrack-interface.so: $(OBJECTS_INTERFACE)
-	$(CXX) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
+	$(LD) $(lenv) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
 
 # Always force re-link at least, since different modes share the same target
 .PHONY: .FORCE

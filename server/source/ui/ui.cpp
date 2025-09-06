@@ -727,6 +727,16 @@ EXPORT void _SignalObservationReset(long firstFrame = 0)
 	GetUI().RequestUpdates();
 }
 
+static void CleanVisualisationState()
+{
+	GetUI().visState.observations = {};
+	GetUI().visState.target = {};
+	GetUI().visState.targetCalib = {};
+	GetUI().visState.incObsUpdate = {};
+	GetUI().visState.tracking.targets = {};
+	GetUI().visState.tracking.debug = {};
+}
+
 EXPORT void _SignalServerEvent(ServerEvents event)
 {
 	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
@@ -739,10 +749,12 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			GetUI().windows[WIN_DEVICES].open = true;
 			break;
 		case EVT_MODE_DEVICE_STOP:
+			CleanVisualisationState();
 			break;
 		case EVT_MODE_SIMULATION_START:
 			break;
 		case EVT_MODE_SIMULATION_STOP:
+			CleanVisualisationState();
 			break;
 		case EVT_START_STREAMING:
 			break;

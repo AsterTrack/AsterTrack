@@ -1,34 +1,26 @@
 # AsterTrack
 
-AsterTrack is a custom multi-camera system designed to track markers in 3D space for a variety of purposes like virtual reality and motion capture. This so-called optical tracking is commonly used in professional setups, but typically costs several thousands of euros. AsterTrack aims to implement the same concept with much less expensive hardware, and pioneer a user-friendly multi-camera experience.
-It aims to be as accurate as the best consumer VR tracking systems with low latency, and very affordable. The trackers can be passive (that is, no battery) and are thus very cheap and lightweight. Users can also create and calibrate trackers themselves from 3D prints and even from everyday objects. 
+<img alt="Banner image with AsterTrack hardware" src="https://docs.astertrack.dev/assets/Banner_AT_Rendered.png">
+
+AsterTrack is a custom multi-camera system designed to track markers and targets in 3D space for a variety of purposes like virtual reality and motion capture.
+This so-called optical tracking is commonly used in professional studios, but typically costs several thousands of euros for even the most basic setups. <br>
+AsterTrack implements the same concept with much less expensive hardware, and pioneer a user-friendly multi-camera tracking experience. <br>
+It aims to be as accurate as the best consumer VR tracking systems, with similarly low latency, while being very affordable for what it does. <br>
+The trackers can be passive (that is, without battery) and are thus very cheap and lightweight.
+Users can even create and calibrate trackers themselves from 3D prints or existing objects.
 
 ## Current State
 
-There are several components affecting the current usability of AsterTrack in real-world use: <br>
+AsterTrack is in a functional state, but usability varies depending on your exact use case. Here are the states of some of the major components:  <br>
 **Camera Calibration:** Fully functional and easy to use - may need improvements for multi-room setups. <br>
 **Target Calibration:** New Targets can be calibrated just fine, but it is a slow, compute-intensive process that requires some manual involvement still. However, this is only needed once for each new target. <br>
-**Target Tracking:** Target tracking works fine and is very much useable, though not yet at peak stability or performance. While multiple targets can track, there are many improvements still to be done here. <br>
-**Integrations:** A VRPN integration exists to send tracker data to other custom applications, but no official SteamVR/Monado driver for VR exists yet, nor any file formats used for mocap.
+**Target Tracking:** Unassisted target tracking is complete and working almost at the peak of what's reasonably possible. IMU-assisted target tracking is very much still a WIP, with only raw gyroscope samples being automatically calibrated and used for tracking prediction (missing accelerometer and fused orientation measurements).  <br>
+**Integrations:** A VRPN integration exists to send tracker data to other custom applications, but no official VR driver exists yet, nor any file formats used for mocap. A Monado driver is being worked on, and a SteamVR driver is planned.
 
-## Software
+## Documentation
 
-You can build and try the AsterTrack Application right now without any hardware. <br>
-You can load sample recordings to try the software, test camera- and target calibration as well as tracking, and perhaps even design your own target geometry in Simulation Mode.
-There are recordings with some image frame data included which you can use to emulate blob detection and develop it further.
-
-## Hardware
-
-You need at least 3 AsterTrack Cameras and one AsterTrack Controller for a minimal setup. You can add more cameras and even controllers at any point, with each controller supporting up to 8 cameras. <br>
-Additionally, you will need a USB PD power source to another power supply that can output between 12V to 24V. 10W should be sufficient for a 3 camera setup, each camera needs about 3W, but please calculate with 5W to be safe. <br>
-Finally, you'll need USB Data and Power cable for each controller, and a CAT 5(e) cable with straight wiring for each camera. These CAT 5 cables are best sourced on your own, they can be found for cheap in a variety of lengths, colors and shapes that you can choose to fit your room. Cheap ones cost about 2€, more expensive ones might cost up to 10€ with smaller, easier to hide wiring (whether round or even flat).
-
-### A note on DIY
-
-AsterTrack has been designed around the custom hardware from the very beginning and it is essential for a performant and user-friendly multi-camera experience. <br>Most importantly, the images are processed onboard the AsterTrack Cameras on a Raspberry Pi Zero. The tracking-relevant data is then sent over a custom protocol through a CAT 5 cable to a AsterTrack Controller, which is a custom board based on the CH32V307 chip. It synchronises and communicates with up to 8 AsterTrack Cameras, and connects to the host PC through an USB 2.0 HS connection. <br>
-While it is theoretically possible to build the hardware DIY with just a CH32V307 EVT board, a Raspberry Pi, an OV9281 camera module from innomaker and some wires, it is insufficient for real-world use. For reliable communication over the CAT 5 cable, the UART communication is wrapped in RS-422 differential signaling, and for stable operation, the power supply voltage through the cable is 12-24V - passing 5V straight through is not sufficient as the Raspberry Pi will suffer from undervoltage crashes. <br>
-In addition to addressing these fundamental problems, the custom hardware also adds support for passive retroreflective markers via a IR LED ring around the camera lens, various buttons and signaling LEDs, power regulation with external power and USB PD support, external sync I/O, and other smaller amenities. <br>
-It is highly recommended to make use of the custom PCBs, either the official dev kit or the DIY version.
+For guides and instructions (many TBD), refer to the [documentation site](https://docs.astertrack.dev/). <br>
+For compilation and software setup instructions, refer to each sub-projects README.
 
 ## License
 Most of the software and firmware in this repository is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header. <br>

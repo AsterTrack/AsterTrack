@@ -8,13 +8,31 @@ While they are tightly integrated, the UI is also clearly separated from the ser
 ### Requirements
 
 #### Linux
-- If you use clang (recommended): (`clang`, `clangd`, `libc++`, `bear`, `libomp5`/`openmp`) <br>
-- If you use gcc: (`gcc`, `g++`) <br>
-- Standard build tools: (`cmake`, `autoconf`, `automake`) <br>
-- OpenGL development libraries (`libgl1-mesa`, `libglu1-mesa`, `libglew`) <br>
-- Wayland development libraries (`libwayland`, `libxkbcommon`) <br>
-- X11 development libraries (`libxcursor`, `libxrandr`, `libxinerama`, `libxi`) <br>
-- TurboJPEG (`libturbojpeg`) <br>
+If you want to build & develop normally:
+- Depending on the compiling toolchain (COMPILER input to Makefile):
+  - clang-std (recommended): `clang`
+  - clang-libc: `clang`, `libc++`, `libomp5`/`openmp`
+  - gcc: `gcc`, `g++`
+- If using clangd for development: `clangd`, `bear`)
+- Build tools: `cmake`, `autoconf`, `automake`, `libtool`, `unzip`, `wget`
+- OpenGL **development** libraries: `libgl1-mesa`, `libglu1-mesa`, `libglew`
+- Wayland **development** libraries: `libwayland`, `libxkbcommon`
+- X11 **development** libraries: `libxcursor`, `libxrandr`, `libxinerama`, `libxi`
+- System **development** libraries: `libudev`, `libdbus`
+- TurboJPEG: `libturbojpeg`/`libturbojpeg0`
+- wget for fetching dependencies
+
+If you want to build a clang-std + release version with limited development capabilities:
+- Use `Build inside Debian Environment` task
+  - just depends on `git`
+  - needs superuser privileges
+  - will setup a debian 12 environment (GLIBC v2.36) using debootstrap
+  - will chroot into it and install all build dependencies
+  - will compile its own clang 21.1 toolchain
+  - will automatically compile server in release mode (others not supported)
+
+This is intended for building a binary distribution compatible with most modern Linux distributions - NOT for development!
+
 
 #### Windows
 **1. MSVC compiler** <br>

@@ -38,8 +38,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define USB_TIME_SYNC_INTERVAL	1*TICKS_PER_MS			// Minimum interval used for time sync with host (needs to be as accurate as possible)
 #define USB_STALL_TIMEOUT		10*TICKS_PER_MS			// Timeout at which we attempt to unstall a sink
-#define USB_COMM_TIMEOUT		200*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
-#define USB_COMM_TIMEOUT_STR	200*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
+#define USB_COMM_TIMEOUT		1000*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
+#define USB_COMM_TIMEOUT_STR	1000*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
 
 #define SYNC_PULSE_WIDTH_US		10
 

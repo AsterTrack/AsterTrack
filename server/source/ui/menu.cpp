@@ -165,12 +165,12 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		else if (state.mode == MODE_Replay)
 		{
-			if (ImGui::MenuItem("Stop Replay###SimulationToggle"))
+			if (ImGui::MenuItem("Stop Replay###SimulationToggle", nullptr, nullptr, !state.isLoading))
 				StopReplay(state);
 		}
 		else
 		{
-			if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, state.mode == MODE_None))
+			if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, !state.isLoading && state.mode == MODE_None))
 			{
 				windows[WIN_CONTROL].open = true;
 				StartSimulation(state);
@@ -179,7 +179,7 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::Separator();
 
 		bool append = state.mode == MODE_Replay;
-		if (ImGui::BeginMenu(append? "Append capture" : "Replay capture", state.mode == MODE_None || append))
+		if (ImGui::BeginMenu(append? "Append capture" : "Replay capture", !state.isLoading && (state.mode == MODE_None || append)))
 		{
 			cachePaths = true;
 			if (!cachingRecordEntries)
@@ -200,9 +200,11 @@ void InterfaceState::UpdateMainMenuBar()
 				// Perform read in a separate thread to prevent blocking UI
 				// TODO: Show indication that sample data is still loading - very bad without
 				// e.g. global popup (then OpenPopup)
+				state.isLoading = true;
 				threadPool.push([](int, Recording entry, bool append)
 				{
 					loadRecording(GetState(), std::move(entry), append);
+					GetState().isLoading = false;
 				}, entry, append);
 			}
 			ImGui::EndMenu();
@@ -222,23 +224,43 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::PushStyleColor(ImGuiCol_Button, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_Button), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImLerp(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg), 0.4f));
 
+		float minButtonWidth = MinSharedLabelWidth("Connect", "Disonnect", "Stop Sim", "Stop Replay", "Loading...");
+		minButtonWidth += ImGui::GetStyle().FramePadding.x * 2;
+		ImVec2 button = ImVec2(minButtonWidth, ImGui::GetFrameHeight());
+
 		if (state.mode == MODE_Device)
 		{
-			if (ImGui::Button("Disonnect###DeviceToggle"))
+			if (ImGui::Button("Disonnect", button))
 				StopDeviceMode(state);
 			ImGui::SetItemTooltip("Disconnect from AsterTrack hardware.");
 		}
-		else
+		else if (state.mode == MODE_Simulation)
 		{
-			ImGui::BeginDisabled(state.mode != MODE_None);
-			if (ImGui::Button("Connect###DeviceToggle"))
+			if (ImGui::Button("Stop Sim", button))
+				StopSimulation(state);
+			ImGui::SetItemTooltip("Stop from AsterTrack hardware.");
+		}
+		else if (state.isLoading)
+		{
+			float pos = ImGui::GetCursorPosX();
+			ImGui::Text("Loading...");
+			ImGui::SetCursorPosX(pos + minButtonWidth + ImGui::GetStyle().ItemSpacing.x);
+		}
+		else if (state.mode == MODE_Replay)
+		{
+			if (ImGui::Button("Stop Replay", button))
+				StopReplay(state);
+			ImGui::SetItemTooltip("Stop from AsterTrack hardware.");
+		}
+		else if (state.mode == MODE_None)
+		{
+			if (ImGui::Button("Connect", button))
 				StartDeviceMode(state);
-			ImGui::EndDisabled();
 			ImGui::SetItemTooltip("Probe for and connect to AsterTrack hardware.");
 		}
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 
-		ImGui::BeginDisabled(state.mode == MODE_None);
+		ImGui::BeginDisabled(state.isLoading || state.mode == MODE_None);
 		if (ImGui::Button(state.isStreaming? "Stop Streaming###Streaming" : "Start Streaming###Streaming"))
 		{
 			if (state.isStreaming)

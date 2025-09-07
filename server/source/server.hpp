@@ -63,7 +63,7 @@ struct ServerState
 {
 	// System State
 	ServerMode mode = MODE_None;
-	bool isStreaming;
+	bool isLoading, isStreaming;
 	PipelineState pipeline = {};
 
 	// Data stored in files

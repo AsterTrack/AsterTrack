@@ -625,7 +625,7 @@ int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraC
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return optimiseData<OptSparse>(
-		OptimisationOptions(true, false, false, false, false), 
+		OptimisationOptions(false, false, true), 
 		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
 }
 
@@ -639,6 +639,6 @@ int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return compareOptimiseData(
-		OptimisationOptions(true, false, false, false, false),
+		OptimisationOptions(false, false, true),
 		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
 }

@@ -84,7 +84,7 @@ struct ReprojectionError
 		m_cameras = cameras;
 		m_pointSamples = 0;
 		m_targetSamples = 0;
-		m_options = {};
+		m_options = OptimisationOptions();
 		m_paramCount = 0;
 
 	#ifdef NORMALIZE_SCALE

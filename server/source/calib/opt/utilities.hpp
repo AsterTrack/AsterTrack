@@ -30,7 +30,7 @@ static inline int numCamParams(const OptimisationOptions &opt, int cams)
 {
 	int extCam = 3 * (opt.position + opt.rotation);
 	int intCam = opt.focalLen + (opt.tangential? 2 : 0) + (opt.principal? 2 : 0);
-	int shared = opt.radial * (opt.sharedRadial? 1 : cams);
+	int shared = opt.radial? (opt.radialOrder * (opt.sharedRadial? 1 : cams)) : 0;
 	return (extCam + intCam) * cams + shared;
 }
 static inline int numTgtStruct(const OptimisationOptions &opt, const ObsTarget& tgt) { return opt.structure? tgt.markers.size()*3 : 0; }
@@ -83,25 +83,25 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 {
 	int index = 0;
 
-	if (opt.sharedRadial && opt.radial > 0)
+	if (opt.sharedRadial && opt.radial)
 	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
 		for (int c = 0; c < cameras.size(); c++)
 		{
 			int i = index;
-			if (opt.radial >= 1)
+			if (opt.radialOrder >= 1)
 				cameras[c].distortion.k1 = calibParams(i++);
 			else
 				cameras[c].distortion.k1 = 0;
-			if (opt.radial >= 2)
+			if (opt.radialOrder >= 2)
 				cameras[c].distortion.k2 = calibParams(i++);
 			else
 				cameras[c].distortion.k2 = 0;
-			if (opt.radial >= 3)
+			if (opt.radialOrder >= 3)
 				cameras[c].distortion.k3 = calibParams(i++);
 			else 
 				cameras[c].distortion.k3 = 0;
 		}
-		index += opt.radial;
+		index += opt.radialOrder;
 	}
 
 	for (int c = 0; c < cameras.size(); c++)
@@ -121,17 +121,17 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 			cameras[c].distortion.p1 = calibParams(index++);
 			cameras[c].distortion.p2 = calibParams(index++);
 		}
-		if (opt.sharedRadial || opt.radial == 0)
+		if (opt.sharedRadial || !opt.radial)
 			continue;
-		if (opt.radial >= 1)
+		if (opt.radialOrder >= 1)
 			cameras[c].distortion.k1 = calibParams(index++);
 		else
 			cameras[c].distortion.k1 = 0;
-		if (opt.radial >= 2)
+		if (opt.radialOrder >= 2)
 			cameras[c].distortion.k2 = calibParams(index++);
 		else
 			cameras[c].distortion.k2 = 0;
-		if (opt.radial >= 3)
+		if (opt.radialOrder >= 3)
 			cameras[c].distortion.k3 = calibParams(index++);
 		else 
 			cameras[c].distortion.k3 = 0;
@@ -159,21 +159,21 @@ static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>
 	int index = 0;
 	calibParams.setZero();
 
-	if (opt.sharedRadial && opt.radial > 0)
+	if (opt.sharedRadial && opt.radial)
 	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
 		for (int c = 0; c < cameras.size(); c++)
 		{
 			int i = index;
-			if (opt.radial >= 1)
+			if (opt.radialOrder >= 1)
 				calibParams(i++) += cameras[c].distortion.k1;
-			if (opt.radial >= 2)
+			if (opt.radialOrder >= 2)
 				calibParams(i++) += cameras[c].distortion.k2;
-			if (opt.radial >= 3)
+			if (opt.radialOrder >= 3)
 				calibParams(i++) += cameras[c].distortion.k3;
 		}
-		for (int i = index; i < index+opt.radial; i++)
+		for (int i = index; i < index+opt.radialOrder; i++)
 			calibParams(i) /= cameras.size();
-		index += opt.radial;
+		index += opt.radialOrder;
 	}
 
 	for (int c = 0; c < cameras.size(); c++)
@@ -190,13 +190,13 @@ static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>
 			calibParams(index++) = cameras[c].distortion.p1;
 			calibParams(index++) = cameras[c].distortion.p2;
 		}
-		if (opt.sharedRadial || opt.radial == 0)
+		if (opt.sharedRadial || !opt.radial)
 			continue;
-		if (opt.radial >= 1)
+		if (opt.radialOrder >= 1)
 			calibParams(index++) = cameras[c].distortion.k1;
-		if (opt.radial >= 2)
+		if (opt.radialOrder >= 2)
 			calibParams(index++) = cameras[c].distortion.k2;
-		if (opt.radial >= 3)
+		if (opt.radialOrder >= 3)
 			calibParams(index++) = cameras[c].distortion.k3;
 	}
 

@@ -49,17 +49,17 @@ void InterfaceState::UpdatePipelineCalibSection()
 		}
 		else if (calibState.numUncalibrated == 0 && visState.incObsUpdate.markerCount > 0)
 		{
-			if (std::isnan(errors.mean) || std::isinf(errors.mean))
+			if (std::isnan(errors.mean) || std::isinf(errors.mean) || errors.mean > 10.0f)
 			{
-				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
+				ImGui::TextUnformatted("Unable to check calibration errors!");
+				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,
 					errors.max*PixelFactor);
 			}
 			else
 			{
-				ImGui::TextUnformatted("Unable to check calibration errors!");
-				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max",
+				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,
 					errors.max*PixelFactor);
@@ -332,27 +332,52 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::Indent();
 	{
 		auto &opt = ptCalib.settings.options;
-		ImGui::Checkbox("Pos", &opt.position);
+		ImGui::Checkbox("Transform", &opt.position);
 		opt.rotation = opt.position;
+		ImGui::SetItemTooltip("Estimate each cameras position and rotation in the room.");
 		ImGui::SameLine();
 		ImGui::Checkbox("Lens", &opt.focalLen);
 		opt.principal = opt.focalLen;
-		ImGui::SetItemTooltip("Calibrate basic lens parameters like focal length and principal point");
+		ImGui::SetItemTooltip("Estimate basic lens parameters like focal length and principal point.");
 		ImGui::SameLine();
 		ImGui::Checkbox("Align", &opt.tangential);
-		ImGui::SetItemTooltip("Enable tangential distortion estimation.\nCalibrates for misalignment of sensor and lens plane.");
+		ImGui::SetItemTooltip("Estimate tangential distortion parameters.\n"
+			"These compensate for misalignment of sensor and lens plane during lens installation.\n"
+			"If disabled, will keep existing distortion parameters.");
 
-		ImGui::Checkbox("Share Distortions", &opt.sharedRadial);
-		ImGui::SetItemTooltip("Assume all cameras have the same radial distortion. This may speed up initial optimisation.\n"
-			"It does not share parameters compensating for installation like focal length, principal point and tangential distortion.");
+		ImGui::Checkbox("Distortions", &opt.radial);
+		ImGui::SetItemTooltip("Enable estimation of radial distortion parameters.\n"
+			"If disabled, will keep existing distortion parameters.");
+		ImGui::BeginDisabled(!opt.radial);
 		ImGui::SameLine();
-		ImGui::Text("Order %d", opt.radial);
+		ImGui::Checkbox("Share", &opt.sharedRadial);
+		ImGui::SetItemTooltip("Assume all lenses are the same and share radial distortion parameters.\n"
+			"This helps constrain them, yielding better results using less computing resources.\n"
+			"This does not share parameters affected by lens installation\n"
+			"    (like focal length, principal point and tangential distortion)");
 		ImGui::SameLine();
-		if (ImGui::Button("-", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
-			opt.radial--;
+		ImGui::BeginDisabled(opt.radialOrder == 0);
+		if (ImGui::Button("X", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+			opt.radialOrder = 0;
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Disable radial distortion entirely.\n"
+			"This will delete all existing parameters on next optimisation.");
 		ImGui::SameLine();
-		if (ImGui::Button("+", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
-			opt.radial++;
+		ImGui::BeginDisabled(opt.radialOrder == 2);
+		if (ImGui::Button("M", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+			opt.radialOrder = 2;
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Set radial distortion order to 2 (medium).\n"
+			"This will delete the parameter of order 3 on next optimisation.");
+		ImGui::SameLine();
+		ImGui::BeginDisabled(opt.radialOrder == 3);
+		if (ImGui::Button("H", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+			opt.radialOrder = 3;
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Set radial distortion order to 3 (highest).\n"
+			"Only use this if you have sufficient coverage and samples.\n"
+			"You may also use 'Share' if all lenses are the same to further constrain the distortions.");
+		ImGui::EndDisabled();
 	}
 	ImGui::Unindent();
 	ImGui::EndDisabled();

@@ -40,19 +40,20 @@ struct OptimisationOptions
 	bool focalLen;
 	bool principal;
 	bool tangential;
-	int radial;
+	bool radial;
+	int radialOrder;
 	bool sharedRadial;
 	// Normalisation
 	bool normalisePos, normaliseScale;
 	// Outliers
 	bool ignoreOutliers;
 
-	OptimisationOptions(bool tgt = false, bool extr = true, bool intr = true, bool dist = true, bool norm = true)
-		: motion(tgt), structure(tgt),
-		position(extr), rotation(extr), focalLen(intr), principal(intr),
-		tangential(dist), radial(dist? 3 : 0), 
-		sharedRadial(false), 
-		normalisePos(norm), normaliseScale(norm),
+	OptimisationOptions(bool extrinsics = true, bool intrinsics = true, bool target = false)
+		: motion(target), structure(target),
+		position(extrinsics), rotation(extrinsics), focalLen(intrinsics), principal(intrinsics),
+		tangential(intrinsics), radial(intrinsics), radialOrder(3), 
+		sharedRadial(intrinsics), 
+		normalisePos(intrinsics), normaliseScale(intrinsics),
 		ignoreOutliers(true)
 	{}
 };

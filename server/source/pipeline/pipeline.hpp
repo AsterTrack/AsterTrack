@@ -180,7 +180,7 @@ struct PipelineState
 		struct
 		{
 			int typeFlags;
-			OptimisationOptions options = OptimisationOptions(false, true, true, true, true);
+			OptimisationOptions options = OptimisationOptions(true, true, false);
 			int maxSteps = 20;
 		} settings = {};
 		struct

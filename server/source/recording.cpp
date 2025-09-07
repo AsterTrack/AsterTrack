@@ -116,7 +116,8 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", framesCount);
 	if (state.mode != MODE_None)
 	{
-		LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
+		if (!append)
+			LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
 		return;
 	}
 

@@ -913,10 +913,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
 
 		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/GenerateSimulationData
-		std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
+		std::shared_ptr<FrameRecord> frameRecord = nullptr;
+		std::size_t frame = pipeline.frameNum+1;
 		if (state->mode == MODE_Simulation)
 		{
-			frameRecord->num = frameRecord->ID = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
+			frameRecord = std::make_shared<FrameRecord>();
+			frameRecord->num = frameRecord->ID = frame;
 			frameRecord->time = sclock::now();
 			GenerateSimulationData(pipeline, *frameRecord);
 			if (!pipeline.isSimulationMode)
@@ -930,14 +932,6 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 		else if (state->mode == MODE_Replay)
 		{
-			std::size_t frame = pipeline.frameNum+1;
-			if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
-			{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
-				pipeline.frameNum++;
-				std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
-				continue;
-			}
-
 			if (frame == 0)
 			{ // Reset time
 				state->recording.replayTime = sclock::now();
@@ -955,14 +949,9 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			}
 
 			auto framesStored = state->stored.frames.getView();
-			if (frame >= framesStored.endIndex() || !framesStored[frame])
-			{ // No frame records to replay
-				frameRecord->num = frameRecord->ID = frame;
-				frameRecord->time = sclock::now();
-				frameRecord->cameras.resize(pipeline.cameras.size());
-			}
-			else
+			if (frame < framesStored.endIndex() && framesStored[frame])
 			{
+				frameRecord = std::make_shared<FrameRecord>();
 				auto &loadedRecord = framesStored[frame];
 				assert(loadedRecord->num == frame);
 				assert(loadedRecord->cameras.size() == pipeline.cameras.size());
@@ -1028,6 +1017,20 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				// This would speed up verification of tracking for optimising parameters
 				// only slightly inaccurate for parameters affecting detection
 			}
+		}
+		if (!frameRecord)
+		{
+			UpdatePipelineStatus(state->pipeline);
+			pipeline_lock.unlock();
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
+		{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
+			UpdatePipelineStatus(state->pipeline);
+			pipeline_lock.unlock();
+			std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
+			continue;
 		}
 		pipeline_lock.unlock();
 

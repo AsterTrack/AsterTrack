@@ -100,10 +100,19 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 	// Correct for timestamp overflow based on existing timestamps
 	uint64_t fullTimestamp = RebaseSourceTimestamp(time, timestamp, overflow, measurement);
 
+	if (time.measurements++ < 10)
+	{ // Only get minimum offset in first few measurements
+		time.lastTime = measurement;
+		time.lastTimestamp = timestamp;
+		time.syncSwitch.reset();
+		time.diff.reset();
+		return { fullTimestamp, measurement };
+	}
+
 	// Predict real-time of timestamp based on time-local estimation of time synchronisation
 	long usPassed = fullTimestamp-time.lastTimestamp;
 	float driftUS = usPassed * (1.0+time.drift) + time.driftAccum;
-	time.driftAccum = driftUS - ((int)driftUS); // Store what we can't apply now in accumulator for next update
+	time.driftAccum = driftUS - ((long)driftUS); // Store what we can't apply now in accumulator for next update
 	TimePoint_t timePred = time.lastTime + std::chrono::microseconds((long)driftUS);
 	long diffUS = dtUS(timePred, measurement);
 
@@ -114,15 +123,6 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 		LOG(LTimesync, LDarn, "Got delayed timestamped packet, reference timestamp %luus %.2fms in the past, timestamp %luus %.2fms in the past, usPassed %ld\n",
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, dtMS(timePred, sclock::now()), usPassed);
 		return { fullTimestamp, timePred };
-	}
-
-	if (time.measurements++ < 10)
-	{ // Only get minimum offset in first few measurements
-		time.lastTime = measurement;
-		time.lastTimestamp = timestamp;
-		time.syncSwitch.reset();
-		time.diff.reset();
-		return { fullTimestamp, measurement };
 	}
 
 	// TODO: Adapt values or full strategy based on protocol (USB vs TCP)
@@ -136,10 +136,10 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 		increase *= 1.0f + adapt * time.driftInitAdapt;
 		return increase;
 	};
-	if (diffUS < 0 && diffUS > -2000)
+	if (diffUS <= 0 && diffUS > -2000)
 	{ // New minimum, upper bound for the actual time sync
-		LOG(LTimesync, LTrace, "New time sync minimum received, timestamp was predicted to be %.2fms ago (including %.2fus drift) but was received %.2fms ago\n",
-			dtMS(timePred, sclock::now()), driftUS, dtMS(measurement, sclock::now()));
+		LOG(LTimesync, LDebug, "New time sync minimum received, timestamp was predicted to be %ldus ago (including %.2fus drift) but was received %ldus ago\n",
+			dtUS(timePred, sclock::now()), driftUS, dtUS(measurement, sclock::now()));
 		float jumpCorrect = diffUS*std::lerp(time.driftDownwardJump, 1.0f, adapt);
 		timePred += std::chrono::microseconds((long)jumpCorrect);
 		time.drift += getDriftCorrection(diffUS-jumpCorrect, usPassed) * time.driftDownwardCorrect;
@@ -177,7 +177,7 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 			//time.diff.update(diffUS / 1000.0f);
 			if (time.measurements > 2)
 			{
-				LOG(LTimesync, LDebug, "! Received timestamp %luus at wrong time, was predicted to be %.2fms ago (including %.2fus drift), "
+				LOG(LTimesync, LDarn, "! Received timestamp %luus at wrong time, was predicted to be %.2fms ago (including %.2fus drift), "
 					"but was received %.2fms ago, diff usually %.2fms +- %.2fms! Maybe Host lagged.\n", 
 					fullTimestamp, dtMS(timePred, sclock::now()), driftUS, dtMS(measurement, sclock::now()), time.diff.avg, time.diff.stdDev());
 			}

@@ -39,6 +39,7 @@ class IMUDevice : public IMU
 public:
 	// State
 	bool hasBattery, isPlugged;
+	TimePoint_t lastConnected;
 	float batteryLevel;
 	float batteryVolts;
 	float temperature;
@@ -48,9 +49,15 @@ public:
 
 	virtual ~IMUDevice() = default;
 
+	virtual std::string getDescriptor() = 0;
+
 protected:
 	IMUDevice(IMUIdent id, bool hasMag, bool isFused)
-		: IMU(id, hasMag, isFused) {}
+		: IMU(id, hasMag, isFused), hasBattery(false), isPlugged(false),
+		batteryLevel(0), batteryVolts(0), temperature(0), signalStrength(0)
+	{
+		lastConnected = TimePoint_t::min();
+	}
 };
 typedef std::vector<std::shared_ptr<IMUDevice>> IMUDeviceList;
 
@@ -65,11 +72,14 @@ class IMUDeviceProvider
 public:
 	IMUDriver driver;
 
+	IMUDeviceList devices;
+
 	TimingRecord timingRecord;
 
 	virtual ~IMUDeviceProvider() = default;
 
 	virtual IMUDeviceProviderStatus poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added) = 0;
+	virtual std::string getDescriptor() = 0;
 
 protected:
 	IMUDeviceProvider(IMUDriver driver) : driver(driver) {}

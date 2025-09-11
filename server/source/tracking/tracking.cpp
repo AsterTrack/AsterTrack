@@ -371,6 +371,8 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	auto filterState = state.state;
 	auto filterTime = state.time;
 	bool updateFilter = inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION;
+	bool isOptical = state.lastObsFrame >= 0;
+	// TODO: Disable isOptical if target has not been tracked for a bit - or better, transition somehow
 
 	// Find first IMU sample after last state time (e.g. last frame)
 	typename BlockedQueue<IMUSample, 16384>::template View<true> samples;
@@ -438,7 +440,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 		filterTime = sample.timestamp;
 
 		// Integrate on current IMU filter state
-		integrateIMUSample(inertial, sample, lastSample, params, filterState, updateFilter, state.lastObsFrame >= 0, false);
+		integrateIMUSample(inertial, sample, lastSample, params, filterState, updateFilter, isOptical, false);
 		lastSample = sample;
 		state.lastIMUSample = it.index();
 		state.lastIMUTime = sample.timestamp;
@@ -473,7 +475,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	}
 
 	// Integrate interpolated IMU sample to bring IMU fusion time up to date
-	integrateIMUSample(inertial, *interpolatedSample, lastSample, params, filterState, updateFilter, state.lastObsFrame >= 0, true);
+	integrateIMUSample(inertial, *interpolatedSample, lastSample, params, filterState, updateFilter, isOptical, true);
 	state.lastIMUTime = time;
 
 	observation.inertialIntegrated.translation() = filterState.position().cast<float>();
@@ -482,6 +484,8 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	observation.inertialFused.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
 	observation.inertialFiltered.translation() = filterState.position().cast<float>();
 	observation.inertialFiltered.linear() = filterState.getCombinedQuaternion().toRotationMatrix().cast<float>();
+	if (!isOptical)
+		observation.filtered = observation.inertialFiltered;
 
 	//observation.covIMU = ;
 
@@ -557,7 +561,7 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFus
 	inertial.fusion.imuVelocity += inertial.fusion.accel * dt;
 
 
-	if (updateFilter && inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION)
+	if (!isOptical || updateFilter && inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION)
 	{ // Correct with updated IMU filter quat
 		auto measurement = FusedIMUMeasurement{
 			inertial.fusion.quat,
@@ -639,7 +643,12 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw
 	// Update fusion time
 	inertial.fusion.time = sample.timestamp;
 
-	if (updateFilter && inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION)
+	if (!isOptical)
+	{
+		// TODO: Add basic IMU fusion (VQF?)
+		// May be beneficial for bias calculation even for optical
+	}
+	else if (updateFilter && inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION)
 	{ // Correct with updated IMU filter quat
 		auto measurement = FusedIMUMeasurement{
 			inertial.fusion.quat,

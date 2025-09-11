@@ -999,7 +999,7 @@ void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
 	// Interesting colors
 	#define DARK_GREEN_RGB		0.26f, 0.59f, 0.98f
 
-	#define LOG_COL(ID) LOG(LIO, LInfo, "colors["#ID"] = = ImVec4(%ff, %ff, %ff, %ff)", colors[ID].x, colors[ID].y, colors[ID].z, colors[ID].w)
+	#define LOG_COL(ID) LOG(LGUI, LInfo, "colors["#ID"] = = ImVec4(%ff, %ff, %ff, %ff)", colors[ID].x, colors[ID].y, colors[ID].z, colors[ID].w)
 	#define ACCENT_1_RGB		0.26f, 0.59f, 0.98f
 	#define ACCENT_2_RGB		0.11f, 0.64f, 0.92f
 

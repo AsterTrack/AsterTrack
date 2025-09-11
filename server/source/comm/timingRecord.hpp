@@ -45,11 +45,14 @@ struct LatencyMeasurement
 
 struct TimingRecord
 {
-	bool recordTimeSync = false;
+	bool supportsTimeSync = false, recordTimeSync = false;
 	BlockedQueue<TimeSyncMeasurement, 4096> timeSync;
-	bool recordLatency = false;
+	bool supportsLatency = false, recordLatency = false;
 	std::vector<std::string> latencyDescriptions;
 	BlockedQueue<LatencyMeasurement, 4096> latency;
+
+	TimingRecord() = default;
+	TimingRecord(bool timeSync, bool latency) : supportsTimeSync(timeSync), supportsLatency(latency) {}
 
 	/* Non-Blocking - only fully deletes blocks not referenced anymore */
 	void clear()

@@ -1273,13 +1273,21 @@ static void CleanTrackingControllerPanel()
 	ui.seqEventsActive = false;
 	lastControllerTab = nullptr;
 }
-static int timeType = -1;
+
+enum class TimeType { None = -1, TimeSync, Latency, Max };
+const char* timeTypeSelection[] = { "TimeSync", "Latency" };
+static TimeType timeType = TimeType::None;
 static int sourceType = -1;
 static int sourceIndex = -1;
 static int PlotFormatterTimeUS(double value, char* buff, int size, void* data)
 {
-	double width = ImPlot::GetPlotLimits(ImAxis_X1, ImAxis_Y1).Size().x;
-	long timeUS = (long)value;
+	ImAxis axis = (ImAxis)(intptr_t)data;
+	double width = 0;
+	if (axis < ImAxis_Y1)
+		width = ImPlot::GetPlotLimits(axis, IMPLOT_AUTO).Size().x;
+	else
+	 	width = ImPlot::GetPlotLimits(IMPLOT_AUTO, axis).Size().y;
+	long timeUS = (long)std::max((double)LONG_MIN, std::min((double)LONG_MAX, value));
 	if (width > 10000000)
 		return snprintf(buff, size, "%lds", timeUS/1000000);
 	else if (width > 500000)
@@ -1347,9 +1355,10 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 				and the top when it was received, representing the latency
 		*/
 
-		ImPlot::SetupAxis(ImAxis_X1, "Base Timestamp (us)", ImPlotAxisFlags_AutoFit);
-		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS);
-		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency (us)", ImPlotAxisFlags_AutoFit);
+		ImPlot::SetupAxis(ImAxis_X1, "Base Timestamp", ImPlotAxisFlags_AutoFit);
+		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_X1);
+		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency", ImPlotAxisFlags_AutoFit);
+		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_Y1);
 
 		static std::vector<double> sourceTimestamps;
 		static std::vector<double> measuredTimesOffset;
@@ -1455,11 +1464,11 @@ static bool ShowLatencyPanel(BlockedQueue<LatencyMeasurement, 4096>::View<true> 
 
 		// Setup plot
 		ImPlot::SetupAxis(ImAxis_X1, "Sample Timestamp (us)");
-		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS);
+		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_X1);
 		ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
 		ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
 		ImPlot::SetupAxis(ImAxis_Y1, "Latency (us)", ImPlotAxisFlags_LockMin);
-		ImPlot::SetupAxisFormat(ImAxis_Y1, PlotFormatterTimeUS);
+		ImPlot::SetupAxisFormat(ImAxis_Y1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_Y1);
 		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50000);
 
 		// Update frameRange from inputs
@@ -1507,23 +1516,22 @@ static bool ShowTimingPanel()
 	ServerState &state = GetState();
 
 	static const char* typeLabel;
-	if (timeType < 0) typeLabel = "Select Type";
-	const char* timeTypeSelection[] = { "TimeSync", "Latency" };
+	if (timeType == TimeType::None) typeLabel = "Select Type";
 	if (ImGui::BeginCombo("Type", typeLabel, ImGuiComboFlags_WidthFitPreview))
 	{
 		bool changed = false;
-		for (int i = 0; i < 2; i++)
+		for (int i = 0; i < (int)TimeType::Max; i++)
 		{
 			if (!ImGui::Selectable(timeTypeSelection[i])) continue;
 			changed = true;
 			typeLabel = timeTypeSelection[i];
-			timeType = i;
+			timeType = (TimeType)i;
 		}
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
-	if (timeType < 0) return false;
+	if (timeType == TimeType::None) return false;
 
 	ImGui::SameLine();
 	static std::string sourceLabel;
@@ -1540,27 +1548,46 @@ static bool ShowTimingPanel()
 			sourceIndex = i;
 			sourceLabel = std::move(label);
 		}
-		for (auto &imu : state.pipeline.record.imus)
-		{
-			if (imu->id.driver == IMU_DRIVER_NONE) continue; // Not an IMUDevice
-			IMUDevice &device = *(IMUDevice*)imu.get();
-			std::string label = asprintf_s("IMU %s (%d) [%d]", device.id.string.c_str(), device.id.driver, device.index);
-			if (!ImGui::Selectable(label.c_str() , sourceType == 1 && sourceIndex == device.index)) continue;
-			changed = true;
-			sourceType = 1;
-			sourceIndex = device.index;
-			sourceLabel = std::move(label);
-		}
 		auto imuProviders = state.imuProviders.contextualRLock();
 		for (int i = 0; i < imuProviders->size(); i++)
-		{ // TODO: Improve labels, at least based on type
-			if (!imuProviders->at(i)) continue;
-			std::string label = asprintf_s("IMU Provider %d", i);
-			if (!ImGui::Selectable(label.c_str() , sourceType == 2 && sourceIndex == i)) continue;
-			changed = true;
-			sourceType = 2;
-			sourceIndex = i;
-			sourceLabel = std::move(label);
+		{
+			auto &imuProvider = imuProviders->at(i);
+			if (!imuProvider) continue;
+			std::string label = imuProvider->getDescriptor();
+			if (!label.empty())
+			{
+				bool supported = (timeType == TimeType::TimeSync && imuProvider->timingRecord.supportsTimeSync)
+							  || (timeType == TimeType::Latency && imuProvider->timingRecord.supportsLatency);
+				if (supported && ImGui::Selectable(label.c_str() , sourceType == 2 && sourceIndex == i))
+				{
+					changed = true;
+					sourceType = 2;
+					sourceIndex = i;
+					sourceLabel = std::move(label);
+				}
+				else if (!supported)
+					ImGui::Text("%s", label.c_str());
+				ImGui::Indent();
+			}
+
+			for (auto &imu : imuProvider->devices)
+			{
+				if (imu->id.driver == IMU_DRIVER_NONE) continue; // Not an IMUDevice
+				IMUDevice &device = *(IMUDevice*)imu.get();
+				bool supported = (timeType == TimeType::TimeSync && device.timingRecord.supportsTimeSync)
+							  || (timeType == TimeType::Latency && device.timingRecord.supportsLatency);
+				if (!supported) continue;
+				std::string label = asprintf_s("%s (%d) [%d]", device.getDescriptor().c_str(), device.id.driver, device.index);
+				if (label.empty()) continue;
+				if (!ImGui::Selectable(label.c_str() , sourceType == 1 && sourceIndex == device.index)) continue;
+				changed = true;
+				sourceType = 1;
+				sourceIndex = device.index;
+				sourceLabel = std::move(label);
+			}
+
+			if (!label.empty())
+				ImGui::Unindent();
 		}
 		ImGui::EndCombo();
 		if (changed)
@@ -1574,16 +1601,15 @@ static bool ShowTimingPanel()
 	bool found = false;
 	auto handleTimingRecord = [&](TimingRecord &record, bool selected)
 	{
-		record.recordTimeSync = selected && timeType == 0;
-		record.recordLatency = selected && timeType == 1;
-		if (!selected || found) return false;
-		if (timeType == 0)
+		record.recordTimeSync = selected && timeType == TimeType::TimeSync && record.supportsTimeSync;
+		record.recordLatency = selected && timeType == TimeType::Latency && record.supportsLatency;
+		if (record.recordTimeSync)
 		{ // Blocks of 4096 measurements each - keep only last 10
 			record.timeSync.delete_culled();
 			record.timeSync.cull_front(-10);
 			timesyncView = record.timeSync.getView();
 		}
-		else if (timeType == 1)
+		else if (record.recordLatency)
 		{ // Blocks of 4096 measurements each - keep only last 10
 			record.latency.delete_culled();
 			record.latency.cull_front(-10);
@@ -1591,8 +1617,6 @@ static bool ShowTimingPanel()
 			latencyDescriptions = &record.latencyDescriptions;
 		}
 		else return false;
-		// NOTE: If timeType is not applicable to this source, might be discarded without rendering
-		// For timeSync, that isn't detected, for latency, that's missing latencyDescriptor
 		found = true;
 		return true;
 	};
@@ -1615,14 +1639,16 @@ static bool ShowTimingPanel()
 	{
 		if (!imuProviders->at(i)) continue;
 		if (!handleTimingRecord(imuProviders->at(i)->timingRecord, sourceType == 2 && sourceIndex == i)) continue;
-		ui.RequestUpdates();
 	}
+	if (!found) return false; // Influences if we get to cleanup after panel gets inactive
+	imuProviders.unlock();
+	ui.RequestUpdates();
 
-	if (found && timeType == 0)
+	if (timeType == TimeType::TimeSync)
 		return ShowTimeSyncPanel(timesyncView);
-	else if (found && timeType == 1 && !latencyDescriptions->empty())
+	else if (timeType == TimeType::Latency && !latencyDescriptions->empty())
 		return ShowLatencyPanel(latencyView, *latencyDescriptions);
-	else return found; // Influences if we get to cleanup after panel gets inactive
+	return true;
 }
 static void CleanTimingPanel()
 {

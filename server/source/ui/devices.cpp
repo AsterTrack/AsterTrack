@@ -608,8 +608,55 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 	}
 
-	// TODO: List IMU providers and their IMU Devices
-	// Including indication of connection stability, rssi, battery, etc.
+	ImGui::SeparatorText("IMU Devices");
+	// TODO: IMU Display: Include indication of connection stability, rssi, battery, etc.
+
+	if (state.mode != MODE_Device)
+		ImGui::Text("Not in Device Mode! Connect to Hardware to see IMU Devices");
+	
+	auto imuProviders = state.imuProviders.contextualRLock();
+	bool hasIMUDevices = false;
+	for (auto &provider : *imuProviders)
+	{
+		std::string desc = provider->getDescriptor();
+		if (desc.empty() && provider->devices.empty()) continue;
+		hasIMUDevices = true;
+		ImGui::Text("%s", desc.c_str());
+		ImGui::Indent();
+		for (auto &imu : provider->devices)
+		{
+			if (!imu)
+				ImGui::Text("Unassigned IMU!");
+			else if (imu->lastConnected == TimePoint_t::min())
+				ImGui::Text("%s (Disconnected)", imu->getDescriptor().c_str());
+			else
+			{
+				if (imu->isFused)
+					ImGui::Text("%s - %d fused samples", imu->getDescriptor().c_str(), (int)imu->samplesFused.getView().size());
+				else
+					ImGui::Text("%s - %d raw samples", imu->getDescriptor().c_str(), (int)imu->samplesRaw.getView().size());
+				if (ImGui::BeginItemTooltip())
+				{
+					if (imu->hasBattery)
+					{
+						if (imu->isPlugged)
+							ImGui::Text("Charging %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
+						else
+							ImGui::Text("Battery %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
+					}
+					else if (imu->isPlugged)
+						ImGui::TextUnformatted("Wired");
+					else
+						ImGui::TextUnformatted("Power Source Unknown");
+					ImGui::Text("Signal Strength %d%%", (int)(imu->signalStrength*100));
+					ImGui::EndTooltip();
+				}
+			}
+		}
+		ImGui::Unindent();
+	}
+	if (state.mode == MODE_Device && !hasIMUDevices)
+		ImGui::Text("No IMU Devices or Receivers connected!");
 
 	ImGui::End();
 }

@@ -311,6 +311,7 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LCameraDevice]			= "Cam ";
 	LogCategoryIdentifiers[LCameraEmulation]		= "Emul";
 	LogCategoryIdentifiers[LFirmwareUpdate]			= "FwUp";
+	LogCategoryIdentifiers[LIMUDriver]				= "dIMU";
 	LogCategoryIdentifiers[LIO]						= "I/O ";
 
 	LogCategoryDescriptions[LDefault] 				= "Default";
@@ -331,7 +332,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LTrackingMatch]			= "Target Matching";
 	LogCategoryDescriptions[LTrackingOpt]			= "Target Optimisation";
 	LogCategoryDescriptions[LTrackingFilter]		= "Filtering";
-	LogCategoryDescriptions[LTrackingIMU]			= "IMU";
+	LogCategoryDescriptions[LTrackingIMU]			= "IMU Tracking";
 
 	LogCategoryDescriptions[LStreaming]				= "Streaming";
 	LogCategoryDescriptions[LTimesync]				= "TimeSync";
@@ -344,6 +345,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LCameraDevice]			= "Camera Logs";
 	LogCategoryDescriptions[LCameraEmulation]		= "Emulated Blob Detection";
 	LogCategoryDescriptions[LFirmwareUpdate]		= "Firmware Update";
+	LogCategoryDescriptions[LIMUDriver]				= "IMU Driver";
 	LogCategoryDescriptions[LIO]					= "Integrations";
 
 	LogLevelIdentifiers[LTrace]  = "TRACE";

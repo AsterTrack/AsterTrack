@@ -70,6 +70,7 @@ enum LogCategory {
 	LCameraDevice,
 	LCameraEmulation,
 	LFirmwareUpdate,
+	LIMUDriver,
 	LIO,
 	LMaxCategory
 };

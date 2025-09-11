@@ -11,11 +11,14 @@ public:
 	RemoteIMU(std::string path, bool hasMag = false, bool isFused = false)
 		: IMUDevice(IMUIdent{ IMU_DRIVER_REMOTE, path }, hasMag, isFused), sampleCount(0)
 	{
+		timingRecord.supportsLatency = true;
 		timingRecord.latencyDescriptions.push_back("Remote RX");
 		timingRecord.latencyDescriptions.push_back("Fusion");
 	}
 
 	~RemoteIMU() = default;
+
+	std::string getDescriptor();
 
 	std::size_t sampleCount;
 };
@@ -27,12 +30,12 @@ class RemoteIMUSingleton : public IMUDeviceProvider
 {
 public:
 
-	IMUDeviceList devices;
 	IMUDeviceList removedIMUs;
 	IMUDeviceList addedIMUs;
 
 	RemoteIMUSingleton() : IMUDeviceProvider(IMU_DRIVER_REMOTE)
 	{
+		timingRecord.supportsLatency = true;
 		timingRecord.latencyDescriptions.push_back("Remote RX");
 		timingRecord.latencyDescriptions.push_back("Fusion");
 	}
@@ -43,6 +46,7 @@ public:
 	}
 
 	IMUDeviceProviderStatus poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added);
+	std::string getDescriptor();
 };
 
 IMUDeviceProviderStatus RemoteIMUSingleton::poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added)
@@ -63,6 +67,17 @@ IMUDeviceProviderStatus RemoteIMUSingleton::poll(int &updated, IMUDeviceList &re
 	removedIMUs.clear();
 	addedIMUs.clear();
 	return devices.empty()? IMU_STATUS_NO_DEVICES : IMU_STATUS_DEVICES_CONNECTED;
+}
+
+std::string RemoteIMUSingleton::getDescriptor()
+{
+	if (devices.empty()) return "";
+	return asprintf_s("%d Remote IMUs", (int)devices.size());
+}
+
+std::string RemoteIMU::getDescriptor()
+{
+	return asprintf_s("Remote IMU %s", id.string.c_str());
 }
 
 bool initialiseRemoteIMUs(IMUDeviceProviderList &providers)

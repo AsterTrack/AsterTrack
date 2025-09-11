@@ -9,7 +9,7 @@
 
 /**
  * Modified SlimeVR firmware that mainly changes the protocols to include timesync
- * TimeSync is required to get exact timesteps of the IMU samples to fuse with optical data correctly
+ * TimeSync is required to get exact timestamps of the IMU samples to fuse with optical data correctly
  * This adds ~2-3 bytes overhead to communication, but protocol saves some bytes elsewhere
  */
 
@@ -72,13 +72,20 @@ public:
 
 	AsterTrackTracker(std::string serial)
 		: IMUDevice(IMUIdent{ IMU_DRIVER_ASTERTRACK, serial }, false, true)
-	{}
+	{
+		timingRecord.supportsLatency = true;
+		timingRecord.latencyDescriptions.push_back("USB TX");
+		timingRecord.latencyDescriptions.push_back("USB RX");
+		timingRecord.latencyDescriptions.push_back("Fusion");
+	}
 
 	~AsterTrackTracker() = default;
+
+	std::string getDescriptor();
 };
 
-#define TRACKER_INFO_SIZE 11 // 1B Header + 10B Info
-#define TRACKER_STATUS_SIZE 5 // 1B Header + 3B Status + !B RSSI
+#define TRACKER_INFO_SIZE 10 // 10B Info
+#define TRACKER_STATUS_SIZE 4 // 3B Status + !B RSSI
 #define TRACKER_REPORT_SIZE 15 // 1B Header + 12B Data + 2B Timestamp (or 1B Header + 14B Data)
 #define HID_HEADER_SIZE 4
 class AsterTrackReceiver : public IMUDeviceProvider
@@ -87,7 +94,6 @@ public:
 	std::string path;
 	hid_device *handle;
 	TimeSync timeSync;
-	IMUDeviceList devices;
 
 	AsterTrackReceiver(const char *path, hid_device *handle)
 		: path(path), handle(handle),
@@ -95,6 +101,8 @@ public:
 	{
 		ResetTimeSync(timeSync);
 		// Unknown latencies of fusion and radio transmission, only the sample timestamp is sent
+		timingRecord.supportsTimeSync = true;
+		timingRecord.supportsLatency = true;
 		timingRecord.latencyDescriptions.push_back("USB TX");
 		timingRecord.latencyDescriptions.push_back("USB RX");
 		timingRecord.latencyDescriptions.push_back("Fusion");
@@ -109,6 +117,7 @@ public:
 	bool parseInfoPacket(AsterTrackTracker &tracker, uint8_t data[TRACKER_INFO_SIZE]);
 	bool parseStatusPacket(AsterTrackTracker &tracker, uint8_t data[TRACKER_STATUS_SIZE]);
 	bool parseDataPacket(AsterTrackTracker &tracker, uint8_t data[TRACKER_REPORT_SIZE], TimePoint_t &timestamp);
+	std::string getDescriptor();
 };
 
 enum PACKET_HEADER_TYPE
@@ -124,10 +133,11 @@ enum PACKET_HEADER_TYPE
 
 IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &removed, IMUDeviceList &added)
 {
+	ScopedLogCategory scopedLogCategory(LIMUDriver);
 	thread_local uint8_t data[64+8]; 
 	int reports = 0;
 	int read;
-	LOG(LIO, LDebug, "Polling SlimeVR Receiver %s!", path.c_str());
+	LOGC(LTrace, "Polling AsterTrack Receiver %s!", path.c_str());
 	while ((read = hid_read(handle, data, sizeof(data))) > 0)
 	{
 		TimePoint_t recvTime = sclock::now();
@@ -136,26 +146,32 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 		if (read > 64)
 		{ // Multiple reports possible
 			int reportID = data[0];
-			LOG(LIO, LDebug, "  SlimeVR Receiver Report %d sent %d bytes!", reportID, read);
+			LOGC(LTrace, "  AsterTrack Receiver Report %d sent %d bytes!", reportID, read);
 			header = data+1;
 		}
+		else
+		{
+			LOGC(LTrace, "  AsterTrack Receiver received default report of size %d!", read);
+		}
 
-		uint16_t timestampUS = ((uint16_t*)header)[0];
-		LOG(LIO, LTrace, "Raw receiver timestamp of last packet is %d", timestampUS);
-		auto packetSentSync = UpdateTimeSync(timeSync, timestampUS, 1<<16, recvTime);
+		// TODO: Check report ID
+
+		uint32_t timestampUS = ((uint16_t*)header)[0] << 2;
+		LOGC(LTrace, "Raw receiver timestamp of last packet is %d", timestampUS);
+		auto packetSentSync = UpdateTimeSync(timeSync, timestampUS, 1UL<<18, recvTime);
 		TimePoint_t sentTime = packetSentSync.second;
 		if (timingRecord.recordTimeSync)
 			timingRecord.timeSync.push_back({ packetSentSync.first, sentTime, recvTime });
 
 		uint8_t *packet = header+HID_HEADER_SIZE;
 		int packets = (size-HID_HEADER_SIZE)/TRACKER_REPORT_SIZE;
-		LOG(LIO, LDebug, "  SlimeVR Receiver sent %d bytes (%d packets)!", size, packets);
+		LOGC(LTrace, "  AsterTrack Receiver sent %d bytes (%d packets)!", size, packets);
 		for (int p = 0; p < packets; p++)
 		{
 			int i = p*TRACKER_REPORT_SIZE;
 			if (packet[i+0] == HEADER_SKIP) continue;
 			uint8_t tracker_id = packet[i+0] & 0b11111;
-			LOG(LIO, LTrace, "    Packet %d from Tracker IMU %d!", packet[i+0] >> 5, tracker_id);
+			LOGC(LTrace, "    Packet %d (%d) from Tracker IMU %d!", packet[i+0] >> 5, p, tracker_id);
 			assert(tracker_id < 31);
 			if (devices.size() <= tracker_id)
 				devices.resize(tracker_id+1);
@@ -164,7 +180,7 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 				// TODO: Use tracker serial number
 				std::string serial = asprintf_s("IMU %d", tracker_id);
 				auto imu = std::make_shared<AsterTrackTracker>(serial);
-				LOG(LIO, LInfo, "    Registered new Tracker IMU %d (%s)!", tracker_id, imu->id.serial().c_str());
+				LOGC(LInfo, "    Registered new AsterTrack Tracker %d (%s)!", tracker_id, imu->id.serial().c_str());
 				added.push_back(imu); // new shared_ptr
 				devices[tracker_id] = std::move(imu);
 			}
@@ -179,6 +195,12 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 						(uint16_t)std::max<long>(0, dtUS(sampleTime, sentTime)),
 						(uint16_t)std::max<long>(0, dtUS(sampleTime, recvTime)) } } );
 				}
+				if (tracker.timingRecord.recordLatency)
+				{
+					tracker.timingRecord.latency.push_back({ sampleTime, { 
+						(uint16_t)std::max<long>(0, dtUS(sampleTime, sentTime)),
+						(uint16_t)std::max<long>(0, dtUS(sampleTime, recvTime)) } } );
+				}
 				updated++;
 			}
 			/* else if (tracker.status == SLIMEVR_TRACKER_DISCONNECTED || tracker.status == SLIMEVR_TRACKER_ERROR)
@@ -187,7 +209,7 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 	}
 	if (read < 0)
 	{
-		LOG(LIO, LInfo, "SlimeVR Receiver %s: %ls", path.c_str(), hid_error(handle));
+		LOGC(LWarn, "AsterTrack Receiver %s: %ls", path.c_str(), hid_error(handle));
 		return IMU_STATUS_DISCONNECTED;
 	}
 	return devices.empty()? IMU_STATUS_NO_DEVICES : IMU_STATUS_DEVICES_CONNECTED;
@@ -195,32 +217,31 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 
 bool AsterTrackReceiver::parseInfoPacket(AsterTrackTracker &tracker, uint8_t data[TRACKER_INFO_SIZE])
 {
-	uint8_t header = data[0];
-	tracker.board = (SLIMEVR_BOARD_TYPE)data[1];
-	tracker.MCU = (SLIMEVR_MCU_TYPE)data[2];
+	tracker.board = (SLIMEVR_BOARD_TYPE)data[0];
+	tracker.MCU = (SLIMEVR_MCU_TYPE)data[1];
 	if (tracker.board >= SLIMEVR_BOARD_MAX && tracker.board != SLIMEVR_BOARD_DEV_RESERVED)
 		tracker.board = SLIMEVR_BOARD_UNKNOWN;
 	if (tracker.MCU >= SLIMEVR_MCU_MAX && tracker.MCU != SLIMEVR_MCU_DEV_RESERVED)
 		tracker.MCU = SLIMEVR_MCU_UNKNOWN;
 	// TODO: Parse remaining info packet
-	uint8_t imuID = data[4];
-	uint8_t magID = data[5];
-	uint16_t fw_date = *(uint16_t*)&data[6];
-	uint8_t fw_major = data[8];
-	uint8_t fw_minor = data[9];
-	uint8_t fw_patch = data[10];
+	uint8_t reserved = data[2];
+	uint8_t imuID = data[3];
+	uint8_t magID = data[4];
+	uint16_t fw_date = *(uint16_t*)&data[5];
+	uint8_t fw_major = data[7];
+	uint8_t fw_minor = data[8];
+	uint8_t fw_patch = data[9];
 	return true;
 }
 
 bool AsterTrackReceiver::parseStatusPacket(AsterTrackTracker &tracker, uint8_t data[TRACKER_STATUS_SIZE])
 {
-	uint8_t header = data[0];
-	tracker.hasBattery = data[1]&0x80;
+	tracker.hasBattery = data[0]&0x80;
+	tracker.batteryLevel = (data[0]&0x7F)/128.0f;
 	tracker.isPlugged = data[1] == 255;
-	tracker.batteryLevel = (data[1]&0x7F)/128.0f;
-	tracker.batteryVolts = (data[2]*0.01f)+2.45f;
-	tracker.temperature = (data[3] - 128.5f)/2 + 25;
-	tracker.signalStrength = data[4];
+	tracker.batteryVolts = (data[1]*0.01f)+2.45f;
+	tracker.temperature = (data[2] - 128.5f)/2 + 25;
+	tracker.signalStrength = data[3]/255.0f;
 	return true;
 }
 
@@ -233,6 +254,9 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 	{
 		case TYPE_IMU_CAYLEY:
 		{
+			if (tracker.lastConnected == TimePoint_t::min())
+				LOGC(LInfo, "    First packet from AsterTrack Tracker %d (%s) - Connected!", tracker_id, tracker.id.serial().c_str());
+			tracker.lastConnected = timestamp;
 			IMUSampleFused report = {};
 			constexpr float quatScale = 1.0f / (1<<15), vecScale = 1.0f / (1<<7);
 			Eigen::Vector3f quatEnc(
@@ -260,7 +284,7 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 			uint16_t timestamp_us = *(uint16_t*)(data+13);
 			report.timestamp = GetTimeSynced(timeSync, timestamp_us, 1 << 16);
 			timestamp = report.timestamp;
-			LOG(LIO, LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
+			LOGC(LTrace, "    Received IMU sample from tracker %d with latency of %.3fms",
 				tracker_id, dtMS(report.timestamp, sclock::now()));
 			tracker.samplesFused.push_back(report);
 			return true;
@@ -268,14 +292,29 @@ bool AsterTrackReceiver::parseDataPacket(AsterTrackTracker &tracker, uint8_t dat
 		case TYPE_REGISTER:
 			// IMU that is paired but not connected - don't care for it right now, already registered anyway
 			return false;
+		case TYPE_INFO_STATUS:
+			parseInfoPacket(tracker, data+1);
+			parseStatusPacket(tracker, data+1+TRACKER_INFO_SIZE);
+			return true;
 		default:
-			LOG(LIO, LDarn, "    Received invalid packet with id %d", type);
+			LOGC(LDarn, "    Received invalid packet with id %d", type);
 			return false;
 	}
 }
 
+std::string AsterTrackReceiver::getDescriptor()
+{
+	return asprintf_s("AsterTrack Receiver with %d known IMUs", (int)devices.size());
+}
+
+std::string AsterTrackTracker::getDescriptor()
+{
+	return asprintf_s("AsterTrack %s", id.string.c_str());
+}
+
 bool detectAsterTrackReceivers(IMUDeviceProviderList &providers)
 {
+	ScopedLogCategory scopedLogCategory(LIMUDriver);
 	bool added = false;
 	hid_device_info *devs = hid_enumerate(0x1209, 0x7691);
 	for (hid_device_info *dev = devs; dev; dev = dev->next)
@@ -290,12 +329,12 @@ bool detectAsterTrackReceivers(IMUDeviceProviderList &providers)
 		hid_device *handle = hid_open_path(dev->path);
 		if (!handle)
 		{
-			LOG(LIO, LWarn, "Failed to add custom SlimeVR Receiver %s", dev->path);
+			LOGC(LWarn, "Failed to add AsterTrack Receiver %s", dev->path);
 			continue;
 		}
 		hid_set_nonblocking(handle, true);
 		providers.push_back(std::make_shared<AsterTrackReceiver>(dev->path, handle));
-		LOG(LIO, LInfo, "Adding SlimeVR Receiver %s", dev->path);
+		LOGC(LInfo, "Adding AsterTrack Receiver %s", dev->path);
 		added = true;
 	}
 	hid_free_enumeration(devs);

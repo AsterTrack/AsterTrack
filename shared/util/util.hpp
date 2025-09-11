@@ -106,7 +106,7 @@ static std::string asprintf_s( const char *format, ...)
 /* shortDiff */
 
 template<typename UINT, typename INT>
-static inline INT shortDiff(UINT a, UINT b, INT bias, INT overflow)
+static inline INT shortDiff(UINT a, UINT b, INT bias, UINT overflow)
 {
 	static_assert(std::numeric_limits<UINT>::lowest() == 0);
 	assert(a < overflow && b < overflow);

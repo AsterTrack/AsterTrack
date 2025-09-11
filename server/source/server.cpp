@@ -617,7 +617,6 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		{ // Fetch new state from IMUs
 			auto imuLock = state->imuProviders.contextualLock();
 			int updatedDevices = 0;
-			IMUDeviceList removedIMUs, addedIMUs;
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
 				auto status = imuProvider->get()->poll(updatedDevices, removedIMUs, addedIMUs);
@@ -632,7 +631,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			}
 		}
 		if (!addedIMUs.empty() || !removedIMUs.empty())
-			threadPool.push([](int, IMUDeviceList &removedIMUs, IMUDeviceList &addedIMUs){
+			threadPool.push([](int, IMUDeviceList &addedIMUs, IMUDeviceList &removedIMUs){
 				ServerState &state = GetState();
 				// In threadPool so we're not blocking (waiting for frame processing) in device supervisor thread
 				std::unique_lock pipeline_lock(state.pipeline.pipelineLock);

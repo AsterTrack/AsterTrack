@@ -35,6 +35,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "scope_guard/scope_guard.hpp"
 
+#include "unsupported/Eigen/NonLinearOptimization"
+
 #include <numeric>
 
 static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr);
@@ -153,15 +155,14 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					view->targetCalib.initialise(newRange.target.markers);
 					*view->target.contextualLock() = std::move(newRange.target);
 					if (pipeline.isSimulationMode)
-					{
 						view->simulation.targetGT = &pipeline.simulation.contextualRLock()->getPrimary().target;
-					}
-					{ // Reconstruct and optimise view immediately
-						view->settings.typeFlags = 0b11;
-						view->settings.maxSteps = pipeline.targetCalib.params.view.initialOptLimit;
-						view->settings.tolerances = pipeline.targetCalib.params.view.initialOptTolerance;
-						view->planned = true;
-					}
+					// Reconstruct and optimise view immediately, and if good, even reevaluate to merge markers
+					view->plan = {
+						TargetView::RECONSTRUCT, TargetView::OPTIMISE_COARSE,
+						TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
+					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
+					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE };
+					view->planned = true;
 					views_lock->push_back(std::move(view));
 				}
 			}
@@ -208,6 +209,31 @@ static void makeGTTarget(const SimulationState &simulation, const SequenceData &
 	}
 }
 
+static void normaliseTarget(const PipelineState &pipeline, ObsTarget &target, ObsTarget *targetGT = nullptr)
+{
+	if (targetGT)
+	{ // Adjust tgt to align with tgtGT
+		debugTargetResults(target, *targetGT);
+		Eigen::Isometry3f GTpose = getTransformToGT(target, *targetGT);
+		for (auto &marker : target.markers)
+			marker = GTpose * marker;
+		GTpose = GTpose.inverse();
+		for (auto &frame : target.frames)
+			frame.pose = frame.pose * GTpose;
+	}
+	else
+	{ // Adjust targets CoM
+		Eigen::Vector3f com = Eigen::Vector3f::Zero();
+		for (auto &marker : target.markers)
+			com += marker;
+		com /= target.markers.size();
+		for (auto &marker : target.markers)
+			marker -= com;
+		for (auto &frame : target.frames)
+			frame.pose.translation() += frame.pose.rotation() * com;
+	}
+};
+
 static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr)
 {
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { viewPtr->control.finished = true; });
@@ -219,7 +245,8 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 	LOGC(LDebug, "=======================\n");
 
 	// Copy data
-	auto settings = viewPtr->settings;
+	auto plan = std::move(viewPtr->plan);
+	if (plan.empty()) return;
 	TargetCalibParameters params = pipeline->targetCalib.params;
 	// Copy camera calibration
 	std::vector<CameraCalib> calibs(cameras.size());
@@ -245,6 +272,7 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 		if (target.markers.empty() || target.frames.empty())
 		{
 			LOGC(LInfo, "Target view has lost all data during optimisation! Deleting!\n");
+			viewPtr->deleted = true;
 			auto views_lock = pipeline->targetCalib.views.contextualLock();
 			auto it = std::find(views_lock->begin(), views_lock->end(), viewPtr);
 			if (it != views_lock->end())
@@ -273,45 +301,18 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 	if (pipeline->isSimulationMode && viewPtr->simulation.targetGT)
 		makeGTTarget(*pipeline->simulation.contextualRLock(), *pipeline->seqDatabase.contextualRLock(), calibs, targetGT, *viewPtr->simulation.targetGT);
 
-	auto alignWithGT = [](ObsTarget &target, const ObsTarget &tgtGT)
+	auto reconstructView = [&]()
 	{
-		// Adjust tgt to align with tgtGT
-		Eigen::Isometry3f GTpose = getTransformToGT(target, tgtGT);
-		for (auto &marker : target.markers)
-			marker = GTpose * marker;
-		GTpose = GTpose.inverse();
-		for (auto &frame : target.frames)
-			frame.pose = frame.pose * GTpose;
-	};
-	auto normaliseTarget = [](ObsTarget &target)
-	{
-		// Adjust targets CoM
-		Eigen::Vector3f com = Eigen::Vector3f::Zero();
-		for (auto &marker : target.markers)
-			com += marker;
-		com /= target.markers.size();
-		for (auto &marker : target.markers)
-			marker -= com;
-		for (auto &frame : target.frames)
-			frame.pose.translation() += frame.pose.rotation() * com;
-	};
-
-	if (settings.typeFlags & 0b01)
-	{
-		LOGC(LDebug, "== Reconstructing Target View:\n");
-
+	#if PERF >= 2
 		int maxIteration = 100, minAbortIteration = 100, correctIteration = 20, dropIteration = 100;
-	#ifndef NDEBUG // Debug mode is too slow, use fewer iterations
-		maxIteration = 20;
-		minAbortIteration = 20;
-		correctIteration = 20;
-		dropIteration = 20;
+	#elif PERF >= 1
+		int maxIteration = 50, minAbortIteration = 50, correctIteration = 20, dropIteration = 50;
+	#elif PERF == 0
+		int maxIteration = 20, minAbortIteration = 20, correctIteration = 20, dropIteration = 20;
 	#endif
 
 		// Pass on a Ground-Truth target in simulation
-		ObsTarget *tgtGTPtr = nullptr;
-		if (pipeline->isSimulationMode)
-			tgtGTPtr = &targetGT;
+		ObsTarget *tgtGTPtr = pipeline->isSimulationMode? &targetGT : nullptr;
 
 		bool success = reconstructTarget(calibs, obsData.targets.front(),
 			maxIteration, minAbortIteration, correctIteration, dropIteration,
@@ -321,45 +322,23 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 		{
 			LOGC(LWarn, "Failed to reconstruct target motion and structure!\n");
 			LOGC(LDebug, "=======================\n");
-			return;
+			return false;
 		}
 
-		if (pipeline->isSimulationMode)
-		{
-			debugTargetResults(obsData.targets.front(), targetGT);
-			alignWithGT(obsData.targets.front(), targetGT);
-		}
-		else
-		{
-			normaliseTarget(obsData.targets.front());
-		}
+		return true;
+	};
 
-		OptErrorRes error = getTargetErrorDist(calibs, obsData.targets.front());
-		LOGC(LDebug, "Target reprojection rmse of %fpx, with %d samples\n",
-			error.rmse*PixelFactor, (int)obsData.targets.front().totalSamples);
-		viewPtr->settings.typeFlags &= ~0b01;
-	}
-
-	// Calculate error and update source on main thread with new results
-	viewPtr->state.errors = updateReprojectionErrors(obsData, calibs);
-	if (!updateTargetView())
-		return;
-	if (stopToken.stop_requested())
-		return;
-
-	if (settings.typeFlags & 0b10)
+	auto optimiseView = [&](int iterations, float tolerances)
 	{
 		LOGC(LDebug, "== Optimising Target View:\n");
 
-		OptimisationOptions options(false, false, true);
-
 		auto lastIt = pclock::now();
-		bool continueOptimisation = false;
+		bool abortOptimisation = false, continueOptimisation = false;
+		viewPtr->state.maxSteps = viewPtr->state.numSteps + iterations;
+		viewPtr->state.complete = false;
 
 		auto itUpdate = [&](OptErrorRes errors){
 			ScopedLogLevel scopedLogLevel(LTrace);
-
-			viewPtr->state.errors = errors;
 			viewPtr->state.numSteps++;
 
 			bool hasNaN = std::isnan(errors.mean) || std::isnan(errors.stdDev) || std::isnan(errors.max);
@@ -370,22 +349,16 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 			LOGC(LDebug, "   Optimisation step took %.2fms!\n", dtMS(lastIt, pclock::now()));
 			lastIt = pclock::now();
 
-			// Debug step
-			if (pipeline->isSimulationMode)
-			{
-				debugTargetResults(obsData.targets.front(), targetGT);
-				alignWithGT(obsData.targets.front(), targetGT);
-			}
-			else
-			{
-				normaliseTarget(obsData.targets.front());
-			}
+			normaliseTarget(*pipeline, obsData.targets.front(), pipeline->isSimulationMode? &targetGT : nullptr);
 
-			// Re-calculate final error to update optData.targets.frame.error
 			viewPtr->state.errors = errors = updateReprojectionErrors(obsData, calibs);
 
 			if (!updateTargetView())
+			{
+				abortOptimisation = true;
+				continueOptimisation = false;
 				return false;
+			}
 
 			// Check if we want to interrupt optimisation to merge markers or delete frames
 			LOGC(LDebug, "Reprojection rmse of %fpx, with %d samples\n",
@@ -400,38 +373,100 @@ static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState
 				{
 					LOGC(LWarn, "Removed all data during outlier determination! %d frames and %d markers left!",
 						(int)obsData.targets.front().frames.size(), (int)obsData.targets.front().markers.size());
+					abortOptimisation = true;
+					continueOptimisation = false;
 					return false;
 				}
 			}
 
-			if (filtered)
-			{
-				continueOptimisation = !stopToken.stop_requested() && viewPtr->state.numSteps < settings.maxSteps && !hasNaN;
-				return false;
-			}
-
-			return !stopToken.stop_requested() && viewPtr->state.numSteps < settings.maxSteps && !hasNaN;
+			abortOptimisation = stopToken.stop_requested() || hasNaN;
+			continueOptimisation = !abortOptimisation && viewPtr->state.numSteps < viewPtr->state.maxSteps;
+			return !filtered && continueOptimisation;
 		};
 
 		do
 		{
 			continueOptimisation = false;
-			viewPtr->state.lastStopCode = optimiseTargets(obsData, calibs, itUpdate, settings.tolerances);
+			viewPtr->state.lastStopCode = optimiseTargets(obsData, calibs, itUpdate, tolerances);
 		}
 		while (continueOptimisation && viewPtr->state.lastStopCode < 0);
 		LOGC(LDebug, "%s", getStopCodeText(viewPtr->state.lastStopCode));
 
-		viewPtr->state.complete = !stopToken.stop_requested() && viewPtr->state.numSteps < settings.maxSteps;
+		if (viewPtr->state.lastStopCode == Eigen::LevenbergMarquardtSpace::ImproperInputParameters)
+		{ // Not enough data, abort completely
+			LOGC(LWarn, "Not enough data, deleting Target View!");
+			obsData.targets.front().frames.clear();
+			obsData.targets.front().totalSamples = 0;
+			abortOptimisation = true;
+		}
+
+		viewPtr->state.complete = !stopToken.stop_requested() && viewPtr->state.numSteps < viewPtr->state.maxSteps;
 		LOGC(LDebug, "Calibration finished with %d/%d steps, was%s stopped, is%s complete\n",
-			viewPtr->state.numSteps, settings.maxSteps, stopToken.stop_requested()? "" : " not", viewPtr->state.complete? "" : " not");
-		viewPtr->settings.typeFlags &= ~0b10;
+			viewPtr->state.numSteps, viewPtr->state.maxSteps, stopToken.stop_requested()? "" : " not", viewPtr->state.complete? "" : " not");
+
+		return !abortOptimisation;
+	};
+
+	auto reevaluateMarkers = [&]()
+	{
+		auto obs_lock = pipeline->seqDatabase.contextualRLock();
+		int mergeCount = reevaluateMarkerSequences<true>(calibs, obs_lock->markers, obsData.targets.front(), { 0.5f, 10, 3, 3 });
+		updateTargetObservations(obsData.targets.front(), obs_lock->markers);
+		return mergeCount > 0;
+	};
+
+	auto expandFrames = [&]()
+	{
+		auto obs_lock = pipeline->seqDatabase.contextualRLock();
+		TargetCalibration3D trkTarget(finaliseTargetMarkers(calibs, obsData.targets.front(), params.post));
+		expandFrameObservations(calibs, pipeline->record.frames, obsData.targets.front(), trkTarget, params.assembly.trackFrame);
+		reevaluateMarkerSequences<true>(calibs, obs_lock->markers, obsData.targets.front(), { 0.5f, 10, 3, 10 });
+		updateTargetObservations(obsData.targets.front(), obs_lock->markers);
+	};
+
+	for (TargetView::CalibrationStep step : plan)
+	{
+		bool success = true;
+		viewPtr->state.step = step;
+		switch (step)
+		{
+			case TargetView::NONE:
+				break;
+			case TargetView::RECONSTRUCT:
+				success = reconstructView();
+				break;
+			case TargetView::OPTIMISE_COARSE:
+				success = optimiseView(params.view.initialOptLimit, params.view.initialOptTolerance);
+				break;
+			case TargetView::OPTIMISE_FINE:
+				success = optimiseView(params.view.manualOptLimitIncrease, params.view.manualOptTolerance);
+				break;
+			case TargetView::TEST_REEVALUATE_MARKERS:
+				if (!viewPtr->selected) success = false;
+				else success = reevaluateMarkers();
+				break;
+			case TargetView::REEVALUATE_MARKERS:
+				success = reevaluateMarkers();
+				break;
+			case TargetView::EXPAND_FRAMES:
+				expandFrames();
+				break;
+		}
+		viewPtr->state.step = TargetView::NONE;
+		if (success)
+		{
+			normaliseTarget(*pipeline, obsData.targets.front(), pipeline->isSimulationMode? &targetGT : nullptr);
+			viewPtr->state.errors = updateReprojectionErrors(obsData, calibs);
+		}
+		if (!updateTargetView())
+			return;
+		if (!success)
+			return;
+		if (stopToken.stop_requested())
+			return;
 	}
 
-	if (!updateTargetView())
-		return;
-
-	if (!stopToken.stop_requested()) LOGC(LDebug, "== Finished Calibrating Target View!\n");
-	else LOGC(LDebug, "== Aborted Target View Calibration!\n");
+	LOGC(LDebug, "== Finished Calibrating Target View!\n");
 }
 
 static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<CameraCalib> &calibs,
@@ -582,7 +617,7 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 	TargetCalibration3D trkTarget(base.target.markers);
 	for (auto &targetView : targetViews)
 	{
-		if (!targetView->selected) continue;
+		if (!targetView->selected || targetView->control.running()) continue;
 		if (std::find(base.merged.begin(), base.merged.end(), targetView->id) != base.merged.end())
 			continue;
 
@@ -753,7 +788,7 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 	std::vector<std::tuple<std::shared_ptr<TargetView>, int, float>> alignedViews;
 	for (auto &targetView : targetViews)
 	{
-		if (!targetView->selected) continue;
+		if (!targetView->selected || targetView->control.running()) continue;
 		if (std::find(base.merged.begin(), base.merged.end(), targetView->id) != base.merged.end()) continue;
 		auto alignment = base.alignmentStats.find(targetView->id);
 		if (alignment == base.alignmentStats.end()) continue;
@@ -814,7 +849,7 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 	std::vector<std::shared_ptr<TargetView>> targetViews;
 	for (auto &viewPtr : views)
 	{
-		if (viewPtr->selected)
+		if (viewPtr->selected && !viewPtr->control.running())
 			targetViews.push_back(viewPtr); // new shared_ptr
 	}
 	if (targetViews.empty())
@@ -918,6 +953,9 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 	auto recordAssemblyStage = [&](TargetAssemblyBase &base, TargetAssemblyStageID stage, int step, std::string &&label) -> TargetAssemblyStage&
 	{
+		// TODO: use base.simulation.targetGT?
+		normaliseTarget(*pipeline, base.target, nullptr);
+		
 		base.errors = getTargetErrorDist(calibs, base.target);
 		base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline->getCalibs(), base.target, pipeline->targetCalib.params.post));
 		auto stages_lock = pipeline->targetCalib.assemblyStages.contextualLock();
@@ -930,6 +968,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 		// Keep a copy of assembly stage for inspection
 		stages_lock->push_back(std::make_shared<TargetAssemblyStage>(base, stage, step, std::move(label)));
 		SignalPipelineUpdate();
+
 		return *stages_lock->back();
 	};
 
@@ -964,7 +1003,9 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				assembly.state.currentStage = "Aligning views";
 				std::vector<TargetAlignResults> alignCandidates;
 				realignTargetViewsToBase(base, *pipeline->targetCalib.views.contextualLock(), calibs, params, alignCandidates);
+				bool empty = alignCandidates.empty();
 				recordAssemblyStage(base, stage, step, asprintf_s("Aligned views to base")).alignResults = std::move(alignCandidates);
+				if (empty) return false;
 				break;
 			}
 
@@ -979,13 +1020,22 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				// Pick view to merge with and already merge some close markers that are likely to be one
 				std::pair<int, int> viewsMerged = beginNewTargetViewMerge(base, observations, *pipeline->targetCalib.views.contextualRLock(), calibs, params, candidates);
 
-				// For debugging purposes
-				recordAssemblyStage(preMergeBase, stage, step, asprintf_s("%d views tested", viewsMerged.first)).mergeTests = std::move(candidates);
-
 				if (!viewsMerged.first)
 				{ // No merge attempts, all views are already merged
 					LOGC(LInfo, "  Already merged all %d views!", (int)base.merged.size());
 					base.merging = nullptr; // Just to make sure
+					return false;
+				}
+				else
+				{
+					recordAssemblyStage(preMergeBase, stage, step, asprintf_s("%d views tested", viewsMerged.first)).mergeTests = std::move(candidates);
+				}
+
+				if (!viewsMerged.second)
+				{ // Had only failed merge attempts
+					LOGC(LInfo, "  Could not merge remaining %d views!", (int)base.merged.size());
+					base.merging = nullptr; // Just to make sure
+					return false;
 				}
 				else
 				{
@@ -1100,7 +1150,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				assembly.state.optimising = true;
 				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt/2;
 				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
-					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
+					options, params.optMaxIt, params.optTolerance, params.outlierSigmasConservative, stopToken, itUpdate);
 				assembly.state.optimising = false;
 				if (stopToken.stop_requested()) break;
 
@@ -1158,6 +1208,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			default:
 				break;
 		}
+		return true;
 	};
 
 	/*
@@ -1218,6 +1269,9 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 		return;
 	}
 
+	if (skipStep >= 0)
+		LOGC(LInfo, "Continuing assembly after stage %d", skipStep);
+
 	/*
 	 * Follow algorithm
 	 */
@@ -1234,12 +1288,14 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 		// View merging step
 		if (skipStep < 2)
 		{
-			performAssemblyStage(base, STAGE_INT_ALIGN, 2, params, aquisition);
+			if (!performAssemblyStage(base, STAGE_INT_ALIGN, 2, params, aquisition))
+				break;
 			if (stopToken.stop_requested()) break;
 		}
 		if (skipStep < 3)
 		{
-			performAssemblyStage(base, STAGE_INT_VIEW, 3, params, aquisition);
+			if (!performAssemblyStage(base, STAGE_INT_VIEW, 3, params, aquisition))
+				break;
 			if (stopToken.stop_requested()) break;
 		}
 		if (skipStep < 4 && base.merging)
@@ -1275,6 +1331,8 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			performAssemblyStage(base, STAGE_OPTIMISATION, 9, params, aquisition);
 			if (stopToken.stop_requested()) break;
 		}
+
+		skipStep = -1;
 	}
 
 	if (!stopToken.stop_requested())

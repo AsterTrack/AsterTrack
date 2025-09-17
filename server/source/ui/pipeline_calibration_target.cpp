@@ -170,10 +170,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 						updateTargetObservations(*view_lock, pipeline.seqDatabase.contextualRLock()->markers);
 						view->state.errors = getTargetErrorDist(pipeline.getCalibs(), *view_lock);
 					}
+					view->state.calibrated = true;
 					// Also start optimisation
-					view->settings.typeFlags = 0b10; // Optimise only
-					view->settings.maxSteps = view->state.numSteps + pipeline.targetCalib.params.view.initialOptLimit;
-					view->settings.tolerances = pipeline.targetCalib.params.view.initialOptTolerance;
+					view->plan = { TargetView::OPTIMISE_COARSE };
 					view->planned = true;
 				}
 			}
@@ -259,10 +258,25 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::EndTooltip();
 			}
 			ImGui::TableNextColumn();
-			if (view.control.running() && (view.settings.typeFlags & 0b01))
-				ImGui::Text("...");
-			else if (view.control.running() && (view.settings.typeFlags & 0b10))
-				ImGui::Text("%.3fpx (%d/%d)", view.state.errors.rmse*PixelFactor, view.state.numSteps, view.settings.maxSteps);
+			if (view.control.running())
+			{
+				switch (view.state.step)
+				{
+					case TargetView::RECONSTRUCT:
+						ImGui::TextUnformatted("Reconstructing...");
+						break;
+					case TargetView::REEVALUATE_MARKERS:
+					case TargetView::TEST_REEVALUATE_MARKERS:
+						ImGui::TextUnformatted("Reevaluating...");
+						break;
+					case TargetView::OPTIMISE_COARSE:
+					case TargetView::OPTIMISE_FINE:
+					ImGui::Text("%.3fpx (%d/%d)", view.state.errors.rmse*PixelFactor, view.state.numSteps, view.state.maxSteps);
+						break;
+					default:
+						ImGui::TextUnformatted("...");
+				}
+			}
 			else if (view.state.calibrated && view.state.complete)
 				ImGui::Text("%.3fpx [%d]", view.state.errors.rmse*PixelFactor, view.state.numSteps);
 			else if (view.state.calibrated && view.state.numSteps > 0)
@@ -277,6 +291,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				view.state.errors.stdDev*PixelFactor,
 				view.state.errors.max*PixelFactor);
 			ImGui::TableNextColumn();
+			bool deleteView = CrossButton("Del");
+			ImGui::SameLine();
 			bool select = visState.targetCalib.view == viewPtr;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
@@ -286,8 +302,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					visState.updateVisTarget();
 				}
 			}
-			ImGui::SameLine();
-			if (CrossButton("Del"))
+			if (deleteView)
 			{
 				if (visState.targetCalib.view == viewPtr)
 				{
@@ -330,12 +345,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		{
 			if (pipeline.targetCalib.baseView == visState.targetCalib.view)
 			{
-				if (ImGui::Button("Auto-Select Base View"))
+				if (ImGui::Button("Auto-Select Base View", SizeWidthDiv2()))
 					pipeline.targetCalib.baseView = nullptr;
 			}
 			else
 			{
-				if (ImGui::Button("Pick as Base View"))
+				if (ImGui::Button("Pick as Base View", SizeWidthDiv2()))
 					pipeline.targetCalib.baseView = visState.targetCalib.view; // new shared_ptr
 			}
 		}
@@ -344,8 +359,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::TextUnformatted("View has been selected as Base View.");
 		}
 
-		ImGui::SameLine();
-		if (ImGui::Button("Save OBJ"))
+		SameLineTrailing(SizeWidthDiv2().x);
+		if (ImGui::Button("Save OBJ", SizeWidthDiv2()))
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
@@ -353,23 +368,45 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		}
 
 		ImGui::BeginDisabled(view.control.stopping());
-		if (view.control.running())
+		if (view.deleted)
+		{
+			ImGui::TextUnformatted("Deleted view due to insufficient data!");
+		}
+		else if (view.control.running())
 		{
 			if (ImGui::Button(view.control.stopping()? "Stopping..." : "Stop", ButtonSize))
 			{
 				view.control.stop_source.request_stop();
 			}
 			ImGui::SameLine();
-			if (view.settings.typeFlags & 0b01)
-				ImGui::TextUnformatted("Reconstructing Target View...");
-			else if (view.settings.typeFlags & 0b10)
-				ImGui::Text("Optimising %d/%d...", view.state.numSteps, view.settings.maxSteps);
+			switch (view.state.step)
+			{
+				case TargetView::RECONSTRUCT:
+					ImGui::TextUnformatted("Reconstructing Target View...");
+					break;
+				case TargetView::REEVALUATE_MARKERS:
+				case TargetView::TEST_REEVALUATE_MARKERS:
+					ImGui::TextUnformatted("Reevaluating Markers Sequences...");
+					break;
+				case TargetView::OPTIMISE_COARSE:
+				case TargetView::OPTIMISE_FINE:
+					ImGui::Text("Optimising %d/%d...", view.state.numSteps, view.state.maxSteps);
+					break;
+				default:
+					ImGui::TextUnformatted("Working...");
+			}
 		}
 		else
 		{
-			if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
-			{
-				view.settings.typeFlags = 0b01; // Reconstruct only
+			if (ImGui::Button("Retry", SizeWidthDiv2()))
+			{ // Reconstruct and optimise view again, and if good, even reevaluate to merge markers
+				view.selected = false; // Reset, may be automatically selected if next try is good
+				// Currently, TEST_REEVALUATE_MARKERS actually checks selected state to test
+				view.plan = {
+					TargetView::RECONSTRUCT, TargetView::OPTIMISE_COARSE,
+					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
+					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
+					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE };
 				view.planned = true;
 			}
 			ImGui::SetItemTooltip("Calculates an initial estimate of the target structure and motion.");
@@ -377,46 +414,19 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::SameLine();
 			if (ImGui::Button("Optimise", SizeWidthDiv2()))
 			{
-				view.settings.typeFlags = 0b10; // Assembly phases
-				view.settings.maxSteps = view.state.numSteps + pipeline.targetCalib.params.view.manualOptLimitIncrease;
-				view.settings.tolerances = pipeline.targetCalib.params.view.manualOptTolerance;
+				view.plan = { TargetView::OPTIMISE_FINE };
 				view.planned = true;
 			}
 			
 			if (ImGui::Button("Reevaluate Markers", SizeWidthDiv2()))
 			{
-				std::vector<CameraCalib> calibs = pipeline.getCalibs();
-				auto obs_lock = pipeline.seqDatabase.contextualRLock();
-				auto target_lock = visState.targetCalib.view->target.contextualLock();
-				reevaluateMarkerSequences<true>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 3 });
-				reevaluateMarkerSequences<false>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 3 });
-				updateTargetObservations(*target_lock, obs_lock->markers);
-				view.state.errors = getTargetErrorDist(calibs, *target_lock);
-				view.targetCalib = TargetCalibration3D(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
-				// Plan optimisation
-				view.settings.outlierSigma = 10.0f;
-				view.settings.typeFlags = 0b10; // Assembly phases
-				view.settings.maxSteps = view.state.numSteps + pipeline.targetCalib.params.view.manualOptLimitIncrease;
-				view.settings.tolerances = pipeline.targetCalib.params.view.manualOptTolerance;
+				view.plan = { TargetView::REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE };
 				view.planned = true;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Expand Frames", SizeWidthDiv2()))
 			{
-				std::vector<CameraCalib> calibs = pipeline.getCalibs();
-				auto obs_lock = pipeline.seqDatabase.contextualRLock();
-				auto target_lock = visState.targetCalib.view->target.contextualLock();
-				TargetCalibration3D trkTarget(finaliseTargetMarkers(calibs, *target_lock, pipeline.targetCalib.params.post));
-				expandFrameObservations(calibs, pipeline.record.frames, *target_lock, trkTarget, pipeline.targetCalib.params.assembly.trackFrame);
-				reevaluateMarkerSequences<true>(calibs, obs_lock->markers, *target_lock, { 0.5f, 10, 3, 10 });
-				updateTargetObservations(*target_lock, obs_lock->markers);
-				view.state.errors = getTargetErrorDist(calibs, *target_lock);
-				view.targetCalib = trkTarget;
-				// Plan optimisation
-				view.settings.outlierSigma = 10.0f;
-				view.settings.typeFlags = 0b10; // Assembly phases
-				view.settings.maxSteps = view.state.numSteps + pipeline.targetCalib.params.view.manualOptLimitIncrease;
-				view.settings.tolerances = pipeline.targetCalib.params.view.manualOptTolerance;
+				view.plan = { TargetView::EXPAND_FRAMES, TargetView::OPTIMISE_COARSE };
 				view.planned = true;
 			}
 			ImGui::EndDisabled();
@@ -983,6 +993,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				stage.base.errors.max*PixelFactor);
 			ImGui::TableNextColumn();
 			ImGui::Text("%s", stage.label.c_str());
+			ImGui::SetItemTooltip("Step ID %d", stage.step);
 			ImGui::TableNextColumn();
 			ImGui::BeginDisabled(pipeline.targetCalib.assembly.control.running());
 			if (ImGui::ArrowButton("Update", ImGuiDir_Down))

@@ -45,6 +45,7 @@ struct TargetView
 	// Range
 	uint32_t beginFrame = std::numeric_limits<uint32_t>::max(), endFrame = 0;
 	bool selected; // For final calibration
+	bool deleted; // E.g. due to insufficient data
 	BlockStats stats = {};
 	// Data
 	SynchronisedS<ObsTarget> target = {};
@@ -53,17 +54,20 @@ struct TargetView
 	// Calibration
 	bool planned;
 	ThreadControl control;
-	struct
-	{
-		int typeFlags;
-		int maxSteps = 20;
-		float tolerances = 1.0f;
-		float outlierSigma = 3.0f;
-	} settings;
+	enum CalibrationStep { NONE,
+		OPTIMISE_FINE,
+		OPTIMISE_COARSE,
+		RECONSTRUCT,
+		TEST_REEVALUATE_MARKERS,
+		REEVALUATE_MARKERS,
+		EXPAND_FRAMES
+	};
+	std::vector<CalibrationStep> plan;
 	struct
 	{
 		bool calibrated = false;
-		int numSteps = 0;
+		CalibrationStep step;
+		int numSteps = 0, maxSteps = 0;
 		OptErrorRes errors = {};
 		int lastStopCode;
 		bool complete = false;
@@ -168,7 +172,7 @@ int mergeCloseMarkers(std::vector<Eigen::Vector3f> &markers, std::map<int,int> &
 bool determineTargetOutliers(const std::vector<CameraCalib> &calibs, ObsTarget &target, TargetOutlierErrors maxErrors, const TargetAquisitionParameters &params);
 
 template<bool APPLY = true>
-void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
+int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params);
 
 ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const std::vector<MarkerSequences> &observations,

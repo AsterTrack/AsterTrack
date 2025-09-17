@@ -91,6 +91,11 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Uncertainty", "mm", &assembly.match.uncertainty, &standard.match.uncertainty, 0, 10, 0.1f, 1000);
 		ScalarProperty<int>("Conservative Level", "", &assembly.match.conservativeLevel, &standard.match.conservativeLevel, 0, 3);
 		ScalarProperty<int>("Compete Range", "", &assembly.match.competeRange, &standard.match.competeRange, 0, 10);
+		ImGui::SeparatorText("Conservative Optimisation After");
+		ScalarProperty<float>("Trigger Outlier Sigma", "o", &assembly.outlierSigmasConservative.trigger, &standard.outlierSigmasConservative.trigger, 1, 10, 0.1f, 1, "%.2f");
+		ScalarProperty<float>("Sample Outlier Sigma", "o", &assembly.outlierSigmasConservative.sample, &standard.outlierSigmasConservative.sample, 1, 10, 0.1f, 1, "%.2f");
+		ScalarProperty<float>("Frame Outlier Sigma", "o", &assembly.outlierSigmasConservative.frame, &standard.outlierSigmasConservative.frame, 1, 10, 0.1f, 1, "%.2f");
+		ScalarProperty<float>("Marker Outlier Sigma", "o", &assembly.outlierSigmasConservative.marker, &standard.outlierSigmasConservative.marker, 1, 10, 0.1f, 1, "%.2f");
 		ImGui::PopID();
 	}
 

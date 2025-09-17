@@ -975,7 +975,7 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 			ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_Lock | ImPlotAxisFlags_NoLabel);
 			ImPlot::SetupAxisLimits(ImAxis_X1, 0, TargetViewAquisitionWindowSize);
 
-			ImPlot::SetupAxis(ImAxis_Y1, "Markers",ImPlotAxisFlags_LockMin);
+			ImPlot::SetupAxis(ImAxis_Y1, "Markers",ImPlotAxisFlags_LockMin | ImPlotAxisFlags_AutoFit);
 			ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 20);
 
 			//ImPlot::SetNextLineStyle(ImVec4(1, 1, 1, 1));

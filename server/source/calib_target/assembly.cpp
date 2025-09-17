@@ -180,6 +180,8 @@ bool determineTargetOutliers(const std::vector<CameraCalib> &calibs, ObsTarget &
 		markerError[m] /= markerSamples[m]; // may be NAN
 		if (markerSamples[m] < params.minMarkerObsCount || markerError[m] > maxErrors.marker)
 		{
+			LOGC(LInfo, "Determined marker %d as an outlier, with %d samples with average error of %.2fpx",
+				m, markerSamples[m], markerError[m]*PixelFactor);
 			target.markers[m].setConstant(NAN);
 			markerOutliers++;
 		}
@@ -246,10 +248,10 @@ bool determineTargetOutliers(const std::vector<CameraCalib> &calibs, ObsTarget &
 }
 
 template<bool APPLY>
-void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
+int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params)
 {
-	if (target.frames.size() < params.minOverlap) return;
+	if (target.frames.size() < params.minOverlap) return 0;
 	params.maxSeqRMSE *= PixelSize;
 	params.uncertainty *= PixelSize;
 	params.match.uncertainty *= PixelSize;
@@ -291,7 +293,7 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 	}
 
 	// Get all potential matches of observed sequences to the 3D markers
-	const int MAX_MERGE_COUNT = 4; // Won't be able to handle more than this many markers that are close / should be merged
+	const int MAX_MERGE_COUNT = 8; // Won't be able to handle more than this many markers that are close / should be merged
 	typedef MatchCandidates<int, WeightedMatch<>, MAX_MERGE_COUNT> SeqMatchCandidates;
 	std::vector<SeqMatchCandidates> seqMarkerMatches;
 	std::vector<WeightedMatch<>> markerMatch;
@@ -567,26 +569,30 @@ void reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std
 		}
 		mergeStats[m1].clear(); // All handled
 	}
+	int mergeCount = target.markers.size() - mergedMarkers.size();
 	if constexpr (APPLY)
 	{
-		target.markers.swap(mergedMarkers);
-		for (auto &map : target.markerMap)
+		if (mergeCount > 0)
 		{
-			map.second = markerMap[map.second];
-		}
+			target.markers.swap(mergedMarkers);
+			for (auto &map : target.markerMap)
+			{
+				map.second = markerMap[map.second];
+			}
 
-
-		LOGC(LDebug, "New mapping of sequences to markers:");
-		for (auto &map : target.markerMap)
-		{
-			LOGC(LDebug, "    Sequence %d maps to marker %d", map.first, map.second);
+			LOGC(LDebug, "New mapping of sequences to markers:");
+			for (auto &map : target.markerMap)
+			{
+				LOGC(LDebug, "    Sequence %d maps to marker %d", map.first, map.second);
+			}
 		}
 	}
+	return mergeCount;
 }
 
-template void reevaluateMarkerSequences<true>(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
+template int reevaluateMarkerSequences<true>(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params);
-template void reevaluateMarkerSequences<false>(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
+template int reevaluateMarkerSequences<false>(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params);
 
 ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const std::vector<MarkerSequences> &observations, const ObsTarget &target,

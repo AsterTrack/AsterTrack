@@ -40,17 +40,17 @@ struct TargetAquisitionParameters
 
 struct TargetOutlierErrors
 {
-	float trigger = 4;
+	float trigger = 5;
 	float sample = 4;
 	float frame = 2;
-	float marker = 2;
+	float marker = 4;
 };
 
 struct TargetViewParameters
 {
-	float initialOptTolerance = 1.0f;
+	float initialOptTolerance = 10.0f;
 	int initialOptLimit = 40;
-	float manualOptTolerance = 0.01f;
+	float manualOptTolerance = 0.1f;
 	int manualOptLimitIncrease = 40;
 	TargetOutlierErrors outlierSigmas = {};
 };
@@ -101,9 +101,10 @@ struct TargetAssemblyParameters
 	MatchingParameters match = { 1.0f/1000, 3, 3, 2, 1 };
 
 	float optThresh = 1.2f;
-	float optTolerance = 2.0f;
+	float optTolerance = 5.0f;
 	int optMaxIt = 15;
 	TargetOutlierErrors outlierSigmas = {};
+	TargetOutlierErrors outlierSigmasConservative = { 10, 6, 6, 10 };
 
 	ReevaluateSequenceParameters reevaluation = {};
 	SubsampleTargetParameters subsampling = {};

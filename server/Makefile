@@ -72,7 +72,7 @@ endif
 ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto)
+cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 lmode = $(lto)
 mode = release
@@ -81,7 +81,7 @@ else ifeq ($(BUILD_TYPE), release-native)
 # Very fast, but slow to iterate on, only used to check for any modern optimisation we missed to take advantage of
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto)
+cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 lmode = $(lto)
 march = -march=native -mtune=native
@@ -89,7 +89,7 @@ mode = release-native
 
 else ifeq ($(BUILD_TYPE), release-verify)
 # Fast, can verify memory is handled correctly, useful for testing code while not sacrificing much performance
-cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace
+cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=2
 ifneq '' '$(findstring clang,$(CC))' # clang
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
@@ -101,21 +101,21 @@ mode = release-verify
 
 else ifeq ($(BUILD_TYPE), sanitize-thread)
 # Super slow (?), can verify no data races exist
-cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=thread
+cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=thread -DPERF=1
 cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=thread
 mode = sanitize-thread
 
 else ifeq ($(BUILD_TYPE), sanitize-memory)
 # Super slow (?), can verify no memory is used uninitialised
-cmode = -O1 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=memory
+cmode = -O1 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=memory -DPERF=1
 cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=memory
 mode = sanitize-memory
 
 else ifeq ($(BUILD_TYPE), sanitize-address)
 # Slow, can verify memory is handled correctly, useful for newly written code
-cmode = -O1 -g -fno-omit-frame-pointer -fsanitize=address
+cmode = -O1 -g -fno-omit-frame-pointer -fsanitize=address -DPERF=1
 ifneq '' '$(findstring clang,$(CC))' # clang
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
@@ -127,7 +127,7 @@ mode = sanitize-address
 
 else ifeq ($(BUILD_TYPE), debug)
 # Slow, for step-through debug
-cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -DEIGEN_NO_DEBUG
+cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -DEIGEN_NO_DEBUG -DPERF=1
 cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 lmode = -fsanitize=address
 mode = debug
@@ -135,7 +135,7 @@ mode = debug
 else ifeq ($(BUILD_TYPE), super-debug)
 # Super slow (?), for step-through debug with extra verification
 # Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
-cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace
+cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
 ifneq '' '$(findstring clang,$(CC))' # clang
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
@@ -149,7 +149,7 @@ mode = super-debug
 else ifeq ($(BUILD_TYPE), super-verify)
 # Slow, verify as much as possible, but still try to be useably fast
 # Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
-cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace
+cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=1
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
 ifneq '' '$(findstring clang,$(CC))' # clang
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)

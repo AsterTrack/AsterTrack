@@ -403,7 +403,7 @@ bool CalibrateRoom(PipelineState &pipeline, PipelineState::RoomCalib &roomCalib)
 	// Estimate a transform to align floor plane to points with correct scale
 	Eigen::Matrix3d roomOrientation;
 	Eigen::Affine3d roomTransform;
-	int pointCount = estimateFloorTransform<double>(roomCalib.floorPoints, roomCalib.distance12, roomOrientation, roomTransform);
+	int pointCount = estimateFloorTransform<double>(calibs, roomCalib.floorPoints, roomCalib.distance12, roomOrientation, roomTransform);
 	if (pointCount > 0)
 	{
 		LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);

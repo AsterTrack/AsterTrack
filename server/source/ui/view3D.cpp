@@ -812,14 +812,14 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			for (auto &pt : room->floorPoints)
 			{
 				if (pt.sampleCount > 3)
-					markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.01f);
+					markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.02f);
 			}
 		}
 
-		Color col = { 0.1f, 0.6f, 1.0f, 1.0f };
+		Color col = { 0.9f, 0.6f, 1.0f, 0.1f };
 		for (auto &tri : frame.triangulations)
 		{
-			markerPoints.emplace_back(tri.cast<float>(), (Color8)col, 0.01f);
+			markerPoints.emplace_back(tri.cast<float>(), (Color8)col, 0.015f);
 		}
 
 		visualisePointsSpheres(markerPoints);

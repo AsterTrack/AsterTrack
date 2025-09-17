@@ -1546,7 +1546,14 @@ static void __attribute__ ((optimize("3"))) calculateCameraDistortionMap(const T
 	// Maximum iterations should only ever be necessary in very distorted areas, tolerance is the real threshold
 	// But a few highly distorted areas can tank performance, resulting in lags, so hope this is fine
 	// Currently, everything <10ms, so all good
-	int tgtSize = 150, tgtHeight = std::ceil(tgtSize*mode.aspect);
+#if PERF >= 2
+	int tgtSize = 150, itCount = 100;
+#elif PERF == 1
+	int tgtSize = 100, itCount = 50;
+#elif PERF == 0
+	int tgtSize = 20, itCount = 10;
+#endif
+	int tgtHeight = std::ceil(tgtSize*mode.aspect);
 	int width = tgtSize/visCamera.view.camZoom, height = tgtHeight/visCamera.view.camZoom;
 	thread_local std::vector<Eigen::Vector2f> undistortionTex;
 	undistortionTex.clear();

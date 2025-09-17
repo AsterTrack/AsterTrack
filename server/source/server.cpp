@@ -902,7 +902,12 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		{ // Wait for next frame advance
 			state->simWaiting = true;
 			state->simWaiting.notify_all();
-			state->simAdvance.wait(0);
+			//state->simAdvance.wait(0);
+			while (state->simAdvance == 0)
+			{ // Instead of wait, to allow thread updates
+				UpdatePipelineStatus(state->pipeline);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
 			state->simWaiting = false;
 		}
 

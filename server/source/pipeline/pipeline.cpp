@@ -321,20 +321,30 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 	std::vector<SynchronisedS<CameraErrorMaps>::LockedPtr> errorMapLocks;
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (calibs[c].invalid()) continue;
 		std::shared_ptr<CameraPipeline> &cam = pipeline.cameras[calibs[c].index];
 		cam->errorVisDirty = false;
 		auto err_lock = cam->errorVis.contextualLock();
+		if (calibs[c].invalid() || data.points.totalSamples == 0)
+		{ // Clear errors
+			err_lock->mapSize.setZero();
+			err_lock->pointErrors.clear();
+			cam->errorVisDirty = true;
+			continue;
+		}
 		err_lock->mapSize = Eigen::Vector2i(cam->mode.widthPx/32, cam->mode.heightPx/32);
 		// Stope pointer to error maps
 		errorMaps[c] = &*err_lock;
 		// Keep lock alive until error maps are not used anymore
 		errorMapLocks.push_back(std::move(err_lock));
 	}
+	if (data.points.totalSamples == 0)
+		return;
 	pipeline.pointCalib.state.errors = updateCameraErrorMaps(data, calibs, errorMaps);
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (calibs[c].invalid()) continue;
+		if (!errorMaps[c]) continue;
+		if (errorMaps[c]->pointErrors.empty())
+			errorMaps[c]->mapSize.setZero(); // No data for camera
 		pipeline.cameras[calibs[c].index]->errorVisDirty = true;
 	}
 }
@@ -356,10 +366,13 @@ void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
 		UpdateErrorMaps(pipeline, data, calibs);
 	}
 
+	if (data.points.totalSamples > 0)
 	{
 		ScopedLogLevel scopedLogLevel(LInfo);
 		pipeline.pointCalib.state.errors = updateReprojectionErrors(data, calibs);
 	}
+	else
+		pipeline.pointCalib.state.errors = {};
 }
 
 static void CalculateFMStats(FundamentalMatrix &FM, const ObsData &data, const CameraCalib &calibA, const CameraCalib &calibB)

@@ -58,7 +58,7 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
  * The distance between the first two points should be passed as distance12 to determine the scale
  */
 template<typename Scalar>
-int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform);
+int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12, Eigen::Matrix<Scalar,3,3> &roomOrientation, Eigen::Transform<Scalar,3,Eigen::Affine> &roomTransform);
 
 /**
  * Normalise the calibration

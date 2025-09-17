@@ -251,7 +251,7 @@ template void StaticPointSamples<double>::update(const std::vector<CameraCalib> 
  * The distance between the first two points should be passed as distance12 to determine the scale
  */
 template<typename Scalar>
-int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12,
+int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12,
 	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform)
 {
 	if (floorPoints.size() < 3 || floorPoints.front().confidence < 1)
@@ -292,7 +292,14 @@ int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorP
 	// TODO: Account for marker size by shifting floor plane up by their radius
 	// Supporting varying sizes sounds like a pain though
 
-	// TODO: Properly check whether cameras are ontop of the floor and not under - currently relying on prior getCalibNormalisation
+	// Flip room up axis based on camera positions
+	Scalar flipAxis = 0;
+	for (auto &calib : calibs)
+		if (!calib.invalid())
+			flipAxis += axis.dot(calib.transform.translation() - origin);
+	if (flipAxis < 0)
+		axis = -axis;
+
 	if (axis.z() < 0) axis = -axis;
 
 	if (rankValues(0)*10 > rankValues(1))
@@ -308,9 +315,9 @@ int estimateFloorTransform(const std::vector<StaticPointSamples<Scalar>> &floorP
 	roomTransform.translation() = -roomTransform.linear()*origin;
 	return pointCount;
 }
-template int estimateFloorTransform(const std::vector<StaticPointSamples<double>> &floorPoints, double distance12,
+template int estimateFloorTransform(const std::vector<CameraCalib_t<double>> &calibs, const std::vector<StaticPointSamples<double>> &floorPoints, double distance12,
 	Eigen::Matrix3d &roomOrientation, Eigen::Affine3d &roomTransform);
-template int estimateFloorTransform(const std::vector<StaticPointSamples<float>> &floorPoints, float distance12,
+template int estimateFloorTransform(const std::vector<CameraCalib_t<float>> &calibs, const std::vector<StaticPointSamples<float>> &floorPoints, float distance12,
 	Eigen::Matrix3f &roomOrientation, Eigen::Affine3f &roomTransform);
 
 /**

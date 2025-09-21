@@ -82,7 +82,7 @@ void pd_init()
 	fusb.DeviceAddress = FUSB302B_ADDR;
 	pe_init(&pe, &fusb, pdbs_dpm_get_sink_capability, pdbs_dpm_evaluate_capability, NULL, 0);
 
-	USBPD_CHARR('/', 'P', 'D', 'S', 'T', 'P');
+	USBPD_CHARR('\n', '/', 'P', 'D', 'S', 'T', 'P');
 
 	// TODO: Might have to call TimersCallback every 5-10s to keep voltage coming (for PPS specifically)
 
@@ -133,7 +133,7 @@ void pd_init()
 
 void pd_poll()
 {
-	USBPD_CHARR('/', 'P', 'D', 'I', 'N', 'T');
+	USBPD_CHARR('\n', '/', 'P', 'D', 'I', 'N', 'T');
 
 	pe_IRQ_occured(&pe);
 
@@ -148,7 +148,7 @@ void pd_timer()
 {
 	//if (pe.PPSTimerEnabled)
 	{
-		USBPD_CHARR('/', 'T', 'M');
+		USBPD_CHARR('\n', '/', 'T', 'M');
 
 		TimersCallback(&pe);
 
@@ -168,7 +168,7 @@ bool pdbs_dpm_evaluate_capability(const pd_msg *capabilities, pd_msg *request)
 	// Get the number of PDOs
 	uint8_t numobj = PD_NUMOBJ_GET(capabilities);
 
-	PDCAP_CHARR('/', 'P', 'D', 'E', 'V', INT99_TO_CHARR(numobj));
+	PDCAP_CHARR('\n', '/', 'P', 'D', 'E', 'V', INT99_TO_CHARR(numobj));
 
 	// Get whether or not the power supply is constrained
 
@@ -321,7 +321,7 @@ void pdbs_dpm_get_sink_capability(pd_msg *cap, const bool isPD3)
 {
 	// Keep track of how many PDOs we've added
 	int numobj = 0;
-	USBPD_CHARR('/', 'P', 'D', 'C', 'P');
+	USBPD_CHARR('\n', '/', 'P', 'D', 'C', 'P');
 
 	// Must always have a PDO object for vSafe5V, indicate the bare minimum power required
 	// Minimum current, 5 V, and higher capability.

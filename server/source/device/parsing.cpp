@@ -114,14 +114,6 @@ bool ReadDebugPacket(TrackingControllerState &controller, uint8_t *data, int len
 	LogLevel curLevel = LDebug;
 	for (int i = 0; i < length; i++)
 	{
-		uint8_t d = data[i];
-		if (data[i] < 32)
-			data[i] = '*';
-		if (data[i] == '!')
-			curLevel = LDarn;
-		if (data[i] == '#')
-			curLevel = LError;
-
 		/* { // Used to verify continuity of debug - needs to be uncommented on controller software
 			static const int digitCnt = 2;
 			static uint8_t digitPos = 0, digits[digitCnt];
@@ -147,8 +139,15 @@ bool ReadDebugPacket(TrackingControllerState &controller, uint8_t *data, int len
 		{
 			LOG(LControllerDevice, curLevel, "%.*s", i-curPos, (char *)(data+curPos));
 			curLevel = LDebug;
-			curPos = i;
+			curPos = i+1;
 		}
+		else if (data[i] < 32)
+			data[i] = '*';
+		else if (data[i] == '!')
+			curLevel = LDarn;
+		else if (data[i] == '#')
+			curLevel = LError;
+
 	}
 	LOG(LControllerDevice, curLevel, "%.*s", length-curPos, (char *)(data+curPos));
 	//std::stringstream debugHex;

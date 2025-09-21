@@ -23,7 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imgui/imgui_onDemand.hpp"
 
-void InterfaceState::UpdateTargets(InterfaceWindow &window)
+void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
@@ -32,9 +32,9 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	ImGui::SeparatorText("Target Database");
+	ImGui::SeparatorText("Tracker Database");
 
-	if (ImGui::BeginTable("Targets", 5,
+	if (ImGui::BeginTable("Tracker", 5,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 	{
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
@@ -85,7 +85,7 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 			ImGui::SameLine(0, 0);
 			if (CrossButton("Del"))
 			{
-				
+				// TODO: Disabled until we have confirmation to prevent accidental deletion. Can edit trackers
 			}
 			ImGui::PopID();
 		}
@@ -93,7 +93,7 @@ void InterfaceState::UpdateTargets(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
-	if (SaveButton("Save Target Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
+	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 	{
 		storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
 		state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;

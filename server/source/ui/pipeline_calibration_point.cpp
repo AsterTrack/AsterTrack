@@ -33,6 +33,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 		const auto &ptCalib = pipeline.pointCalib;
 		auto errors = ptCalib.state.errors;
 		float PixelFactor = (pipeline.cameras.empty()? 1280 : pipeline.cameras.front()->mode.widthPx)/2.0f; // For external logging, already dynamic
+		ImGui::AlignTextToFramePadding();
 		if (ptCalib.control.thread)
 		{
 			if (ptCalib.settings.typeFlags & 0b01)
@@ -69,6 +70,12 @@ void InterfaceState::UpdatePipelineCalibSection()
 			ImGui::TextUnformatted("No data to check calibration against!");
 		else
 			ImGui::TextUnformatted("No calibration nor samples available!");
+
+		SameLineTrailing(ImGui::GetFrameHeight());
+		if (RetryButton("Recalc"))
+		{
+			UpdateErrorFromObservations(pipeline);
+		}
 	}
 	{
 		if (ImGui::Button("Reset##Calibration", ButtonSize))

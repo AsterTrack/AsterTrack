@@ -81,9 +81,9 @@ void InterfaceState::UpdateMainMenuBar()
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 	if (ImGui::BeginMenu("View"))
 	{
-		auto addWindowMenuItem = [](InterfaceWindow &window)
+		auto addWindowMenuItem = [](InterfaceWindow &window, const char* override_name = nullptr)
 		{
-			if (!ImGui::MenuItem(window.title.c_str(), nullptr, &window.open))
+			if (!ImGui::MenuItem(override_name? override_name : window.title.c_str(), nullptr, &window.open))
 				return;
 			if (!window.open)
 			{
@@ -103,7 +103,7 @@ void InterfaceState::UpdateMainMenuBar()
 		addWindowMenuItem(windows[WIN_LOGGING]);
 		addWindowMenuItem(windows[WIN_INSIGHTS]);
 		ImGui::Separator();
-		addWindowMenuItem(windows[WIN_TARGETS]);
+		addWindowMenuItem(windows[WIN_TRACKERS]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_DEVICES]);
 		addWindowMenuItem(windows[WIN_CAMERA_SETTINGS]);
@@ -111,10 +111,10 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::Separator();
 		if (ImGui::BeginMenu("Parameters"))
 		{
-			addWindowMenuItem(windows[WIN_SEQUENCE_PARAMS]);
-			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS]);
-			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS]);
-			addWindowMenuItem(windows[WIN_TRACKING_PARAMS]);
+			addWindowMenuItem(windows[WIN_SEQUENCE_PARAMS], "Sequence2D");
+			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS], "Point Calibration");
+			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS], "Target Calibration");
+			addWindowMenuItem(windows[WIN_TRACKING_PARAMS], "Tracking");
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Tools"))

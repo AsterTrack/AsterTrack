@@ -100,7 +100,7 @@ enum InterfaceWindows
 	WIN_LOGGING,
 	WIN_INSIGHTS,
 
-	WIN_TARGETS,
+	WIN_TRACKERS,
 
 	WIN_DEVICES,
 	WIN_CAMERA_SETTINGS,
@@ -433,7 +433,7 @@ public:
 	void UpdateLogging(InterfaceWindow &window);
 	void UpdateInsights(InterfaceWindow &window);
 
-	void UpdateTargets(InterfaceWindow &window);
+	void UpdateTrackers(InterfaceWindow &window);
 
 	void UpdateDevices(InterfaceWindow &window);
 	void UpdateCameraSettings(InterfaceWindow &window);

@@ -762,7 +762,7 @@ static bool ShowTrackingPanel()
 		stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
 
 		// Indices into ImPlotColormap_Dark:
-		if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
+		if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
 			stats.tracking[index] = 0;
 		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
 			stats.tracking[index] = 1;
@@ -770,7 +770,7 @@ static bool ShowTrackingPanel()
 			stats.tracking[index] = 2;
 		else if (trackRecord->result.isProbe())
 			stats.tracking[index] = 3;
-		else if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
+		else if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
 			stats.tracking[index] = 4;
 		else if (trackRecord->result.isDetected())
 			stats.tracking[index] = 7;

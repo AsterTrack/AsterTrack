@@ -407,7 +407,7 @@ void InterfaceState::ResetWindowLayout()
 	ImGui::DockBuilderDockWindow(windows[WIN_LOGGING].title.c_str(), bottomPanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_INSIGHTS].title.c_str(), bottomPanelID);
 
-	ImGui::DockBuilderDockWindow(windows[WIN_TARGETS].title.c_str(), auxPanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_TRACKERS].title.c_str(), auxPanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_DEVICES].title.c_str(), edgePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_SETTINGS].title.c_str(), sidePanelID);
@@ -607,7 +607,7 @@ bool InterfaceState::Init()
 	windows[WIN_LOGGING] = InterfaceWindow("Logging", &InterfaceState::UpdateLogging, true);
 	windows[WIN_INSIGHTS] = InterfaceWindow("Insights", &InterfaceState::UpdateInsights, true);
 	// Database
-	windows[WIN_TARGETS] = InterfaceWindow("Targets", &InterfaceState::UpdateTargets, false);
+	windows[WIN_TRACKERS] = InterfaceWindow("Trackers", &InterfaceState::UpdateTrackers, false);
 	// Device mode
 	windows[WIN_DEVICES] = InterfaceWindow("Devices", &InterfaceState::UpdateDevices, false);
 	windows[WIN_CAMERA_SETTINGS] = InterfaceWindow("Camera Settings", &InterfaceState::UpdateCameraSettings, false);

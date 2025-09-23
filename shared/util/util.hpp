@@ -105,16 +105,16 @@ static std::string asprintf_s( const char *format, ...)
 
 /* shortDiff */
 
-template<typename UINT, typename INT>
-static inline INT shortDiff(UINT a, UINT b, INT bias, UINT overflow)
+template<typename TRUNC, typename DIFF>
+static inline DIFF shortDiff(TRUNC a, TRUNC b, DIFF bias, TRUNC max = std::numeric_limits<TRUNC>::max())
 {
-	static_assert(std::numeric_limits<UINT>::lowest() == 0);
-	assert(a < overflow && b < overflow);
-	INT passed = ((INT)b) - a;
+	static_assert(std::numeric_limits<TRUNC>::lowest() == 0);
+	assert(a <= max && b <= max);
+	DIFF passed = ((DIFF)b) - a;
 	if (passed < -bias)
-		passed += overflow;
-	else if (passed > overflow-bias)
-		passed -= overflow;
+		passed = passed + 1 + max;
+	else if (passed > max-bias)
+		passed = passed - 1 - max;
 	return passed;
 }
 

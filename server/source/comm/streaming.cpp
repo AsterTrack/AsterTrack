@@ -175,7 +175,7 @@ FrameID EstimateFullFrameID(const SyncGroup &sync, TruncFrameID frameID)
 {
 	if (sync.frames.empty())
 		return frameID;
-	return sync.frames.back().ID + shortDiff<TruncFrameID, int>(sync.frames.back().ID, frameID, std::numeric_limits<TruncFrameID>::max()/2, std::numeric_limits<TruncFrameID>::max()+1);
+	return sync.frames.back().ID + shortDiff<TruncFrameID, int>(sync.frames.back().ID, frameID, std::numeric_limits<TruncFrameID>::max()/2);
 }
 
 /**

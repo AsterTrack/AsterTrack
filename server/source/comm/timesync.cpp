@@ -39,7 +39,7 @@ uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_
 	if (time.measurements == 0)
 		return timestamp;
 	assert((overflow & (overflow-1)) == 0); // Else use %overflow instead of &(overflow-1)
-	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/10, overflow);
+	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/10, overflow-1);
 	return time.lastTimestamp + usPassed;
 }
 // Corrects source timestamp for overflow using real-time reference as help
@@ -48,7 +48,7 @@ uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_
 	if (time.measurements == 0)
 		return timestamp;
 	assert((overflow & (overflow-1)) == 0); // Else use %overflow instead of &(overflow-1)
-	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/2, overflow);
+	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/2, overflow-1);
 	long usPassedRT = dtUS(time.lastTime, reference);
 	int overflowCorrection = (int)std::round((float)(usPassedRT-usPassed)/overflow);
 	if (overflowCorrection != 0)
@@ -75,7 +75,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t overflow)
 {
 	assert((overflow & (overflow-1)) == 0); // Else use %overflow instead of &(overflow-1)
-	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/2, overflow);
+	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/2, overflow-1);
 	TimePoint_t synced = time.lastTime + std::chrono::microseconds((long long)(usPassed * (1.0+time.drift) + time.driftAccum));
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)

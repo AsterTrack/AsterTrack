@@ -412,7 +412,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	}
 	else if (cameraFWUpdateSetup)
 	{
-		ImGui::SeparatorText("Camera Firmware Update");
+		BeginSection("Camera Firmware Update");
 
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
@@ -488,13 +488,15 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			cameraFWUpdateState = CamerasFlashFirmwareFile(firmwareUpdateCameras, firmwareFile);
 		}
+
+		EndSection();
 	}
 
 	// TODO: Ask controller via USB to automatically switch to Bootloader 2/3
 	// So for now, just always show FW update for controllers
 	//if (controllerFWUpdate)
 	{
-		ImGui::SeparatorText("Controller Firmware Update");
+		BeginSection("Controller Firmware Update");
 
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
@@ -606,6 +608,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::SetItemTooltip("The controller already has to be running the bootloader, appearing as a WinChipHead USB device.\n"
 				"To get a controller to reboot into the bootloader, hold the 'Flash' button (middle) for one second.");
 		}
+
+		EndSection();
 	}
 
 	ImGui::SeparatorText("IMU Devices");

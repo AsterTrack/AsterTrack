@@ -153,7 +153,7 @@ void visualisePointsVBOSprites(unsigned int VBO, unsigned int count, bool round,
 	shader->use();
 	glUniformMatrix4fv(shader->uProjAdr, 1, GL_FALSE, vpMat.data());
 	glUniformMatrix4fv(shader->uModelAdr, 1, GL_FALSE, id.matrix().data());
-	glUniform1f(round? roundSizeAdr : squareSizeAdr, sizeFactor*viewportZoom*pointSizeCorrection);
+	glUniform1f(round? roundSizeAdr : squareSizeAdr, sizeFactor*viewportZoom);
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VisPoint), (void *)offsetof(VisPoint, pos));

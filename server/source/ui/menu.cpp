@@ -21,6 +21,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "app.hpp"
 #include "recording.hpp"
 
+#include "device/tracking_camera.hpp"
+
 #define GLFW_INCLUDE_NONE
 #include "GLFW/glfw3.h"
 
@@ -271,6 +273,44 @@ void InterfaceState::UpdateMainMenuBar()
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 		ImGui::SetItemTooltip("Once cameras are connected or a simulation has been started, pressing 'Start Streaming' will enable the cameras.");
 		ImGui::EndDisabled();
+
+		if (state.mode == MODE_Device && state.isStreaming)
+		{
+			bool inBGCalib = false;
+			for (auto &cam : state.cameras)
+				if (cam->isMode(TRCAM_MODE_BGCALIB))
+					inBGCalib = true;
+			if (inBGCalib)
+			{
+				auto updateWith = [&](TrackingCameraState::BackgroundCalibOpt opt)
+				{
+					for (auto &cam : state.cameras)
+						if (cam->isMode(TRCAM_MODE_BGCALIB))
+							cam->updateBackgroundCalib(opt);
+				};
+				ImGui::TextUnformatted("Background:");
+				if (RetryButton("Retry"))
+					updateWith(TrackingCameraState::BG_RESET);
+				focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+				if (CheckButton("Accept"))
+					updateWith(TrackingCameraState::BG_ACCEPT);
+				focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+				if (CrossButton("Discard"))
+					updateWith(TrackingCameraState::BG_DISCARD);
+				focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+			}
+			else
+			{
+				if (ImGui::Button("Calibrate Background"))
+				{
+					LOG(LGUI, LInfo, "Starting BG Calibration on all cameras!");
+					for (auto &cam : state.cameras)
+						cam->updateBackgroundCalib(TrackingCameraState::BG_CALIB);
+				}
+				focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+				ImGui::SetItemTooltip("Calibrate Background on all cameras at once.\nAlternative to doing it manually on all cameras.");
+			}
+		}
 
 		ImGui::PopStyleColor(2);
 	}

@@ -70,14 +70,17 @@ struct TrackingCameraState
 		TimePoint_t time;
 		bool handleIndividually = true;
 	} modeSet = {};
-	inline bool hasSetMode(TrCamMode Mode) const { return (modeSet.mode&TRCAM_MODE_MASK) == Mode; }
-	inline bool isMode(TrCamMode Mode) const { return (mode&TRCAM_MODE_MASK) == Mode; }
+	inline bool hasSetMode(TrCamMode Mode) const { return (modeSet.mode&TRCAM_MODE_MASK) & Mode; }
+	inline bool isMode(TrCamMode Mode) const { return (mode&TRCAM_MODE_MASK) & Mode; }
 	inline bool hasSetStreaming() const { return (modeSet.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 	inline bool isStreaming() const { return (mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 
 	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length, bool writeChecksum);
 	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
 	void recvModeSet(uint8_t mode);
+
+	enum BackgroundCalibOpt { BG_CALIB, BG_RESET, BG_ACCEPT, BG_DISCARD };
+	bool updateBackgroundCalib(BackgroundCalibOpt opt);
 
 	/**
 	* Device configuration
@@ -147,6 +150,7 @@ struct TrackingCameraState
 	struct BackgroundCalib
 	{ // Background calibration data sent by the TrackingCamera
 		std::vector<Eigen::Vector2f> tiles;
+		float tileSize;
 	};
 
 	struct ImageReceiving

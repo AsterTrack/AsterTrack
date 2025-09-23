@@ -389,17 +389,9 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			&bgCalib, device && state.isStreaming && !visDebug))
 		{
 			if (bgCalib)
-			{ // Enable background calibration
-				view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB);
-			}
-			else if (state.isStreaming)
-			{ // Return to normal tracking
-				view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			}
+				view.camera->updateBackgroundCalib(TrackingCameraState::BG_CALIB);
 			else
-			{ // Return to standby
-				view.camera->sendModeSet(TRCAM_STANDBY);
-			}
+				view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
 			view.camera->receiving.background.contextualLock()->tiles.clear();
 		}
 		if (ImGui::MenuItem("Visual Debug", nullptr, 
@@ -470,6 +462,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		vis.show = true;
 
 		BeginViewToolbar();
+		ImGui::PushID("IMG");
 
 		ImGui::Checkbox("Undistort", &vis.undistort);
 		ImGui::SameLine();
@@ -596,6 +589,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			updateImageStreaming = true;
 		}
 
+		ImGui::PopID();
 		EndViewToolbar();
 	}
 	else if (state.mode == MODE_Replay && view.vis.imageVis.show)
@@ -603,6 +597,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		auto &vis = view.vis.imageVis;
 
 		BeginViewToolbar();
+		ImGui::PushID("IMG");
 	
 		ImGui::Checkbox("Undistort", &vis.undistort);
 		ImGui::SameLine();
@@ -626,6 +621,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			vis.show = false;
 		}
 
+		ImGui::PopID();
 		EndViewToolbar();
 	}
 	else
@@ -636,6 +632,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	if (bgCalib)
 	{
 		BeginViewToolbar();
+		ImGui::PushID("BG");
 		ImGui::TextUnformatted("Background Calibration");
 		if (ImGui::BeginItemTooltip())
 		{
@@ -645,24 +642,15 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		}
 		SameLineTrailing(GetBarWidth(ImGui::GetFrameHeight(), 3));
 		if (RetryButton("Retry"))
-		{
-			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
-			view.camera->receiving.background.contextualLock()->tiles.clear();
-		}
+			view.camera->updateBackgroundCalib(TrackingCameraState::BG_RESET);
 		ImGui::SameLine();
 		if (CheckButton("Accept"))
-		{
-			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT);
-			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-		}
+			view.camera->updateBackgroundCalib(TrackingCameraState::BG_ACCEPT);
 		ImGui::SameLine();
 		if (CrossButton("Discard"))
-		{
-			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
-			view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			view.camera->receiving.background.contextualLock()->tiles.clear();
-		}
+			view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
 
+		ImGui::PopID();
 		EndViewToolbar();
 	}
 
@@ -1044,10 +1032,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f, blobCross = 2.0f / mode.widthPx;
 	if (visCamera.visMode == VIS_BACKGROUND_TILES)
 	{
-		// TODO: Fix background calib visualisation, needs inversion of some sort
-		float PixelSizeCur = 8 * (float)viewSize.x()/mode.widthPx * visCamera.view.zoom;
-		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
-		visualisePoints2D(camera.receiving.background.contextualRLock()->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
+		auto bgCalib = camera.receiving.background.contextualRLock();
+		float PixelSizeCur = bgCalib->tileSize * viewSize.x() * pixelRatio;
+		visualisePoints2D(bgCalib->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
 	}
 	else if (visCamera.visMode == VIS_BLOB)
 	{

@@ -82,9 +82,6 @@ struct VisModel
 };
 #pragma pack(pop)
 
-// OpenGL Points are weirdly larger than they ought to be
-const static float pointSizeCorrection = 1.0f/1.2f;
-
 // For use as a scene overlay
 struct SceneLabel
 {

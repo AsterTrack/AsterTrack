@@ -31,6 +31,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 #include "util/image.hpp"
 
+#include "emulation/emulation.hpp"
+
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
@@ -948,22 +950,28 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet)
 {
 	if (packet.erroneous) return false;
 	if (packet.data.size() < 3) return false;
+	// TODO: Replace extends in packet with tilePx + offsetPx
 	uint8_t extendsX = packet.data[0], extendsY = packet.data[1];
+	const float tilePx = 8;
+	ProgramLayout layout = SetupProgramLayout(camera.pipeline->mode.widthPx, camera.pipeline->mode.heightPx, 8, false);
+	Eigen::Vector2i offsetPx = layout.maskOffset;
 	uint8_t *tiles = &packet.data[2];
 	uint16_t tileCnt = ((uint16_t)packet.data.size()-2)/2;
-	int width = camera.pipeline->mode.widthPx, height = camera.pipeline->mode.heightPx;
-	Eigen::Vector2f offset(-extendsX/2.0f + 0.5f, -extendsY/2.0f + 0.5f);
-	LOG(LCameraDevice, LDebug, "Received a total of %d background tiles! Range %d, %d; Calc offset %.3f, %.3f\n",
-		tileCnt, extendsX, extendsY, offset.x(), offset.y());
+	LOG(LCameraDevice, LDebug, "Received a total of %d background tiles! Range %d, %d; Offset %d, %d\n",
+		tileCnt, extendsX, extendsY, offsetPx.x(), offsetPx.y());
 	// Update background tiles
 	auto bg_lock = camera.receiving.background.contextualLock();
 	//bg_lock->tiles.clear();
 	for (int i = 0; i < tileCnt; i++)
 	{
-		float x = (tiles[i*2+0] + offset.x())*8.0f/width*2.0f;
-		float y = (tiles[i*2+1] + offset.y())*8.0f/height*2.0f;
-		bg_lock->tiles.emplace_back(-x, y);
+		float x = (tiles[i*2+0]*tilePx + offsetPx.x() + tilePx/2) * 2.0f/camera.pipeline->mode.widthPx - camera.pipeline->mode.sizeW;
+		float y = (tiles[i*2+1]*tilePx + offsetPx.y() + tilePx/2) * 2.0f/camera.pipeline->mode.widthPx - camera.pipeline->mode.sizeH;
+		bg_lock->tiles.emplace_back(x, -y);
 	}
+	// TODO: Figure out why this point scale factor is necessary, and just for tiles
+	//float scaleFactor = (float)layout.maskSize.y()/layout.maskSize.x(); // 800/1152 - Not quite
+	float scaleFactor = 0.69f; // Seems exactly right, really confused
+	bg_lock->tileSize = tilePx / camera.pipeline->mode.widthPx * scaleFactor;
 	return true;
 }
 

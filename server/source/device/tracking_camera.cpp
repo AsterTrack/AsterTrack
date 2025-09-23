@@ -77,7 +77,7 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 			id, setMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 		return false;
 	} */
-	if (modeSet.mode == setMode)
+	if (modeSet.mode == setMode && dtMS(modeSet.time, sclock::now()) < 500)
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d already requested mode %x %fms ago!",
 			id, modeSet.mode, dtMS(modeSet.time, sclock::now()));
@@ -110,6 +110,37 @@ void TrackingCameraState::recvModeSet(uint8_t recvMode)
 			ControllerUpdateSyncMask(*controller);
 	}
 	LOG(LCameraDevice, LInfo, "Camera %d entered mode %x!", id, mode);
+}
+
+bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
+{
+	switch (opt)
+	{
+		case BG_CALIB:
+			receiving.background.contextualLock()->tiles.clear();
+			if (GetState().isStreaming)
+				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB);
+			return false;
+		case BG_RESET:
+			receiving.background.contextualLock()->tiles.clear();
+			return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
+		case BG_ACCEPT:
+			if (!sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT))
+				return false;
+			if (GetState().isStreaming)
+				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
+			else
+				return sendModeSet(TRCAM_STANDBY);
+		case BG_DISCARD:
+			receiving.background.contextualLock()->tiles.clear();
+			if (!sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET))
+				return false;
+			if (GetState().isStreaming)
+				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
+			else
+				return sendModeSet(TRCAM_STANDBY);
+	}
+	return false;
 }
 
 bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera)

@@ -51,25 +51,22 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 	if (state.mode == MODE_Device)
 	{
-		AddOnDemandText("Frame 00000000", [](const ImDrawList* dl, const ImDrawCmd* dc)
-		{
-			RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Frame %d", GetState().pipeline.frameNum.load());
-		});
+		ImGui::Text("Frame %ld", GetState().pipeline.frameNum.load());
 	}
 	else if (state.mode == MODE_Simulation || state.mode == MODE_Replay)
 	{
-		bool debug = dbg_debugging.load(), breaking = dbg_isBreaking.load();
-		BeginSection(state.mode == MODE_Simulation? "Simulation" : "Replay");
-		ImGui::BeginDisabled(breaking);
-		{ // Show controls for simulation frame advancing
-			bool advancing = state.simAdvance.load() != 0;
+		{
 			ImGui::AlignTextToFramePadding();
-			AddOnDemandText("Frame 00000000", [](const ImDrawList* dl, const ImDrawCmd* dc)
-			{
-				RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Frame %d", GetState().pipeline.frameNum.load());
-			});
+			if (state.mode == MODE_Replay)
+				ImGui::Text("Replaying Frame %ld / %ld", GetState().pipeline.frameNum.load(), GetState().recording.frames);
+			else if (state.mode == MODE_Simulation)
+				ImGui::Text("Simulating Frame %ld", GetState().pipeline.frameNum.load());
+			SameLineTrailing(SizeWidthDiv3().x);
+			ImGui::Checkbox("Quickly", &state.simAdvanceQuickly);
+		}
 
-			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
+		{
+			bool advancing = state.simAdvance.load() != 0;
 			if (ImGui::Button(advancing? "Halt##Halt" : "Continue##Halt", SizeWidthDiv3()))
 			{
 				advancing = !advancing;
@@ -84,55 +81,102 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 			}
 			ImGui::SameLine();
-			ImGui::BeginDisabled(advancing);
-			if (ImGui::Button("Advance", SizeWidthDiv3()))
+			ImGui::BeginDisabled(advancing || !state.isStreaming);
+			if (ImGui::Button("+1", SizeWidthDiv3_Div2()))
 			{
 				state.simAdvance = 1;
 				state.simAdvance.notify_all();
 			}
+			ImGui::SameLine();
+			if (ImGui::Button("+10", SizeWidthDiv3_Div2()))
+			{
+				state.simAdvance = 10;
+				state.simAdvance.notify_all();
+			}
+			ImGui::SameLine();
+			if (state.mode == MODE_Replay)
+			{ // Show Replay-Specific control
+				if (ImGui::Button("Next Image", SizeWidthDiv3()))
+				{
+					state.simAdvance = -2;
+					state.simAdvance.notify_all();
+				}
+			}
+			ImGui::EndDisabled();
+
+			if (state.mode == MODE_Simulation)
+			{ // Show Restart here in place of Next Image in Simulation mode, next line is omitted
+				if (ImGui::Button("Restart", SizeWidthDiv3()))
+				{ // Stop and Start Streaming to restart
+					StopStreaming(state);
+					StartStreaming(state);
+				}
+			}
+		}
+
+		if (state.mode == MODE_Replay)
+		{ // Show Restart and Replay-specific jump control
+			ImGui::BeginDisabled(!state.isStreaming);
+			if (ImGui::Button("Restart", SizeWidthDiv3()))
+			{ // Stop and Start Streaming to restart
+				StopStreaming(state);
+				StartStreaming(state);
+			}
+			ImGui::EndDisabled();
+
+			ImGui::SameLine();
+			if (ImGui::Button("Jump To", SizeWidthDiv3()))
+			{
+				// Stop advancing replay
+				int prevState = state.simAdvance;
+				state.simAdvance = 0;
+				state.simWaiting.wait(false);
+				// Jump to frame after last frame has been processed
+				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, frameJumpTarget);
+				if (frame)
+					AdoptFrameRecordState(pipeline, *frame);
+				// Continue advancing
+				state.simAdvance = prevState;
+				state.simAdvance.notify_all();
+			}
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
+			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
+		}
+
+		{ // Show controls for simulating dropouts
+			ImGui::BeginDisabled(state.simDropoutIndex >= 0);
+			if (ImGui::Button("Frame Drop", SizeWidthDiv3()))
+			{
+				for (int i = 0; i < state.simDropoutSeverity.size(); i++)
+					state.simDropoutSeverity[i] = 1.0f;
+				state.simDropoutIndex = 0;
+			}
+			ImGui::SetItemTooltip("Simulate full frame drops (no optical data) for all cameras.\nDrop length adjustable");
+			ImGui::SameLine();
+			if (ImGui::Button("Occlusion", SizeWidthDiv3()))
+			{
+				float peak = std::log(1 + state.simDropoutSeverity.size());
+				for (int i = 0; i < state.simDropoutSeverity.size(); i++)
+				{
+					float dist = (float)std::abs((int)state.simDropoutSeverity.size() - 1 - i*2) / state.simDropoutSeverity.size();
+					state.simDropoutSeverity[i] = std::min(1.0f, (1.0f - dist) * peak);
+				}
+				state.simDropoutIndex = 0;
+			}
+			ImGui::SetItemTooltip("Simulate a severe visual occlusion across all cameras.\nDrop length adjustable, will drop blobs partially at beginning and end.");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
+			int dropoutLen = state.simDropoutSeverity.size();
+			if (ImGui::InputInt("##DropoutLength", &dropoutLen))
+				state.simDropoutSeverity.resize(std::min(100, dropoutLen));
+			ImGui::SetItemTooltip("Sets the length of the dropout.");
 			ImGui::EndDisabled();
 		}
 
-		ImGui::Checkbox("Quickly", &state.simAdvanceQuickly);
-
-		if (state.mode == MODE_Replay)
-		{ // Show additional advancing control line in replay mode
-			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
-			if (ImGui::Button("Next Image", SizeWidthDiv3()))
-			{
-				state.simAdvance = -2;
-				state.simAdvance.notify_all();
-			}
-		}
-
-		SameLineTrailing(SizeWidthDiv3().x);
-		if (ImGui::Button("Advance 10", SizeWidthDiv3()))
-		{
-			state.simAdvance = 10;
-			state.simAdvance.notify_all();
-		}
-
-		ImGui::EndDisabled();
-
 		{ // Show controls for interactive debugging
-			ImGui::AlignTextToFramePadding();
-			if (breaking)
-			{
-				ImGui::PushStyleColor(ImGuiCol_Text, isDarkMode? IM_COL32(220, 150, 150, 255) : IM_COL32(150, 50, 50, 255));
-				ImGui::TextUnformatted("Debug Break!");
-				ImGui::PopStyleColor();
-			}
-			else ImGui::TextUnformatted("Debugging:");
-			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
-
-			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-			int level = dbg_debugging.load();
-			if (ImGui::InputInt("", &level))
-				dbg_debugging = std::clamp(level, 0, 5);
-			ImGui::SetItemTooltip("Sets the debug level.");
-			ImGui::SameLine();
-
-			if (ImGui::Button(debug? "Disable##Debug" : "Enable##Debug", SizeWidthDiv3_Div2()))
+			bool debug = dbg_debugging.load(), breaking = dbg_isBreaking.load();
+			if (ImGui::Button(debug? "Disable Debug##Debug" : "Enable Debug##Debug", SizeWidthDiv3()))
 			{
 				dbg_debugging = !dbg_debugging;
 				debug = !debug;
@@ -144,21 +188,33 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 			}
 			ImGui::SameLine();
-
 			ImGui::BeginDisabled(!debug || !breaking);
-			if (ImGui::Button("Step", SizeWidthDiv3_Div2()))
+			if (ImGui::Button("Step", SizeWidthDiv3()))
 			{
 				dbg_isBreaking = false;
 				dbg_isBreaking.notify_all();
 			}
 			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
+			int level = dbg_debugging.load();
+			if (ImGui::InputInt("##DbgLvl", &level))
+				dbg_debugging = std::clamp(level, 0, 5);
+			ImGui::SetItemTooltip("Sets the debug level.");
+
+			if (breaking)
+			{ // New line - may add additional info
+				ImGui::PushStyleColor(ImGuiCol_Text, isDarkMode? IM_COL32(220, 150, 150, 255) : IM_COL32(150, 50, 50, 255));
+				ImGui::TextUnformatted("Debug Break!");
+				ImGui::PopStyleColor();
+			}
 		}
 
 		if (state.mode == MODE_Simulation)
 		{
-			auto sim_lock = pipeline.simulation.contextualLock();
+			BeginSection("Simulated Objects");
 
-			ImGui::TextUnformatted("Simulated Objects");
+			auto sim_lock = pipeline.simulation.contextualLock();
 			for (auto &object : sim_lock->objects)
 			{
 				ImGui::PushID(object.id);
@@ -173,53 +229,18 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				}
 				ImGui::PopID();
 			}
-		}
-		else if (state.mode == MODE_Replay)
-		{
-			ImGui::BeginDisabled(!state.isStreaming);
-			if (state.recording.frames > 0)
-			{
-				ImGui::AlignTextToFramePadding();
-				AddOnDemandText("Replaying 00000000 frames", [](const ImDrawList* dl, const ImDrawCmd* dc)
-				{
-					RenderOnDemandText(*static_cast<OnDemandItem*>(dc->UserCallbackData), "Replaying %ld frames", GetState().recording.frames);
-				});
-				SameLineTrailing(SizeWidthDiv3().x);
-				if (ImGui::Button("Restart", SizeWidthDiv3()))
-				{ // Stop and Start Streaming to restart
-					StopStreaming(state);
-					StartStreaming(state);
-				}
-			}
 
-			ImGui::Text("Jump To Frame");
-			SameLineTrailing(SizeWidthDiv3_2().x);
-			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
-			ImGui::SameLine();
-			if (ImGui::Button("Jump", SizeWidthDiv3()))
-			{
-				// Stop advancing replay
-				int prevState = state.simAdvance;
-				state.simAdvance = 0;
-				state.simWaiting.wait(false);
-				// Jump to frame after last frame has been processed
-				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, frameJumpTarget);
-				if (frame)
-					AdoptFrameRecordState(pipeline, *frame);
-				// Continue advancing
-				state.simAdvance = prevState;
-				state.simAdvance.notify_all();
-			}
-			ImGui::EndDisabled();
+			EndSection();
 		}
-
-		EndSection();
 	}
 
 	if (state.mode != MODE_Replay)
 	{ // Allow recording and storing of frame sections
 		BeginSection("Recording");
+
+		ImGui::Checkbox("Frame Images", &pipeline.keepFrameImages);
+		SameLineTrailing(SizeWidthDiv2().x);
+		ImGui::Checkbox("Tracking Results", &saveTrackingResults);
 
 		if (ImGui::Button(recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
 		{
@@ -243,12 +264,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			recordSections.emplace_back(framesRecord.beginIndex(), framesRecord.endIndex(), true);
 		}
 		ImGui::EndDisabled();
-		ImGui::BeginDisabled(true);
-		ImGui::Checkbox("Record by default", &pipeline.keepFrameRecordsDefault);
-		ImGui::EndDisabled();
-		SameLineTrailing(SizeWidthDiv2().x);
-		ImGui::Checkbox("Save Images", &pipeline.keepFrameImages);
-		ImGui::Checkbox("Save Tracking Results", &saveTrackingResults);
 
 		if (ImGui::BeginTable("Sections", 4, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{

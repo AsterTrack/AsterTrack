@@ -94,6 +94,9 @@ struct ServerState
 	std::atomic<int> simAdvance = { -1 };
 	std::atomic<bool> simWaiting = { false };
 	bool simAdvanceQuickly;
+	// Dropout Simulation
+	std::atomic<int> simDropoutIndex = { -1 };
+	std::vector<float> simDropoutSeverity = { 1 };
 	// Loaded records for replay
 	struct {
 		std::vector<std::string> captures;

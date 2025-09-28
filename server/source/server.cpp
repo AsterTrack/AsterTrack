@@ -1029,6 +1029,26 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
+		int dropout = state->simDropoutIndex.load();
+		if (dropout >= state->simDropoutSeverity.size())
+			state->simDropoutIndex = -1;
+		else if (dropout >= 0)
+		{ // Drop a random amount of blobs
+			float droprate = state->simDropoutSeverity[dropout];
+			state->simDropoutIndex = dropout+1;
+			for (auto &camera : frameRecord->cameras)
+			{
+				auto blobIt = camera.rawPoints2D.begin();
+				while (blobIt != camera.rawPoints2D.end())
+				{
+					float chance = (double)rand() / RAND_MAX;
+					if (chance > droprate)
+						blobIt++;
+					else
+						blobIt = camera.rawPoints2D.erase(blobIt);
+				}
+			}
+		}
 		if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
 		{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
 			UpdatePipelineStatus(state->pipeline);

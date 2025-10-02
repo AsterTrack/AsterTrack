@@ -135,18 +135,26 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::Separator();
 		if (ImGui::BeginMenu("Style"))
 		{
+			addWindowMenuItem(windows[WIN_STYLE_EDITOR]);
+			ImGui::Separator();
 			if (ImGui::MenuItem("AsterTrack Style"))
 				StyleSizingAsterDark();
-			if (ImGui::MenuItem("AsterTrack Dark Colors"))
-				StyleColorsAsterDark();
 			if (ImGui::MenuItem("Default Style"))
 				StyleSizingDefault();
+			ImGui::Separator();
+			if (ImGui::MenuItem("AsterTrack Dark Colors"))
+				StyleColorsAsterDark();
 			if (ImGui::MenuItem("ImGui Dark Colors"))
 				ImGui::StyleColorsDark();
 			if (ImGui::MenuItem("ImGui Light Colors"))
 				ImGui::StyleColorsLight();
 			if (ImGui::MenuItem("ImGui Classic Colors"))
 				ImGui::StyleColorsClassic();
+			ImGui::Separator();
+			if (ImGui::MenuItem("Karla Font"))
+				StyleSelectFont("Karla");
+			if (ImGui::MenuItem("NotoSans Font"))
+				StyleSelectFont("NotoSans");
 			ImGui::EndMenu();
 		}
 		if (ImGui::MenuItem("Reset Layout"))

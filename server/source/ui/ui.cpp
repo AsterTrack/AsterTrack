@@ -79,7 +79,8 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader);
 static void closePlatformWindow(GLFWwindow *windowHandle);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
-static void loadFont();
+static std::string loadedFont, selectedFont;
+static void updateFont();
 static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
 static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
 static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line);
@@ -222,6 +223,8 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 void InterfaceState::UpdateUI()
 {
+	updateFont();
+
 	std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
 	// Start new UI frame
@@ -483,8 +486,8 @@ bool InterfaceState::Init()
 
 	StyleSizingAsterDark();
 	StyleColorsAsterDark();
-
-	loadFont();
+	StyleSelectFont();
+	updateFont();
 
 	{ // Read/Write custom UI state settings
 		ImGuiSettingsHandler uiStateHandler;
@@ -554,10 +557,10 @@ bool InterfaceState::Init()
 	};
 
 	#define ICON_LOAD(NAME) \
-		lightModeIcons.NAME = loadIcon("resources/" #NAME ".png"); \
-		darkModeIcons.NAME = loadIcon("resources/" #NAME "_d.png"); \
+		lightModeIcons.NAME = loadIcon("resources/icons/" #NAME ".png"); \
+		darkModeIcons.NAME = loadIcon("resources/icons/" #NAME "_d.png"); \
 
-	if (std::filesystem::exists("resources/"))
+	if (std::filesystem::exists("resources/icons/"))
 	{
 		ICON_LOAD(frame_wireless)
 		ICON_LOAD(frame_hdmi)
@@ -1065,25 +1068,38 @@ void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
 	colors[ImGuiCol_ModalWindowDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
-static void loadFont()
+void InterfaceState::StyleSelectFont(std::string name)
 {
+	if (name.empty())
+		selectedFont = "Karla";
+	else selectedFont = name;
+}
+
+static void updateFont()
+{
+	if (loadedFont == selectedFont) return;
+	loadedFont = selectedFont;
 	ImFontConfig config;
 	config.OversampleH = 2;
 	config.OversampleV = 2;
-	if (std::filesystem::exists("resources/Karla-Regular.ttf"))
+	std::string latinFont = "resources/fonts/" + selectedFont + "-Regular-Latin.ttf";
+	std::string iconFont = "resources/fonts/LineAwesome-Regular-Icon.ttf";
+	if (std::filesystem::exists(latinFont))
 	{
-		ImGui::GetIO().Fonts->Clear();
-		ImGui::GetIO().Fonts->AddFontFromFileTTF("resources/Karla-Regular.ttf", 17, &config);
+		auto &io = ImGui::GetIO(); 
+		io.Fonts->Clear();
+		io.Fonts->AddFontFromFileTTF(latinFont.c_str(), 17, &config);
+		io.Fonts->AddFontFromFileTTF(iconFont.c_str(), 17, &config);
 	}
-	else if (std::filesystem::exists("../resources/Karla-Regular.ttf"))
+	else if (std::filesystem::exists("../" + latinFont))
 	{
-		printf("'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
-		LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+		printf("'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n", latinFont.c_str());
+		LOG(LDefault, LError, "'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!", latinFont.c_str());
 	}
 	else
 	{
-		printf("'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
-		LOG(LDefault, LError, "'resources/Karla-Regular.ttf' not found in working directory! Make sure to run AsterTrack in the program root directory!");
+		printf("'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!\n", latinFont.c_str());
+		LOG(LDefault, LError, "'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!", latinFont.c_str());
 	}
 }
 

@@ -412,6 +412,7 @@ public:
 	static void StyleSizingDefault(ImGuiStyle *dst = nullptr);
 	static void StyleSizingAsterDark(ImGuiStyle *dst = nullptr);
 	static void StyleColorsAsterDark(ImGuiStyle* dst = nullptr);
+	static void StyleSelectFont(std::string name = "");
 
 	void UpdateMainMenuBar();
 

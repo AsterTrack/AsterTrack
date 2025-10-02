@@ -92,7 +92,7 @@ void InterfaceState::UpdateLensSelectionTool(InterfaceWindow &window)
 		ImGui::Text("Sensor has a Pixel Size of %.3fum!", pixelSizes.x()*1000);
 	ImGui::EndDisabled();
 	ImGui::BeginDisabled(OV9281Input);
-	ScalarInput<float>("CRA", "dg", &sensorCRA, 0, 40, 1, 1, "%.1f");
+	ScalarInput<float>("CRA", "°", &sensorCRA, 0, 40, 1, 1, "%.1f");
 	ImGui::SetItemTooltip("Chief Ray Angle, mismatch to lens CRA can result in poor relative illumination,\n"
 		"and even vignetting (different from vignetting image circle).");
 	ImGui::EndDisabled();
@@ -125,7 +125,7 @@ void InterfaceState::UpdateLensSelectionTool(InterfaceWindow &window)
 	ScalarInput2<float>("Design Format", "um", &lens.designSize.x(), &lens.designSize.y(), 0, 10000, 1, 1000, "%.0f");
 	ImGui::SetItemTooltip("The format (or better yet, exact sensor size) the lens has been designed for (3600x2700 for a 4:3 1/4\").\n"
 		"Without knowing this, many specs are practically useless, including FoV, distortions and relative illumination.");
-	ScalarInput<float>("CRA", "dg", &lens.CRA, 0, 40, 1, 1, "%.1f");
+	ScalarInput<float>("CRA", "°", &lens.CRA, 0, 40, 1, 1, "%.1f");
 	ImGui::SetItemTooltip("Chief Ray Angle, mismatch to sensor CRA can result in poor relative illumination,\n"
 		"and even vignetting (different from vignetting image circle).");
 	EndSection();
@@ -139,7 +139,7 @@ void InterfaceState::UpdateLensSelectionTool(InterfaceWindow &window)
 		"3. Exact sensor size used to measure that FoV - if only format is specified, guess.");
 
 	ImGui::BeginDisabled(!fov2Dist);
-	ImGui::InputFloat3("h/v/d", lens.measuredFOV_HVD.data(), "%.2fdg");
+	ImGui::InputFloat3("h/v/d", lens.measuredFOV_HVD.data(), "%.2f°");
 	ImGui::EndDisabled();
 	if (fov2Dist)
 	{
@@ -280,9 +280,9 @@ void InterfaceState::UpdateLensSelectionTool(InterfaceWindow &window)
 	float virtualApertureHeight = lens.designSize.norm() / std::sin(lens.CRA/180*PI);
 	float CRAinUsedArea = std::asin(usedSize.norm()/virtualApertureHeight) /PI*180;
 	float CRAmaxDev = sensorCRA < 10? 10 : (sensorCRA < 20? 7 : 4); // according to https://commonlands.com/blogs/technical/lens-chief-ray-angle-and-mismatch
-	ImGui::Text("Max CRA in used sensor area: %.2fdg (sensor CRA %.2fdg)", CRAinUsedArea, sensorCRA);
+	ImGui::Text("Max CRA in used sensor area: %.2f° (sensor CRA %.2f°)", CRAinUsedArea, sensorCRA);
 	float CRADeviation = std::abs(CRAinUsedArea-sensorCRA);
-	ImGui::Text("Deviation of %.2fdg is %c recommended limit of %.2fdg! Read more.", CRADeviation, CRADeviation < CRAmaxDev? '<' : '>', CRAmaxDev);
+	ImGui::Text("Deviation of %.2f° is %c recommended limit of %.2f°! Read more.", CRADeviation, CRADeviation < CRAmaxDev? '<' : '>', CRAmaxDev);
 	ImGui::SetItemTooltip("Note: Too high of a CRA deviation can yield strong drops in relative illumination (and discoloration for color sensors)!");
 	EndSection();
 

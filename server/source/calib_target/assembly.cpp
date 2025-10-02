@@ -1186,7 +1186,7 @@ void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vec
 	// Find widest markers and estimate field of view to use for all markers
 	std::partial_sort(limits.begin(), limits.begin()+3, limits.end());
 	float limit = mixLimits(limits, params.viewCone.topMarkerExtremes);
-	LOG(LTargetCalib, LDebug, "Determined primary FoV for %d markers as %.4fdg. Top 3 are %.4fdg, %.4fdg, and %.4fdg",
+	LOG(LTargetCalib, LDebug, "Determined primary FoV for %d markers as %.4f°. Top 3 are %.4f°, %.4f°, and %.4f°",
 		(int)markers.size(), std::acos(limit)*360/PI,
 		std::acos(limits[0])*360/PI, std::acos(limits[1])*360/PI, std::acos(limits[2])*360/PI);
 
@@ -1197,7 +1197,7 @@ void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vec
 		float conservativeLimit = std::cos(std::acos(limit)*2 - std::acos(limits[m]));
 		// In the end, mix individual observed limit, shared limit from widest markers, and conservative overestimated limit
 		markers[m].angleLimit = mixLimits(std::array{ limits[m], limit, conservativeLimit }, params.viewCone.markerLimitMix);
-		LOG(LTargetCalib, LTrace, "    Marker %d with %d observations had own FoV of %.4fdg, so conservatively %.4fdg, updated to %.4fdg",
+		LOG(LTargetCalib, LTrace, "    Marker %d with %d observations had own FoV of %.4f°, so conservatively %.4f°, updated to %.4f°",
 			m, (int)markerRays[m].size(), std::acos(limits[m])*360/PI, std::acos(conservativeLimit)*360/PI, std::acos(markers[m].angleLimit)*360/PI);
 	}
 }

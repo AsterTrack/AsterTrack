@@ -173,7 +173,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 		{
 			Eigen::Quaternionf quat(object.internalMotionState.RGT);
 			LOGC(LDebug, "Object %s GT Pose: (%.4f, %.4f, %.4f), Quat (%.4f, %.4f, %.4f, %.4f) --"
-				"Dynamic state %.3fcm/f, %.3fcm/f^2, %.3fdg/f, Change: %.3fcm, %.3fdg/f\n",
+				"Dynamic state %.3fcm/f, %.3fcm/f^2, %.3f°/f, Change: %.3fcm, %.3f°/f\n",
 				object.label.c_str(),
 				object.pose.translation().x(), object.pose.translation().y(), object.pose.translation().z(),
 				quat.x(), quat.y(), quat.z(), quat.w(),

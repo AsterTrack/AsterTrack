@@ -595,7 +595,7 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw
 		{ // Too fast, retract gyro samples to time of last optical measurement
 			calib.aborted = true;
 			if (calib.current.gyroSamples.size() > 50)
-				LOG(LTrackingIMU, LDebug, "    Collection of %d gyro samples was aborted due to sample of %fdg over %fms!",
+				LOG(LTrackingIMU, LDebug, "    Collection of %d gyro samples was aborted due to sample of %f° over %fms!",
 					(int)calib.current.gyroSamples.size(), angDiff, dt*1000);
 		}
 		else
@@ -823,7 +823,7 @@ static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInerti
 			calib.current.inertial /= calib.numCurrent;
 			calib.samples.push_back(calib.current);
 			LOG(LTrackingIMU, LInfo,
-				"    Collected gravity vectors across %d samples, diff of %fdg, motion (vel %f, ang vel %f, grav diff %f)",
+				"    Collected gravity vectors across %d samples, diff of %f°, motion (vel %f, ang vel %f, grav diff %f)",
 				calib.numCurrent, diff, vel, ang, grv);
 
 			calib.numCurrent = 0;
@@ -832,7 +832,7 @@ static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInerti
 		else if (calib.numCurrent >= 50)
 		{
 			LOG(LTrackingIMU, LDebug,
-				"    Collection of gravity vectors across %d samples, diff of %fdg, was interrupted by motion (vel %f, ang vel %f, grav diff %f)",
+				"    Collection of gravity vectors across %d samples, diff of %f°, was interrupted by motion (vel %f, ang vel %f, grav diff %f)",
 				calib.numCurrent, diff, vel, ang, grv);
 		}
 		calib.numCurrent = 0;
@@ -852,7 +852,7 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 	double angVel = state.state.angularVelocity().norm();
 	bool abortSampling = angVel < 0.1f || angVel > 5.0f;
 	if (abortSampling && calib.current.gyroSamples.size() > 50)
-		LOG(LTrackingIMU, LDebug, "    Collection of %d gyro samples was aborted due to filtered angular velocity of %fdg/s",
+		LOG(LTrackingIMU, LDebug, "    Collection of %d gyro samples was aborted due to filtered angular velocity of %f°/s",
 			(int)calib.current.gyroSamples.size(), angVel*180/PI);
 
 	if (calib.aborted || abortSampling)
@@ -895,7 +895,7 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 	}
 	else if (calib.current.gyroSamples.size() >= MIN && diff >= MinAng)
 	{ // Accept collected samples for calibration
-		LOG(LTrackingIMU, LInfo, "    Collected %d gyro samples over rotation of %fdg!",
+		LOG(LTrackingIMU, LInfo, "    Collected %d gyro samples over rotation of %f°!",
 			(int)calib.current.gyroSamples.size(), diff);
 		calib.samples.push_back(std::move(calib.current));
 		calib.current = {};
@@ -1104,7 +1104,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 			auto &errorsOpt = lm.fvec;
 
 			LOG(LTrackingIMU, LInfo,
-				"        Optimised error to %fdg with max %fdg",
+				"        Optimised error to %f° with max %f°",
 				errorsOpt.mean()*180/PI, errorsOpt.maxCoeff()*180/PI);
 
 			if (lm.fvec.mean()*180/PI > 5.0)
@@ -1130,7 +1130,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 
 			auto errorsGyro = errorsOpt.tail(inertial.calibration.gyro.samples.size());
 			LOG(LTrackingIMU, LInfo,
-				"        Optimised error of %fdg to %fdg with max %fdg - gyro relative error %f%%",
+				"        Optimised error of %f° to %f° with max %f° - gyro relative error %f%%",
 				errorsPre.mean()*180/PI, errorsOpt.mean()*180/PI, errorsOpt.maxCoeff()*180/PI, errorsGyro.mean()/gyroDiffAvg*100);
 
 			LOG(LTrackingIMU, LDebug, "            Errors Pre: %s", printMatrix((errorsPre*180/PI).transpose()).c_str());
@@ -1159,7 +1159,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 
 			LOG(LTrackingIMU, LDebug, "            Relative Errors (x):  %s", printMatrix(errorsRel.transpose()).c_str());
 			LOG(LTrackingIMU, LDebug, "            Max Gyro (rad/s):  %s", printMatrix(maxGyro.transpose()).c_str());
-			LOG(LTrackingIMU, LDebug, "            Max dGyro (dg):  %s", printMatrix(maxDGyro.transpose()).c_str());
+			LOG(LTrackingIMU, LDebug, "            Max dGyro (°):  %s", printMatrix(maxDGyro.transpose()).c_str());
 			LOG(LTrackingIMU, LDebug, "            Max dT (ms):  %s", printMatrix(maxDT.transpose()).c_str());
 		}
 
@@ -1187,7 +1187,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 				auto &errorsOpt = lm.fvec;
 
 				LOG(LTrackingIMU, LInfo,
-					"        Formula %d optimised error of %fdg to %fdg with max %fdg - fused quat relative error %f%%",
+					"        Formula %d optimised error of %f° to %f° with max %f° - fused quat relative error %f%%",
 					f, errorsPre.mean()*180/PI, errorsOpt.mean()*180/PI, errorsOpt.maxCoeff()*180/PI,
 					errorsOpt.tail(inertial.calibration.fused.samples.size()).mean()/fusedDiffAvg*100);
 			}
@@ -1209,7 +1209,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 
 	if (bestConv >= 0)
 	{
-		LOG(LTrackingIMU, LInfo, "Selected best conversion %d with error %fdg", bestConv, bestError);
+		LOG(LTrackingIMU, LInfo, "Selected best conversion %d with error %f°", bestConv, bestError);
 		LOG(LTrackingIMU, LDebug, "Orientation Quat: (%f, %f, %f), %f", orientation.x(), orientation.y(), orientation.z(), orientation.w());
 		LOG(LTrackingIMU, LDebug, "Conversion matrix: \n%s", printMatrix(conversion).c_str());
 

@@ -827,7 +827,7 @@ void StartSimulation(ServerState &state)
 		const CameraCalib &cCam = cam->calib;
 		Eigen::Vector3d posGT = tCam.transform.translation();
 		Eigen::Vector3d rotGT = getEulerXYZ(tCam.transform.rotation()) / PI * 180;
-		LOG(LDefault, LTrace, "Cam %d testing transform: Pos/m (%.3f, %.3f, %.3f), Rot/\u00B0 (%.2f, %.2f, %.2f)\n",
+		LOG(LDefault, LTrace, "Cam %d testing transform: Pos/m (%.3f, %.3f, %.3f), Rot/° (%.2f, %.2f, %.2f)\n",
 			  cam->id, posGT.x(), posGT.y(), posGT.z(), rotGT.x(), rotGT.y(), rotGT.z());
 		if (cCam.transform.translation().sum() != 0)
 		{
@@ -836,7 +836,7 @@ void StartSimulation(ServerState &state)
 			Eigen::Vector3d tDiff = cCam.transform.translation() - tCam.transform.translation();
 			Eigen::Matrix3d rDiff = tCam.transform.rotation() * cCam.transform.rotation().transpose();
 			double tError = tDiff.norm(), rError = Eigen::AngleAxis<CVScalar>(rDiff).angle() / PI * 180;
-			LOG(LDefault, LTrace, "Cam %d calibrated transform: Pos/m (%.3f, %.3f, %.3f), Rot/\u00B0 (%.2f, %.2f, %.2f), Error: (%.4fmm, %.4f\u00B0)\n",
+			LOG(LDefault, LTrace, "Cam %d calibrated transform: Pos/m (%.3f, %.3f, %.3f), Rot/° (%.2f, %.2f, %.2f), Error: (%.4fmm, %.4f°)\n",
 				  cam->id, posCB.x(), posCB.y(), posCB.z(), rotCB.x(), rotCB.y(), rotCB.z(), tError * 1000, rError);
 		}
 	}

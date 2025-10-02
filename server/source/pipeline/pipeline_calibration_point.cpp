@@ -196,9 +196,9 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 		LOGC(LInfo, "== Adjusting calibration to ground truth simulation setup:\n");
 		auto errors = AlignWithGT(*pipeline, calibs);
 		if (errors.first < 50 && errors.second < 10)
-			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3fdg\n", errors.first, errors.second);
+			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3f°\n", errors.first, errors.second);
 		else
-			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3fdg\n", errors.first, errors.second);
+			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3f°\n", errors.first, errors.second);
 	}
 	else
 	{
@@ -360,9 +360,9 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 		LOGC(LInfo, "== Adjusting calibration to ground truth simulation setup:\n");
 		auto errors = AlignWithGT(*pipeline, calibs);
 		if (errors.first < 50 && errors.second < 10)
-			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3fdg\n", errors.first, errors.second);
+			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3f°\n", errors.first, errors.second);
 		else
-			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3fdg\n", errors.first, errors.second);
+			LOGC(LWarn, "    Room calibration is different from Ground Truth simulation setup! Had error of %.3fmm and %.3f°\n", errors.first, errors.second);
 	}
 
 	if (!stopToken.stop_requested())

@@ -454,7 +454,7 @@ void debugTargetResults(const ObsTarget &target, const ObsTarget &targetGT)
 	frameErrorPos = frameErrorPos/target.frames.size()*1000;
 	frameErrorRot = frameErrorRot/target.frames.size()/(float)PI*180;
 	frameErrorMarker = frameErrorMarker/target.frames.size()*1000;
-	LOG(LTargetCalib, LDebug, "Frame pose error avg is %fmm and %fdg over %d frames\n", frameErrorPos, frameErrorRot, (int)target.frames.size());
+	LOG(LTargetCalib, LDebug, "Frame pose error avg is %fmm and %f° over %d frames\n", frameErrorPos, frameErrorRot, (int)target.frames.size());
 
 	std::vector<int> gtMap(target.markers.size(), -1);
 	for (auto map : target.markerMap)

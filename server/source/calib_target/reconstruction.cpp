@@ -345,7 +345,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 		ratingGTRot = ratingGTRot/frameCnt;
 		ratingGT = ratingGT/frameCnt*1000; // marker rmse to mm
 
-		LOGC(LDebug, "        Sample rating: %.4f error, %.4f change, %.4f rating, %.4fmm GT Marker RMSE, GT Pose: %.4fmm, %.4fdg\n",
+		LOGC(LDebug, "        Sample rating: %.4f error, %.4f change, %.4f rating, %.4fmm GT Marker RMSE, GT Pose: %.4fmm, %.4f°\n",
 			ratingError, ratingChange, ratingCombined, ratingGT, ratingGTPos, ratingGTRot);
 
 		cand.markerErrorGT = ratingGT;

@@ -179,7 +179,7 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 			post.assumedAngle = assumeAngle? 180.0f : NAN;
 		ImGui::SameLine();
 		ImGui::BeginDisabled(!assumeAngle);
-		ScalarProperty<float>("Assume Angle", "dg", &post.assumedAngle, &standard.assumedAngle, 0, 360, 5);
+		ScalarProperty<float>("Assume Angle", "°", &post.assumedAngle, &standard.assumedAngle, 0, 360, 5);
 		ImGui::EndDisabled();
 
 		ImGui::BeginDisabled(assumeAngle);

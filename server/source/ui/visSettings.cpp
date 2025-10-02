@@ -48,7 +48,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Unindent(checkboxIndent);
 		ImGui::Checkbox("Show FoV Bounds (H, V, D)", &visState.calib.showFoVBounds);
 		ImGui::Indent(checkboxIndent);
-		ImGui::InputFloat3("##HVD", visState.calib.boundsFoV.data(), "%.3fdg");
+		ImGui::InputFloat3("##HVD", visState.calib.boundsFoV.data(), "%.3f°");
 		ImGui::Unindent(checkboxIndent);
 		ImGui::TreePop();
 	}

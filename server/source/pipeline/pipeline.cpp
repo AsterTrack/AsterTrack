@@ -285,7 +285,7 @@ void DebugSpecificCameraParameters(const std::vector<CameraCalib> &calibs, const
 		float fovH = (float)getFoVH(calib, modes[c]), fovV = (float)getFoVV(calib, modes[c]), fovD = (float)getFoVD(calib, modes[c]);
 		float effH = (float)getEffectiveFoVH(calib, modes[c]), effV = (float)getEffectiveFoVV(calib, modes[c]), effD = (float)getEffectiveFoVD(calib, modes[c]);
 		float distH = (effH/fovH - 1) * 100, distV = (effV/fovV - 1) * 100, distD = (effD/fovD - 1) * 100;
-		LOGCL("    Cam %d: FoV (H,V,D) (%f, %f, %f); P (%f, %f); D (%f, %f, %f, %f, %f); Distortion (%.2f%%, %.2f%%, %.2f%%); Effective FoV: (%.2fdg, %.2fdg, %.2fdg)\n",
+		LOGCL("    Cam %d: FoV (H,V,D) (%f, %f, %f); P (%f, %f); D (%f, %f, %f, %f, %f); Distortion (%.2f%%, %.2f%%, %.2f%%); Effective FoV: (%.2f°, %.2f°, %.2f°)\n",
 			c, fovH, fovV, fovD,
 			calib.principalPoint.x(), calib.principalPoint.y(),
 			calib.distortion.k1, calib.distortion.k2, calib.distortion.p1, calib.distortion.p2, calib.distortion.k3,
@@ -304,7 +304,7 @@ void DebugCameraParameters(const std::vector<CameraCalib> &calibs)
 		float fovH = (float)getFoVH(calib);
 		float effH = (float)getEffectiveFoVH(calib);
 		float distH = (effH/fovH - 1) * 100;
-		LOGC(LDebug, "    Cam %d: FoV (H) (%f); P (%f, %f); D (%f, %f, %f, %f, %f); Distortion (%.2f%%); Effective FoV: (%.2fdg)\n",
+		LOGC(LDebug, "    Cam %d: FoV (H) (%f); P (%f, %f); D (%f, %f, %f, %f, %f); Distortion (%.2f%%); Effective FoV: (%.2f°)\n",
 			calib.id, fovH,
 			calib.principalPoint.x(), calib.principalPoint.y(),
 			calib.distortion.k1, calib.distortion.k2, calib.distortion.p1, calib.distortion.p2, calib.distortion.k3,

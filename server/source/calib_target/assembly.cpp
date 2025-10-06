@@ -1002,6 +1002,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		{
 			invalidFrames++;
 			invalidSamples += frame.samples.size();
+			error.num++;
 			error.mean += frame.error;
 			error.max = std::max(error.max, frame.error);
 			newSampleCnt += frame.samples.size();
@@ -1010,6 +1011,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 			continue;
 		}
 
+		error.num++;
 		error.mean += targetMatch2D.error.mean;
 		error.max = std::max(error.max, targetMatch2D.error.max);
 		newSampleCnt += targetMatch2D.error.samples;
@@ -1037,7 +1039,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		// Maybe look at existing markerMap and pick a random sequence marker for each target marker to use
 		// Addendum: Look at above TODOs for further info on how to proceed
 	}
-	error.mean /= target.frames.size();
+	error.mean /= error.num;
 
 	LOG(LTargetCalib, LInfo, "    Reevaluating observations of %d frames of %d previous samples with avg error of %fpx, "
 		"yielded %d total samples with avg error of %fpx, including %d untrackable frames with %d samples",

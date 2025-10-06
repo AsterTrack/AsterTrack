@@ -379,6 +379,7 @@ public:
 	struct {
 		int numCalibrated, numUncalibrated, relCertain, relUncertain;
 	} calibState;
+	int editingLensPreset = -1;
 
 	// Pipeline/TargetCalib state
 	std::vector<std::shared_ptr<TargetView>> targetViewsSorted;

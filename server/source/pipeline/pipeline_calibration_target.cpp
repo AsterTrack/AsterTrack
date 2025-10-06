@@ -985,7 +985,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt;
 				LOGC(LInfo, "  Optimising current target:");
 				ScopedLogLevel scopedLogLevel(LInfo);
-				OptimisationOptions options(false, false, true);
+				OptimisationOptions options(false, false, false, true, false);
 				auto itUpdate = [&](OptErrorRes errors){
 					assembly.state.errors = errors;
 					assembly.state.numSteps++;
@@ -1050,7 +1050,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
-				OptimisationOptions options(false, false, true);
+				OptimisationOptions options(false, false, false, true, false);
 
 				// Add all remaining frames
 				auto insIt = std::lower_bound(base.target.frames.begin(), base.target.frames.end(), tgt->frames.front(), 
@@ -1119,7 +1119,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
-				OptimisationOptions options(false, false, true);
+				OptimisationOptions options(false, false, false, true, false);
 
 				// Add remaining and new markers
 				std::map<int, int> newMarkerMap;

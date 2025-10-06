@@ -118,7 +118,7 @@ struct ReprojectionError
 	void setOptimisationOptions(OptimisationOptions options)
 	{
 		m_options = options;
-		m_paramCount = m_paramCameras = m_tgtParamIndex = numCamParams(options, m_cameras.size());
+		m_paramCount = m_paramCameras = m_tgtParamIndex = numCamParams(options, m_cameras);
 		m_paramTarget.clear();
 		m_paramTarget.reserve(m_data->targets.size());
 		for (auto &target : m_data->targets)

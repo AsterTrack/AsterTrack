@@ -260,6 +260,97 @@ void storeCameraConfigFile(const std::string &path, const CameraConfigMap &confi
 	fs.close();
 }
 
+void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens)
+{
+	// Read JSON config file
+	std::ifstream fs(path);
+	if (!fs.is_open()) return;
+	json calib;
+	fs >> calib;
+	fs.close();
+
+#ifndef JSON_NOEXCEPTION
+	try
+#endif
+	{ // Parse camera calibration
+		if (calib.contains("lenses"))
+		{
+			auto &jsLenses = calib["lenses"];
+			if (jsLenses.is_array())
+			{
+				int i = 0;
+				for (auto &jsLens : jsLenses)
+				{
+					if (!jsLens.contains("id") || !jsLens.contains("distortion")) return;
+					LensCalib calib = {};
+					if (jsLens.contains("id"))
+						calib.id = jsLens["id"].get<int>();
+					if (jsLens.contains("label"))
+						calib.label = jsLens["label"].get<std::string>();
+					if (jsLens.contains("f"))
+						calib.f = jsLens["f"].get<CVScalar>();
+					if (jsLens.contains("distortion"))
+					{
+						auto &distortion = jsLens["distortion"];
+						if (distortion.is_object())
+						{
+							calib.k1 = distortion["k1"].get<CVScalar>();
+							calib.k2 = distortion["k2"].get<CVScalar>();
+							calib.k3 = distortion["k3"].get<CVScalar>();
+						}
+					}
+
+					lensCalib[calib.id] = calib;
+				}
+			}
+		}
+
+		defaultLens = -1;
+		if (calib.contains("default"))
+			defaultLens = calib["default"].get<int>();
+		if (!lensCalib.empty() && !lensCalib.contains(defaultLens))
+			defaultLens = lensCalib.begin()->first;
+	}
+#ifndef JSON_NOEXCEPTION
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
+		return;
+	}
+#endif
+}
+
+void storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens)
+{
+	json file;
+
+	// Write camera calibration
+	file["lenses"] = json::array();
+	for (const auto &lensIt : lensCalib)
+	{
+		const LensCalib &lens = lensIt.second;
+		if (lens.id < 0) continue;
+		json jsLens;
+		// Write intrinsic calibration
+		jsLens["id"] = lens.id;
+		jsLens["label"] = lens.label;
+		jsLens["f"] = lens.f;
+		jsLens["distortion"]["k1"] = lens.k1;
+		jsLens["distortion"]["k2"] = lens.k2;
+		jsLens["distortion"]["k3"] = lens.k3;
+		file["lenses"].push_back(std::move(jsLens));
+	}
+
+	file["default"] = defaultLens;
+
+	// Write JSON calib file
+	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
+	std::ofstream fs(path);
+	if (!fs.is_open()) return;
+	fs << std::setfill('\t') << std::setw(1) << file;
+	fs.close();
+}
+
 void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib)
 {
 	// Read JSON config file
@@ -310,7 +401,6 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 							calib.fInv = 1.0/calib.f;
 						}
 					}
-					// Parse principal point
 					if (jsCamera.contains("principalPoint"))
 					{
 						auto &principalPoint = jsCamera["principalPoint"];
@@ -331,6 +421,10 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 							calib.distortion.p1 = distortion["p1"].get<CVScalar>();
 							calib.distortion.p2 = distortion["p2"].get<CVScalar>();
 						}
+					}
+					if (jsCamera.contains("lensID"))
+					{
+						calib.lensID = jsCamera["lensID"].get<int>();
 					}
 					// Parse extrinsic calibration
 					calib.transform = Eigen::Transform<CVScalar,3,Eigen::Isometry>::Identity();
@@ -390,6 +484,7 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 		cam["distortion"]["k3"] = calib.distortion.k3;
 		cam["distortion"]["p1"] = calib.distortion.p1;
 		cam["distortion"]["p2"] = calib.distortion.p2;
+		cam["lensID"] = calib.lensID;
 		// Write extrinsic calibration
 		Eigen::Matrix<CVScalar,3,1> pos = calib.transform.translation();
 		cam["position"]["x"] = pos.x();

@@ -319,8 +319,10 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 {
 	std::vector<CameraErrorMaps*> errorMaps(calibs.size());
 	std::vector<SynchronisedS<CameraErrorMaps>::LockedPtr> errorMapLocks;
+	std::vector<OptErrorRes> errors(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{
+		if (calibs[c].index < 0) continue;
 		std::shared_ptr<CameraPipeline> &cam = pipeline.cameras[calibs[c].index];
 		cam->errorVisDirty = false;
 		auto err_lock = cam->errorVis.contextualLock();
@@ -339,13 +341,14 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 	}
 	if (data.points.totalSamples == 0)
 		return;
-	pipeline.pointCalib.state.errors = updateCameraErrorMaps(data, calibs, errorMaps);
+	pipeline.pointCalib.state.errors = updateCameraErrorMaps(data, calibs, errorMaps, errors);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (!errorMaps[c]) continue;
 		if (errorMaps[c]->pointErrors.empty())
 			errorMaps[c]->mapSize.setZero(); // No data for camera
 		pipeline.cameras[calibs[c].index]->errorVisDirty = true;
+		pipeline.cameras[calibs[c].index]->errorStats = errors[c];
 	}
 }
 

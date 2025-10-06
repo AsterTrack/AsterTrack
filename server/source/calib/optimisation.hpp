@@ -48,13 +48,15 @@ struct OptimisationOptions
 	// Outliers
 	bool ignoreOutliers;
 
-	OptimisationOptions(bool extrinsics = true, bool intrinsics = true, bool target = false)
+	OptimisationOptions(bool extrinsics, bool align, bool radial, bool target, bool normalise = true)
 		: motion(target), structure(target),
-		position(extrinsics), rotation(extrinsics), focalLen(intrinsics), principal(intrinsics),
-		tangential(intrinsics), radial(intrinsics), radialOrder(3), 
-		sharedRadial(intrinsics), 
-		normalisePos(intrinsics), normaliseScale(intrinsics),
+		position(extrinsics), rotation(extrinsics), focalLen(align), principal(align),
+		tangential(align), radial(radial), radialOrder(3), 
+		sharedRadial(radial), 
+		normalisePos(normalise), normaliseScale(normalise),
 		ignoreOutliers(true)
+	{}
+	OptimisationOptions() : OptimisationOptions(true, true, true, false)
 	{}
 };
 
@@ -77,6 +79,7 @@ enum OptOptions {
 
 struct OptErrorRes
 {
+	int num = 0;
     float mean = std::numeric_limits<float>::max();
 	float rmse = std::numeric_limits<float>::max();
 	float stdDev = std::numeric_limits<float>::max();
@@ -99,7 +102,7 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
  * Returns avg, stdDev, max in -1 to 1 coordinates
  * Also fills the error maps
  */
-OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::vector<CameraErrorMaps*> &cameraErrorMaps);
+OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::vector<CameraErrorMaps*> &cameraErrorMaps, std::vector<OptErrorRes> &cameraErrors);
 
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations

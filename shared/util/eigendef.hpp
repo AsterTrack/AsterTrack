@@ -64,6 +64,35 @@ using Vector2 = Eigen::Matrix<Scalar, 2, 1>;
 typedef int CameraID;
 const CameraID CAMERA_ID_NONE = 0;
 
+template<typename Scalar>
+struct CameraCalib_t;
+
+/**
+ * Distortion preset of a known lens
+ */
+template<typename Scalar>
+struct LensCalib_t
+{
+	int id;
+	std::string label;
+	Scalar f;
+	Scalar k1;
+	Scalar k2;
+	Scalar k3;
+
+	LensCalib_t() = default;
+	LensCalib_t(int ID, CameraCalib_t<Scalar> calib)
+	{
+		id = ID;
+		label = "New Lens";
+		f = calib.f;
+		k1 = calib.distortion.k1;
+		k2 = calib.distortion.k2;
+		k3 = calib.distortion.k3;
+	}
+};
+typedef LensCalib_t<CVScalar> LensCalib;
+
 /**
  * Calibration data of a camera
  */
@@ -86,6 +115,7 @@ struct CameraCalib_t
 		Scalar p2;
 		Scalar k3;
 	} distortion;
+	int lensID;
 
 	/**
 	 * Update the view and camera matrix when transform or intrinsiv parameters of cameras changed
@@ -113,11 +143,12 @@ struct CameraCalib_t
 		other.distortion.p1 = (T)distortion.p1;
 		other.distortion.p2 = (T)distortion.p2;
 		other.distortion.k3 = (T)distortion.k3;
+		other.lensID = lensID;
 		return other;
 	}
 
 	CameraCalib_t()
-	{ // Conversion
+	{
 		transform.setIdentity();
 		f = 1;
 		fInv = 1;
@@ -127,10 +158,26 @@ struct CameraCalib_t
 		distortion.p1 = 0;
 		distortion.p2 = 0;
 		distortion.k3 = 0;
+		lensID = -1;
+		UpdateDerived();
+	}
+
+	CameraCalib_t(LensCalib_t<Scalar> lens)
+	{
+		transform.setIdentity();
+		f = lens.f;
+		fInv = 1.0f/lens.f;
+		principalPoint.setZero();
+		distortion.k1 = lens.k1;
+		distortion.k2 = lens.k2;
+		distortion.p1 = 0;
+		distortion.p2 = 0;
+		distortion.k3 = lens.k3;
+		lensID = lens.id;
 		UpdateDerived();
 	}
 };
-typedef CameraCalib_t<CVScalar> CameraCalib; 
+typedef CameraCalib_t<CVScalar> CameraCalib;
 
 /**
  * Physical data of a camera and its mode

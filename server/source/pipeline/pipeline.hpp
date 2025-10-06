@@ -83,6 +83,7 @@ struct CameraPipeline
 	// Error data of calibration
 	std::atomic<bool> errorVisDirty = { false };
 	SynchronisedS<CameraErrorMaps> errorVis = {};
+	OptErrorRes errorStats;
 
 	// Ground-truth data generated in simulation mode
 	struct {
@@ -180,7 +181,7 @@ struct PipelineState
 		struct
 		{
 			int typeFlags;
-			OptimisationOptions options = OptimisationOptions(true, true, false);
+			OptimisationOptions options = OptimisationOptions(true, true, false, false);
 			int maxSteps = 20;
 		} settings = {};
 		struct

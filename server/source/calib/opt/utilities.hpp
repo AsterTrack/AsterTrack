@@ -24,14 +24,27 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigenutil.hpp"
 #include "util/log.hpp"
 
+#include <set>
+
 typedef CVScalar ScalarInternal;
 
-static inline int numCamParams(const OptimisationOptions &opt, int cams)
+template<typename Scalar = ScalarInternal>
+static inline int numCamParams(const OptimisationOptions &opt, const std::vector<CameraCalib_t<Scalar>> &cameras)
 {
 	int extCam = 3 * (opt.position + opt.rotation);
 	int intCam = opt.focalLen + (opt.tangential? 2 : 0) + (opt.principal? 2 : 0);
-	int shared = opt.radial? (opt.radialOrder * (opt.sharedRadial? 1 : cams)) : 0;
-	return (extCam + intCam) * cams + shared;
+	int numRad = cameras.size();
+	if (opt.sharedRadial)
+	{
+		std::set<int> lenses;
+		for (auto &camera : cameras)
+		{
+			if (camera.lensID >= 0 && !lenses.insert(camera.lensID).second)
+				numRad--; // Remove duplicates
+		}
+	}
+	int shared = opt.radial? (opt.radialOrder * numRad) : 0;
+	return (extCam + intCam) * cameras.size() + shared;
 }
 static inline int numTgtStruct(const OptimisationOptions &opt, const ObsTarget& tgt) { return opt.structure? tgt.markers.size()*3 : 0; }
 static inline int numTgtMotion(const OptimisationOptions &opt, const ObsTarget& tgt) { return opt.motion? tgt.frames.size()*6 : 0; }
@@ -81,13 +94,22 @@ static inline std::pair<Vector3<Scalar>, Scalar> setCameraNorms(std::vector<Came
 template<typename Scalar = ScalarInternal>
 static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &cameras, const OptimisationOptions &opt, const Eigen::Ref<const VectorX<Scalar>> &calibParams)
 {
-	int index = 0;
-
+	int numShared = 0;
 	if (opt.sharedRadial && opt.radial)
 	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
+		std::map<int,int> lenses;
+		for (auto &camera : cameras)
+		{
+			if (camera.lensID >= 0)
+				lenses.insert({ camera.lensID, 0 });
+		}
+		for (auto &lens : lenses)
+			lens.second = numShared++;
 		for (int c = 0; c < cameras.size(); c++)
 		{
-			int i = index;
+			int lens = cameras[c].lensID;
+			if (lens < 0) continue;
+			int i = lenses[lens] * opt.radialOrder;
 			if (opt.radialOrder >= 1)
 				cameras[c].distortion.k1 = calibParams(i++);
 			else
@@ -101,9 +123,9 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 			else 
 				cameras[c].distortion.k3 = 0;
 		}
-		index += opt.radialOrder;
 	}
 
+	int index = numShared * opt.radialOrder;
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		if (opt.focalLen)
@@ -121,7 +143,7 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 			cameras[c].distortion.p1 = calibParams(index++);
 			cameras[c].distortion.p2 = calibParams(index++);
 		}
-		if (opt.sharedRadial || !opt.radial)
+		if ((opt.sharedRadial && cameras[c].lensID >= 0) || !opt.radial)
 			continue;
 		if (opt.radialOrder >= 1)
 			cameras[c].distortion.k1 = calibParams(index++);
@@ -156,14 +178,29 @@ static inline void readCameraParameters(std::vector<CameraCalib_t<Scalar>> &came
 template<typename Scalar = ScalarInternal>
 static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>> &cameras, const OptimisationOptions &opt, Eigen::Ref<VectorX<Scalar>> calibParams)
 {
-	int index = 0;
 	calibParams.setZero();
 
+	int numShared = 0;
 	if (opt.sharedRadial && opt.radial)
 	{ // Don't touch radial if none enabled, reset higher orders if at least one is enabled
+		std::map<int,std::pair<int,int>> lenses;
+		for (auto &camera : cameras)
+		{
+			if (camera.lensID >= 0)
+				lenses.insert({ camera.lensID, { 0, 0 } });
+			// TODO: Add ability to mark lenses as static to not optimise them but others
+			// useful when they were already optimised previously on more data, but some lenses are new
+			// Would require passing in way more information in here - e.g. a list of LensCalibs to draw that info from:/
+			// Current workarounds include: Optimising it anyway, later reversing manually in lens_presets.json, then optimising again but not radial distortions
+		}
+		for (auto &lens : lenses)
+			lens.second.first = numShared++;
 		for (int c = 0; c < cameras.size(); c++)
 		{
-			int i = index;
+			int lens = cameras[c].lensID;
+			if (lens < 0) continue;
+			lenses[lens].second++;
+			int i = lenses[lens].first * opt.radialOrder;
 			if (opt.radialOrder >= 1)
 				calibParams(i++) += cameras[c].distortion.k1;
 			if (opt.radialOrder >= 2)
@@ -171,11 +208,12 @@ static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>
 			if (opt.radialOrder >= 3)
 				calibParams(i++) += cameras[c].distortion.k3;
 		}
-		for (int i = index; i < index+opt.radialOrder; i++)
-			calibParams(i) /= cameras.size();
-		index += opt.radialOrder;
+		for (int i = 0; i < numShared; i++)
+			for (int j = 0; j < opt.radialOrder; j++)
+				calibParams(i*opt.radialOrder+j) /= lenses[i].second;
 	}
 
+	int index = numShared * opt.radialOrder;
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		if (opt.focalLen)
@@ -190,7 +228,7 @@ static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>
 			calibParams(index++) = cameras[c].distortion.p1;
 			calibParams(index++) = cameras[c].distortion.p2;
 		}
-		if (opt.sharedRadial || !opt.radial)
+		if ((opt.sharedRadial && cameras[c].lensID >= 0) || !opt.radial)
 			continue;
 		if (opt.radialOrder >= 1)
 			calibParams(index++) = cameras[c].distortion.k1;
@@ -267,9 +305,10 @@ static inline OptErrorRes getErrorStats(Eigen::MatrixBase<Derived> &errors, int 
 		return OptErrorRes();	
 
 	OptErrorRes error;
+	error.num = errors.size()-outliers;
 	error.max = errors.maxCoeff();
-	error.mean = errors.sum() / (errors.size()-outliers);
-	error.rmse = std::sqrt(errors.cwiseProduct(errors).sum() / (errors.size()-outliers));	
+	error.mean = errors.sum() / error.num;
+	error.rmse = std::sqrt(errors.cwiseProduct(errors).sum() / error.num);	
 	error.stdDev = 0;
 	if (outliers == 0)
 	{
@@ -281,7 +320,7 @@ static inline OptErrorRes getErrorStats(Eigen::MatrixBase<Derived> &errors, int 
 			if (errors(i) > 0) // Outlier
 				error.stdDev += (errors(i) - error.mean)*(errors(i) - error.mean);
 	}
-	error.stdDev = std::sqrt(error.stdDev / (errors.size() - 1));
+	error.stdDev = std::sqrt(error.stdDev / (error.num - 1));
 	return error;
 }
 
@@ -297,7 +336,7 @@ static OptErrorRes logErrorStats(const char* label, VectorX<Scalar> &errorVec, i
 	if (errorVec.hasNaN())
 	{
 		LOGC(LWarn, "%s: Error contains NANs!\n", label);
-		return { NAN, NAN, NAN, NAN };
+		return { 0, NAN, NAN, NAN, NAN };
 	}
 
 	OptErrorRes error = getErrorStats(errorVec, outliers);

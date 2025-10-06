@@ -70,11 +70,14 @@ struct ServerState
 	GeneralConfig config = {};
 	CameraConfigMap cameraConfig;
 	ControllerConfig controllerConfig; // TODO: Add support for multiple controllers with different configs
+	std::map<int, LensCalib> lensPresets;
+	int defaultLens;
 	std::vector<CameraCalib> cameraCalibrations;
 	std::vector<TrackerConfig> trackerConfigs; // TODO: Synchronised
 	std::string wpa_supplicant_conf;
 	bool generalConfigDirty, cameraConfigDirty, trackerConfigDirty;
 	bool cameraCalibsDirty, trackerCalibsDirty, trackerIMUsDirty;
+	bool lensPresetsDirty;
 	// TODO: Should not store on disk by default, but provide option to store wifi credentials using secret service on linux 
 
 	// Device setup

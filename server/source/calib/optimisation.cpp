@@ -166,7 +166,7 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
  * Returns avg, stdDev, max in -1 to 1 coordinates
  * Also fills the error maps
  */
-OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::vector<CameraErrorMaps*> &cameraErrorMaps)
+OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::vector<CameraErrorMaps*> &cameraErrorMaps, std::vector<OptErrorRes> &cameraErrors)
 {
 	if (data.points.totalSamples == 0 && data.targets.empty())
 	{
@@ -188,6 +188,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 	std::vector<std::vector<float>> mapErrorAccum(cameraCalibs.size());
 	std::vector<std::vector<int>> mapCount(cameraCalibs.size());
 	std::vector<std::vector<int>> mapOutliers(cameraCalibs.size());
+	std::vector<std::vector<float>> camErrors(cameraCalibs.size());
 	for (int c = 0; c < cameraCalibs.size(); c++)
 	{
 		if (cameraCalibs[c].invalid()) continue;
@@ -196,6 +197,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 		mapCount[c].resize(mapSize.x()*mapSize.y(), 0);
 		mapOutliers[c].resize(mapSize.x()*mapSize.y(), 0);
 		cameraErrorMaps[c]->pointErrors.clear();
+		camErrors[c].reserve(cameraErrorMaps[c]->pointErrors.size()*3/2);
 	}
 
 	// Calculate error values
@@ -238,6 +240,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 			mapErrorAccum[c][mapY*mapSize.x()+mapX] += (float)errorVec(index);
 			mapCount[c][mapY*mapSize.x()+mapX]++;
 			cameraErrorMaps[c]->pointErrors.push_back(Eigen::Vector3f(pos.x(), pos.y(), (float)(errorVec(index) / errorMax)));
+			camErrors[c].push_back(errorVec(index));
 			index++;
 			// TODO: No way to actually report already removed outliers in mapOutliers
 		}
@@ -274,6 +277,9 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
 				if (cellErrorMax < error) cellErrorMax = error;
 			}
 		}
+
+		Eigen::Map<Eigen::VectorXf> errorVec(camErrors[c].data(), camErrors[c].size());
+		cameraErrors[c] = getErrorStats(errorVec);
 	}
 
 	LOGC(LTrace, "Error map has maximum reported error at %f, max error at %f, average cell error %f, "
@@ -313,12 +319,6 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
 	}
-	{
-		VectorX<ScalarInternal> errorVec(errorTerm.values());
-		errorTerm.calculateError(camerasInternal, errorVec);
-		auto errors = logErrorStats("    Error Before", errorVec, 0);
-		if (std::isnan(errors.mean)) return {};
-	}
 
 	// Create initial parameter vector
 	VectorX<ScalarInternal> calibParams(errorTerm.m_paramCount);
@@ -353,6 +353,13 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		if constexpr (Options & OptTgtMotionOpt)
 			errorTerm.updateTargetMotions(data); // TODO: Use camera norms, currently incompatible with normaliseScale
 	};
+
+	{
+		VectorX<ScalarInternal> errorVec(errorTerm.values());
+		errorTerm.calculateError(camerasInternal, errorVec);
+		auto errors = logErrorStats("    Error Before", errorVec, 0);
+		if (std::isnan(errors.mean)) return {};
+	}
 
 	readFromParameters();
 
@@ -625,7 +632,7 @@ int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraC
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return optimiseData<OptSparse>(
-		OptimisationOptions(false, false, true), 
+		OptimisationOptions(false, false, false, true, false), 
 		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
 }
 
@@ -639,6 +646,6 @@ int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return compareOptimiseData(
-		OptimisationOptions(false, false, true),
+		OptimisationOptions(false, false, false, true, false),
 		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
 }

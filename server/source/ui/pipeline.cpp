@@ -329,7 +329,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					updateReprojectionErrors(data, calibs);
 
 					LOGCL("Optimising camera position:");
-					OptimisationOptions options(true, false, false);
+					OptimisationOptions options(true, false, false, false);
 					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
 					// Update calibration
@@ -380,7 +380,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					updateReprojectionErrors(data, calibs);
 
 					LOGCL("Optimising target markers:");
-					OptimisationOptions options(false, false, true);
+					OptimisationOptions options(false, false, false, true, false);
 					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
 					LOGCL("Done optimising! Applying to database1");

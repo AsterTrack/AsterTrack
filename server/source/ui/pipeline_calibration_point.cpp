@@ -117,6 +117,271 @@ void InterfaceState::UpdatePipelineCalibSection()
 			DebugCameraParameters(state.cameraCalibrations);
 		}
 	}
+	if (ImGui::TreeNode("Cameras"))
+	{
+		bool openLensPresets = false;
+		if (ImGui::BeginTable("CamCalibs", 3))
+		{
+			ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthStretch, 3);
+			ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 5);
+			ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthStretch, 5);
+
+			for (auto &camera : pipeline.cameras)
+			{
+				auto &calib = camera->calib;
+				ImGui::PushID(camera->id);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("#%d", camera->id);
+
+				ImGui::TableNextColumn();
+				bool noCalib = calib.invalid();
+				bool noExtrinsics = calib.transform.matrix().isIdentity();
+				bool noRadialDist = calib.distortion.k1 == 0 && calib.distortion.k2 == 0 && calib.distortion.k3 == 0;
+				bool noAlignCorr = calib.principalPoint.squaredNorm() == 0 && calib.distortion.p1 == 0 && calib.distortion.p2 == 0;
+				bool fullCalib = !(noCalib || noExtrinsics || noRadialDist || noAlignCorr);
+				if (noCalib || noExtrinsics)
+					ImGui::Text("No Calibration");
+				else if (noRadialDist)
+					ImGui::Text("No Distortion Profile");
+				else if (noAlignCorr)
+					ImGui::Text("No Alignment Correction");
+				else if (!fullCalib)
+					ImGui::Text("Invalid");
+				else
+				{
+					if (camera->errorStats.num > 0)
+						ImGui::Text("%.2f°h Lens, %.2fpx", getEffectiveFoVH(calib, camera->mode), camera->errorStats.rmse*PixelFactor);
+					else
+					 	ImGui::Text("%.2f°h Lens", getEffectiveFoVH(calib, camera->mode));
+				}
+
+				if (ImGui::BeginItemTooltip())
+				{
+					if (camera->errorStats.num > 0)
+					{
+						ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
+							camera->errorStats.mean*PixelFactor,
+							camera->errorStats.stdDev*PixelFactor,
+							camera->errorStats.max*PixelFactor,
+							camera->errorStats.num);
+					}
+					if (fullCalib)
+					{
+						auto &mode = camera->mode;
+						float fovH = getFoVH(calib, mode), fovV = getFoVV(calib, mode), fovD = getFoVD(calib, mode);
+						//ImGui::Text("Raw FoV /wo Distortion: %.2f° H, %.2f° V, %.2f° D", fovH, fovV, fovD);
+						float effH = getEffectiveFoVH(calib, mode), effV = getEffectiveFoVV(calib, mode), effD = getEffectiveFoVD(calib, mode);
+						ImGui::Text("Field of View: %.2f° H, %.2f° V, %.2f° D", effH, effV, effD);
+						float distH = (effH/fovH - 1) * 100, distV = (effV/fovV - 1) * 100, distD = (effD/fovD - 1) * 100;
+						ImGui::Text("Relative Distortion: %.2f%% H, %.2f%% V, %.2f%% D", distH, distV, distD);
+					}
+					/* ImGui::Text("Raw: f = %f; principal = (%f, %f); radial = %f, %f, %f; tangential = %f, %f",
+						calib.f,
+						calib.principalPoint.x(), calib.principalPoint.y(),
+						calib.distortion.k1, calib.distortion.k2, calib.distortion.k3,
+						calib.distortion.p1, calib.distortion.p2); */
+					ImGui::EndTooltip();
+				}
+
+				ImGui::TableNextColumn();
+				ImGui::SetNextItemWidth(ImGui::GetColumnWidth() - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
+				if (ImGui::BeginCombo("##Preset", calib.lensID < 0? "Lens" : state.lensPresets[calib.lensID].label.c_str()))
+				{
+					if (ImGui::Selectable("None"))
+					{
+						if (calib.lensID >= 0)
+							state.cameraCalibsDirty = true;
+						calib.lensID = -1;
+						SignalCameraCalibUpdate({ calib });
+					}
+					if (ImGui::Selectable("Make Preset"))
+					{
+						int id = state.lensPresets.empty()? 1 : (state.lensPresets.rbegin()->first + 1);
+						assert(!state.lensPresets.contains(id));
+						state.lensPresets[id] = LensCalib(id, calib);
+						state.lensPresetsDirty = true;
+						calib.lensID = id;
+						SignalCameraCalibUpdate({ calib });
+						openLensPresets = true;
+					}
+					for (auto &lensIt : state.lensPresets)
+					{
+						auto &lens = lensIt.second;
+						ImGui::PushID(lensIt.first);
+						if (ImGui::Selectable(lens.label.c_str(), calib.lensID == lensIt.first))
+						{
+							if (calib.lensID != lensIt.first)
+								state.cameraCalibsDirty = true;
+							if (calib.invalid())
+							{ // Create new calib from lens
+								calib = CameraCalib(lens);
+								calib.id = camera->id;
+								calib.index = camera->index;
+							}
+							else
+							{ // Update existing calib with lens
+								calib.distortion.k1 = lens.k1;
+								calib.distortion.k2 = lens.k2;
+								calib.distortion.k3 = lens.k3;
+								calib.lensID = lens.id;
+							}
+							SignalCameraCalibUpdate({ calib });
+						}
+						ImGui::PopID();
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::SameLine();
+				if (CrossButton("ResetCamCalib"))
+				{
+					calib = CameraCalib();
+				}
+				
+				ImGui::PopID();
+			}
+
+			ImGui::EndTable();
+		}
+
+		if (openLensPresets)
+			ImGui::SetNextItemOpen(true);
+		if (ImGui::TreeNode(state.lensPresetsDirty? "Lens Presets (unsaved)###LensPreset" : "Lens Presets###LensPreset"))
+		{
+			if (ImGui::BeginTable("LensPresets", 2))
+			{
+				ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch, 1);
+				ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 3));
+
+				for (auto lensIt = state.lensPresets.begin(); lensIt != state.lensPresets.end();)
+				{
+					LensCalib &lens = lensIt->second;
+					CameraCalib calib(lens);
+					CameraMode mode(1280, 800);
+					ImGui::PushID(lens.id);
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					bool editing = editingLensPreset == lens.id;
+					bool deleteLens = lensIt->first != lens.id;
+					if (editing)
+					{
+						ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+						if (ImGui::InputText("##LensName", &lens.label))
+							state.lensPresetsDirty = true;
+					}
+					else
+					{
+						ImGui::AlignTextToFramePadding();
+						ImGui::Text("Lens %s (%d) - %.2f° H",
+							lens.label.c_str(), lens.id, getEffectiveFoVH(calib, mode));
+						if (ImGui::BeginItemTooltip())
+						{
+							float fovH = getFoVH(calib, mode), fovV = getFoVV(calib, mode), fovD = getFoVD(calib, mode);
+							float effH = getEffectiveFoVH(calib, mode), effV = getEffectiveFoVV(calib, mode), effD = getEffectiveFoVD(calib, mode);
+							ImGui::Text("Field of View: %.2f° H, %.2f° V, %.2f° D", effH, effV, effD);
+							float distH = (effH/fovH - 1) * 100, distV = (effV/fovV - 1) * 100, distD = (effD/fovD - 1) * 100;
+							ImGui::Text("Relative Distortion: %.2f%% H, %.2f%% V, %.2f%% D", distH, distV, distD);
+							ImGui::Text("Raw: ID = %d, f = %f, radial = (%f, %f, %f)",
+								lens.id, lens.f, lens.k1, lens.k2, lens.k3);
+							ImGui::EndTooltip();
+						}
+					}
+
+					ImGui::TableNextColumn();
+
+					if (ImGui::Button(editing? "D###Edit" : "E###Edit", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+						editingLensPreset = editing? -1 : lens.id;
+					ImGui::SetItemTooltip("Toggle Edit Mode to change the label and delete the lens preset.");
+					ImGui::SameLine();
+
+					if (editing)
+					{
+						std::string deletePopup = asprintf_s("deleteLens%d", lens.id);
+						if (CrossButton("Delete"))
+							ImGui::OpenPopup(deletePopup.c_str());
+						if (ImGui::BeginPopup(deletePopup.c_str()))
+						{
+							ImGui::Text("Delete Lens Preset %d?", lens.id);
+							if (ImGui::Button("Delete", SizeWidthFull()))
+								deleteLens = true;
+							ImGui::EndPopup();
+						}
+					}
+					else
+					{
+						if (RetryButton("Refetch"))
+						{
+							int num = 0;
+							for (auto &camera : pipeline.cameras)
+								if (camera->calib.lensID == lens.id)
+									num++;
+							if (num > 0)
+							{
+								lens.f = 0;
+								lens.k1 = 0;
+								lens.k2 = 0;
+								lens.k3 = 0;
+								for (auto &camera : pipeline.cameras)
+								{
+									if (camera->calib.lensID != lens.id) continue;
+									lens.f += camera->calib.f;
+									lens.k1 += camera->calib.distortion.k1;
+									lens.k2 += camera->calib.distortion.k2;
+									lens.k3 += camera->calib.distortion.k3;
+								}
+								lens.f /= num;
+								lens.k1 /= num;
+								lens.k2 /= num;
+								lens.k3 /= num;
+								state.lensPresetsDirty = true;
+							}
+						}
+						ImGui::SetItemTooltip("Update Lens Preset from calibration of connected cameras.");
+					}
+
+					ImGui::SameLine();
+					bool defaultLens = state.defaultLens == lens.id;
+					ImGui::BeginDisabled(defaultLens);
+					if (ImGui::Checkbox("##Default", &defaultLens))
+					{
+						state.defaultLens = lens.id;
+						state.lensPresetsDirty = true;
+					}
+					ImGui::EndDisabled();
+
+					ImGui::PopID();
+
+					if (deleteLens)
+					{
+						for (auto &camera : state.cameraCalibrations)
+						{
+							if (camera.lensID == lens.id)
+								deleteLens = false;
+						}
+					}
+					if (!deleteLens) lensIt++;
+					else lensIt = state.lensPresets.erase(lensIt);
+				}
+				ImGui::EndTable();
+			}
+
+			if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
+			{
+				storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+				state.lensPresetsDirty = false;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
+			{
+				parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+				state.lensPresetsDirty = false;
+			}
+			ImGui::TreePop();
+		}
+
+		ImGui::TreePop();
+	}
 	EndSection();
 }
 
@@ -358,10 +623,11 @@ void InterfaceState::UpdatePipelinePointCalib()
 		ImGui::BeginDisabled(!opt.radial);
 		ImGui::SameLine();
 		ImGui::Checkbox("Share", &opt.sharedRadial);
-		ImGui::SetItemTooltip("Assume all lenses are the same and share radial distortion parameters.\n"
+		ImGui::SetItemTooltip("Share radial distortion parameters of cameras using the same Lens.\n"
 			"This helps constrain them, yielding better results using less computing resources.\n"
 			"This does not share parameters affected by lens installation\n"
-			"    (like focal length, principal point and tangential distortion)");
+			"    (like focal length, principal point and tangential distortion)\n"
+			"NOTE: Lenses need to be setup for relevant cameras for this to have any effect at all!");
 		ImGui::SameLine();
 		ImGui::BeginDisabled(opt.radialOrder == 0);
 		if (ImGui::Button("X", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))

@@ -205,6 +205,9 @@ void storeGeneralConfigFile(const std::string &path, const GeneralConfig &config
 void parseCameraConfigFile(const std::string &path, CameraConfigMap &config);
 void storeCameraConfigFile(const std::string &path, const CameraConfigMap &config);
 
+void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens);
+void storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens);
+
 void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
 void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
 

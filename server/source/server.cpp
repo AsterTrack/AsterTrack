@@ -79,6 +79,10 @@ bool ServerInit(ServerState &state)
 	// TODO: Add UI and storage of general config
 	parseCameraConfigFile("store/camera_config.json", state.cameraConfig);
 	state.cameraConfigDirty = false;
+	// Also load lens presets in case they are needed for camera calib UI
+	parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+	if (state.lensPresets.empty())
+		parseLensPresets("store/lens_presets_builtin.json", state.lensPresets, state.defaultLens);
 
 	// Load calibrations
 	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
@@ -235,8 +239,8 @@ void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
 		{ // New camera with calibration, add as calibration entry
 			state.cameraCalibrations.push_back(calib);
 		}
+		GetState().cameraCalibsDirty = true;
 	}
-	GetState().cameraCalibsDirty = true;
 	// Signal UI that calibrations got updated
 	SignalServerEvent(EVT_UPDATE_CALIBS);
 	// This update is assumed to have come from pipeline, so no need to update it

@@ -1448,7 +1448,7 @@ static bool ShowLatencyPanel(BlockedQueue<LatencyMeasurement, 4096>::View<true> 
 	if (ImPlot::BeginPlot("##Latency", ImVec2(-1, -1)))
 	{
 		// Update frameRange
-    	static ImPlotRange frameRange(0, 1000000);
+		static ImPlotRange frameRange(0, 1000000);
 		int maxOffset = std::max(1000.0, frameRange.Size()/6);
 		if (followFrame)
 		{ // Apply offset due to new recent frame

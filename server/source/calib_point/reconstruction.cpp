@@ -132,8 +132,8 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	estimateProjectiveDepths<CenterViewStrategy>(normMeasurementMatrix, params, projectiveDepthMatrix, viewsDiscarded);
 
 	int recViewCount = viewCount - viewsDiscarded.count();
-	if (recViewCount < 3)
-	{ // TODO: Change to 2 once euclidean stratification can work with two cameras
+	if (recViewCount < 2)
+	{ // TODO: Reconstructing 2 cameras MAY work, allow for now to give user choice
 		LOGC(LError, "Cannot recover any views/camera calibrations since only %d/%d had significant overlap!\n", recViewCount, viewCount);
 		for (int i = 0; i < viewsDiscarded.size(); i++)
 			LOGC(LError, " View %d got recoverable state %d!", i, viewsDiscarded[i]);

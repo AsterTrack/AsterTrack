@@ -331,7 +331,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 
 	ImGui::SetCursorPosX(areaEnd - GetBarWidth(ImGui::GetFrameHeight(), 1));
 	ImGui::BeginDisabled(true);
-	ImGui::Button("?", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight()));
+	ImGui::Button("?", SizeFrame());
 	ImGui::EndDisabled();
 	ImGui::SetItemTooltip("Move around with WASD/Arrow Keys\nMove Up/Down with E/Q\nLook around with Left Mouse Drag");
 

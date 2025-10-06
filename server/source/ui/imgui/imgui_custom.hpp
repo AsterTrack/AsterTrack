@@ -68,6 +68,9 @@ inline bool SliderInput(const char *label, Scalar *value, Scalar min, Scalar max
 
 bool BeginIconDropdown(const char *id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags);
 
+bool BeginInteractiveItemTooltip(const char* text_id = "");
+void EndInteractiveItemTooltip();
+
 /**
  * Adds an interactable background item that other items can overlap with
  * Returns whether the interaction surface itself is pressed
@@ -223,6 +226,10 @@ static inline float MinSharedLabelWidth(STRING... labels)
  * Subdivided sizes in line space
  */
 
+static inline ImVec2 SizeFrame()
+{
+	return ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+}
 static inline ImVec2 SizeWidthFull()
 {
 	return ImVec2(LineWidth(), ImGui::GetFrameHeight());

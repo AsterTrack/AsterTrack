@@ -345,3 +345,82 @@ bool BeginIconDropdown(const char *id, ImTextureID iconTex, ImVec2 iconSize, ImG
 	bool open = ImGui::BeginComboPopup(popupID, contextBB, flags);
 	return open;
 }
+
+bool BeginInteractiveItemTooltip(const char* text_id)
+{
+	using namespace ImGui;
+	ImGuiContext& g = *GImGui;
+
+	// FIXME: move storage elsewhere.
+	static ImGuiID InteractiveTooltipOpenID = 0;
+	static ImGuiID InteractiveTooltipCloseID = 0;
+
+	const char* WINDOW_NAME = "Tooltip##InteractiveTooltip";
+
+	ImGuiID id = g.LastItemData.ID;
+	if (id == 0)
+		id = g.CurrentWindow->GetID(text_id);
+	bool input_mode_is_nav = g.NavHighlightItemUnderNav && g.NavCursorVisible;
+
+	if (InteractiveTooltipCloseID != 0 && (g.NavJustMovedToId == InteractiveTooltipCloseID || !input_mode_is_nav))
+		InteractiveTooltipCloseID = 0;
+
+	if (IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+	{
+		bool cancel_open_for_nav = (InteractiveTooltipCloseID != 0 && input_mode_is_nav);
+		if (!cancel_open_for_nav)
+		{
+			InteractiveTooltipOpenID = id;
+			SetNextWindowFocus();
+		}
+	}
+	if (InteractiveTooltipOpenID != id)
+	{
+		g.NextWindowData.ClearFlags(); // We behave like Begin() and need to consume those values
+		return false;
+	}
+
+	bool hovered_item = IsItemHovered(ImGuiHoveredFlags_RectOnly);
+	if (ImGuiWindow* window = FindWindowByName(WINDOW_NAME))
+	{
+		ImVec2 size = CalcWindowNextAutoFitSize(window);
+		ImRect r_outer = GetPopupAllowedExtentRect(window);
+		ImVec2 pos = FindBestWindowPosForPopupEx(g.LastItemData.Rect.GetBL(), size, &window->AutoPosLastDirection, r_outer, g.LastItemData.Rect, ImGuiPopupPositionPolicy_ComboBox);
+		SetNextWindowPos(pos);
+	}
+
+	ImGuiWindowFlags flags =
+		ImGuiWindowFlags_Tooltip |
+		//ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize; // | ImGuiWindowFlags_NoDocking;
+	if (!Begin(WINDOW_NAME, NULL, flags))
+	{
+		End(); // NB: Begin can return false when the popup is completely clipped (e.g. zero size display)
+		return false;
+	}
+
+	// Hack so nested tooltips will work, for e.g. TextLinkOpenURL(). (#8982)
+	g.TooltipPreviousWindow = NULL;
+
+	// Close
+	if (!hovered_item)
+	{
+		if (!input_mode_is_nav && !IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+			InteractiveTooltipOpenID = 0;
+		else if (input_mode_is_nav && !IsWindowFocused(ImGuiFocusedFlags_ChildWindows))
+			InteractiveTooltipOpenID = 0;
+	}
+	if (Shortcut(ImGuiKey_Escape))
+	{
+		InteractiveTooltipOpenID = 0;
+		InteractiveTooltipCloseID = id;
+	}
+
+	return true;
+}
+
+void EndInteractiveItemTooltip()
+{
+	using namespace ImGui;
+	End();
+}

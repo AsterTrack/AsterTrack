@@ -166,28 +166,8 @@ void InterfaceState::UpdateMainMenuBar()
 	bool cachePaths = false;
 	static bool cachingRecordEntries = false;
 	static std::map<int,Recording> recordEntries;
-	if (ImGui::BeginMenu("Simulation"))
+	if (ImGui::BeginMenu("Replay"))
 	{
-		if (state.mode == MODE_Simulation)
-		{
-			if (ImGui::MenuItem("Stop Simulation###SimulationToggle"))
-				StopSimulation(state);
-		}
-		else if (state.mode == MODE_Replay)
-		{
-			if (ImGui::MenuItem("Stop Replay###SimulationToggle", nullptr, nullptr, !state.isLoading))
-				StopReplay(state);
-		}
-		else
-		{
-			if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, !state.isLoading && state.mode == MODE_None))
-			{
-				windows[WIN_CONTROL].open = true;
-				StartSimulation(state);
-			}
-		}
-		ImGui::Separator();
-
 		bool append = state.mode == MODE_Replay;
 		if (ImGui::BeginMenu(append? "Append capture" : "Replay capture", !state.isLoading && (state.mode == MODE_None || append)))
 		{
@@ -219,6 +199,28 @@ void InterfaceState::UpdateMainMenuBar()
 			}
 			ImGui::EndMenu();
 		}
+
+		ImGui::Separator();
+	
+		if (state.mode == MODE_Simulation)
+		{
+			if (ImGui::MenuItem("Stop Simulation###SimulationToggle"))
+				StopSimulation(state);
+		}
+		else if (state.mode == MODE_Replay)
+		{
+			if (ImGui::MenuItem("Stop Replay###SimulationToggle", nullptr, nullptr, !state.isLoading))
+				StopReplay(state);
+		}
+		else
+		{
+			if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, !state.isLoading && state.mode == MODE_None))
+			{
+				windows[WIN_CONTROL].open = true;
+				StartSimulation(state);
+			}
+		}
+
 		ImGui::EndMenu();
 	}
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
@@ -325,8 +327,8 @@ void InterfaceState::UpdateMainMenuBar()
 
 	if (useCustomHeader)
 	{
-		ImVec2 maxIconSize = ImVec2(ImGui::GetFrameHeight()-ImGui::GetStyle().FramePadding.x*2, ImGui::GetFrameHeight()-ImGui::GetStyle().FramePadding.y*2);
-		/* ImVec2 iconSize = ImVec2(24, 20); // For aspect ratio
+		/* ImVec2 maxIconSize = ImVec2(ImGui::GetFrameHeight()-ImGui::GetStyle().FramePadding.x*2, ImGui::GetFrameHeight()-ImGui::GetStyle().FramePadding.y*2);
+		ImVec2 iconSize = ImVec2(24, 20); // For aspect ratio
 		float factor = std::min(maxIconSize.x/iconSize.x, maxIconSize.y/iconSize.y);
 		iconSize = ImVec2(iconSize.x*factor, iconSize.y*factor); */
 		//if (ImGui::ImageButton("##WindowMinButton", icons().visual, maxIconSize))

@@ -21,6 +21,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
 
+#include <set>
+
 void InterfaceState::UpdatePipelineCalibSection()
 {
 	ServerState &state = GetState();
@@ -42,10 +44,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 			}
 			else if (ptCalib.settings.typeFlags & 0b10)
 			{
-				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
+				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor);
+					errors.max*PixelFactor,
+					errors.num);
 			}
 		}
 		else if (calibState.numUncalibrated == 0 && visState.incObsUpdate.markerCount > 0)
@@ -53,23 +56,27 @@ void InterfaceState::UpdatePipelineCalibSection()
 			if (std::isnan(errors.mean) || std::isinf(errors.mean) || errors.mean > 10.0f)
 			{
 				ImGui::TextUnformatted("Unable to check calibration errors!");
-				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max",
+				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor);
+					errors.max*PixelFactor,
+					errors.num);
 			}
 			else
 			{
-				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max",
+				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor);
+					errors.max*PixelFactor,
+					errors.num);
 			}
 		}
 		else if (calibState.numUncalibrated == 0)
 			ImGui::TextUnformatted("No data to check calibration against!");
+		else if (visState.incObsUpdate.markerCount > 0)
+			ImGui::TextUnformatted("Incomplete calibration!");
 		else
-			ImGui::TextUnformatted("No calibration nor samples available!");
+		 	ImGui::TextUnformatted("No calibration nor samples available!");
 
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (RetryButton("Recalc"))
@@ -290,7 +297,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 					ImGui::TableNextColumn();
 
-					if (ImGui::Button(editing? "D###Edit" : "E###Edit", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+					if (ImGui::Button(editing? "D###Edit" : "E###Edit", SizeFrame()))
 						editingLensPreset = editing? -1 : lens.id;
 					ImGui::SetItemTooltip("Toggle Edit Mode to change the label and delete the lens preset.");
 					ImGui::SameLine();
@@ -555,7 +562,14 @@ void InterfaceState::UpdatePipelinePointCalib()
 
 	ImVec2 ButtonSize = ImVec2(std::min(100.0f, SizeWidthDiv3().x), ImGui::GetFrameHeight());
 
-	BeginSection("Algorithm");
+	BeginSection("Calibration Procedure (?)");
+	if (BeginInteractiveItemTooltip("procedure"))
+	{
+		ImGui::TextUnformatted("To calibrate the cameras (minimum 3), collect samples by waving around a small spherical marker.\n"
+			"Then, depending on why you want to calibrate, hit Reconstruct, and then Optimise.");
+		ImGui::TextLinkOpenURL("See Full Calibration Documentation", "https://docs.astertrack.dev/calib_cameras/");
+		EndInteractiveItemTooltip();
+	}
 	auto &ptCalib = pipeline.pointCalib;
 	ImGui::BeginDisabled(ptCalib.control.stopping());
 	if (ptCalib.control.running())
@@ -576,32 +590,93 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 	else
 	{
-		if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
+		auto startCalibration = [&](int typeFlags)
 		{
-			ptCalib.settings.typeFlags = 0b01;
+			ptCalib.settings.typeFlags = typeFlags;
+			if (typeFlags & 0b10)
+				ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
 			ptCalib.planned = true;
 			// Forgetting to do this is annoying as existing recorded data might get poisoned
-			pipeline.recordSequences = false;
+			// In replay, a replays end means no more data, but a Restart might require this to be kept on
+			if (state.mode != MODE_Replay)
+				pipeline.recordSequences = false;
+		};
+		auto getUniqueLenses = [&]()
+		{
+			int camUniqueLenses = pipeline.cameras.size();
+			std::set<int> lenses;
+			for (auto &camera : pipeline.cameras)
+			{
+				if (camera->calib.lensID >= 0 && !lenses.insert(camera->calib.lensID).second)
+					camUniqueLenses--; // Remove duplicates
+			}
+			return camUniqueLenses;
+		};
+		if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
+		{
+			if (pipeline.cameras.size() < 3)
+				ImGui::OpenPopup("RecConfirm");
+			else
+			 	startCalibration(0b01);
 		}
 		ImGui::SetItemTooltip("Calculates an initial estimate of the camera setup (camera location, lens field of view).\n"
 			"It is an important first step in calibration, but it cannot determine non-linear parameters like lens-distortion, and so errors may be relatively high.");
+		if (ImGui::BeginPopup("RecConfirm"))
+		{
+			ImGui::Text("You have only %d cameras connected, with %d unique lenses.", (int)pipeline.cameras.size(), getUniqueLenses());
+			ImGui::TextUnformatted("For a fully constrained system, you need at least 3 cameras.\n"
+				"If all cameras use the same lens, you may be able to use just 2 cameras.\n"
+				"In that case, select the same Lens for both cameras in the Camera List above.");
+			ImVec2 buttonWidth((LineWidth()-ImGui::GetStyle().ItemSpacing.x)/2, ImGui::GetFrameHeight());
+			if (ImGui::Button("Cancel", SizeWidthDiv2()))
+				ImGui::CloseCurrentPopup();
+			ImGui::SameLine();
+			if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
+				startCalibration(0b01);
+			ImGui::EndPopup();
+		}
+	
 		ImGui::SameLine();
+
+		auto getUnknownLenses = [&]()
+		{
+			int camUnknownLenses = 0;
+			if (ptCalib.settings.options.sharedRadial)
+			{
+				for (auto &camera : pipeline.cameras)
+					if (camera->calib.lensID < 0)
+						camUnknownLenses++;
+			}
+			return camUnknownLenses;
+		};
 		if (ImGui::Button("Optimise", SizeWidthDiv2()))
 		{
-			ptCalib.settings.typeFlags = 0b10;
-			ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
-			ptCalib.planned = true;
-			// Forgetting to do this is annoying as existing recorded data might get poisoned
-			pipeline.recordSequences = false;
+			if (getUnknownLenses() > 1)
+				ImGui::OpenPopup("OptConfirm");
+			else
+			 	startCalibration(0b10);
 		}
 		ImGui::SetItemTooltip("Optimise the selected parameters of the cameras and their lenses.\n"
 			"Required to determine non-linear parameters like lens-distortion.");
+		if (ImGui::BeginPopup("OptConfirm"))
+		{
+			ImGui::Text("%d/%d cameras don't have their lenses configured.", getUnknownLenses(), (int)pipeline.cameras.size());
+			ImGui::TextUnformatted(
+				"The option to share distortion parameters among cameras using the same lens requires this.\n"
+				"You may proceed and cameras without a lens assigned will be assumed to have a unique lens.");
+			ImVec2 buttonWidth((LineWidth()-ImGui::GetStyle().ItemSpacing.x)/2, ImGui::GetFrameHeight());
+			if (ImGui::Button("Cancel", SizeWidthDiv2()))
+				ImGui::CloseCurrentPopup();
+			ImGui::SameLine();
+			if (ImGui::Button("Optimise", SizeWidthDiv2()))
+			 	startCalibration(0b10);
+			ImGui::EndPopup();
+		}
 	}
 	ImGui::EndDisabled();
 
 	ImGui::BeginDisabled(ptCalib.control.running());
-	ImGui::Text("Optimisation Options:");
-	ImGui::Indent();
+	if (ImGui::TreeNode("Optimisation Options"))
 	{
 		auto &opt = ptCalib.settings.options;
 		ImGui::Checkbox("Transform", &opt.position);
@@ -615,11 +690,11 @@ void InterfaceState::UpdatePipelinePointCalib()
 		ImGui::Checkbox("Align", &opt.tangential);
 		ImGui::SetItemTooltip("Estimate tangential distortion parameters.\n"
 			"These compensate for misalignment of sensor and lens plane during lens installation.\n"
-			"If disabled, will keep existing distortion parameters.");
+			"If disabled, will keep existing parameters.");
 
 		ImGui::Checkbox("Distortions", &opt.radial);
 		ImGui::SetItemTooltip("Enable estimation of radial distortion parameters.\n"
-			"If disabled, will keep existing distortion parameters.");
+			"If disabled, will keep existing parameters.");
 		ImGui::BeginDisabled(!opt.radial);
 		ImGui::SameLine();
 		ImGui::Checkbox("Share", &opt.sharedRadial);
@@ -630,37 +705,43 @@ void InterfaceState::UpdatePipelinePointCalib()
 			"NOTE: Lenses need to be setup for relevant cameras for this to have any effect at all!");
 		ImGui::SameLine();
 		ImGui::BeginDisabled(opt.radialOrder == 0);
-		if (ImGui::Button("X", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+		if (ImGui::Button("X", SizeFrame()))
 			opt.radialOrder = 0;
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Disable radial distortion entirely.\n"
 			"This will delete all existing parameters on next optimisation.");
 		ImGui::SameLine();
 		ImGui::BeginDisabled(opt.radialOrder == 2);
-		if (ImGui::Button("M", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+		if (ImGui::Button("M", SizeFrame()))
 			opt.radialOrder = 2;
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Set radial distortion order to 2 (medium).\n"
 			"This will delete the parameter of order 3 on next optimisation.");
 		ImGui::SameLine();
 		ImGui::BeginDisabled(opt.radialOrder == 3);
-		if (ImGui::Button("H", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+		if (ImGui::Button("H", SizeFrame()))
 			opt.radialOrder = 3;
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Set radial distortion order to 3 (highest).\n"
 			"Only use this if you have sufficient coverage and samples.\n"
 			"You may also use 'Share' if all lenses are the same to further constrain the distortions.");
 		ImGui::EndDisabled();
+
+		ImGui::TreePop();
 	}
-	ImGui::Unindent();
 	ImGui::EndDisabled();
 	EndSection();
 
 	BeginSection("Room Calibration (?)");
-	ImGui::SetItemTooltip("After above calibration, the room rotation and scale is still undetermined.\n"
+	if (BeginInteractiveItemTooltip("roomcalib"))
+	{
+		ImGui::TextUnformatted("After above calibration, the room rotation and scale is still undetermined.\n"
 		"You need to specify at least 3 points on the floor plane with known distances to fix these.\n"
 		"Currently the interface is rough, it expects exactly one marker in the tracking volume at a time. \n"
 		"You will be able to select markers through the 3D View in the future.");
+		ImGui::TextLinkOpenURL("See Full Calibration Documentation", "https://docs.astertrack.dev/calib_cameras/");
+		EndInteractiveItemTooltip();
+	}
 
 	auto roomCalib = ptCalib.room.contextualLock();
 	ImGui::BeginDisabled(ptCalib.control.running() || calibState.numUncalibrated || calibState.relUncertain);
@@ -719,6 +800,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 			auto calibs = pipeline.getCalibs();
 			for (auto &point : roomCalib->floorPoints)
 				point.update(calibs);
+
+			SignalCameraCalibUpdate(calibs);
 		}
 	}
 	ImGui::SetItemTooltip("Adjust the height of the floor-plane.");
@@ -741,6 +824,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 			auto calibs = pipeline.getCalibs();
 			for (auto &point : roomCalib->floorPoints)
 				point.update(calibs);
+
+			SignalCameraCalibUpdate(calibs);
 		}
 	}
 	ImGui::SetItemTooltip("Flip the cameras along the floor plane in case they are below it..");
@@ -756,6 +841,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 				if (camera->calibBackup.valid())
 					camera->calib = camera->calibBackup;
 			}
+			SignalCameraCalibUpdate(pipeline.getCalibs());
 		}
 	}
 	ImGui::SetItemTooltip("Restore calibration to backup created before last floor calibration.");

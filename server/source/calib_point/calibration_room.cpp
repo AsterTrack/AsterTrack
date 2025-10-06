@@ -300,8 +300,6 @@ int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, con
 	if (flipAxis < 0)
 		axis = -axis;
 
-	if (axis.z() < 0) axis = -axis;
-
 	if (rankValues(0)*10 > rankValues(1))
 	{
 		LOG(LPointCalib, LError, "    Failed to completely constrain the floor orientation! Rank values (%f, %f) - %f\n", rankValues(2), rankValues(1), rankValues(1));

@@ -75,7 +75,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 
 		// Update and render visualisations
 		visualiseState3D(GetState(), GetUI().visState,
-			GetUI().view3D, Eigen::Vector2i(size.x, size.y), GetState().isStreaming? GetUI().deltaTime : 0.0f);
+			GetUI().view3D, Eigen::Vector2i(size.x, size.y), GetUI().deltaTime);
 	}, nullptr);
 
 	std::string viewLabel = "";
@@ -396,7 +396,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	visSetupView(view3D.getProj(visAspect), view3D.viewTransform.inverse());
 
 	static float time = 15.0f;
-	time += dT/6;
+	if (state.isStreaming)
+		time += dT/6;
 
 	visualiseSkybox(time);
 	visualiseFloor();

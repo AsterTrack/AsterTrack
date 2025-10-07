@@ -970,7 +970,7 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	}
 	// TODO: Figure out why this point scale factor is necessary, and just for tiles
 	//float scaleFactor = (float)layout.maskSize.y()/layout.maskSize.x(); // 800/1152 - Not quite
-	float scaleFactor = 0.69f; // Seems exactly right, really confused
+	float scaleFactor = 1.0f;//0.69f; // Seems exactly right, really confused
 	bg_lock->tileSize = tilePx / camera.pipeline->mode.widthPx * scaleFactor;
 	return true;
 }

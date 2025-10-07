@@ -69,7 +69,9 @@ InterfaceState *InterfaceInstance;
 const int maxRefreshRateHz = 60; // This is further limited to display refresh rate
 const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 50.0f/1000.0f
 
+// Minimum render/update interval, no faster allowed
 const long minIntervalUS = 1000000/maxRefreshRateHz;
+// Maximum interval between updates
 const double waitIntervalS = minRefreshRateHz? (1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz) : (0.1f);
 
 /* Function prototypes */
@@ -128,22 +130,27 @@ EXPORT bool _InterfaceThread()
 	ui.requireUpdates = 3;
 	while (!glfwWindowShouldClose(ui.glfwWindow) && !ui.setCloseInterface)
 	{
-		// Record render time
-		auto now = sclock::now();
-		ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
-		ui.renderTime = now;
-
 		if (ui.cameraListDirty)
 			ui.UpdateCameras();
 
 		if (ui.calibrationsDirty)
 			ui.UpdateCalibrations();
 
+		// Record render time
+		auto now = sclock::now();
+		ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
+		ui.renderTime = now;
+
+		if (dtS(ui.updateTime, now) > waitIntervalS)
+			ui.requireUpdates = std::max(ui.requireUpdates, 1);
+
 		// Update/render UI as requested
 		if (ui.requireUpdates)
+		//if (ui.requireUpdates || ui.requireRender)
 		{ // ImGui UI needs updates
 			ui.requireUpdates--;
 			ui.requireRender = false;
+			ui.updateTime = now;
 			ui.UpdateUI();
 			ui.RenderUI(true);
 		}
@@ -166,11 +173,7 @@ EXPORT bool _InterfaceThread()
 		{ // This timeout greatly influences idle power consumption
 			glfwWaitEventsTimeout(waitIntervalS);
 			ui.GeneralUpdate();
-			if (minRefreshRateHz > 0)
-			{ // Force a render if we want a minimum refresh rate
-				ui.requireUpdates = std::max(ui.requireUpdates, 1);
-				break;
-			}
+			if (minRefreshRateHz > 0) break;
 		}
 		if (!ImGui::GetCurrentContext()->InputEventsQueue.empty())
 			ui.requireUpdates = std::max(ui.requireUpdates, 3);
@@ -206,7 +209,7 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 	// Check render time
 	auto now = sclock::now();
-	if (dtUS(ui.renderTime, now) < waitIntervalS) return;
+	if (dtUS(ui.renderTime, now) < minIntervalUS) return;
 	ui.deltaTime = dtMS(ui.renderTime, now)/1000.0f;
 	ui.renderTime = now;
 

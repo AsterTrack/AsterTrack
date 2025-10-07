@@ -324,7 +324,7 @@ public:
 	bool setCloseInterface = false;
 
 	// Render state
-	TimePoint_t renderTime;
+	TimePoint_t renderTime, updateTime;
 	float deltaTime;
 	int requireUpdates = 3;
 	bool requireRender;

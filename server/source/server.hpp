@@ -92,6 +92,17 @@ struct ServerState
 
 	// Thread for current mode
 	std::jthread *coprocessingThread = NULL;
+	std::jthread *rtProcessingThread = NULL;
+
+	// Realtime Processing (only for device mode)
+	std::mutex parsing_m, processing_m;
+	std::condition_variable parsing_cv, processing_cv;
+	// Enables integration of IMU samples past the latest frame for lower latency at the cost of accurracy
+	// TODO: Integrate IMU samples ontop of latest frame for lower latency (1/3)
+	bool lowLatencyIMU = true;
+	// Aims to keep USB thread free for time sync by queuing packets for coprocessing thread to parse
+	// Since parsing may take too long due to debug builds, system load, bugs, etc.
+	bool usePacketQueue = false;
 
 	// Simulation/Replay control
 	std::atomic<int> simAdvance = { -1 };

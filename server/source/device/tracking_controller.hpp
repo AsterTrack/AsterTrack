@@ -112,6 +112,7 @@ void DisconnectController(ServerState &state, TrackingControllerState &controlle
 void DevicesStartStreaming(ServerState &state);
 void DevicesStopStreaming(ServerState &state);
 void HandleController(ServerState &state, TrackingControllerState &controller);
+void ParseControllerPackets(ServerState &state, TrackingControllerState &controller);
 
 bool ControllerUpdateSyncMask(TrackingControllerState &controller);
 

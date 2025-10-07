@@ -121,6 +121,7 @@ static bool operator==(const SyncGroup& a, const SyncGroup& b) { return &a == &b
 struct StreamState
 {
 	std::vector<std::shared_ptr<Synchronised<SyncGroup>>> syncGroups;
+	TimePoint_t lastMaintainTime;
 };
 
 
@@ -179,8 +180,8 @@ SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameI
 SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrameID frameID, CameraFrameRecord &&cameraFrame, bool erroneous);
 
 /**
- * Check all sync groups for delayed and complete frames
+ * Check all sync groups for delayed and complete frames, and returns true if a new frame was set to process
  */
-void MaintainStreamState(StreamState &state);
+bool MaintainStreamState(StreamState &state);
 
 #endif // COMM_STREAMING_H

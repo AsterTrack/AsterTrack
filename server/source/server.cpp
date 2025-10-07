@@ -50,8 +50,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "hidapi/hidapi.h"
 
-#define USB_PACKET_QUEUE // Keep USB thread free for timing by queuing packets for device thread to parse
-
 /**
  * Main program flow
  */
@@ -66,8 +64,9 @@ std::atomic<int> dbg_debugging;
 
 /* Functions */
 
-static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *state);
-static void SimulationThread(std::stop_token stop_token, ServerState *state);
+static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *statePtr);
+static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr);
+static void SimulationThread(std::stop_token stop_token, ServerState *statePtr);
 
 bool ServerInit(ServerState &state)
 {
@@ -529,6 +528,7 @@ void StopDeviceMode(ServerState &state)
 	LOG(LDefault, LInfo, "Disconnecting!\n");
 
 	// Join coprocessing thread
+	state.parsing_cv.notify_all();
 	delete state.coprocessingThread;
 	state.coprocessingThread = NULL;
 
@@ -561,46 +561,59 @@ void StopDeviceMode(ServerState &state)
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
 }
 
-static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *state)
+static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *statePtr)
 {
+	ServerState &state = *statePtr;
+
 	int it = 0;
 
 	static bool checkingIMU = false;
+	TimePoint_t lastContCheck = sclock::now();
 	TimePoint_t lastIMUCheck = sclock::now();
+	TimePoint_t lastIOCheck = sclock::now();
 
 	while (!stop_token.stop_requested())
 	{
 		it++;
 
+		TimePoint_t now = sclock::now();
+
 #if !defined(_WIN32)
 		// Does work, but takes over a second on windows because no hotplugging support
-		if (it % 100 == 0)
-		{ // Detect new controllers
+		if (dtMS(lastContCheck, now) > 100)
+		{ // Detect check for new controllers
 			//DetectNewControllers(*state);
+			lastContCheck = now;
 		}
 #endif
 
-		// Check comm with every controller
-		for (int c = 0; c < state->controllers.size(); c++)
+		// Check for any disconnected controllers
+		for (int c = 0; c < state.controllers.size(); c++)
 		{
-			TrackingControllerState &controller = *state->controllers[c];
+			TrackingControllerState &controller = *state.controllers[c];
 			if (!controller.comm->deviceConnected)
 			{
 				LOG(LControllerDevice, LWarn, "Communication link of controller died!\n");
 				// TODO: Disconnect controller asynchronously somehow
 				// Why? Does this take long? Not sure anymore, need to check
-				DisconnectController(*state, controller);
+				DisconnectController(state, controller);
 				c--;
 				continue;
 			}
 
-			HandleController(*state, controller);
+			HandleController(state, controller);
 		}
 
-		if (!checkingIMU && dtMS(lastIMUCheck, sclock::now()) > 500)
-		{ // Regularly check for new IMU providers
+		if (dtMS(lastIOCheck, now) > 10)
+		{ // Check Tracking IO for low-priority updates
+			lastIOCheck = now;
+			CheckTrackingIO(state);
+		}
+
+		if (!checkingIMU && dtMS(lastIMUCheck, now) > 100)
+		{ // Check for new IMU providers
+			lastIMUCheck = now;
 			checkingIMU = true;
-			lastIMUCheck = sclock::now();
 			threadPool.push([](int){
 				auto &state = GetState();
 				auto providers = *state.imuProviders.contextualLock();
@@ -616,14 +629,17 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			});
 		}
 
+		// Fetch IO packets for e.g. Remote IMUs
+		FetchTrackingIO(state);
+
 		bool imusRegistered = false;
+		int updatedIMUs = 0;
 		IMUDeviceList removedIMUs, addedIMUs;
-		{ // Fetch new state from IMUs
-			auto imuLock = state->imuProviders.contextualLock();
-			int updatedDevices = 0;
+		{ // Fetch new packets from IMUs
+			auto imuLock = state.imuProviders.contextualLock();
 			for (auto imuProvider = imuLock->begin(); imuProvider != imuLock->end();)
 			{
-				auto status = imuProvider->get()->poll(updatedDevices, removedIMUs, addedIMUs);
+				auto status = imuProvider->get()->poll(updatedIMUs, removedIMUs, addedIMUs);
 				if (status == IMU_STATUS_DISCONNECTED)
 				{
 					imuProvider = imuLock->erase(imuProvider);
@@ -635,6 +651,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			}
 		}
 		if (!addedIMUs.empty() || !removedIMUs.empty())
+		{ // Asynchronously register new IMUs
 			threadPool.push([](int, IMUDeviceList &addedIMUs, IMUDeviceList &removedIMUs){
 				ServerState &state = GetState();
 				// In threadPool so we're not blocking (waiting for frame processing) in device supervisor thread
@@ -674,41 +691,85 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				}
 				SignalPipelineUpdate();
 			}, std::move(addedIMUs), std::move(removedIMUs));
-
-		// Intermittendly check Tracking IO
-		CheckTrackingIO(*state);
-
-		// Frame consistency supervision and processing stream frames once deemed complete
-		TimePoint_t s0 = sclock::now();
-		if (state->isStreaming)
-			MaintainStreamState(*state->stream.contextualLock());
-		TimePoint_t s1 = sclock::now();
-		if (dtUS(s0, s1) > 500)
-		{
-			long numFrames = 0;
-			auto stream = state->stream.contextualRLock();
-			for (int s = 0; s < stream->syncGroups.size(); s++)
-			{
-				auto sync = stream->syncGroups[s]->contextualRLock();
-				numFrames += sync->frames.size();
-			}
-			LOG(LParsing, LDarn, "Maintaining stream state took %.2fms! Keeping track of %ld frames",
-				dtMS(s0,s1), numFrames);
 		}
 
-		// TODO: Consider pushing new state from IMUs to IO if no frame was finished in a bit
+		if (state.usePacketQueue)
+		{
+			for (int c = 0; c < state.controllers.size(); c++)
+			{ // Parse new packets from controllers
+				TrackingControllerState &controller = *state.controllers[c];
+				if (controller.comm->deviceConnected)
+					ParseControllerPackets(state, controller);
+			}
+		}
 
-		if (!state->isStreaming)
-			UpdatePipelineStatus(state->pipeline);
+		if (state.isStreaming)
+		{ // Frame consistency supervision and processing stream frames once deemed complete
+			auto stream_lock = state.stream.contextualLock();
+			bool startedProcessing = false;
+			if (state.usePacketQueue || dtMS(stream_lock->lastMaintainTime, now) > 5)
+			{ // Maintain stream state only if we've not already called MaintainStreamState with a recent USB packet
+				startedProcessing = MaintainStreamState(*stream_lock);
+			}
+			if (!startedProcessing && state.lowLatencyIMU && updatedIMUs > 0)
+			{ // Notify realtime processing thread of new IMU samples at least
+				state.processing_cv.notify_one();
+			}
+		}
 
-		if (!state->isStreaming && !imusRegistered)
-			std::this_thread::sleep_for(std::chrono::milliseconds(20));
-		else if (!state->isStreaming)
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-#ifndef USB_PACKET_QUEUE
-		else
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-#endif
+		if (!state.isStreaming)
+		{ // Update status of background processes even when not streaming (anymore)
+			UpdatePipelineStatus(state.pipeline);
+		}
+
+		// Interval only affects IMU polling rate, not USB packets by controllers
+		int interval = imusRegistered? (state.lowLatencyIMU? 1 : 1) : 20;
+		TimePoint_t wakeup = sclock::now() + std::chrono::milliseconds(interval);
+		std::unique_lock parsing_lock(state.parsing_m);
+		state.parsing_cv.wait_until(parsing_lock, wakeup);
+	}
+}
+
+static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr)
+{
+	ServerState &state = *statePtr;
+	PipelineState &pipeline = state.pipeline;
+
+	while (!stop_token.stop_requested())
+	{
+		auto frames = pipeline.record.frames.getView();
+		if (frames.empty())
+		{}
+		else if (pipeline.frameNum+1 < frames.endIndex())
+		{ // Process most recent fully-received frame (may skip frames!)
+			std::shared_ptr<FrameRecord> frame = frames.back(); // new shared_ptr
+
+			auto start = sclock::now();
+			ProcessFrame(pipeline, frames.back()); // new shared_ptr
+			auto end = sclock::now();
+
+			if (state.lowLatencyIMU)
+			{
+				// TODO: Integrate IMU samples ontop of latest frame for lower latency (2/3)
+				// Then PushTrackingIO with updated tracking results
+			}
+
+			PushTrackingIO(state, frame);
+
+			SignalCameraRefresh(0);
+		}
+		else if (state.lowLatencyIMU)
+		{
+			// TODO: Integrate IMU samples ontop of latest frame for lower latency (3/3)
+			// Then PushTrackingIO without full frame
+
+			SignalCameraRefresh(0);
+		}
+
+		// Can wait long, getting notified on any new frame and IMU sample
+		TimePoint_t wakeup = sclock::now() + std::chrono::milliseconds(100);
+		std::unique_lock processing_lock(state.processing_m);
+		state.processing_cv.wait_until(processing_lock, wakeup);
 	}
 }
 
@@ -879,13 +940,14 @@ void StopSimulation(ServerState &state)
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
 }
 
-static void SimulationThread(std::stop_token stop_token, ServerState *state)
+static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 {
-	PipelineState &pipeline = state->pipeline;
+	ServerState &state = *statePtr;
+	PipelineState &pipeline = state.pipeline;
 
 	while (!stop_token.stop_requested())
 	{
-		if (!state->isStreaming)
+		if (!state.isStreaming)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			UpdatePipelineStatus(pipeline);
@@ -898,32 +960,32 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			// TODO: Somehow call UpdatePipelineStatus regularly while halted to update background thread status
 		}
 
-		if (!state->isStreaming || stop_token.stop_requested())
+		if (!state.isStreaming || stop_token.stop_requested())
 			continue;
 
 		// Check after breakpoint to allow for halting while in breakpoint
-		if (state->simAdvance == 0)
+		if (state.simAdvance == 0)
 		{ // Wait for next frame advance
-			state->simWaiting = true;
-			state->simWaiting.notify_all();
-			//state->simAdvance.wait(0);
-			while (state->simAdvance == 0)
+			state.simWaiting = true;
+			state.simWaiting.notify_all();
+			//state.simAdvance.wait(0);
+			while (state.simAdvance == 0)
 			{ // Instead of wait, to allow thread updates
-				UpdatePipelineStatus(state->pipeline);
+				UpdatePipelineStatus(state.pipeline);
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
-			state->simWaiting = false;
+			state.simWaiting = false;
 		}
 
-		if (!state->isStreaming || stop_token.stop_requested())
+		if (!state.isStreaming || stop_token.stop_requested())
 			continue;
 
-		long desiredFrameIntervalUS = 1000000 / state->controllerConfig.framerate;
+		long desiredFrameIntervalUS = 1000000 / state.controllerConfig.framerate;
 
 		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/GenerateSimulationData
 		std::shared_ptr<FrameRecord> frameRecord = nullptr;
 		std::size_t frame = pipeline.frameNum+1;
-		if (state->mode == MODE_Simulation)
+		if (state.mode == MODE_Simulation)
 		{
 			frameRecord = std::make_shared<FrameRecord>();
 			frameRecord->num = frameRecord->ID = frame;
@@ -938,11 +1000,11 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				}
 			}
 		}
-		else if (state->mode == MODE_Replay)
+		else if (state.mode == MODE_Replay)
 		{
 			if (frame == 0)
 			{ // Reset time
-				state->recording.replayTime = sclock::now();
+				state.recording.replayTime = sclock::now();
 				// Ensure timestamp is set properly
 				for (auto &imu : pipeline.record.imus)
 				{
@@ -956,7 +1018,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				}
 			}
 
-			auto framesStored = state->stored.frames.getView();
+			auto framesStored = state.stored.frames.getView();
 			if (frame < framesStored.endIndex() && framesStored[frame])
 			{
 				frameRecord = std::make_shared<FrameRecord>();
@@ -965,7 +1027,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 				assert(loadedRecord->cameras.size() == pipeline.cameras.size());
 				frameRecord->num = loadedRecord->num;
 				frameRecord->ID = loadedRecord->ID;
-				frameRecord->time = state->recording.replayTime + (loadedRecord->time - framesStored.front()->time);
+				frameRecord->time = state.recording.replayTime + (loadedRecord->time - framesStored.front()->time);
 				frameRecord->cameras = loadedRecord->cameras;
 				if (frame+1 < framesStored.endIndex())
 				{ // Replicate original frame pacing
@@ -977,33 +1039,33 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 
 				// Copy imu samples a bit ahead of the frame into record
 				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);
-				assert(pipeline.record.imus.size() == state->stored.imus.size());
-				for (int i = 0; i < state->stored.imus.size(); i++)
+				assert(pipeline.record.imus.size() == state.stored.imus.size());
+				for (int i = 0; i < state.stored.imus.size(); i++)
 				{
 					auto &imu = pipeline.record.imus[i];
 					{
-						auto samples = state->stored.imus[i]->samplesFused.getView();
+						auto samples = state.stored.imus[i]->samplesFused.getView();
 						auto it = samples.pos(imu->samplesFused.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recording.replayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state.recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesFused.insert(it.index(), sample);
 						}
 					}
 					{
-						auto samples = state->stored.imus[i]->samplesRaw.getView();
+						auto samples = state.stored.imus[i]->samplesRaw.getView();
 						auto it = samples.pos(imu->samplesRaw.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state->recording.replayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state.recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesRaw.insert(it.index(), sample);
 						}
 					}
 				}
 
-				for (auto &cam : state->cameras)
+				for (auto &cam : state.cameras)
 				{ // Set camera image in cameras
 					if (!frameRecord->cameras[cam->pipeline->index].image)
 						continue;
@@ -1028,18 +1090,18 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 		if (!frameRecord)
 		{
-			UpdatePipelineStatus(state->pipeline);
+			UpdatePipelineStatus(state.pipeline);
 			pipeline_lock.unlock();
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
-		int dropout = state->simDropoutIndex.load();
-		if (dropout >= state->simDropoutSeverity.size())
-			state->simDropoutIndex = -1;
+		int dropout = state.simDropoutIndex.load();
+		if (dropout >= state.simDropoutSeverity.size())
+			state.simDropoutIndex = -1;
 		else if (dropout >= 0)
 		{ // Drop a random amount of blobs
-			float droprate = state->simDropoutSeverity[dropout];
-			state->simDropoutIndex = dropout+1;
+			float droprate = state.simDropoutSeverity[dropout];
+			state.simDropoutIndex = dropout+1;
 			for (auto &camera : frameRecord->cameras)
 			{
 				auto blobIt = camera.rawPoints2D.begin();
@@ -1055,46 +1117,46 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 		}
 		if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
 		{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
-			UpdatePipelineStatus(state->pipeline);
+			UpdatePipelineStatus(state.pipeline);
 			pipeline_lock.unlock();
 			std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
 			continue;
 		}
 		pipeline_lock.unlock();
 
-		if (!state->isStreaming || stop_token.stop_requested())
+		if (!state.isStreaming || stop_token.stop_requested())
 			continue;
 
 		auto frameReceiveTime = sclock::now();
 
 		{
-			CheckTrackingIO(*state);
+			CheckTrackingIO(state);
 			//FetchTrackingIO(*state);
 
 			ProcessFrame(pipeline, frameRecord); // new shared_ptr
 
-			PushTrackingIO(*state, frameRecord);
+			PushTrackingIO(state, frameRecord);
 
 			SignalCameraRefresh(0);
 			SignalPipelineUpdate();
 		}
 
 		{ // Special cases for advancing
-			int count = state->simAdvance;
+			int count = state.simAdvance;
 			if (count > 0)
 			{ // Advance limited amount of frames, if it fails to reduce, no matter
-				state->simAdvance.compare_exchange_weak(count, count-1);
-				state->simAdvance.notify_all();
+				state.simAdvance.compare_exchange_weak(count, count-1);
+				state.simAdvance.notify_all();
 			}
 			else if (count == -2)
 			{ // Advance until next image - halt advance since we received the next image
 				bool haveImageData = false;
-				for (auto &cam : state->cameras)
+				for (auto &cam : state.cameras)
 					haveImageData |= (bool)frameRecord->cameras[cam->pipeline->index].image;
 				if (haveImageData)
 				{
-					state->simAdvance = 0;
-					state->simAdvance.notify_all();
+					state.simAdvance = 0;
+					state.simAdvance.notify_all();
 				}
 				else {} // Advance freely, do nothing
 			}
@@ -1102,7 +1164,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *state)
 			{} // Advance freely, do nothing
 		}
 
-		if (state->simAdvanceQuickly)
+		if (state.simAdvanceQuickly)
 			std::this_thread::sleep_for(std::chrono::microseconds(500));
 		else
 			std::this_thread::sleep_until(frameReceiveTime + std::chrono::microseconds(desiredFrameIntervalUS));
@@ -1240,6 +1302,10 @@ bool StartStreaming(ServerState &state)
 	if (state.mode == MODE_Device)
 	{
 		DevicesStartStreaming(state);
+
+		// Start realtime processing thread
+		assert(state.rtProcessingThread == NULL);
+		state.rtProcessingThread = new std::jthread(RealtimeProcessingThread, &state);
 	}
 
 	SignalServerEvent(EVT_START_STREAMING);
@@ -1257,6 +1323,11 @@ void StopStreaming(ServerState &state)
 	if (state.mode == MODE_Device)
 	{
 		DevicesStopStreaming(state);
+
+		// Join realtime processing thread
+		state.processing_cv.notify_all();
+		delete state.rtProcessingThread;
+		state.rtProcessingThread = NULL;
 	}
 
 	state.isStreaming = false;
@@ -1371,9 +1442,6 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		// Packet was properly received
 		frameRecord->cameras[camera->pipeline->index] = std::move(camRecv.record);
 	}
-	frameRecord->time = frame.SOF;
-	frameRecord->ID = frame.ID;
-	frameRecord->num = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
 	for (auto &camera : sync.cameras)
 	{ // Copy over image data received before processing started
 		if (!camera) continue; // Removed while streaming - have to ignore even if data was valid
@@ -1382,27 +1450,20 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 			frameRecord->cameras[camera->pipeline->index].image = camera->receiving.latestFrameImageRecord;
 		}
 	}
-
-	// Queue for processing in a separate thread
-	threadPool.push([&](int, std::shared_ptr<FrameRecord> &frame)
+	frameRecord->time = frame.SOF;
+	frameRecord->ID = frame.ID;
+	// Insert frame into record in the correct order
+	auto frames = pipeline.record.frames.getView();
+	if (frames.empty() || frames.back()->time < frame.SOF)
+		frameRecord->num = pipeline.record.frames.push_back(frameRecord); // new shared_ptr
+	else
 	{
-		FetchTrackingIO(GetState());
+		// TODO: Ensure frames are processed/appended to frame record in chronological order even between sync groups
+		// This is also complicated IF we allow frame IDs to be arbitrary or duplicate between sync groups
+		LOG(LStreaming, LError, "Dropped frame %d because future frame %d was already recorded - cannot insert in order!", frames.back()->ID, frame.ID);
+	}
 
-		auto start = sclock::now();
-		ProcessFrame(pipeline, frame); // new shared_ptr
-		auto end = sclock::now();
-
-		if (GetState().mode == MODE_None)
-			return;
-
-		PushTrackingIO(GetState(), frame);
-
-		for (int c = 0; c < frame->cameras.size(); c++)
-		{
-			if (frame->cameras[c].received)
-				SignalCameraRefresh(pipeline.cameras[c]->id);
-		}
-	}, std::move(frameRecord));
+	GetState().processing_cv.notify_one();
 }
 
 
@@ -1493,16 +1554,6 @@ void CheckTrackingIO(ServerState &state)
 	{ // Handle mainloop (mostly ping-pong) here as well
 		trackerIO.second->mainloop();
 	}
-
-	// Fetch incoming packets
-	LOG(LIO, LTrace, "Intermittedly checking server connection to fetch IMU packets!\n");
-	state.io.vrpn_server->mainloop();
-	if (!state.io.vrpn_server->doing_okay())
-	{
-		LOG(LIO, LWarn, "VRPN Connection Error!\n");
-	}
-	else
-		LOG(LIO, LTrace, "     Server connection is doing ok!\n");
 }
 
 void FetchTrackingIO(ServerState &state)

@@ -465,9 +465,11 @@ SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrame
 /**
  * Check all sync groups for delayed and complete frames
  */
-void MaintainStreamState(StreamState &state)
+bool MaintainStreamState(StreamState &state)
 {
 	TimePoint_t now = sclock::now();
+	state.lastMaintainTime = now;
+	bool startedProcessing = false;
 	for (int s = 0; s < state.syncGroups.size(); s++)
 	{
 		auto sync = state.syncGroups[s]->contextualLock();
@@ -478,8 +480,6 @@ void MaintainStreamState(StreamState &state)
 			float frameMS = dtMS(frame->SOF, now);
 			float packetLastMS = frame->receiving? dtMS(frame->lastBlock, now) : 0;
 
-			// TODO: Ensure frames are processed/appended to frame record in chronological order even between sync groups
-
 			auto processFrame = [&](bool premature)
 			{
 				assert(!frame->finallyProcessed);
@@ -488,6 +488,7 @@ void MaintainStreamState(StreamState &state)
 				frame->previouslyProcessed = true;
 				frame->dataProcessed = true; // Reset dirty flag
 				frame->finallyProcessed = !premature;
+				startedProcessing = true;
 			};
 			auto registerFrameEnd = [&](bool complete)
 			{
@@ -635,4 +636,5 @@ void MaintainStreamState(StreamState &state)
 				LOG(LStreaming, LDarn, "Replacing completely dropped frame with virtual frame!");
 		}
 	}
+	return startedProcessing;
 }

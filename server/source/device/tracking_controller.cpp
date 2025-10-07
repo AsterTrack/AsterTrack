@@ -28,8 +28,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/shared.hpp"
 #include "util/log.hpp"
 
-#define USB_PACKET_QUEUE // Keep USB thread free for timing by queuing packets for device thread to parse
-
 // USB Handlers
 static void ReadUSBPacket(ServerState &state, TrackingControllerState &controller, uint8_t *data, int length, TimePoint_t receiveTime, uint8_t endpoint);
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data, int length, void *userState, std::shared_ptr<void> &userDevice, bool success);
@@ -173,12 +171,14 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 		controller.comm->lastUSBStatCheck = sclock::now();
 		LogUSBStats(controller, timeUS);
 	} */
+}
 
-#ifdef USB_PACKET_QUEUE
+void ParseControllerPackets(ServerState &state, TrackingControllerState &controller)
+{
 	static TimePoint_t last = sclock::now(); // TODO: This is static, so shared between controllers. Makes no sense.
 	TimePoint_t start = sclock::now();
 	int packetParsed = 0;
-	//while(true)
+	while (true)
 	{
 		TimePoint_t s0 = sclock::now();
 		std::vector<TrackingControllerState::USBPacket> packets;
@@ -190,6 +190,7 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 				queue_lock->pop();
 			}
 		}
+		if (packets.empty()) break;
 		TimePoint_t s1 = sclock::now();
 		float accumMS = dtMS(last, s1);
 		last = s0;
@@ -199,19 +200,18 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 		}
 		packetParsed += packets.size();
 		TimePoint_t s2 = sclock::now();
-		if (dtUS(s0, s2) > 2000)
+		if (dtUS(s0, s2) > 1000)
 		{
 			LOG(LParsing, LDarn, "Parsing %d usb packets accumulated over %.2fms took %.2fms of processing plus %ldus of dequeuing!",
 				(int)packets.size(), accumMS, dtMS(s1, s2), dtUS(s0,s1));
 		}
-		//if (dtUS(start, s2) > 5000)
-		//{
-		//	LOG(LParsing, LDarn, "Been parsing %d packets for %.2fms, with %d left in queue, leaving loop!",
-		//		packetParsed, dtMS(start, s2), packets.size());
-		//	break;
-		//}
+		if (dtUS(start, s2) > 2000)
+		{
+			LOG(LParsing, LDarn, "Been parsing %d packets for %.2fms, with %d left in queue, leaving loop!",
+				packetParsed, dtMS(start, s2), (int)packets.size());
+			break;
+		}
 	}
-#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -742,13 +742,13 @@ static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, u
 	{ // Packet Response
 		if (length <= USB_PACKET_HEADER)
 			break;
-#ifdef USB_PACKET_QUEUE
-		// Queue packet instead of handling it here to keep USB thread clear
-		auto queue_lock = controller.packetQueue.contextualLock();
-		queue_lock->emplace(sclock::now(), 0, std::vector<uint8_t>(data+USB_PACKET_HEADER, data+length));
-#else
-		ReadUSBPacket(state, controller, data+USB_PACKET_HEADER, length-USB_PACKET_HEADER, sclock::now(), 0);
-#endif
+		if (state.usePacketQueue)
+		{ // Queue packet instead of handling it here to keep USB thread clear
+			auto queue_lock = controller.packetQueue.contextualLock();
+			queue_lock->emplace(sclock::now(), 0, std::vector<uint8_t>(data+USB_PACKET_HEADER, data+length));
+		}
+		else
+			ReadUSBPacket(state, controller, data+USB_PACKET_HEADER, length-USB_PACKET_HEADER, sclock::now(), 0);
 		break;
 	}
 	default:
@@ -827,14 +827,17 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 		return;
 	}
 
-#ifdef USB_PACKET_QUEUE
-	// Queue packet instead of handling it here to keep USB thread clear
-	auto queue_lock = controller.packetQueue.contextualLock();
-	queue_lock->emplace(receiveTime, endpoint, std::vector<uint8_t>(data, data+length));
-#else
-	ReadUSBPacket(state, controller, data, length, receiveTime, endpoint);
-	MaintainStreamState(*state.stream.contextualLock());
-#endif
+	if (state.usePacketQueue)
+	{ // Queue packet instead of handling it here to keep USB thread clear
+		auto queue_lock = controller.packetQueue.contextualLock();
+		queue_lock->emplace(receiveTime, endpoint, std::vector<uint8_t>(data, data+length));
+		state.parsing_cv.notify_one();
+	}
+	else
+	{
+		ReadUSBPacket(state, controller, data, length, receiveTime, endpoint);
+		MaintainStreamState(*state.stream.contextualLock());
+	}
 
 	long timeUS = dtUS(controller.comm->lastUSBStatCheck, sclock::now());
 	if (timeUS > 2000000)

@@ -210,7 +210,7 @@ struct TargetTrackingParameters
 		float cameraGoodRatio = 0.5f;
 		int minTotalObs = 3;
 		int minCameraObs = 1;
-		float maxTotalError = 0.8f*PixelSize;
+		float maxTotalError = 2.0f*PixelSize;
 	} quality = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};

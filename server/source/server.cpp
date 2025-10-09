@@ -128,6 +128,8 @@ void ServerExit(ServerState &state)
 
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 {
+	state.trackerConfigDirty = true;
+
 	if (!state.isStreaming) return;
 	// Trigger tracker to be considered for tracking
 

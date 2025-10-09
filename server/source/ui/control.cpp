@@ -373,8 +373,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 			while (!stop_token.stop_requested())
 			{
-				if (state.simAdvance.load() < 0 || !state.isStreaming)
-				{ // Halt condition
+				if (!state.isStreaming)
+				{ // Wait
 					std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					continue;
 				}
@@ -395,7 +395,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					}
 				}
 				if (!gotRange)
-				{
+				{ // Wait
 					std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					continue;
 				}

@@ -227,12 +227,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 				if (debugVis.frameNum == frameNum)
 				{
-					ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-						trackRecord->error.mean*PixelFactor, trackRecord->error.stdDev*PixelFactor, trackRecord->error.max*PixelFactor);
-					ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-						debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor);
-					ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max",
-						debugVis.editedMatch2D.error.mean*PixelFactor, debugVis.editedMatch2D.error.stdDev*PixelFactor, debugVis.editedMatch2D.error.max*PixelFactor);
+					ImGui::Text("Original tracking error: %.2fpx +- %.2fpx, %.2fpx max, %d matches",
+						trackRecord->error.mean*PixelFactor, trackRecord->error.stdDev*PixelFactor, trackRecord->error.max*PixelFactor, trackRecord->error.samples);
+					ImGui::Text("Redone tracking error: %.2fpx +- %.2fpx, %.2fpx max, %d matches",
+						debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor, debugVis.targetMatch2D.error.samples);
+					ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max, %d matches",
+						debugVis.editedMatch2D.error.mean*PixelFactor, debugVis.editedMatch2D.error.stdDev*PixelFactor, debugVis.editedMatch2D.error.max*PixelFactor, debugVis.editedMatch2D.error.samples);
 
 					if (ImGui::Button(debugVis.showEdited? "Hide" : "Edit", SizeWidthDiv4()))
 					{
@@ -279,6 +279,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				std::string label = asprintf_s("Target %d: %d frames, %d samples, %d outliers###TgtCont",
 					tgt.targetID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
 				bool selected = visState.target.selectedTargetID == tgt.targetID;
+				ImGui::AlignTextToFramePadding();
 				if (ImGui::Selectable(label.c_str(), visState.target.selectedTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
 				{
 					if (visState.target.selectedTargetID != tgt.targetID)

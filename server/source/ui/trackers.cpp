@@ -342,7 +342,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (changed)
 		{
-			state.trackerConfigDirty = true;
 			ServerUpdatedTrackerConfig(state, tracker);
 		}
 

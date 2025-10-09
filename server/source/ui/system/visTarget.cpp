@@ -659,7 +659,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		auto &editMatches = (trkVis.debug.showEdited? trkVis.debug.editedMatch2D : trkVis.debug.targetMatch2D).points2D[calib.index];
 		for (int m = 0; m < targetMatch.markerCount; m++)
 		{
-			if (trkVis.onlyFocusPoint && trkVis.debugFocusStage >= 0 && m != trkVis.debugFocusPoint)
+			if (trkVis.onlyFocusPoint && m != trkVis.debugFocusPoint)
 				continue; // Only show matches related to the focus point
 			const auto &markerMatch = targetMatch.markers[m];
 			for (const auto &match : markerMatch.matches)

@@ -80,9 +80,6 @@ static void setConsoleRawMode();
 static TrackingCameraState state = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
-CommList comms;
-static std::thread *uartThread;
-static std::thread *serverThread;
 ErrorTag error = ERROR_NONE;
 bool hasMCU;
 
@@ -174,17 +171,19 @@ bool handleError(bool NAK = true, std::string backtrace = "")
 {
 	if (error < ERROR_MAX)
 		fprintf(stderr, "Encountered Error %d: %s!\n", (int)error, ErrorTag_String[(int)error]);
-	if (comm_anyEnabled(comms))
+	for (int c = 0; c < COMM_MEDIUM_MAX; c++)
 	{
+		CommState* comm = comms.medium[c];
+		if (!comm && !comm->ready) continue;
 		bool serious = error != ERROR_GCS_TIMEOUT;
-		void *packet = comm_packet(comms, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
-		comm_write(comms, packet, (uint8_t*)&error, 1);
-		comm_write(comms, packet, (uint8_t*)&serious, 1);
-		comm_write(comms, packet, (uint8_t*)backtrace.data(), backtrace.size());
-		comm_submit(comms, packet);
-		comm_flush(comms);
+		void *packet = comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
+		comm_write(comm, packet, (uint8_t*)&error, 1);
+		comm_write(comm, packet, (uint8_t*)&serious, 1);
+		comm_write(comm, packet, (uint8_t*)backtrace.data(), backtrace.size());
+		comm_submit(comm, packet);
+		comm_flush(*comm);
 		if (NAK)
-			comm_NAK(comms);
+			comm_NAK(*comm);
 	}
 	return true;
 }
@@ -388,7 +387,6 @@ int main(int argc, char **argv)
 	// UART communications
 	{ // Init whether used or not, might be enabled later on
 		state.uart.protocol.needsErrorScanning = true;
-		state.uart.port = uart_init(state.serialName);
 		state.uart.start = uart_start;
 		state.uart.stop = uart_stop;
 		state.uart.wait = uart_wait;
@@ -403,23 +401,19 @@ int main(int argc, char **argv)
 		state.uart.started = false;
 	}
 	atexit([]{ // Close at exit
-		state.uart.enabled = false;
-		if (uartThread && uartThread->joinable())
-			uartThread->join();
-		delete uartThread;
+		comm_disable(state.uart);
 		uart_deinit(state.uart.port);
 	});
 	if (state.uart.enabled)
 	{
-		uartThread = new std::thread(CommThread, &state.uart, &state);
-		comms.arr[comms.cnt++] = &state.uart;
+		state.uart.port = uart_init(state.serialName);
+		comm_enable(state.uart, &state, COMM_MEDIUM_UART);
 		printf("Initiating UART connection...\n");
 	}
 
 	// Server communications
 	{ // Init whether used or not, might be enabled later on
 		state.server.protocol.needsErrorScanning = false;
-		state.server.port = server_init(state.server_host, state.server_port);
 		state.server.start = server_start;
 		state.server.stop = server_stop;
 		state.server.wait = server_wait;
@@ -434,16 +428,13 @@ int main(int argc, char **argv)
 		state.server.started = false;
 	}
 	atexit([]{ // Close at exit
-		state.server.enabled = false;
-		if (serverThread && serverThread->joinable())
-			serverThread->join();
-		delete serverThread;
+		comm_disable(state.server);
 		server_deinit(state.server.port);
 	});
 	if (state.server.enabled)
 	{
-		serverThread = new std::thread(CommThread, &state.server, &state);
-		comms.arr[comms.cnt++] = &state.server;
+		state.server.port = server_init(state.server_host, state.server_port);
+		comm_enable(state.server, &state, COMM_MEDIUM_WIFI);
 		printf("Initiating server connection...\n");
 	}
 
@@ -2140,11 +2131,11 @@ static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
 	// Interleave packet with low-latency comm to not disrupt it
 
 	// Only one comm should be active, else it would have already been sent directly to server
-	auto &comm = state.uart.ready? state.uart : state.server;
+	CommState *comm = comms;
 
 	// Calculate rough budget left to send bytes
 	int budget;
-	if (&comm == &state.uart)
+	if (comm == &state.uart)
 	{ // Account for bytes still in TX queue
 		budget = (int)(uart_getBitsPerUS(state.uart.port) * commTimeUS);
 		budget -= uart_getTXQueue(state.uart.port);

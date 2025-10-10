@@ -453,26 +453,26 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	return true;
 }
 
-CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, PacketBlocks &packet)
+CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	CameraFrameRecord frame = {};
-	if (packet.erroneous)
+	if (erroneous)
 		return frame;
 
 	// Determine packet structure
 	const int blobEncSize = 6;
-	int totalBlobCount = (packet.data.size()-STREAM_PACKET_HEADER_SIZE) / STREAM_PACKET_BLOB_SIZE;
-	if (totalBlobCount*STREAM_PACKET_BLOB_SIZE + STREAM_PACKET_HEADER_SIZE != packet.data.size())
+	int totalBlobCount = (length-STREAM_PACKET_HEADER_SIZE) / STREAM_PACKET_BLOB_SIZE;
+	if (totalBlobCount*STREAM_PACKET_BLOB_SIZE + STREAM_PACKET_HEADER_SIZE != length)
 	{
 		LOG(LParsing, LWarn, "Invalid blob packet size of %d not divisible by %d!",
-			(int)packet.data.size() - STREAM_PACKET_HEADER_SIZE, STREAM_PACKET_BLOB_SIZE);
+			(int)length - STREAM_PACKET_HEADER_SIZE, STREAM_PACKET_BLOB_SIZE);
 		return frame;
 	}
 
 	// Parse array of blobs
 	frame.rawPoints2D.reserve(totalBlobCount);
 	frame.properties.reserve(totalBlobCount);
-	uint8_t *blobData = packet.data.data()+STREAM_PACKET_HEADER_SIZE;
+	const uint8_t *blobData = data+STREAM_PACKET_HEADER_SIZE;
 	for (int b = 0; b < totalBlobCount; b++)
 	{ // Parse all data as blobs
 		int base = b*STREAM_PACKET_BLOB_SIZE;
@@ -491,33 +491,33 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, PacketBlocks 
 	return frame;
 }
 
-bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	TrackingCameraState::Errors error = {};
 	error.encountered = true;
 	error.recovered = false;
 	error.time = sclock::now();
-	if (packet.erroneous || packet.data.size() < 2)
+	if (erroneous || length < 2)
 	{
 		LOG(LCameraDevice, LError, "Received invalid error packet of length %d from camera %d in port %d!\n",
-			(int)packet.data.size(), camera.id, camera.port);
+			(int)length, camera.id, camera.port);
 		error.code = ERROR_UNKNOWN;
 		error.serious = true;
 	}
 	else
 	{
-		error.code = packet.data[0] >= ERROR_MAX? ERROR_UNKNOWN : (ErrorTag)packet.data[0];
-		error.serious = (bool)packet.data[1];
+		error.code = data[0] >= ERROR_MAX? ERROR_UNKNOWN : (ErrorTag)data[0];
+		error.serious = (bool)data[1];
 	}
 
 	std::vector<std::string> backtrace;
-	if (packet.data.size() > 2)
+	if (length > 2)
 	{
 		std::size_t pos = 2;
-		while (pos < packet.data.size())
+		while (pos < length)
 		{ // Copy line-by-line, could also directly print
-			char *start = (char*)&packet.data[pos];
-			std::size_t len = strnlen(start, packet.data.size()-pos);
+			char *start = (char*)&data[pos];
+			std::size_t len = strnlen(start, length-pos);
 			backtrace.push_back(std::string(start, start+len));
 			pos += len+1; // Include null-termination
 		}
@@ -552,24 +552,24 @@ bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	return true;
 }
 
-bool ReadModePacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadModePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (packet.erroneous) return false;
-	if (packet.data.size() < 1) return false;
-	camera.recvModeSet(packet.data[0]);
+	if (erroneous) return false;
+	if (length < 1) return false;
+	camera.recvModeSet(data[0]);
 	return true;
 }
 
-bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadVisualPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (packet.erroneous) return false;
+	if (erroneous) return false;
 	const int metaSize = 2*4 + 2*2 + 2 + 2; // Bounds, Center, Size, Refinement Method
-	if (packet.data.size() <= metaSize) return false;
+	if (length <= metaSize) return false;
 
-	LOG(LParsing, LDebug, "Parsing visualdebug packet of size %d", (int)packet.data.size());
+	LOG(LParsing, LDebug, "Parsing visualdebug packet of size %d", (int)length);
 
 	// Parse metadata
-	uint16_t *metaData = (uint16_t*)packet.data.data();
+	uint16_t *metaData = (uint16_t*)data;
 	Bounds2i bounds(metaData[0], metaData[1], metaData[2], metaData[3]);
 	Eigen::Vector2f centerPos = Eigen::Vector2f(metaData[4] / 65536.0f, metaData[5] / 65536.0f);
 	centerPos = npix2cam(camera.pipeline->mode, centerPos); // Convert from normalised pixel space (0-1) to our coordinate system
@@ -589,10 +589,10 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	int bitSize = imgSize / 8;
 	if (imgSize & 7) bitSize++;
 	int ptSize = dbgPtCount * 3;
-	if (packet.data.size() != (metaSize + imgSize + bitSize + ptSize))
+	if (length != (metaSize + imgSize + bitSize + ptSize))
 	{
 		LOG(LParsing, LError, "VisualDebug packet size of %d doesn't match derived size of %d! Split as %d, %d, %d, %d\n",
-			(int)packet.data.size(), metaSize + imgSize + bitSize + ptSize,
+			(int)length, metaSize + imgSize + bitSize + ptSize,
 			metaSize, imgSize, bitSize, ptSize);
 		return false;
 	}
@@ -609,14 +609,14 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 	// Read image, flipped on Y-axis
 	std::vector<uint8_t> image(imgSize);
-	uint8_t *imgData = packet.data.data() + metaSize;
+	const uint8_t *imgData = data + metaSize;
 	std::vector<uint8_t> flippedImg(imgSize);
 	for (int y = 0; y < extends.y(); y++)
 		memcpy(image.data()+(extends.y()-y-1)*extends.x(), image.data()+y*extends.x(), extends.x());
 
 	// Read bitmask
 	std::bitset<MAX_IMAGE_SIZE> bitmask;
-	uint8_t *bitData = packet.data.data() + metaSize + imgSize;
+	const uint8_t *bitData = data + metaSize + imgSize;
 	for (int b = 0; b < bitSize; b++)
 	{ // Parse bit mask byte by byte (if imgSize%8 != 0, remaining bits don't matter anyway)
 		for (int i = 0; i < 8; i++)
@@ -634,7 +634,7 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 	// Parse debug points
 	std::vector<Eigen::Vector2f> boundPoints(dbgPtCount);
-	uint8_t *pointData = packet.data.data() + metaSize + imgSize + bitSize;
+	const uint8_t *pointData = data + metaSize + imgSize + bitSize;
 	for (int p = 0; p < dbgPtCount; p++)
 	{
 		uint32_t ptData = (pointData[p*3+0] << 16) | (pointData[p*3+1] << 8) | pointData[p*3+2];
@@ -670,7 +670,7 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	return true;
 }
 
-bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (!camera.config.imageStreaming.enabled)
 	{ // TODO: This is bad if it happens, so should log, but make sure to only log it after repeated violation
@@ -678,14 +678,14 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 		return false;
 	}
 	const int headerSize = 22;
-	if (packet.data.size() < headerSize)
+	if (length < headerSize)
 	{ // Erroneous packet, but can't be sure it is for the current frame being received
 		//camera.state.frameNext.contextualLock()->get()->erroneous = true;
 		return false;
 	}
 
 	// Parse header data
-	uint8_t *headerData = (uint8_t*)packet.data.data();
+	uint8_t *headerData = (uint8_t*)data;
 	uint32_t imageSize = *(uint32_t*)&headerData[0];
 	uint32_t blockOffset = *(uint32_t*)&headerData[4];
 	uint32_t blockSize = *(uint32_t*)&headerData[8];
@@ -701,7 +701,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 	// Check parsing state
 	auto &parseImg = camera.receiving.parsingFrameImage;
-	if ((TruncFrameID)(parseImg.frameID) != packet.header.frameID)
+	if ((TruncFrameID)(parseImg.frameID) != header.frameID)
 	{ // Start new frame
 		if (parseImg.received < parseImg.jpeg.size())
 		{ // Currently only support parsing one frame at a time
@@ -709,17 +709,17 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 				camera.id, parseImg.received, (int)parseImg.jpeg.size(), parseImg.frameID);
 		}
 
-		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync->contextualLock(), packet.header.frameID) : packet.header.frameID;
+		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync->contextualLock(), header.frameID) : header.frameID;
 		parseImg.received = 0;
-		parseImg.erroneous = packet.erroneous || imageWidth == 0 || imageHeight == 0;
+		parseImg.erroneous = erroneous || imageWidth == 0 || imageHeight == 0;
 		parseImg.jpeg.clear();
-		if (!packet.erroneous) // Allocated data
+		if (!erroneous) // Allocated data
 			parseImg.jpeg.resize(imageSize, 0);
-		LOG(LParsing, LDebug, "Camera %d starts receiving new image (%d x %d, %d bytes) of frame %d with first block %d",
-			camera.id, imageWidth, imageHeight, imageSize, parseImg.frameID, packet.headerBlockID);
+		LOG(LParsing, LDebug, "Camera %d starts receiving new image (%d x %d, %d bytes) of frame %d",
+			camera.id, imageWidth, imageHeight, imageSize, parseImg.frameID);
 	}
 
-	if (packet.erroneous)
+	if (erroneous)
 	{ // If a single packet is erronous (e.g. checksum failed), the image cannot be recovered currently
 		LOG(LParsing, LDarn, "Camera %d received erroneous packet with block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
@@ -739,7 +739,7 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 		parseImg.erroneous = true;
 		return false;
 	}
-	if ((headerSize+blockSize) != packet.data.size() || (blockOffset+blockSize) > parseImg.jpeg.size())
+	if ((headerSize+blockSize) != length || (blockOffset+blockSize) > parseImg.jpeg.size())
 	{
 		LOG(LParsing, LWarn, "Camera %d received block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
@@ -755,9 +755,9 @@ bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet)
 	}
 
 	// Copy block of jpeg data
-	memcpy(&parseImg.jpeg[blockOffset], &packet.data[headerSize], blockSize);
+	memcpy(&parseImg.jpeg[blockOffset], &data[headerSize], blockSize);
 	LOG(LParsing, LDebug, "Camera %d received block (offset %d length %d) in image packet of size %d with %d / %d bytes received in total!",
-		camera.id, blockOffset, blockSize, (int)packet.data.size(), parseImg.received, (int)parseImg.jpeg.size());
+		camera.id, blockOffset, blockSize, (int)length, parseImg.received, (int)parseImg.jpeg.size());
 
 	if (parseImg.received == parseImg.jpeg.size() && !parseImg.erroneous)
 	{ // Got full jpeg data for frame image, store record
@@ -851,17 +851,17 @@ std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraI
 	return image;
 }
 
-bool ReadStatPacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (packet.erroneous) return false;
-	if (packet.data.size() != STAT_PACKET_SIZE) // && writeStatLogs
+	if (erroneous) return false;
+	if (length != STAT_PACKET_SIZE) // && writeStatLogs
 	{
-		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d!\n", (int)packet.data.size(), STAT_PACKET_SIZE);
+		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d!\n", (int)length, STAT_PACKET_SIZE);
 		return false;
 	}
 	auto stat_lock = camera.receiving.statistics.contextualLock();
 	uint32_t lastStatFrame = stat_lock->header.frame;
-	*stat_lock = parseStatPacket(packet.data.data());
+	*stat_lock = parseStatPacket(data);
 	auto &s = *stat_lock;
 	float elapsedS = s.header.deltaUS/1000000.0f;
 	LOG(LCameraDevice, LInfo, "Camera %d, Frame %d, %.2f fps, %.1f\u00B0C\n", camera.id, s.header.frame,
@@ -898,13 +898,12 @@ bool ReadStatPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	return true;
 }
 
-bool ReadWirelessPacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (packet.erroneous) return false;
-	if (packet.data.size() < WIRELESS_PACKET_HEADER) return false;
+	if (erroneous) return false;
+	if (length < WIRELESS_PACKET_HEADER) return false;
 	auto &wireless = camera.config.wireless;
 
-	std::vector<uint8_t> &data = packet.data;
 	bool newlyConnected = wireless.wifiStatus != WIRELESS_STATUS_CONNECTED;
 	wireless.wifiStatus = (WirelessConfigStatus)data[0];
 	wireless.sshStatus = (WirelessConfigStatus)data[1];
@@ -914,7 +913,7 @@ bool ReadWirelessPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	uint8_t SSIDLen = data[6];
 	uint8_t IPLen = data[7];
 
-	uint8_t *ptr = data.data() + WIRELESS_PACKET_HEADER;
+	const uint8_t *ptr = data + WIRELESS_PACKET_HEADER;
 	if (errorLen > 0)
 	{
 		wireless.error = std::string((char*)ptr, errorLen);
@@ -938,17 +937,17 @@ bool ReadWirelessPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	return true;
 }
 
-bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet)
+bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (packet.erroneous) return false;
-	if (packet.data.size() < 3) return false;
+	if (erroneous) return false;
+	if (length < 3) return false;
 	// TODO: Replace extends in packet with tilePx + offsetPx
-	uint8_t extendsX = packet.data[0], extendsY = packet.data[1];
+	uint8_t extendsX = data[0], extendsY = data[1];
 	const float tilePx = 8;
 	ProgramLayout layout = SetupProgramLayout(camera.pipeline->mode.widthPx, camera.pipeline->mode.heightPx, 8, false);
 	Eigen::Vector2i offsetPx = layout.maskOffset;
-	uint8_t *tiles = &packet.data[2];
-	uint16_t tileCnt = ((uint16_t)packet.data.size()-2)/2;
+	const uint8_t *tiles = &data[2];
+	uint16_t tileCnt = ((uint16_t)length-2)/2;
 	LOG(LCameraDevice, LDebug, "Received a total of %d background tiles! Range %d, %d; Offset %d, %d\n",
 		tileCnt, extendsX, extendsY, offsetPx.x(), offsetPx.y());
 	// Update background tiles
@@ -967,53 +966,53 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	return true;
 }
 
-void ReadCameraPacket(TrackingCameraState &camera, PacketBlocks &packet)
+void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	switch (packet.header.tag)
+	switch (header.tag)
 	{
     case PACKET_ERROR:
     {
-		ReadErrorPacket(camera, packet);
+		ReadErrorPacket(camera, header, data, length, erroneous);
         break;
     }
 	case PACKET_MODE:
 	{
-		ReadModePacket(camera, packet);
+		ReadModePacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_VISUAL:
 	{
-		ReadVisualPacket(camera, packet);
+		ReadVisualPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_IMAGE:
 	{
-		ReadFramePacket(camera, packet);
+		ReadFramePacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_STAT:
 	{
-		ReadStatPacket(camera, packet);
+		ReadStatPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_WIRELESS:
 	{
-		ReadWirelessPacket(camera, packet);
+		ReadWirelessPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_BGTILES:
 	{
-		ReadBGTilesPacket(camera, packet);
+		ReadBGTilesPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_FW_STATUS:
 	{
 		LOG(LFirmwareUpdate, LTrace, "Camera %d received a firmware status packet!", camera.id);
-		if (packet.erroneous) break;
-		if (packet.data.size() < FIRMWARE_PACKET_HEADER) break;
+		if (erroneous) break;
+		if (length < FIRMWARE_PACKET_HEADER) break;
 		if (!camera.firmware) break;
 		auto camStatus = camera.firmware->contextualLock();
-		camStatus->packets.push_back(std::move(packet.data));
+		camStatus->packets.emplace_back(data, data+length);
 		break;
 	}
 	default:

@@ -648,7 +648,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				packet.erroneous = true;
 			if (packet.header.isStreamPacket())
 			{
-				auto cameraFrame = ReadStreamingPacket(*camera, packet);
+				auto cameraFrame = ReadStreamingPacket(*camera, packet.header, packet.data.data(), packet.data.size(), packet.erroneous);
 				int blobCount = cameraFrame.rawPoints2D.size();
 				auto sync_lock = camera->sync->contextualLock();
 				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
@@ -669,7 +669,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			else
 			{
-				ReadCameraPacket(*camera, packet);
+				ReadCameraPacket(*camera, packet.header, packet.data.data(), packet.data.size(), packet.erroneous);
 			}
 		});
 }

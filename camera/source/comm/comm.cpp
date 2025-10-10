@@ -56,51 +56,68 @@ struct PacketSendingHandle
 	CRC32 crc;
 };
 
-void* comm_packet(CommList comms, PacketHeader header)
+CommList comms;
+
+void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium)
 {
+	assert(medium >= 0 && medium < COMM_MEDIUM_MAX);
+	comm.enabled = true;
+	if (!comm.thread)
+		comm.thread = new std::thread(CommThread, &comm, state);
+	comms.medium[medium] = &comm;
+}
+
+void comm_disable(CommState &comm)
+{
+	auto pos = std::find(comms.medium.begin(), comms.medium.end(), &comm);
+	if (pos != comms.medium.end())
+		*pos = nullptr;
+	comm.enabled = false;
+	if (comm.thread && comm.thread->joinable())
+		comm.thread->join();
+	delete comm.thread;
+	comm.thread = nullptr;
+}
+
+void* comm_packet(CommState *commPtr, PacketHeader header)
+{
+	if (!commPtr || !commPtr->ready) return nullptr;
+	CommState &comm = *commPtr;
 	if (header.tag < PACKET_HOST_COMM)
 	{
-		printf("Attempting to send packet %d to MCU using methods intended for Host comm!\n", header.tag);
+		printf("Attempting to send packet %d to Controller using methods intended for Host comm!\n", header.tag);
 		return nullptr;
 	}
 	// Prepare packet start
 	UARTPacketRef packet;
 	writeUARTPacketHeader(&packet, header);
 	// Send out packet start
-	int numWriting = 0;
-	for (int i = 0; i < comms.cnt; i++)
+	// Initiate packet
+	comm.writeAccess.lock();
+	comm.writing = true;
+	// Write header
+	int ret = comm.write(comm.port, (uint8_t*)&packet, sizeof(packet));
+	if (ret < 0)
 	{
-		CommState &comm = *comms.arr[i];
-		// Initiate packet
-		if (!comm.ready) continue;
-		comm.writeAccess.lock();
-		comm.writing = true;
-		// Write header
-		int ret = comm.write(comm.port, (uint8_t*)&packet, sizeof(packet));
-		if (ret < 0)
-		{
-			comm.writeAccess.unlock();
-			comm_close(*comms.arr[i]);
-			continue;
-		}
-		comm.writing = true;
-		numWriting++;
+		comm.writeAccess.unlock();
+		comm_close(comm);
+		return nullptr;
 	}
-	if (numWriting > 0)
-	{ // Store ongoing checksum calculation data in handle - may be share among multiple CommStates
-		PacketSendingHandle *handle = new PacketSendingHandle();
-		handle->interfaces = numWriting;
-		handle->totalSize = header.length;
-		handle->sentSize = 0;
-		handle->crc.reset();
-		return handle;
-	}
+	// Store ongoing checksum calculation data in handle - may be share among multiple CommStates
+	PacketSendingHandle *handle = new PacketSendingHandle();
+	handle->interfaces = 1;
+	handle->totalSize = header.length;
+	handle->sentSize = 0;
+	handle->crc.reset();
+	return handle;
 	return nullptr;
 }
 
-void comm_write(CommList comms, void *packet, const uint8_t *data, uint32_t length)
+void comm_write(CommState *commPtr, void *packet, const uint8_t *data, uint32_t length)
 {
 	if (!packet) return; // No CommState is sending
+	if (!commPtr || !commPtr->ready || !commPtr->writing) return;
+	CommState &comm = *commPtr;
 	PacketSendingHandle *handle = (PacketSendingHandle*)packet;
 	if (handle->interfaces == 0) return; // No CommState is sending anymore
 	// Update checksum of block
@@ -108,24 +125,25 @@ void comm_write(CommList comms, void *packet, const uint8_t *data, uint32_t leng
 		handle->crc.add(data, length);
 	handle->sentSize += length;
 	// Send out packet block
-	for (int i = 0; i < comms.cnt; i++)
+	int ret = comm.write(comm.port, data, length);
+	if (ret < 0)
 	{
-		CommState &comm = *comms.arr[i];
-		if (!comm.writing) continue;
-		int ret = comm.write(comm.port, data, length);
-		if (ret < 0)
-		{
-			comm.writing = false;
-			comm.writeAccess.unlock();
-			comm_close(comm);
-			handle->interfaces--;
-		}
+		comm.writing = false;
+		comm.writeAccess.unlock();
+		comm_close(comm);
+		handle->interfaces--;
 	}
 }
 
-void comm_submit(CommList comms, void *packet)
+void comm_submit(CommState *commPtr, void *packet)
 {
 	if (!packet) return; // No CommState is sending
+	if (!commPtr || !commPtr->ready || !commPtr->writing)
+	{
+		delete (PacketSendingHandle*)packet;
+		return;
+	}
+	CommState &comm = *commPtr;
 	PacketSendingHandle *handle = (PacketSendingHandle*)packet;
 	if (handle->interfaces == 0) return; // No CommState is sending anymore
 	assert (handle->sentSize == handle->totalSize);
@@ -136,19 +154,14 @@ void comm_submit(CommList comms, void *packet)
 	for (int i = 0; i < UART_TRAILING_SEND; i++)
 		buffer[PACKET_CHECKSUM_SIZE+i] = UART_TRAILING_BYTE;
 	// Send out packet end
-	for (int i = 0; i < comms.cnt; i++)
-	{
-		CommState &comm = *comms.arr[i];
-		if (!comm.writing) continue;
-		if (handle->totalSize > 0)
-			comm.write(comm.port, buffer, sizeof(buffer));
-		else // Skip packet checksum
-		 	comm.write(comm.port, buffer+PACKET_CHECKSUM_SIZE, sizeof(buffer)-PACKET_CHECKSUM_SIZE);
-		comm.submit(comm.port);
-		comm.writing = false;
-		comm.writeAccess.unlock();
-		handle->interfaces--;
-	}
+	if (handle->totalSize > 0)
+		comm.write(comm.port, buffer, sizeof(buffer));
+	else // Skip packet checksum
+		comm.write(comm.port, buffer+PACKET_CHECKSUM_SIZE, sizeof(buffer)-PACKET_CHECKSUM_SIZE);
+	comm.submit(comm.port);
+	comm.writing = false;
+	comm.writeAccess.unlock();
+	handle->interfaces--;
 	if (handle->interfaces != 0)
 		printf("Packet handle had comm num of %d after submission!\n", handle->interfaces);
 	delete handle;

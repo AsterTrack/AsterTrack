@@ -221,6 +221,13 @@ enum ControllerCommState {
 	CommPiReady = CommPi | CommReady,
 };
 
+enum CommMedium
+{
+	COMM_MEDIUM_UART = 0,
+	COMM_MEDIUM_WIFI = 1,
+	COMM_MEDIUM_MAX
+};
+
 enum FilterSwitchCommand {
 	FILTER_KEEP = 0,
 	FILTER_SWITCH_VISIBLE = 1,
@@ -271,6 +278,7 @@ struct PacketHeader
 static inline bool isStreamPacket(struct PacketHeader header) { return header.tag == PACKET_BLOB; }
 #endif
 #define PACKET_HEADER_SIZE 4
+#define PACKET_MAX_LENGTH ((1 << 18) - 1)
 
 static inline struct PacketHeader parsePacketHeader(uint8_t data[PACKET_HEADER_SIZE])
 {

@@ -53,6 +53,7 @@ struct CommState
 	IdentPacket expIdent = {};
 	IdentPacket otherIdent = {};
 
+	std::thread *thread;
 	void *port;
 	bool (*start)(void *port);
 	void (*stop)(void *port);

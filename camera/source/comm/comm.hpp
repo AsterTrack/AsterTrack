@@ -36,51 +36,55 @@ void comm_init();
 void comm_close(CommState &comm);
 
 struct CommList
-{ // Wrapper to:
-	// - avoid dynamic allocation, instead allocating on stack
-	// - allow passing passing of a single CommState without overload
-	std::array<CommState*,2> arr;
-	int cnt;
-	CommList() : arr{}, cnt(0) {}
-	CommList(CommState &comm) : arr{&comm}, cnt(1) {}
+{
+	std::array<CommState*,COMM_MEDIUM_MAX> medium;
+
+	inline CommState* get(CommMedium affinity)
+	{
+		assert(affinity >= 0 && affinity < COMM_MEDIUM_MAX);
+		if (medium[affinity] && medium[affinity]->ready)
+			return medium[affinity];
+		for (int i = 0; i < COMM_MEDIUM_MAX; i++)
+			if (medium[i] && medium[i]->ready)
+				return medium[i];
+		// Nothing ready, doesn't matter which comm to select
+		return nullptr;
+	}
+
+	operator CommState*() { return get(COMM_MEDIUM_UART); }
 };
 
+extern CommList comms;
+
+void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium);
+void comm_disable(CommState &comm);
+
 /* Start sending a packet to host */
-void* comm_packet(CommList comms, PacketHeader header);
-void comm_write(CommList comms, void* packet, const uint8_t *data, uint32_t length);
-void comm_submit(CommList comms, void* packet);
+void* comm_packet(CommState *commPtr, PacketHeader header);
+void comm_write(CommState *commPtr, void* packet, const uint8_t *data, uint32_t length);
+void comm_submit(CommState *commPtr, void* packet);
+
+void comm_NAK(CommState &comm);
 
 inline void comm_flush(CommState &comm)
 {
 	if (comm.started)
 		comm.flush(comm.port);
 }
-inline void comm_flush(CommList comms)
-{
-	for (int i = 0; i < comms.cnt; i++)
-		comm_flush(*comms.arr[i]);
-}
 
-void comm_NAK(CommState &comm);
-inline void comm_NAK(CommList comms)
-{
-	for (int i = 0; i < comms.cnt; i++)
-		comm_NAK(*comms.arr[i]);
-}
-
-inline bool comm_anyReady(CommList comms)
+inline bool comm_anyReady(CommList &comms)
 {
 	bool anyReady = false;
-	for (int i = 0; i < comms.cnt; i++)
-		anyReady = anyReady || comms.arr[i]->ready;
+	for (int i = 0; i < COMM_MEDIUM_MAX; i++)
+		anyReady = anyReady || (comms.medium[i] && comms.medium[i]->ready);
 	return anyReady;
 }
 
-inline bool comm_anyEnabled(CommList comms)
+inline bool comm_anyEnabled(CommList &comms)
 {
 	bool anyEnabled = false;
-	for (int i = 0; i < comms.cnt; i++)
-		anyEnabled = anyEnabled || comms.arr[i]->enabled;
+	for (int i = 0; i < COMM_MEDIUM_MAX; i++)
+		anyEnabled = anyEnabled || (comms.medium[i] && comms.medium[i]->enabled);
 	return anyEnabled;
 }
 

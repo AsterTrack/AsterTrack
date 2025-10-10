@@ -50,6 +50,7 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 			calculateDirectPacketChecksum(data, length-PACKET_CHECKSUM_SIZE, data+length-PACKET_CHECKSUM_SIZE);
 		LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(data+length-PACKET_CHECKSUM_SIZE));
 	}
+	else assert(length == 0);
 	if (controller)
 	{
 		return comm_submit_control_data(controller->comm, COMMAND_OUT_SEND_PACKET,

@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef PARSING_H
 #define PARSING_H
 
-#include "comm/protocol_packet.hpp"
+#include "comm/packet.h"
 
 #include "pipeline/record.hpp"
 
@@ -36,18 +36,18 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, uint8_t *data, int length);
 
 // Stream camera packets
-CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, PacketBlocks &packet);
+CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 
 // Normal camera packets
-bool ReadErrorPacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadModePacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadFramePacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadStatPacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadWirelessPacket(TrackingCameraState &camera, PacketBlocks &packet);
-bool ReadBGTilesPacket(TrackingCameraState &camera, PacketBlocks &packet);
+bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadModePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadVisualPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 // Delegate to correct parsing function
-void ReadCameraPacket(TrackingCameraState &camera, PacketBlocks &packet);
+void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 
 std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraImageRecord> &imageRecord);
 

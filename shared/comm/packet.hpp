@@ -367,7 +367,7 @@ struct StatPacket
 };
 #define STAT_PACKET_SIZE			97
 
-static inline struct StatPacket parseStatPacket(uint8_t data[STAT_PACKET_SIZE])
+static inline struct StatPacket parseStatPacket(const uint8_t data[STAT_PACKET_SIZE])
 {
 	struct StatPacket stat;
 	{ // Header has padding, so need to manually copy

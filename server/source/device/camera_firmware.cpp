@@ -55,7 +55,7 @@ struct FirmwareTransferStatus
 struct FirmwareTransfer
 {
 	std::vector<uint8_t> data;
-	uint8_t SHA256[SHA256::HashBytes];
+	uint8_t sha256[SHA256::HashBytes];
 	std::vector<uint8_t> sign;
 
 	FirmwareTransferType type;
@@ -210,7 +210,7 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 		*(uint8_t*)(ptr+1) = (uint8_t)transfer.type;
 		*(uint32_t*)(ptr+2) = transfer.data.size();
 		ptr += FIRMWARE_FILE_HEADER;
-		memcpy(ptr, transfer.SHA256, SHA256::HashBytes);
+		memcpy(ptr, transfer.sha256, SHA256::HashBytes);
 		ptr += SHA256::HashBytes;
 		if (!transfer.sign.empty())
 			memcpy(ptr, transfer.sign.data(), transfer.sign.size());
@@ -879,7 +879,7 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		// Calculate SHA256 of file
 		SHA256 sha;
 		sha.add(transfer.data.data(), transfer.data.size());
-		sha.getHash(transfer.SHA256);
+		sha.getHash(transfer.sha256);
 		LOG(LFirmwareUpdate, LDebug, "Calculated hash for firmware file as %s", sha.getHash().c_str());
 	}
 

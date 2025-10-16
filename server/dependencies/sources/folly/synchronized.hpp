@@ -618,6 +618,11 @@ class SynchronizedBase<Subclass, detail::SynchronizedMutexLevel::Unique> {
   }
 };
 
+// Using deprecated std::aligned_storage_t
+//#pragma warning (disable: deprecated-declarations)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 /**
  * `folly::Synchronized` pairs a datum with a mutex. The datum can only be
  * reached through a `LockedPtr`, typically acquired via `.rlock()` or
@@ -963,6 +968,8 @@ struct Synchronized
   T datum_;
   mutable Mutex mutex_;
 };
+
+#pragma GCC diagnostic pop
 
 template <class SynchronizedType, class LockPolicy>
 class ScopedUnlocker;

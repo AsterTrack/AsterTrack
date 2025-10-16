@@ -55,9 +55,9 @@ else ifeq ($(COMPILER), gcc)
 # gcc compiler
 CXX=g++
 CC=gcc
-LD=gcc
+LD=g++
 # gnu libraries (libstdc++ + libgomp)
-cstd = -fopenmp -finline-limit=1000000
+cstd = -fopenmp -finline-limit=1000000 -Wno-virtual-move-assign
 lstd = -latomic -lgomp
 lto = -flto=auto
 ifeq "$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 14)" "1"
@@ -173,10 +173,10 @@ cflags = $(cenv) -Idependencies/include -Idependencies/sources \
 	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus)
 cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
 	-DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
-	-Wno-deprecated-enum-enum-conversion \
+	-Wno-deprecated-enum-enum-conversion -Wno-unknown-attributes \
 	-D_UNICODE -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
-	-std=c++20 -ffp-contract=fast
+	-std=c++23 -ffp-contract=fast
 lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 
 

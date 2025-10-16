@@ -38,7 +38,7 @@ SOFTWARE.
 template<typename _Tp>
 struct OpaqueDeleter
 {
-	void operator()(_Tp* ptr) const;
+	virtual void operator()(_Tp* ptr) const;
 };
 
 template<typename _Tp>

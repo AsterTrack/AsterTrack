@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 #include "util/image.hpp"
 
-#include "emulation/emulation.hpp"
+#include "blob/qpu_blob_tiled.hpp"
 
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;

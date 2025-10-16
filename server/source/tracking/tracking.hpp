@@ -221,8 +221,6 @@ struct TrackedBase
 {
 	int id;
 	std::string label;
-
-	TrackedBase(int id, std::string label) : id(id), label(label) {}
 };
 
 struct TrackedTarget : public virtual TrackedBase

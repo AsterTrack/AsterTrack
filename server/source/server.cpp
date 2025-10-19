@@ -318,6 +318,9 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	}
 	else
 	{
+		if (state.defaultLens > 0)
+			camera->calib = CameraCalib(state.lensPresets[state.defaultLens]);
+		else camera->calib = CameraCalib();
 		LOG(LDefault, LInfo, "No calibration found for camera %d!\n", camera->id);
 	}
 

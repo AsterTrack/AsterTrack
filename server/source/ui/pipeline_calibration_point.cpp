@@ -91,7 +91,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 				std::unique_lock pipeline_lock(pipeline.pipelineLock);
 				for (auto &cam : pipeline.cameras)
 				{
-					cam->calib = {};
+					if (state.defaultLens > 0)
+						cam->calib = CameraCalib(state.lensPresets[state.defaultLens]);
+					else cam->calib = CameraCalib();
 					cam->calib.index = cam->index;
 				}
 			}
@@ -248,7 +250,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 				ImGui::SameLine();
 				if (CrossButton("ResetCamCalib"))
 				{
-					calib = CameraCalib();
+					if (state.defaultLens > 0)
+						calib = CameraCalib(state.lensPresets[state.defaultLens]);
+					else calib = CameraCalib();
 				}
 				
 				ImGui::PopID();

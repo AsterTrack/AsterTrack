@@ -444,14 +444,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 			if (SaveButton("Save Cameras", SizeWidthDiv3(), state.cameraCalibsDirty))
 			{
-				storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-				state.cameraCalibsDirty = false;
+				auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+				if (error) GetState().errors.push(error.value());
+				else state.cameraCalibsDirty = false;
 			}
 			ImGui::SameLine();
 			if (SaveButton("Save Targets", SizeWidthDiv3(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 			{
-				storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-				state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+				auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+				if (error) GetState().errors.push(error.value());
+				else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Clear Database", SizeWidthDiv3()))
@@ -475,8 +477,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (segment.frameCount == 0) continue; // Invalid or missing segment
 					if (state.recording.tracking[i].empty())
 						state.recording.tracking[i] = state.recording.captures[i];
-					dumpTrackingResults(state.recording.tracking[i], pipeline.record,
+					auto error = dumpTrackingResults(state.recording.tracking[i], pipeline.record,
 						segment.frameStart, segment.frameStart+segment.frameCount, segment.frameOffset);
+					if (error) GetState().errors.push(error.value());
 				}
 			}
 			ImGui::SameLine();
@@ -489,7 +492,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (segment.frameCount == 0) continue; // Invalid or missing segment
 					if (state.recording.tracking[i].empty())
 						state.recording.tracking[i] = state.recording.captures[i];
-					parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
+					auto error = parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
+					if (error) GetState().errors.push(error.value());
 				}
 			}
 			ImGui::SameLine();

@@ -72,21 +72,27 @@ bool ServerInit(ServerState &state)
 {
 	state.libusb_context = comm_init_context();
 
+	auto handleConfigError = [](const std::optional<ErrorMessage> &&error, bool missingOK)
+	{
+		if (error && (!missingOK || error->code != ENOENT))
+			GetState().errors.push(error.value());
+	};
+
 	// Read configurations
-	parseGeneralConfigFile("store/general_config.json", state.config);
+	handleConfigError(parseGeneralConfigFile("store/general_config.json", state.config), false);
 	state.generalConfigDirty = false;
 	// TODO: Add UI and storage of general config
-	parseCameraConfigFile("store/camera_config.json", state.cameraConfig);
+	handleConfigError(parseCameraConfigFile("store/camera_config.json", state.cameraConfig), true);
 	state.cameraConfigDirty = false;
 	// Also load lens presets in case they are needed for camera calib UI
-	parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+	handleConfigError(parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens), true);
 	if (state.lensPresets.empty())
-		parseLensPresets("store/lens_presets_builtin.json", state.lensPresets, state.defaultLens);
+		handleConfigError(parseLensPresets("store/lens_presets_builtin.json", state.lensPresets, state.defaultLens), false);
 
 	// Load calibrations
-	parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+	handleConfigError(parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations), true);
 	state.cameraCalibsDirty = false;
-	parseTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+	handleConfigError(parseTrackerConfigurations("store/trackers.json", state.trackerConfigs), true);
 	state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 
 	{
@@ -245,6 +251,11 @@ void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
 	// Signal UI that calibrations got updated
 	SignalServerEvent(EVT_UPDATE_CALIBS);
 	// This update is assumed to have come from pipeline, so no need to update it
+}
+
+void SignalErrorToUser(ErrorMessage error)
+{
+	GetState().errors.push(std::move(error));	
 }
 
 // ----------------------------------------------------------------------------

@@ -193,7 +193,8 @@ void InterfaceState::UpdateMainMenuBar()
 				state.isLoading = true;
 				threadPool.push([](int, Recording entry, bool append)
 				{
-					loadRecording(GetState(), std::move(entry), append);
+					auto error = loadRecording(GetState(), std::move(entry), append);
+					if (error) GetState().errors.push(error.value());
 					GetState().isLoading = false;
 				}, entry, append);
 			}

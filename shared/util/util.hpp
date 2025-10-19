@@ -40,6 +40,8 @@ SOFTWARE.
 #include <cassert>
 #include <cstdarg>
 
+#include "error.hpp"
+
 /*
  * Utilities (logging, statistics, etc)
  */

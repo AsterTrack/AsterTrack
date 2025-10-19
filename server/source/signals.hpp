@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imu/imu.hpp"
 #include "target/target.hpp"
+#include "util/error.hpp"
 
 /**
  * Signals to Server
@@ -31,5 +32,6 @@ void SignalTrackerDetected(int trackerID);									// Signal: Pipeline -> Server
 void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib);		// Signal: Pipeline -> Server
 void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib);	// Signal: Pipeline -> Server
 void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs);				// Signal: Pipeline -> Server
+void SignalErrorToUser(ErrorMessage error);									// Signal: Pipeline -> Server
 
 #endif // SERVER_SIGNALS_H

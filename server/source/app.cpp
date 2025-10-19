@@ -198,8 +198,9 @@ int main (void)
 			if (!uidl || !LinkInterface(uidl))
 			{ // Error during linking
 				const char * reason = dlerror();
-				LOG(LDefault, LError, "Failed to link interface library: %s", reason);
 				printf("Failed to link interface library: %s", reason);
+				LOG(LDefault, LError, "Failed to link interface library: %s", reason);
+				StateInstance.errors.push(asprintf_s("Failed to link interface library: %s", reason));
 				fflush(stdout);
 				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 				exit(-1); // TODO: notify user that UI failed to open

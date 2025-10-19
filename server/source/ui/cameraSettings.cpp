@@ -281,8 +281,9 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 	if (SaveButton("Save Configurations", SizeWidthFull(), state.cameraConfigDirty))
 	{
-		storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
-		state.cameraConfigDirty = false;
+		auto error = storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+		if (error) GetState().errors.push(error.value());
+		else state.cameraConfigDirty = false;
 	}
 
 	BeginSection("Controller Configuration");

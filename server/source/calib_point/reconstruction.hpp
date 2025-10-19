@@ -21,6 +21,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "calib_point/parameters.hpp"
 
 #include "util/eigendef.hpp"
+#include "util/error.hpp"
 
 /**
  * Geometric reconstruction of observations used for calibration
@@ -29,6 +30,6 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 /**
  * Attempts to reconstruct the geometry (points, cameras calibration) of the scene given the observed points
  */
-bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params);
+std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params);
 
 #endif // RECONSTRUCTION_POINT_H

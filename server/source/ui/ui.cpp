@@ -271,6 +271,32 @@ void InterfaceState::UpdateUI()
 		 	viewIt.second.detachedIndex = -1;
 	}
 
+	static bool handlingErrors = false;
+	if (!handlingErrors && !GetState().errors.empty())
+	{
+		// TODO: Improve error handling when they occurred long before interface opened
+		// This is currently not possible, but may want to use a better way to show older errors that happened while interface was closed than flooding the user
+		handlingErrors = true;
+		ImGui::OpenPopup("ErrorPop");
+	}
+	if (ImGui::BeginPopup("ErrorPop"))
+	{
+		ErrorMessage &error = GetState().errors.front();
+		ImGui::Text("%s", error.c_str());
+		ImVec2 buttonWidth((LineWidth()-ImGui::GetStyle().ItemSpacing.x)/2, ImGui::GetFrameHeight());
+		if (ImGui::Button("Ok", SizeWidthFull()))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	if (handlingErrors && !ImGui::IsPopupOpen("ErrorPop"))
+	{
+		// TODO: Handle popups for multiple errors better
+		// - keep next popup in same placed as last one (or never really close it if possible)
+		// - show number of errors and allow to OK/Clear all
+		GetState().errors.pop();
+		handlingErrors = false;
+	}
+
 	GeneralInput();
 
 	// Render UI out to a DrawData list, for later GL rendering
@@ -528,7 +554,8 @@ bool InterfaceState::Init()
 
 	// GL Icons Init
 
-	auto loadIcon = [](const char *path)
+	int iconLoadFailures = 0;
+	auto loadIcon = [&iconLoadFailures](const char *path)
 	{
 		int x, y, n;
 		uint8_t *imageData = stbi_load(path, &x, &y, &n, 4);
@@ -536,6 +563,7 @@ bool InterfaceState::Init()
 		{
 			printf("Failed to load '%s': %s\n", path, stbi_failure_reason());
 			LOG(LGUI, LError, "Failed to load '%s': %s", path, stbi_failure_reason());
+			iconLoadFailures++;
 			return (ImTextureID)0;
 		}
 
@@ -587,16 +615,21 @@ bool InterfaceState::Init()
 		ICON_LOAD(no_server)
 		ICON_LOAD(ssh)
 		ICON_LOAD(no_ssh)
+
+		if (iconLoadFailures > 0)
+			GetState().errors.push(asprintf_s("Failed to load %d icons - check Logging view!", iconLoadFailures));
 	}
 	else if (std::filesystem::exists("../resources/"))
 	{
 		printf("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
 		LOG(LDefault, LError, "'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+		GetState().errors.push("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
 	}
 	else
 	{
 		printf("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
 		LOG(LDefault, LError, "'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
+		GetState().errors.push("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
 	}
 
 

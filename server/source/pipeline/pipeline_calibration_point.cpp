@@ -179,10 +179,14 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 	auto rec1 = pclock::now();
 
 	LOGC(LInfo, "== Reconstructing Geometry:\n");
-	bool success = reconstructGeometry(pointData.points, calibs, params.reconstruction);
-	if (success) LOGC(LInfo, "== Finished Reconstructing Calibration!\n");
-	else LOGC(LInfo, "== Failed to properly reconstruct geometry!\n");
-
+	auto error = reconstructGeometry(pointData.points, calibs, params.reconstruction);
+	if (error)
+	{
+		SignalErrorToUser(error.value());
+		LOGC(LInfo, "== Failed to properly reconstruct geometry!\n");
+	}
+	else LOGC(LInfo, "== Finished Reconstructing Calibration!\n");
+	
 	auto rec2 = pclock::now();
 
 	{
@@ -426,16 +430,33 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 	if (copyRoomCalib)
 	{
 		std::vector<CameraCalib> oldCalibs(calibs.size());
+		int validCalibs = 0;
 		for (int c = 0; c < calibs.size(); c++)
-			oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
-		Eigen::Matrix3d roomOrientation;
-		Eigen::Affine3d roomTransform;
-		if (transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
 		{
-			if (roomOrientation.hasNaN() || roomTransform.matrix().hasNaN())
-				LOG(LPointCalib, LError, "Transferring room calibration resulted in NAN transforms despite succeeding!");
+			oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
+			if (oldCalibs[c].valid())
+				validCalibs++;
+		}
+
+		if (validCalibs >= 2)
+		{
+			Eigen::Matrix3d roomOrientation;
+			Eigen::Affine3d roomTransform;
+			if (transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
+			{
+				if (roomOrientation.hasNaN() || roomTransform.matrix().hasNaN())
+				{
+					LOG(LPointCalib, LError, "Failed to transfer room calibration due to numerical errors! You will need to re-calibrate the room!");
+					SignalErrorToUser("Failed to transfer room calibration due to numerical errors! You will need to re-calibrate the room!");
+				}
+				else
+					ApplyTransformation(calibs, roomOrientation, roomTransform);
+			}
 			else
-				ApplyTransformation(calibs, roomOrientation, roomTransform);
+			{
+				LOG(LPointCalib, LError, "Failed to transfer room calibration as no two cameras were unchanged! You will need to re-calibrate the room!");
+				SignalErrorToUser("Failed to transfer room calibration as no two cameras were unchanged! You will need to re-calibrate the room!");
+			}
 		}
 	}
 

@@ -61,7 +61,7 @@ static double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::MatrixX
 template<typename Scalar>
 static void SeparateProjectionMatrix(const Eigen::Ref<const Eigen::Matrix<Scalar,3,3>> matrix, Eigen::Ref<Eigen::Matrix<Scalar,3,3>> projection, Eigen::Ref<Eigen::Matrix<Scalar,3,3>> rotation);
 
-static bool SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, const Eigen::Ref<const Eigen::MatrixXd> &P, const Eigen::Ref<const Eigen::MatrixXd> &measurementMatrix, CameraCalib &cameraCalib);
+static std::optional<ErrorMessage> SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, const Eigen::Ref<const Eigen::MatrixXd> &P, const Eigen::Ref<const Eigen::MatrixXd> &measurementMatrix, CameraCalib &cameraCalib);
 
 /**
  * Normalises the given 3xN row of points by centering and scaling to a distance of sqrt(2), and returns the inverse of that normalisation transform
@@ -85,7 +85,7 @@ static std::pair<int,double> calculateFundamentalMatrix(const Eigen::Ref<const E
  * Attempts to reconstruct the geometry (points, cameras calibration) of the scene given the observed points
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params)
+std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params)
 {
 	ScopedLogCategory scopedLogCategory(LPointReconstruction);
 
@@ -93,8 +93,8 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	int pointCount = data.points.size();
 	if (pointCount < 100)
 	{
-		LOGC(LError, "Too little data for calibration!\n");
-		return false;
+		LOGC(LError, "Too little data for reconstruction!");
+		return "Too little data for reconstruction!";
 	}
 
 	// Build measurement matrix for point lookup and fill with point correspondences
@@ -124,7 +124,7 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 
 
 	// ----- Projective Depths Estimation
-	LOGC(LDebug, "-- Projective Depths Estimation\n");
+	LOGC(LDebug, "-- Projective Depths Estimation");
 
 	// Iteratively determine projective depths according to best strategy
 	Eigen::MatrixXd projectiveDepthMatrix; // (viewCount, pointCount)
@@ -134,10 +134,10 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	int recViewCount = viewCount - viewsDiscarded.count();
 	if (recViewCount < 2)
 	{ // TODO: Reconstructing 2 cameras MAY work, allow for now to give user choice
-		LOGC(LError, "Cannot recover any views/camera calibrations since only %d/%d had significant overlap!\n", recViewCount, viewCount);
+		LOGC(LError, "Cannot recover any views/camera calibrations since only %d/%d had significant overlap!", recViewCount, viewCount);
 		for (int i = 0; i < viewsDiscarded.size(); i++)
 			LOGC(LError, " View %d got recoverable state %d!", i, viewsDiscarded[i]);
-		return false;
+		return asprintf_s("Cannot recover any views/camera calibrations since only %d/%d had significant overlap!", recViewCount, viewCount);
 	}
 
 	// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
@@ -166,7 +166,7 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 
 
 	// ----- Missing Data Extrapolation
-	LOGC(LDebug, "-- Missing Data Extrapolation\n");
+	LOGC(LDebug, "-- Missing Data Extrapolation");
 
 	// Right now projectiveMatrix has data holes that need to be filled by extrapolation
 	// Both due to missing points (NaNs) and missing projective depth (marked by projectiveDepthMissing)
@@ -174,19 +174,22 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	// Then complete the columns of the projectiveMatrix as linear combinations of that basis
 	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, params);
 	if (basis.hasNaN()) // basis (recViewCount*3, 4)
-		return false;
+	{
+		LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
+		return "Failed to determine basis of data samples due to numerical errors!";
+	}
 	auto mid2 = pclock::now();
 	Eigen::MatrixXd P_approx;  // (4, pointCount)
 	int pointsUnrecoverable = recoverPointData(projectiveMatrix, projectiveDepthMissing, basis, P_approx);
 
-	LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!\n", 
+	LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!", 
 		std::sqrt((projectiveMatrix - (basis*P_approx)).squaredNorm() / (recViewCount*3*pointCount)));
 
 	auto mid3 = pclock::now();
 
 
 	// ----- Assemble Factorisation Matrix
-	LOGC(LDebug, "-- Factorisation\n");
+	LOGC(LDebug, "-- Factorisation");
 
 	int recPointCount = pointCount-pointsUnrecoverable;
 	Eigen::MatrixXd factorisationMatrix(recViewCount*3, recPointCount);
@@ -232,7 +235,7 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	{ // Factorise complemented data into View matrices and Points
 
 		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV> svd_M(factorisationMatrix);
-		LOGC(LDebug, "Factorisation matrix with %d unrecoverable columns removed has rank %d (should be 4) with rank values (%.2f, %.2f, %.2f, %.2f) - %.2f!\n", 
+		LOGC(LDebug, "Factorisation matrix with %d unrecoverable columns removed has rank %d (should be 4) with rank values (%.2f, %.2f, %.2f, %.2f) - %.2f!", 
 			pointsUnrecoverable, (int)svd_M.rank(), svd_M.singularValues()(0), svd_M.singularValues()(1), svd_M.singularValues()(2), svd_M.singularValues()(3), svd_M.singularValues()(4));
 
 		// Discard noise data in ranks over 4, split singular values arbitrarily (here in half with sqrt)
@@ -246,7 +249,7 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	}
 
 	// Test reprojection error on original (non-estimated) measurements
-	LOGC(LDebug, "Reprojection error of factorisation on measurements: %fpx RMSE\n", 
+	LOGC(LDebug, "Reprojection error of factorisation on measurements: %fpx RMSE", 
 		std::sqrt(calculateReprojectionErrorSq(V_all, P_all, recMeasurementMatrix))*PixelFactor);
 
 	auto mid5 = pclock::now();
@@ -259,7 +262,7 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 
 
 	// ----- Euclidean Stratification
-	LOGC(LDebug, "-- Euclidean Stratification\n");
+	LOGC(LDebug, "-- Euclidean Stratification");
 
 	// Apply correction to camera matrices and positions
 	Eigen::Matrix4d H_strat = getStratificationMatrix(V_all, P_all);
@@ -278,41 +281,41 @@ bool reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cam
 	auto mid6 = pclock::now();
 
 	// Test reprojection error on original (non-estimated) measurements
-	LOGC(LDebug, "Reprojection error of stratified factorisation on measurements: %fpx RMSE\n", 
+	LOGC(LDebug, "Reprojection error of stratified factorisation on measurements: %fpx RMSE", 
 		std::sqrt(calculateReprojectionErrorSq(V_corrected, P_corrected, recMeasurementMatrix))*PixelFactor);
 
 
 	// ----- Projective Factorisation
-	LOGC(LDebug, "-- Projective Factorisation\n");
+	LOGC(LDebug, "-- Projective Factorisation");
 
-	bool reconstructionSuccess = true;
-	
+	std::optional<ErrorMessage> error;
+
 	for (int vv = 0, v = -1; vv < viewCount; vv++)
 	{
 		LOGC(LDebug, "------------");
 
 		if (viewsDiscarded(vv))
 		{
-			LOGC(LWarn, "Can not recover view %d!\n", vv);
+			LOGC(LWarn, "Can not recover view %d!", vv);
 			continue;
 		}
 		v++;
-		LOGC(LInfo, "Results for view %d:\n", vv);
+		LOGC(LInfo, "Results for view %d:", vv);
 
 		// Decompose view projection matrix in V_corrected into camera projection and transformation and update cameraCalibs with it
-		if (!SeparatePerspectiveProjection(V_corrected.block<3,4>(v*3,0), v, P_corrected, recMeasurementMatrix, cameraCalibs[vv]))
-			reconstructionSuccess = false;
+		error = SeparatePerspectiveProjection(V_corrected.block<3,4>(v*3,0), v, P_corrected, recMeasurementMatrix, cameraCalibs[vv]);
+		if (error) break;
 	}
 	LOGC(LDebug, "------------");
 
 	auto end = pclock::now();
 	LOGC(LDebug, 
 		"-- Reconstruction took %.2fms: "
-			"%.2fms proj. depth, %.2fms basis, %.2fms filling, %.2fms interim, %.2fms factorisation, %.2fms stratification, %.2fms camera factorisation\n", 
+			"%.2fms proj. depth, %.2fms basis, %.2fms filling, %.2fms interim, %.2fms factorisation, %.2fms stratification, %.2fms camera factorisation", 
 		dtMS(start, end), 
 			dtMS(start, mid1), dtMS(mid1, mid2), dtMS(mid2, mid3), dtMS(mid3, mid4), dtMS(mid4, mid5), dtMS(mid5, mid6), dtMS(mid6, end));
 
-	return reconstructionSuccess;
+	return error;
 }
 
 
@@ -326,7 +329,7 @@ public:
 		// Select view with the most overlap to other views
 		numRecoverable = viewsRecoverable.colwise().sum().maxCoeff(&bestView);
 		viewsDiscarded = 1-viewsRecoverable.col(bestView).array();
-		LOGC(LDebug, "Selected view %d as center!\n", (int)bestView);
+		LOGC(LDebug, "Selected view %d as center!", (int)bestView);
 		viewCount = viewCorrespondences.rows();
 	}
 	class iterator {
@@ -447,7 +450,7 @@ static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &no
 		{ // View does not have sufficient correspondence with center view 
 			// TODO: Multiple recovery strategy iterations until view can be recovered
 			viewsDiscarded(v) = 1;
-			LOGC(LWarn, "---- Retroactively abandoning view %d because it only shares %d points of %f confidence with best view %d!\n", v, results.first, results.second, b);
+			LOGC(LWarn, "---- Retroactively abandoning view %d because it only shares %d points of %f confidence with best view %d!", v, results.first, results.second, b);
 			continue;
 		}
 
@@ -516,7 +519,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	auto permIndices = generateQuadruplets(pointCount);
 	auto t1 = sclock::now();
 
-	LOGC(LDebug, "Took %fms to generate %d quadruplets for %d points!\n", dtMS(t0,t1), permIndices.size(), pointCount); */
+	LOGC(LDebug, "Took %fms to generate %d quadruplets for %d points!", dtMS(t0,t1), permIndices.size(), pointCount); */
 
 	// Limit the number of maximum possible computation
 	// TODO: Better limits, adapted to camera count etc.
@@ -593,20 +596,20 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		if (rankB >= 4+newCols) // TODO: Still take even if not full rank, any nullspace should be fine
 		{ // Extract null space / orthogonal complement of B
 			int colCount = viewCount*3-rankB;
-			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions\n", rankB, colCount, viewCount*3);
+			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
 			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
 			//partN.push_back(orthComplementB);
 			priv_partN.push_back(orthComplementB);
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)\n", rankB, 4+newCols);
+			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
 			colsN += colCount;
 		}
 		else 
 		{
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)\n", rankB, 4+newCols);
+			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
 		}
     }
 	auto p1 = sclock::now();
-	LOGC(LDebug, "Thread %d added %d potential parts in %fms!\n", omp_get_thread_num(), priv_partN.size(), dtMS(p0, p1));
+	LOGC(LDebug, "Thread %d added %d potential parts in %fms!", omp_get_thread_num(), priv_partN.size(), dtMS(p0, p1));
     #pragma omp critical
     partN.insert(partN.end(), priv_partN.begin(), priv_partN.end());
 	} */
@@ -673,23 +676,23 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		if (rankB >= 4+newCols) // TODO: Still take even if not full rank, any nullspace should be fine
 		{ // Extract null space / orthogonal complement of B
 			int colCount = viewCount*3-rankB;
-			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions\n", rankB, colCount, viewCount*3);
+			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
 			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
 			partN.push_back(orthComplementB);
 			colsN += colCount;
 		}
 		else 
 		{
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)\n", rankB, 4+newCols);
+			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
 		}
 	}
 
 	// Combine all collected orthogonal complements together as N
-	LOGC(LDebug, "N has %d columns in total with %d/%d tuples accepted!\n", colsN, (int)partN.size(), tested4Tuples);
+	LOGC(LDebug, "N has %d columns in total with %d/%d tuples accepted!", colsN, (int)partN.size(), tested4Tuples);
 	if (colsN < minNColumns)
 	{
-		LOGC(LError, "Basis cannot be reliably determined with column count %d < %d!\n", colsN, minNColumns);
-		LOGC(LError, "Likely hit limits: %d / %d tuples recorded, %d / %d tested.\n", (int)partN.size(), max4Tuples, tested4Tuples, max4TupleTests);
+		LOGC(LError, "Basis cannot be reliably determined with column count %d < %d!", colsN, minNColumns);
+		LOGC(LError, "Likely hit limits: %d / %d tuples recorded, %d / %d tested.", (int)partN.size(), max4Tuples, tested4Tuples, max4TupleTests);
 		return Eigen::MatrixXd::Constant(viewCount*3, 4, NAN);
 	}
 	Eigen::MatrixXd N = Eigen::MatrixXd(viewCount*3, colsN);
@@ -711,14 +714,14 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 
 	if (rankValues(3)*params.basis.minRankFactor > rankValues(4))
 	{ // Expected full rank due to noise, less than this means not enough 4-tuples were added
-		LOGC(LWarn, "Failed to completely constrain target vector space, increase number of regarded 4-tuples or data! Rank values (%f, %f, %f, %f) - %f\n",
+		LOGC(LWarn, "Failed to completely constrain target vector space, increase number of regarded 4-tuples or data! Rank values (%f, %f, %f, %f) - %f",
 			rankValues(0), rankValues(1), rankValues(2), rankValues(3), rankValues(4));
-		LOGC(LWarn, "Limits: %d Columns within [%d,%d],  %d / %d tuples recorded, %d / %d tested.\n",
+		LOGC(LWarn, "Limits: %d Columns within [%d,%d],  %d / %d tuples recorded, %d / %d tested.",
 			colsN, minNColumns, maxNColumns, (int)partN.size(), max4Tuples, tested4Tuples, max4TupleTests);
 	}
 
 	// Size of basis: 3*recViewCount rows and 4 columns (the basis vectors)
-	LOGC(LDebug, "Extracted target vector space basis! Noise rank difference %f vs %f\n", rankValues(3), rankValues(4));
+	LOGC(LDebug, "Extracted target vector space basis! Noise rank difference %f vs %f", rankValues(3), rankValues(4));
 
 	return basis;
 }
@@ -746,11 +749,11 @@ static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 			int usefulRows = viewCount*3 - missingProjDepths*3;
 			if (usefulRows < 4)
 			{ // TODO: These can be potentially recovered with more iterations of spreading newly estimated projective depths
-				LOGC(LTrace, "Col %d cannot be used so far, only %d / %d rows useful!\n", p, usefulRows, viewCount*3);
+				LOGC(LTrace, "Col %d cannot be used so far, only %d / %d rows useful!", p, usefulRows, viewCount*3);
 				pointsUnrecoverable++;
 				continue;
 			}
-			LOGC(LTrace, "Col %d needs adjustment and correction, with %d / %d rows useless!\n", p, missingProjDepths*3, viewCount*3);
+			LOGC(LTrace, "Col %d needs adjustment and correction, with %d / %d rows useless!", p, missingProjDepths*3, viewCount*3);
 
 			// Truncate columns by removing rows that need to be recovered
 			Eigen::VectorXd truncatedCol(usefulRows);
@@ -795,7 +798,7 @@ static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 			pointsRecovered++;
 			double error = std::sqrt((estCol - projectiveMatrix.col(p)).squaredNorm()/(viewCount*3));
 			recoveryError += error;
-			LOGC(LTrace, "Incompleted coeffs %f, %f, %f, %f yielded error %f after recovery!\n", coeff(0), coeff(1), coeff(2), coeff(3), error);
+			LOGC(LTrace, "Incompleted coeffs %f, %f, %f, %f yielded error %f after recovery!", coeff(0), coeff(1), coeff(2), coeff(3), error);
 		}
 		else
 		{ // Confirm point column with basis
@@ -810,11 +813,11 @@ static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 			// Record error
 			double error = std::sqrt((basis*coeff - projectiveMatrix.col(p)).squaredNorm()/(viewCount*3));
 			confirmationError += error;
-			LOGC(LTrace, "Complete coeffs %f, %f, %f, %f confirm base with error %f!\n", coeff(0), coeff(1), coeff(2), coeff(3), error);
+			LOGC(LTrace, "Complete coeffs %f, %f, %f, %f confirm base with error %f!", coeff(0), coeff(1), coeff(2), coeff(3), error);
 		}
 	}
 	LOGC(LDebug, "Fully recovered %d columns with %d unrecoverable and %d confirmed!", pointsRecovered, pointsUnrecoverable, pointsConfirmed);
-	LOGC(LDebug, "Average recovery error of %f and average confirmation error of %f!\n", recoveryError/pointsRecovered, confirmationError/pointsConfirmed);
+	LOGC(LDebug, "Average recovery error of %f and average confirmation error of %f!", recoveryError/pointsRecovered, confirmationError/pointsConfirmed);
 
 	return pointsUnrecoverable;
 }
@@ -900,12 +903,12 @@ static Eigen::Matrix4d getStratificationMatrix(const Eigen::Ref<const Eigen::Mat
 		Eigen::Matrix3d MMT = V.block<3,4>(0,0) * Q * V.block<3,4>(0,0).transpose();
 		if (MMT(1,1) <= 0)
 		{
-			LOGC(LDebug, "Flipping Q because diagonal of MM^T is negative (checked %f)!\n", MMT(1,1));
+			LOGC(LDebug, "Flipping Q because diagonal of MM^T is negative (checked %f)!", MMT(1,1));
 			Q = -Q;
 		}
 	}
 
-	LOGC(LDebug, "Stratification solve errors: B: %f, Q: %f\n", (B_solve*B).norm(), (Q_solve*Qc).norm());
+	LOGC(LDebug, "Stratification solve errors: B: %f, Q: %f", (B_solve*B).norm(), (Q_solve*Qc).norm());
 
 	// Factor symmetric Q into AA^T of rank 3
 	Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> evd_Q(Q, Eigen::ComputeEigenvectors);
@@ -914,7 +917,7 @@ static Eigen::Matrix4d getStratificationMatrix(const Eigen::Ref<const Eigen::Mat
 	A.col(1) = evd_Q.eigenvectors().col(2) * std::sqrt(evd_Q.eigenvalues()(2));
 	A.col(2) = evd_Q.eigenvectors().col(1) * std::sqrt(evd_Q.eigenvalues()(1));
 
-	LOGC(LDebug, "Eigenvalues of Q: (%f, %f, %f) - %f\n", evd_Q.eigenvalues()(3), evd_Q.eigenvalues()(2), evd_Q.eigenvalues()(1), evd_Q.eigenvalues()(0));
+	LOGC(LDebug, "Eigenvalues of Q: (%f, %f, %f) - %f", evd_Q.eigenvalues()(3), evd_Q.eigenvalues()(2), evd_Q.eigenvalues()(1), evd_Q.eigenvalues()(0));
 
 	// Apply correction to camera matrices and positions
 	Eigen::Matrix4d H;
@@ -942,7 +945,7 @@ static Eigen::Matrix4d getCorrectionMatrix(const Eigen::Ref<const Eigen::MatrixX
 		bool back = (V.block<3,4>(v*3,0) * P).row(2).sum() < 0;
 		if (back)
 		{ // Flip - TODO: Find out why this happens
-			LOGC(LDarn, "    View matrix %d is flipped!\n", v);
+			LOGC(LDarn, "    View matrix %d is flipped!", v);
 			V_v = -V_v;
 		}
 
@@ -951,7 +954,7 @@ static Eigen::Matrix4d getCorrectionMatrix(const Eigen::Ref<const Eigen::MatrixX
 
 		if (R_v.determinant() <= 0)
 		{ // Should not happen afaik
-			LOGC(LWarn, "    View matrix %ds' rotation matrix was invalid!\n", v);
+			LOGC(LWarn, "    View matrix %ds' rotation matrix was invalid!", v);
 			continue;
 		}
 
@@ -962,7 +965,7 @@ static Eigen::Matrix4d getCorrectionMatrix(const Eigen::Ref<const Eigen::MatrixX
 			H(1,1) = -1;
 		if (P_v(2,2) < 0)
 			H(2,2) = -1;
-		LOGC(LDebug, "View %d provided a correction of %f,%f,%f,%f\n", v, H(0,0), H(1,1), H(2,2), H(3,3));
+		LOGC(LDebug, "View %d provided a correction of %f,%f,%f,%f", v, H(0,0), H(1,1), H(2,2), H(3,3));
 
 		// Should only need to accommodate one valid camera to correct all of them
 		break;
@@ -1044,17 +1047,17 @@ static void SeparateProjectionMatrix(const Eigen::Ref<const Eigen::Matrix<Scalar
 } */
 // TODO: Consider just using EulerAngles to approximate, seems to do fine
 
-static bool SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, const Eigen::Ref<const Eigen::MatrixXd> &P, const Eigen::Ref<const Eigen::MatrixXd> &measurementMatrix, CameraCalib &cameraCalib)
+static std::optional<ErrorMessage> SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, const Eigen::Ref<const Eigen::MatrixXd> &P, const Eigen::Ref<const Eigen::MatrixXd> &measurementMatrix, CameraCalib &cameraCalib)
 {
 	assert(P.rows() == 4);
 	assert(P.cols() == measurementMatrix.cols());
 
-	LOGC(LDebug, "Reprojection error of view %d initially: %fpx RMSE\n", v, std::sqrt(calculateReprojectionErrorSq(V_v, v, P, measurementMatrix))*PixelFactor);
+	LOGC(LDebug, "Reprojection error of view %d initially: %fpx RMSE", v, std::sqrt(calculateReprojectionErrorSq(V_v, v, P, measurementMatrix))*PixelFactor);
 
 	// Check polarity
 	if ((V_v * P).row(2).sum() < 0)
 	{
-		LOGC(LDebug, "Flipping view matrix!\n");
+		LOGC(LDebug, "Flipping view matrix!");
 		V_v = -V_v;
 	}
 
@@ -1068,7 +1071,7 @@ static bool SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, 
 	// If the number of negatives is uneven, something got messed up - probably in getCorrectionMatrix
 	int neg = (P_v(0,0) < 0) + (P_v(1,1) < 0) + (P_v(2,2) < 0) + (R_v.determinant() < 0);
 	if (neg % 2 == 1)
-		LOGC(LWarn, "Got uneven amount of negatives (%d), will not be able to correctly separate matrices for view %d!\n", neg, v);
+		LOGC(LWarn, "Got uneven amount of negatives (%d), will not be able to correctly separate matrices for view %d!", neg, v);
 
 	// Correct projection matrix signs
 	for (int i = 0; i < 3; i++)
@@ -1090,7 +1093,7 @@ static bool SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, 
 	P_v(0,1) = 0;
 	P_v /= P_v(2,2);
 
-	auto verifyDecomposition = [&](Eigen::Matrix3d P_v, Eigen::Matrix3d R_v, Eigen::Vector3d C_T)
+	auto verifyDecomposition = [&](Eigen::Matrix3d P_v, Eigen::Matrix3d R_v, Eigen::Vector3d C_T) -> std::optional<ErrorMessage>
 	{
 		double reprojectionError = 0;
 		int ptCnt = 0;
@@ -1107,24 +1110,24 @@ static bool SeparatePerspectiveProjection(Eigen::Matrix<double,3,4> V_v, int v, 
 			reprojectionError += (measure-reprojection.hnormalized()).squaredNorm();
 		}
 		reprojectionError = std::sqrt(reprojectionError/ptCnt);
-		LOGC(LInfo, "    Final reprojection error across %d recovered observations: %fpx RMSE\n", ptCnt, reprojectionError*PixelFactor);
+		LOGC(LInfo, "    Final reprojection error across %d recovered observations: %fpx RMSE", ptCnt, reprojectionError*PixelFactor);
 
 		if (R_v.determinant() < 0)
 		{ // Should not happen, if so then getCorrectionMatrix failed
-			LOGC(LWarn, "    ----- Rotation matrix invalid!!!!\n");
-			return false;
+			LOGC(LWarn, "    ----- Rotation matrix invalid!!!!");
+			return "Camera Decomposition resulted in invalid rotation matrix!";
 		}
 		if (front < back)
 		{ // Should not happen, if so then getCorrectionMatrix failed
-			LOGC(LWarn, "    ----- View matrices flipped!!!!\n");
-			return false;
+			LOGC(LWarn, "    ----- View matrices flipped!!!!");
+			return "Camera Decomposition resulted in flipped view matrix!";
 		}
 		if (reprojectionError*PixelFactor > 10)
 		{
-			LOGC(LInfo, "    ----- Unusually high reprojection RMSE!\n");
-			return true;
+			LOGC(LInfo, "    ----- Unusually high reprojection RMSE!");
+			return std::nullopt;
 		}
-		return true;
+		return std::nullopt;
 	};
 
 	// Record calibration values
@@ -1233,7 +1236,7 @@ static void balanceMatrix3Triplet(Eigen::Ref<Eigen::MatrixXd> matrix)
 			avgColChange += std::abs(colScaleSq-1);
 		}
 		avgColChange /= cols;
-		LOGC(LTrace, "Balancing iteration change: row %f, col %f\n", avgRowChange, avgColChange);
+		LOGC(LTrace, "Balancing iteration change: row %f, col %f", avgRowChange, avgColChange);
 	} while ((avgRowChange > 0.01 || avgColChange > 0.01) && maxIt > 0);
 }
 
@@ -1245,7 +1248,7 @@ static std::pair<int,double> calculateFundamentalMatrix(const Eigen::Ref<const E
 	int colCount = std::min(pointsA.cols(), pointsB.cols());
 	if (colCount < minPointCount)
 	{
-		LOGC(LWarn, "    Cannot calculate fundamental matrix from %d points!\n", colCount);
+		LOGC(LWarn, "    Cannot calculate fundamental matrix from %d points!", colCount);
 		return { colCount, 0 };
 	}
 	int pointCount = 0;
@@ -1255,7 +1258,7 @@ static std::pair<int,double> calculateFundamentalMatrix(const Eigen::Ref<const E
 	LOGC(LDebug, "Calculating fundamental matrix with %d/%d overlapping points!", pointCount, colCount);
 	if (pointCount < minPointCount)
 	{
-		LOGC(LWarn, "    Cannot calculate fundamental matrix from %d/%d non-nan points!\n", pointCount, colCount);
+		LOGC(LWarn, "    Cannot calculate fundamental matrix from %d/%d non-nan points!", pointCount, colCount);
 		return { pointCount, 0 };
 	}
 
@@ -1298,7 +1301,7 @@ static std::pair<int,double> calculateFundamentalMatrix(const Eigen::Ref<const E
 			error += std::abs((pointsB.template block<3,1>(0,p)/pointsB(2,p)).transpose() * fundamentalMatrix * (pointsA.template block<3,1>(0,p)/pointsA(2,p)));
 	}
 	error /= pointCount;
-	LOGC(LDebug, "    Fundamental matrix leaves %f average point error and has %f confidence\n", error, confidence);*/
+	LOGC(LDebug, "    Fundamental matrix leaves %f average point error and has %f confidence", error, confidence);*/
 
 	return { pointCount, confidence };
 }

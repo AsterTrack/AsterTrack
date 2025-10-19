@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef RECORDING_H
 #define RECORDING_H
 
+#include "util/error.hpp"
+
 #include <string>
 #include <vector>
 #include <map>
@@ -57,6 +59,6 @@ void parseRecordEntries(std::map<int,Recording> &recordEntries);
 /**
  * Loads the recording into state for replay, optionally appending to an existing recording
  */
-void loadRecording(ServerState &state, Recording &&recordEntries, bool append);
+HANDLE_ERROR loadRecording(ServerState &state, Recording &&recordEntries, bool append);
 
 #endif // RECORDING_H

@@ -65,6 +65,7 @@ struct ServerState
 	ServerMode mode = MODE_None;
 	bool isLoading, isStreaming;
 	PipelineState pipeline = {};
+	std::queue<ErrorMessage> errors;
 
 	// Data stored in files
 	GeneralConfig config = {};

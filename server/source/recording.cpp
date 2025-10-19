@@ -70,7 +70,7 @@ void parseRecordEntries(std::map<int, Recording> &recordEntries)
 	}
 }
 
-void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
+std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 {
 	std::vector<CameraConfigRecord> cameras;
 	if (append)
@@ -93,8 +93,9 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	for (int i = 0; i < recordEntries.captures.size(); i++)
 	{
 		std::size_t start = state.stored.frames.getView().size();
-		std::size_t offset = parseRecording(recordEntries.captures[i], cameras, state.stored);
-		// May fail, in which case frame count will be 0 for this segment
+		std::size_t offset;
+		auto error = parseRecording(recordEntries.captures[i], cameras, state.stored, offset);
+		if (error) return error;
 		std::size_t count = state.stored.frames.getView().size() - start;
 		state.recording.segments.emplace_back(start, count, offset);
 		framesCount += count;
@@ -106,7 +107,8 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 		if (segment.frameCount == 0) continue; // Invalid or missing segment
 		if (recordEntries.tracking[i].empty())
 			recordEntries.tracking[i] = recordEntries.captures[i];
-		parseTrackingResults(recordEntries.tracking[i], state.stored, segment.frameOffset);
+		auto error = parseTrackingResults(recordEntries.tracking[i], state.stored, segment.frameOffset);
+		if (error && error->code != ENOENT) return error;
 	}
 	// Store paths of each numbered segment as well
 	std::move(std::begin(recordEntries.captures), std::end(recordEntries.captures), std::back_inserter(state.recording.captures));
@@ -117,8 +119,11 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	if (state.mode != MODE_None)
 	{
 		if (!append)
+		{
 			LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
-		return;
+			return "Entered a mode while loading replay!";
+		}
+		return std::nullopt;
 	}
 
 	// Setup replay mode with relevant cameras
@@ -127,7 +132,10 @@ void loadRecording(ServerState &state, Recording &&recordEntries, bool append)
 	if (!recordEntries.calib.empty())
 	{ // Overwrite any calibrations
 		std::vector<CameraCalib> cameraCalibs;
-		parseCameraCalibrations(recordEntries.calib, cameraCalibs);
+		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);
+		if (error && error->code != ENOENT) return error;
 		AdoptNewCalibrations(state.pipeline, cameraCalibs, false);
 	}
+
+	return std::nullopt;
 }

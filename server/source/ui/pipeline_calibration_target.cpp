@@ -24,18 +24,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // This is just a cached value to reduce the amount sequences needs to be saved/loaded
 static int savedSequencesLastFrame = 0;
 
-static void ensureSequencesSaved(const PipelineState &pipeline, const SequenceData &sequences)
+static bool ensureSequencesSaved(const PipelineState &pipeline, const SequenceData &sequences)
 {
-	if (savedSequencesLastFrame != sequences.lastRecordedFrame)
-	{
-		savedSequencesLastFrame = sequences.lastRecordedFrame;
-		// Copy camera ids
-		std::vector<int> cameraIDs;
-		for (auto &cam : pipeline.cameras)
-			cameraIDs.push_back(cam->id);
-		// Write accompanying sequences
-		dumpSequenceDatabase("dump/target_calib_sequences.json", sequences, cameraIDs);
-	}
+	if (savedSequencesLastFrame == sequences.lastRecordedFrame)
+		return true;
+	// Copy camera ids
+	std::vector<int> cameraIDs;
+	for (auto &cam : pipeline.cameras)
+		cameraIDs.push_back(cam->id);
+	// Write accompanying sequences
+	auto error = dumpSequenceDatabase("dump/target_calib_sequences.json", sequences, cameraIDs);
+	if (error) GetState().errors.push(error.value());
+	else savedSequencesLastFrame = sequences.lastRecordedFrame;
+	return !error;
 }
 
 static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
@@ -43,7 +44,14 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 	if (savedSequencesLastFrame == 0 || savedSequencesLastFrame > sequences.lastRecordedFrame)
 	{
 		std::vector<int> cameraIDs;
-		SequenceData loadedSequences = parseSequenceDatabase("dump/target_calib_sequences.json", cameraIDs);
+		SequenceData loadedSequences;
+		auto error = parseSequenceDatabase("dump/target_calib_sequences.json", cameraIDs, loadedSequences);
+		if (error)
+		{
+			LOG(LTargetCalib, LError, "%s", error->c_str());
+			GetState().errors.push(error.value());
+			return false;
+		}
 		bool valid = cameraIDs.size() == pipeline.cameras.size();
 		if (valid)
 		{
@@ -66,6 +74,7 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 		if (!valid)
 		{
 			LOG(LTargetCalib, LError, "Cameras mismatch those in the accompanying sequence database - perhaps you loaded the wrong recording?");
+			GetState().errors.push("Cameras mismatch those in the accompanying sequence database - perhaps you loaded the wrong recording?");
 			return false;
 		}
 		sequences = std::move(loadedSequences);
@@ -92,6 +101,7 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 		if (GetState().mode == MODE_Replay && pipeline.record.frames.getView().size() < sequences.lastRecordedFrame)
 		{ // Check that the frames are actually covering the loaded sequences
 			LOG(LTargetCalib, LError, "Current frames aren't covering loaded data fully! Either recording mismatches or you started playback but didn't wait for it to finish!");
+			GetState().errors.push("Current frames aren't covering loaded data fully! Either recording mismatches or you started playback but didn't wait for it to finish!");
 			return false;
 		}
 	}
@@ -151,9 +161,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		ImGui::SameLine();
 		if (ImGui::Button("Save##Observations", SizeWidthDiv3()))
 		{
-			dumpTargetViewRecords("dump/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
 			// Make sure the relevant sequence data is saved alongside
-			ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock());
+			if (ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
+			{
+				auto error = dumpTargetViewRecords("dump/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
+				if (error) GetState().errors.push(error.value());
+			}
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Observations", SizeWidthDiv3()))
@@ -162,7 +175,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			if (checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
 			{
 				auto views_lock = pipeline.targetCalib.views.contextualLock();
-				*views_lock = parseTargetViewRecords("dump/target_calib_views.json", pipeline.record.frames);
+				auto error = parseTargetViewRecords("dump/target_calib_views.json", pipeline.record.frames, *views_lock);
+				if (error) GetState().errors.push(error.value());
+				else
 				for (auto &view : *views_lock)
 				{
 					{ // Fill target observations and calculate errors
@@ -364,7 +379,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			writeTargetObjFile(tgtPath, TargetCalibration3D(view.target.contextualRLock()->markers));
+			auto error = writeTargetObjFile(tgtPath, TargetCalibration3D(view.target.contextualRLock()->markers));
+			if (error) GetState().errors.push(error.value());
 		}
 
 		ImGui::BeginDisabled(view.control.stopping());
@@ -878,12 +894,13 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					const char* obsPathFmt = "dump/assembly_stage_%d.json";
 					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt));
 					TargetAssemblyBase base;
-					bool success = parseTargetAssemblyStage(obsPath, base);
-					auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
-					stages_lock->clear();
-					visState.targetCalib.stage = nullptr;
-					if (success)
+					auto error = parseTargetAssemblyStage(obsPath, base);
+					if (error) GetState().errors.push(error.value());
+					else
 					{
+						auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
+						stages_lock->clear();
+						visState.targetCalib.stage = nullptr;
 						LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
 							(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
 						auto obs_lock = pipeline.seqDatabase.contextualRLock();
@@ -923,19 +940,22 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				TargetCalibration3D targetCalib(finaliseTargetMarkers(
 					pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
 				state.trackerConfigs.emplace_back(id, label, std::move(targetCalib), TargetDetectionConfig());
-				storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-				state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+				auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+				if (error) GetState().errors.push(error.value());
+				else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 			}
 
 			ImGui::SameLine();
 
 			if (ImGui::Button("Stage", SizeWidthDiv3()))
 			{
-				const char* obsPathFmt = "dump/assembly_stage_%d.json";
-				std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
-				dumpTargetAssemblyStage(obsPath, getSelectedStage()->base);
-				// Make sure the relevant sequence data is saved alongside
-				ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock());
+				if (ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
+				{
+					const char* obsPathFmt = "dump/assembly_stage_%d.json";
+					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
+					auto error = dumpTargetAssemblyStage(obsPath, getSelectedStage()->base);
+					if (error) GetState().errors.push(error.value());
+				}
 			}
 
 			ImGui::EndDisabled();

@@ -416,15 +416,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
-		static std::string selectError;
 		ImGui::AlignTextToFramePadding();
-		if (!selectError.empty())
-			ImGui::Text("%s", selectError.c_str());
-		else
-		{
-			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
-			ImGui::SetItemTooltip("%s", firmwareFile.c_str());
-		}
+		ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
+		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
 		{
@@ -433,7 +427,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				if (!NFD_Init())
 				{ // Thread-specific init
 					LOG(LGUI, LError, "Failed to initialise File Picker: %s", NFD_GetError());
-					selectError = NFD_GetError();
+					GetState().errors.push(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
 					return;
 				}
 
@@ -457,13 +451,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				if (result == NFD_OKAY)
 				{
 					firmwareFile = outPath;
-					selectError.clear();
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
 				{
 					LOG(LGUI, LError, "Failed to use File Picker: %s", NFD_GetError());
-					selectError = NFD_GetError();
+					GetState().errors.push(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 				}
 
 				NFD_Quit();
@@ -500,15 +493,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
-		static std::string selectError;
 		ImGui::AlignTextToFramePadding();
-		if (!selectError.empty())
-			ImGui::Text("%s", selectError.c_str());
-		else
-		{
-			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
-			ImGui::SetItemTooltip("%s", firmwareFile.c_str());
-		}
+		ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
+		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
 		{
@@ -517,7 +504,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				if (!NFD_Init())
 				{ // Thread-specific init
 					LOG(LGUI, LError, "Failed to initialise File Picker: %s", NFD_GetError());
-					selectError = NFD_GetError();
+					GetState().errors.push(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
 					return;
 				}
 
@@ -540,13 +527,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				if (result == NFD_OKAY)
 				{
 					firmwareFile = outPath;
-					selectError.clear();
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
 				{
 					LOG(LGUI, LError, "Failed to use File Picker: %s", NFD_GetError());
-					selectError = NFD_GetError();
+					GetState().errors.push(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 				}
 
 				NFD_Quit();

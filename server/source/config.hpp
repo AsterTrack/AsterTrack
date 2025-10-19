@@ -199,38 +199,38 @@ int findLastFileEnumeration(const char* pathFormat);
  */
 int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString = true);
 
-void parseGeneralConfigFile(const std::string &path, GeneralConfig &config);
-void storeGeneralConfigFile(const std::string &path, const GeneralConfig &config);
+HANDLE_ERROR parseGeneralConfigFile(const std::string &path, GeneralConfig &config);
+HANDLE_ERROR storeGeneralConfigFile(const std::string &path, const GeneralConfig &config);
 
-void parseCameraConfigFile(const std::string &path, CameraConfigMap &config);
-void storeCameraConfigFile(const std::string &path, const CameraConfigMap &config);
+HANDLE_ERROR parseCameraConfigFile(const std::string &path, CameraConfigMap &config);
+HANDLE_ERROR storeCameraConfigFile(const std::string &path, const CameraConfigMap &config);
 
-void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens);
-void storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens);
+HANDLE_ERROR parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens);
+HANDLE_ERROR storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens);
 
-void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
-void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
+HANDLE_ERROR parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
+HANDLE_ERROR storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
 
-void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
-void storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig);
+HANDLE_ERROR parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
+HANDLE_ERROR storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig);
 
-std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record);
-void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
+HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset);
+HANDLE_ERROR dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
-void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);
-void dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
+HANDLE_ERROR parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);
+HANDLE_ERROR dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
 
-SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs);
-void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs);
+HANDLE_ERROR parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs, SequenceData &sequences);
+HANDLE_ERROR dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs);
 
-std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::string &path,
-	const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords);
-void dumpTargetViewRecords(const std::string &path, const std::vector<std::shared_ptr<TargetView>> &views);
+HANDLE_ERROR parseTargetViewRecords(const std::string &path,
+	const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, std::vector<std::shared_ptr<TargetView>> &views);
+HANDLE_ERROR dumpTargetViewRecords(const std::string &path, const std::vector<std::shared_ptr<TargetView>> &views);
 
-bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base);
-void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
+HANDLE_ERROR parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base);
+HANDLE_ERROR dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
 
-bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size);
-void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target);
+HANDLE_ERROR parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size);
+HANDLE_ERROR writeTargetObjFile(const std::string &path, const TargetCalibration3D &target);
 
 #endif // CONFIG_H

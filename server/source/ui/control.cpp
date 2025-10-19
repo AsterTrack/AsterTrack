@@ -309,11 +309,15 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 									return;
 								}
 							}
-							dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
-							dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);
+							auto error = dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
+							if (error) GetState().errors.push(error.value());
+							else error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
 							for (auto &s : GetUI().recordSections)
-								if (s.begin == section.begin && s.end == section.end)
-									s.saved = true;
+							{
+								if (s.begin != section.begin || s.end != section.end) continue;
+								if (error) s.path.clear();
+								else s.saved = true;
+							}
 							GetUI().RequestUpdates();
 						}, section);
 					}

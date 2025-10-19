@@ -30,7 +30,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #ifndef NDEBUG
 #define JSON_NOEXCEPTION
+#define JSON_PARSE_TRY_BLOCK
+#define JSON_PARSE_CATCH_BLOCK
+#else
+#define JSON_PARSE_TRY_BLOCK try
+#define JSON_PARSE_CATCH_BLOCK \
+	catch(json::exception e) \
+	{ \
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str()); \
+		return asprintf_s("Failed to parse '%s'!", path.c_str()); \
+	}
+
 #endif
+
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -43,6 +55,35 @@ using json = nlohmann::json;
  * Parsing and writing of Config and other files
  */
 
+std::optional<ErrorMessage> writeJSON(const std::string &path, const json &data)
+{
+	// Serialise JSON
+	std::stringstream ss;
+	ss << std::setfill('\t') << std::setw(1) << data;
+	// Create directories
+	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
+	// Write file
+	std::ofstream fs(path);
+	if (!fs.is_open()) return asprintf_s("Failed to open '%s' for writing!", path.c_str());
+	fs << ss.rdbuf();
+	if (fs.fail()) return asprintf_s("Failed to write '%s'!", path.c_str());
+	fs.close();
+	if (fs.fail()) return asprintf_s("Failed to close '%s' after writing!", path.c_str());
+	// TODO: Verify file was written
+	return std::nullopt;
+}
+
+std::optional<ErrorMessage> readJSON(const std::string &path, json &data)
+{
+	// Read file
+	std::ifstream fs(path);
+	if (!fs.is_open()) return ErrorMessage(asprintf_s("Failed to open '%s' for reading!", path.c_str()), ENOENT);
+	fs >> data;
+	if (fs.fail()) return asprintf_s("Failed to read '%s'!", path.c_str());
+	fs.close();
+	if (fs.fail()) return asprintf_s("Failed to close '%s' after reading!", path.c_str());
+	return std::nullopt;
+}
 
 int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString)
 {
@@ -80,18 +121,13 @@ int findLastFileEnumeration(const char* pathFormat)
 	return i-1;
 }
 
-void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
+std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 {
-	// Read JSON config file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json cfg;
-	fs >> cfg;
+	auto error = readJSON(path, cfg);
+	if (error) return error;
 
-	// Parse JSON config file
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
 		if (cfg.contains("simulation"))
 		{
@@ -105,22 +141,27 @@ void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 				float defaultMarkerFoV = 180;
 				float defaultMarkerSize = 0.005f;
 				auto &targets = simulation["trackingTargets"];
+				std::optional<ErrorMessage> error;
 				if (targets.is_array())
 				{
 					for (auto &md : targets)
 					{
 						if (md.is_string())
-							parseTargetObjFile(md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+							error = parseTargetObjFile(md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
 						else if (md.is_object())
 						{
 							float v = md.contains("markerViewAngle") && md["markerViewAngle"].is_number()? md["markerViewAngle"].get<float>() : defaultMarkerFoV;
 							float s = md.contains("markerSizeMM") && md["markerSizeMM"].is_number()? md["markerSizeMM"].get<float>() : defaultMarkerSize;
-							parseTargetObjFile(md["path"], config.simulation.trackingTargets, v, s);
+							error = parseTargetObjFile(md["path"], config.simulation.trackingTargets, v, s);
 						}
+						if (error) return error;
 					}
 				}
 				else if (targets.is_string())
-					parseTargetObjFile(targets, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+				{
+					error = parseTargetObjFile(targets, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+					if (error) return error;
+				}
 			}
 			if (simulation.contains("cameras"))
 			{
@@ -128,37 +169,30 @@ void parseGeneralConfigFile(const std::string &path, GeneralConfig &config)
 				if (cameras.is_string())
 				{
 					config.simulation.cameraDefPath = cameras.get<std::string>();
-					parseCameraCalibrations(cameras.get<std::string>(), config.simulation.cameraDefinitions);
+					auto error = parseCameraCalibrations(cameras.get<std::string>(), config.simulation.cameraDefinitions);
+					if (error) return error;
 				}
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void storeGeneralConfigFile(const std::string &path, const GeneralConfig &config)
+std::optional<ErrorMessage> storeGeneralConfigFile(const std::string &path, const GeneralConfig &config)
 {
 	// TODO
+	return std::nullopt;
 }
 
-void parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
+std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
 {
-	// Read JSON config file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json calib;
-	fs >> calib;
-	fs.close();
+	auto error = readJSON(path, calib);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
 		// Parse camera calibration
 		if (calib.contains("configurations"))
@@ -208,16 +242,12 @@ void parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void storeCameraConfigFile(const std::string &path, const CameraConfigMap &config)
+std::optional<ErrorMessage> storeCameraConfigFile(const std::string &path, const CameraConfigMap &config)
 {
 	json file;
 
@@ -252,26 +282,16 @@ void storeCameraConfigFile(const std::string &path, const CameraConfigMap &confi
 		file["cameras"].push_back(std::move(cam));
 	}
 
-	// Write JSON calib file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens)
+std::optional<ErrorMessage> parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCalib, int &defaultLens)
 {
-	// Read JSON config file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json calib;
-	fs >> calib;
-	fs.close();
+	auto error = readJSON(path, calib);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{ // Parse camera calibration
 		if (calib.contains("lenses"))
 		{
@@ -281,7 +301,7 @@ void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCal
 				int i = 0;
 				for (auto &jsLens : jsLenses)
 				{
-					if (!jsLens.contains("id") || !jsLens.contains("distortion")) return;
+					if (!jsLens.contains("id") || !jsLens.contains("distortion")) return "Missing id or distortion in lens preset!";
 					LensCalib calib = {};
 					if (jsLens.contains("id"))
 						calib.id = jsLens["id"].get<int>();
@@ -311,16 +331,12 @@ void parseLensPresets(const std::string &path, std::map<int, LensCalib> &lensCal
 		if (!lensCalib.empty() && !lensCalib.contains(defaultLens))
 			defaultLens = lensCalib.begin()->first;
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens)
+std::optional<ErrorMessage> storeLensPresets(const std::string &path, const std::map<int, LensCalib> &lensCalib, int defaultLens)
 {
 	json file;
 
@@ -343,26 +359,16 @@ void storeLensPresets(const std::string &path, const std::map<int, LensCalib> &l
 
 	file["default"] = defaultLens;
 
-	// Write JSON calib file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib)
+std::optional<ErrorMessage> parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib)
 {
-	// Read JSON config file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json calib;
-	fs >> calib;
-	fs.close();
+	auto error = readJSON(path, calib);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{ // Parse camera calibration
 		if (calib.contains("cameras"))
 		{
@@ -455,16 +461,14 @@ void parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib)
+
+
+std::optional<ErrorMessage> storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib)
 {
 	json file;
 
@@ -497,12 +501,7 @@ void storeCameraCalibrations(const std::string &path, const std::vector<CameraCa
 		file["cameras"].push_back(std::move(cam));
 	}
 
-	// Write JSON calib file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
 static IMUCalib readIMUCalib(json &jsIMU)
@@ -624,21 +623,16 @@ static void writeTargetCalib(const TargetCalibration3D &target, json &jsTarget)
 	}
 }
 
-void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig)
+std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig)
 {
-	// Read JSON config file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
 		// Parse tracker configurations
-		if (!file.contains("trackers") || !file["trackers"].is_array()) return;
+		if (!file.contains("trackers") || !file["trackers"].is_array()) return "Invalid tracker configuration!";
 		auto &jsTrackers = file["trackers"];
 		trackerConfig.reserve(trackerConfig.size() + jsTrackers.size());
 		for (auto &jsTracker : jsTrackers)
@@ -704,16 +698,12 @@ void parseTrackerConfigurations(const std::string &path, std::vector<TrackerConf
 			trackerConfig.push_back(std::move(tracker));
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig)
+std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig)
 {
 	json file;
 
@@ -757,36 +747,26 @@ void storeTrackerConfigurations(const std::string &path, const std::vector<Track
 		file["trackers"].push_back(std::move(jsTracker));
 	}
 
-	// Write JSON calib file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-std::size_t parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record)
+std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
+	frameOffset = 0;
 
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return 0;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-	unsigned int frameOffset = 0;
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
-		if (!file.contains("frameRecords")) return 0;
-		if (!file["frameRecords"].is_object()) return 0;
+		if (!file.contains("frameRecords") || !file["frameRecords"].is_object())
+			return asprintf_s("Invalid recording file '%s' - frameRecords!", path.c_str());
 		auto &jsRecords = file["frameRecords"];
 
-		if (!jsRecords.contains("frames")) return 0;
-		if (!jsRecords["frames"].is_array()) return 0;
+		if (!jsRecords.contains("frames") || !jsRecords["frames"].is_array())
+			return asprintf_s("Invalid recording file '%s' - frames!", path.c_str());
 		auto &jsFrames = jsRecords["frames"];
 
 		std::vector<CameraConfigRecord> parsedCameras;
@@ -798,7 +778,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			{
 				if (jsCamera.is_object())
 				{
-					if (!jsCamera.contains("id")) return 0;
+					if (!jsCamera.contains("id")) return asprintf_s("Invalid recording file '%s' - camera ID!", path.c_str());
 					parsedCameras.emplace_back(jsCamera["id"].get<CameraID>(),
 						jsCamera.contains("frameX")? jsCamera["frameX"].get<int>() : 1280,
 						jsCamera.contains("frameY")? jsCamera["frameY"].get<int>() : 800
@@ -807,7 +787,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 				else if (jsCamera.is_number_integer())
 					parsedCameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
 				else
-					return 0;
+					return asprintf_s("Invalid recording file '%s' - camera ID!", path.c_str());
 			}
 		}
 		else if (jsRecords.contains("cameraCount") && jsRecords["cameraCount"].is_number_integer())
@@ -817,11 +797,14 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 				parsedCameras.emplace_back(i+1, 1280, 800);
 		}
 		else
-			return 0;
+			return asprintf_s("Invalid recording file '%s' - cameras!", path.c_str());
 
 		// Check match with any prior cameras (for segmented/appended recordings)
+		if (!cameras.empty() && parsedCameras.size() != cameras.size())
+			return asprintf_s("Failed to match %d existing cameras against %d cameras in recording file '%s'!", (int)cameras.size(), (int)parsedCameras.size(), path.c_str());
 		for (int c = 0; c < cameras.size(); c++)
-			if (cameras[c].ID != parsedCameras[c].ID) return 0;
+			if (cameras[c].ID != parsedCameras[c].ID)
+				return asprintf_s("Failed to match existing camera #%d against camera #%d in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
 		cameras = std::move(parsedCameras);
 
 		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
@@ -850,7 +833,7 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			for (auto &jsCamera : jsCameras)
 			{
 				if (frame->cameras.size() >= cameras.size())
-					return frameOffset;
+					return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
 
 				frame->cameras.push_back({});
 				auto &camera = frame->cameras.back();
@@ -916,8 +899,8 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			record.frames.insert(frame->num, std::move(frame));
 		}
 
-		if (!file.contains("imuRecords")) return frameOffset;
-		if (!file["imuRecords"].is_array()) return frameOffset;
+		if (!file.contains("imuRecords")) return std::nullopt;
+		if (!file["imuRecords"].is_array()) return std::nullopt;
 		auto &jsIMUs = file["imuRecords"];
 		auto noMag = nlohmann::json::array({ 0.0f, 0.0f, 0.0f });
 		record.imus.reserve(jsIMUs.size());
@@ -971,37 +954,26 @@ std::size_t parseRecording(const std::string &path, std::vector<CameraConfigReco
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return frameOffset;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
 
-	return frameOffset;
+	return std::nullopt;
 }
 
-void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
+std::optional<ErrorMessage> dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 
 	begin = std::max(begin, frames.beginIndex());
 	end = std::min(end, frames.endIndex());
-	if (begin >= end) return;
+	if (begin >= end) return "Failed to write recording with invalid frame range!";
 	auto frameBegin = frames.pos(begin);
 	while (frameBegin < frames.end() && !*frameBegin) frameBegin++;
 	auto frameBack = frames.pos(end-1);
 	while (frameBack > frames.begin() && !*frameBack) frameBack--;
 	auto frameEnd = std::next(frameBack);
-	if (frameBegin >= frameEnd) return;
+	if (frameBegin >= frameEnd) return "Failed to write recording with non-existant frame range!";
 
-	// Open file
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::flush;
 
 	json file;
 
@@ -1147,36 +1119,29 @@ void dumpRecording(const std::string &path, const std::vector<CameraConfigRecord
 		jsIMUs.push_back(std::move(jsIMU));
 	}
 
-	// Write JSON calib file
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset)
+std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset)
 {
 	// Modify path (expecting XX_capture_XX.json)
 	std::size_t index = path.rfind("_capture_");
 	if (index != std::string::npos)
 		path.replace(index, 9, "_tracking_");
 
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
 		auto frames = record.frames.getView();
-		if (!file.contains("trackingResults")) return;
-		if (!file["trackingResults"].is_object()) return;
+		if (!file.contains("trackingResults") || !file["trackingResults"].is_object())
+			return asprintf_s("Invalid tracking file '%s' - tracking results!", path.c_str());
 		auto &jsRecords = file["trackingResults"];
 
-		if (!jsRecords.contains("frames")) return;
-		if (!jsRecords["frames"].is_array()) return;
+		if (!jsRecords.contains("frames") || !jsRecords["frames"].is_array())
+			return asprintf_s("Invalid tracking file '%s' - frames!", path.c_str());
 		auto &jsFrames = jsRecords["frames"];
 
 		for (auto &jsFrame : jsFrames)
@@ -1220,34 +1185,26 @@ void parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
+std::optional<ErrorMessage> dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 
 	begin = std::max(begin, frames.beginIndex());
 	end = std::min(end, frames.endIndex());
-	if (begin >= end)
-		return;
+	if (begin >= end) return "Failed to write tracking results with invalid frame range!";
 	auto frameBegin = frames.pos(begin);
 	auto frameEnd = frames.pos(end);
+	if (frameBegin >= frameEnd) return "Failed to write tracking results with non-existant frame range!";
 
 	// Modify path (expecting XX_capture***.json)
 	std::size_t index = path.rfind("_capture");
 	if (index != std::string::npos)
 		path.replace(index, 8, "_tracking");
-	// Open file
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::flush;
 
 	json file;
 
@@ -1292,32 +1249,25 @@ void dumpTrackingResults(std::string &path, const TrackingRecord &record, std::s
 	for (int tgtID : targetIDs)
 		jsRecords["trackers"].push_back(tgtID);
 
-	// Write JSON calib file
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs)
+std::optional<ErrorMessage> parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs, SequenceData &sequences)
 {
-	SequenceData sequences = {};
-
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return sequences;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	sequences = {};
+
+	JSON_PARSE_TRY_BLOCK
 	{
-		if (!file.contains("observations")) return sequences;
-		if (!file["observations"].is_object()) return sequences;
+		if (!file.contains("observations") || !file["observations"].is_object())
+			return asprintf_s("Invalid marker observations file '%s' - observations!", path.c_str());
 		auto &jsObs = file["observations"];
 
-		if (!jsObs.contains("markers")) return sequences;
-		if (!jsObs["markers"].is_array()) return sequences;
+		if (!jsObs.contains("markers") || !jsObs["markers"].is_array())
+			return asprintf_s("Invalid marker observations file '%s' - markers!", path.c_str());
 		auto &jsMarkers = jsObs["markers"];
 
 		int cameraCount = 0;
@@ -1335,7 +1285,7 @@ SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID
 				cameraIDs.push_back(i+1);
 		}
 		else
-			return sequences;
+			return asprintf_s("Invalid marker observations file '%s' - no cameras!", path.c_str());
 		sequences.temporary.resize(cameraCount);
 
 		sequences.markers.resize(jsMarkers.size());
@@ -1387,26 +1337,15 @@ SequenceData parseSequenceDatabase(const std::string &path, std::vector<CameraID
 			sequences.lastRecordedFrame = std::max(sequences.lastRecordedFrame, marker.lastFrame);
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return sequences;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
 
-	return sequences;
+	return std::nullopt;
 }
 
-void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs)
+std::optional<ErrorMessage> dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs)
 {
 	if (sequences.markers.size() == 0)
-		return;
-	// Open file first
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::flush;
+		return "No observation data to store!";
 
 	json file;
 
@@ -1450,9 +1389,7 @@ void dumpSequenceDatabase(const std::string &path, const SequenceData &sequences
 		jsMarkers.push_back(std::move(jsMarker));
 	}
 
-	// Write JSON calib file
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
 static bool parseOptTarget(json &in, ObsTarget &target)
@@ -1540,24 +1477,18 @@ static void storeOptTarget(json &out, const ObsTarget &target)
 	}
 }
 
-std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::string &path,
-	const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords)
+std::optional<ErrorMessage> parseTargetViewRecords(const std::string &path,
+	const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
+	std::vector<std::shared_ptr<TargetView>> &views)
 {
-	std::vector<std::shared_ptr<TargetView>> views;
-
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return views;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
-		if (!file.contains("views")) return views;
-		if (!file["views"].is_array()) return views;
+		if (!file.contains("views")) return asprintf_s("Invalid target views file '%s' - views!", path.c_str());
+		if (!file["views"].is_array()) return asprintf_s("Invalid target views file '%s' - views!", path.c_str());
 		auto &viewArr = file["views"];
 
 		views.reserve(viewArr.size());
@@ -1579,25 +1510,13 @@ std::vector<std::shared_ptr<TargetView>> parseTargetViewRecords(const std::strin
 			views.push_back(std::move(tgtView));
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return views;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
 
-	return views;
+	return std::nullopt;
 }
 
-void dumpTargetViewRecords(const std::string &path, const std::vector<std::shared_ptr<TargetView>> &views)
+std::optional<ErrorMessage> dumpTargetViewRecords(const std::string &path, const std::vector<std::shared_ptr<TargetView>> &views)
 {
-	// Open file first
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::flush;
-
 	json file;
 
 	// Write views
@@ -1611,55 +1530,39 @@ void dumpTargetViewRecords(const std::string &path, const std::vector<std::share
 		file["views"].push_back(std::move(view));
 	}
 
-	// Write JSON calib file
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-bool parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base)
+std::optional<ErrorMessage> parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base)
 {
-	// Read JSON file
-	std::ifstream fs(path);
-	if (!fs.is_open()) return false;
 	json file;
-	fs >> file;
-	fs.close();
+	auto error = readJSON(path, file);
+	if (error) return error;
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
+	JSON_PARSE_TRY_BLOCK
 	{
-		if (!file.contains("initialViewID")) return false;
-		if (!file["initialViewID"].is_number_integer()) return false;
+		if (!file.contains("initialViewID") || !file["initialViewID"].is_number_integer())
+			return asprintf_s("Invalid target assembly stage '%s' - initialViewID!", path.c_str());
 		base.initialViewID = file["initialViewID"].get<int>();
 
-		if (!file.contains("merged")) return false;
-		if (!file["merged"].is_array()) return false;
+		if (!file.contains("merged") || !file["merged"].is_array())
+			return asprintf_s("Invalid target assembly stage '%s' - merged!", path.c_str());
 		base.merged.reserve(file["merged"].size());
 		for (auto &m : file["merged"])
 			base.merged.push_back(m.get<int>());
 
-		if (!file.contains("target")) return false;
-		if (!file["target"].is_object()) return false;
-		return parseOptTarget(file["target"], base.target);
+		if (!file.contains("target") || !file["target"].is_object()
+			|| !parseOptTarget(file["target"], base.target))
+			return asprintf_s("Invalid target assembly stage '%s' - target!", path.c_str());
+
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str());
-		return false;
-	}
-#endif
+	JSON_PARSE_CATCH_BLOCK
+
+	return std::nullopt;
 }
 
-void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base)
+std::optional<ErrorMessage> dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base)
 {
-	// Open file first
-	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
-	std::ofstream fs(path);
-	if (!fs.is_open()) return;
-	fs << std::flush;
-
 	json file;
 	file["initialViewID"] = base.initialViewID;
 
@@ -1671,27 +1574,22 @@ void dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &
 	// Write target with markers, sequence mapping, frames and their poses
 	storeOptTarget(file["target"], base.target);
 
-	// Write JSON calib file
-	fs << std::setfill('\t') << std::setw(1) << file;
-	fs.close();
+	return writeJSON(path, file);
 }
 
-bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size)
+std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size)
 {
 	std::vector<Eigen::Vector3f> verts;
 	std::vector<Eigen::Vector3f> nrms;
 
 	std::ifstream fs(path);
-	if (!fs.is_open()) return false;
+	if (!fs.is_open()) return asprintf_s("Failed to open '%s' for reading!", path.c_str());
 
 	std::map<std::string, TargetCalibration3D> groups = { { path, TargetCalibration3D() } };
 	TargetCalibration3D *curGroup = &groups[path];
 
 	float limit = std::cos(fov/360*PI);
 
-#ifndef JSON_NOEXCEPTION
-	try
-#endif
 	{
 		while (true)
 		{
@@ -1730,7 +1628,7 @@ bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCal
 					pt.pos += verts.at(vID-1);
 					pt.nrm += nrms.at(nID-1);
 				}
-				if (count == 0) return false;
+				if (count == 0) return "";
 				if (count < 3) continue; // Failed to read face, probably because UVs were exported
 				// Calculate face center as average
 				pt.pos = pt.pos/count;
@@ -1760,25 +1658,17 @@ bool parseTargetObjFile(const std::string &path, std::map<std::string, TargetCal
 			}
 		}
 	}
-#ifndef JSON_NOEXCEPTION
-	catch(json::exception e)
-	{
-		LOG(LDefault, LWarn, "Failed to fully parse OBJ file %s!", path.c_str());
-		fs.close();
-		return false;
-	}
-#endif
 
-	fs.close();
-	return true;
+	return std::nullopt;
 }
 
-void writeTargetObjFile(const std::string &path, const TargetCalibration3D &target)
+std::optional<ErrorMessage> writeTargetObjFile(const std::string &path, const TargetCalibration3D &target)
 {
 	std::filesystem::path fsPath(path);
 	std::filesystem::create_directories(fsPath.remove_filename());
 
 	FILE *out = fopen(path.c_str(), "w");
+	if (!out) return asprintf_s("Failed to open '%s' for writing!", path.c_str());
 
 	auto writeVec = [out](std::string id, Eigen::Vector3f vec)
 	{
@@ -1809,4 +1699,6 @@ void writeTargetObjFile(const std::string &path, const TargetCalibration3D &targ
 		writeQuad(i*4 + 1);
 	}
 	fclose(out);
+
+	return std::nullopt;
 }

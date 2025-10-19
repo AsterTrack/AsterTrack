@@ -104,24 +104,29 @@ void InterfaceState::UpdatePipelineCalibSection()
 		ImGui::SameLine();
 		if (SaveButton("Save##Calibration", ButtonSize, state.cameraCalibsDirty))
 		{
-			storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-			state.cameraCalibsDirty = false;
+			auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			if (error) GetState().errors.push(error.value());
+			else state.cameraCalibsDirty = false;
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Calibration", ButtonSize))
 		{
-			parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-			state.cameraCalibsDirty = false;
-			AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, false);
+			auto error = parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			if (error) GetState().errors.push(error.value());
+			else
 			{
-				auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
-				UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
-			}
-			UpdateErrorFromObservations(pipeline);
-			UpdateCalibrations();
+				state.cameraCalibsDirty = false;
+				AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, false);
+				{
+					auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
+					UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
+				}
+				UpdateErrorFromObservations(pipeline);
+				UpdateCalibrations();
 
-			LOG(LGUI, LDebug, "== Loaded %d camera calibrations:\n", (int)state.cameraCalibrations.size());
-			DebugCameraParameters(state.cameraCalibrations);
+				LOG(LGUI, LDebug, "== Loaded %d camera calibrations:\n", (int)state.cameraCalibrations.size());
+				DebugCameraParameters(state.cameraCalibrations);
+			}
 		}
 	}
 	if (ImGui::TreeNode("Cameras"))
@@ -375,14 +380,16 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 			if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
 			{
-				storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				state.lensPresetsDirty = false;
+				auto error = storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+				if (error) GetState().errors.push(error.value());
+				else state.lensPresetsDirty = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
 			{
-				parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				state.lensPresetsDirty = false;
+				auto error = parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+				if (error) GetState().errors.push(error.value());
+				else state.lensPresetsDirty = false;
 			}
 			ImGui::TreePop();
 		}
@@ -422,7 +429,8 @@ void InterfaceState::UpdatePipelineObservationSection()
 		for (auto &cam : pipeline.cameras)
 			cameraIDs.push_back(cam->id);
 		// Write to path
-		dumpSequenceDatabase(obsPath, *pipeline.seqDatabase.contextualRLock(), cameraIDs);
+		auto error = dumpSequenceDatabase(obsPath, *pipeline.seqDatabase.contextualRLock(), cameraIDs);
+		if (error) GetState().errors.push(error.value());
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Load", ButtonSize))
@@ -434,55 +442,65 @@ void InterfaceState::UpdatePipelineObservationSection()
 		{
 			std::string obsPath = asprintf_s(obsPathFmt, i);
 			std::vector<int> cameraIDs;
-			SequenceData observations = parseSequenceDatabase(obsPath, cameraIDs);
-			bool valid = cameraIDs.size() == pipeline.cameras.size();
-			if (valid)
-			{
-				std::vector<int> camMap(cameraIDs.size(), -1);
-				for (auto &cam : pipeline.cameras)
-				{
-					bool found = false;
-					for (int c = 0; c < cameraIDs.size(); c++)
-					{
-						if (cameraIDs[c] == cam->id)
-						{
-							camMap[c] = cam->index;
-							found = true;
-							break;
-						}
-					}
-					if (!found) valid = false;
-				}
-
-				for (int c = 0; c < cameraIDs.size(); c++)
-				{
-					LOGC(LWarn, "Camera %d in saved observations is moved from saved slot %d to current index %d!", cameraIDs[c], c, camMap[c]);
-				}
-
-				if (valid)
-				{ // Re-order cameras for all observations
-					for (auto &marker : observations.markers)
-					{
-						std::vector<CameraSequences> camObs(pipeline.cameras.size());
-						for (int c = 0; c < marker.cameras.size(); c++)
-							camObs[camMap[c]] = std::move(marker.cameras[c]);
-						marker.cameras = std::move(camObs);
-					}
-				}
-			}
-			if (valid)
-			{
-				LOG(LGUI, LDebug, "== Loaded calibration samples from '%s'!", obsPath.c_str());
-				UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), observations);
-				*pipeline.seqDatabase.contextualLock() = std::move(observations);
-				UpdateErrorFromObservations(pipeline);
-				UpdateSequences(true);
-			}
+			SequenceData observations;
+			auto error = parseSequenceDatabase(obsPath, cameraIDs, observations);
+			if (error)
+				GetState().errors.push(error.value());
 			else
 			{
-				LOG(LGUI, LWarn, "== Calibration samples in '%s' did not match the currently available cameras!", obsPath.c_str());
+				bool valid = cameraIDs.size() == pipeline.cameras.size();
+				if (valid)
+				{
+					std::vector<int> camMap(cameraIDs.size(), -1);
+					for (auto &cam : pipeline.cameras)
+					{
+						bool found = false;
+						for (int c = 0; c < cameraIDs.size(); c++)
+						{
+							if (cameraIDs[c] == cam->id)
+							{
+								camMap[c] = cam->index;
+								found = true;
+								break;
+							}
+						}
+						if (!found) valid = false;
+					}
+
+					for (int c = 0; c < cameraIDs.size(); c++)
+					{
+						LOGC(LWarn, "Camera %d in saved observations is moved from saved slot %d to current index %d!", cameraIDs[c], c, camMap[c]);
+					}
+
+					if (valid)
+					{ // Re-order cameras for all observations
+						for (auto &marker : observations.markers)
+						{
+							std::vector<CameraSequences> camObs(pipeline.cameras.size());
+							for (int c = 0; c < marker.cameras.size(); c++)
+								camObs[camMap[c]] = std::move(marker.cameras[c]);
+							marker.cameras = std::move(camObs);
+						}
+					}
+				}
+				if (valid)
+				{
+					LOG(LGUI, LDebug, "== Loaded calibration samples from '%s'!", obsPath.c_str());
+					if (observations.markers.empty())
+						GetState().errors.push("Failed to load any samples from file!");
+					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), observations);
+					*pipeline.seqDatabase.contextualLock() = std::move(observations);
+					UpdateErrorFromObservations(pipeline);
+					UpdateSequences(true);
+				}
+				else
+				{
+					LOG(LGUI, LWarn, "== Calibration samples in '%s' did not match the currently available cameras!", obsPath.c_str());
+					GetState().errors.push("Last saved observations had mismatching cameras!");
+				}
 			}
 		}
+		else GetState().errors.push("No observations file to load!");
 	}
 
 	if (state.mode == MODE_Replay && ImGui::TreeNode("Compare observations"))
@@ -627,12 +645,14 @@ void InterfaceState::UpdatePipelinePointCalib()
 			ImGui::TextUnformatted("For a fully constrained system, you need at least 3 cameras.\n"
 				"If all cameras use the same lens, you may be able to use just 2 cameras.\n"
 				"In that case, select the same Lens for both cameras in the Camera List above.");
-			ImVec2 buttonWidth((LineWidth()-ImGui::GetStyle().ItemSpacing.x)/2, ImGui::GetFrameHeight());
 			if (ImGui::Button("Cancel", SizeWidthDiv2()))
 				ImGui::CloseCurrentPopup();
 			ImGui::SameLine();
 			if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
+			{
+				ImGui::CloseCurrentPopup();
 				startCalibration(0b01);
+			}
 			ImGui::EndPopup();
 		}
 	
@@ -664,12 +684,14 @@ void InterfaceState::UpdatePipelinePointCalib()
 			ImGui::TextUnformatted(
 				"The option to share distortion parameters among cameras using the same lens requires this.\n"
 				"You may proceed and cameras without a lens assigned will be assumed to have a unique lens.");
-			ImVec2 buttonWidth((LineWidth()-ImGui::GetStyle().ItemSpacing.x)/2, ImGui::GetFrameHeight());
 			if (ImGui::Button("Cancel", SizeWidthDiv2()))
 				ImGui::CloseCurrentPopup();
 			ImGui::SameLine();
 			if (ImGui::Button("Optimise", SizeWidthDiv2()))
+			{
+				ImGui::CloseCurrentPopup();
 			 	startCalibration(0b10);
+			}
 			ImGui::EndPopup();
 		}
 	}

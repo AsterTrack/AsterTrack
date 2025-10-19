@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct ThresholdingParameters
 {
 	int absolute = 100;
-	int edge = 15;
+	int edge = 10;
 };
 
 struct ClassificationParameters 

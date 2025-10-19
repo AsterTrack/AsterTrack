@@ -54,12 +54,12 @@ struct CameraConfig
 	int height = 800;
 	bool synchronised = true;
 	int framerate = 144; // Only used if synchronised == false
-	int exposure = 6;
+	int exposure = 20;
 	int gain = 2;
 	int filter = 0;
 	bool enableStrobe = true;
 	int strobeOffset = 0;
-	int strobeLength = 10;
+	int strobeLength = 55;
 	
 	BlobProcessingParameters blobProcessing = {};
 	bool shareBlobProcessing = true;

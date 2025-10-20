@@ -1288,22 +1288,24 @@ std::optional<ErrorMessage> parseSequenceDatabase(const std::string &path, std::
 			return asprintf_s("Invalid marker observations file '%s' - no cameras!", path.c_str());
 		sequences.temporary.resize(cameraCount);
 
-		sequences.markers.resize(jsMarkers.size());
+		sequences.markers.reserve(jsMarkers.size());
 		int m = 0;
 		for (auto &jsMarker : jsMarkers)
 		{
 			if (!jsMarker.contains("cameras")) continue;
 			if (!jsMarker["cameras"].is_array()) continue;
 			auto &jsCameras = jsMarker["cameras"];
+			if (jsCameras.size() > cameraCount)
+				return asprintf_s("Invalid observation file '%s' - marker with more cameras!", path.c_str());
 
-			MarkerSequences &marker = sequences.markers[m++];
+			MarkerSequences marker = {};
 			marker.cameras.resize(cameraCount);
 
 			int c = 0;
 			for (auto &jsCamera : jsCameras)
 			{
-				if (!jsCamera.contains("sequences")) continue;
-				if (!jsCamera["sequences"].is_array()) continue;
+				if (!jsCamera.contains("sequences")) break;
+				if (!jsCamera["sequences"].is_array()) break;
 				auto &jsSequences = jsCamera["sequences"];
 
 				auto &camera = marker.cameras[c++];
@@ -1333,8 +1335,13 @@ std::optional<ErrorMessage> parseSequenceDatabase(const std::string &path, std::
 					s++;
 				}
 			}
+			if (c != cameraCount)
+			{ // Error parsing marker
+				continue;
+			}
 
 			sequences.lastRecordedFrame = std::max(sequences.lastRecordedFrame, marker.lastFrame);
+			sequences.markers.push_back(std::move(marker));
 		}
 	}
 	JSON_PARSE_CATCH_BLOCK
@@ -1360,6 +1367,8 @@ std::optional<ErrorMessage> dumpSequenceDatabase(const std::string &path, const 
 	auto &jsMarkers = file["observations"]["markers"];
 	for (auto &marker : sequences.markers)
 	{
+		if (marker.cameras.size() > cameraIDs.size())
+			continue;
 		json jsMarker;
 		jsMarker["cameras"] = json::array();
 		for (auto &camObs : marker.cameras)

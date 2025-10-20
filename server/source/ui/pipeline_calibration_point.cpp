@@ -21,6 +21,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
 #include <set>
 
 void InterfaceState::UpdatePipelineCalibSection()
@@ -51,7 +54,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 					errors.num);
 			}
 		}
-		else if (calibState.numUncalibrated == 0 && visState.incObsUpdate.markerCount > 0)
+		else if (calibState.numUncalibrated == 0 && errors.num > 0)
 		{
 			if (std::isnan(errors.mean) || std::isinf(errors.mean) || errors.mean > 10.0f)
 			{
@@ -72,16 +75,25 @@ void InterfaceState::UpdatePipelineCalibSection()
 			}
 		}
 		else if (calibState.numUncalibrated == 0)
-			ImGui::TextUnformatted("No data to check calibration against!");
+		{ // Calibration exists
+			if (visState.incObsUpdate.markerCount > 0 && calibError.calculating)
+				ImGui::TextUnformatted("Calculating error...");
+			else
+				ImGui::TextUnformatted("No data to check calibration against!");
+		}
 		else if (visState.incObsUpdate.markerCount > 0)
+		{ // Data exists
 			ImGui::TextUnformatted("Incomplete calibration!");
+			ImGui::SetItemTooltip("%d cameras are calibrated, %d are not, %d relations are certain, %d are not.",
+				calibState.numCalibrated, calibState.numUncalibrated, calibState.relCertain, calibState.relUncertain);
+		}
 		else
-		 	ImGui::TextUnformatted("No calibration nor samples available!");
+			ImGui::TextUnformatted("No calibration nor samples available!");
 
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (RetryButton("Recalc"))
 		{
-			UpdateErrorFromObservations(pipeline);
+			UpdateCalibrationError(false, true);
 		}
 	}
 	{
@@ -99,9 +111,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 			}
 
 			pipeline.calibration.contextualLock()->init(pipeline.cameras.size());
-			UpdateErrorFromObservations(pipeline);
 			UpdateCalibrations();
-			state.cameraCalibsDirty = true;
+			UpdateCalibrationError(true);
+			// TODO: This implies resetting can delete an existing calibration on saving, which it does not
+			// Saved calibrations are only updated once a new calibration for this camera ID is created
+			//state.cameraCalibsDirty = true;
 		}
 		ImGui::SameLine();
 		if (SaveButton("Save##Calibration", ButtonSize, state.cameraCalibsDirty))
@@ -123,8 +137,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 					auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
 					UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
 				}
-				UpdateErrorFromObservations(pipeline);
+
 				UpdateCalibrations();
+				UpdateCalibrationError(true);
 
 				LOG(LGUI, LDebug, "== Loaded %d camera calibrations:\n", (int)state.cameraCalibrations.size());
 				DebugCameraParameters(state.cameraCalibrations);
@@ -242,6 +257,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 								calib.lensID = lens.id;
 							}
 							SignalCameraCalibUpdate({ calib });
+							UpdateCalibrationError(true);
 						}
 						ImGui::PopID();
 					}
@@ -415,11 +431,15 @@ void InterfaceState::UpdatePipelineObservationSection()
 	ImGui::SetItemTooltip("Record visible markers into observations as continous sequences.");
 	ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x*2);
 	ImGui::Text("%s", calibSamples.contextualRLock()->c_str());
+	SameLineTrailing(ImGui::GetFrameHeight());
+	if (RetryButton("Recalc"))
+	{ // TODO: Fix incremental observation update (3/3)
+		visState.incObsUpdate.resetFirstFrame = 0;
+	}
 
 	if (ImGui::Button("Clear", ButtonSize))
 	{
 		pipeline.seqDatabase.contextualLock()->clear();
-		UpdateErrorFromObservations(pipeline);
 		UpdateSequences(true);
 	}
 	ImGui::SameLine();
@@ -494,7 +514,6 @@ void InterfaceState::UpdatePipelineObservationSection()
 						GetState().errors.push("Failed to load any samples from file!");
 					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), observations);
 					*pipeline.seqDatabase.contextualLock() = std::move(observations);
-					UpdateErrorFromObservations(pipeline);
 					UpdateSequences(true);
 				}
 				else

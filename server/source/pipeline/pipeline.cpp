@@ -352,7 +352,7 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 	}
 }
 
-void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
+void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps, bool logging)
 {
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
 
@@ -371,7 +371,7 @@ void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps)
 
 	if (data.points.totalSamples > 0)
 	{
-		ScopedLogLevel scopedLogLevel(LInfo);
+		ScopedLogLevel scopedLogLevel(logging? LInfo : LDebug);
 		pipeline.pointCalib.state.errors = updateReprojectionErrors(data, calibs);
 	}
 	else

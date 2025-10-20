@@ -28,6 +28,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui/gl/visualisation.hpp"
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
+
 void InterfaceState::UpdateSequences(bool reset)
 {
 	PipelineState &pipeline = GetState().pipeline;
@@ -48,7 +52,7 @@ void InterfaceState::UpdateSequences(bool reset)
 		else // Note: point count includes unstable, min2DPoints doesn't
 			*calibSamples.contextualLock() = std::string(asprintf_s("%d samples", total2DPoints));
 
-		return;
+		UpdateCalibrationError(reset);
 	}
 	else if (visState.showMarkerTrails)
 	{
@@ -78,8 +82,31 @@ void InterfaceState::UpdateSequences(bool reset)
 				int index = map.second.camera->pipeline->index;
 				std::move(std::begin(labels[index]), std::end(labels[index]), std::back_inserter(map.second.vis.observations.labels));
 			}
-
 		}
+	}
+}
+
+void InterfaceState::UpdateCalibrationError(bool reset, bool userTrigger)
+{
+	if (reset || userTrigger)
+	{
+		if (reset)
+			GetState().pipeline.pointCalib.state.errors = {};
+		calibError.dirty = true;
+		calibError.triggered = true;
+	}
+	if (calibError.dirty && !calibError.calculating && (calibError.triggered || dtMS(calibError.lastCalc, sclock::now()) > 1000))
+	{ // Regularly update error if it needs it
+		calibError.dirty = false;
+		calibError.calculating = true;
+		calibError.lastCalc = sclock::now();
+		threadPool.push([](int, bool triggered){
+			UpdateErrorFromObservations(GetState().pipeline, triggered);
+			GetUI().calibError.lastCalc = sclock::now();
+			GetUI().calibError.calculating = false;
+			GetUI().RequestUpdates();
+		}, calibError.triggered);
+		calibError.triggered = false;
 	}
 }
 
@@ -128,17 +155,10 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 
 	int cameraCount = sequences.temporary.size();
 	int markerCount = sequences.markers.size();
+	long prevPoints = inc.pointsStable;
 
-	// TODO: Rework so marker merging doesn't require full re-evaluation
-	// Not that easy, will need different way of keeping observation vis to update partially
-	// Merging markers might add new observations in the past due to new triangulations
-	// Ideally, be able to reset observations to a specific frame and update from there
-	// Or only be able to update affected markers, requiring storing separate observations for each marker (yikes)
-	// Probably best: Store indices every 100 frames (for the last 10000 frames) to be able to jump back to a "checkpoint"
-	//if (inc.markerCount != 0 && markerCount == 0 && !inc.reset)
 	if (markerCount < inc.markerCount && inc.resetFirstFrame < 0)
 	{
-		//assert(inc.dirty);
 		LOG(LGUI, LWarn, "Incremental observation visualisation hadn't been notified of a reset in observations!");
 		inc.resetFirstFrame = 0;
 	}
@@ -198,6 +218,10 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		for (int m = 0; m < markerCount; m++)
 		{
 			const MarkerSequences &marker = sequences.markers[m];
+			// TODO: Fix incremental observation update (1/3)
+			// The error is very likely here, with selecting and updating from frmaes
+			// resetFirstFrame > 0 and stableSequenceDelay both don't seem to be the (sole) issue
+			// Instead it seems some markers and/or sequences are afflicted and then never get updated incrementally again
 			std::map<int, int> frameMap;
 			inc.pointsStable += getTriangulationFrameMap(marker, frameMap, inc.frameStable, curStableFrame);
 			handleMappedSequences(marker, frameMap, [&]
@@ -222,6 +246,8 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 			inc.frameIndices.erase(inc.frameIndices.begin());
 		LOG(LGUI, LTrace, "Registering checkpoint at frame %d!", curStableFrame);
 		inc.frameStable = curStableFrame;
+		if (prevPoints != inc.pointsStable)
+			calibError.dirty = true;
 	}
 	{ // Recreate unstable points completely (all before curStableFrame will have moved to stable)
 		inc.pointsUnstable = 0;

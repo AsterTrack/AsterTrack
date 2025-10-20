@@ -102,12 +102,11 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 	int curFrame = minFrame.rank[1];
 	if (frameStart > curFrame)
 		curFrame = frameStart;
-	if (frameStart >= maxFrame.rank[1])
+	if (curFrame >= maxFrame.rank[1])
 		return 0; // This marker has no timely overlap
 
 	// Setup first frame
 	frameMap.clear();
-	frameMap.insert({ curFrame, frameCount });
 
 	std::vector<int> curSeq(marker.cameras.size());
 	for (int c = 0; c < marker.cameras.size(); c++)
@@ -118,7 +117,7 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 	// Now get frames with at least one observation
 	// Take the longest sequence of the active frame and go to its end, if none is there go to the start of the next sequence
 	// Along the way, record the active frame periods in frameMap so that they can be mapped to a continuous frame timeline
-	bool inPeriod = true;
+	bool inPeriod = false;
 	int lastPeriodFrame = 0;
 	while (curFrame < frameEnd)
 	{

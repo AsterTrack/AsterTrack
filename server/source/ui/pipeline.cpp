@@ -334,6 +334,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					optimiseDataSparse(options, data, calibs, itUpdate, 1);
 
 					// Update calibration
+					pipeline.pointCalib.state.errors = lastError;
 					AdoptNewCalibrations(pipeline, calibs, true);
 					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), data);
 					SignalCameraCalibUpdate(calibs);

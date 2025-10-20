@@ -156,7 +156,6 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			// Reset observations
 			pipeline.seqDatabase.contextualLock()->clear();
 			UpdateSequences(true);
-			UpdateErrorFromObservations(pipeline);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Save##Observations", SizeWidthDiv3()))

@@ -380,6 +380,10 @@ public:
 		int numCalibrated, numUncalibrated, relCertain, relUncertain;
 	} calibState;
 	int editingLensPreset = -1;
+	struct {
+		TimePoint_t lastCalc;
+		bool calculating, dirty, triggered;
+	} calibError;
 
 	// Pipeline/TargetCalib state
 	std::vector<std::shared_ptr<TargetView>> targetViewsSorted;
@@ -400,6 +404,7 @@ public:
 
 	void UpdateSequences(bool reset = false);
 		void UpdateIncrementalSequencesVis(const SequenceData &sequences, bool updateStable, bool rawPoints);
+	void UpdateCalibrationError(bool reset = false, bool userTrigger = false);
 	void UpdateCalibrations();
 
 	void UpdateCameras();

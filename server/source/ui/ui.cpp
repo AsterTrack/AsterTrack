@@ -404,9 +404,17 @@ void InterfaceState::GeneralUpdate()
 		(state.mode != MODE_Replay || pipeline.frameNum < state.recording.frames) &&
 		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
 	{
-		static TimePoint_t lastObservationUpdate;
-		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.resetFirstFrame >= 0)
-		{
+		static TimePoint_t lastObservationUpdate, lastSequenceReset;
+		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.resetFirstFrame >= 0 || calibError.triggered)
+		{ // Incrementally update sequence observations for visualisation / stats in UI
+
+			if (pipeline.phase == PHASE_Calibration_Point && dtMS(lastSequenceReset, sclock::now()) > 1000)
+			{ // Regularly trigger full reset of observations
+				// TODO: Fix incremental observation update (2/3)
+				lastSequenceReset = sclock::now();
+				visState.incObsUpdate.resetFirstFrame = 0;
+			}
+
 			lastObservationUpdate = sclock::now();
 			UpdateSequences();
 		}

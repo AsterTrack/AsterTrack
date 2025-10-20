@@ -328,7 +328,7 @@ void DebugCameraParameters(const std::vector<CameraCalib> &calibs);
  */
 void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &cameras);
 
-void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps = true);
+void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps = true, bool logging = true);
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations);
 

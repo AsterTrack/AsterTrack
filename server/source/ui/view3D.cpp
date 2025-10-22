@@ -45,6 +45,8 @@ static void visualRotationGenAnalysis(const VisualisationState &visState, const 
 
 void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 {
+	if (!window.open)
+		return;
 	if (!ImGui::Begin(window.title.c_str(), &window.open, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
 	{
 		ImGui::End();

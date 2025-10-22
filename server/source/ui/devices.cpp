@@ -43,10 +43,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	static ControllerFirmwareUpdateRef controllerFWUpdateState;
 	bool controllerFWUpdateSetup = false;
 
-
+	if (!window.open)
+	{ // TODO: Could abort firmware update here
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
-		// TODO: Could abort firmware update here, but window might be accidentally hidden
 		ImGui::End();
 		return;
 	}

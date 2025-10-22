@@ -24,6 +24,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateLensSelectionTool(InterfaceWindow &window)
 {
+	if (!window.open)
+	{
+		visState.calib.showDesignCalib = false;
+		visState.calib.designCalibs.clear();
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		visState.calib.showDesignCalib = false;

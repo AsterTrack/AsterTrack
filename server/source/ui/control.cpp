@@ -41,6 +41,8 @@ static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, long num)
 
 void InterfaceState::UpdateControl(InterfaceWindow &window)
 {
+	if (!window.open)
+		return;
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		ImGui::End();

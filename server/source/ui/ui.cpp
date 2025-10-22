@@ -258,7 +258,7 @@ void InterfaceState::UpdateUI()
 
 	for (auto &window : windows)
 	{
-		if (window.open)
+		if (window.open || window.alwaysUpdate)
 			(this->*window.updateWindow)(window);
 	}
 
@@ -667,10 +667,10 @@ bool InterfaceState::Init()
 	// Tools
 	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow("Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
 	// Shortcut to ImGui's built-in style editor
-	windows[WIN_STYLE_EDITOR] = InterfaceWindow("Style Editor", &InterfaceState::UpdateStyleUI);
+	windows[WIN_STYLE_EDITOR] = InterfaceWindow("Style Editor", &InterfaceState::UpdateStyleUI, false, false);
 	// Useful tool to debug and research UI
-	windows[WIN_IMGUI_DEMO] = InterfaceWindow("Dear ImGui Demo", &InterfaceState::UpdateImGuiDemoUI);
-	windows[WIN_IMPLOT_DEMO] = InterfaceWindow("ImPlot Demo", &InterfaceState::UpdateImPlotDemoUI);
+	windows[WIN_IMGUI_DEMO] = InterfaceWindow("Dear ImGui Demo", &InterfaceState::UpdateImGuiDemoUI, false, false);
+	windows[WIN_IMPLOT_DEMO] = InterfaceWindow("ImPlot Demo", &InterfaceState::UpdateImPlotDemoUI, false, false);
 
 	// Initialise 3D View
 	view3D.pitch = (float)PI/2.0f;

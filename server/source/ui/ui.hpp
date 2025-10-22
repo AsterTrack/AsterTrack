@@ -81,11 +81,12 @@ struct InterfaceWindow
 	std::string title;
 	ImGuiID id;
 	bool open;
+	bool alwaysUpdate;
 	void (InterfaceState::*updateWindow)(InterfaceWindow&);
 
 	InterfaceWindow() {}
-	InterfaceWindow(const char* Title, void (InterfaceState::*UpdateWindow)(InterfaceWindow&), bool Open = false)
-		: title(Title), id(ImHashStr(Title)), updateWindow(UpdateWindow), open(Open) {}
+	InterfaceWindow(const char* Title, void (InterfaceState::*UpdateWindow)(InterfaceWindow&), bool Open = false, bool alwaysUpdate = true)
+		: title(Title), id(ImHashStr(Title)), updateWindow(UpdateWindow), open(Open), alwaysUpdate(alwaysUpdate) {}
 };
 
 enum InterfaceWindows

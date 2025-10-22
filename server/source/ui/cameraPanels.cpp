@@ -93,6 +93,11 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 	ImGuiWindowFlags flags = 0;
 	if (horizontalScrolling)
 		flags |= ImGuiWindowFlags_HorizontalScrollbar;
+	if (!window.open)
+	{
+		ImGui::PopStyleVar();
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open, flags))
 	{
 		ImGui::PopStyleVar();

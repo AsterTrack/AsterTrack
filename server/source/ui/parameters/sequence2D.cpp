@@ -26,6 +26,11 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 {
 	ServerState &state = GetState();
 	auto &params = state.pipeline.sequenceParams;
+	if (!window.open)
+	{
+		params.selected = -1;
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		params.selected = -1;

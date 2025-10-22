@@ -24,6 +24,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 {
+	if (!window.open)
+		return;
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		ImGui::End();

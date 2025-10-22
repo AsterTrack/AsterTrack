@@ -610,6 +610,11 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 			CleanSequencePanel();
 		lastPanel = curPanel;
 	};
+	if (!window.open)
+	{
+		cleanNewlyClosed();
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open) ||
 		!ImGui::BeginTabBar("InsightsSelector", ImGuiTabBarFlags_None))
 	{

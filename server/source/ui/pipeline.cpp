@@ -44,6 +44,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			GetUI().visState.target.inspectingSource = 'N';
 		}
 	};
+	if (!window.open)
+	{
+		discardTargetSelection();
+		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		discardTargetSelection();

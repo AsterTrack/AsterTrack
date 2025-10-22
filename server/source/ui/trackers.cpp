@@ -32,10 +32,38 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	ImGui::SeparatorText("Tracker Database");
+	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
+	{
+		auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+		if (error) GetState().errors.push(error.value());
+		else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+	}
+	if ((state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty) && ImGui::BeginItemTooltip())
+	{
+		if (state.trackerConfigDirty)
+			ImGui::TextUnformatted("Tracker Config has been changed.");
+		if (state.trackerCalibsDirty)
+			ImGui::TextUnformatted("Tracker Calibration has been changed.");
+		if (state.trackerIMUsDirty)
+			ImGui::TextUnformatted("Tracker IMU Configuration has been changed.");
+		ImGui::EndTooltip();
+	}
 
-	if (ImGui::BeginTable("Tracker", 5,
-		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
+	if (!ImGui::BeginChild("EditChild", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding))
+	{
+		discardSelection();
+		ImGui::EndChild();
+		ImGui::End();
+		return;
+	}
+
+	/* static float childSize = 100; // Auto-Scale to fit view and keep bottom control visible
+	childSize = std::max(CalcTableHeight(3), childSize + GetWindowContentRegionHeight() - GetWindowActualContentHeight());
+	childSize = std::min(CalcTableHeight(state.trackerConfigs.size()), childSize); */
+	float childSize = CalcTableHeight(5); // Adaptive sizing adapts TOO well to differences in UI
+	if (ImGui::BeginTable("Tracker", 4,
+		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_ScrollY,
+		ImVec2(0, childSize)))
 	{
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthStretch, 3);
@@ -93,27 +121,11 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
-	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
-	{
-		auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-		if (error) GetState().errors.push(error.value());
-		else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
-	}
-	if ((state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty) && ImGui::BeginItemTooltip())
-	{
-		if (state.trackerConfigDirty)
-			ImGui::TextUnformatted("Tracker Config has been changed.");
-		if (state.trackerCalibsDirty)
-			ImGui::TextUnformatted("Tracker Calibration has been changed.");
-		if (state.trackerIMUsDirty)
-			ImGui::TextUnformatted("Tracker IMU Configuration has been changed.");
-		ImGui::EndTooltip();
-	}
-
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 		[&](auto &t){ return t.id == visState.target.selectedTargetID; });
 	if (trackerIt == state.trackerConfigs.end())
 	{
+		ImGui::EndChild();
 		ImGui::End();
 		return;
 	}
@@ -351,6 +363,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
 		// Maybe make TrackedTarget::filter object an opaque pointer, and have a few method calls abstracted away
 	}
+
+	ImGui::EndChild();
 
 	ImGui::End();
 }

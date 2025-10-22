@@ -991,7 +991,7 @@ void InterfaceState::StyleSizingAsterDark(ImGuiStyle *dst)
 	//style.WindowMinSize					= ImVec2(32,32);		// Minimum window size
 	//style.WindowTitleAlign				= ImVec2(0.0f,0.5f);	// Alignment for title bar text
 	style.WindowMenuButtonPosition		= ImGuiDir_None;		// Position of the collapsing/docking button in the title bar (left/right). Defaults to ImGuiDir_Left.
-	style.ChildRounding					= 8.0f;					// Radius of child window corners rounding. Set to 0.0f to have rectangular child windows
+	style.ChildRounding					= 2.0f;					// Radius of child window corners rounding. Set to 0.0f to have rectangular child windows
 	//style.ChildBorderSize				= 1.0f;					// Thickness of border around child windows. Generally set to 0.0f or 1.0f. Other values not well tested.
 	//style.PopupRounding					= 0.0f;					// Radius of popup window corners rounding. Set to 0.0f to have rectangular child windows
 	//style.PopupBorderSize				= 1.0f;					// Thickness of border around popup or tooltip windows. Generally set to 0.0f or 1.0f. Other values not well tested.

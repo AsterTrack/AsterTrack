@@ -227,6 +227,13 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		}
 	};
 
+	if (SaveButton("Save Configurations", SizeWidthFull(), state.cameraConfigDirty))
+	{
+		auto error = storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+		if (error) GetState().errors.push(error.value());
+		else state.cameraConfigDirty = false;
+	}
+
 	// Tab bar to select configuration to edit
 	int selectedConfiguration = -1;
 	if (ImGui::BeginTabBar("CameraConfigs", ImGuiTabBarFlags_AutoSelectNewTabs | 
@@ -276,14 +283,16 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			RequestUpdates(1);
 		ImGui::EndTabBar();
 	}
-	if (selectedConfiguration >= 0)
-		displayConfigurationUI(selectedConfiguration);
 
-	if (SaveButton("Save Configurations", SizeWidthFull(), state.cameraConfigDirty))
+	if (selectedConfiguration >= 0)
 	{
-		auto error = storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
-		if (error) GetState().errors.push(error.value());
-		else state.cameraConfigDirty = false;
+		static float childSize = 100; // Auto-Scale to fit view and keep bottom control visible
+		childSize = std::max(100.0f, childSize + GetWindowContentRegionHeight() - GetWindowActualContentHeight());
+		if (ImGui::BeginChild("CamSettings", ImVec2(0, childSize), ImGuiChildFlags_AlwaysUseWindowPadding))
+		{
+			displayConfigurationUI(selectedConfiguration);
+		}
+		ImGui::EndChild();
 	}
 
 	BeginSection("Controller Configuration");

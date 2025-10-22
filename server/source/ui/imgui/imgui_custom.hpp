@@ -222,6 +222,23 @@ static inline float MinSharedLabelWidth(STRING... labels)
 	return max;
 }
 
+static inline float GetWindowActualContentHeight()
+{
+	auto window = ImGui::GetCurrentWindowRead();
+	return window->ContentSize.y;
+}
+
+static inline float GetWindowContentRegionHeight()
+{
+	auto window = ImGui::GetCurrentWindowRead();
+	return window->ContentRegionRect.GetHeight();
+}
+
+static inline float CalcTableHeight(int rows, float rowHeight = ImGui::GetFrameHeight())
+{
+	return (rowHeight + ImGui::GetStyle().CellPadding.y*2) * rows;
+}
+
 /*
  * Subdivided sizes in line space
  */

@@ -142,7 +142,9 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		// Check if it has been merged yet
 		if (ix->merge != NULL)
 		{
-			LOGC(LTrace, "------ Skipping merged intersections %d on rays %d %d %d!\n", i, ix->blobs[0], ix->blobs[1], ix->blobs[2]);
+			LOGC(LTrace, "------ Skipping merged intersections %d on rays ", i);
+			for (int j = 0; j < camCount; j++)
+				LOGCONTC(LTrace, "%d - ", ix->blobs[j]);
 			continue;
 		}
 		// Find the indices of the two intersecting rays
@@ -151,16 +153,26 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		int r2 = r1+1;
 		while (ix->blobs[r2] == InvalidBlob) r2++;
 		// Search for other intersections with one common ray and one new ray
+		auto isWithinMargin = [&](Intersection *ixm, int testCam)
+		{
+			float errorSq = (ixm->center - ix->center).squaredNorm()/4;
+			float distSq = (cameras[testCam].transform.translation().cast<float>() - ix->center).squaredNorm();
+			float errorCone = maxError*maxError*distSq*(float)cameras[testCam].f;
+			return errorSq <= errorCone;
+		};
 		for (int j = i+1; j < intersections.size(); j++)
 		{
 			Intersection *ixm = &intersections[j];
 			if (ixm->merge != NULL) continue;
+			// TODO: Problem: This only considers 2-Intersections that share a ray.
+			// This breaks down for even just 3 cameras, though there the remaining 2-intersection is just ignored later on
+			// For 4+ cameras, this will create a full alternative TriangulatedPoint, with lower score, less cameras, essentially garbage
+			// But the main point at least does include all cameras and is correct
 			if (ixm->blobs[r1] == ix->blobs[r1])
 			{ // Intersection on same ray, either merge or create conflict
 				if (ixm->blobs[r2] == InvalidBlob)
 				{ // Intersection is with a different ray group, check proximity to determine if merge or conflict
-					float error = (ixm->center - ix->center).squaredNorm();
-					if (error <= maxError*maxError)
+					if (isWithinMargin(ixm, r2))
 					{ // Merge intersections, now consisting of three rays intersecting
 						mergers.push_back(ixm);
 						continue;
@@ -173,11 +185,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			{ // Intersection on same ray, either merge or create conflict
 				if (ixm->blobs[r1] == InvalidBlob)
 				{ // Intersection is with a different ray group, check proximity to determine if merge of conflict
-					float errorSq = (ixm->center - ix->center).squaredNorm()/4;
-					float dist1Sq = (cameras[r1].transform.translation().cast<float>() - ix->center).squaredNorm();
-					float dist2Sq = (cameras[r2].transform.translation().cast<float>() - ix->center).squaredNorm();
-					float errorCone = maxError*maxError*std::min(dist1Sq*(float)cameras[r1].f, dist2Sq*(float)cameras[r2].f);
-					if (errorSq <= errorCone)
+					if (isWithinMargin(ixm, r1))
 					{ // Merge intersections, now consisting of three rays intersecting
 						mergers.push_back(ixm);
 						continue;
@@ -188,11 +196,12 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 		}
 
-		if (cameras.size() >= 3)
-			LOGC(LDebug, "------ Intersections %d on rays %d %d %d!\n", i, ix->blobs[0], ix->blobs[1], ix->blobs[2]);
-		LOGC(LTrace, "Potential mergers: ");
+		LOGC(LTrace, "------ Intersection %d on rays ", i);
+		for (int j = 0; j < camCount; j++)
+			LOGCONTC(LTrace, "%d - ", ix->blobs[j]);
+		LOGC(LTrace, "Potentially conflicting/merging intersections: ");
 		for (int j = 0; j < potentialMergers.size(); j++)
-			LOGCONTC(LTrace, "%d - ", IXNUM(potentialMergers[j]));
+			LOGCONTC(LTrace, "%d, ", IXNUM(potentialMergers[j]));
 
 		// Check if merge candidates found (only for 3 rays+)
 		if (mergers.size() > 0)

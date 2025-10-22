@@ -811,7 +811,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 		{
 			auto room = pipeline.pointCalib.room.contextualRLock();
-			Color col = { 0.6f, 1.0f, 0.1f, 1.0f };
+			Color col = { 0.6f, 1.0f, 0.1f, 0.6f };
 			for (auto &pt : room->floorPoints)
 			{
 				if (pt.sampleCount > 3)
@@ -819,7 +819,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			}
 		}
 
-		Color col = { 0.9f, 0.6f, 1.0f, 0.1f };
+		Color col = { 0.9f, 0.6f, 1.0f, 0.8f };
 		for (auto &tri : frame.triangulations)
 		{
 			markerPoints.emplace_back(tri.cast<float>(), (Color8)col, 0.015f);

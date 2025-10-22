@@ -147,7 +147,7 @@ extern uint32_t LogLevelHexColors[LMaxLevel];
 
 #define LOGCONTC(LEVEL, ...) do { \
 	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
-		PrintLog(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
+		PrintLogCont(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
 } while(false)
 
 #define LOGCONT(CATEGORY, LEVEL, ...) do { \

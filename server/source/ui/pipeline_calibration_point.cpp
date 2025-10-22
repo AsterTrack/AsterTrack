@@ -41,11 +41,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 		ImGui::AlignTextToFramePadding();
 		if (ptCalib.control.thread)
 		{
-			if (ptCalib.settings.typeFlags & 0b01)
+			if (ptCalib.settings.typeFlags & 0b001)
 			{
-				ImGui::TextUnformatted("");
+				ImGui::TextUnformatted("...");
 			}
-			else if (ptCalib.settings.typeFlags & 0b10)
+			else if (ptCalib.settings.typeFlags & 0b010)
 			{
 				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
 					errors.mean*PixelFactor,
@@ -612,6 +612,18 @@ void InterfaceState::UpdatePipelinePointCalib()
 		EndInteractiveItemTooltip();
 	}
 	auto &ptCalib = pipeline.pointCalib;
+	auto startCalibration = [&](int typeFlags)
+	{
+		ptCalib.settings.typeFlags = typeFlags;
+		if (typeFlags & 0b010)
+			ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
+		ptCalib.planned = true;
+		// Forgetting to do this is annoying as existing recorded data might get poisoned
+		// In replay, a replays end means no more data, but a Restart might require this to be kept on
+		if (state.mode != MODE_Replay)
+			pipeline.recordSequences = false;
+	};
+
 	ImGui::BeginDisabled(ptCalib.control.stopping());
 	if (ptCalib.control.running())
 	{
@@ -620,28 +632,17 @@ void InterfaceState::UpdatePipelinePointCalib()
 			ptCalib.control.stop_source.request_stop();
 		}
 		ImGui::SameLine();
-		if (ptCalib.settings.typeFlags & 0b01)
+		if (ptCalib.settings.typeFlags & 0b001)
 		{
 			ImGui::TextUnformatted("Reconstructing Geometry...");
 		}
-		else if (ptCalib.settings.typeFlags & 0b10)
+		else if (ptCalib.settings.typeFlags & 0b010)
 		{
 			ImGui::Text("Optimising %d/%d...", ptCalib.state.numSteps, ptCalib.settings.maxSteps);
 		}
 	}
 	else
 	{
-		auto startCalibration = [&](int typeFlags)
-		{
-			ptCalib.settings.typeFlags = typeFlags;
-			if (typeFlags & 0b10)
-				ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
-			ptCalib.planned = true;
-			// Forgetting to do this is annoying as existing recorded data might get poisoned
-			// In replay, a replays end means no more data, but a Restart might require this to be kept on
-			if (state.mode != MODE_Replay)
-				pipeline.recordSequences = false;
-		};
 		auto getUniqueLenses = [&]()
 		{
 			int camUniqueLenses = pipeline.cameras.size();
@@ -823,9 +824,9 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ImGui::BeginDisabled(roomCalib->floorPoints.size() < 3);
 	if (ImGui::Button("Calibrate Floor", SizeWidthFull()))
 	{
-		CalibrateRoom(pipeline, *roomCalib);
+		startCalibration(0b100);
 	}
-	ImGui::SetItemTooltip("Use at least 3 points to calibrated the floor of the room.");
+	ImGui::SetItemTooltip("Use at least 3 points (not in a line) to calibrated the floor of the room.");
 	ImGui::EndDisabled();
 
 	static float floorHeight = -1.0f;
@@ -873,7 +874,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 			SignalCameraCalibUpdate(calibs);
 		}
 	}
-	ImGui::SetItemTooltip("Flip the cameras along the floor plane in case they are below it..");
+	ImGui::SetItemTooltip("Flip the cameras vertically if your setup is inverted or the automatic orientation was wrong.");
 
 	if (ImGui::Button("Undo Once", SizeWidthFull()))
 	{ // TODO: Disable this button if floor is not calibrated yet (or a new calibration exists)

@@ -33,6 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
 static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
+static void ThreadCalibrationRoom(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
 
 
 // ----------------------------------------------------------------------------
@@ -73,10 +74,12 @@ void UpdatePointCalibrationStatus(PipelineState &pipeline)
 	{
 		ptCalib.planned = false;
 		ptCalib.control.init();
-		if (ptCalib.settings.typeFlags & 0b01)
+		if (ptCalib.settings.typeFlags & 0b001)
 			ptCalib.control.thread = new std::thread(ThreadCalibrationReconstruction, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
-		else if (ptCalib.settings.typeFlags & 0b10)
+		else if (ptCalib.settings.typeFlags & 0b010)
 			ptCalib.control.thread = new std::thread(ThreadCalibrationOptimisation, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
+		else if (ptCalib.settings.typeFlags & 0b100)
+			ptCalib.control.thread = new std::thread(ThreadCalibrationRoom, ptCalib.control.stop_source.get_token(), &pipeline, cameras);
 		SignalPipelineUpdate();
 	}
 }
@@ -87,8 +90,9 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	UpdatePointCalibrationStatus(pipeline);
 
-	// TODO: Room calibration should be considered largely untested since it hasn't been used in a while
-	// Need to improve experience / instructions, visualise points on the floor, account for physical marker sizes, etc.
+	// TODO: Improve UX of room calibration
+	// Allow selecting which point to use if there's multiple (currently needs one visible only)
+	// Account for physical marker sizes, etc.
 	auto roomCalib = ptCalib.room.contextualLock();
 	if (!roomCalib->floorPoints.empty() && roomCalib->floorPoints.back().sampling)
 	{
@@ -96,6 +100,10 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 		if (pipeline.tracking.triangulations3D.empty())
 		{
 			LOG(LPointCalib, LDebug, "No markers visible to calibrate floor point!\n");
+			if (point.sampleCount == 0)
+				SignalErrorToUser("No markers visible, please put a marker on the floor!");
+			else
+				SignalErrorToUser("Visibility of marker got interrupted, please try again!");
 			roomCalib->floorPoints.pop_back();
 		}
 		else
@@ -103,8 +111,18 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			TriangulatedPoint tri;
 			if (point.sampleCount == 0)
 			{
-				LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)roomCalib->floorPoints.size());
-				tri = pipeline.tracking.triangulations3D.front();
+				// Using the best available triangulation (tris are sorted) is actually a fine metric
+				/* if (pipeline.tracking.triangulations3D.size() > 1)
+				{
+					LOG(LPointCalib, LWarn, "== There are multiple markers visible, cannot start calibrating floor point %d!\n", (int)roomCalib->floorPoints.size());
+					SignalErrorToUser("There are multiple markers visible, please make sure only the marker on the floor is visible.");
+					roomCalib->floorPoints.pop_back();
+				}
+				else */
+				{
+					LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)roomCalib->floorPoints.size());
+					tri = pipeline.tracking.triangulations3D.front();
+				}
 			}
 			else
 			{
@@ -162,8 +180,8 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 	auto &ptCalib = pipeline->pointCalib;
 	PointCalibParameters params = ptCalib.params;
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
-	std::vector<CameraMode> modes(observations.temporary.size());
-	std::vector<CameraCalib> calibs(observations.temporary.size());
+	std::vector<CameraMode> modes(pipeline->cameras.size());
+	std::vector<CameraCalib> calibs(pipeline->cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		int index = cameras[c]->index;
@@ -258,8 +276,8 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	auto settings = ptCalib.settings;
 	PointCalibParameters params = ptCalib.params;
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
-	std::vector<CameraMode> modes(observations.temporary.size());
-	std::vector<CameraCalib> calibs(observations.temporary.size());
+	std::vector<CameraMode> modes(pipeline->cameras.size());
+	std::vector<CameraCalib> calibs(pipeline->cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		int index = cameras[c]->index;
@@ -389,40 +407,51 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	LOGC(LDebug, "=======================\n");
 }
 
-bool CalibrateRoom(PipelineState &pipeline, PipelineState::RoomCalib &roomCalib)
+static void ThreadCalibrationRoom(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras)
 {
-	if (roomCalib.floorPoints.size() < 3)
+	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { pipeline->pointCalib.control.finished = true; });
+
+	ScopedLogCategory scopedLogCategory(LPointCalib, true);
+	ScopedLogLevel scopedLogLevel(LInfo);
+
+	LOGC(LInfo, "=======================\n");
+
+	auto roomCalib = pipeline->pointCalib.room.contextualLock();
+	std::vector<CameraCalib> calibs(pipeline->cameras.size());
+	for (int c = 0; c < cameras.size(); c++)
 	{
-		LOG(LPointCalib, LDebug, "Could not calibrate floor!\n");
-		return false;
+		int index = cameras[c]->index;
+		calibs[index] = cameras[c]->calib;
 	}
 
 	LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
 
-	// Re-evaluate positions incase calibration changed since observation
-	auto calibs = pipeline.getCalibs();
-	for (auto &point : roomCalib.floorPoints)
+	// Re-evaluate positions in case calibration changed since observation
+	for (auto &point : roomCalib->floorPoints)
 		point.update(calibs);
 
 	// Estimate a transform to align floor plane to points with correct scale
 	Eigen::Matrix3d roomOrientation;
 	Eigen::Affine3d roomTransform;
-	int pointCount = estimateFloorTransform<double>(calibs, roomCalib.floorPoints, roomCalib.distance12, roomOrientation, roomTransform);
-	if (pointCount > 0)
+	auto error = estimateFloorTransform<double>(calibs, roomCalib->floorPoints, roomCalib->distance12, roomOrientation, roomTransform);
+	if (error)
 	{
-		LOG(LPointCalib, LInfo, "Calibrated floor with %d points!\n", pointCount);
-		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
-			roomTransform.linear().colwise().norm().mean());
-		ApplyTransformation(calibs, roomOrientation, roomTransform);
-		AdoptNewCalibrations(pipeline, calibs, false);
-		SignalCameraCalibUpdate(calibs);
-		return true;
+		LOG(LPointCalib, LError, "Failed to calibrate the floor: %s", error->c_str());
+		SignalErrorToUser(error.value());
 	}
 	else
 	{
-		LOG(LPointCalib, LDebug, "Failed to calibrate the floor!\n");
-		return false;
+		LOG(LPointCalib, LInfo, "Successfully calibrated floor with %d points!\n", (int)roomCalib->floorPoints.size());
+		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
+			roomTransform.linear().colwise().norm().mean());
+
+		// Update calibration
+		ApplyTransformation(calibs, roomOrientation, roomTransform);
+		AdoptNewCalibrations(*pipeline, calibs, false);
+		SignalCameraCalibUpdate(calibs);
 	}
+
+	LOGC(LDebug, "=======================\n");
 }
 
 void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool copyRoomCalib)

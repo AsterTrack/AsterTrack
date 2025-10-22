@@ -302,11 +302,6 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
 /* General functions */
 
 /**
- * Calibrate the room coordinate system given a number of floor points and scale for reference (pipeline state)
- */
-bool CalibrateRoom(PipelineState &pipeline, PipelineState::RoomCalib &roomCalib);
-
-/**
  * Updates pipeline cameras with given calibrations
  * Optionally copies an existing room calibration from current camera calibrations into the given new calibrations (updating them in the process).
  * This will try to identify at least two cameras that have not changed between the current calibration and this one.

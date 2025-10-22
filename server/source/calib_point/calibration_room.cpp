@@ -235,6 +235,7 @@ void StaticPointSamples<Scalar>::update(const std::vector<CameraCalib> &calibs)
 	TriangulatedPoint_t<Scalar> sampleTri(pos, 0, 0, calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{
+		if (calibs[c].invalid()) continue;
 		samplePointGroups[c] = &samplePoints[c];
 		if (samples[c].first == 0) continue;
 		sampleTri.blobs[c] = 0;
@@ -251,14 +252,13 @@ template void StaticPointSamples<double>::update(const std::vector<CameraCalib> 
  * The distance between the first two points should be passed as distance12 to determine the scale
  */
 template<typename Scalar>
-int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12,
+HANDLE_ERROR estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, const std::vector<StaticPointSamples<Scalar>> &floorPoints, Scalar distance12,
 	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform)
 {
-	if (floorPoints.size() < 3 || floorPoints.front().confidence < 1)
-	{
-		LOG(LPointCalib, LError, "    Origin (Point 1) is not calibrated!\n");
-		return 0;
-	}
+	if (floorPoints.size() < 3)
+		return "Need at least three points (not in a single line) to calibrate the room floor!";
+	if (floorPoints.front().confidence < 1)
+		return "Origin (Point 1) is not calibrated!";
 	int pointCount = 0;
 	for (int i = 0; i < floorPoints.size(); i++)
 	{
@@ -266,10 +266,7 @@ int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, con
 			pointCount++;
 	}
 	if (pointCount < 3)
-	{
-		LOG(LPointCalib, LError, "    Got %d points calibrated, need at least 3 to calibrate the floor!\n", pointCount);
-		return 0;
-	}
+		return asprintf_s("Need at least three points (not in a single line) to calibrate the room floor, only %d are valid!", pointCount);
 	Vector3<Scalar> origin = floorPoints.front().pos;
 
 	// Perform Principle Component Analysis to get the least represented axis, which is our axis going vertically through the plane of the points
@@ -289,6 +286,12 @@ int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, con
 	Vector3<Scalar> rankValues = evd_N.eigenvalues().template head<3>();
 	LOG(LPointCalib, LDebug, "    PCA for rotation has ranks (%f, %f, %f)\n", rankValues(2), rankValues(1), rankValues(0));
 
+	if (rankValues(0)*1000 > rankValues(1))
+		return asprintf_s("The floor points don't appear to be on a plane or are too noisy!");
+
+	if (rankValues(1)*20 < rankValues(2))
+		return asprintf_s("The floor points appear to be close to a straight line - make sure they span a plane!");
+
 	// TODO: Account for marker size by shifting floor plane up by their radius
 	// Supporting varying sizes sounds like a pain though
 
@@ -300,22 +303,16 @@ int estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &calibs, con
 	if (flipAxis < 0)
 		axis = -axis;
 
-	if (rankValues(0)*10 > rankValues(1))
-	{
-		LOG(LPointCalib, LError, "    Failed to completely constrain the floor orientation! Rank values (%f, %f) - %f\n", rankValues(2), rankValues(1), rankValues(1));
-		return 0;
-	}
-
 	// Get transform to calibrated room from up axis, origin and scale
 	roomOrientation = Eigen::Quaternion<Scalar>::FromTwoVectors(axis, Vector3<Scalar>::UnitZ()).toRotationMatrix();
 	Scalar scaling = distance12 / N.col(1).norm();
 	roomTransform.linear() = roomOrientation * Eigen::DiagonalMatrix<Scalar,3>(scaling, scaling, scaling);
 	roomTransform.translation() = -roomTransform.linear()*origin;
-	return pointCount;
+	return std::nullopt;
 }
-template int estimateFloorTransform(const std::vector<CameraCalib_t<double>> &calibs, const std::vector<StaticPointSamples<double>> &floorPoints, double distance12,
+template std::optional<ErrorMessage> estimateFloorTransform(const std::vector<CameraCalib_t<double>> &calibs, const std::vector<StaticPointSamples<double>> &floorPoints, double distance12,
 	Eigen::Matrix3d &roomOrientation, Eigen::Affine3d &roomTransform);
-template int estimateFloorTransform(const std::vector<CameraCalib_t<float>> &calibs, const std::vector<StaticPointSamples<float>> &floorPoints, float distance12,
+template std::optional<ErrorMessage> estimateFloorTransform(const std::vector<CameraCalib_t<float>> &calibs, const std::vector<StaticPointSamples<float>> &floorPoints, float distance12,
 	Eigen::Matrix3f &roomOrientation, Eigen::Affine3f &roomTransform);
 
 /**

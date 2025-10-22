@@ -154,10 +154,10 @@ static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, con
 	{
 		auto db_lock = pipeline.obsDatabase.contextualLock();
 		auto targetIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-			[&](auto &tgt){ return tgt.targetID == trackerID; });
+			[&](auto &tgt){ return tgt.trackerID == trackerID; });
 		if (targetIt == db_lock->targets.end())
 		{
-			db_lock->targets.push_back({ trackerID });
+			db_lock->targets.emplace_back(trackerID);
 			targetIt = std::prev(db_lock->targets.end());
 			targetIt->markers.reserve(tracker.calib.markers.size());
 			for (auto &marker : tracker.calib.markers)

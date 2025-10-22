@@ -599,7 +599,7 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 	SubsampleTargetParameters params)
 {
 	ObsTarget subsampled = {};
-	subsampled.targetID = target.targetID;
+	subsampled.trackerID = target.trackerID;
 	subsampled.markerMap = target.markerMap;
 	subsampled.markers = target.markers;
 	

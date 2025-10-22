@@ -36,8 +36,17 @@ extern ctpl::thread_pool threadPool;
 
 void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 {
+	auto discardTargetSelection = []
+	{
+		if (GetUI().visState.target.inspectingSource == 'O')
+		{
+			GetUI().visState.target.inspectingTrackerID = 0;
+			GetUI().visState.target.inspectingSource = 'N';
+		}
+	};
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
+		discardTargetSelection();
 		ImGui::End();
 		return;
 	}
@@ -94,6 +103,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	ImGui::EndDisabled();
 	if (state.mode == MODE_None)
 	{
+		discardTargetSelection();
 		ImGui::End();
 		return;
 	}
@@ -275,24 +285,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end(); tgtIt++)
 			{
 				auto tgt = *tgtIt;
-				ImGui::PushID(tgt.targetID);
+				ImGui::PushID(tgt.trackerID);
 				std::string label = asprintf_s("Target %d: %d frames, %d samples, %d outliers###TgtCont",
-					tgt.targetID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
-				bool selected = visState.target.selectedTargetID == tgt.targetID;
+					tgt.trackerID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
+				bool selected = visState.target.inspectingTrackerID == tgt.trackerID;
 				ImGui::AlignTextToFramePadding();
-				if (ImGui::Selectable(label.c_str(), visState.target.selectedTargetID == tgt.targetID, ImGuiSelectableFlags_AllowOverlap))
+				if (ImGui::Selectable(label.c_str(), visState.target.inspectingTrackerID == tgt.trackerID, ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (visState.target.selectedTargetID != tgt.targetID)
+					if (visState.target.inspectingTrackerID != tgt.trackerID)
 					{ // Set new selected target ID
-						visState.target.selectedTargetCalib = {};
+						visState.target.inspectingTargetCalib = {};
 						auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-							[&](auto &t){ return t.id == tgt.targetID; });
+							[&](auto &t){ return t.id == tgt.trackerID; });
 						if (track == state.trackerConfigs.end())
 						{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-							visState.target.selectedTargetCalib = TargetCalibration3D(finaliseTargetMarkers(
+							visState.target.inspectingTargetCalib = TargetCalibration3D(finaliseTargetMarkers(
 								pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
 						}
-						visState.target.selectedTargetID = tgt.targetID;
+						visState.target.inspectingTrackerID = tgt.trackerID;
+						visState.target.inspectingSource = 'O';
 					}
 					else visState.resetVisTarget(false);
 				}
@@ -301,7 +312,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				bool del = CrossButton("Del");
 				if (del)
 				{
-					if (visState.target.selectedTargetID == tgt.targetID)
+					if (visState.target.inspectingTrackerID == tgt.trackerID)
 						visState.resetVisTarget(false);
 					tgtIt = db_lock->targets.erase(tgtIt);
 				}
@@ -360,13 +371,13 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						{
 							for (auto &tracker : state.trackerConfigs)
 							{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
-								if (tracker.id != tgtNew.targetID) continue;
+								if (tracker.id != tgtNew.trackerID) continue;
 								// Copy and update target calibration
 								TargetCalibration3D calib = tracker.calib;
 								calib.markers = finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post);
 								calib.updateMarkers();
 								// Signal server to update calib
-								SignalTargetCalibUpdate(tgtNew.targetID, calib);
+								SignalTargetCalibUpdate(tgtNew.trackerID, calib);
 								break;
 							}
 						}
@@ -393,7 +404,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						{
 							for (auto &tgtDB : db_lock->targets)
 							{
-								if (std::abs(tgtDB.targetID) != std::abs(tgtOpt.targetID)) continue;
+								if (std::abs(tgtDB.trackerID) != std::abs(tgtOpt.trackerID)) continue;
 								tgtDB.markers = tgtOpt.markers;
 								auto frameOpt = tgtOpt.frames.begin();
 								for (auto &frameDB : tgtDB.frames)
@@ -429,13 +440,13 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					{
 						for (auto &tracker : state.trackerConfigs)
 						{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
-							if (tracker.id != tgtNew.targetID) continue;
+							if (tracker.id != tgtNew.trackerID) continue;
 							// Copy and update target calibration
 							TargetCalibration3D calib = tracker.calib;
 							updateMarkerOrientations(calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
 							calib.updateMarkers();
 							// Signal server to update calib
-							SignalTargetCalibUpdate(tgtNew.targetID, calib);
+							SignalTargetCalibUpdate(tgtNew.trackerID, calib);
 							break;
 						}
 					}
@@ -465,6 +476,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 			ImGui::PopID();
 		}
+		else
+			discardTargetSelection();
 
 		if (state.mode == MODE_Replay)
 		{
@@ -659,14 +672,18 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	}
 	else if (pipeline.phase == PHASE_Calibration_Point)
 	{
+		discardTargetSelection();
 		UpdatePipelineCalibSection();
 		UpdatePipelineObservationSection();
 		UpdatePipelinePointCalib();
 	}
 	else if (pipeline.phase == PHASE_Calibration_Target)
 	{
+		discardTargetSelection();
 		UpdatePipelineTargetCalib();
 	}
+	else
+		discardTargetSelection();
 
 	ImGui::End();
 }

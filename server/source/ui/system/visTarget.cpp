@@ -55,22 +55,22 @@ VisTargetLock VisualisationState::lockVisTarget() const
 		state.hasPose = true;
 		state.targetGT = targetCalib.stage->base.simulation.targetGT;
 	}
-	else if (target.selectedTargetID != 0)
+	else if (target.inspectingTrackerID != 0)
 	{
 		// Get TargetCalibration3D
 		auto trackerIt = std::find_if(GetState().trackerConfigs.begin(), GetState().trackerConfigs.end(),
-			[&](auto &tgt){ return tgt.id == target.selectedTargetID; });
+			[&](auto &tgt){ return tgt.id == target.inspectingTrackerID; });
 		if (trackerIt != GetState().trackerConfigs.end() && trackerIt->type == TrackerConfig::TRACKER_TARGET)
 			state.calib = &trackerIt->calib;
-		else if (!target.selectedTargetCalib.markers.empty())
-			state.calib = &target.selectedTargetCalib;
+		else if (!target.inspectingTargetCalib.markers.empty())
+			state.calib = &target.inspectingTargetCalib;
 		else
 			return state;
 		state.targetGT = nullptr;
 		// Get ObsTarget if tracking data exists
 		auto db_lock = GetState().pipeline.obsDatabase.contextualRLock();
 		auto obsIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-			[&](auto &tgt){ return tgt.targetID == target.selectedTargetID; });
+			[&](auto &tgt){ return tgt.trackerID == target.inspectingTrackerID; });
 		if (obsIt == db_lock->targets.end())
 			return state;
 		state.db_lock = std::move(db_lock);
@@ -104,8 +104,9 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	targetCalib.stage = nullptr;
 	targetCalib.stageSubIndex = -1;
 	targetCalib.stageSubSubIndex = -1;
-	target.selectedTargetID = 0;
-	target.selectedTargetCalib = {};
+	target.inspectingSource = 'N';
+	target.inspectingTrackerID = 0;
+	target.inspectingTargetCalib = {};
 	target.markerSelect.clear();
 	return true;
 }

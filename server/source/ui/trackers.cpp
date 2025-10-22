@@ -25,8 +25,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
+	static int selectedTrackerID = 0;
+	auto discardSelection = []
+	{
+		selectedTrackerID = 0;
+		if (GetUI().visState.target.inspectingSource == 'T')
+		{
+			GetUI().visState.target.inspectingTrackerID = 0;
+			GetUI().visState.target.inspectingSource = 'N';
+		}
+	};
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
+		discardSelection();
 		ImGui::End();
 		return;
 	}
@@ -66,55 +77,48 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImVec2(0, childSize)))
 	{
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
-		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthStretch, 3);
-		ImGui::TableSetupColumn("Markers");
-		ImGui::TableSetupColumn("Detail");
+		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthStretch, 1);
+		ImGui::TableSetupColumn("Detail", ImGuiTableColumnFlags_WidthStretch, 1);
 		ImGui::TableSetupColumn("Del", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		//ImGui::TableHeadersRow();
 
-		for (auto &target : state.trackerConfigs)
+		for (auto trackerIt = state.trackerConfigs.begin(); trackerIt != state.trackerConfigs.end();)
 		{
-			if (target.type != TrackerConfig::TRACKER_TARGET)
-				continue;
-
-			ImGui::PushID(target.id);
+			auto &tracker = *trackerIt;
+			ImGui::PushID(tracker.id);
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::AlignTextToFramePadding();
 
-			ImGui::Text("%d", target.id);
+			ImGui::Text("%d", tracker.id);
 			ImGui::TableNextColumn();
 
-			ImGui::Text("'%s'", target.label.c_str());
+			ImGui::Text("'%s'", tracker.label.c_str());
 			ImGui::TableNextColumn();
 
-			ImGui::Text("%d", (int)target.calib.markers.size());
+			if (tracker.type == TrackerConfig::TRACKER_TARGET)
+				ImGui::Text("Target with %d markers", (int)tracker.calib.markers.size());
+			else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+				ImGui::Text("Marker of size %.1fmm", tracker.markerSize*1000.0f);
+			else
+			 	ImGui::TextUnformatted("Tracker of unknown type.");
 			ImGui::TableNextColumn();
 
-			ImGui::Text("%d", (int)target.calib.markers.size());
-			ImGui::TableNextColumn();
-
-			bool select = visState.target.selectedTargetID == target.id;
+			bool select = selectedTrackerID == tracker.id;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				if (visState.target.selectedTargetID == target.id)
-					visState.target.selectedTargetID = 0;
-				else if (visState.resetVisTarget())
-				{
-					if (visState.target.selectedTargetID == target.id)
-						visState.target.selectedTargetID = 0;
-					else
-					{
-						visState.target.selectedTargetID = target.id;
-						visState.updateVisTarget();
-					}
-				}
+				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == selectedTrackerID)
+					visState.resetVisTarget();
+				if (selectedTrackerID == tracker.id)
+					selectedTrackerID = 0;
+				else
+					selectedTrackerID = tracker.id;
 			}
 			ImGui::SameLine(0, 0);
 			if (CrossButton("Del"))
-			{
-				// TODO: Disabled until we have confirmation to prevent accidental deletion. Can edit trackers
-			}
+				trackerIt = state.trackerConfigs.erase(trackerIt);
+			else
+				trackerIt++;
 			ImGui::PopID();
 		}
 
@@ -122,9 +126,10 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-		[&](auto &t){ return t.id == visState.target.selectedTargetID; });
+		[&](auto &t){ return t.id == selectedTrackerID; });
 	if (trackerIt == state.trackerConfigs.end())
 	{
+		discardSelection();
 		ImGui::EndChild();
 		ImGui::End();
 		return;
@@ -230,6 +235,22 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	{
 		BeginSection("Target Calibration");
 
+		if (visState.target.inspectingTrackerID == tracker.id)
+		{
+			if (ImGui::Button("Stop###Inspect", SizeWidthFull()))
+				visState.resetVisTarget();
+		}
+		else if (ImGui::Button("Inspect", SizeWidthFull()))
+		{
+			if (visState.resetVisTarget())
+			{
+				visState.target.inspectingTrackerID = tracker.id;
+				visState.target.inspectingSource = 'T';
+				view3D.orbit = true;
+				visState.updateVisTarget();
+			}
+		}
+
 		static float adjustScale = 1.0f;
 		ImGui::SetNextItemWidth(SizeWidthDiv2().x);
 		ImGui::InputFloat("##Scale", &adjustScale, 0.0f, 0.0f, "%.8f");
@@ -244,7 +265,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			auto obs_lock = state.pipeline.obsDatabase.contextualLock();
 			for (auto &tgt : obs_lock->targets)
 			{
-				if (tgt.targetID != visState.target.selectedTargetID) continue;
+				if (tgt.trackerID != visState.target.inspectingTrackerID) continue;
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}

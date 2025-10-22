@@ -205,8 +205,9 @@ struct VisualisationState
 	struct
 	{
 		// Selection of target for inspection outside of target calib
-		int selectedTargetID = 0;
-		TargetCalibration3D selectedTargetCalib;
+		int inspectingTrackerID = 0;
+		char inspectingSource = 'N';
+		TargetCalibration3D inspectingTargetCalib;
 
 		// Visualisation
 		std::vector<bool> cameraRays;

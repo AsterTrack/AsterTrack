@@ -59,7 +59,7 @@ struct ObsTargetFrame
 };
 struct ObsTarget
 {
-	int targetID;
+	int trackerID;
 	std::vector<ObsTargetFrame> frames;
 	std::map<int,int> markerMap;
 	std::vector<Eigen::Vector3f> markers;

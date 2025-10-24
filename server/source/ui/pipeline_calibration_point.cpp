@@ -109,6 +109,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 					cam->calib.index = cam->index;
 				}
 			}
+			pipeline.pointCalib.roomState.lastTransferSuccess = -1;
+			pipeline.pointCalib.roomState.lastTransferError = std::nullopt;
+			pipeline.pointCalib.roomState.unchangedCameras.clear();
 
 			pipeline.calibration.contextualLock()->init(pipeline.cameras.size());
 			UpdateCalibrations();
@@ -120,9 +123,29 @@ void InterfaceState::UpdatePipelineCalibSection()
 		ImGui::SameLine();
 		if (SaveButton("Save##Calibration", ButtonSize, state.cameraCalibsDirty))
 		{
+			if (pipeline.pointCalib.roomState.lastTransferSuccess == 0)
+			{ // Currently no valid room calibration - either cameras changed too much or there was no prior calibration at all
+				// TODO: There is NO fool-proof way to verify the room calibration is good
+				// At most the tracking can tell the scale is off if cameras never agree on where a known-good target is
+				// This system fails if you save and load a calibration without room calib
+				// Currently, we assume anything loaded has room calib, and this is only updated when room calibration is done
+				// Then, it will continuously try to align itself to any prior calibration - and pop this message if transfer failed
+				ImGui::OpenPopup("SaveNoRoomCalib");
+			}
 			auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
 			if (error) GetState().errors.push(error.value());
 			else state.cameraCalibsDirty = false;
+		}
+		if (ImGui::BeginPopup("SaveNoRoomCalib"))
+		{
+			ImGui::TextUnformatted("It appears the room calibration is not valid. This may happen if:\n"
+				"- This is your first time setting up the camera system in this room.\n"
+				"- The existing room calibration couldn't be transferred to this \n"
+				"   re-calibrated system because too many cameras changed.\n"
+				"You may have to do the Room Calibration below before you can track.");
+			if (ImGui::Button("OK", SizeWidthFull()))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Calibration", ButtonSize))
@@ -132,7 +155,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 			else
 			{
 				state.cameraCalibsDirty = false;
-				AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, false);
+				AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, true);
 				{
 					auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
 					UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
@@ -787,6 +810,47 @@ void InterfaceState::UpdatePipelinePointCalib()
 		"You will be able to select markers through the 3D View in the future.");
 		ImGui::TextLinkOpenURL("See Full Calibration Documentation", "https://docs.astertrack.dev/calib_cameras/");
 		EndInteractiveItemTooltip();
+	}
+
+	if (ptCalib.roomState.lastTransferSuccess == 2)
+	{
+		ImGui::Text("Existing Room Calibration from %d cameras", (int)ptCalib.roomState.unchangedCameras.size());
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::TextUnformatted("Transferred prior room calibration successfully by finding cameras that did not move:");
+			for (auto &cam : ptCalib.roomState.unchangedCameras)
+				ImGui::Text("Camera #%d unchanged with relational error %.2fmm", cam.first, cam.second);
+			ImGui::TextUnformatted("NOTE: Whether there even was a prior room calibration is unknown!");
+			ImGui::EndTooltip();
+		}
+	}
+	else if (ptCalib.roomState.lastTransferSuccess == 1)
+	{
+		ImGui::Text("Uncertain Room Calibration from %d cameras", (int)ptCalib.roomState.unchangedCameras.size());
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::TextUnformatted("Transferred prior room calibration by relying on cameras who might have been re-mounted:");
+			for (auto &cam : ptCalib.roomState.unchangedCameras)
+				ImGui::Text("Camera #%d used within relational error %.2fmm", cam.first, cam.second);
+			ImGui::TextUnformatted("NOTE: Whether there even was a prior room calibration is unknown!");
+			ImGui::EndTooltip();
+		}
+	}
+	else if (ptCalib.roomState.lastTransferSuccess == 0)
+	{
+		ImGui::TextUnformatted("Failed to transfer Room Calibration!");
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::TextUnformatted("Could not transfer prior room calibration as no 2 cameras appeared unchanged!");
+			if (pipeline.pointCalib.roomState.lastTransferError)
+				ImGui::Text("Error: %s", pipeline.pointCalib.roomState.lastTransferError->c_str());
+			ImGui::TextUnformatted("NOTE: Whether there even was a prior room calibration is unknown!");
+			ImGui::EndTooltip();
+		}
+	}
+	else
+	{
+		ImGui::Text("Room calibration status unknown.");
 	}
 
 	auto roomCalib = ptCalib.room.contextualLock();

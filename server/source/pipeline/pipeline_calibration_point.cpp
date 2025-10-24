@@ -251,7 +251,7 @@ static void ThreadCalibrationReconstruction(std::stop_token stopToken, PipelineS
 	}
 
 	// Update calibration
-	AdoptNewCalibrations(*pipeline, calibs, true);
+	AdoptNewCalibrations(*pipeline, calibs);
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
 	SignalCameraCalibUpdate(calibs);
 
@@ -334,7 +334,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 				ptCalib.state.numSteps, errors.mean, errors.stdDev, errors.max);
 
 		// Update calibration
-		AdoptNewCalibrations(*pipeline, calibs, true);
+		AdoptNewCalibrations(*pipeline, calibs);
 		SignalCameraCalibUpdate(calibs);
 
 		if (errors.max > errors.mean + params.outliers.sigma.trigger*errors.stdDev)
@@ -400,7 +400,7 @@ static void ThreadCalibrationOptimisation(std::stop_token stopToken, PipelineSta
 	}
 
 	// Update calibration
-	AdoptNewCalibrations(*pipeline, calibs, true);
+	AdoptNewCalibrations(*pipeline, calibs);
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
 	SignalCameraCalibUpdate(calibs);
 
@@ -447,46 +447,55 @@ static void ThreadCalibrationRoom(std::stop_token stopToken, PipelineState *pipe
 
 		// Update calibration
 		ApplyTransformation(calibs, roomOrientation, roomTransform);
-		AdoptNewCalibrations(*pipeline, calibs, false);
+		AdoptNewCalibrations(*pipeline, calibs, true);
 		SignalCameraCalibUpdate(calibs);
 	}
 
 	LOGC(LDebug, "=======================\n");
 }
 
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool copyRoomCalib)
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool hasRoomCalib)
 {
-	if (copyRoomCalib)
+	if (!hasRoomCalib)
 	{
-		std::vector<CameraCalib> oldCalibs(calibs.size());
-		int validCalibs = 0;
-		for (int c = 0; c < calibs.size(); c++)
-		{
-			oldCalibs[c] = pipeline.cameras[calibs[c].index]->calib;
-			if (oldCalibs[c].valid())
-				validCalibs++;
-		}
+		ScopedLogLevel scopedLogLevel(LDebug);
 
-		if (validCalibs >= 2)
+		std::vector<CameraCalib> roomCalib(calibs.size());
+		for (int c = 0; c < calibs.size(); c++)
+			roomCalib[c] = pipeline.cameras[calibs[c].index]->calibRoom;
+
+		Eigen::Matrix3d roomOrientation;
+		Eigen::Affine3d roomTransform;
+		std::map<int,float> usedCmeras;
+		bool strict = true;
+		auto error = transferRoomCalibration(roomCalib, calibs, roomOrientation, roomTransform, usedCmeras, strict);
+		if (error && error->code != -2)
 		{
-			Eigen::Matrix3d roomOrientation;
-			Eigen::Affine3d roomTransform;
-			if (transferRoomCalibration(oldCalibs, calibs, roomOrientation, roomTransform))
-			{
-				if (roomOrientation.hasNaN() || roomTransform.matrix().hasNaN())
-				{
-					LOG(LPointCalib, LError, "Failed to transfer room calibration due to numerical errors! You will need to re-calibrate the room!");
-					SignalErrorToUser("Failed to transfer room calibration due to numerical errors! You will need to re-calibrate the room!");
-				}
-				else
-					ApplyTransformation(calibs, roomOrientation, roomTransform);
-			}
-			else
-			{
-				LOG(LPointCalib, LError, "Failed to transfer room calibration as no two cameras were unchanged! You will need to re-calibrate the room!");
-				SignalErrorToUser("Failed to transfer room calibration as no two cameras were unchanged! You will need to re-calibrate the room!");
-			}
+			LOG(LPointCalib, LError, "Failed to transfer room calibration (strict): %s", error->c_str());
+			strict = false;
+			error = transferRoomCalibration(roomCalib, calibs, roomOrientation, roomTransform, usedCmeras, strict);
+			if (error)
+				LOG(LPointCalib, LError, "Failed to transfer room calibration (lax): %s", error->c_str());
 		}
+		if (error)
+		{
+			pipeline.pointCalib.roomState.lastTransferSuccess = 0;
+			pipeline.pointCalib.roomState.lastTransferError = error;
+			pipeline.pointCalib.roomState.unchangedCameras.clear();
+		}
+		else
+		{
+			pipeline.pointCalib.roomState.lastTransferSuccess = strict? 2 : 1;
+			pipeline.pointCalib.roomState.lastTransferError = std::nullopt;
+			pipeline.pointCalib.roomState.unchangedCameras = std::move(usedCmeras);
+			ApplyTransformation(calibs, roomOrientation, roomTransform);
+		}
+	}
+	else
+	{
+		pipeline.pointCalib.roomState.lastTransferSuccess = -1;
+		pipeline.pointCalib.roomState.lastTransferError = std::nullopt;
+		pipeline.pointCalib.roomState.unchangedCameras.clear();
 	}
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
@@ -505,6 +514,8 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		}
 		// Make sure index is correct
 		cam->calib.index = cam->index;
+		if (hasRoomCalib)
+			cam->calibRoom = cam->calib;
 	}
 }
 

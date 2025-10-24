@@ -77,6 +77,7 @@ struct CameraPipeline
 	CameraID id = CAMERA_ID_NONE;
 	int index = -1;
 	CameraCalib calib = {};
+	CameraCalib calibRoom = {};
 	CameraCalib calibBackup = {}; // To undo certain operations
 	CameraMode mode = {};
 
@@ -193,6 +194,15 @@ struct PipelineState
 		} state = {};
 		// Room parameters
 		Synchronised<RoomCalib> room;
+		struct
+		{
+			bool knownGoodScale; // TODO: Validate over time by multi-camera tracking with pre-calibrated targets
+			bool knownGoodFloor; // TODO: Validate over time with IMUs
+			std::optional<ErrorMessage> lastTransferError;
+			int lastTransferSuccess = -1; // Success of last transfer, and how much current calib reflects the above state
+			// Transfer may succeed with known unchanged cameras (2), with cameras mounted in the same place (1), or fail (0)
+			std::map<int,float> unchangedCameras; // If last transfer succeeded, list cameras that were deemed unchanged, with accompanying error (0-2)
+		} roomState = {};
 	} pointCalib = {};
 
 	// Target calibration state
@@ -306,7 +316,7 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
  * Optionally copies an existing room calibration from current camera calibrations into the given new calibrations (updating them in the process).
  * This will try to identify at least two cameras that have not changed between the current calibration and this one.
  */
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool copyRoomCalib);
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool hasRoomCalib = false);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations

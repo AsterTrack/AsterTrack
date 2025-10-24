@@ -73,7 +73,7 @@ void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Eig
  * But it can also transfer if cameras moved as long as two didn't move
  */
 template<typename Scalar>
-bool transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc, const std::vector<CameraCalib_t<Scalar>> &calibsTgt,
-	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform);
+HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &calibsSrc, const std::vector<CameraCalib_t<Scalar>> &calibsTgt,
+	Matrix3<Scalar> &roomOrientation, Affine3<Scalar> &roomTransform, std::map<int,float> &usedCmeras, bool strict = true);
 
 #endif // CALIBRATION_ROOM_H

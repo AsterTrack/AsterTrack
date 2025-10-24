@@ -101,7 +101,7 @@ void InterfaceState::UpdateCalibrationError(bool reset, bool userTrigger)
 		calibError.calculating = true;
 		calibError.lastCalc = sclock::now();
 		threadPool.push([](int, bool triggered){
-			UpdateErrorFromObservations(GetState().pipeline, triggered);
+			UpdateErrorFromObservations(GetState().pipeline, triggered, false);
 			GetUI().calibError.lastCalc = sclock::now();
 			GetUI().calibError.calculating = false;
 			GetUI().RequestUpdates();

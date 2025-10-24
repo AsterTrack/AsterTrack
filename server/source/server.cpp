@@ -323,6 +323,7 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 		else camera->calib = CameraCalib();
 		LOG(LDefault, LInfo, "No calibration found for camera %d!\n", camera->id);
 	}
+	camera->calibRoom = camera->calib;
 
 	return camera;
 }
@@ -898,7 +899,7 @@ void StartSimulation(ServerState &state)
 	{ // Align calibrations to simulated calibrations
 		auto calibs = state.pipeline.getCalibs();
 		AlignWithGT(state.pipeline, calibs);
-		AdoptNewCalibrations(state.pipeline, calibs, false);
+		AdoptNewCalibrations(state.pipeline, calibs, true);
 	}
 
 	// Debug calibrations

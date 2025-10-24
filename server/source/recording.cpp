@@ -134,7 +134,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 		std::vector<CameraCalib> cameraCalibs;
 		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);
 		if (error && error->code != ENOENT) return error;
-		AdoptNewCalibrations(state.pipeline, cameraCalibs, false);
+		AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
 	}
 
 	return std::nullopt;

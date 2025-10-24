@@ -309,7 +309,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	int freeCols = numFreeCameras == 0? 0 : (int)std::ceil((float)numFreeCameras/numRows);
 	int numCols = state.controllers.size() + freeCols;
 
-	if (numCols > 0 && ImGui::BeginTable("Devices", numCols,
+	if (numCols == 0)
+	{
+		ImGui::TextWrapped("There are no controllers or cameras connected.\n"
+			"Plug in a controller, then Disconnect and Connect again for it to appear.");
+	}
+	else if (ImGui::BeginTable("Devices", numCols,
 		ImGuiTableFlags_PadOuterX | ImGuiTableFlags_BordersInner))
 	{
 		// Register columns, but without headers

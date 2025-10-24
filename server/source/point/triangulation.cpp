@@ -463,7 +463,7 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 		lastTri = newTri;
 		if (change3D <= (Scalar)threshold3D)
 		{
-			LOGC(LTrace, "Triangulation got %f error after %d a total of iterations!\n", (triSolve * triResult).cwiseAbs().mean()*1000, i);
+			LOG(LTriangulation, LTrace, "Triangulation got %f error after %d a total of iterations!\n", (triSolve * triResult).cwiseAbs().mean()*1000, i);
 			break;
 		}
 	}

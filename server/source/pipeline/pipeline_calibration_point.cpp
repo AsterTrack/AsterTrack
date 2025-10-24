@@ -515,6 +515,7 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 	}
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	bool lensesChanged = false;
 	for (auto &cam : pipeline.cameras)
 	{
 		cam->calibBackup = cam->calib; // Create backup
@@ -524,6 +525,9 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 			if (calib.invalid()) continue;
 			if (calib.id == cam->id)
 			{ // Adopt
+				if (calib.lensID != cam->calib.lensID)
+					lensesChanged = true;
+				calib.lensID = cam->calib.lensID;
 				cam->calib = calib;
 				break;
 			}
@@ -532,6 +536,15 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		cam->calib.index = cam->index;
 		if (hasRoomCalib)
 			cam->calibRoom = cam->calib;
+	}
+	if (lensesChanged)
+	{ // TODO: User edited lenses while calibration process was ongoing, may result in unintended behaviour
+		// We CAN adopt the ID for the next calibration, but we may have overwritten the distortion parameters loaded from a preset
+		// Least we can do is warn user
+		SignalErrorToUser("Lense assignments have been edited while calibration was underway.\n"
+			"If you loaded a preset, the distortion parameters have been overwritten by the calibration process.\n"
+			"If you intended to pre-load the distortion parameters, you may have to re-load the lens preset.");
+
 	}
 }
 

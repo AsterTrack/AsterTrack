@@ -52,7 +52,7 @@ struct OptimisationOptions
 		: motion(target), structure(target),
 		position(extrinsics), rotation(extrinsics), focalLen(align), principal(align),
 		tangential(align), radial(radial), radialOrder(3), 
-		sharedRadial(radial), 
+		sharedRadial(true), 
 		normalisePos(normalise), normaliseScale(normalise),
 		ignoreOutliers(true)
 	{}

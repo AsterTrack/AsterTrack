@@ -55,6 +55,18 @@ using json = nlohmann::json;
  * Parsing and writing of Config and other files
  */
 
+std::optional<ErrorMessage> touchFile(const std::string &path)
+{
+	// Create directories
+	std::filesystem::create_directories(std::filesystem::path(path).remove_filename());
+	// Write file
+	std::ofstream fs(path);
+	if (!fs.is_open()) return asprintf_s("Failed to open '%s' for writing!", path.c_str());
+	fs.close();
+	if (fs.fail()) return asprintf_s("Failed to close '%s' after writing!", path.c_str());
+	return std::nullopt;
+}
+
 std::optional<ErrorMessage> writeJSON(const std::string &path, const json &data)
 {
 	// Serialise JSON
@@ -1124,10 +1136,10 @@ std::optional<ErrorMessage> dumpRecording(const std::string &path, const std::ve
 
 std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset)
 {
-	// Modify path (expecting XX_capture_XX.json)
-	std::size_t index = path.rfind("_capture_");
+	// Modify path (expecting XX_capture***.json)
+	std::size_t index = path.rfind("_capture");
 	if (index != std::string::npos)
-		path.replace(index, 9, "_tracking_");
+		path.replace(index, 8, "_tracking");
 
 	json file;
 	auto error = readJSON(path, file);

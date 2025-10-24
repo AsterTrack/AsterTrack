@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 void InitPipelineStreaming(PipelineState &pipeline)
-{
+{ // Called when starting streaming after ResetPipelineData
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
 	// Init realtime subsystems
@@ -41,7 +41,7 @@ void InitPipelineStreaming(PipelineState &pipeline)
 }
 
 void ResetPipelineStreaming(PipelineState &pipeline)
-{
+{ // Called when stopping streaming
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
 	// Reset realtime subsystems
@@ -61,6 +61,7 @@ static void DeletePipelineData(PipelineState &pipeline)
 
 	// Delete data
 	pipeline.seqDatabase.contextualLock()->clear();
+	*pipeline.obsDatabase.contextualLock() = {};
 	pipeline.record.frames.cull_clear(); // Non-blocking, might need another delete_culled later
 	pipeline.record.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
 	pipeline.frameNum = -1;
@@ -85,7 +86,7 @@ static void DeletePipelineSetup(PipelineState &pipeline)
 }
 
 void ResetPipelineState(PipelineState &pipeline)
-{
+{ // Called when leaving mode
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
 	// Reset all subsystems
@@ -99,7 +100,7 @@ void ResetPipelineState(PipelineState &pipeline)
 }
 
 void ResetPipelineData(PipelineState &pipeline)
-{
+{ // Called when starting streaming
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
 	// Reset all subsystems

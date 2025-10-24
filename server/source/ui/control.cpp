@@ -293,24 +293,30 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 						// Find path
 						int saveIndex = findHighestFileEnumeration("dump", "%d_capture", ".json")+1;
 						section.path = asprintf_s("dump/%d_capture.json", saveIndex);
+						// Occupy path now to prevent next save from using same path
+						touchFile(section.path);
 						// Perform write in a separate thread to prevent blocking UI
 						// TODO: Memory Leak. Thread never joined
-						new std::thread([](auto section)
+						new std::thread([](InterfaceState::RecordedSections section)
 						{
 							PipelineState &pipeline = GetState().pipeline;
 							// Copy camera ids
 							std::vector<CameraConfigRecord> cameras;
 							for (auto &cam : pipeline.cameras)
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
-							// Write to path
-							{
+							{ // Verify frames are available
 								auto framesRecord = pipeline.record.frames.getView();
 								if (framesRecord.endIndex() < section.end)
 								{ // Already deleted
-									LOG(LGUI, LWarn, "The section to be saved has already been deleted internally!");
+									SignalErrorToUser("The section to be saved has already been deleted internally!");
 									return;
 								}
+								if (framesRecord.beginIndex() > section.begin)
+								{ // Already culled (partially)
+									SignalErrorToUser("The section to be saved has already been partially cleared!");
+								}
 							}
+							// Write to path
 							auto error = dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
 							if (error) GetState().errors.push(error.value());
 							else error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								

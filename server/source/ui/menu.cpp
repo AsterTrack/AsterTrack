@@ -268,7 +268,13 @@ void InterfaceState::UpdateMainMenuBar()
 		else if (state.mode == MODE_None)
 		{
 			if (ImGui::Button("Connect", button))
+			{
 				StartDeviceMode(state);
+				if (state.controllers.empty())
+					SignalErrorToUser("Found no connected controllers!\n"
+						"Plug in a controller, then Disconnect and Connect again.");
+
+			}
 			ImGui::SetItemTooltip("Probe for and connect to AsterTrack hardware.");
 		}
 		focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);

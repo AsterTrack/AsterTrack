@@ -33,6 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #endif
 
 #include <cstdio>
+#include <filesystem>
 
 #ifdef __unix__
 #include <unistd.h>
@@ -139,7 +140,12 @@ int main (void)
 	
 	{ // Setup logging
 		initialise_logging_strings();
-		GetApp().logFile.open("log.txt", std::ios::app);
+		// Basic log file rotation
+		if (std::filesystem::exists("log_1.txt"))
+			std::filesystem::rename("log_1.txt", "log_2.txt");
+		if (std::filesystem::exists("log.txt"))
+			std::filesystem::rename("log.txt", "log_1.txt");
+		GetApp().logFile.open("log.txt");
 
 		// Init runtime max log levels
 		// NOTE: Compile-time LOG_MAX_LEVEL takes priority!

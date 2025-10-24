@@ -199,6 +199,8 @@ int findLastFileEnumeration(const char* pathFormat);
  */
 int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString = true);
 
+std::optional<ErrorMessage> touchFile(const std::string &path);
+
 HANDLE_ERROR parseGeneralConfigFile(const std::string &path, GeneralConfig &config);
 HANDLE_ERROR storeGeneralConfigFile(const std::string &path, const GeneralConfig &config);
 

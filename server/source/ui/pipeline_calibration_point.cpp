@@ -75,12 +75,17 @@ void InterfaceState::UpdatePipelineCalibSection()
 					errors.num);
 			}
 		}
+		else if (calibError.calculating)
+		{ // Calculating, show when the current error is invalidated (num == 0)
+			ImGui::TextUnformatted("Calculating error...");
+		}
+		else if (calibState.numUncalibrated == 0 && visState.incObsUpdate.markerCount > 0)
+		{ // Not calculating, but despite having calib and data, num was 0
+			ImGui::TextUnformatted("Unable to check calibration errors!");
+		}
 		else if (calibState.numUncalibrated == 0)
 		{ // Calibration exists
-			if (visState.incObsUpdate.markerCount > 0 && calibError.calculating)
-				ImGui::TextUnformatted("Calculating error...");
-			else
-				ImGui::TextUnformatted("No data to check calibration against!");
+			ImGui::TextUnformatted("No data to check calibration against!");
 		}
 		else if (visState.incObsUpdate.markerCount > 0)
 		{ // Data exists
@@ -358,7 +363,16 @@ void InterfaceState::UpdatePipelineCalibSection()
 							ImGui::OpenPopup(deletePopup.c_str());
 						if (ImGui::BeginPopup(deletePopup.c_str()))
 						{
-							ImGui::Text("Delete Lens Preset %d?", lens.id);
+							int referenced = 0;
+							for (auto &camera : state.cameraCalibrations)
+							{
+								if (camera.lensID == lens.id)
+									referenced++;
+							}
+							if (referenced > 0)
+								ImGui::Text("Delete Lens Preset %d referenced by %d cameras?", lens.id, referenced);
+							else
+								ImGui::Text("Delete Lens Preset %d not referenced by any camera?", lens.id);
 							if (ImGui::Button("Delete", SizeWidthFull()))
 								deleteLens = true;
 							ImGui::EndPopup();
@@ -410,14 +424,20 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 					if (deleteLens)
 					{
+						bool referenced = false;
 						for (auto &camera : state.cameraCalibrations)
 						{
 							if (camera.lensID == lens.id)
-								deleteLens = false;
+							{
+								referenced = true;
+								camera.lensID = -1;
+							}
 						}
+						lensIt = state.lensPresets.erase(lensIt);
+						if (referenced)
+							state.cameraCalibsDirty = true;
 					}
-					if (!deleteLens) lensIt++;
-					else lensIt = state.lensPresets.erase(lensIt);
+					else lensIt++;
 				}
 				ImGui::EndTable();
 			}
@@ -719,7 +739,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 		};
 		if (ImGui::Button("Optimise", SizeWidthDiv2()))
 		{
-			if (getUnknownLenses() > 1)
+			if (getUnknownLenses() > 1 && ptCalib.settings.options.radial && ptCalib.settings.options.sharedRadial)
 				ImGui::OpenPopup("OptConfirm");
 			else
 			 	startCalibration(0b10);

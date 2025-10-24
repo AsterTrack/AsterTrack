@@ -377,7 +377,23 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 
 	// Right-aligned bar of 2 buttons
-	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize()), 2)));
+	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize()), 3)));
+
+	if (ImGui::ImageButton("ImgStr", darkModeIcons.frame_wireless, iconSize()))
+	{
+		if (state.mode == MODE_Replay)
+		{
+			view.vis.imageVis.show = !view.vis.imageVis.show;
+		}
+		else if (device && state.isStreaming)
+		{
+			view.camera->config.imageStreaming.enabled = !view.camera->config.imageStreaming.enabled;
+			updateImageStreaming = true;
+		}
+		RequestUpdates();
+	}
+	ImGui::SetItemTooltip("Toggle image streaming - Shortcut 'H'");
+	ImGui::SameLine();
 
 	// One Dropdown for modes the camera can be in:
 	if (BeginIconDropdown("Mode", darkModeIcons.mode, iconSize(), ImGuiComboFlags_PopupAlignLeft))
@@ -583,6 +599,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			ImGui::Text("%dx%d, %d", size.x(), size.y(), request.jpegQuality);
 
 		SameLineTrailing(ImGui::GetFrameHeight());
+		ImGui::SetNextItemAllowOverlap();
 		if (CrossButton("Discard"))
 		{
 			view.camera->config.imageStreaming.enabled = false;

@@ -105,8 +105,6 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	{
 		auto &segment = state.recording.segments[segmentOffset + i];
 		if (segment.frameCount == 0) continue; // Invalid or missing segment
-		if (recordEntries.tracking[i].empty())
-			recordEntries.tracking[i] = recordEntries.captures[i];
 		auto error = parseTrackingResults(recordEntries.tracking[i], state.stored, segment.frameOffset);
 		if (error && error->code != ENOENT) return error;
 	}
@@ -129,7 +127,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	// Setup replay mode with relevant cameras
 	StartReplay(state, cameras);
 
-	if (!recordEntries.calib.empty())
+	if (!recordEntries.calib.empty() && !append)
 	{ // Overwrite any calibrations
 		std::vector<CameraCalib> cameraCalibs;
 		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);

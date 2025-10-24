@@ -804,13 +804,13 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			CleanVisualisationState();
 			break;
 		case EVT_START_STREAMING:
+			GetUI().recordSections.clear();
+			GetUI().recordSectionStart = -1;
 			break;
 		case EVT_STOP_STREAMING:
 			// TODO: Might need UI drawing lock, not in UI thread right now
 			GetUI().visState.tracking.targets.clear();
 			GetUI().visState.tracking.focusedTrackerID = 0;
-			GetUI().recordSections.clear();
-			GetUI().recordSectionStart = -1;
 			break;
 		case EVT_UPDATE_CAMERAS:
 			GetUI().cameraListDirty = true;
@@ -998,7 +998,7 @@ void InterfaceState::StyleSizingAsterDark(ImGuiStyle *dst)
 	style.FramePadding					= ImVec2(8,4);	 	// Padding within a framed rectangle (used by most widgets)
 	style.FrameRounding					= 2.0f;					// Radius of frame corners rounding. Set to 0.0f to have rectangular frames (used by most widgets).
 	//style.FrameBorderSize				= 0.0f;					// Thickness of border around frames. Generally set to 0.0f or 1.0f. Other values not well tested.
-	style.ItemSpacing					= ImVec2(8,6);	 	// Horizontal and vertical spacing between widgets/lines
+	style.ItemSpacing					= ImVec2(6,6);	 	// Horizontal and vertical spacing between widgets/lines
 	style.ItemInnerSpacing				= ImVec2(6,6);	 	// Horizontal and vertical spacing between within elements of a composed widget (e.g. a slider and its label)
 	style.CellPadding					= ImVec2(4,4);	 	// Padding within a table cell. Cellpadding.x is locked for entire table. CellPadding.y may be altered between different rows.
 	//style.TouchExtraPadding				= ImVec2(0,0);	 	// Expand reactive bounding box for touch-based system where touch position is not accurate enough. Unfortunately we don't sort widgets so priority on overlap will always be given to the first widget. So don't grow this too much!

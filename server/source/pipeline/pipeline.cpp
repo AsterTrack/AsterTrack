@@ -341,7 +341,7 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 	}
 	if (data.points.totalSamples == 0)
 		return;
-	pipeline.pointCalib.state.errors = updateCameraErrorMaps(data, calibs, errorMaps, errors);
+	pipeline.pointCalib.state->errors = updateCameraErrorMaps(data, calibs, errorMaps, errors);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (!errorMaps[c]) continue;
@@ -354,6 +354,8 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 
 void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps, bool logging)
 {
+	if (!pipeline.pointCalib.state) return;
+
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
 
 	ObsData data;
@@ -372,10 +374,10 @@ void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps, bool l
 	if (data.points.totalSamples > 0)
 	{
 		ScopedLogLevel scopedLogLevel(logging? LInfo : LDebug);
-		pipeline.pointCalib.state.errors = updateReprojectionErrors(data, calibs);
+		pipeline.pointCalib.state->errors = updateReprojectionErrors(data, calibs);
 	}
 	else
-		pipeline.pointCalib.state.errors = {};
+		pipeline.pointCalib.state->errors = {};
 }
 
 static void CalculateFMStats(FundamentalMatrix &FM, const ObsData &data, const CameraCalib &calibA, const CameraCalib &calibB)

@@ -90,8 +90,8 @@ void InterfaceState::UpdateCalibrationError(bool reset, bool userTrigger)
 {
 	if (reset || userTrigger)
 	{
-		if (reset)
-			GetState().pipeline.pointCalib.state.errors = {};
+		if (reset && GetState().pipeline.pointCalib.state)
+			GetState().pipeline.pointCalib.state->errors = {};
 		calibError.dirty = true;
 		calibError.triggered = true;
 	}

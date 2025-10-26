@@ -36,11 +36,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 	BeginSection("Camera Calibration");
 	{
 		const auto &ptCalib = pipeline.pointCalib;
-		auto errors = ptCalib.state.errors;
 		float PixelFactor = (pipeline.cameras.empty()? 1280 : pipeline.cameras.front()->mode.widthPx)/2.0f; // For external logging, already dynamic
 		ImGui::AlignTextToFramePadding();
-		if (ptCalib.control.thread)
+		if (ptCalib.control && ptCalib.control->running() && ptCalib.state)
 		{
+			auto errors = ptCalib.state->errors;
 			if (ptCalib.settings.typeFlags & 0b001)
 			{
 				ImGui::TextUnformatted("...");
@@ -54,8 +54,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 					errors.num);
 			}
 		}
-		else if (calibState.numUncalibrated == 0 && errors.num > 0)
+		else if (calibState.numUncalibrated == 0 && ptCalib.state && ptCalib.state->errors.num > 0)
 		{
+			auto errors = ptCalib.state->errors;
 			if (std::isnan(errors.mean) || std::isinf(errors.mean) || errors.mean > 10.0f)
 			{
 				ImGui::TextUnformatted("Unable to check calibration errors!");
@@ -639,7 +640,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	{
 		ptCalib.settings.typeFlags = typeFlags;
 		if (typeFlags & 0b010)
-			ptCalib.settings.maxSteps = ptCalib.state.numSteps + 10;
+			ptCalib.settings.maxSteps = ptCalib.state->numSteps + 10;
 		ptCalib.planned = true;
 		// Forgetting to do this is annoying as existing recorded data might get poisoned
 		// In replay, a replays end means no more data, but a Restart might require this to be kept on
@@ -647,12 +648,12 @@ void InterfaceState::UpdatePipelinePointCalib()
 			pipeline.recordSequences = false;
 	};
 
-	ImGui::BeginDisabled(ptCalib.control.stopping());
-	if (ptCalib.control.running())
+	ImGui::BeginDisabled(ptCalib.control && ptCalib.control->stopping());
+	if (ptCalib.control && ptCalib.control->running())
 	{
-		if (ImGui::Button(ptCalib.control.stopping()? "Stopping..." : "Stop", ButtonSize))
+		if (ImGui::Button(ptCalib.control->stopping()? "Stopping..." : "Stop", ButtonSize))
 		{
-			ptCalib.control.stop_source.request_stop();
+			ptCalib.control->stop_source.request_stop();
 		}
 		ImGui::SameLine();
 		if (ptCalib.settings.typeFlags & 0b001)
@@ -661,7 +662,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 		}
 		else if (ptCalib.settings.typeFlags & 0b010)
 		{
-			ImGui::Text("Optimising %d/%d...", ptCalib.state.numSteps, ptCalib.settings.maxSteps);
+			ImGui::Text("Optimising %d/%d...", ptCalib.state->numSteps, ptCalib.settings.maxSteps);
 		}
 	}
 	else
@@ -744,7 +745,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 	ImGui::EndDisabled();
 
-	ImGui::BeginDisabled(ptCalib.control.running());
+	ImGui::BeginDisabled(ptCalib.control && ptCalib.control->running());
 	if (ImGui::TreeNode("Optimisation Options"))
 	{
 		auto &opt = ptCalib.settings.options;
@@ -854,7 +855,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 
 	auto roomCalib = ptCalib.room.contextualLock();
-	ImGui::BeginDisabled(ptCalib.control.running() || calibState.numUncalibrated || calibState.relUncertain);
+	ImGui::BeginDisabled(ptCalib.control || calibState.numUncalibrated || calibState.relUncertain);
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::Text("%d floor points", (int)roomCalib->floorPoints.size());

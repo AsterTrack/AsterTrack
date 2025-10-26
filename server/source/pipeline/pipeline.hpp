@@ -173,25 +173,26 @@ struct PipelineState
 		std::vector<StaticPointSamples<double>> floorPoints;
 		float distance12 = 1.0f; // In m
 	};
+	struct PointCalibState
+	{
+		int numSteps = 0;
+		OptErrorRes errors = {};
+		int lastStopCode;
+		bool complete = false;
+	};
 	struct
 	{
 		PointCalibParameters params;
 		// Calibration State (both reconstruction and optimisation)
 		bool planned;
-		ThreadControl control;
+		std::shared_ptr<ThreadControl> control;
 		struct
 		{
 			int typeFlags;
 			OptimisationOptions options = OptimisationOptions(true, true, false, false);
 			int maxSteps = 20;
 		} settings = {};
-		struct
-		{
-			int numSteps = 0;
-			OptErrorRes errors = {};
-			int lastStopCode;
-			bool complete = false;
-		} state = {};
+		std::shared_ptr<PointCalibState> state;
 		// Room parameters
 		Synchronised<RoomCalib> room;
 		struct
@@ -206,6 +207,13 @@ struct PipelineState
 	} pointCalib = {};
 
 	// Target calibration state
+	struct TargetAssemblyState
+	{
+		std::string currentStage;
+		bool optimising = false;
+		int numSteps = 0, maxSteps = 0;
+		OptErrorRes errors = {}; // Errors after last proper oprimisation
+	};
 	struct
 	{
 		TargetCalibParameters params;
@@ -218,7 +226,7 @@ struct PipelineState
 		struct
 		{
 			bool planned;
-			ThreadControl control;
+			std::shared_ptr<ThreadControl> control;
 			struct
 			{
 				bool followAlgorithm = true;
@@ -227,13 +235,7 @@ struct PipelineState
 				int maxSteps;
 				float tolerances;
 			} settings = {};
-			struct
-			{
-				std::string currentStage;
-				bool optimising = false;
-				int numSteps = 0, maxSteps = 0;
-				OptErrorRes errors = {}; // Errors after last proper oprimisation
-			} state = {};
+			std::shared_ptr<TargetAssemblyState> state;
 		} assembly = {};
 		Synchronised<std::vector<std::shared_ptr<TargetAssemblyStage>>> assemblyStages;
 	} targetCalib = {};

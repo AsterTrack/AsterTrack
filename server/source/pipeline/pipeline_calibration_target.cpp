@@ -37,10 +37,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "unsupported/Eigen/NonLinearOptimization"
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
 #include <numeric>
 
-static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr);
-static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras);
+static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr);
+static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state);
 
 // ----------------------------------------------------------------------------
 // Target Calibration
@@ -49,24 +52,19 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 void ResetTargetCalibration(PipelineState &pipeline)
 {
 	// Request all calibration threads to stop if they are still running
-	pipeline.targetCalib.assembly.control.stop_source.request_stop();
+	if (pipeline.targetCalib.assembly.control)
+		pipeline.targetCalib.assembly.control->stop_source.request_stop();
 	for (auto &view : *pipeline.targetCalib.views.contextualRLock())
 		view->control.stop_source.request_stop();
-	// Wait for threads to stop - not entirely necessary, but else threads will never be deleted
-	pipeline.targetCalib.assembly.control.stop();
-	// Destructor of views will join and thus block
-	// TODO: Make thread stopping async to prevent UI blocking while waiting for an optimisation to finish
-	// Threads should already be instructed to not write, but need to make extra sure if it will be async
-	// since then pipeline might already be used again if a thread took long to finish
-	// which they do rn as optimisation step cannot be interrupted
-	// Same applies to point calibration of course
+	// Asynchronously wait for assembly and view threads
+	threadPool.push([](int, std::shared_ptr<ThreadControl> &control, std::vector<std::shared_ptr<TargetView>> &views)
+	{ /* Destructor */ }, std::move(pipeline.targetCalib.assembly.control), std::move(*pipeline.targetCalib.views.contextualLock()));
 
 	// Clean the rest
 	pipeline.targetCalib.assembly.planned = false;
 	pipeline.targetCalib.assembly.settings = {};
 	pipeline.targetCalib.assembly.state = {};
 	pipeline.targetCalib.assemblyStages.contextualLock()->clear();
-	pipeline.targetCalib.views.contextualLock()->clear();
 	pipeline.targetCalib.aquisition.contextualLock()->reset();
 }
 
@@ -93,25 +91,31 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 		{
 			view->planned = false;
 			view->control.init();
-			view->control.thread = new std::thread(ThreadCalibrationTargetView, view->control.stop_source.get_token(), &pipeline, cameras, view);
+			view->control.thread = new std::thread(ThreadCalibrationTargetView, &pipeline, cameras, view);
 			SignalPipelineUpdate();
 		}
 	}
 
 	{
-		if (tgtCalib.assembly.control.running())
+		if (tgtCalib.assembly.control)
 		{
-			if (tgtCalib.assembly.control.finished)
+			if (!tgtCalib.assembly.control->running())
+				tgtCalib.assembly.control = nullptr;
+			else if (tgtCalib.assembly.control->finished)
 			{
-				tgtCalib.assembly.control.stop();
+				tgtCalib.assembly.control->stop();
+				tgtCalib.assembly.control = nullptr;
+				tgtCalib.assembly.state = nullptr;
 				SignalPipelineUpdate();
 			}
 		}
 		else if (tgtCalib.assembly.planned)
 		{
 			tgtCalib.assembly.planned = false;
-			tgtCalib.assembly.control.init();
-			tgtCalib.assembly.control.thread = new std::thread(ThreadCalibrationTarget, tgtCalib.assembly.control.stop_source.get_token(), &pipeline, cameras);
+			tgtCalib.assembly.state = std::make_shared<PipelineState::TargetAssemblyState>();
+			tgtCalib.assembly.control = std::make_shared<ThreadControl>();
+			tgtCalib.assembly.control->init();
+			tgtCalib.assembly.control->thread = new std::thread(ThreadCalibrationTarget, &pipeline, cameras, tgtCalib.assembly.control, tgtCalib.assembly.state);
 			SignalPipelineUpdate();
 		}
 	}
@@ -234,8 +238,9 @@ static void normaliseTarget(const PipelineState &pipeline, ObsTarget &target, Ob
 	}
 };
 
-static void ThreadCalibrationTargetView(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr)
+static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr)
 {
+	std::stop_token stopToken = viewPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { viewPtr->control.finished = true; });
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
@@ -910,9 +915,10 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 	return targetViews[bestBase]; // new shared_ptr
 }
 
-static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pipeline, std::vector<CameraPipeline*> cameras)
+static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state)
 {
-	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { pipeline->targetCalib.assembly.control.finished = true; });
+	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
+	std::stop_token stopToken = control->stop_source.get_token();
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
 	ScopedLogContext scopedLogContext(rand()); // Need something visible in the UI
@@ -972,7 +978,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 		return *stages_lock->back();
 	};
 
-	auto performAssemblyStage = [&pipeline, &assembly, &calibs, &observations, &stopToken, &recordAssemblyStage]
+	auto performAssemblyStage = [&pipeline, &state, &calibs, &observations, &stopToken, &recordAssemblyStage]
 		(TargetAssemblyBase &base, TargetAssemblyStageID stage, int step, TargetAssemblyParameters params, TargetAquisitionParameters aquisition)
 	{
 		switch (stage)
@@ -980,27 +986,27 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			case STAGE_OPTIMISATION:
 			{
 				//if (getTargetErrorDist(calibs, base.optTarget).rmse > base.errors.rmse * params.optThresh)
-				assembly.state.currentStage = "Optimising";
-				assembly.state.optimising = true;
-				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt;
+				state->currentStage = "Optimising";
+				state->optimising = true;
+				state->maxSteps = state->numSteps+params.optMaxIt;
 				LOGC(LInfo, "  Optimising current target:");
 				ScopedLogLevel scopedLogLevel(LInfo);
 				OptimisationOptions options(false, false, false, true, false);
 				auto itUpdate = [&](OptErrorRes errors){
-					assembly.state.errors = errors;
-					assembly.state.numSteps++;
+					state->errors = errors;
+					state->numSteps++;
 				};
 				base.errors = optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
-				assembly.state.errors = base.errors;
-				assembly.state.optimising = false;
+				state->errors = base.errors;
+				state->optimising = false;
 				recordAssemblyStage(base, stage, step, "Optimised");
 				break;
 			}
 
 			case STAGE_INT_ALIGN:
 			{
-				assembly.state.currentStage = "Aligning views";
+				state->currentStage = "Aligning views";
 				std::vector<TargetAlignResults> alignCandidates;
 				realignTargetViewsToBase(base, *pipeline->targetCalib.views.contextualLock(), calibs, params, alignCandidates);
 				bool empty = alignCandidates.empty();
@@ -1011,7 +1017,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 			case STAGE_INT_VIEW:
 			{
-				assembly.state.currentStage = "Merging views";
+				state->currentStage = "Merging views";
 
 				// For debugging purposes
 				TargetAssemblyBase preMergeBase = base;
@@ -1046,7 +1052,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 			case STAGE_INT_FRAMES:
 			{
-				assembly.state.currentStage = "Integrating all frames";
+				state->currentStage = "Integrating all frames";
 
 				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
@@ -1092,18 +1098,18 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 				// Optimise frame poses and markers, but only allow removing outliers later (after reevaluateMarkerSequences)
 				if (stopToken.stop_requested()) break;
-				auto itUpdate = [&](OptErrorRes errors){ assembly.state.numSteps++; };
-				assembly.state.optimising = true;
-				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt/2;
+				auto itUpdate = [&](OptErrorRes errors){ state->numSteps++; };
+				state->optimising = true;
+				state->maxSteps = state->numSteps+params.optMaxIt/2;
 				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt/2, params.optTolerance, { 1000 }, stopToken, itUpdate);
-				assembly.state.optimising = false;
+				state->optimising = false;
 				if (stopToken.stop_requested()) break;
-				assembly.state.optimising = true;
-				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt;
+				state->optimising = true;
+				state->maxSteps = state->numSteps+params.optMaxIt;
 				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmas, stopToken, itUpdate);
-				assembly.state.optimising = false;
+				state->optimising = false;
 				if (stopToken.stop_requested()) break;
 
 				LOGC(LInfo, "  After optimising, now %d samples, optimised to reprojection RMSE of %fpx!",
@@ -1115,7 +1121,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 			case STAGE_INT_MARKERS:
 			{
-				assembly.state.currentStage = "Adopting new markers";
+				state->currentStage = "Adopting new markers";
 
 				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
@@ -1146,12 +1152,12 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 				// Optimise markers
 				if (stopToken.stop_requested()) break;
-				auto itUpdate = [&](OptErrorRes errors){ assembly.state.numSteps++; };
-				assembly.state.optimising = true;
-				assembly.state.maxSteps = assembly.state.numSteps+params.optMaxIt/2;
+				auto itUpdate = [&](OptErrorRes errors){ state->numSteps++; };
+				state->optimising = true;
+				state->maxSteps = state->numSteps+params.optMaxIt/2;
 				optimiseTargetDataLoop(base.target, calibs, pipeline->record.frames, observations, params.subsampling, aquisition,
 					options, params.optMaxIt, params.optTolerance, params.outlierSigmasConservative, stopToken, itUpdate);
-				assembly.state.optimising = false;
+				state->optimising = false;
 				if (stopToken.stop_requested()) break;
 
 				LOGC(LInfo, "  After adding all markers, now %d, optimised to reprojection RMSE of %fpx!",
@@ -1171,7 +1177,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 			case STAGE_REEVALUATE_MARKERS:
 			{
-				assembly.state.currentStage = "Reevaluating marker sequences";
+				state->currentStage = "Reevaluating marker sequences";
 
 				// Add more data of existing markers in new frames, and merge markers
 				determineTargetOutliers(calibs, base.target, SigmaToErrors(params.outlierSigmas, base.errors), aquisition);
@@ -1190,7 +1196,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 
 			case STAGE_EXPAND_FRAMES:
 			{
-				assembly.state.currentStage = "Expanding frames";
+				state->currentStage = "Expanding frames";
 
 				expandFrameObservations(calibs, pipeline->record.frames, base.target, base.targetCalib, params.trackFrame);
 				ReevaluateSequenceParameters reevalParams = params.reevaluation;
@@ -1279,7 +1285,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 	{
 		if (stopToken.stop_requested()) break;
 
-		if (skipStep < 1 && base.errors.rmse > assembly.state.errors.rmse * params.optThresh)
+		if (skipStep < 1 && base.errors.rmse > state->errors.rmse * params.optThresh)
 		{
 			performAssemblyStage(base, STAGE_OPTIMISATION, 1, params, aquisition);
 			if (stopToken.stop_requested()) break;
@@ -1314,7 +1320,7 @@ static void ThreadCalibrationTarget(std::stop_token stopToken, PipelineState *pi
 			if (stopToken.stop_requested()) break;
 		}
 
-		if (skipStep < 7 && base.errors.rmse > assembly.state.errors.rmse * params.optThresh)
+		if (skipStep < 7 && base.errors.rmse > state->errors.rmse * params.optThresh)
 		{
 			performAssemblyStage(base, STAGE_OPTIMISATION, 7, params, aquisition);
 			if (stopToken.stop_requested()) break;

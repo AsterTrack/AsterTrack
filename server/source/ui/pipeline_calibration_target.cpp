@@ -135,18 +135,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 		if (ImGui::Button("Clear##Observations", SizeWidthDiv3()))
 		{
-			// Request all calibration threads to stop if they are still running
-			pipeline.targetCalib.assembly.control.stop_source.request_stop();
-			for (auto &view : *pipeline.targetCalib.views.contextualRLock())
-				view->control.stop_source.request_stop();
-			// Wait for threads to stop - not entirely necessary, but else threads will never be deleted
-			pipeline.targetCalib.assembly.control.stop();
-			// Destructor of views will join and thus block
-			// TODO: Make that async somehow? Can't have UI blocking for an optimisation to finish
-
-			// Clean up the rest
-			pipeline.targetCalib.views.contextualLock()->clear();
-			pipeline.targetCalib.assemblyStages.contextualLock()->clear();
+			ResetTargetCalibration(pipeline);
 			
 			// Clean up UI state
 			targetViewsSorted.clear();
@@ -564,24 +553,26 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::TextUnformatted("Record good views of the target to be calibrated");
 		}
 
-		if (assembly.control.running())
+		if (assembly.control && assembly.state)
 		{ // Assembly thread status + controls
-			ImGui::BeginDisabled(assembly.control.stopping());
-			if (ImGui::Button(assembly.control.stopping()? "Stopping...##Stop" : "Stop##Stop", ButtonSize))
+			auto state = assembly.state;
+			assert(state);
+			ImGui::BeginDisabled(assembly.control->stopping());
+			if (ImGui::Button(assembly.control->stopping()? "Stopping...##Stop" : "Stop##Stop", ButtonSize))
 			{
-				assembly.control.stop_source.request_stop();
+				assembly.control->stop_source.request_stop();
 			}
 			ImGui::SameLine();
 			if (assemblyProgress > 0) // No stage yet - still selecting base view
 				ImGui::TextUnformatted("Assembling - selecting base view...");
-			else if (assembly.state.optimising)
-				ImGui::Text("%s %d/%d...", assembly.state.currentStage.c_str(), assembly.state.numSteps, assembly.state.maxSteps);
+			else if (state->optimising)
+				ImGui::Text("%s %d/%d...", state->currentStage.c_str(), state->numSteps, state->maxSteps);
 			else
-				ImGui::Text("%s...", assembly.state.currentStage.c_str());
+				ImGui::Text("%s...", state->currentStage.c_str());
 			ImGui::EndDisabled();
 		}
 
-		if (visState.targetCalib.edit && !assembly.control.running())
+		if (visState.targetCalib.edit && !assembly.control)
 		{ // Direct editing tools
 			auto &editTarget = visState.targetCalib.edit;
 			auto &selection = visState.target.markerSelect;
@@ -768,13 +759,13 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 		}
 		
-		if (!visState.targetCalib.edit && !assembly.control.running())
+		if (!visState.targetCalib.edit && !assembly.control)
 		{ // Main assembly directives and tools
 
 			ImGui::BeginDisabled(assemblyProgress > 1);
 			if (ImGui::Button("Auto-Assembly", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				if (targetDiscardAfterStage >= 0 && targetDiscardAfterStage < stages_lock->size())
 					stages_lock->resize(targetDiscardAfterStage);
@@ -790,7 +781,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Optimise", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				assembly.settings = {};
 				assembly.settings.followAlgorithm = false;
 				assembly.settings.instructions = { STAGE_OPTIMISATION };
@@ -802,7 +793,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Reevaluate Markers", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				assembly.settings = {};
 				assembly.settings.followAlgorithm = false;
 				assembly.settings.instructions = { STAGE_REEVALUATE_MARKERS };
@@ -818,7 +809,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Expand Frames", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				assembly.settings = {};
 				assembly.settings.followAlgorithm = false;
 				assembly.settings.instructions = { STAGE_EXPAND_FRAMES };
@@ -831,7 +822,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Subsample Data", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				TargetAssemblyBase base = stages_lock->back()->base;
 				auto obs_lock = pipeline.seqDatabase.contextualRLock();
@@ -846,7 +837,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Determine Outliers", SizeWidthDiv2()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				auto calibs = pipeline.getCalibs();
 				TargetAssemblyBase base = stages_lock->back()->base;
@@ -860,7 +851,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Manually Edit Target", SizeWidthFull()))
 			{
-				assert(!assembly.planned && !assembly.control.running());
+				assert(!assembly.planned && !assembly.control);
 				visState.resetVisTarget();
 				visState.targetCalib.edit = std::make_shared<TargetAssemblyBase>(pipeline.targetCalib.assemblyStages.contextualRLock()->back()->base);
 				visState.updateVisTarget();
@@ -870,7 +861,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::EndDisabled();
 		}
 
-		if (!visState.targetCalib.edit && !assembly.control.running())
+		if (!visState.targetCalib.edit && !assembly.control)
 		{ // Assembly stages input
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("Stages");
@@ -1014,7 +1005,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::Text("%s", stage.label.c_str());
 			ImGui::SetItemTooltip("Step ID %d", stage.step);
 			ImGui::TableNextColumn();
-			ImGui::BeginDisabled(pipeline.targetCalib.assembly.control.running());
+			ImGui::BeginDisabled(pipeline.targetCalib.assembly.control && pipeline.targetCalib.assembly.control->running());
 			if (ImGui::ArrowButton("Update", ImGuiDir_Down))
 			{ // Discard this stages when updating
 				if (targetDiscardAfterStage == i+1)

@@ -46,7 +46,7 @@ SOFTWARE.
  */
 struct ThreadControl
 {
-	std::thread *thread;
+	std::thread *thread = nullptr;
 	std::stop_source stop_source;
 	std::atomic<bool> finished;
 

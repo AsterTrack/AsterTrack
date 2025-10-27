@@ -330,6 +330,12 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		writeTargetParameters<ScalarInternal>(tgt, options, norm, calibParams.segment(paramIdx, paramLen));
 		tgtIdx++;
 	}
+	if (calibParams.hasNaN())
+	{
+		LOGC(LError, "Written parameters contain NAN!\n");
+		writeCameraParameters<ScalarInternal>(camerasInternal, options, calibParams);
+		return Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
+	}
 
 	auto readFromParameters = [&]()
 	{

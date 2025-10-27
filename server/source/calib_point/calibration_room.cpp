@@ -397,7 +397,10 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 			if (calibsTgt[cc].invalid()) continue;
 			float distSrc = (calibsSrc[c].transform.translation() - calibsSrc[cc].transform.translation()).norm();
 			float distTgt = (calibsTgt[c].transform.translation() - calibsTgt[cc].transform.translation()).norm();
-			scaleGuesses.push_back(Eigen::Vector<Scalar,1>(distSrc/distTgt));
+			float scale = distSrc/distTgt;
+			if (std::isnan(scale) || std::isinf(scale) || scale < 0.001f || scale > 10000.0f)
+				continue;
+			scaleGuesses.push_back(Eigen::Vector<Scalar,1>(scale));
 		}
 	}
 	if (scaleGuesses.empty())
@@ -433,8 +436,6 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 		for (int i : scaleGroups[g])
 			scale += scaleGuesses[i](0);
 		scale /= scaleGroups[g].size();
-		if (scale < 0.001f || scale > 10000.0f)
-			continue;
 
 		LOGCL("Testing room calib scale guess %.2f supported by %d relations",
 			scale, (int)scaleGroups[g].size());

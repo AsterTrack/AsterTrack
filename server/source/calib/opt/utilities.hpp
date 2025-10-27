@@ -59,31 +59,33 @@ static inline std::pair<Vector3<Scalar>, Scalar> setCameraNorms(std::vector<Came
 {
 	Vector3<Scalar> origin = Vector3<Scalar>::Zero();
 	Scalar scale = 1;
-    if (!opt.normalisePos)
-        return { origin, scale };
+	if (!opt.normalisePos)
+		return { origin, scale };
 
-    for (int c = 0; c < cameras.size(); c++)
-        origin += cameras[c].transform.translation();
-    origin /= cameras.size();
+	for (int c = 0; c < cameras.size(); c++)
+		origin += cameras[c].transform.translation();
+	origin /= cameras.size();
 
-    if (opt.normaliseScale)
+	if (opt.normaliseScale)
 	{
-        scale = 0;
-        for (int c = 0; c < cameras.size(); c++)
-        {
-            cameras[c].transform.translation() -= origin;
-            scale += (cameras[c].transform.translation()).norm();
-        }
-        scale /= (Scalar)cameras.size();
-        Scalar factor = fixScale / scale;
-        for (int c = 0; c < cameras.size(); c++)
-            cameras[c].transform.translation() = cameras[c].transform.translation() * factor + fixOrigin;
-    }
-    else
-    {
-    	for (int c = 0; c < cameras.size(); c++)
-	    	cameras[c].transform.translation() += fixOrigin-origin;
-    }
+		scale = 0;
+		for (int c = 0; c < cameras.size(); c++)
+		{
+			cameras[c].transform.translation() -= origin;
+			scale += (cameras[c].transform.translation()).norm();
+		}
+		scale /= (Scalar)cameras.size();
+		if (scale < 0.000000001f)
+			return { origin, 1.0f };
+		Scalar factor = fixScale / scale;
+		for (int c = 0; c < cameras.size(); c++)
+			cameras[c].transform.translation() = cameras[c].transform.translation() * factor + fixOrigin;
+	}
+	else
+	{
+		for (int c = 0; c < cameras.size(); c++)
+			cameras[c].transform.translation() += fixOrigin-origin;
+	}
 
 	for (int c = 0; c < cameras.size(); c++)
 		cameras[c].UpdateDerived();
@@ -208,9 +210,9 @@ static inline void writeCameraParameters(const std::vector<CameraCalib_t<Scalar>
 			if (opt.radialOrder >= 3)
 				calibParams(i++) += cameras[c].distortion.k3;
 		}
-		for (int i = 0; i < numShared; i++)
+		for (auto &lens : lenses)
 			for (int j = 0; j < opt.radialOrder; j++)
-				calibParams(i*opt.radialOrder+j) /= lenses[i].second;
+				calibParams(lens.second.first*opt.radialOrder+j) /= lens.second.second;
 	}
 
 	int index = numShared * opt.radialOrder;

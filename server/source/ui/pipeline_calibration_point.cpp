@@ -139,7 +139,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 				ImGui::OpenPopup("SaveNoRoomCalib");
 			}
 			auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-			if (error) GetState().errors.push(error.value());
+			if (error) SignalErrorToUser(error.value());
 			else state.cameraCalibsDirty = false;
 		}
 		if (ImGui::BeginPopup("SaveNoRoomCalib"))
@@ -157,7 +157,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 		if (ImGui::Button("Load##Calibration", ButtonSize))
 		{
 			auto error = parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-			if (error) GetState().errors.push(error.value());
+			if (error) SignalErrorToUser(error.value());
 			else
 			{
 				state.cameraCalibsDirty = false;
@@ -445,14 +445,14 @@ void InterfaceState::UpdatePipelineCalibSection()
 			if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
 			{
 				auto error = storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				if (error) GetState().errors.push(error.value());
+				if (error) SignalErrorToUser(error.value());
 				else state.lensPresetsDirty = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
 			{
 				auto error = parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				if (error) GetState().errors.push(error.value());
+				if (error) SignalErrorToUser(error.value());
 				else state.lensPresetsDirty = false;
 			}
 			ImGui::TreePop();
@@ -498,7 +498,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 			cameraIDs.push_back(cam->id);
 		// Write to path
 		auto error = dumpSequenceDatabase(obsPath, *pipeline.seqDatabase.contextualRLock(), cameraIDs);
-		if (error) GetState().errors.push(error.value());
+		if (error) SignalErrorToUser(error.value());
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Load", ButtonSize))
@@ -513,7 +513,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 			SequenceData observations;
 			auto error = parseSequenceDatabase(obsPath, cameraIDs, observations);
 			if (error)
-				GetState().errors.push(error.value());
+				SignalErrorToUser(error.value());
 			else
 			{
 				bool valid = cameraIDs.size() == pipeline.cameras.size();
@@ -555,7 +555,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 				{
 					LOG(LGUI, LDebug, "== Loaded calibration samples from '%s'!", obsPath.c_str());
 					if (observations.markers.empty())
-						GetState().errors.push("Failed to load any samples from file!");
+						SignalErrorToUser("Failed to load any samples from file!");
 					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), observations);
 					*pipeline.seqDatabase.contextualLock() = std::move(observations);
 					UpdateSequences(true);
@@ -563,11 +563,11 @@ void InterfaceState::UpdatePipelineObservationSection()
 				else
 				{
 					LOG(LGUI, LWarn, "== Calibration samples in '%s' did not match the currently available cameras!", obsPath.c_str());
-					GetState().errors.push("Last saved observations had mismatching cameras!");
+					SignalErrorToUser("Last saved observations had mismatching cameras!");
 				}
 			}
 		}
-		else GetState().errors.push("No observations file to load!");
+		else SignalErrorToUser("No observations file to load!");
 	}
 
 	if (state.mode == MODE_Replay && ImGui::TreeNode("Compare observations"))

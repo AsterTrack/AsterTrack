@@ -194,7 +194,7 @@ void InterfaceState::UpdateMainMenuBar()
 				threadPool.push([](int, Recording entry, bool append)
 				{
 					auto error = loadRecording(GetState(), std::move(entry), append);
-					if (error) GetState().errors.push(error.value());
+					if (error) SignalErrorToUser(error.value());
 					GetState().isLoading = false;
 				}, entry, append);
 			}

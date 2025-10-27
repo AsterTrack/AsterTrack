@@ -51,7 +51,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 	{
 		auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-		if (error) GetState().errors.push(error.value());
+		if (error) SignalErrorToUser(error.value());
 		else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 	}
 	if ((state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty) && ImGui::BeginItemTooltip())
@@ -283,7 +283,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
 			auto error = writeTargetObjFile(tgtPath, TargetCalibration3D(tracker.calib));
-			if (error) GetState().errors.push(error.value());
+			if (error) SignalErrorToUser(error.value());
 		}
 
 		EndSection();

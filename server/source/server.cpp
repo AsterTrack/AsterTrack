@@ -75,7 +75,7 @@ bool ServerInit(ServerState &state)
 	auto handleConfigError = [](const std::optional<ErrorMessage> &&error, bool missingOK)
 	{
 		if (error && (!missingOK || error->code != ENOENT))
-			GetState().errors.push(error.value());
+			SignalErrorToUser(error.value());
 	};
 
 	// Read configurations
@@ -255,6 +255,7 @@ void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
 
 void SignalErrorToUser(ErrorMessage error)
 {
+	LOG(LGUI, LWarn, "Error: %s", error.c_str());
 	GetState().errors.push(std::move(error));	
 }
 

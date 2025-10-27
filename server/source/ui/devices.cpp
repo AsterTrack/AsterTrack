@@ -433,8 +433,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			{
 				if (!NFD_Init())
 				{ // Thread-specific init
-					LOG(LGUI, LError, "Failed to initialise File Picker: %s", NFD_GetError());
-					GetState().errors.push(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
+					SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
 					return;
 				}
 
@@ -462,8 +461,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				}
 				else if (result == NFD_ERROR)
 				{
-					LOG(LGUI, LError, "Failed to use File Picker: %s", NFD_GetError());
-					GetState().errors.push(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+					SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 				}
 
 				NFD_Quit();
@@ -510,8 +508,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			{
 				if (!NFD_Init())
 				{ // Thread-specific init
-					LOG(LGUI, LError, "Failed to initialise File Picker: %s", NFD_GetError());
-					GetState().errors.push(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
+					SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
 					return;
 				}
 
@@ -538,8 +535,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				}
 				else if (result == NFD_ERROR)
 				{
-					LOG(LGUI, LError, "Failed to use File Picker: %s", NFD_GetError());
-					GetState().errors.push(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+					SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 				}
 
 				NFD_Quit();

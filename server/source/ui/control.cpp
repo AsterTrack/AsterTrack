@@ -318,7 +318,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							}
 							// Write to path
 							auto error = dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
-							if (error) GetState().errors.push(error.value());
+							if (error) SignalErrorToUser(error.value());
 							else error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
 							for (auto &s : GetUI().recordSections)
 							{

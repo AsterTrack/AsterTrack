@@ -212,8 +212,8 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	auto error = reconstructGeometry(pointData.points, calibs, params.reconstruction);
 	if (error)
 	{
-		SignalErrorToUser(error.value());
 		LOGC(LInfo, "== Failed to properly reconstruct geometry!\n");
+		SignalErrorToUser(error.value());
 	}
 	else LOGC(LInfo, "== Finished Reconstructing Calibration!\n");
 	
@@ -470,10 +470,10 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 	LOGC(LDebug, "=======================\n");
 }
 
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool hasRoomCalib)
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib)
 {
-	if (!hasRoomCalib)
-	{
+	if (!isLoadOrRoomCalib)
+	{ // Loaded calibs and new room calibration do not need old room calibration transferred
 		ScopedLogLevel scopedLogLevel(LDebug);
 
 		std::vector<CameraCalib> roomCalib(calibs.size());
@@ -534,14 +534,14 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		}
 		// Make sure index is correct
 		cam->calib.index = cam->index;
-		if (hasRoomCalib)
+		if (isLoadOrRoomCalib)
 			cam->calibRoom = cam->calib;
 	}
-	if (lensesChanged)
+	if (lensesChanged && !isLoadOrRoomCalib)
 	{ // TODO: User edited lenses while calibration process was ongoing, may result in unintended behaviour
 		// We CAN adopt the ID for the next calibration, but we may have overwritten the distortion parameters loaded from a preset
 		// Least we can do is warn user
-		SignalErrorToUser("Lense assignments have been edited while calibration was underway.\n"
+		SignalErrorToUser("Lens assignments have been edited while calibration was underway.\n"
 			"If you loaded a preset, the distortion parameters have been overwritten by the calibration process.\n"
 			"If you intended to pre-load the distortion parameters, you may have to re-load the lens preset.");
 

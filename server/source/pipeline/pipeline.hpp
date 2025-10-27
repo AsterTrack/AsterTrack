@@ -318,7 +318,7 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
  * Optionally copies an existing room calibration from current camera calibrations into the given new calibrations (updating them in the process).
  * This will try to identify at least two cameras that have not changed between the current calibration and this one.
  */
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool hasRoomCalib = false);
+void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib = false);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations

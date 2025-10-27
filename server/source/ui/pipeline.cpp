@@ -462,14 +462,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (SaveButton("Save Cameras", SizeWidthDiv3(), state.cameraCalibsDirty))
 			{
 				auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
-				if (error) GetState().errors.push(error.value());
+				if (error) SignalErrorToUser(error.value());
 				else state.cameraCalibsDirty = false;
 			}
 			ImGui::SameLine();
 			if (SaveButton("Save Targets", SizeWidthDiv3(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 			{
 				auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-				if (error) GetState().errors.push(error.value());
+				if (error) SignalErrorToUser(error.value());
 				else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
 			}
 			ImGui::SameLine();
@@ -498,7 +498,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						state.recording.tracking[i] = state.recording.captures[i];
 					auto error = dumpTrackingResults(state.recording.tracking[i], pipeline.record,
 						segment.frameStart, segment.frameStart+segment.frameCount, segment.frameOffset);
-					if (error) GetState().errors.push(error.value());
+					if (error) SignalErrorToUser(error.value());
 				}
 			}
 			ImGui::SameLine();
@@ -512,7 +512,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (state.recording.tracking[i].empty())
 						state.recording.tracking[i] = state.recording.captures[i];
 					auto error = parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
-					if (error) GetState().errors.push(error.value());
+					if (error) SignalErrorToUser(error.value());
 				}
 			}
 			ImGui::SameLine();

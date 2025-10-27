@@ -625,19 +625,15 @@ bool InterfaceState::Init()
 		ICON_LOAD(no_ssh)
 
 		if (iconLoadFailures > 0)
-			GetState().errors.push(asprintf_s("Failed to load %d icons - check Logging view!", iconLoadFailures));
+			SignalErrorToUser(asprintf_s("Failed to load %d icons - check Logging view!", iconLoadFailures));
 	}
 	else if (std::filesystem::exists("../resources/"))
 	{
-		printf("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n");
-		LOG(LDefault, LError, "'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
-		GetState().errors.push("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
+		SignalErrorToUser("'resources' folder not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!");
 	}
 	else
 	{
-		printf("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!\n");
-		LOG(LDefault, LError, "'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
-		GetState().errors.push("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
+		SignalErrorToUser("'resources' folder not found in working directory! Make sure to run AsterTrack in the program root directory!");
 	}
 
 

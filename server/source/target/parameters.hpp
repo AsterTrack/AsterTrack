@@ -197,6 +197,11 @@ struct TargetTrackingParameters
 	// Marker Matching
 	float expandMarkerFoV = 0.0f;
 	float normaliseDistance = 5.0f;
+	// Selecting whether to go down slow path
+	int minCamerasGood = 2;
+	int minImprovePoints = 2;
+	float minImproveFactor = 1.5f;
+	int maxRecoverStages = 2;
 	TargetMatchingParametersFast matchFast = {};
 	TargetMatchingParametersSlow matchSlow = {};
 	TargetMatchingParametersUncertain matchUncertain = {};

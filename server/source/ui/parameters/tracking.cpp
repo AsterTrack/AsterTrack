@@ -199,7 +199,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Optimisation");
 		modified |= ScalarProperty<int>("Max Iterations", "", &params.opt.maxIterations, &standard.opt.maxIterations, 0, 100);
-		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 1000, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
 		EndSection();
@@ -226,17 +226,30 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("2D Point Matching");
 		modified |= ScalarProperty<float>("Expand Marker FoV", "", &params.expandMarkerFoV, &standard.expandMarkerFoV, -2.0f, 2.0f, 0.02f);
-		if (ImGui::TreeNode("Fast Path"))
+		modified |= ScalarProperty<float>("Normalise for Distance", "m", &params.normaliseDistance, &standard.normaliseDistance, 0, 10, 0.5f);
+		if (ImGui::TreeNode("Match Evaluation"))
+		{
+			modified |= ScalarProperty<int>("Min Good Cameras", "", &params.minCamerasGood, &standard.minCamerasGood, 0, 10);
+			modified |= ScalarProperty<int>("Min Points To Improve", "", &params.minImprovePoints, &standard.minImprovePoints, 0, 10);
+			modified |= ScalarProperty<float>("Min Factor To Improve", "x", &params.minImproveFactor, &standard.minImproveFactor, 0, 10, 0.1f);
+			modified |= ScalarProperty<int>("Max Recover Stages", "", &params.maxRecoverStages, &standard.maxRecoverStages, 0, 10);
+			ImGui::TreePop();
+		}
+		ImGui::SetItemTooltip("These parameters influence whether Recover Matching is used.");
+		if (ImGui::TreeNode("Fast Matching"))
 		{
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchFast.matchRadius, &standard.matchFast.matchRadius, 0, 100, 1.0f, PixelFactor);
 			modified |= matchAlgParamUI(params.matchFast.match, standard.matchFast.match);
 			ImGui::TreePop();
 		}
-		if (ImGui::TreeNode("Slow Path"))
+		ImGui::SetItemTooltip("Fast matching is used initially, and generally also at the end to increase points matched.");
+		if (ImGui::TreeNode("Recover Matching"))
 		{
 			modified |= matchParamUI(params.matchSlow, standard.matchSlow);
 			ImGui::TreePop();
 		}
+		ImGui::SetItemTooltip("A complex matching algorithm that may recover from severe prediction errors (mostly translational).\n"
+			"It may also perform worse than fast matching in simpler cases, so it is only used as a fallback if needed.");
 		if (ImGui::TreeNode("Single Camera Uncertainty Axis"))
 		{
 			modified |= ScalarProperty<float>("Max Dominant Factor", "px", &params.matchUncertain.maxDominantFactor, &standard.matchUncertain.maxDominantFactor, 0, 50, 1.0f);
@@ -264,7 +277,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Optimisation");
 		modified |= ScalarProperty<int>("Max Iterations", "", &params.opt.maxIterations, &standard.opt.maxIterations, 0, 100);
-		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 1000, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
 		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");

@@ -123,7 +123,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 			// Match relevant points (observation and projected target)
 			// Note: We use "Slow" here because it can deal with our position estimate being wildly off
 			auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
-			matchTargetPointsSlow(*points2D[c], *properties[c], *relevantPoints2D[c],
+			matchTargetPointsRecover(*points2D[c], *properties[c], *relevantPoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches,
 				matchingStage, track.matchSlow, paramScale[c]);
 			if (cameraMatches.size() < track.quality.minCameraObs)
@@ -366,7 +366,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 
 		// Add focus camera point matches using initial pose
 		auto &cameraMatches = targetMatch2D.points2D[focus];
-		matchTargetPointsSlow(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
+		matchTargetPointsRecover(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
 			projected2D, relevantProjected2D, cameraMatches, matchData,
 			params.match, distFactor);
 	

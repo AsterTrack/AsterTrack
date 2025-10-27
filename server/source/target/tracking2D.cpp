@@ -239,8 +239,9 @@ bool matchTargetPointsFast(
 
 /**
  * Matches a relevant set of projected target points to a relevant set of point observations
+ * This can recover from translational errors in image space, but may benefit from a fast match afterwards
  */
-void matchTargetPointsSlow(
+void matchTargetPointsRecover(
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
 	const std::vector<Eigen::Vector2f> &projected2D, const std::vector<int> &relevantProjected2D,
 	std::vector<std::pair<int, int>> &matches, TargetMatchingData &matchData,
@@ -552,7 +553,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
 		return { 10000.0f, 0.0f, 10000.0f, 0 };
 	}
-	LOGC(LDebug, "        Optimising target pose using %d point matches!\n", (int)errorTerm.m_observedPoints.size());
+	LOGC(LTrace, "        Optimising target pose using %d point matches!\n", (int)errorTerm.m_observedPoints.size());
 
 	// On-the-fly outlier detection
 	if constexpr (OUTLIER)
@@ -564,6 +565,10 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		poseVec = errorTerm.encodePose(Eigen::Isometry3d::Identity());
 	else
 		poseVec = errorTerm.encodePose(match.pose.cast<double>());
+
+	Eigen::VectorXd errors(errorTerm.m_observedPoints.size());
+	errorTerm.calculateSampleErrors(errorTerm.decodePose(poseVec), errors);
+	float prevError = errors.sum() / match.error.samples;
 
 	// Initialise optimisation algorithm
 	Eigen::LevenbergMarquardt<TgtError, double> lm(errorTerm);
@@ -582,14 +587,15 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	int it = 0;
 	int outlierCount = 0;
 	match.error.samples = errorTerm.m_observedPoints.size();
-	while (++it <= params.maxIterations)
+	while (it < params.maxIterations)
 	{
+		it++;
 		status = lm.minimizeOneStep(poseVec);
 		auto errors = lm.fvec.head(errorTerm.m_observedPoints.size());
 		match.error.mean = errors.sum() / match.error.samples;
 		match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
 		match.error.max = errors.maxCoeff();
-		LOGC(LTrace, "            Current RMSE: %.4f (sum %f, inliers %d)\n", match.error.mean*PixelFactor, errors.sum(), match.error.samples);
+		LOGC(LTrace, "            Current Error: %.4fpx (sum %f, inliers %d)\n", match.error.mean*PixelFactor, errors.sum(), match.error.samples);
 		if (status != Eigen::LevenbergMarquardtSpace::Running)
 		{
 			LOGC(LDebug, "          Stopped optimisation: %s\n", getStopCodeText(status));
@@ -621,14 +627,15 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 					break;
 				}
 			}
-			LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4f! %d inliers left, with %.4f max\n",
+			LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4fpx! %d inliers left, with %.4f max\n",
 				cam, marker, pt,
 				lm.fvec(i)*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
 		}
 		if (errorTerm.values()-outlierCount < errorTerm.inputs())
 			break;
 	}
-	LOGC(LTrace, "          Finished with it %d / %d\n", it, params.maxIterations);
+	LOGC(LDebug, "        Optimised target pose with %d points from %.4fpx to %.4fpx error and %d outliers in %d / %d iterations!\n",
+		(int)errorTerm.m_observedPoints.size(), prevError*PixelFactor, match.error.mean*PixelFactor, (int)errorTerm.m_observedPoints.size()-match.error.samples, it, params.maxIterations);
 
 	// Apply optimised pose
 	if constexpr (OPTIONS & OptCorrectivePose)
@@ -794,295 +801,324 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			projectedBounds.extends().x()*PixelFactor, projectedBounds.extends().y()*PixelFactor);
 	}
 
-
-	LOGC(LDebug, "    trackTarget2D:");
-
-	auto reprojectTargetMarkers = [&]()
-	{
-		for (int c = 0; c < calibs.size(); c++)
-		{
-			projected2D[c].clear();
-			relevantProjected2D[c].clear();
-			if (closePoints2D[c].empty()) continue;
-			projectTarget(projected2D[c], relevantProjected2D[c],
-				target, calibs[c], targetMatch2D.pose, params.expandMarkerFoV);
-			LOGC(LDebug, "        Camera %d: Projected %d target markers, matching them to %d closeby observations!\n",
-				c, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());
-		}
-	};
-	auto optimiseTargetMatch =  [&](bool quick)
-	{ // Optimise pose to observations
-		if (targetMatch2D.count() == 0)
-		{
-			LOGC(LDebug, "        Cannot optimise pose without any points!\n");
-			return;
-		}
-		// TODO: Provide a quick option
-		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
-		TargetMatchError newErrors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, !quick);
-		if (newErrors.samples == 0)
-		{
-			LOGC(LDarn, "        Failed to optimise pose of %d points!\n", prevErrors.samples);
-			return;
-		}
-		LOGC(LDebug, "        Reduced average pixel error of %d points from %.4fpx to %d inliers with %.4fpx error\n",
-			prevErrors.samples, prevErrors.mean * PixelFactor, newErrors.samples, newErrors.mean * PixelFactor);
-	};
-
 	// Normalise pixel parameters to a fixed distance
 	std::vector<float> paramScale(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 		paramScale[c] = params.normaliseDistance / (prediction.translation() - calibs[c].transform.translation().cast<float>()).norm();
 
-	reprojectTargetMarkers();
-
-	int camerasGood = 0;
+	bool newMatches = false;
+	std::vector<std::pair<int, int>> matches;
 	int matchedSamples = 0;
-	const int minCamerasGood = 2;
+
+	auto reprojectTargetMarkers = [&]()
+	{
+		matchedSamples = 0;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			relevantProjected2D[c].clear();
+			if (closePoints2D[c].empty()) continue;
+
+			// TODO: Improve selection/projection of markers at a distance
+			// Instead of limiting which markers to reproject at a distance
+			// May want to project more (especially if pose is uncertain)
+			// And instead weight them somehow based on their suspected brightness
+			float angleLimit = params.expandMarkerFoV;
+
+			// Project markers and mark those not seen with NAN
+			Eigen::Isometry3f mv = calibs[c].view.cast<float>() * targetMatch2D.pose;
+			projected2D[c].resize(target.markers.size());
+			relevantProjected2D[c].reserve(target.markers.size());
+			for (int i = 0; i < target.markers.size(); i++)
+			{
+				if (projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv, angleLimit))
+					relevantProjected2D[c].push_back(i);
+			}
+			LOGC(LDebug, "        Camera %d: Projected %d target markers, matching them to %d closeby observations!\n",
+				c, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());
+		}
+	};
+
+	auto improveTargetMatch =  [&]() -> TargetMatchError
+	{ // Optimise pose to observations
+		if (targetMatch2D.count() == 0)
+		{
+			LOGC(LDebug, "        Cannot optimise pose without any points!\n");
+			return {};
+		}
+		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, false);
+		if (errors.samples > 0)
+		{
+			reprojectTargetMarkers();
+			newMatches = false;
+		}
+		// Recalculate because of outliers
+		matchedSamples = 0;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			int camera = calibs[c].index;
+			auto &cameraMatches = targetMatch2D.points2D[camera];
+			matchedSamples += cameraMatches.size();
+		}
+		return errors;
+	};
+
+	auto canUpdateCameraMatches = [&](int c)
+	{
+		int camera = calibs[c].index;
+		auto &cameraMatches = targetMatch2D.points2D[camera];
+		if (cameraMatches.size() == closePoints2D[c].empty())
+			return false; // If no improvements are possible, skip
+		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
+		if (maxPossible == 0)
+		{ // Even if we did match, it's not sufficient with the current pose anymore
+			matchedSamples -= cameraMatches.size();
+			cameraMatches.clear();
+			return false;
+		}
+		matches.clear();
+		return true;
+	};
+
+	auto updateCameraMatches = [&](int c, std::vector<std::pair<int, int>> matches)
+	{
+		int camera = calibs[c].index;
+		auto &cameraMatches = targetMatch2D.points2D[camera];
+		if (SHOULD_LOGC(LDebug))
+		{
+			if (cameraMatches.empty())
+			{
+				if (matches.size() < params.quality.minCameraObs)
+					LOGC(LDebug, "            Camera %d: Only found %d matches, discarding!", c, (int)matches.size());
+				else
+					LOGC(LDebug, "            Camera %d: Found %d matches!", c, (int)matches.size());
+			}
+			else
+			{
+				if (matches.size() < params.quality.minCameraObs)
+					LOGC(LDebug, "            Camera %d: Only found %d matches, %d before, discarding!", c, (int)matches.size(), (int)cameraMatches.size());
+				else if (matches.size() <= cameraMatches.size())
+					LOGC(LDebug, "            Camera %d: Still only found %d matches, with %d before!", c, (int)matches.size(), (int)cameraMatches.size());
+				else
+					LOGC(LDebug, "            Camera %d: Found %d matches, had %d before!", c, (int)matches.size(), (int)cameraMatches.size());
+			}
+		}
+		bool accepted = matches.size() >= params.quality.minCameraObs;
+		if (accepted)
+		{
+			if (matches.size() > cameraMatches.size())
+				newMatches = true;
+			matchedSamples += matches.size() - cameraMatches.size();
+			std::swap(matches, cameraMatches);
+		}
+		else
+		{
+			matchedSamples -= cameraMatches.size();
+			cameraMatches.clear();
+		}
+		matches.clear();
+		return accepted;
+	};
+
+	LOGC(LDebug, "    trackTarget2D:");
+
+	reprojectTargetMarkers();
 
 	// Try first with simple matching algorithm
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (relevantProjected2D[c].empty() || closePoints2D[c].empty()) continue;
-		int camera = calibs[c].index;
-		auto &cameraMatches = targetMatch2D.points2D[camera];
+		if (!canUpdateCameraMatches(c)) continue;
 
 		// Match relevant points (observation and projected target)
 		matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
-			projected2D[c], relevantProjected2D[c], cameraMatches,
-			internalData.nextMatchingStage(camera, targetMatch2D.pose, "Initial fast match"),
+			projected2D[c], relevantProjected2D[c], matches,
+			internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Initial fast match"),
 			params.matchFast, paramScale[c]);
 
-		if (cameraMatches.size() < params.quality.minCameraObs)
-		{
-			LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
-			cameraMatches.clear();
-		}
-		else
-		{
-			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-			matchedSamples += cameraMatches.size();
-			if (cameraMatches.size() >= params.quality.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.quality.cameraGoodRatio)
-				camerasGood++;
-		}
+		updateCameraMatches(c, matches);
 	}
 	LOGC(LDebug, "        Matched a total of %d samples in initial fast-path!", matchedSamples);
 
-	if (camerasGood < minCamerasGood || matchedSamples < params.quality.minTotalObs)
+	auto shouldRecoverCameraMatches = [&]()
 	{
-		LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
-		const int maxComplexStages = 2;
-		for (int i = 0; i < maxComplexStages; i++)
-		{ // Try again with complex matching algorithm
-
-			camerasGood = 0;
-			matchedSamples = 0;
-			bool nothingNew = true;
+		int camerasGood = 0;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			int camera = calibs[c].index;
+			auto &cameraMatches = targetMatch2D.points2D[camera];
+			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
+				camerasGood++;
+		}
+		bool recover = camerasGood < params.minCamerasGood || matchedSamples < params.quality.minTotalObs;
+		if (recover)
+			LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
+		return recover;
+	};
+	auto shouldRecoverCamera = [&](int c)
+	{
+		return canUpdateCameraMatches(c);
+	};
+	auto continueRecoveringCameras = [&]()
+	{
+		int camerasGood = 0;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			int camera = calibs[c].index;
+			auto &cameraMatches = targetMatch2D.points2D[camera];
+			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
+				camerasGood++;
+		}
+		return camerasGood < params.minCamerasGood;
+	};
+	if (shouldRecoverCameraMatches())
+	{ // Try again with recover matching algorithm
+		for (int i = 0; i < params.maxRecoverStages; i++)
+		{
+			newMatches = false;
 
 			for (int c = 0; c < calibs.size(); c++)
 			{
-				int camera = calibs[c].index;
-				auto &cameraMatches = targetMatch2D.points2D[camera];
-				if (cameraMatches.size() == closePoints2D[c].size())
-				{ // If no observations left in bounds, skip
-					matchedSamples += cameraMatches.size();
-					continue;
-				}
-				int prevPointCount = cameraMatches.size();
-				cameraMatches.clear();
-				if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
-					continue; // Even if we did match, it's not visible with the current pose anymore
+				if (!shouldRecoverCamera(c)) continue;
 
 				// Match relevant points (observation and projected target)
-				matchTargetPointsSlow(*points2D[c], *properties[c], closePoints2D[c],
-					projected2D[c], relevantProjected2D[c], cameraMatches,
-					internalData.nextMatchingStage(camera, targetMatch2D.pose, "Recover match"),
+				matchTargetPointsRecover(*points2D[c], *properties[c], closePoints2D[c],
+					projected2D[c], relevantProjected2D[c], matches,
+					internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Recover match"),
 					params.matchSlow, paramScale[c]);
 
-				if (cameraMatches.size() < params.quality.minCameraObs)
-				{
-					LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
-					cameraMatches.clear();
-				}
-				else
-				{
-					LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-					matchedSamples += cameraMatches.size();
-					if (cameraMatches.size() >= params.quality.cameraGoodObs && (float)cameraMatches.size()/closePoints2D[c].size() > params.quality.cameraGoodRatio)
-						camerasGood++;
-					if (prevPointCount < cameraMatches.size())
-						nothingNew = false;
-				}
+				updateCameraMatches(c, matches);
 			}
+			LOGC(LDebug, "        Matched a total of %d samples in matching slow-path %d!", matchedSamples, i);
 
-			LOGC(LDebug, "        Matched a total of %d samples in matching slow-path %d!",
-				matchedSamples, i);
-
-			if (camerasGood >= minCamerasGood) break; // Continue normally
-			if (nothingNew)
-			{ // No hope improving
-				optimiseTargetMatch(false);
+			if (!continueRecoveringCameras()) break;
+			if (!newMatches)
+			{
+				auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, true);
 				return targetMatch2D;
 			}
-			if (i+1 >= maxComplexStages)
+			if (i+1 >= params.maxRecoverStages)
 			{ // Last iterations, don't optimise again
 				if (matchedSamples >= params.quality.minTotalObs)
 					break; // Some new data after last try, continue normally
 				return targetMatch2D; // Else, not enough data still
 			}
-			// Else, with some new data, try again after quick optimisation
-
-			optimiseTargetMatch(true);
-			reprojectTargetMarkers();
+			if (improveTargetMatch().samples == 0)
+				break; // If we cannot imrpove, continue
 		}
 
 		LOGC(LDebug, "        Continuing normally after slow-path finished!");
 	}
-	assert(camerasGood >= minCamerasGood || matchedSamples >= params.quality.minTotalObs);
 
-	if (camerasGood >= minCamerasGood)
-	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
-		DualExtremum<int> camPoints(0);
+	DualExtremum<int> camPoints(0);
+	for (int c = 0; c < calibs.size(); c++)
+		camPoints.max(targetMatch2D.points2D[calibs[c].index].size());
+	auto shouldHandleSingleCameraMatches = [&](const DualExtremum<int> &camPoints)
+	{
+		int camerasGood = 0;
 		for (int c = 0; c < calibs.size(); c++)
-			camPoints.max(targetMatch2D.points2D[c].size());
-		if (camPoints.rank[0] > camPoints.rank[1]*params.matchUncertain.maxDominantFactor)
-		{ // The existing pose is very uncertain along the axis through the dominant camera
+		{
+			int camera = calibs[c].index;
+			auto &cameraMatches = targetMatch2D.points2D[camera];
+			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
+				camerasGood++;
+		}
+		bool recover = camerasGood >= params.minCamerasGood &&
+			camPoints.rank[0] > camPoints.rank[1]*params.matchUncertain.maxDominantFactor;
+		return recover;
+	};
+	if (shouldHandleSingleCameraMatches(camPoints))
+	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
+		// The existing pose is very uncertain along the axis through the dominant camera
 
-			// Find dominant camera
-			int dominantCamera = -1;
-			for (int c = 0; c < calibs.size(); c++)
-				if (targetMatch2D.points2D[c].size() == camPoints.rank[0])
-					dominantCamera = c;
-			assert(dominantCamera >= 0);
+		// Find dominant camera
+		int dominantCamera = -1;
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (targetMatch2D.points2D[calibs[c].index].size() == camPoints.rank[0])
+				dominantCamera = c;
+		}
+		assert(dominantCamera >= 0);
 
-			LOGC(LDebug, "        Camera %d is dominant with %d out of %d total samples (next best %d)! Entering uncertainty compensation path!",
-				dominantCamera, camPoints.rank[0], matchedSamples, camPoints.rank[1]);
-			Breakpoint(2);
+		LOGC(LDebug, "        Camera %d is dominant with %d out of %d total samples (next best %d)! Entering uncertainty compensation path!",
+			dominantCamera, camPoints.rank[0], matchedSamples, camPoints.rank[1]);
+		Breakpoint(2);
 
-			optimiseTargetMatch(true);
-			reprojectTargetMarkers();
+		improveTargetMatch();
 
-			// Find axis of most uncertainty
-			Ray3f uncertainAxis;
-			uncertainAxis.pos = calibs[dominantCamera].transform.translation().cast<float>();
-			uncertainAxis.dir = (targetMatch2D.pose.translation() - uncertainAxis.pos).normalized();
+		// Find axis of most uncertainty
+		Ray3f uncertainAxis;
+		uncertainAxis.pos = calibs[dominantCamera].transform.translation().cast<float>();
+		uncertainAxis.dir = (targetMatch2D.pose.translation() - uncertainAxis.pos).normalized();
 
-			// Find more visible target points (which would be newly visible in this frame)
-			bool nothingNew = true;
-			matchedSamples = targetMatch2D.points2D[calibs[dominantCamera].index].size();
-			for (int c = 0; c < calibs.size(); c++)
-			{
-				if (dominantCamera == c) continue;
-				int camera = calibs[c].index;
-				auto &cameraMatches = targetMatch2D.points2D[camera];
-				if (cameraMatches.size() == closePoints2D[c].size())
-				{ // If no observations left in bounds, skip
-					matchedSamples += cameraMatches.size();
-					continue;
-				}
-				int prevPointCount = cameraMatches.size();
-				cameraMatches.clear();
-				if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
-					continue; // Even if we did match, it's not visible with the current pose anymore
+		// Find more visible target points (which would be newly visible in this frame)
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (dominantCamera == c) continue;
+			if (!canUpdateCameraMatches(c)) continue;
+			int camera = calibs[c].index;
 
-				// Try to shift along uncertain axis to align the prediction with the observations of this camera
-				int obsConsidered = shiftPointsAlongAxis(
-					*points2D[c], closePoints2D[c], projected2D[c], relevantProjected2D[c],
-					calibs[c], uncertainAxis, targetMatch2D.pose.translation(), params.matchUncertain.perpDeviation,
-					internalData.uncertaintyAxis[camera]);
-				LOGC(LDebug, "            Considering %d/%d points of camera %d to match with %d projected points along uncertainty axis!",
-					obsConsidered, (int)closePoints2D[c].size(), c, (int)relevantProjected2D[c].size());
-				if (obsConsidered == 0)
-					continue;
+			// Try to shift along uncertain axis to align the prediction with the observations of this camera
+			int obsConsidered = shiftPointsAlongAxis(
+				*points2D[c], closePoints2D[c], projected2D[c], relevantProjected2D[c],
+				calibs[c], uncertainAxis, targetMatch2D.pose.translation(), params.matchUncertain.perpDeviation,
+				internalData.uncertaintyAxis[camera]);
+			LOGC(LDebug, "            Considering %d/%d points of camera %d to match with %d projected points along uncertainty axis!",
+				obsConsidered, (int)closePoints2D[c].size(), c, (int)relevantProjected2D[c].size());
+			if (obsConsidered == 0)
+				continue;
 
-				// Try to match points quickly along the uncertainty axis
-				float bestShift = matchTargetPointsAlongAxis(*points2D[c], *properties[c], closePoints2D[c],
-					projected2D[c], relevantProjected2D[c], cameraMatches,
-					internalData.nextMatchingStage(camera, targetMatch2D.pose, "Corrective align match"),
-					params.matchUncertain, paramScale[c],
-					internalData.uncertaintyAxis[camera]);
+			// Try to match points quickly along the uncertainty axis
+			float bestShift = matchTargetPointsAlongAxis(*points2D[c], *properties[c], closePoints2D[c],
+				projected2D[c], relevantProjected2D[c], matches,
+				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Corrective align match"),
+				params.matchUncertain, paramScale[c],
+				internalData.uncertaintyAxis[camera]);
 
-				if (cameraMatches.size() < params.quality.minCameraObs)
-				{
-					LOGC(LDebug, "            Camera %d: Found %d matches along uncertainty axis, discarded all!\n", c, (int)cameraMatches.size());
-					cameraMatches.clear();
-				}
-				else
-				{
-					LOGC(LDebug, "            Camera %d: Found %d matches in %d points shifted %.1fpx along uncertainty axis!",
-						c, (int)cameraMatches.size(), obsConsidered, bestShift*PixelFactor);
-					matchedSamples += cameraMatches.size();
-					if (prevPointCount < cameraMatches.size())
-						nothingNew = false;
-				}
-			}
+			updateCameraMatches(c, matches);
+		}
 
-			if (nothingNew)
-			{
-				LOGC(LDebug, "        Failed to find any more samples from other cameras to break dominance! Aborting!");
-				return targetMatch2D; // No hope improving
-			}
-			// Else, with some new data, continue normally
+		if (!newMatches)
+		{
+			LOGC(LDebug, "        Failed to find any more samples from other cameras to break dominance! Aborting!");
+			return targetMatch2D; // No hope improving
 		}
 	}
 
-	optimiseTargetMatch(true);
-	reprojectTargetMarkers();
+	improveTargetMatch();
 
 	LOGC(LDebug, "        Searching for final additions:");
 
 	// Find some more points if possible
-	matchedSamples = 0;
-	bool nothingNew = true;
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		int camera = calibs[c].index;
-		auto &cameraMatches = targetMatch2D.points2D[camera];
-		if (cameraMatches.size() == closePoints2D[c].size())
-		{ // If no observations left in bounds, skip
-			matchedSamples += cameraMatches.size();
-			continue;
-		}
-		int prevPointCount = cameraMatches.size();
-		cameraMatches.clear();
-		if (relevantProjected2D[c].empty() || closePoints2D[c].empty())
-			continue; // Even if we did match, it's not visible with the current pose anymore
+		if (!canUpdateCameraMatches(c)) continue;
 
-		// Match relevant points (observation and projected target)
-		if (prevPointCount < params.quality.cameraGoodObs)
+		int camera = calibs[c].index;
+		if (targetMatch2D.points2D[camera].size() < params.quality.cameraGoodObs)
 		{
-			LOGC(LDebug, "            Camera %d: Use recover matching!", c);
-			matchTargetPointsSlow(*points2D[c], *properties[c], closePoints2D[c],
-				projected2D[c], relevantProjected2D[c], cameraMatches,
-				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final slow match"),
+			LOGC(LDebug, "            Camera %d: Use recover matching!", camera);
+			matchTargetPointsRecover(*points2D[c], *properties[c], closePoints2D[c],
+				projected2D[c], relevantProjected2D[c], matches,
+				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final recover match"),
 				params.matchSlowSecond, paramScale[c]);
 		}
 		else
-		{ // TODO: Only match points not already matched
-			LOGC(LDebug, "            Camera %d: Use fast matching!", c);
+		{
+			LOGC(LDebug, "            Camera %d: Use fast matching!", camera);
 			matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
-				projected2D[c], relevantProjected2D[c], cameraMatches,
+				projected2D[c], relevantProjected2D[c], matches,
 				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final fast match"),
 				params.matchFast, paramScale[c]);
 		}
 
-		if (cameraMatches.size() < params.quality.minCameraObs)
-		{
-			LOGC(LDebug, "            Camera %d: Found %d matches, discarded all!\n", c, (int)cameraMatches.size());
-			cameraMatches.clear();
-		}
-		else
-		{
-			LOGC(LDebug, "            Camera %d: Found %d matches!\n", c, (int)cameraMatches.size());
-			matchedSamples += cameraMatches.size();
-			if (prevPointCount < cameraMatches.size())
-				nothingNew = false;
-		}
+		updateCameraMatches(c, matches);
 	}
 
 	//if (!nothingNew)
 	{ // Final optimisation
-		optimiseTargetMatch(false);
+		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, prediction, params.opt, params.filter.point.stdDev, true);
 	}
 	// Update covariance (done in optimiseTargetMatch with !quick)
 	//evaluateTargetPoseCovariance(calibs, points2D, targetMatch2D, params.filter.point.stdDev);

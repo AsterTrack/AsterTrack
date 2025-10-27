@@ -81,7 +81,7 @@ static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker 
 	return camPoint.z() > 0; // Cull back
 }
 
-static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
+bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
 	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandFoV)
 {
 	Eigen::Vector3f camPoint = mv * marker.pos;

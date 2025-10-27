@@ -138,7 +138,7 @@ bool matchTargetPointsFast(
 /**
  * Matches a relevant set of projected target points to a relevant set of point observations
  */
-void matchTargetPointsSlow(
+void matchTargetPointsRecover(
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobProperty> &properties, const std::vector<int> &relevantPoints2D,
 	const std::vector<Eigen::Vector2f> &projected2D, const std::vector<int> &relevantProjected2D,
 	std::vector<std::pair<int, int>> &matches, TargetMatchingData &matchData,

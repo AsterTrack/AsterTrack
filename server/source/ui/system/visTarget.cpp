@@ -703,7 +703,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 				else if (trkVis.showAllLabels || trkVis.debugFocusPoint == m)
 				{ // Secondary match that has neither been accepted nor deemed valid through manual editing
 					secLabels.push_back(createLabel(markerMatch, markerMatch.projected, match,
-						Color{ 0.6f, 0.6f, 0.6f, 1 }));
+						Color{ std::clamp(0.5f - 0.1f*std::log(match.value), 0.0f, 1.0f), 0.6f, 0.6f, 1 }));
 				}
 			}
 		}

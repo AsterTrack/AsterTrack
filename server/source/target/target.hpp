@@ -103,6 +103,12 @@ struct TargetCalibration3D
 };
 
 /**
+ * Projects target markers into camera view, and returns if it is within view
+ */
+bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
+	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandFoV);
+
+/**
  * Projects target markers into camera view, clipping out-of-view points
  * Writes those points into their position in points2D corresponding to the marker point index
  * Writes indices of points projected into projected

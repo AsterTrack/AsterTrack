@@ -39,10 +39,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	auto discardTargetSelection = []
 	{
 		if (GetUI().visState.target.inspectingSource == 'O')
-		{
-			GetUI().visState.target.inspectingTrackerID = 0;
-			GetUI().visState.target.inspectingSource = 'N';
-		}
+			GetUI().visState.resetVisTarget();
 	};
 	if (!window.open)
 	{
@@ -297,7 +294,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::AlignTextToFramePadding();
 				if (ImGui::Selectable(label.c_str(), visState.target.inspectingTrackerID == tgt.trackerID, ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (visState.target.inspectingTrackerID != tgt.trackerID)
+					if (visState.resetVisTarget(false) && visState.target.inspectingTrackerID != tgt.trackerID)
 					{ // Set new selected target ID
 						visState.target.inspectingTargetCalib = {};
 						auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
@@ -307,10 +304,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 							visState.target.inspectingTargetCalib = TargetCalibration3D(finaliseTargetMarkers(
 								pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
 						}
+						auto unlock = db_lock.scopedUnlock();
 						visState.target.inspectingTrackerID = tgt.trackerID;
 						visState.target.inspectingSource = 'O';
+						visState.updateVisTarget();
 					}
-					else visState.resetVisTarget(false);
 				}
 				// Button to delete
 				SameLineTrailing(ImGui::GetFrameHeight());

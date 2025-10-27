@@ -195,7 +195,7 @@ struct TargetTrackingParameters
 	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
 	float uncertaintySigma = 3;
 	// Marker Matching
-	float expandMarkerFoV = 0.1f;
+	float expandMarkerFoV = 0.0f;
 	float normaliseDistance = 5.0f;
 	TargetMatchingParametersFast matchFast = {};
 	TargetMatchingParametersSlow matchSlow = {};

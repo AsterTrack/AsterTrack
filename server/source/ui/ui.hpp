@@ -218,6 +218,7 @@ struct VisualisationState
 		int markerHovered = -1; // Hovered in 3D View
 		bool markerObservations = false;
 		bool markerViewCones = true;
+		float editMarkerFoV = 0.0f;
 	} target;
 
 	// Target Calibration

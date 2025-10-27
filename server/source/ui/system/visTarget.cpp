@@ -108,6 +108,7 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	target.inspectingTrackerID = 0;
 	target.inspectingTargetCalib = {};
 	target.markerSelect.clear();
+	target.editMarkerFoV = 0.0f;
 	return true;
 }
 
@@ -360,23 +361,36 @@ void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const V
 
 	thread_local std::vector<VisPoint> coneMesh;
 	const int coneRes = 20;
+	coneMesh.clear();
 	coneMesh.resize(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), Color{ 0.6f, 0.6f, 0.6f, 0.6f } });
-	for (auto &marker : visTarget.calib->markers)
+	auto visCone = [&](Eigen::Vector3f pos, Eigen::Vector3f nrm, float angleLimit)
 	{
-		Eigen::Vector3f pos = tgtPose * marker.pos;
-		Eigen::Vector3f nrm = tgtPose.linear() * marker.nrm;
 		coneMesh[0].pos = pos;
 		Eigen::Vector3f perp1(1, 0, 0);
 		perp1 = (perp1 - perp1.dot(nrm) * nrm).normalized();
 		Eigen::Vector3f perp2 = perp1.cross(nrm);
-		pos += nrm * 0.02f * marker.angleLimit;
-		float side = 0.02f * std::sin(std::acos(marker.angleLimit));
+		pos += nrm * 0.02f * angleLimit;
+		float side = 0.02f * std::sin(std::acos(angleLimit));
 		for (int i = 0; i <= coneRes; i++)
 		{
 			float c = 2*(float)PI*(float)i/coneRes;
 			coneMesh[i+1].pos = pos + side * (perp1 * std::sin(c) + perp2 * std::cos(c));
 		}
 		visualiseMesh(coneMesh, 6); // GL_TRIANGLE_FAN
+	};
+	for (auto &marker : visTarget.calib->markers)
+	{
+		visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, marker.angleLimit);
+	}
+	if (visState.target.editMarkerFoV != 0.0f)
+	{
+		coneMesh.clear();
+		coneMesh.resize(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), Color{ 0.5f, 0.8f, 0.5f, 0.6f } });
+		for (auto &marker : visTarget.calib->markers)
+		{
+			float angleLimit = std::min(1.0f, std::max(-1.0f, marker.angleLimit + visState.target.editMarkerFoV));
+			visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, angleLimit);
+		}
 	}
 }
 

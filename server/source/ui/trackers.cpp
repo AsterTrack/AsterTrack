@@ -30,10 +30,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	{
 		selectedTrackerID = 0;
 		if (GetUI().visState.target.inspectingSource == 'T')
-		{
-			GetUI().visState.target.inspectingTrackerID = 0;
-			GetUI().visState.target.inspectingSource = 'N';
-		}
+			GetUI().visState.resetVisTarget();
 	};
 	if (!window.open)
 	{
@@ -274,6 +271,22 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}
+			adjustScale = 1.0f/adjustScale;
+			// Signal server to update calib
+			SignalTargetCalibUpdate(tracker.id, calib);
+		}
+
+		ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+		ImGui::SliderFloat("##FoV", &visState.target.editMarkerFoV, -2.0f, 2.0f);
+		ImGui::SameLine();
+		if (ImGui::Button("Adjust FoV", SizeWidthDiv2()))
+		{
+			LOG(LTargetCalib, LInfo, "Adjusting FoV of target '%s' by %f!", tracker.label.c_str(), visState.target.editMarkerFoV);
+			TargetCalibration3D calib = tracker.calib;
+			for (auto &mk : calib.markers)
+				mk.angleLimit = std::min(1.0f, std::max(-1.0f, mk.angleLimit + visState.target.editMarkerFoV));
+			calib.updateMarkers();
+			visState.target.editMarkerFoV = 0;
 			// Signal server to update calib
 			SignalTargetCalibUpdate(tracker.id, calib);
 		}

@@ -151,7 +151,6 @@ int main (void)
 		// NOTE: Compile-time LOG_MAX_LEVEL takes priority!
 		for (int i = 0; i < LMaxCategory; i++)
 			LogMaxLevelTable[i] = LOG_MAX_LEVEL_DEFAULT;
-		LogMaxLevelTable[LDetection3D] = LDarn;
 
 		atexit([](){
 			GetApp().FlushLog();

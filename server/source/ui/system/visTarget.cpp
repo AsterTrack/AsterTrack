@@ -498,7 +498,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 			Color col;
 			if (match.value < lower)
 				col = lerp({ 0, 1, 0, 1.0f*alpha }, { 1, 0, 0, 0.9f*alpha }, match.value/lower);
-			else if (match.value < upper)
+			else
 				col = lerp({ 1, 0, 0, 0.9f*alpha }, { 1, 0, 1, 0.8f*alpha }, match.value/upper);
 			matchLines.push_back({
 				{ pos.homogeneous(), col },

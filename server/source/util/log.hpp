@@ -28,7 +28,11 @@ SOFTWARE.
 #endif
 
 #ifndef LOG_MAX_LEVEL_DEFAULT
+#ifdef NDEBUG
+#define LOG_MAX_LEVEL_DEFAULT LDarn
+#else
 #define LOG_MAX_LEVEL_DEFAULT LDebug
+#endif
 #endif
 
 #ifndef LOG_H

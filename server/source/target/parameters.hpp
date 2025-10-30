@@ -200,7 +200,7 @@ struct TargetTrackingParameters
 	// Selecting whether to go down slow path
 	int minCamerasGood = 2;
 	int minImprovePoints = 2;
-	float minImproveFactor = 1.5f;
+	float minImproveFactor = 1.3f;
 	int maxRecoverStages = 2;
 	TargetMatchingParametersFast matchFast = {};
 	TargetMatchingParametersSlow matchSlow = {};

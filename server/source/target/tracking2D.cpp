@@ -952,7 +952,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 	auto shouldRecoverCameraMatches = [&]()
 	{
-		int camerasGood = 0;
+		int camerasGood = 0, improvableCameras = 0;
 		for (int c = 0; c < calibs.size(); c++)
 		{
 			int camera = calibs[c].index;
@@ -960,15 +960,23 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
+			int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
+			int minImprov = std::max<int>(params.minImprovePoints, std::ceil(cameraMatches.size() * params.minImproveFactor));
+			if (cameraMatches.size() < params.quality.cameraGoodObs && minImprov <= maxPossible)
+				improvableCameras++;
 		}
-		bool recover = camerasGood < params.minCamerasGood || matchedSamples < params.quality.minTotalObs;
+		bool recover = improvableCameras > 0 && (camerasGood < params.minCamerasGood || matchedSamples < params.quality.minTotalObs);
 		if (recover)
 			LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
 		return recover;
 	};
 	auto shouldRecoverCamera = [&](int c)
 	{
-		return canUpdateCameraMatches(c);
+		int camera = calibs[c].index;
+		auto &cameraMatches = targetMatch2D.points2D[camera];
+		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
+		int minImprov = std::max<int>(params.minImprovePoints, std::ceil(cameraMatches.size() * params.minImproveFactor));
+		return cameraMatches.size() < params.quality.cameraGoodObs && minImprov <= maxPossible;
 	};
 	auto continueRecoveringCameras = [&]()
 	{
@@ -987,8 +995,6 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	{ // Try again with recover matching algorithm
 		for (int i = 0; i < params.maxRecoverStages; i++)
 		{
-			newMatches = false;
-
 			for (int c = 0; c < calibs.size(); c++)
 			{
 				if (!shouldRecoverCamera(c)) continue;
@@ -1004,17 +1010,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			LOGC(LDebug, "        Matched a total of %d samples in matching slow-path %d!", matchedSamples, i);
 
 			if (!continueRecoveringCameras()) break;
-			if (!newMatches)
-			{
-				auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.point.stdDev, true);
-				return targetMatch2D;
-			}
-			if (i+1 >= params.maxRecoverStages)
-			{ // Last iterations, don't optimise again
-				if (matchedSamples >= params.quality.minTotalObs)
-					break; // Some new data after last try, continue normally
-				return targetMatch2D; // Else, not enough data still
-			}
+			if (!newMatches) break;
 			if (improveTargetMatch().samples == 0)
 				break; // If we cannot imrpove, continue
 		}

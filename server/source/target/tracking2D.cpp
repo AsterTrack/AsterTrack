@@ -850,7 +850,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		// Match relevant points (observation and projected target)
 		matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
 			projected2D[c], relevantProjected2D[c], cameraMatches,
-			internalData.nextMatchingStage(camera, targetMatch2D.pose),
+			internalData.nextMatchingStage(camera, targetMatch2D.pose, "Initial fast match"),
 			params.matchFast, paramScale[c]);
 
 		if (cameraMatches.size() < params.quality.minCameraObs)
@@ -896,7 +896,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				// Match relevant points (observation and projected target)
 				matchTargetPointsSlow(*points2D[c], *properties[c], closePoints2D[c],
 					projected2D[c], relevantProjected2D[c], cameraMatches,
-					internalData.nextMatchingStage(camera, targetMatch2D.pose),
+					internalData.nextMatchingStage(camera, targetMatch2D.pose, "Recover match"),
 					params.matchSlow, paramScale[c]);
 
 				if (cameraMatches.size() < params.quality.minCameraObs)
@@ -998,7 +998,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				// Try to match points quickly along the uncertainty axis
 				float bestShift = matchTargetPointsAlongAxis(*points2D[c], *properties[c], closePoints2D[c],
 					projected2D[c], relevantProjected2D[c], cameraMatches,
-					internalData.nextMatchingStage(camera, targetMatch2D.pose),
+					internalData.nextMatchingStage(camera, targetMatch2D.pose, "Corrective align match"),
 					params.matchUncertain, paramScale[c],
 					internalData.uncertaintyAxis[camera]);
 
@@ -1051,16 +1051,18 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		// Match relevant points (observation and projected target)
 		if (prevPointCount < params.quality.cameraGoodObs)
 		{
+			LOGC(LDebug, "            Camera %d: Use recover matching!", c);
 			matchTargetPointsSlow(*points2D[c], *properties[c], closePoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches,
-				internalData.nextMatchingStage(camera, targetMatch2D.pose),
+				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final slow match"),
 				params.matchSlowSecond, paramScale[c]);
 		}
 		else
 		{ // TODO: Only match points not already matched
+			LOGC(LDebug, "            Camera %d: Use fast matching!", c);
 			matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches,
-				internalData.nextMatchingStage(camera, targetMatch2D.pose),
+				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final fast match"),
 				params.matchFast, paramScale[c]);
 		}
 

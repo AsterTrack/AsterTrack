@@ -293,12 +293,31 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 	if (state.pipeline.phase == PHASE_Tracking && visState.tracking.debug.frameNum > 0 && visState.tracking.debugMatchingState)
 	{
-		if (visState.tracking.debug.priLabels.size() > view.camera->pipeline->index)
-			displaySceneLabels(visState.tracking.debug.priLabels[view.camera->pipeline->index], false);
-		if (visState.tracking.debug.secLabels.size() > view.camera->pipeline->index)
-			displaySceneLabels(visState.tracking.debug.secLabels[view.camera->pipeline->index], false);
-		if (visState.tracking.debug.editButtons.size() > view.camera->pipeline->index)
-			displaySceneButtons(visState.tracking.debug.editButtons[view.camera->pipeline->index]);
+		auto &trkVis = visState.tracking;
+		int camera = view.camera->pipeline->index;
+		if (trkVis.debugFocusStage > 0)
+		{
+			auto &matchingData = trkVis.debug.internalData.matching.at(camera);
+			if (trkVis.debugFocusStage-1 < matchingData.numStages
+				&& matchingData.stages[trkVis.debugFocusStage-1].identifier >= 0)
+			{
+				auto &targetMatch = matchingData.stages[trkVis.debugFocusStage-1];
+				SceneLabel label;
+				label.position.head<2>() = trkVis.debug.targetBounds[camera].center() - trkVis.debug.targetBounds[camera].extends();
+				label.radius = 1.0f*PixelSize;
+				label.text = targetMatch.label;
+				label.color = Color{ 1.0f, 1.0f, 1.0f, 1 };
+				std::vector<SceneLabel> labels = { label };
+				displaySceneLabels(labels, true);
+			}
+		}
+
+		if (trkVis.debug.priLabels.size() > camera)
+			displaySceneLabels(trkVis.debug.priLabels[camera], false);
+		if (trkVis.debug.secLabels.size() > camera)
+			displaySceneLabels(trkVis.debug.secLabels[camera], false);
+		if (trkVis.debug.editButtons.size() > camera)
+			displaySceneButtons(trkVis.debug.editButtons[camera]);
 	}
 
 	/**
@@ -1100,7 +1119,8 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			auto &debugVis = visState.tracking.debug;
 			if (debugVis.frameNum > 0 && debugVis.frameNum < frame->num)
 				debugVis = {}; // Any one camera can reset
-			if (displayInternalDebug && debugVis.frameNum == frame->num && visState.tracking.debugMatchingState)
+			if (displayInternalDebug && visState.tracking.debugMatchingState &&
+				debugVis.frameNum == frame->num && debugVis.trackerID == visState.tracking.focusedTrackerID)
 			{ // Visualise internal tracking debug instead of normal vis
 
 				visualiseTarget2DMatchingStages(visState, calib, camFrame, *debugVis.calib,

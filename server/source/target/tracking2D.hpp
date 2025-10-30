@@ -69,6 +69,7 @@ struct TargetMatchingData
 	};
 
 	int identifier = -1;
+	std::string label;
 	float lower, upper;
 	int markerCount = 0;
 	std::vector<MarkerMatchingData> markers;
@@ -110,13 +111,14 @@ struct TargetTracking2DData
 		matching.resize(cameraCount);
 	}
 
-	TargetMatchingData &nextMatchingStage(int camera, Eigen::Isometry3f pose)
+	TargetMatchingData &nextMatchingStage(int camera, Eigen::Isometry3f pose, std::string label)
 	{
 		assert(camera < matching.size());
 		CameraMatchingStages &cam = matching[camera];
 		assert(cam.numStages < CameraMatchingStages::MaxStages);
 		TargetMatchingData &data = cam.stages[cam.numStages++];
 		data.pose = pose;
+		data.label = std::move(label);
 		return data;
 	}
 };

@@ -473,7 +473,8 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	thread_local std::vector<Eigen::Vector2f> projected2D;
 	thread_local std::vector<int> relevantProjected2D;
 	auto &trkVis = visState.tracking;
-	
+
+	trkVis.debug.targetBounds.resize(trkVis.debug.targetMatch2D.points2D.size());
 	trkVis.debug.priLabels.resize(trkVis.debug.targetMatch2D.points2D.size());
 	trkVis.debug.secLabels.resize(trkVis.debug.targetMatch2D.points2D.size());
 	trkVis.debug.editButtons.resize(trkVis.debug.targetMatch2D.points2D.size());
@@ -483,6 +484,13 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	priLabels.clear();
 	secLabels.clear();
 	buttons.clear();
+
+	trkVis.debug.targetBounds[calib.index] = {};
+	for (int i = 0; i < trkVis.debug.targetMatch2D.points2D[calib.index].size(); i++)
+	{
+		int pt = trkVis.debug.targetMatch2D.points2D[calib.index][i].second;
+		trkVis.debug.targetBounds[calib.index].include(frame.points2D[pt]);
+	}
 
 	std::vector<std::pair<VisPoint,VisPoint>> matchLines;
 	auto reprojection = [&calib, &target](const TargetMatchingData::MarkerMatchingData &markerMatch, const Eigen::Isometry3f &pose)

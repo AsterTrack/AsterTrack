@@ -186,6 +186,7 @@ struct VisualisationState
 			TargetTracking2DData internalData;
 			bool showEdited = false;
 			bool showEditTools = false;
+			std::vector<Bounds2f> targetBounds;
 			std::vector<std::vector<SceneLabel>> priLabels;
 			std::vector<std::vector<SceneLabel>> secLabels;
 			std::vector<std::vector<SceneButton>> editButtons;

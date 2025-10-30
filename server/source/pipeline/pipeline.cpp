@@ -263,6 +263,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// Adopt state for all recorded trackers in that frame to kickstart tracking
 	for (auto &targetRecord : frameRecord.trackers)
 	{
+		if (!targetRecord.result.isDetected() && !targetRecord.result.isTracked()) continue;
 		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 			[&](auto &trk){ return trk.id == targetRecord.id; });
 		if (dormantIt == pipeline.tracking.dormantTargets.end()) continue;

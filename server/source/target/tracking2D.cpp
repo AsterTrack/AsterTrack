@@ -821,7 +821,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			// Instead of limiting which markers to reproject at a distance
 			// May want to project more (especially if pose is uncertain)
 			// And instead weight them somehow based on their suspected brightness
-			float angleLimit = params.expandMarkerFoV;
+			float angleLimit = params.expandMarkerFoV / paramScale[c];
 
 			// Project markers and mark those not seen with NAN
 			Eigen::Isometry3f mv = calibs[c].view.cast<float>() * targetMatch2D.pose;

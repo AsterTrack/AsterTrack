@@ -195,7 +195,7 @@ struct TargetTrackingParameters
 	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
 	float uncertaintySigma = 3;
 	// Marker Matching
-	float expandMarkerFoV = 0.0f;
+	float expandMarkerFoV = -0.3f;
 	float normaliseDistance = 5.0f;
 	// Selecting whether to go down slow path
 	int minCamerasGood = 2;

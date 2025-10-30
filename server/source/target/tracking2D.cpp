@@ -871,7 +871,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			newMatches = false;
 		}
 
-		// Recalculate because of outliers and reprojection changing cameraMAtches
+		// Recalculate because of outliers and reprojection changing cameraMatches
 		matchedSamples = 0;
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -976,11 +976,11 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 			int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
-			int minImprov = std::max<int>(params.minImprovePoints, std::ceil(cameraMatches.size() * params.minImproveFactor));
+			int minImprov = std::max<int>(params.quality.minImprovePoints, std::ceil(cameraMatches.size() * params.quality.minImproveFactor));
 			if (cameraMatches.size() < params.quality.cameraGoodObs && minImprov <= maxPossible)
 				improvableCameras++;
 		}
-		bool recover = improvableCameras > 0 && (camerasGood < params.minCamerasGood || matchedSamples < params.quality.minTotalObs);
+		bool recover = improvableCameras > 0 && camerasGood < params.selectRecover.minCamerasGood;
 		if (recover)
 			LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
 		return recover;
@@ -990,7 +990,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		int camera = calibs[c].index;
 		auto &cameraMatches = targetMatch2D.points2D[camera];
 		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
-		int minImprov = std::max<int>(params.minImprovePoints, std::ceil(cameraMatches.size() * params.minImproveFactor));
+		int minImprov = std::max<int>(params.quality.minImprovePoints, std::ceil(cameraMatches.size() * params.quality.minImproveFactor));
 		return cameraMatches.size() < params.quality.cameraGoodObs && minImprov <= maxPossible;
 	};
 	auto continueRecoveringCameras = [&]()
@@ -1004,11 +1004,11 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
-		return camerasGood < params.minCamerasGood;
+		return camerasGood < params.selectRecover.minCamerasGood;
 	};
 	if (shouldRecoverCameraMatches())
 	{ // Try again with recover matching algorithm
-		for (int i = 0; i < params.maxRecoverStages; i++)
+		for (int i = 0; i < params.selectRecover.maxRecoverStages; i++)
 		{
 			for (int c = 0; c < calibs.size(); c++)
 			{
@@ -1018,7 +1018,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				matchTargetPointsRecover(*points2D[c], *properties[c], closePoints2D[c],
 					projected2D[c], relevantProjected2D[c], matches,
 					internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Recover match"),
-					params.matchSlow, paramScale[c]);
+					params.matchRecover, paramScale[c]);
 
 				updateCameraMatches(c, matches);
 			}
@@ -1047,9 +1047,10 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
-		bool recover = camerasGood >= params.minCamerasGood &&
-			camPoints.rank[0] > camPoints.rank[1]*params.matchUncertain.maxDominantFactor;
-		return recover;
+		// If one camera is either the only matched one or dominating over others
+		// as long as the others aren't good themselves, at which point there's no worry over uncertainty
+		return camPoints.rank[0] > 0 && camerasGood < params.selectUncertain.maxCamerasGood &&
+			camPoints.rank[0] > camPoints.rank[1]*params.selectUncertain.maxDominantFactor;
 	};
 	if (shouldHandleSingleCameraMatches(camPoints))
 	{ // If a single camera is dominant, allow other cameras to shift along its uncertainty axis
@@ -1061,6 +1062,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			if (targetMatch2D.points2D[calibs[c].index].size() == camPoints.rank[0])
 				dominantCamera = c;
+			//else // No a good idea in general
+			// 	targetMatch2D.points2D[c].clear();
 		}
 		assert(dominantCamera >= 0);
 
@@ -1103,10 +1106,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		}
 
 		if (!newMatches)
-		{
 			LOGC(LDebug, "        Failed to find any more samples from other cameras to break dominance! Aborting!");
-			return targetMatch2D; // No hope improving
-		}
 	}
 
 	improveTargetMatch();

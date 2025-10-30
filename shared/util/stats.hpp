@@ -174,7 +174,7 @@ struct MultipleExtremum
 
 	void max(Scalar value, int maxMatches = -1)
 	{
-		if (rank.size() >= std::max(1,maxMatches) && rank.back() != signal && rank.back() < value) return;
+		if (rank.size() >= std::max(1,maxMatches) && rank.back() != signal && rank.back() > value) return;
 		int i = 0;
 		for (; i < rank.size(); i++)
 			if (rank[i] == signal || rank[i] < value) break;

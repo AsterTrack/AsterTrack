@@ -64,7 +64,6 @@ struct TargetMatchingParametersSlow
 struct TargetMatchingParametersUncertain
 {
 	// Accounting for excessive uncertainty after initial match
-	float maxDominantFactor = 2.0f;
 	float perpDeviation = 1.2f;
 	float stepLength = 3.0f*PixelSize;
 	int maxSteps = 20;
@@ -197,19 +196,26 @@ struct TargetTrackingParameters
 	// Marker Matching
 	float expandMarkerFoV = -0.3f;
 	float normaliseDistance = 5.0f;
-	// Selecting whether to go down slow path
-	int minCamerasGood = 2;
-	int minImprovePoints = 2;
-	float minImproveFactor = 1.3f;
-	int maxRecoverStages = 2;
 	TargetMatchingParametersFast matchFast = {};
-	TargetMatchingParametersSlow matchSlow = {};
+	struct { // Selecting whether to go down recover path
+		int minCamerasGood = 2;
+		int maxRecoverStages = 2;
+	} selectRecover;
+	TargetMatchingParametersSlow matchRecover = {};
+	struct { // Selecting whether to go down single camera uncertainty path
+		// Uncertain matching is too unstable, may destroy a fine matching
+		// A/B Testing didn't result in a clear benefit either way, so rework it in the future
+		int maxCamerasGood = 0; // Disabled via this. Would be 2
+		float maxDominantFactor = 2.0f;
+	} selectUncertain = {};
 	TargetMatchingParametersUncertain matchUncertain = {};
 	TargetMatchingParametersFast matchFastFinal = {};
 	// Quality
 	struct {
 		int cameraGoodObs = 5;
 		float cameraGoodRatio = 0.5f;
+		int minImprovePoints = 2;
+		float minImproveFactor = 1.3f;
 		int minTotalObs = 3;
 		int minCameraObs = 1;
 		float maxTotalError = 2.0f*PixelSize;

@@ -124,7 +124,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 			auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
 			matchTargetPointsRecover(*points2D[c], *properties[c], *relevantPoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches,
-				matchingStage, track.matchSlow, paramScale[c]);
+				matchingStage, track.matchRecover, paramScale[c]);
 			if (cameraMatches.size() < track.quality.minCameraObs)
 				cameraMatches.clear();
 			targetMatch2D.error.samples += cameraMatches.size();

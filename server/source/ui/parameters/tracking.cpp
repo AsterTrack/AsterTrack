@@ -227,15 +227,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		BeginSection("2D Point Matching");
 		modified |= ScalarProperty<float>("Expand Marker FoV", "", &params.expandMarkerFoV, &standard.expandMarkerFoV, -2.0f, 2.0f, 0.02f);
 		modified |= ScalarProperty<float>("Normalise for Distance", "m", &params.normaliseDistance, &standard.normaliseDistance, 0, 10, 0.5f);
-		if (ImGui::TreeNode("Match Evaluation"))
-		{
-			modified |= ScalarProperty<int>("Min Good Cameras", "", &params.minCamerasGood, &standard.minCamerasGood, 0, 10);
-			modified |= ScalarProperty<int>("Min Points To Improve", "", &params.minImprovePoints, &standard.minImprovePoints, 0, 10);
-			modified |= ScalarProperty<float>("Min Factor To Improve", "x", &params.minImproveFactor, &standard.minImproveFactor, 0, 10, 0.1f);
-			modified |= ScalarProperty<int>("Max Recover Stages", "", &params.maxRecoverStages, &standard.maxRecoverStages, 0, 10);
-			ImGui::TreePop();
-		}
-		ImGui::SetItemTooltip("These parameters influence whether Recover Matching is used.");
 		if (ImGui::TreeNode("Fast Matching"))
 		{
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchFast.matchRadius, &standard.matchFast.matchRadius, 0, 100, 1.0f, PixelFactor);
@@ -243,16 +234,29 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			ImGui::TreePop();
 		}
 		ImGui::SetItemTooltip("Fast matching used initially, works well when changes were predicted accurately.");
+		if (ImGui::TreeNode("Select Recover Matching"))
+		{
+			modified |= ScalarProperty<int>("Min Good Cameras", "", &params.selectRecover.minCamerasGood, &standard.selectRecover.minCamerasGood, 0, 10);
+			modified |= ScalarProperty<int>("Max Recover Stages", "", &params.selectRecover.maxRecoverStages, &standard.selectRecover.maxRecoverStages, 0, 10);
+			ImGui::TreePop();
+		}
+		ImGui::SetItemTooltip("These parameters influence whether Recover Matching is used.");
 		if (ImGui::TreeNode("Recover Matching"))
 		{
-			modified |= matchParamUI(params.matchSlow, standard.matchSlow);
+			modified |= matchParamUI(params.matchRecover, standard.matchRecover);
 			ImGui::TreePop();
 		}
 		ImGui::SetItemTooltip("A complex matching algorithm that may recover from severe prediction errors (mostly translational).\n"
 			"It may also perform worse than fast matching in simpler cases, so it is only used as a fallback if needed.");
+		if (ImGui::TreeNode("Select Single Camera Uncertainty"))
+		{
+			modified |= ScalarProperty<int>("Min Good Cameras", "", &params.selectUncertain.maxCamerasGood, &standard.selectUncertain.maxCamerasGood, 0, 10);
+			modified |= ScalarProperty<float>("Max Dominant Factor", "x", &params.selectUncertain.maxDominantFactor, &standard.selectUncertain.maxDominantFactor, 0, 50, 1.0f);
+			ImGui::TreePop();
+		}
+		ImGui::SetItemTooltip("These parameters influence whether Single Camera Uncertainty Matching is used.");
 		if (ImGui::TreeNode("Single Camera Uncertainty Axis"))
 		{
-			modified |= ScalarProperty<float>("Max Dominant Factor", "x", &params.matchUncertain.maxDominantFactor, &standard.matchUncertain.maxDominantFactor, 0, 50, 1.0f);
 			modified |= ScalarProperty<float>("Axis Perp Deviation", "", &params.matchUncertain.perpDeviation, &standard.matchUncertain.perpDeviation, 1.0f, 2.0f, 0.1f, 1, "%.1f");
 			modified |= ScalarProperty<float>("Step Length", "px", &params.matchUncertain.stepLength, &standard.matchUncertain.stepLength, 1.0f, 10, 0.5f, PixelFactor, "%.1f");
 			modified |= ScalarProperty<int>("Max Steps", "", &params.matchUncertain.maxSteps, &standard.matchUncertain.maxSteps, 5, 100);
@@ -271,7 +275,10 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Quality");
+		modified |= ScalarProperty<int>("Good Camera Min Obs", "", &params.quality.cameraGoodObs, &standard.quality.cameraGoodObs, 0, 20);
 		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "px", &params.quality.cameraGoodRatio, &standard.quality.cameraGoodRatio, 0, 1, 0.05f);
+		modified |= ScalarProperty<int>("Min Points To Improve", "", &params.quality.minImprovePoints, &standard.quality.minImprovePoints, 0, 20);
+		modified |= ScalarProperty<float>("Min Factor To Improve", "x", &params.quality.minImproveFactor, &standard.quality.minImproveFactor, 0, 10, 0.1f);
 		modified |= ScalarProperty<int>("Min total Observations", "", &params.quality.minTotalObs, &standard.quality.minTotalObs, 1, 50); // 6 needed to optimise 6 parameters
 		modified |= ScalarProperty<int>("Min camera Observations", "", &params.quality.minCameraObs, &standard.quality.minCameraObs, 0, 50);
 		modified |= ScalarProperty<float>("Max total Error", "px", &params.quality.maxTotalError, &standard.quality.maxTotalError, 0, 10, 0.1f, PixelFactor, "%.2f");

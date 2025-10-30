@@ -191,9 +191,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		}
 		EndSection();
 
-		bool defaultFinalTrack = true;
-		modified |= BooleanProperty("Allow final recover match", &state.pipeline.params.detectTrack.allowFinalRecoverMatch, &defaultFinalTrack);
-
 		BeginSection("Quality");
 		modified |= ScalarProperty<int>("Min Obs in Focus Cam", "", &params.minObservations.focus, &standard.minObservations.focus, 0, 50);
 		modified |= ScalarProperty<int>("Min Obs in Sec Cam", "", &params.minObservations.sec, &standard.minObservations.sec, 0, 50);
@@ -245,7 +242,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			modified |= matchAlgParamUI(params.matchFast.match, standard.matchFast.match);
 			ImGui::TreePop();
 		}
-		ImGui::SetItemTooltip("Fast matching is used initially, and generally also at the end to increase points matched.");
+		ImGui::SetItemTooltip("Fast matching used initially, works well when changes were predicted accurately.");
 		if (ImGui::TreeNode("Recover Matching"))
 		{
 			modified |= matchParamUI(params.matchSlow, standard.matchSlow);
@@ -264,21 +261,13 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			modified |= matchAlgParamUI(params.matchUncertain.subMatch.match, standard.matchUncertain.subMatch.match);
 			ImGui::TreePop();
 		}
-		if (ImGui::TreeNode("Fast Matching as Final Stage"))
+		if (ImGui::TreeNode("Final Fast Matching"))
 		{
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchFastFinal.matchRadius, &standard.matchFastFinal.matchRadius, 0, 100, 1.0f, PixelFactor);
 			modified |= matchAlgParamUI(params.matchFastFinal.match, standard.matchFastFinal.match);
 			ImGui::TreePop();
 		}
-		ImGui::SetItemTooltip("Fast matching is used initially, and generally also at the end to increase points matched.");
-		if (ImGui::TreeNode("Recover Matching as Final Stage"))
-		{
-			modified |= matchParamUI(params.matchSlowFinal, standard.matchSlowFinal);
-			ImGui::TreePop();
-		}
-		ImGui::SetItemTooltip("A complex matching algorithm that may recover from severe prediction errors (mostly translational).\n"
-			"It may also perform worse than fast matching in simpler cases, so it is only used as a fallback if needed.");
-		modified |= BooleanProperty("Allow Final Recover Matching", &params.allowFinalRecoverMatch, &standard.allowFinalRecoverMatch);
+		ImGui::SetItemTooltip("Fast matching used at the end to increase points matched.");
 		EndSection();
 
 		BeginSection("Quality");

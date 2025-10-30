@@ -1118,24 +1118,10 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	{
 		if (!canUpdateCameraMatches(c) && checkDiscardCameraMatches(c)) continue;
 
-		int camera = calibs[c].index;
-		if (targetMatch2D.points2D[camera].size() < params.quality.cameraGoodObs &&
-			params.allowFinalRecoverMatch)
-		{
-			LOGC(LDebug, "            Camera %d: Use recover matching!", camera);
-			matchTargetPointsRecover(*points2D[c], *properties[c], closePoints2D[c],
-				projected2D[c], relevantProjected2D[c], matches,
-				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final recover match"),
-				params.matchSlowFinal, paramScale[c]);
-		}
-		else
-		{
-			LOGC(LDebug, "            Camera %d: Use fast matching!", camera);
-			matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
-				projected2D[c], relevantProjected2D[c], matches,
-				internalData.nextMatchingStage(camera, targetMatch2D.pose, "Final fast match"),
-				params.matchFastFinal, paramScale[c]);
-		}
+		matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
+			projected2D[c], relevantProjected2D[c], matches,
+			internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Final fast match"),
+			params.matchFastFinal, paramScale[c]);
 
 		updateCameraMatches(c, matches);
 	}

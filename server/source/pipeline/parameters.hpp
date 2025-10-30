@@ -76,7 +76,6 @@ struct TrackingParameters
 	ClusteringParameters cluster = {};
 	TargetDetectionParameters detect = {};
 	TargetTrackingParameters track = {};
-	TargetTrackingParameters detectTrack = {};
 	ContinuousOptimisationParameters cont = {};
 };
 

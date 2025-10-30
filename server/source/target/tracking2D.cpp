@@ -862,12 +862,20 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		return errors;
 	};
 
+	int oldCameraGood = 0;
 	auto canUpdateCameraMatches = [&](int c)
 	{
 		int camera = calibs[c].index;
 		auto &cameraMatches = targetMatch2D.points2D[camera];
-		if (cameraMatches.size() == closePoints2D[c].empty())
+		if (cameraMatches.size() == closePoints2D[c].size())
+		{
+			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
+			{ // Due to a bug camerasGood was previously underestimated; reproduce
+				oldCameraGood++;
+			}
 			return false; // If no improvements are possible, skip
+		}
 		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
 		if (maxPossible == 0)
 		{ // Even if we did match, it's not sufficient with the current pose anymore
@@ -949,6 +957,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
+		camerasGood -= oldCameraGood; // Reproduce bug
 		bool recover = camerasGood < params.minCamerasGood || matchedSamples < params.quality.minTotalObs;
 		if (recover)
 			LOGC(LDebug, "        Only %d cameras had a good amount of samples with %d total, entering slow-path!", camerasGood, matchedSamples);
@@ -969,6 +978,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
+		camerasGood -= oldCameraGood; // Reproduce bug
 		return camerasGood < params.minCamerasGood;
 	};
 	if (shouldRecoverCameraMatches())
@@ -976,6 +986,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		for (int i = 0; i < params.maxRecoverStages; i++)
 		{
 			newMatches = false;
+			oldCameraGood = 0;
 
 			for (int c = 0; c < calibs.size(); c++)
 			{
@@ -1024,6 +1035,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
+		camerasGood -= oldCameraGood; // Reproduce bug
 		bool recover = camerasGood >= params.minCamerasGood &&
 			camPoints.rank[0] > camPoints.rank[1]*params.matchUncertain.maxDominantFactor;
 		return recover;
@@ -1051,6 +1063,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		Ray3f uncertainAxis;
 		uncertainAxis.pos = calibs[dominantCamera].transform.translation().cast<float>();
 		uncertainAxis.dir = (targetMatch2D.pose.translation() - uncertainAxis.pos).normalized();
+		oldCameraGood = 0;
 
 		// Find more visible target points (which would be newly visible in this frame)
 		for (int c = 0; c < calibs.size(); c++)

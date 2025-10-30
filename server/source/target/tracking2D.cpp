@@ -890,7 +890,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	{
 		auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
 		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
-		if (cameraMatches.size() == closePoints2D[c].size())
+		if (cameraMatches.size() == maxPossible)
 			return false; // If no improvements are possible, skip
 		if (maxPossible < params.quality.minCameraObs)
 			return false; // If no valid match is possible, skip
@@ -932,19 +932,14 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 					LOGC(LDebug, "            Camera %d: Found %d matches, had %d before!", c, (int)matches.size(), (int)cameraMatches.size());
 			}
 		}
-		bool accepted = matches.size() >= params.quality.minCameraObs;
+		bool accepted = matches.size() > cameraMatches.size() && matches.size() >= params.quality.minCameraObs;
 		if (accepted)
 		{
-			if (matches.size() > cameraMatches.size())
-				newMatches = true;
+			newMatches = true;
 			matchedSamples += matches.size() - cameraMatches.size();
 			std::swap(matches, cameraMatches);
 		}
-		else
-		{
-			matchedSamples -= cameraMatches.size();
-			cameraMatches.clear();
-		}
+		else checkDiscardCameraMatches(c);
 		matches.clear();
 		return accepted;
 	};

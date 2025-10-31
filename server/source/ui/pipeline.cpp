@@ -226,6 +226,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				if (debugVis.needsUpdate)
 				{
 					debugVis.needsUpdate = false;
+					debugVis.showInitial = trackRecord->match2D.error.samples > 0 && trackRecord->result.isProbe();
+					debugVis.initialMatch2D = trackRecord->match2D;
 					debugVis.internalData.init(pipeline.cameras.size());
 					debugVis.targetMatch2D = trackTarget2D(trackConfig->calib,
 						trackRecord->posePredicted, trackRecord->covPredicted,
@@ -245,6 +247,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						debugVis.targetMatch2D.error.mean*PixelFactor, debugVis.targetMatch2D.error.stdDev*PixelFactor, debugVis.targetMatch2D.error.max*PixelFactor, debugVis.targetMatch2D.error.samples);
 					ImGui::Text("Edited tracking error: %.2fpx +- %.2fpx, %.2fpx max, %d matches",
 						debugVis.editedMatch2D.error.mean*PixelFactor, debugVis.editedMatch2D.error.stdDev*PixelFactor, debugVis.editedMatch2D.error.max*PixelFactor, debugVis.editedMatch2D.error.samples);
+
+					if (trackRecord->result.isProbe())
+						ImGui::TextUnformatted("Detection attempt!");
+					ImGui::BeginDisabled(debugVis.showEdited);
+					ImGui::Checkbox(debugVis.showInitial?
+						"Showing Initial Matching###DetectToggle" :
+						"Showing Redone Matching###DetectToggle",
+						&debugVis.showInitial);
+					ImGui::EndDisabled();
 
 					if (ImGui::Button(debugVis.showEdited? "Hide" : "Edit", SizeWidthDiv4()))
 					{

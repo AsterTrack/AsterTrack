@@ -474,10 +474,11 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	thread_local std::vector<int> relevantProjected2D;
 	auto &trkVis = visState.tracking;
 
-	trkVis.debug.targetBounds.resize(trkVis.debug.targetMatch2D.points2D.size());
-	trkVis.debug.priLabels.resize(trkVis.debug.targetMatch2D.points2D.size());
-	trkVis.debug.secLabels.resize(trkVis.debug.targetMatch2D.points2D.size());
-	trkVis.debug.editButtons.resize(trkVis.debug.targetMatch2D.points2D.size());
+	int camCount = trkVis.debug.targetMatch2D.points2D.size();
+	trkVis.debug.targetBounds.resize(camCount);
+	trkVis.debug.priLabels.resize(camCount);
+	trkVis.debug.secLabels.resize(camCount);
+	trkVis.debug.editButtons.resize(camCount);
 	auto &priLabels = trkVis.debug.priLabels[calib.index];
 	auto &secLabels = trkVis.debug.secLabels[calib.index];
 	auto &buttons = trkVis.debug.editButtons[calib.index];
@@ -486,6 +487,11 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	buttons.clear();
 
 	trkVis.debug.targetBounds[calib.index] = {};
+	for (int i = 0; i < trkVis.debug.initialMatch2D.points2D[calib.index].size(); i++)
+	{
+		int pt = trkVis.debug.initialMatch2D.points2D[calib.index][i].second;
+		trkVis.debug.targetBounds[calib.index].include(frame.points2D[pt]);
+	}
 	for (int i = 0; i < trkVis.debug.targetMatch2D.points2D[calib.index].size(); i++)
 	{
 		int pt = trkVis.debug.targetMatch2D.points2D[calib.index][i].second;
@@ -606,7 +612,8 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	}
 	else if (trkVis.debugFocusStage == 0)
 	{
-		const auto &tgtMatch = trkVis.debug.showEdited? trkVis.debug.editedMatch2D : trkVis.debug.targetMatch2D;
+		const auto &tgtMatch = trkVis.debug.showInitial? trkVis.debug.initialMatch2D :
+			(trkVis.debug.showEdited? trkVis.debug.editedMatch2D : trkVis.debug.targetMatch2D);
 		const auto &matches = tgtMatch.points2D[calib.index];
 
 		// Visualise target points that were considered (since they should've been visible assuming the pose is about right)

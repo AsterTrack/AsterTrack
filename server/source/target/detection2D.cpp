@@ -218,7 +218,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 
 	auto bestResult = candResults[candSolutions[0]];
 	if (bestResult.first < params.minObservations.total || bestResult.second > params.probe.errorMax)
-		return {};
+		return candMatches[candSolutions[0]];
 
 	return candMatches[candSolutions[0]];
 }

@@ -217,6 +217,33 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
 	return record;
 }
 
+/**
+ * Update tracked target record with failed probe2D or search2D
+ */
+static void recordTrackerFailedTest(TrackerRecord &record, const TargetMatch2D &match2D, bool keepInternalData)
+{
+	record.error = match2D.error;
+	if (keepInternalData)
+	{
+		record.match2D = match2D;
+	}
+	updateVisibleMarkers(record.visibleMarkers, match2D);
+	if (match2D.pose.matrix().hasNaN())
+	{
+		record.posePredicted.setIdentity();
+		record.poseFiltered.setIdentity();
+	}
+	else
+	{ // At least had a candidate
+		record.posePredicted = match2D.pose;
+		record.poseFiltered = match2D.pose;
+	}
+	record.covPredicted.setZero();
+	record.poseObserved.setIdentity();
+	record.covObserved.setZero();
+	record.covFiltered.setZero();
+}
+
 static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &tracker, std::shared_ptr<FrameRecord> &frame)
 {
 	frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
@@ -280,9 +307,11 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			dormant.target.match2D = searchTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
 				focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 		}
-		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total)
+		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total
+			|| dormant.target.match2D.error.mean > (useProbe? pipeline.params.detect.probe.errorMax : pipeline.params.detect.search.errorMax))
 		{
-			createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D);
+			auto &record = createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D);
+			recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
 			frame->finishedProcessing = true;
 			return false;
 		}
@@ -963,7 +992,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 					
 				}
-				if (dormant.target.match2D.error.samples >= pipeline.params.detect.minObservations.total)
+				if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total
+					|| dormant.target.match2D.error.mean > (useProbe? pipeline.params.detect.probe.errorMax : pipeline.params.detect.search.errorMax))
+				{
+					auto &record = createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D);
+					recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
+				}
+				else
 				{
 					LOG(LDetection2D, LInfo, useProbe?
 					"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
@@ -976,10 +1011,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					SignalTrackerDetected(tracker.id);
 					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 					pipeline.tracking.dormantTargets.pop_back();
-				}
-				else
-				{
-					createTrackerRecord(frame, dormant.id, TrackingResult::SEARCHED_2D);
 				}
 			}
 		}

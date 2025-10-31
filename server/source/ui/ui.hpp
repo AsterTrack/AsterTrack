@@ -181,9 +181,11 @@ struct VisualisationState
 			int frameNum = -1, trackerID = 0;
 			bool needsUpdate = false;
 			const TargetCalibration3D *calib;
+			TargetMatch2D initialMatch2D;
 			TargetMatch2D targetMatch2D;
 			TargetMatch2D editedMatch2D;
 			TargetTracking2DData internalData;
+			bool showInitial = false;
 			bool showEdited = false;
 			bool showEditTools = false;
 			std::vector<Bounds2f> targetBounds;

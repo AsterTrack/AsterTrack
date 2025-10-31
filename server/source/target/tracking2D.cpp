@@ -831,9 +831,21 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			{
 				if (projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv, angleLimit))
 					relevantProjected2D[c].push_back(i);
+				else
+				 	projected2D[c][i].setConstant(NAN);
 			}
 			LOGC(LDebug, "        Camera %d: Projected %d target markers, matching them to %d closeby observations!\n",
 				c, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());
+
+			// Remove existing matches that are not visible anymore - happens rarely
+			int camera = calibs[c].index;
+			auto &cameraMatches = targetMatch2D.points2D[camera];
+			for (int p = 0; p < cameraMatches.size();)
+			{
+				if (projected2D[c][cameraMatches[p].first].hasNaN())
+					cameraMatches.erase(cameraMatches.begin()+p);
+				else p++;
+			}
 		}
 	};
 
@@ -850,7 +862,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			reprojectTargetMarkers();
 			newMatches = false;
 		}
-		// Recalculate because of outliers
+
+		// Recalculate because of outliers and reprojection changing cameraMAtches
 		matchedSamples = 0;
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -868,7 +881,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		if (cameraMatches.size() == closePoints2D[c].size())
 			return false; // If no improvements are possible, skip
 		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
-		if (maxPossible == 0)
+		if (maxPossible < params.quality.minCameraObs)
 		{ // Even if we did match, it's not sufficient with the current pose anymore
 			matchedSamples -= cameraMatches.size();
 			cameraMatches.clear();

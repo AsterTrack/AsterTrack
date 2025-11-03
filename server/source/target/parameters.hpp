@@ -202,10 +202,12 @@ struct TargetTrackingParameters
 	int minImprovePoints = 2;
 	float minImproveFactor = 1.3f;
 	int maxRecoverStages = 2;
+	bool allowFinalRecoverMatch = false;
 	TargetMatchingParametersFast matchFast = {};
 	TargetMatchingParametersSlow matchSlow = {};
 	TargetMatchingParametersUncertain matchUncertain = {};
-	TargetMatchingParametersSlow matchSlowSecond = {
+	TargetMatchingParametersFast matchFastFinal = {};
+	TargetMatchingParametersSlow matchSlowFinal = {
 		1.0f, 0.0f, 1.0f,
 		3, 5.0f*PixelSize, 5.0f*PixelSize
 	};

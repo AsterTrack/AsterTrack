@@ -349,7 +349,7 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 
 	tracker.result = trackTarget(tracker.state, tracker.target, tracker.pose,
 		calibs, points2D, properties, relevantPoints2D,
-		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.track);
+		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.detectTrack);
 
 	if (tracker.result.isTracked() && tracker.inertial)
 		postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
@@ -384,12 +384,12 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		if (useProbe)
 		{ // Probe target against clusters points
 			dormant.target.match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
-				pos, pipeline.cameras.size(), probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				pos, pipeline.cameras.size(), probeCount, pipeline.params.detect, pipeline.params.detectTrack, dormant.target.data);
 		}
 		else
 		{ // Detect target first in focusCameras 2D points, and then match with others
 			dormant.target.match2D = searchTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
-				focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.detectTrack, dormant.target.data);
 		}
 		procTimeMS = dtMS(start, sclock::now());
 		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total
@@ -920,7 +920,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// Use pose candidate to track target with 2D points
 				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * pipeline.params.track.filter.detectSigma;
 				dormant.target.match2D = trackTarget2D(dormant.target.calib, candidate.pose, covariance,
-					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.track, dormant.target.data);
+					calibs, camCount, points2D, properties, relevantPoints2D, pipeline.params.detectTrack, dormant.target.data);
 
 				float procTimeMS = dtMS(start, sclock::now());
 				acceptCandidate = dormant.target.match2D.error.samples >= pipeline.params.track.quality.minTotalObs
@@ -1111,13 +1111,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				{ // Probe target against clusters points
 					dormant.target.match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
 						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, cluster.center,
-						pipeline.cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
+						pipeline.cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.detectTrack, dormant.target.data);
 				}
 				else
 				{ // Detect target first in focusCameras 2D points, and then match with others
 					dormant.target.match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
 						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync,
-						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.detectTrack, dormant.target.data);
 					
 				}
 				float procTimeMS = dtMS(start, sclock::now());

@@ -97,6 +97,7 @@ struct TargetTracking2DData
 		}
 	};
 	std::vector<CameraMatchingStages> matching;
+	int freeProjections, freeObservations;
 
 	std::vector<UncertaintyAxisAlignment> uncertaintyAxis;
 
@@ -109,6 +110,7 @@ struct TargetTracking2DData
 		uncertaintyAxis.clear();
 		uncertaintyAxis.resize(cameraCount);
 		matching.resize(cameraCount);
+		freeProjections = freeObservations = 0;
 	}
 
 	TargetMatchingData &nextMatchingStage(int camera, Eigen::Isometry3f pose, std::string label)

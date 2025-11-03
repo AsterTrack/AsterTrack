@@ -217,6 +217,19 @@ struct TargetTrackingParameters
 		int minCameraObs = 1;
 		float maxTotalError = 2.0f*PixelSize;
 	} quality = {};
+	// Mistrust
+	struct {
+		float noTrackingAccum = 0.2f;
+		float highErrorFactor = 100.0f;
+		float highErrorThreshold = 0.8f*PixelSize;
+		float matchedMarkerFactor = 0.99f;
+		float conflictedMarkerAccum = 0.05f;
+		float unmatchedCertainAccum = 0.015f;
+		float unmatchedObservationsAccum = 0.005f;
+		float unmatchedProjectionsAccum = 0.000f;
+		float closebyObservationsRange = 1.0f;
+		float maxMistrust = 1.0f;
+	} mistrust = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};
 	// Filtering

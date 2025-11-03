@@ -217,7 +217,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ImGui::PushID("Track");
 		auto &params = state.pipeline.params.track;
 		const auto &standard = defaultParams.track;
-		bool modified = false;
+		bool modified = false, trustMod = false, filterMod = false;
 
 		BeginSection("Prediction");
 		modified |= ScalarProperty<float>("Min 3D Uncertainty", "mm", &params.minUncertainty3D, &standard.minUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");
@@ -252,7 +252,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			"It may also perform worse than fast matching in simpler cases, so it is only used as a fallback if needed.");
 		if (ImGui::TreeNode("Single Camera Uncertainty Axis"))
 		{
-			modified |= ScalarProperty<float>("Max Dominant Factor", "px", &params.matchUncertain.maxDominantFactor, &standard.matchUncertain.maxDominantFactor, 0, 50, 1.0f);
+			modified |= ScalarProperty<float>("Max Dominant Factor", "x", &params.matchUncertain.maxDominantFactor, &standard.matchUncertain.maxDominantFactor, 0, 50, 1.0f);
 			modified |= ScalarProperty<float>("Axis Perp Deviation", "", &params.matchUncertain.perpDeviation, &standard.matchUncertain.perpDeviation, 1.0f, 2.0f, 0.1f, 1, "%.1f");
 			modified |= ScalarProperty<float>("Step Length", "px", &params.matchUncertain.stepLength, &standard.matchUncertain.stepLength, 1.0f, 10, 0.5f, PixelFactor, "%.1f");
 			modified |= ScalarProperty<int>("Max Steps", "", &params.matchUncertain.maxSteps, &standard.matchUncertain.maxSteps, 5, 100);
@@ -275,6 +275,18 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Max total Error", "px", &params.quality.maxTotalError, &standard.quality.maxTotalError, 0, 10, 0.1f, PixelFactor, "%.2f");
 		EndSection();
 
+		BeginSection("Mistrust");
+		trustMod |= ScalarProperty<float>("Tracked Marker Trust", "x", &params.mistrust.matchedMarkerFactor, &standard.mistrust.matchedMarkerFactor, 0, 1, 0.01f);
+		trustMod |= ScalarProperty<float>("High Error Threshold", "px", &params.mistrust.highErrorThreshold, &standard.mistrust.highErrorThreshold, 0, 10, 0.1f, PixelFactor, "%.2f");
+		trustMod |= ScalarProperty<float>("High Error Mistrust", "x", &params.mistrust.highErrorFactor, &standard.mistrust.highErrorFactor, 0, 1000, 1.0f);
+		trustMod |= ScalarProperty<float>("No-Tracking Mistrust", "", &params.mistrust.noTrackingAccum, &standard.mistrust.noTrackingAccum, 0, 1, 0.1f);
+		trustMod |= ScalarProperty<float>("Marker Conflict Mistrust", "", &params.mistrust.conflictedMarkerAccum, &standard.mistrust.conflictedMarkerAccum, 0, 1, 0.05f);
+		trustMod |= ScalarProperty<float>("Unmatched Pair Mistrust", "", &params.mistrust.unmatchedCertainAccum, &standard.mistrust.unmatchedCertainAccum, 0, 1, 0.001f);
+		trustMod |= ScalarProperty<float>("Free Observations Mistrust", "", &params.mistrust.unmatchedObservationsAccum, &standard.mistrust.unmatchedObservationsAccum, 0, 1, 0.001f);
+		trustMod |= ScalarProperty<float>("Free Projections Mistrust", "", &params.mistrust.unmatchedProjectionsAccum, &standard.mistrust.unmatchedProjectionsAccum, 0, 1, 0.0001f, 1, "%.4f");
+		trustMod |= ScalarProperty<float>("Maximum Mistrust", "", &params.mistrust.maxMistrust, &standard.mistrust.maxMistrust, 0, 10, 0.1f);
+		EndSection();
+
 		BeginSection("Optimisation");
 		modified |= ScalarProperty<int>("Max Iterations", "", &params.opt.maxIterations, &standard.opt.maxIterations, 0, 100);
 		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 1000, 0.1f, 1, "%.4f");
@@ -283,7 +295,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
 		EndSection();
 
-		bool filterMod = false;
 		BeginSection("Filtering");
 
 		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
@@ -325,22 +336,27 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.imu.stdDevAccel, &standard.filter.imu.stdDevAccel, 0, 10, 0.01f, 1000, "%.4f");
 
 		EndSection();
-		modified |= filterMod;
 
 		BeginSection("Tracking Loss");
 		modified |= ScalarProperty<float>("Coast Time", "ms", &params.lostTargetCoastMS, &standard.lostTargetCoastMS, 0, 10000, 0.1f, 1, "%.0f");
 		modified |= ScalarProperty<float>("Min Track Time", "ms", &params.coastMinTrackTime, &standard.coastMinTrackTime, 0, 10000, 0.1f, 1, "%.0f");
 		EndSection();
 
+		modified |= trustMod;
+		modified |= filterMod;
 		if (modified)
 			frameRelevantParametersDirty = true;
-		if ((state.mode == MODE_Replay || state.mode == MODE_Simulation) && state.simAdvance == 0)
-		{ // Stopped in replay/simulation
-			if (modified && visState.tracking.debug.frameNum == pipeline.frameNum)
+		if (state.mode == MODE_Replay || state.mode == MODE_Simulation)
+		{ // In replay/simulation
+			if (modified && state.simAdvance == 0 && visState.tracking.debug.frameNum == pipeline.frameNum)
 			{ // Debugging tracking, automatically track frame again
 				visState.tracking.debug.needsUpdate = true;
 			}
-			if (filterMod && visState.tracking.trailLength > 0)
+			if (trustMod)
+			{ // Debugging trust values, simulate new filter parameters on recent history
+				RetroactivelySimulateMistrust(pipeline, 0, pipeline.frameNum+1);
+			}
+			else if (filterMod && state.simAdvance == 0 && visState.tracking.trailLength > 0)
 			{ // Debugging filter, simulate new filter parameters on recent history
 				RetroactivelySimulateFilter(pipeline, pipeline.frameNum-visState.tracking.trailLength, pipeline.frameNum);
 			}

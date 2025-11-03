@@ -223,6 +223,7 @@ struct TrackedBase
 	std::string label;
 	TrackingResult result;
 	float procTimeMS;
+	float mistrust = 0.0f;
 };
 
 struct TrackedTarget : public virtual TrackedBase

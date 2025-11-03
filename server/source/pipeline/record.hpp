@@ -200,6 +200,8 @@ struct TrackerRecord
 	TrackingResult result;
 	float procTimeMS;
 	TargetMatchError error;
+	float mistrust;
+	int freeProjections, freeObservations;
 
 	TrackerInertialState imuState;
 	float imuSampleInterval;

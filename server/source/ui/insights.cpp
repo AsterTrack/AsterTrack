@@ -739,52 +739,6 @@ static bool ShowTrackingPanel()
 	if (!ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
 		return false;
 
-	static struct {
-		std::vector<int> sampleCount;
-		std::vector<float> errors2D;
-		std::vector<float> tracking;
-		std::vector<float> procTimeMS;
-
-		void setup(int size)
-		{
-			sampleCount.clear();
-			errors2D.clear();
-			tracking.clear();
-			procTimeMS.clear();
-			sampleCount.resize(size, 0);
-			errors2D.resize(size, NAN);
-			tracking.resize(size, NAN);
-			procTimeMS.resize(size, NAN);
-		}
-	} tracking, recording;
-	static std::vector<float> imuSampleTime;
-	static std::vector<float> imuSampleRate;
-
-	auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
-	{
-		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTrackerID; });
-		if (trackRecord == frame.trackers.end())
-			return;
-		stats.sampleCount[index] = trackRecord->error.samples;
-		stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
-
-		// Indices into ImPlotColormap_Dark:
-		if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
-			stats.tracking[index] = 0;
-		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
-			stats.tracking[index] = 1;
-		else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
-			stats.tracking[index] = 2;
-		else if (trackRecord->result.isProbe())
-			stats.tracking[index] = 3;
-		else if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
-			stats.tracking[index] = 4;
-		else if (trackRecord->result.isDetected())
-			stats.tracking[index] = 7;
-
-		stats.procTimeMS[index] = trackRecord->procTimeMS;
-	};
-
 	// Update frameRange
 	static ImPlotRange frameRange(0, 1000);
 	int maxOffset = std::max(10.0, frameRange.Size()/6);
@@ -825,6 +779,57 @@ static bool ShowTrackingPanel()
 	ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
 	frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
 	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
+
+	static struct {
+		std::vector<int> sampleCount;
+		std::vector<float> errors2D;
+		std::vector<float> tracking;
+		std::vector<float> procTimeMS;
+		std::vector<float> mistrust;
+
+		void setup(int size)
+		{
+			sampleCount.clear();
+			errors2D.clear();
+			tracking.clear();
+			procTimeMS.clear();
+			mistrust.clear();
+			sampleCount.resize(size, 0);
+			errors2D.resize(size, NAN);
+			tracking.resize(size, NAN);
+			procTimeMS.resize(size, NAN);
+			mistrust.resize(size, NAN);
+		}
+	} tracking, recording;
+	static std::vector<float> imuSampleTime;
+	static std::vector<float> imuSampleRate;
+
+	float mistrustScale = ImPlot::GetPlotLimits(IMPLOT_AUTO, ImAxis_Y2).Y.Max / pipeline.params.track.mistrust.maxMistrust;
+	auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
+	{
+		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTrackerID; });
+		if (trackRecord == frame.trackers.end())
+			return;
+		stats.sampleCount[index] = trackRecord->error.samples;
+		stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
+
+		// Indices into ImPlotColormap_Dark:
+		if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
+			stats.tracking[index] = 0;
+		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
+			stats.tracking[index] = 1;
+		else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
+			stats.tracking[index] = 2;
+		else if (trackRecord->result.isProbe())
+			stats.tracking[index] = 3;
+		else if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
+			stats.tracking[index] = 4;
+		else if (trackRecord->result.isDetected())
+			stats.tracking[index] = 7;
+
+		stats.procTimeMS[index] = trackRecord->procTimeMS;
+		stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
+	};
 
 	double frameShift = 0.0f, frameShiftRec = 0.0f;
 	bool drawCur = false, drawRec = false;
@@ -944,6 +949,19 @@ static bool ShowTrackingPanel()
 		ImPlot::HideNextItem(ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
 		ImPlot::PlotLine("Time", tracking.procTimeMS.data(), tracking.procTimeMS.size(), 1, frameShift);
+	}
+
+	// Mistrust line
+	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not same scala
+	if (drawRec)
+	{ // Draw recorded
+		ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
+		ImPlot::PlotLine("Mistrust", recording.mistrust.data(), recording.mistrust.size(), 1, frameShiftRec);
+	}
+	if (drawCur)
+	{ // Draw current
+		ImPlot::SetNextLineStyle(ImVec4(1.0, 0.2, 0.2, 1), 2.0);
+		ImPlot::PlotLine("Mistrust", tracking.mistrust.data(), tracking.mistrust.size(), 1, frameShift);
 	}
 
 	// IMU Update Rate line

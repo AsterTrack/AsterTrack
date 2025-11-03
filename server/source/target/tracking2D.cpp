@@ -1128,5 +1128,30 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			devPos.x(), devPos.y(), devPos.z(), devRot.x(), devRot.y(), devRot.z());
 	}
 
+	// Record how many points where involved for judging end result
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		int matched = targetMatch2D.points2D[calibs[c].index].size();
+		internalData.freeProjections += std::max<int>(0, relevantProjected2D[c].size()-matched);
+
+		if (closePoints2D[c].empty()) continue;
+
+		// Project target bounds and relevant target points into camera view
+		Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
+		Bounds2f bounds = projectBounds(mvp, target.bounds);
+		auto center = bounds.center();
+		bounds.min = center + (bounds.min-center) * params.mistrust.closebyObservationsRange;
+		bounds.max = center + (bounds.max-center) * params.mistrust.closebyObservationsRange;
+
+		// Filter observed points by target bounds
+		int closeObservations = 0;
+		for (int p : closePoints2D[c])
+		{
+			if (bounds.includes(points2D[c]->at(p)))
+				closeObservations++;
+		}
+		internalData.freeObservations += std::max<int>(0, closeObservations-matched);
+	}
+
 	return targetMatch2D;
 }

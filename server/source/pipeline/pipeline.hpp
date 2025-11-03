@@ -291,6 +291,9 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 /* For simulation/replay to update past filter behaviour with new settings for testing */
 void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
 
+/* For simulation/replay to update past mistrust behaviour with new settings for testing */
+void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd);
+
 /**
  * Setup and update tracked markers/targets and their associations to IMUs
  */

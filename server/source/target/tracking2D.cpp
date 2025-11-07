@@ -793,7 +793,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	std::vector<std::pair<int, int>> matches;
 	int matchedSamples = 0;
 
-	auto reevaluateClosebyPoints = [&]()
+	auto reevaluateClosebyPoints = [&](Eigen::Vector3f uncertaintyRay = Eigen::Vector3f::Zero())
 	{ // Find set of closeby points to consider
 		// TODO: Use nearby cluster(s) from all cameras passed into this function
 		for (int c = 0; c < calibs.size(); c++)
@@ -804,6 +804,10 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			// Project target bounds and relevant target points into camera view
 			Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
 			Bounds2f projectedBounds = projectBounds(mvp, targetBounds);
+
+			Eigen::Vector2f source = projectPoint2D(calibs[c].camera, targetMatch2D.pose.translation());
+			Eigen::Vector2f end1 = projectPoint2D(calibs[c].camera, targetMatch2D.pose.translation()+uncertaintyRay);
+			projectedBounds.extendBy(end1-source); // Extending in both directions
 
 			// Filter observed points by target bounds
 			for (int p : *relevantPoints2D[c])
@@ -1078,6 +1082,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		uncertainAxis.pos = calibs[dominantCamera].transform.translation().cast<float>();
 		uncertainAxis.dir = (targetMatch2D.pose.translation() - uncertainAxis.pos).normalized();
 
+		float uncertaintyDistance = 0.5f; // How uncertain along either direction of the axis
+		reevaluateClosebyPoints(uncertainAxis.dir * uncertaintyDistance);
+
 		// Find more visible target points (which would be newly visible in this frame)
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -1104,6 +1111,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 			updateCameraMatches(c, matches);
 		}
+
+		// Probably not necessary
+		//reevaluateClosebyPoints();
 
 		if (!newMatches)
 			LOGC(LDebug, "        Failed to find any more samples from other cameras to break dominance! Aborting!");

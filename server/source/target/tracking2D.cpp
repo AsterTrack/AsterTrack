@@ -884,18 +884,24 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 	auto canUpdateCameraMatches = [&](int c)
 	{
-		int camera = calibs[c].index;
-		auto &cameraMatches = targetMatch2D.points2D[camera];
+		auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
+		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
 		if (cameraMatches.size() == closePoints2D[c].size())
 			return false; // If no improvements are possible, skip
-		int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
 		if (maxPossible < params.quality.minCameraObs)
+			return false; // If no valid match is possible, skip
+		matches.clear();
+		return true;
+	};
+
+	auto checkDiscardCameraMatches = [&](int c)
+	{
+		auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
+		if (cameraMatches.size() < params.quality.minCameraObs)
 		{ // Even if we did match, it's not sufficient with the current pose anymore
 			matchedSamples -= cameraMatches.size();
 			cameraMatches.clear();
-			return false;
 		}
-		matches.clear();
 		return true;
 	};
 
@@ -947,7 +953,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	// Try first with simple matching algorithm
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (!canUpdateCameraMatches(c)) continue;
+		if (!canUpdateCameraMatches(c) && checkDiscardCameraMatches(c)) continue;
 
 		// Match relevant points (observation and projected target)
 		matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
@@ -1006,7 +1012,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			for (int c = 0; c < calibs.size(); c++)
 			{
-				if (!shouldRecoverCamera(c)) continue;
+				if (!shouldRecoverCamera(c) && checkDiscardCameraMatches(c)) continue;
 
 				// Match relevant points (observation and projected target)
 				matchTargetPointsRecover(*points2D[c], *properties[c], closePoints2D[c],
@@ -1073,7 +1079,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		for (int c = 0; c < calibs.size(); c++)
 		{
 			if (dominantCamera == c) continue;
-			if (!canUpdateCameraMatches(c)) continue;
+			if (!canUpdateCameraMatches(c) && checkDiscardCameraMatches(c)) continue;
 			int camera = calibs[c].index;
 
 			// Try to shift along uncertain axis to align the prediction with the observations of this camera
@@ -1083,7 +1089,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				internalData.uncertaintyAxis[camera]);
 			LOGC(LDebug, "            Considering %d/%d points of camera %d to match with %d projected points along uncertainty axis!",
 				obsConsidered, (int)closePoints2D[c].size(), c, (int)relevantProjected2D[c].size());
-			if (obsConsidered == 0)
+			if (obsConsidered == 0 && checkDiscardCameraMatches(c))
 				continue;
 
 			// Try to match points quickly along the uncertainty axis
@@ -1110,7 +1116,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	// Find some more points if possible
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		if (!canUpdateCameraMatches(c)) continue;
+		if (!canUpdateCameraMatches(c) && checkDiscardCameraMatches(c)) continue;
 
 		int camera = calibs[c].index;
 		if (targetMatch2D.points2D[camera].size() < params.quality.cameraGoodObs)

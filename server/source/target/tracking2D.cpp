@@ -753,6 +753,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	const TargetTrackingParameters &params, TargetTracking2DData &internalData)
 {
 	ScopedLogCategory scopedLogCategory(LTracking);
+	assert(calibs.size() == points2D.size());
+	assert(calibs.size() == properties.size());
+	assert(calibs.size() == relevantPoints2D.size());
 
 	// Find candidate for 2D point matches
 	TargetMatch2D targetMatch2D = {};
@@ -765,40 +768,21 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	uncertainty += Eigen::Vector3f::Constant(params.minUncertainty3D);
 	Bounds3f targetBounds = target.bounds.extendedBy(uncertainty);
 
-	// Reused allocation of target point reprojections
+	// Reused allocation of per-camera data
 	thread_local std::vector<std::vector<Eigen::Vector2f>> projected2D;
 	thread_local std::vector<std::vector<int>> relevantProjected2D;
-	if (projected2D.size() < points2D.size())
-		projected2D.resize(points2D.size());
-	if (relevantProjected2D.size() < points2D.size())
-		relevantProjected2D.resize(points2D.size());
+	thread_local std::vector<std::vector<int>> closePoints2D;
+	if (projected2D.size() < calibs.size())
+		projected2D.resize(calibs.size());
+	if (relevantProjected2D.size() < calibs.size())
+		relevantProjected2D.resize(calibs.size());
+	if (closePoints2D.size() < calibs.size())
+		closePoints2D.resize(calibs.size());
 
 	// Clear internal data for visualisation purposes (low overhead)
 	internalData.init(cameraCount);
 	for (int c = 0; c < calibs.size(); c++)
 		internalData.matching.at(calibs[c].index).clear();
-
-	// Find initial set of closeby points to consider
-	// TODO: Use nearby cluster(s) from all cameras passed into this function
-	std::vector<std::vector<int>> closePoints2D(calibs.size());
-	for (int c = 0; c < calibs.size(); c++)
-	{
-		if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
-
-		// Project target bounds and relevant target points into camera view
-		Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
-		Bounds2f projectedBounds = projectBounds(mvp, targetBounds);
-
-		// Filter observed points by target bounds
-		for (int p : *relevantPoints2D[c])
-		{
-			if (projectedBounds.includes(points2D[c]->at(p)))
-				closePoints2D[c].push_back(p);
-		}
-		LOGC(LTrace, "        Camera %d: Found %d/%d closeby in %.1fx%.1f bounds!\n",
-			c, (int)closePoints2D[c].size(), (int)points2D[c]->size(),
-			projectedBounds.extends().x()*PixelFactor, projectedBounds.extends().y()*PixelFactor);
-	}
 
 	// Normalise pixel parameters to a fixed distance
 	std::vector<float> paramScale(calibs.size());
@@ -808,6 +792,30 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	bool newMatches = false;
 	std::vector<std::pair<int, int>> matches;
 	int matchedSamples = 0;
+
+	auto reevaluateClosebyPoints = [&]()
+	{ // Find set of closeby points to consider
+		// TODO: Use nearby cluster(s) from all cameras passed into this function
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			closePoints2D[c].clear();
+			if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
+
+			// Project target bounds and relevant target points into camera view
+			Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
+			Bounds2f projectedBounds = projectBounds(mvp, targetBounds);
+
+			// Filter observed points by target bounds
+			for (int p : *relevantPoints2D[c])
+			{
+				if (projectedBounds.includes(points2D[c]->at(p)))
+					closePoints2D[c].push_back(p);
+			}
+			LOGC(LTrace, "        Camera %d: Found %d/%d closeby in %.1fx%.1f bounds!\n",
+				c, (int)closePoints2D[c].size(), (int)points2D[c]->size(),
+				projectedBounds.extends().x()*PixelFactor, projectedBounds.extends().y()*PixelFactor);
+		}
+	};
 
 	auto reprojectTargetMarkers = [&]()
 	{
@@ -933,6 +941,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 	LOGC(LDebug, "    trackTarget2D:");
 
+	reevaluateClosebyPoints();
 	reprojectTargetMarkers();
 
 	// Try first with simple matching algorithm

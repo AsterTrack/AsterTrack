@@ -896,10 +896,10 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 
 				if (jsImage.contains("min") && jsImage.contains("max"))
 				{
-					image.boundsPx.minX = jsImage["min"]["x"].get<int>();
-					image.boundsPx.minY = jsImage["min"]["y"].get<int>();
-					image.boundsPx.maxX = jsImage["max"]["x"].get<int>();
-					image.boundsPx.maxY = jsImage["max"]["y"].get<int>();
+					image.boundsPx.min.x() = jsImage["min"]["x"].get<int>();
+					image.boundsPx.min.y() = jsImage["min"]["y"].get<int>();
+					image.boundsPx.max.x() = jsImage["max"]["x"].get<int>();
+					image.boundsPx.max.y() = jsImage["max"]["y"].get<int>();
 				}
 				else
 					image.boundsPx = Bounds2i(0, 0, image.frameX, image.frameY);
@@ -1057,10 +1057,10 @@ std::optional<ErrorMessage> dumpRecording(const std::string &path, const std::ve
 
 					if (image.imageX != image.frameX || image.imageY != image.frameY)
 					{ // Subsection of the image
-						jsImage["min"]["x"] = image.boundsPx.minX;
-						jsImage["min"]["y"] = image.boundsPx.minY;
-						jsImage["max"]["x"] = image.boundsPx.maxX;
-						jsImage["max"]["y"] = image.boundsPx.maxY;
+						jsImage["min"]["x"] = image.boundsPx.min.x();
+						jsImage["min"]["y"] = image.boundsPx.min.y();
+						jsImage["max"]["x"] = image.boundsPx.max.x();
+						jsImage["max"]["y"] = image.boundsPx.max.y();
 						jsImage["imageX"] = image.imageX;
 						jsImage["imageY"] = image.imageY;
 					}

@@ -222,15 +222,15 @@ void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f
 void visualiseBounds3D(Bounds3f bounds, Eigen::Isometry3f pose)
 {
 	std::array<Eigen::Vector3f, 8> corners = {
-		pose * Eigen::Vector3f(bounds.minX, bounds.minY, bounds.minZ),
-		pose * Eigen::Vector3f(bounds.maxX, bounds.minY, bounds.minZ),
-		pose * Eigen::Vector3f(bounds.maxX, bounds.maxY, bounds.minZ),
-		pose * Eigen::Vector3f(bounds.minX, bounds.maxY, bounds.minZ),
+		pose * Eigen::Vector3f(bounds.min.x(), bounds.min.y(), bounds.min.z()),
+		pose * Eigen::Vector3f(bounds.max.x(), bounds.min.y(), bounds.min.z()),
+		pose * Eigen::Vector3f(bounds.max.x(), bounds.max.y(), bounds.min.z()),
+		pose * Eigen::Vector3f(bounds.min.x(), bounds.max.y(), bounds.min.z()),
 		// Upper verts
-		pose * Eigen::Vector3f(bounds.minX, bounds.minY, bounds.maxZ),
-		pose * Eigen::Vector3f(bounds.maxX, bounds.minY, bounds.maxZ),
-		pose * Eigen::Vector3f(bounds.maxX, bounds.maxY, bounds.maxZ),
-		pose * Eigen::Vector3f(bounds.minX, bounds.maxY, bounds.maxZ)
+		pose * Eigen::Vector3f(bounds.min.x(), bounds.min.y(), bounds.max.z()),
+		pose * Eigen::Vector3f(bounds.max.x(), bounds.min.y(), bounds.max.z()),
+		pose * Eigen::Vector3f(bounds.max.x(), bounds.max.y(), bounds.max.z()),
+		pose * Eigen::Vector3f(bounds.min.x(), bounds.max.y(), bounds.max.z())
 	};
 	Color8 col = Color{ 1, 1, 0, 1 };
 	std::vector<std::pair<VisPoint, VisPoint>> lines = {
@@ -257,10 +257,10 @@ void visualiseBounds2D(Bounds2f bounds)
 {
 	float depth = 1-0.9f;
 	std::array<Eigen::Vector3f, 4> corners = {
-		Eigen::Vector3f(bounds.minX, bounds.minY, depth),
-		Eigen::Vector3f(bounds.maxX, bounds.minY, depth),
-		Eigen::Vector3f(bounds.maxX, bounds.maxY, depth),
-		Eigen::Vector3f(bounds.minX, bounds.maxY, depth)
+		Eigen::Vector3f(bounds.min.x(), bounds.min.y(), depth),
+		Eigen::Vector3f(bounds.max.x(), bounds.min.y(), depth),
+		Eigen::Vector3f(bounds.max.x(), bounds.max.y(), depth),
+		Eigen::Vector3f(bounds.min.x(), bounds.max.y(), depth)
 	};
 	Color8 col = Color{ 1, 1, 0, 1 };
 	std::vector<std::pair<VisPoint, VisPoint>> lines = {

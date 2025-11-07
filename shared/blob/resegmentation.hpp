@@ -118,8 +118,8 @@ static inline float calcKernelBorder(const uint8_t *image, int stride, int width
 static void applyKernel(const uint8_t *image, uint8_t *output, int stride, Bounds2i bounds, const std::vector<float> &kernel)
 {
 	int radius = (kernel.size()-1)/2;
-	for (int y = bounds.minY; y < bounds.maxY; y++)
-	for (int x = bounds.minX; x < bounds.maxX; x++)
+	for (int y = bounds.min.y(); y < bounds.max.y(); y++)
+	for (int x = bounds.min.x(); x < bounds.max.x(); x++)
 	{ // Calling calcKernel here makes debug modes unbearably slow since they won't inline, so keep direct
 		float value = 0;
 		for (int yy = -radius; yy <= +radius; yy++)
@@ -134,9 +134,9 @@ static void applySeparableKernel(const uint8_t *image, uint8_t *output, uint8_t 
 	int radius = (kernel.size()-1)/2;
 	auto applyKernelHorizontal = [&](const uint8_t *img, uint8_t *out)
 	{
-		for (int y = bounds.minY; y < bounds.maxY; y++)
+		for (int y = bounds.min.y(); y < bounds.max.y(); y++)
 		{
-			int index = y*stride + bounds.minX;
+			int index = y*stride + bounds.min.x();
 			for (int i = 0; i < bounds.extends().x(); i++)
 			{
 				float value = 0;
@@ -148,9 +148,9 @@ static void applySeparableKernel(const uint8_t *image, uint8_t *output, uint8_t 
 	};
 	auto applyKernelVertical = [&](const uint8_t *img, uint8_t *out)
 	{
-		for (int x = bounds.minX; x < bounds.maxX; x++)
+		for (int x = bounds.min.x(); x < bounds.max.x(); x++)
 		{
-			int index = bounds.minY*stride + x;
+			int index = bounds.min.y()*stride + x;
 			for (int i = 0; i < bounds.extends().y(); i++)
 			{
 				float value = 0;
@@ -195,9 +195,9 @@ static void applyBoxFilter(const uint8_t *image, uint8_t *output, uint8_t *temp,
 	float weight = 1.0f / (radius*2 + 1);
 	auto applyBoxBlurHorizontal = [&](const uint8_t *img, uint8_t *out)
 	{
-		for (int y = bounds.minY; y < bounds.maxY; y++)
+		for (int y = bounds.min.y(); y < bounds.max.y(); y++)
 		{
-			int index = y*stride + bounds.minX;
+			int index = y*stride + bounds.min.x();
 			int indexL = index-radius, indexR = index+radius;
 			float value = 0;
 			for (int i = indexL; i <= indexR; i++)
@@ -212,9 +212,9 @@ static void applyBoxFilter(const uint8_t *image, uint8_t *output, uint8_t *temp,
 	};
 	auto applyBoxBlurVertical = [&](const uint8_t *img, uint8_t *out)
 	{
-		for (int x = bounds.minX; x < bounds.maxX; x++)
+		for (int x = bounds.min.x(); x < bounds.max.x(); x++)
 		{
-			int index = bounds.minY*stride + x;
+			int index = bounds.min.y()*stride + x;
 			int indexT = index-radius*stride, indexB = index+radius*stride;
 			float value = 0;
 			for (int i = indexT; i <= indexB; i += stride)
@@ -284,7 +284,7 @@ static inline MaxArea checkMaximumArea(const QF &queryImg, Bounds2i bounds, Eige
 	assert(bounds.includes(pos));
 	assert(handled.size() == bounds.size());
 	int stride = bounds.extends().x();
-	int index = (pos.y()-bounds.minY) * stride + (pos.x()-bounds.minX);
+	int index = (pos.y()-bounds.min.y()) * stride + (pos.x()-bounds.min.x());
 	if (handled[index])
 	{ // Might be part of a blob area already!
 		return { 0, 0 };
@@ -334,7 +334,7 @@ static inline MaxArea checkMaximumArea(const QF &queryImg, Bounds2i bounds, Eige
 		for (auto &p : neighbors)
 		{
 			if (!bounds.includes(p)) continue;
-			index = (p.y()-bounds.minY) * stride + (p.x()-bounds.minX);
+			index = (p.y()-bounds.min.y()) * stride + (p.x()-bounds.min.x());
 			if (handled[index]) continue;
 			uint8_t val = queryImg(p);
 			if (val > max)
@@ -459,8 +459,8 @@ static std::vector<ClusterPeakHint> FindMaximaHints(
 			{ // Maximum disappeared or moved, check immediate neighbours
 				uint8_t nMaxVal = area.value;
 				Eigen::Vector2i nMaxPos;
-				for (int yy = std::max(bounds.minY, pos.y()-1); yy < std::min(bounds.maxY, pos.y()+2); yy++)
-				for (int xx = std::max(bounds.minX, pos.x()-1); xx < std::min(bounds.maxX, pos.x()+2); xx++)
+				for (int yy = std::max(bounds.min.y(), pos.y()-1); yy < std::min(bounds.max.y(), pos.y()+2); yy++)
+				for (int xx = std::max(bounds.min.x(), pos.x()-1); xx < std::min(bounds.max.x(), pos.x()+2); xx++)
 				{
 					Eigen::Vector2i nPos(xx, yy);
 					uint8_t nValue = QueryGaussian(s, nPos);
@@ -499,7 +499,7 @@ static std::vector<ClusterPeakHint> FindMaximaHints(
 			{
 				if (!itSub->sealed)
 				{ // Already considered done
-					int index = ((int)itSub->pos.y()-bounds.minY) * bounds.extends().x() + ((int)itSub->pos.x()-bounds.minX);
+					int index = ((int)itSub->pos.y()-bounds.min.y()) * bounds.extends().x() + ((int)itSub->pos.x()-bounds.min.x());
 					if (handled[index])
 					{ // These blobs have merged, not stable anymore
 						blob.stable = 0;
@@ -582,7 +582,7 @@ static std::vector<Cluster> ResegmentCluster(
 	int bstride = bounds.extends().x();
 	auto getIndex = [&bounds, &bstride](Eigen::Vector2i pos) -> int
 	{
-		return (pos.y()-bounds.minY)*bstride + (pos.x()-bounds.minX);
+		return (pos.y()-bounds.min.y())*bstride + (pos.x()-bounds.min.x());
 	};
 	auto getImgIndex = [stride](Eigen::Vector2i pos)
 	{
@@ -846,8 +846,8 @@ static std::vector<Cluster> ResegmentCluster(
 				ffStage.clear();
 				ffStage.resize(stride*height);
 			}
-			for (int y = bounds.minY; y < bounds.maxY; y++)
-			for (int x = bounds.minX; x < bounds.maxX; x++)
+			for (int y = bounds.min.y(); y < bounds.max.y(); y++)
+			for (int x = bounds.min.x(); x < bounds.max.x(); x++)
 			{
 				Eigen::Vector2i pos(x, y);
 				int i = assigned[getIndex(pos)];
@@ -1037,8 +1037,8 @@ static std::vector<Cluster> ResegmentCluster(
 	if (fetchArea.size() > 0)
 	{
 		fetchArea.overlapWith(bounds.extendedBy(-1));
-		for (int y = fetchArea.minY; y < fetchArea.maxY; y++)
-		for (int x = fetchArea.minX; x < fetchArea.maxX; x++)
+		for (int y = fetchArea.min.y(); y < fetchArea.max.y(); y++)
+		for (int x = fetchArea.min.x(); x < fetchArea.max.x(); x++)
 		{
 			int index = getIndex(Eigen::Vector2i(x, y));
 			int id = assigned[index];

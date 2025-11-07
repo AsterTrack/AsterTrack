@@ -479,7 +479,7 @@ void showGrayscaleFrameUndistorted(unsigned int frame, unsigned int undistortion
 	static GLint uBoundsAdr = glGetUniformLocation(undistortTexShader->ID, "bounds");
 	static GLint uSizeAdr = glGetUniformLocation(undistortTexShader->ID, "size");
 	static GLint uUndistortTexAdr = glGetUniformLocation(undistortTexShader->ID, "undistortTex");
-	glUniform4f(uBoundsAdr, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+	glUniform4f(uBoundsAdr, bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y());
 	glUniform2f(uSizeAdr, mode.sizeW, mode.sizeH);
 	glUniform1i(uUndistortTexAdr, 1);
 	// Set frame texture
@@ -522,7 +522,7 @@ void showGrayscaleFrameUndistorted(unsigned int frame,
 	static GLint uDistKAdr = glGetUniformLocation(undistortAlgShader->ID, "distK");
 	static GLint uDistPAdr = glGetUniformLocation(undistortAlgShader->ID, "distP");
 	glUniform2f(uUVScaleAdr, viewportScale.x(), viewportScale.y());
-	glUniform4f(uBoundsAdr, bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+	glUniform4f(uBoundsAdr, bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y());
 	glUniform2f(uSizeAdr, mode.sizeW, mode.sizeH);
 	glUniform2f(uPrincipalAdr, calib.principalPoint.x(), calib.principalPoint.y());
 	glUniform3f(uDistKAdr, calib.distortion.k1, calib.distortion.k2, calib.distortion.k3);

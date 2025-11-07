@@ -570,11 +570,7 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 
 	// Parse metadata
 	uint16_t *metaData = (uint16_t*)packet.data.data();
-	Bounds2i bounds;
-	bounds.minX = metaData[0];
-	bounds.minY = metaData[1];
-	bounds.maxX = metaData[2];
-	bounds.maxY = metaData[3];
+	Bounds2i bounds(metaData[0], metaData[1], metaData[2], metaData[3]);
 	Eigen::Vector2f centerPos = Eigen::Vector2f(metaData[4] / 65536.0f, metaData[5] / 65536.0f);
 	centerPos = npix2cam(camera.pipeline->mode, centerPos); // Convert from normalised pixel space (0-1) to our coordinate system
 	float size = metaData[6] / 65536.0f * 256.0f;
@@ -608,7 +604,7 @@ bool ReadVisualPacket(TrackingCameraState &camera, PacketBlocks &packet)
 	}
 	// Debug
 	LOG(LParsing, LDebug, "Parsed meta. %dx%d area, bounds (%d, %d, %d, %d), %f size, center pos (%f, %f)/(%fpx, %fpx)\n",
-		extends.x(), extends.y(), bounds.minX, bounds.minY, bounds.maxX, bounds.maxY, size,
+		extends.x(), extends.y(), bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y(), size,
 		centerPos.x(), centerPos.y(), (centerPos.x()+1)*PixelFactor, (centerPos.y()+camera.pipeline->mode.aspect)*PixelFactor);
 
 	// Read image, flipped on Y-axis
@@ -846,12 +842,8 @@ std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraI
 	image->boundsPx = imageRecord->boundsPx;
 	// TODO: If mode.widthPx != mode.sensorWidth, it might be wrong depending on what the camera is sending
 	Bounds2f fullFrame(0, 0, imageRecord->frameX, imageRecord->frameY);
-	image->boundsRel = {
-		(image->boundsPx.minX-fullFrame.minX)/fullFrame.extends().x(),
-		(image->boundsPx.minY-fullFrame.minY)/fullFrame.extends().y(),
-		(image->boundsPx.maxX-fullFrame.minX)/fullFrame.extends().x(),
-		(image->boundsPx.maxY-fullFrame.minY)/fullFrame.extends().y()
-	};
+	image->boundsRel.min = (image->boundsPx.min.cast<float>() - fullFrame.min).cwiseQuotient(fullFrame.extends());
+	image->boundsRel.max = (image->boundsPx.max.cast<float>() - fullFrame.max).cwiseQuotient(fullFrame.extends());
 	image->image = std::move(imageBuf);
 	image->width = imageRecord->imageX;
 	image->height = imageRecord->imageY;

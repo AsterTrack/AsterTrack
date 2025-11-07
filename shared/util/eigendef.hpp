@@ -234,223 +234,124 @@ struct Ray3_t
 typedef Ray3_t<float> Ray3f;
 typedef Ray3_t<double> Ray3d;
 
-template<typename Scalar>
-struct Bounds2
+template<typename Scalar, int N>
+struct Bounds
 {
-	Scalar minX, minY;
-	Scalar maxX, maxY;
+	using VEC = Eigen::Matrix<Scalar,N,1>;
+	VEC min;
+	VEC max;
 
-	Bounds2() 
+	Bounds() 
 	{
-		minX = minY = std::numeric_limits<Scalar>::max();
-		maxX = maxY = std::numeric_limits<Scalar>::lowest();
+		min.setConstant(std::numeric_limits<Scalar>::max());
+		max.setConstant(std::numeric_limits<Scalar>::lowest());
 	}
-	Bounds2(Scalar MinX, Scalar MinY, Scalar MaxX, Scalar MaxY)
-		: minX(MinX), minY(MinY), maxX(MaxX), maxY(MaxY) {}
-	Bounds2(Eigen::Matrix<Scalar,2,1> center, Eigen::Matrix<Scalar,2,1> size) 
+
+	Bounds(Scalar MinX, Scalar MinY, Scalar MaxX, Scalar MaxY)
+		: min(MinX, MinY), max(MaxX, MaxY)
+	{ static_assert(N == 2); }
+
+	Bounds(Scalar MinX, Scalar MinY, Scalar MinZ, Scalar MaxX, Scalar MaxY, Scalar MaxZ)
+		: min(MinX, MinY, MinZ), max(MaxX, MaxY, MaxZ)
+	{ static_assert(N == 3); }
+
+	Bounds(VEC center, VEC size) 
 	{
-		minX = center.x()-size.x()/2;
-		maxX = center.x()+size.x()/2;
-		minY = center.y()-size.y()/2;
-		maxY = center.y()+size.y()/2;
+		min = center-size/2;
+		max = center+size/2;
 	}
+
 	template<typename T>
-	Bounds2<T> cast() const
+	Bounds<T,N> cast() const
 	{ // Conversion
-		Bounds2<T> other;
-		other.minX = minX;
-		other.minY = minY;
-		other.maxX = maxX;
-		other.maxY = maxY;
+		Bounds<T,N> other;
+		other.min = min.template cast<T>();
+		other.max = max.template cast<T>();
 		return other;
 	}
 
-
 	template<typename ScalarPrec = Scalar>
-	inline Eigen::Matrix<ScalarPrec,2,1> center() const
+	inline Eigen::Matrix<ScalarPrec,N,1> center() const
 	{
-		return Eigen::Matrix<ScalarPrec,2,1>((ScalarPrec)(maxX+minX)/(ScalarPrec)2, (ScalarPrec)(maxY+minY)/(ScalarPrec)2);
+		return (max.template cast<ScalarPrec>()+min.template cast<ScalarPrec>())/2;
 	};
-	inline Eigen::Matrix<Scalar,2,1> extends() const
+	inline VEC extends() const
 	{
-		return Eigen::Matrix<Scalar,2,1>(
-			maxX > minX? maxX-minX : 0, 
-			maxY > minY? maxY-minY : 0);
+		return (max - min).cwiseMax(VEC::Zero());
 	};
-	inline Eigen::Matrix<Scalar,2,1> min() const
+	inline bool overlaps(const Bounds<Scalar,N> other) const
 	{
-		return Eigen::Matrix<Scalar,2,1>(minX, minY);
+		return (other.min.array() - max.array()).maxCoeff() <= 0 && (other.max.array() - min.array()).minCoeff() >= 0;
+
 	};
-	inline Eigen::Matrix<Scalar,2,1> max() const
+	inline void overlapWith(const Bounds<Scalar,N> other)
 	{
-		return Eigen::Matrix<Scalar,2,1>(maxX, maxY);
-	};
-	inline bool overlaps(const Bounds2<Scalar> other) const
-	{
-		return maxX >= other.minX && other.maxX >= minX && maxY >= other.minY && other.maxY >= minY;
-	};
-	inline void overlapWith(const Bounds2<Scalar> other)
-	{
-		minX = std::max(minX, other.minX);
-		maxX = std::min(maxX, other.maxX);
-		minY = std::max(minY, other.minY);
-		maxY = std::min(maxY, other.maxY);
+		min = min.cwiseMax(other.min);
+		max = min.cwiseMin(other.max);
 	}
-	inline bool includes(const Bounds2<Scalar> other) const
+	inline bool includes(const Bounds<Scalar,N> other) const
 	{
-		return maxX >= other.maxX && other.minX >= minX && maxY >= other.maxY && other.minY >= minY;
+		return (other.max.array() - max.array()).maxCoeff() <= 0 && (other.min.array() - min.array()).minCoeff() >= 0;
 	};
-	inline bool includes(const Eigen::Matrix<Scalar,2,1> point) const
+	inline bool includes(const VEC point) const
 	{
-		return point.x() < maxX && point.x() >= minX && point.y() < maxY && point.y() >= minY;
+		return (point.array() - max.array()).maxCoeff() < 0 && (point.array() - min.array()).minCoeff() >= 0;
 	};
-	inline void include(const Eigen::Matrix<Scalar,2,1> point)
+	inline void include(const VEC point)
 	{
-		minX = std::min(minX, point.x());
-		maxX = std::max(maxX, point.x());
-		minY = std::min(minY, point.y());
-		maxY = std::max(maxY, point.y());
+		min = min.cwiseMin(point);
+		max = max.cwiseMax(point);
 	};
-	inline void include(const Bounds2<Scalar> other)
+	inline void include(const Bounds<Scalar,N> other)
 	{
-		minX = std::min(minX, other.minX);
-		minY = std::min(minY, other.minY);
-		maxX = std::max(maxX, other.maxX);
-		maxY = std::max(maxY, other.maxY);
+		min = min.cwiseMin(other.min);
+		max = max.cwiseMax(other.max);
 	}
-	inline Eigen::Matrix<Scalar,2,1> clamp(const Eigen::Matrix<Scalar,2,1> point)
+	inline VEC clamp(const VEC point)
 	{
-		return Eigen::Matrix<Scalar,2,1>(
-			std::max(minX, std::min(maxX, point.x())),
-			std::max(minY, std::min(maxY, point.y()))
-		);
+		return point.cwiseMax(min).cwiseMin(max);
 	}
-	inline void extendBy(const Eigen::Matrix<Scalar,2,1> size)
+	inline void extendBy(const VEC size)
 	{
-		minX -= size.x();
-		maxX += size.x();
-		minY -= size.y();
-		maxY += size.y();
+		min -= size;
+		max += size;
 	};
 	inline void extendBy(Scalar size)
 	{
-		minX -= size;
-		maxX += size;
-		minY -= size;
-		maxY += size;
+		min -= VEC::Constant(size);
+		max += VEC::Constant(size);
 	};
-	inline Bounds2 extendedBy(const Eigen::Matrix<Scalar,2,1> size) const
+	inline Bounds extendedBy(const VEC size) const
 	{
-		Bounds2 other = *this;
+		Bounds other = *this;
 		other.extendBy(size);
 		return other;
 	};
-	inline Bounds2 extendedBy(Scalar size) const
+	inline Bounds extendedBy(Scalar size) const
 	{
-		Bounds2 other = *this;
+		Bounds other = *this;
 		other.extendBy(size);
 		return other;
 	};
-	inline bool operator==(const Bounds2<Scalar> other) const
+	inline bool operator==(const Bounds<Scalar,N> other) const
 	{
-		return maxX == other.maxX && other.minX == minX && maxY == other.maxY && other.minY == minY;
+		return min == other.min && max == other.max;
 	};
 	inline Scalar size() const
 	{
 		return extends().prod();
 	};
 };
+
+template<typename Scalar>
+using Bounds2 = Bounds<Scalar,2>;
+
 typedef Bounds2<int> Bounds2i;
 typedef Bounds2<float> Bounds2f;
 
-
 template<typename Scalar>
-struct Bounds3
-{
-	Scalar minX, minY, minZ;
-	Scalar maxX, maxY, maxZ;
+using Bounds3 = Bounds<Scalar,3>;
 
-	Bounds3() 
-	{
-		minX = minY = minZ = std::numeric_limits<Scalar>::max();
-		maxX = maxY = maxZ = std::numeric_limits<Scalar>::lowest();
-	}
-	Bounds3(Eigen::Matrix<Scalar,3,1> center, Eigen::Matrix<Scalar,3,1> size) 
-	{
-		minX = center.x()-size.x()/2;
-		maxX = center.x()+size.x()/2;
-		minY = center.y()-size.y()/2;
-		maxY = center.y()+size.y()/2;
-		minZ = center.z()-size.z()/2;
-		maxZ = center.z()+size.z()/2;
-	}
-	inline Eigen::Matrix<Scalar,3,1> center() const
-	{
-		return Eigen::Matrix<Scalar,3,1>((maxX+minX)/2.0f, (maxY+minY)/2.0f, (maxZ+minZ)/2.0f);
-	};
-	inline Eigen::Matrix<Scalar,3,1> extends() const
-	{
-		return Eigen::Matrix<Scalar,3,1>(maxX-minX, maxY-minY, maxZ-minZ);
-	};
-	inline Eigen::Matrix<Scalar,3,1> min() const
-	{
-		return Eigen::Matrix<Scalar,3,1>(minX, minY, minZ);
-	};
-	inline Eigen::Matrix<Scalar,3,1> max() const
-	{
-		return Eigen::Matrix<Scalar,3,1>(maxX, maxY, maxZ);
-	};
-	inline bool overlaps(const Bounds3<Scalar> other) const
-	{
-		return maxX >= other.minX && other.maxX >= minX && maxY >= other.minY && other.maxY >= minY && maxZ >= other.minZ && other.maxZ >= minZ;
-	};
-	inline bool includes(const Eigen::Matrix<Scalar,3,1> point) const
-	{
-		return point.x() <= maxX && point.x() >= minX && point.y() <= maxY && point.y() >= minY && point.z() <= maxZ && point.z() >= minZ;
-	};
-	inline bool includes(const Bounds3<Scalar> other) const
-	{
-		return maxX >= other.maxX && other.minX >= minX && maxY >= other.maxY && other.minY >= minY && maxZ >= other.maxZ && other.minZ >= minZ;
-	};
-	inline void include(const Eigen::Matrix<Scalar,3,1> point)
-	{
-		if (point.x() < minX) minX = point.x();
-		if (point.x() > maxX) maxX = point.x();
-		if (point.y() < minY) minY = point.y();
-		if (point.y() > maxY) maxY = point.y();
-		if (point.z() < minZ) minZ = point.z();
-		if (point.z() > maxZ) maxZ = point.z();
-	};
-	inline void extendBy(const Eigen::Matrix<Scalar,3,1> size)
-	{
-		minX -= size.x();
-		maxX += size.x();
-		minY -= size.y();
-		maxY += size.y();
-		minZ -= size.z();
-		maxZ += size.z();
-	};
-	inline Bounds3 extendBy(Scalar size) const
-	{
-		extendBy(Eigen::Matrix<Scalar,3,1>::Constant(size));
-	};
-	inline Bounds3 extendedBy(const Eigen::Matrix<Scalar,3,1> size) const
-	{
-		Bounds3 other = *this;
-		other.extendBy(size);
-		return other;
-	};
-	inline Bounds3 extendedBy(Scalar size) const
-	{
-		Bounds3 other = *this;
-		other.extendBy(Eigen::Matrix<Scalar,3,1>::Constant(size));
-		return other;
-	};
-	inline bool operator==(const Bounds3<Scalar> other) const
-	{
-		return maxX == other.maxX && other.minX == minX && maxY == other.maxY && other.minY == minY && maxZ == other.maxZ && other.minZ == minZ;
-	};
-};
 typedef Bounds3<int> Bounds3i;
 typedef Bounds3<float> Bounds3f;
 

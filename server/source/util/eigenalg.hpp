@@ -48,12 +48,12 @@ std::array<Eigen::Matrix<Scalar,3,1>, 8> transformBounds(const Eigen::Transform<
 
 	// Project all needed coordinates separately
 	std::array<Eigen::Matrix<Scalar,4,1>, 7> cols;
-	cols[0] = mvp.matrix().col(0) * bounds.minX;
-	cols[1] = mvp.matrix().col(1) * bounds.minY;
-	cols[2] = mvp.matrix().col(2) * bounds.minZ;
-	cols[3] = mvp.matrix().col(0) * bounds.maxX;
-	cols[4] = mvp.matrix().col(1) * bounds.maxY;
-	cols[5] = mvp.matrix().col(2) * bounds.maxZ;
+	cols[0] = mvp.matrix().col(0) * bounds.min.x();
+	cols[1] = mvp.matrix().col(1) * bounds.min.y();
+	cols[2] = mvp.matrix().col(2) * bounds.min.z();
+	cols[3] = mvp.matrix().col(0) * bounds.max.x();
+	cols[4] = mvp.matrix().col(1) * bounds.max.y();
+	cols[5] = mvp.matrix().col(2) * bounds.max.z();
 	cols[6] = mvp.matrix().col(3);
 
 	std::array<Eigen::Matrix<Scalar,3,1>, 8> corners;
@@ -79,8 +79,8 @@ Bounds2<Scalar> projectBounds(const Eigen::Transform<Scalar,3,Transform> &mvp, B
 
 	if (bounds.includes((mvp * Eigen::Matrix<Scalar,4,1>(0,0,0,1)).hnormalized()))
 	{ // If inside the bounding box, bounds should be full-screen
-		bounds2D.minX = bounds2D.minY = -1;
-		bounds2D.maxX = bounds2D.maxY = +1;
+		bounds2D.min.setConstant(-1);
+		bounds2D.max.setConstant(+1);
 		return bounds2D;
 	}
 

@@ -84,7 +84,7 @@ void performBlobDetection(const CameraConfig &config, Bounds2i bounds,
 		auto test_impl = [&](Cluster &blob, int x, int y, auto &test)
 		{
 			if (blob.ptCnt > 10000) return false; // Blob will be split up
-			if (x < bounds.minX || y < bounds.minY || x >= bounds.maxX || y >= bounds.maxY) return false;
+			if (x < bounds.min.x() || y < bounds.min.y() || x >= bounds.max.x() || y >= bounds.max.y()) return false;
 			if (mask.test(y*width+x)) return true; // Already part of blob
 			if (!TestPixel(x, y, true)) return false;
 			// Add dot to blob
@@ -112,8 +112,8 @@ void performBlobDetection(const CameraConfig &config, Bounds2i bounds,
 		return test_impl(blob, x, y, test_impl);
 	};
 
-	for (int y = bounds.minY; y < bounds.maxY; y++)
-	for (int x = bounds.minX; x < bounds.maxX; x++)
+	for (int y = bounds.min.y(); y < bounds.max.y(); y++)
+	for (int x = bounds.min.x(); x < bounds.max.x(); x++)
 	{
 		if (mask.test(y*width+x)) continue; // Already handled
 		if (!TestPixel(x, y, false)) continue;

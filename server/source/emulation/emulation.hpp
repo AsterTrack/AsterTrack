@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef EMULATION_H
 #define EMULATION_H
 
-#include "device/tracking_camera.hpp"
 
 #include "emulation/detection.hpp" // Simplified replacement for the blob detection subsystem
 #include "blob/parameters.hpp" // Parameters for all blob detection algorithms
@@ -27,10 +26,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "blob/qpu_blob_tiled.hpp" // To re-evaluate blob detection program layout and coverage
 #include "blob/resegmentation.hpp" // Resegmenting clusters to make sure only peaks are included
 
+#include "server.hpp"
 #include "pipeline/record.hpp"
+#include "device/tracking_camera.hpp"
 #include "ui/gl/visualisation.hpp"
 
 #include "util/eigendef.hpp"
+#include "util/eigenutil.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -162,18 +164,15 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	proc.overlapWith(layout.validMaskRect);
 
 	// Transform from frame space into image pixel space (may be a subsection of frame)
-	proc.minX -= frame->boundsPx.minX;
-	proc.minY -= frame->boundsPx.minY;
-	proc.maxX -= frame->boundsPx.minX;
-	proc.maxY -= frame->boundsPx.minY;
-	proc.minX = proc.minX*frame->width/frame->boundsPx.extends().x();
-	proc.minY = proc.minY*frame->height/frame->boundsPx.extends().y();
-	proc.maxX = proc.maxX*frame->width/frame->boundsPx.extends().x();
-	proc.maxY = proc.maxY*frame->height/frame->boundsPx.extends().y();
+	proc.min -= frame->boundsPx.min;
+	proc.max -= frame->boundsPx.min;
+	auto size = Eigen::Vector2i(frame->width, frame->height), bounds = frame->boundsPx.extends();
+	proc.min = proc.min.cwiseProduct(size).cwiseQuotient(bounds);
+	proc.max = proc.max.cwiseProduct(size).cwiseQuotient(bounds);
 
 	// Transform all results from image pixel space back to frame space
 	Eigen::Vector2f camPixFactor((float)frame->boundsPx.extends().x()/frame->width, (float)frame->boundsPx.extends().y()/frame->height);
-	Eigen::Vector2f camPixOffset = frame->boundsPx.min().cast<float>();
+	Eigen::Vector2f camPixOffset = frame->boundsPx.min.cast<float>();
 	auto emulPix2Cam = [=](Eigen::Vector2f px)
 	{
 		px = px + Eigen::Vector2f(0.5f,0.5f);

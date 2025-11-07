@@ -716,7 +716,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			bounds.center() + view.vis.view.center.cwiseProduct(Eigen::Vector2f(+flip, -flip)) / 2.0f * boundsSizeW * view.vis.view.camZoom,
 			bounds.extends() * view.vis.view.camZoom / view.vis.view.zoom);
 		uint8_t val = std::max(std::min((int)(0x33*std::pow(view.vis.view.zoom, 0.8f)), 0xFF), 0x33);
-		ImGui::RenderFrame(ImVec2(viewBounds.minX, viewBounds.minY), ImVec2(viewBounds.maxX, viewBounds.maxY), IM_COL32(val, val, val, 0x33), false, 5);
+		ImGui::RenderFrame(ImVec2(viewBounds.min.x(), viewBounds.min.y()), ImVec2(viewBounds.max.x(), viewBounds.max.y()), IM_COL32(val, val, val, 0x33), false, 5);
 		// Provide interaction to move the view
 		bool boundsHovered, boundsHeld;
 		if (InteractionSurface("ZoomView", ImRect(boundsMin, boundsMax), boundsHovered, boundsHeld) || boundsHeld)
@@ -961,7 +961,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		loadGrayscaleFrame(visCamera.imageVis.texID, visCamera.image->image.data(), visCamera.image->width, visCamera.image->height);
 		visCamera.emulation.update = true;
 		LOG(LGUI, LTrace, "Loading image for visualisation with bounds (%d,%d)(%d,%d)",
-			visCamera.image->boundsPx.minX, visCamera.image->boundsPx.minY, visCamera.image->boundsPx.maxX, visCamera.image->boundsPx.maxY);
+			visCamera.image->boundsPx.min.x(), visCamera.image->boundsPx.min.y(), visCamera.image->boundsPx.max.x(), visCamera.image->boundsPx.max.y());
 	}
 
 	/**
@@ -1330,7 +1330,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		visualiseBlobCircle(visual.pos, visual.size*PixelStride, Color{ 1, 0, 0, 1 }, PixelStride);
 
 		// Visualise refined edge
-		Eigen::Vector2f boundsOrigin = pix2cam<float>(mode, visual.bounds.min().cast<float>());
+		Eigen::Vector2f boundsOrigin = pix2cam<float>(mode, visual.bounds.min.cast<float>());
 		thread_local std::vector<VisPoint> edgePoints;
 		edgePoints.clear();
 		for (auto &pt : visual.boundPoints)
@@ -1514,8 +1514,8 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 
 	// Calculate rect actually used for blob detection
 	ProgramLayout layout = SetupProgramLayout(mode.widthPx, mode.heightPx, 8, false);
-	Eigen::Vector2f tl = layout.validMaskRect.min().cast<float>() * 2.0f / mode.widthPx;
-	Eigen::Vector2f br = layout.validMaskRect.max().cast<float>() * 2.0f / mode.widthPx;
+	Eigen::Vector2f tl = layout.validMaskRect.min.cast<float>() * 2.0f / mode.widthPx;
+	Eigen::Vector2f br = layout.validMaskRect.max.cast<float>() * 2.0f / mode.widthPx;
 	tl = Eigen::Vector2f(tl.x()-1, mode.aspect-tl.y());
 	br = Eigen::Vector2f(br.x()-1, mode.aspect-br.y());
 
@@ -1604,10 +1604,10 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 	Bounds2f imageBounds;
 	if (visCamera.imageVis.undistort)
 	{ // Undistort roughly - since values outside of image could be used, it could be even more unstable than usual
-		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.maxX, view.maxY), 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.maxX, view.minY), 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.minX, view.maxY), 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.minX, view.minY), 100, 1*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, view.max, 100, 1*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, view.max, 100, 1*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, view.min, 100, 1*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, view.min, 100, 1*PixelSize));
 	}
 	else
 	 	imageBounds = view;
@@ -1618,14 +1618,14 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 			imageBounds.extends().x()*camera.mode.factorW/2.0f * expansionFactor,
 			imageBounds.extends().y()*camera.mode.factorH/2.0f * expansionFactor));
 	Bounds2i pixelBounds(
-		normBounds.minX*camera.mode.widthPx, normBounds.minY*camera.mode.heightPx,
-		normBounds.maxX*camera.mode.widthPx, normBounds.maxY*camera.mode.heightPx);
+		normBounds.min.x()*camera.mode.widthPx, normBounds.min.y()*camera.mode.heightPx,
+		normBounds.max.x()*camera.mode.widthPx, normBounds.max.x()*camera.mode.heightPx);
 	pixelBounds.overlapWith(fullFrame); // Due to expansionFactor and undistortion
 	if (bounds != pixelBounds)
 	{
 		bounds = pixelBounds;
 		LOG(LGUI, LTrace, "Requesting image bounds (%d,%d)(%d,%d)",
-			bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+			bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y());
 		return true;
 	}
 	return false;

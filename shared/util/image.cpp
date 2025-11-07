@@ -114,14 +114,14 @@ uint8_t* sampleImageBounds(uint8_t *srcImage, int srcX, int srcY, int srcStride,
 		printf("Failed to sample with subsample of 0\n");
 		return nullptr;
 	}
-	if (srcBounds.maxX > srcX || srcBounds.maxY > srcY)
+	if (srcBounds.max.x() > srcX || srcBounds.max.y() > srcY)
 	{
 		printf("Failed to sample with bounds max (%d, %d) over source size (%d, %d)\n",
-			srcBounds.maxX, srcBounds.maxY, srcX, srcY);
+			srcBounds.max.x(), srcBounds.max.y(), srcX, srcY);
 		return nullptr;
 	}
-	tgtX = (srcBounds.maxX-srcBounds.minX)/subsample;
-	tgtY = (srcBounds.maxY-srcBounds.minY)/subsample;
+	tgtX = srcBounds.extends().x()/subsample;
+	tgtY = srcBounds.extends().y()/subsample;
 	// TODO: Enforce cropped image size to be multiples of 8?
 	tgtBounds = srcBounds;
 	if (tgtX < 10 || tgtY < 10)
@@ -133,7 +133,7 @@ uint8_t* sampleImageBounds(uint8_t *srcImage, int srcX, int srcY, int srcStride,
 	if (subsample <= 1)
 	{ // Send a (sub)block in original resolution
 		tgtStride = srcStride;
-		return srcImage + (srcBounds.minY*srcStride+srcBounds.minX);
+		return srcImage + (srcBounds.min.y()*srcStride+srcBounds.min.x());
 	}
 
 	// Subsample a block of image
@@ -142,12 +142,12 @@ uint8_t* sampleImageBounds(uint8_t *srcImage, int srcX, int srcY, int srcStride,
 	tgtStride = tgtX;
 	for (uint_fast16_t y = 0; y < tgtY; y++)
 	{
-		uint_fast16_t pxY = y * subsample + srcBounds.minY;
+		uint_fast16_t pxY = y * subsample + srcBounds.min.y();
 		uint_fast16_t srcBase = pxY * srcStride;
 		uint_fast16_t tgtBase = y * tgtStride;
 		for (uint_fast16_t x = 0; x < tgtX; x++)
 		{
-			uint_fast16_t pxX = x * subsample + srcBounds.minX;
+			uint_fast16_t pxX = x * subsample + srcBounds.min.x();
 			encDataBuffer[tgtBase+x] = srcImage[srcBase+pxX];
 		}
 	}

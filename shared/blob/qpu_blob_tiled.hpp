@@ -202,17 +202,17 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 	*/
 
 	// Determine the image space rect for which a valid mask exists
-	layout.validMaskRect.minX = layout.srcOffset.x() + paddingX;
-	layout.validMaskRect.minY = layout.srcOffset.y();
-	layout.validMaskRect.maxX = layout.validMaskRect.minX + validWidth;
-	layout.validMaskRect.maxY = layout.validMaskRect.minY + validLines;
+	layout.validMaskRect.min.x() = layout.srcOffset.x() + paddingX;
+	layout.validMaskRect.min.y() = layout.srcOffset.y();
+	layout.validMaskRect.max.x() = layout.validMaskRect.min.x() + validWidth;
+	layout.validMaskRect.max.y() = layout.validMaskRect.min.y() + validLines;
 
 	if (debug)
 	{
 		LOG(LCameraEmulation, LInfo,
 			"SETUP: %d instances processing 1/%d columns each, covering %dx%d pixels total (%d x %d dropped, offset %d x %d)\n",
 			layout.instances, splitCols, validWidth, validLines,
-			droppedColumns, droppedLines, layout.validMaskRect.minX, layout.validMaskRect.minY);
+			droppedColumns, droppedLines, layout.validMaskRect.min.x(), layout.validMaskRect.min.y());
 	}
 	// With this, a 1280x800 image becomes 1152x798 of effectively processed pixels. Not optimal but fastest way
 

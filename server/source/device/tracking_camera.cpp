@@ -282,10 +282,10 @@ static void CameraSendImageRequest(TrackingCameraState &device, uint8_t mode, Im
 	stream[0] = mode;
 	if (mode > 0)
 	{
-		*((uint16_t *)&stream[1]) = request.bounds.minX;
-		*((uint16_t *)&stream[3]) = request.bounds.minY;
-		*((uint16_t *)&stream[5]) = request.bounds.maxX;
-		*((uint16_t *)&stream[7]) = request.bounds.maxY;
+		*((uint16_t *)&stream[1]) = request.bounds.min.x();
+		*((uint16_t *)&stream[3]) = request.bounds.min.y();
+		*((uint16_t *)&stream[5]) = request.bounds.max.x();
+		*((uint16_t *)&stream[7]) = request.bounds.max.y();
 		stream[9] = request.subsampling;
 		stream[10] = request.jpegQuality;
 		stream[11] = request.frame;

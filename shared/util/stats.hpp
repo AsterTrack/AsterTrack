@@ -204,7 +204,7 @@ struct MultipleExtremum
 		}
 	}
 
-	int weakest()
+	int weakest() const
 	{
 		for (int i = 0; i < rank.size(); i++)
 			if (rank[i] == signal)
@@ -212,7 +212,7 @@ struct MultipleExtremum
 		return N-1;
 	}
 
-	Scalar average()
+	Scalar average() const
 	{
 		if (rank.empty()) return signal;
 		Scalar avg = 0.0;
@@ -226,8 +226,20 @@ struct MultipleExtremum
 		return avg / rank.size();
 	}
 
-	bool hasAll() { return rank[N-1] != signal; }
-	bool hasAny() { return rank[0] != signal; }
+	bool hasAll() const
+	{
+		if constexpr (Dynamic::value)
+			return rank.size() == rank.capacity();
+		else
+			return rank[N-1] != signal;
+	}
+	bool hasAny() const
+	{
+		if constexpr (Dynamic::value)
+			return !rank.empty();
+		else
+			return rank[0] != signal;
+	}
 };
 
 /**

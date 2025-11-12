@@ -237,6 +237,8 @@ void InterfaceState::UpdateUI()
 
 	OnDemandNewFrame();
 
+	GeneralInput();
+
 	// Settings will have been loaded in NewFrame if an imgui.ini file existed
 	static bool firstIteration = true;
 	if (firstIteration)
@@ -296,8 +298,6 @@ void InterfaceState::UpdateUI()
 		GetState().errors.pop();
 		handlingErrors = false;
 	}
-
-	GeneralInput();
 
 	// Render UI out to a DrawData list, for later GL rendering
 	ImGui::Render();

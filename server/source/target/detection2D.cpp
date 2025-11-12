@@ -97,7 +97,6 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 
 		// Find candidate for 2D point matches
 		TargetMatch2D targetMatch2D = {};
-		targetMatch2D.calib = &target3D;
 		targetMatch2D.pose = estimate;
 		targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 
@@ -133,7 +132,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 
 		if (targetMatch2D.error.samples >= params.probe.minObs)
 		{ // Initial optimisation
-			optimiseTargetPose<false>(calibs, points2D, targetMatch2D,
+			optimiseTargetPose<false>(calibs, points2D, targetMatch2D, target3D,
 				Eigen::Isometry3f::Identity(), params.opt);
 		}
 
@@ -189,8 +188,8 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 		LOG(LDetection2D, LDebug, "    Best: Rotation %d resulted in %d matches, error %fpx!", it, res.first, res.second*PixelFactor);
 
 		TargetMatch2D targetMatch2D = std::move(itMatches[it]);
-		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D);
-		TargetMatchError newErrors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D,
+		TargetMatchError prevErrors = evaluateTargetPose(calibs, points2D, targetMatch2D, target3D);
+		TargetMatchError newErrors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, target3D,
 			Eigen::Isometry3f::Identity(), params.opt);
 		if (newErrors.samples > 0)
 		{
@@ -352,7 +351,6 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			return {};
 
 		TargetMatch2D targetMatch2D = {};
-		targetMatch2D.calib = &target3D;
 		targetMatch2D.pose = pose;
 		targetMatch2D.points2D.resize(cameraCount);
 
@@ -371,7 +369,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			params.match, distFactor);
 	
 		{ // For debug only
-			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D);
+			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D, target3D);
 			LOGC(LTrace, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
 				i++, errors.samples, focus, errors.mean*PixelFactor);
 		}
@@ -379,7 +377,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			continue;
 
 		// Optimise and remove outliers
-		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, pose, params.opt, track.filter.point.stdDev, true);
+		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, target3D, pose, params.opt, track.filter.point.stdDev, true);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 

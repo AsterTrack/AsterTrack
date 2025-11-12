@@ -121,7 +121,7 @@ struct TargetReprojectionError
 	}
 
 #ifdef TARGET_TRACKING_2D_H
-	void setData(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const TargetMatch2D &match)
+	void setData(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const TargetMatch2D &match, const TargetCalibration3D &calib)
 	{
 		static_assert(Options&OptUndistorted);
 		m_observedPoints.clear();
@@ -132,7 +132,7 @@ struct TargetReprojectionError
 			// Though points2D should be empty anyways if we didn't get a calibration
 			for (auto &pts : match.points2D[index])
 				m_observedPoints.push_back({ index,
-					match.calib->markers[pts.first].pos.template cast<Scalar>(),
+					calib.markers[pts.first].pos.template cast<Scalar>(),
 					points2D[c]->at(pts.second).template cast<Scalar>() // Already undistorted
 				});
 		}

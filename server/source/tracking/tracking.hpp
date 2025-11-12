@@ -221,6 +221,7 @@ struct TrackedBase
 {
 	int id;
 	std::string label;
+	TrackingResult result;
 };
 
 struct TrackedTarget : public virtual TrackedBase

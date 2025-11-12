@@ -105,7 +105,6 @@ struct TargetCalibration3D;
 
 struct TargetMatch2D
 {
-	const TargetCalibration3D *calib;
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
 	TargetMatchError error;

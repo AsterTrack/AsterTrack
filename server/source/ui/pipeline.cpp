@@ -272,7 +272,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (ImGui::Button("Optimise", SizeWidthDiv4()))
 					{
 						debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
-							debugVis.editedMatch2D, trackRecord->posePredicted, pipeline.params.track.opt);
+							debugVis.editedMatch2D, *debugVis.calib, trackRecord->posePredicted, pipeline.params.track.opt);
 					}
 					ImGui::SameLine();
 					if (ImGui::Button("Reset", SizeWidthDiv4()))

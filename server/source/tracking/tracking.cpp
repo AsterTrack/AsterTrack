@@ -75,7 +75,7 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 			target.match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
-		errorTerm.setData(points2D, target.match2D);
+		errorTerm.setData(points2D, target.match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
 		measurement.useNumerical(params.filter.point.useNumericJac);
@@ -179,7 +179,7 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 			target.match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
-		errorTerm.setData(points2D, target.match2D);
+		errorTerm.setData(points2D, target.match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
 		measurement.useNumerical(params.filter.point.useNumericJac);

@@ -1063,7 +1063,6 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 
 		std::vector<std::vector<Eigen::Vector2f>> points2DRecStore(frameRecord->cameras.size());
 		TargetMatch2D targetMatch2D = {};
-		targetMatch2D.calib = &trkTarget;
 		targetMatch2D.pose = frame.pose;
 		targetMatch2D.points2D.resize(frameRecord->cameras.size());
 		for (auto &sample : frame.samples)
@@ -1076,7 +1075,7 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 		for (int c = 0; c < frameRecord->cameras.size(); c++)
 			points2D[c] = &points2DRecStore[c];
 
-		TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D);
+		TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D, trkTarget);
 		prevError += frame.error;
 		newError += errors.mean;
 		sampleCnt += frame.samples.size();

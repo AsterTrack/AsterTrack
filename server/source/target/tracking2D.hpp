@@ -149,20 +149,20 @@ void matchTargetPointsRecover(
  */
 template<bool REFERENCE = true, bool OUTLIER = true>
 TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, Eigen::Isometry3f prediction,
-	TargetOptimisationParameters params, float errorStdDev = 0.0f, bool updateCovariance = false);
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib,
+	Eigen::Isometry3f prediction, TargetOptimisationParameters params, float errorStdDev = 0.0f, bool updateCovariance = false);
 
 /**
  * Evaluate the given target match and update its pose error
  */
 TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match);
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib);
 
 /**
  * Evaluate the given target match and update its pose error, and numerically calculates its covariance
  */
 TargetMatchError evaluateTargetPoseCovariance(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, float errorStdDev);
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib, float errorStdDev);
 
 /**
  * Updates visibleMarkers of target to those matched

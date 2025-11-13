@@ -540,6 +540,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	Eigen::Isometry3f prediction, TargetOptimisationParameters params, float errorStdDev, bool updateCovariance)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
+	assert(match.error.samples >= 0);
 
 	// Initialise optimisation error term, preparing the data
 	constexpr int OPTIONS = OptUndistorted | (OUTLIER? OptOutliers : 0) | (REFERENCE? OptReferencePose : 0);
@@ -568,14 +569,19 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 
 	Eigen::VectorXd errors(errorTerm.m_observedPoints.size());
 	errorTerm.calculateSampleErrors(errorTerm.decodePose(poseVec), errors);
-	float prevError = errors.sum() / match.error.samples;
+	float prevError = errors.mean();
 
 	// Initialise optimisation algorithm
 	Eigen::LevenbergMarquardt<TgtError, double> lm(errorTerm);
-	lm.parameters.maxfev = params.maxIterations*10; // Max number of evaluations of errorTerm, bounds for number of iterations
-	lm.parameters.xtol = 0.0000001f * PixelSize * params.tolerances;
-	lm.parameters.ftol = 0.00001f * params.tolerances;
-	lm.parameters.gtol = 0.00001f * params.tolerances;
+	// Max number of evaluations of errorTerm, bounds for number of iterations
+	lm.parameters.maxfev = (params.maxOutlierIterations+params.maxRefineIterations)*10;
+	auto updateTolerances = [&](bool outlierPasses)
+	{
+		float tolerances = outlierPasses? params.outlierTolerances : params.refineTolerances;
+		lm.parameters.xtol = 0.001f * PixelSize * tolerances;
+		lm.parameters.ftol = 0.0001f * tolerances;
+		lm.parameters.gtol = 0.0001f * tolerances;
+	};
 	Eigen::LevenbergMarquardtSpace::Status status = lm.minimizeInit(poseVec);
 	if (status == Eigen::LevenbergMarquardtSpace::ImproperInputParameters)
 	{
@@ -584,36 +590,71 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	}
 
 	// Optimisation steps
-	int it = 0;
+	updateTolerances(OUTLIER);
+	bool outlierPasses = OUTLIER;
 	int outlierCount = 0;
 	match.error.samples = errorTerm.m_observedPoints.size();
-	while (it < params.maxIterations)
+	int outIt = 0, refIt = 0;
+	while (true)
 	{
-		it++;
 		status = lm.minimizeOneStep(poseVec);
-		auto errors = lm.fvec.head(errorTerm.m_observedPoints.size());
+		auto errors = lm.fvec.head(errorTerm.m_observedPoints.size()); // Ignore reference pose
 		match.error.mean = errors.sum() / match.error.samples;
 		match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
 		match.error.max = errors.maxCoeff();
-		LOGC(LTrace, "            Current Error: %.4fpx (sum %f, inliers %d)\n", match.error.mean*PixelFactor, errors.sum(), match.error.samples);
-		if (status != Eigen::LevenbergMarquardtSpace::Running)
+		LOGC(LTrace, "            Current Error: %.4fpx (max %f, inliers %d)\n", match.error.mean*PixelFactor, match.error.max*PixelFactor, match.error.samples);
+		if (!outlierPasses)
 		{
-			LOGC(LDebug, "          Stopped optimisation: %s\n", getStopCodeText(status));
-			break;
+			if (++refIt >= params.maxRefineIterations)
+				break;
+			if (status != Eigen::LevenbergMarquardtSpace::Running)
+			{
+				LOGC(LDebug, "          Stopped optimisation: %s\n", getStopCodeText(status));
+				break;
+			}
+			continue;
 		}
 		if constexpr (!OUTLIER) continue;
-		// Find outliers
-		float maxAllowed = match.error.mean + std::max(params.outlierSigma*match.error.stdDev, params.outlierVarMin);
+		if (++outIt >= params.maxOutlierIterations)
+		{ // Leave outlier passes and refine
+			LOGC(LDebug, "            Reached maximum outlier iterations of %d! Remaining Errors %.4fpx (max %f, inliers %d)\n",
+				outIt, match.error.mean*PixelFactor, match.error.max*PixelFactor, match.error.samples);
+			outlierPasses = false;
+			updateTolerances(false);
+			continue;
+		}
+		if (status == Eigen::LevenbergMarquardtSpace::Running)
+		{ // Outlier tolerances not yet reached
+			continue;
+		}
+		// Find outliers - remove one at a time in case of severe errors
+		float maxAllowed = match.error.max > params.outlierErrorLimit?
+			std::max(match.error.max * params.outlierGrouping * 0.9999f, params.outlierErrorLimit) : 
+			match.error.mean + std::max(params.outlierSigma*match.error.stdDev, params.outlierVarMin);
+		if (match.error.max < maxAllowed)
+		{ // Leave outlier passes and refine
+			LOGC(LDebug, "            No more outliers to discern at iteration %d! Remaining Errors %.4fpx (max %f, inliers %d)\n",
+				outIt, match.error.mean*PixelFactor, match.error.max*PixelFactor, match.error.samples);
+			outlierPasses = false;
+			updateTolerances(false);
+			continue;
+		}
+		LOGC(LDebug, "            Checking for outliers in iteration %d with max error allowed of %fpx! Current Error: %.4fpx (max %f, inliers %d)\n",
+			outIt, maxAllowed*PixelFactor, match.error.mean*PixelFactor, match.error.max*PixelFactor, match.error.samples);
+		int newOutliers = 0;
 		for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 		{
 			int cam = std::get<0>(errorTerm.m_observedPoints[i]);
 			// TODO: Per camera outlier limit, definitely need to treat dominant cameras differently than fringe cameras
-			if (lm.fvec(i) <= maxAllowed) continue;
+			if (errors(i) < maxAllowed) continue;
+			float outlierError = errors(i);
 			// TODO: Determine point outliers using jacobian
 			// A point that goes against the general direction of the jacobian is more likely to be an outlier
 			match.error.samples--;
 			outlierCount++;
 			errorTerm.m_outlierMap[i] = true;
+			errors(i) = 0;
+			newOutliers++;
 
 			// Rest is just for debug
 			int marker = -1, pt = -1;
@@ -629,13 +670,22 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			}
 			LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4fpx! %d inliers left, with %.4f max\n",
 				cam, marker, pt,
-				lm.fvec(i)*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
+				outlierError*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
 		}
-		if (errorTerm.values()-outlierCount < errorTerm.inputs())
+		if (match.error.samples == 0 || errorTerm.values()-outlierCount < errorTerm.inputs())
 			break;
+		if (newOutliers == 0)
+		{ // Leave outlier passes and refine
+			LOGC(LDebug, "            Could not find any more outliers at iteration %d! Remaining Errors %.4fpx (max %f, inliers %d)\n",
+				outIt, match.error.mean*PixelFactor, match.error.max*PixelFactor, match.error.samples);
+			outlierPasses = false;
+			updateTolerances(false);
+			continue;
+		}
 	}
-	LOGC(LDebug, "        Optimised target pose with %d points from %.4fpx to %.4fpx error and %d outliers in %d / %d iterations!\n",
-		(int)errorTerm.m_observedPoints.size(), prevError*PixelFactor, match.error.mean*PixelFactor, (int)errorTerm.m_observedPoints.size()-match.error.samples, it, params.maxIterations);
+	LOGC(LDebug, "        Optimised target pose with %d points from %.4fpx to %.4fpx error and %d outliers in %d+%d / %d iterations!\n",
+		(int)errorTerm.m_observedPoints.size(), prevError*PixelFactor, match.error.mean*PixelFactor,
+		(int)errorTerm.m_observedPoints.size()-match.error.samples, outIt, refIt, params.maxOutlierIterations+params.maxRefineIterations);
 
 	// Apply optimised pose
 	if constexpr (OPTIONS & OptCorrectivePose)
@@ -648,6 +698,9 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 
 	if constexpr (OUTLIER) if (outlierCount > 0)
 	{ // Remove detected outliers from target match
+		float maxAllowed = std::min(params.outlierErrorLimit,
+			match.error.mean + std::max(params.outlierSigma*match.error.stdDev, params.outlierVarMin));
+
 		int errorIndex = 0;
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -659,12 +712,24 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			{
 				if (errorTerm.m_outlierMap[errorIndex])
 				{
-					LOGC(LTrace, "            Camera %d Marker %d - Point %d, outlier!\n", calib.id, pointsMatch[i].first, pointsMatch[i].second);
-					outliersCam++;
+					float outError = errorTerm.calculateSampleError(match.pose, errorIndex);
+					if (outError > maxAllowed)
+					{
+						LOGC(LTrace, "            Camera %d Marker %d - Point %d, outlier with error %.4fpx!", calib.id, pointsMatch[i].first, pointsMatch[i].second, outError*PixelFactor);
+						outliersCam++;
+					}
+					else
+					{
+						LOGC(LDebug, "            Camera %d Marker %d - Point %d, reinstated as inlier with error %.4fpx",
+							calib.id, pointsMatch[i].first, pointsMatch[i].second, outError*PixelFactor);
+						pointsMatch[writeIndex++] = pointsMatch[i];
+						match.error.samples++;
+						outlierCount--;
+					}
 				}
 				else
 				{
-					LOGC(LTrace, "            Camera %d Marker %d - Point %d, remaining pixel error %.4f\n",
+					LOGC(LTrace, "            Camera %d Marker %d - Point %d, remaining pixel error %.4fpx",
 						calib.id, pointsMatch[i].first, pointsMatch[i].second, lm.fvec(errorIndex)*PixelFactor);
 					pointsMatch[writeIndex++] = pointsMatch[i];
 				}
@@ -673,6 +738,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			pointsMatch.resize(pointsMatch.size()-outliersCam);
 		}
 	}
+	assert(match.error.samples >= 0);
 
 	return match.error;
 }

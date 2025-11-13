@@ -107,7 +107,7 @@ struct TargetMatch2D
 {
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
-	TargetMatchError error;
+	TargetMatchError error = {};
 	CovarianceMatrix covariance;
 	std::vector<VectorX<float>> deviations;
 

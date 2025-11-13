@@ -165,25 +165,29 @@ struct TargetReprojectionError
 	 */
 
 	template<typename DiffScalar = Scalar>
+	DiffScalar calculateSampleError(const Isometry3<DiffScalar> &pose, int p) const
+	{
+		auto &pt = m_observedPoints[p];
+		int c = std::get<0>(pt);
+		Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
+		Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
+		Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+		if constexpr (!(Options&OptUndistorted))
+			measurement = undistortPoint(m_calibs[c], measurement);
+		return (proj - measurement).norm();
+		// TODO: Switch to squaredNorm to save on many sqrts in tracking
+		// Previous attempts resulted in optimisation that couldn't optimise (did not abort early, just no progress)
+	}
+
+	template<typename DiffScalar = Scalar>
 	void calculateSampleErrors(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &errors) const
 	{
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			if ((Options&OptOutliers) && m_outlierMap.at(p))
-			{
 				errors(p) = 0;
-				continue;
-			}
-			auto &pt = m_observedPoints[p];
-			int c = std::get<0>(pt);
-			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
-			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
-			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
-			if constexpr (!(Options&OptUndistorted))
-				measurement = undistortPoint(m_calibs[c], measurement);
-			errors(p) = (proj - measurement).norm();
-			// TODO: Switch to squaredNorm to save on many sqrts in tracking
-			// Previous attempts resulted in optimisation that couldn't optimise (did not abort early, just no progress)
+			else
+			 	errors(p) = calculateSampleError(pose, p);
 		}
 	}
 

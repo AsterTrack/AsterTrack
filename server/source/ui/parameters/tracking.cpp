@@ -198,10 +198,15 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Optimisation");
-		modified |= ScalarProperty<int>("Max Iterations", "", &params.opt.maxIterations, &standard.opt.maxIterations, 0, 100);
-		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<int>("Max Refine Iterations", "", &params.opt.maxRefineIterations, &standard.opt.maxRefineIterations, 0, 100);
+		modified |= ScalarProperty<float>("Refine Tolerances", "x", &params.opt.refineTolerances, &standard.opt.refineTolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<int>("Max Outlier Iterations", "", &params.opt.maxOutlierIterations, &standard.opt.maxOutlierIterations, 0, 100);
+		modified |= ScalarProperty<float>("Outlier Tolerances", "x", &params.opt.outlierTolerances, &standard.opt.outlierTolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Outlier Error Limit", "px", &params.opt.outlierErrorLimit, &standard.opt.outlierErrorLimit, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Outlier Grouping", "x", &params.opt.outlierGrouping, &standard.opt.outlierGrouping, 0, 1, 0.05f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
 		EndSection();
 
 		if (modified)
@@ -297,8 +302,12 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("Optimisation");
-		modified |= ScalarProperty<int>("Max Iterations", "", &params.opt.maxIterations, &standard.opt.maxIterations, 0, 100);
-		modified |= ScalarProperty<float>("Tolerances", "x", &params.opt.tolerances, &standard.opt.tolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<int>("Max Refine Iterations", "", &params.opt.maxRefineIterations, &standard.opt.maxRefineIterations, 0, 100);
+		modified |= ScalarProperty<float>("Refine Tolerances", "x", &params.opt.refineTolerances, &standard.opt.refineTolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<int>("Max Outlier Iterations", "", &params.opt.maxOutlierIterations, &standard.opt.maxOutlierIterations, 0, 100);
+		modified |= ScalarProperty<float>("Outlier Tolerances", "x", &params.opt.outlierTolerances, &standard.opt.outlierTolerances, 0, 1000, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Outlier Error Limit", "px", &params.opt.outlierErrorLimit, &standard.opt.outlierErrorLimit, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Outlier Grouping", "x", &params.opt.outlierGrouping, &standard.opt.outlierGrouping, 0, 1, 0.05f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
 		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");

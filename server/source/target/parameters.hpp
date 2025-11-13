@@ -71,9 +71,13 @@ struct TargetMatchingParametersUncertain
 };
 struct TargetOptimisationParameters
 {
-	int maxIterations = 10;
-	float tolerances = 1.0f;
-	float outlierSigma = 2.3f;
+	int maxOutlierIterations = 20;
+	int maxRefineIterations = 5;
+	float refineTolerances = 10.0f;
+	float outlierTolerances = 200.0f;
+	float outlierErrorLimit = 2.0f*PixelSize;
+	float outlierGrouping = 0.9f;
+	float outlierSigma = 2.5f;
 	float outlierVarMin = 0.5f*PixelSize;
 	float predictionInfluence = 0.000005f;
 };
@@ -190,8 +194,7 @@ struct TargetDetectionParameters
 struct TargetTrackingParameters
 {
 	// Prediction
-	float minUncertainty3D = 0.01f;
-	// TODO: Rethink how tracking uncertainty maps to increased "search" range in both 2D and 3D
+	float minUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;
 	// Marker Matching
 	float expandMarkerFoV = -0.3f;

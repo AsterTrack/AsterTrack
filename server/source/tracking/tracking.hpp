@@ -222,6 +222,7 @@ struct TrackedBase
 	int id;
 	std::string label;
 	TrackingResult result;
+	float procTimeMS;
 };
 
 struct TrackedTarget : public virtual TrackedBase

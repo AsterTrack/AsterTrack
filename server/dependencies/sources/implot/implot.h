@@ -123,6 +123,7 @@ enum ImAxis_ {
     ImAxis_Y1,     // enabled by default
     ImAxis_Y2,     // disabled by default
     ImAxis_Y3,     // disabled by default
+    ImAxis_Y4,     // disabled by default
     // bookeeping
     ImAxis_COUNT
 };

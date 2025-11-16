@@ -198,6 +198,7 @@ struct TrackerRecord
 	int id;
 
 	TrackingResult result;
+	float procTimeMS;
 	TargetMatchError error;
 
 	TrackerInertialState imuState;

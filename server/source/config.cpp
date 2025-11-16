@@ -1186,6 +1186,8 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 					tracker.result = jsTarget["res"].get<int>();
 				else
 					tracker.result = TrackingResult::NONE;
+				if (jsTarget.contains("time"))
+					tracker.procTimeMS = jsTarget["time"].get<float>();
 				int i = 0;
 				auto poseArr = tracker.poseObserved.matrix().array();
 				for (auto &val : jsTarget["pose"])
@@ -1242,6 +1244,7 @@ std::optional<ErrorMessage> dumpTrackingResults(std::string &path, const Trackin
 			json jsTarget;
 			jsTarget["id"] = target.id;
 			jsTarget["res"]	= (int)target.result;
+			jsTarget["time"] = target.procTimeMS;
 			jsTarget["pose"] = json::array();
 			auto poseArr = target.poseObserved.matrix().array();
 			for (int i = 0; i < 16; i++)

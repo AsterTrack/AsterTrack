@@ -743,15 +743,18 @@ static bool ShowTrackingPanel()
 		std::vector<int> sampleCount;
 		std::vector<float> errors2D;
 		std::vector<float> tracking;
+		std::vector<float> procTimeMS;
 
 		void setup(int size)
 		{
 			sampleCount.clear();
 			errors2D.clear();
 			tracking.clear();
+			procTimeMS.clear();
 			sampleCount.resize(size, 0);
 			errors2D.resize(size, NAN);
 			tracking.resize(size, NAN);
+			procTimeMS.resize(size, NAN);
 		}
 	} tracking, recording;
 	static std::vector<float> imuSampleTime;
@@ -778,6 +781,8 @@ static bool ShowTrackingPanel()
 			stats.tracking[index] = 4;
 		else if (trackRecord->result.isDetected())
 			stats.tracking[index] = 7;
+
+		stats.procTimeMS[index] = trackRecord->procTimeMS;
 	};
 
 	// Update frameRange
@@ -806,6 +811,13 @@ static bool ShowTrackingPanel()
 	{
 		ImPlot::SetupAxis(ImAxis_Y3, "IMU /Hz", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
 		ImPlot::SetupAxisLimits(ImAxis_Y3, 0, 1020);
+	}
+	// TODO: Would love to toggle time axis along with time data, but needs to be setup before SetAxis is called
+	// Thus, the only way to do this is to implement a IsItemHidden with from the last call, and show axis by default
+	// String ID doesn't work since something (perhaps SetupFinish) will change the ID stack before the actual item is drawn
+	{
+		ImPlot::SetupAxis(ImAxis_Y4, "Time", ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 10);
 	}
 	ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
 
@@ -917,6 +929,21 @@ static bool ShowTrackingPanel()
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
 		ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
+	}
+
+	// Processing time line
+	ImPlot::SetAxis(ImAxis_Y4); // Use same axis, but not same scala
+	if (drawRec)
+	{ // Draw recorded
+		ImPlot::HideNextItem(ImGuiCond_Appearing);
+		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
+		ImPlot::PlotLine("Time", recording.procTimeMS.data(), recording.procTimeMS.size(), 1, frameShiftRec);
+	}
+	if (drawCur)
+	{ // Draw current
+		ImPlot::HideNextItem(ImGuiCond_Appearing);
+		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
+		ImPlot::PlotLine("Time", tracking.procTimeMS.data(), tracking.procTimeMS.size(), 1, frameShift);
 	}
 
 	// IMU Update Rate line

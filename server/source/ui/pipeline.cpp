@@ -556,6 +556,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				EventChange tracked;
 				StatValue<float,StatExtremas|StatDistribution> samplesLoaded, samplesCurrent, samplesAdded, samplesRemoved;
 				StatValue<float,StatExtremas|StatDistribution> errorLoaded, errorCurrent, errorAdded, errorRemoved;
+				StatValue<float,StatDistribution> trackTimeLoaded, trackTimeCurrent;
 			};
 			static std::map<int, TrackingSamples> trackers;
 			static long coveredFrames;
@@ -600,6 +601,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					struct FrameTrackers {
 						int samplesLoaded = 0, samplesCurrent = 0;
 						float errorLoaded = 0, errorCurrent = 0;
+						float timeLoaded = 0.0f, timeCurrent = 0.0f;
 					};
 					std::map<int, FrameTrackers> frameTrackers;
 					for (auto &trackRecord : record.trackers)
@@ -607,12 +609,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						auto &trkFrame = frameTrackers[trackRecord.id];
 						trkFrame.samplesCurrent = trackRecord.error.samples;
 						trkFrame.errorCurrent = trackRecord.error.mean;
+						if (trackRecord.result.isTracked())
+							trkFrame.timeCurrent = trackRecord.procTimeMS;
 					}
 					for (auto &trackStored : stored.trackers)
 					{
 						auto &trkFrame = frameTrackers[trackStored.id];
 						trkFrame.samplesLoaded = trackStored.error.samples;
 						trkFrame.errorLoaded = trackStored.error.mean;
+						if (trackStored.result.isTracked())
+							trkFrame.timeLoaded = trackStored.procTimeMS;
 					}
 					// Update changes to each targets tracking results
 					for (auto &trk : frameTrackers)
@@ -624,11 +630,13 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						{
 							tracker.samplesLoaded.update(trkFrame.samplesLoaded);
 							tracker.errorLoaded.update(trkFrame.errorLoaded);
+							tracker.trackTimeLoaded.update(trkFrame.timeLoaded);
 						}
 						if (trkFrame.samplesCurrent)
 						{
 							tracker.samplesCurrent.update(trkFrame.samplesCurrent);
 							tracker.errorCurrent.update(trkFrame.errorCurrent);
+							tracker.trackTimeCurrent.update(trkFrame.timeCurrent);
 						}
 						if (trkFrame.samplesCurrent > trkFrame.samplesLoaded)
 							tracker.samplesAdded.update(trkFrame.samplesCurrent-trkFrame.samplesLoaded);
@@ -665,6 +673,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					{
 						auto &tgt = trackedTarget.second;
 						ImGui::Text("Frames: %d  [%d]  +%d -%d", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
+						ImGui::Text("Times: %.2fms +- %.2f  [%.2fms +- %.2f]", tgt.trackTimeCurrent.avg, tgt.trackTimeCurrent.stdDev()*2, tgt.trackTimeLoaded.avg, tgt.trackTimeLoaded.stdDev()*2);
 						ImGui::Text("Samples:");
 						ImGui::Text("    sum: %ld  [%ld]  +%ld -%ld", (long)tgt.samplesCurrent.sum, (long)tgt.samplesLoaded.sum, (long)tgt.samplesAdded.sum, (long)tgt.samplesRemoved.sum);
 						ImGui::Text("     avg: %.2f +- %.2f  [%.2f +- %.2f]", tgt.samplesCurrent.avg, tgt.samplesCurrent.stdDev()*2, tgt.samplesLoaded.avg, tgt.samplesLoaded.stdDev()*2);

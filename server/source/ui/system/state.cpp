@@ -131,9 +131,9 @@ void InterfaceState::UpdateCalibrations()
 		{
 			if (pipeline.cameras[j]->calib.invalid())
 				continue;
-			if (calib_lock->relations.FMStore.size() < std::min(i, j))
+			if (calib_lock->relations.FMStore.size() <= j)
 			{
-				state.relCertain++;
+				state.relUncertain++;
 				continue;
 			}
 			auto FMcand = calib_lock->relations.getFMEntry(i, j);

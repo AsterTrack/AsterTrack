@@ -76,6 +76,7 @@ struct CameraPipeline
 {
 	CameraID id = CAMERA_ID_NONE;
 	int index = -1;
+	bool disabled = false;
 	CameraCalib calib = {};
 	CameraCalib calibRoom = {};
 	CameraCalib calibBackup = {}; // To undo certain operations

@@ -125,6 +125,8 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	bool fullyCalibrated = true;
 	for (auto &cam : pipeline.cameras)
 	{
+		if (cam->disabled)
+			continue;
 		if (cam->calib.invalid())
 			fullyCalibrated = false;
 		if (cam->index >= frame->cameras.size())

@@ -407,7 +407,11 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		visualiseOrigin(visState.room.origin, 1, 5);
 
 	for (auto &camera : pipeline.cameras)
-		visualiseCamera(camera->calib.transform.cast<float>());
+		if (camera->disabled)
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, 0.3f, 1.0f });
+	for (auto &camera : pipeline.cameras)
+		if (!camera->disabled)
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, 0.3f, 1.0f });
 
 	if (pipeline.isSimulationMode)
 	{

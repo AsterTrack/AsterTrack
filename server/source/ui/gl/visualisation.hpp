@@ -175,7 +175,7 @@ void visualiseMesh(const std::vector<VisPoint> &vertices, unsigned int mode);
 /**
  * Render representative camera model
  */
-void visualiseCamera(Eigen::Isometry3f camera, Color color = { 0.3f, 0.3f, 0.3f, 1.0f });
+void visualiseCamera(Eigen::Isometry3f camera, Color color);
 
 /**
  * Render coordinate cross with axis-coloring at pos

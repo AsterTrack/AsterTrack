@@ -644,7 +644,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 		int newOutliers = 0;
 		for (int i = 0; i < errorTerm.m_observedPoints.size(); i++)
 		{
-			int cam = std::get<0>(errorTerm.m_observedPoints[i]);
+			int cam = errorTerm.m_observedPoints[i].camera;
 			// TODO: Per camera outlier limit, definitely need to treat dominant cameras differently than fringe cameras
 			if (errors(i) < maxAllowed) continue;
 			float outlierError = errors(i);
@@ -657,20 +657,30 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 			newOutliers++;
 
 			// Rest is just for debug
-			int marker = -1, pt = -1;
-			const auto &pointsMatch = match.points2D[calibs[cam].index];
-			for (int p = 0; p < pointsMatch.size(); p++)
+			if (SHOULD_LOGC(LTrace))
 			{
-				if (points2D[cam]->at(pointsMatch[p].second) == std::get<2>(errorTerm.m_observedPoints[i]).template cast<float>())
+				Eigen::Vector2f point = errorTerm.m_observedPoints[i].obs.template cast<float>();
+				int c = 0, marker = -1, pt = -1;
+				for (c = 0; c < calibs.size(); c++)
+					if (calibs[c].index == cam)
+						break;
+				const auto &pointsMatch = match.points2D[cam];
+				for (int p = 0; p < pointsMatch.size(); p++)
 				{
+					if (points2D[c]->at(pointsMatch[p].second) != point) continue;
 					marker = pointsMatch[p].first;
 					pt = pointsMatch[p].second;
 					break;
 				}
+				LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4fpx! %d inliers left, with %.4f max\n",
+					cam, marker, pt,
+					outlierError*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
 			}
-			LOGC(LDebug, "            Found outlier (cam %d, marker %d, pt %d) with error %.4fpx! %d inliers left, with %.4f max\n",
-				cam, marker, pt,
-				outlierError*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
+			else if (SHOULD_LOGC(LDebug))
+			{
+				LOGC(LDebug, "            Found outlier in cam %d with error %.4fpx! %d inliers left, with %.4f max\n",
+					cam, outlierError*PixelFactor, match.error.samples, maxAllowed*PixelFactor);
+			}
 		}
 		if (match.error.samples == 0 || errorTerm.values()-outlierCount < errorTerm.inputs())
 			break;

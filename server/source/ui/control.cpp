@@ -646,5 +646,17 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		frameRanges.clear();
 	}
 
+	if (state.mode == MODE_Replay && ImGui::CollapsingHeader("Disable Cameras"))
+	{
+		for (auto &camera : pipeline.cameras)
+		{
+			ImGui::PushID(camera->id);
+			ImGui::Text("#%d", camera->id);
+			SameLineTrailing(ImGui::GetFrameHeight());
+			ImGui::Checkbox("##CamDisable", &camera->disabled);
+			ImGui::PopID();
+		}
+	}
+
 	ImGui::End();
 }

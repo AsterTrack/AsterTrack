@@ -639,9 +639,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			auto &tri = track.triangulations3D[p];
 			for (int c = 0; c < calibs.size(); c++)
 			{
-				int i = calibs[c].index;
-				for (auto &match : targetMatch2D.points2D[i])
-					if (tri.blobs[i] == match.second)
+				int cam = calibs[c].index;
+				for (auto &match : targetMatch2D.points2D[cam])
+					if (tri.blobs[c] == match.second)
 						return true;
 			}
 			return false;

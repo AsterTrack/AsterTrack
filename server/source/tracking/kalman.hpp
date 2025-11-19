@@ -327,8 +327,8 @@ class TargetMatchMeasurement :
 	void calculateJacobian(State const &state, int p, Eigen::Ref<Eigen::MatrixXd> jacobian) const
 	{
 		auto &pt = m_targetError.m_observedPoints[p];
-		int c = std::get<0>(pt);
-		Vector3<double> tgtPt = std::get<1>(pt).cast<double>();
+		int c = pt.camera;
+		Vector3<double> tgtPt = pt.marker.cast<double>();
 
 		if (m_numerical)
 		{

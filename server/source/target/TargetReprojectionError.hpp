@@ -53,7 +53,13 @@ struct TargetReprojectionError
 	std::vector<int> m_cams;
 	std::vector<CameraCalib_t<Scalar>> m_calibs;
 	std::vector<Projective3<Scalar>> m_mvps;
-	std::vector<std::tuple<int, Vector3<Scalar>, Vector2<Scalar>>> m_observedPoints;
+	struct PointSample
+	{
+		int camera;
+		Vector3<Scalar> marker;
+		Vector2<Scalar> obs;
+	};
+	std::vector<PointSample> m_observedPoints;
 	std::vector<bool> m_outlierMap;
 	Eigen::Matrix<Scalar,6,1> refPose;
 	Scalar refInfluence = 1.0f;
@@ -168,12 +174,11 @@ struct TargetReprojectionError
 	DiffScalar calculateSampleError(const Isometry3<DiffScalar> &pose, int p) const
 	{
 		auto &pt = m_observedPoints[p];
-		int c = std::get<0>(pt);
-		Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
-		Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
-		Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+		Vector3<DiffScalar> tgtPt = pt.marker.template cast<DiffScalar>();
+		Vector2<DiffScalar> proj = projectPoint2D(m_mvps[pt.camera], pose * tgtPt);
+		Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 		if constexpr (!(Options&OptUndistorted))
-			measurement = undistortPoint(m_calibs[c], measurement);
+			measurement = undistortPoint(m_calibs[pt.camera], measurement);
 		return (proj - measurement).norm();
 		// TODO: Switch to squaredNorm to save on many sqrts in tracking
 		// Previous attempts resulted in optimisation that couldn't optimise (did not abort early, just no progress)
@@ -252,12 +257,11 @@ struct TargetReprojectionError
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			auto &pt = m_observedPoints[p];
-			int c = std::get<0>(pt);
-			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
-			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
-			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+			Vector3<DiffScalar> tgtPt = pt.marker.template cast<DiffScalar>();
+			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[pt.camera], pose * tgtPt);
+			Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 			if constexpr (!(Options&OptUndistorted))
-				measurement = undistortPoint(m_calibs[c], measurement);
+				measurement = undistortPoint(m_calibs[pt.camera], measurement);
 			errors.template segment<2>(p*2) = proj - measurement;
 		}
 	}
@@ -269,9 +273,8 @@ struct TargetReprojectionError
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			auto &pt = m_observedPoints[p];
-			int c = std::get<0>(pt);
-			Vector3<DiffScalar> tgtPt = std::get<1>(pt).template cast<DiffScalar>();
-			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[c], pose * tgtPt);
+			Vector3<DiffScalar> tgtPt = pt.marker.template cast<DiffScalar>();
+			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[pt.camera], pose * tgtPt);
 			projections.template segment<2>(p*2) = proj;
 		}
 	}
@@ -283,10 +286,9 @@ struct TargetReprojectionError
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			auto &pt = m_observedPoints[p];
-			int c = std::get<0>(pt);
-			Vector2<DiffScalar> measurement = std::get<2>(pt).template cast<DiffScalar>();
+			Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 			if constexpr (!(Options&OptUndistorted))
-				measurement = undistortPoint(m_calibs[c], measurement);
+				measurement = undistortPoint(m_calibs[pt.camera], measurement);
 			measurements.template segment<2>(p*2) = measurement;
 		}
 	}

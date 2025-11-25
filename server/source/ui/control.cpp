@@ -414,7 +414,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				// Ensure we have decent parameters
 				pipeline.params.detect.useAsyncDetection = false;
 				// Instruct pipeline to process given frame range
-				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, range.begin-1);
+				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, range.begin);
 				if (!frame) continue;
 				AdoptFrameRecordState(pipeline, *frame);
 				// Quickly advance through frame range

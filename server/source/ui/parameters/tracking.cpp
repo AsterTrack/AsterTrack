@@ -144,6 +144,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Error Sigma over Best", "o", &params.search.errorSigma, &standard.search.errorSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Error Max", "px", &params.search.errorMax, &standard.search.errorMax, 0, 10, 0.5f, PixelFactor, "%.1f");
 		modified |= ScalarProperty<int>("Max Candidates", "", &params.search.maxCandidates, &standard.search.maxCandidates, 1, 100);
+		BooleanProperty("Allow Single Camera Search", &params.search.allowSingleCamera, &standard.search.allowSingleCamera);
 		EndSection();
 
 		BeginSection("2D Probe");
@@ -193,7 +194,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Quality");
 		modified |= ScalarProperty<int>("Min Obs in Focus Cam", "", &params.minObservations.focus, &standard.minObservations.focus, 0, 50);
-		modified |= ScalarProperty<int>("Min Obs in Sec Cam", "", &params.minObservations.sec, &standard.minObservations.sec, 0, 50);
 		modified |= ScalarProperty<int>("Min total Observations", "", &params.minObservations.total, &standard.minObservations.total, 6, 50); // 6 needed to optimise 6 parameters
 		EndSection();
 

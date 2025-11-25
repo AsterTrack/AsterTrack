@@ -148,7 +148,7 @@ struct TargetDetectionConfig
 	// Computationally intensive 2D detection methods (limited number active at the same time):
 	bool search2D = true; // Faster, may not work on targets with few markers visible at once
 	bool probe2D = true; // Slower, should work on all targets
-	
+
 	// Critical parameters that may be tuned per target:
 	int probeCount = 1000;
 };
@@ -161,6 +161,7 @@ struct TargetDetectionParameters
 		float errorMax = 5.0f*PixelSize;
 		float errorSigma = 3;
 		int maxCandidates = 10;
+		bool allowSingleCamera = true;
 	} search;
 	RotationGenerationParameters rotGen;
 	struct
@@ -186,7 +187,6 @@ struct TargetDetectionParameters
 	// Quality
 	struct {
 		int focus = 6;
-		int sec = 3;
 		int total = 10;
 	} minObservations;
 };

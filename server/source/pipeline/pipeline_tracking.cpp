@@ -363,7 +363,7 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
 	const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<int>> &detectionPoints2D,
+	const std::vector<Cluster2D> &detectionPoints2D,
 	bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget &&dormant)
 {
 	float procTimeMS;
@@ -1031,44 +1031,75 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		trackedClusters3D.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.1f);
 	}
 
-	if (trackTargets && !clusters2DTri.empty() && !pipeline.tracking.dormantTargets.empty() && !pipeline.tracking.asyncDetection)
+	if (trackTargets && !pipeline.tracking.asyncDetection && (!clusters2DTri.empty() || detect.search.allowSingleCamera))
 	{
-		// Select cluster to detect in
-		Cluster2DTri3D &cluster = clusters2DTri.front();
+		// Select target, cluster, and detection method
+		int opt, focusPoints, focusCamera;
+		Eigen::Vector3f focusPos;
+		std::vector<int> clusters;
+		auto dormantIt = pipeline.tracking.dormantTargets.begin();
+		for (; dormantIt != pipeline.tracking.dormantTargets.end(); dormantIt++)
+		{ // FIFO queue of dormant targets, but targets may skip until conditions are good while retaining their positions
+			bool singleCamera = clusters2DTri.empty();
 
-		// Select target to detect
-		pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, pipeline.tracking.dormantTargets.begin());
-		DormantTarget &dormant = pipeline.tracking.dormantTargets.back();
-		TargetDetectionConfig config = dormant.target.detectionConfig;
-
-		// Select best camera from that cluster
-		int focusPoints = 0, focusCamera = -1;
-		for (int c = 0; c < calibs.size(); c++)
-		{
-			int cIndex = cluster.camClusters[c];
-			if (cIndex >= 0 && focusPoints < clusters2D[c][cIndex].size())
+			// Select cluster and focus camera to detect in
+			focusPoints = 0;
+			focusCamera = -1;
+			if (singleCamera)
 			{
-				focusPoints = clusters2D[c][cIndex].size();
-				focusCamera = c;
+				focusPos = Eigen::Vector3f::Constant(NAN);
+				for (int c = 0; c < calibs.size(); c++)
+					if (!clusters2D[c].empty() && (focusCamera < 0 || clusters2D[focusCamera].front().size() < clusters2D[c].front().size()))
+						focusCamera = c;
+				if (focusCamera < 0)
+					continue;
+				clusters.clear();
+				clusters.resize(calibs.size(), -1);
+				clusters[focusCamera] = 0;
+				focusPoints = clusters2D[focusCamera].front().size();
 			}
-		}
+			else
+			{
+				focusPos = clusters2DTri.front().center;
+				clusters = clusters2DTri.front().camClusters;
+				for (int c = 0; c < calibs.size(); c++)
+				{
+					int cIndex = clusters[c];
+					if (cIndex >= 0 && focusPoints < clusters2D[c][cIndex].size())
+					{
+						focusPoints = clusters2D[c][cIndex].size();
+						focusCamera = c;
+					}
+				}
+			}
 
-		// Cycle through methods to use (per target)
-		std::array<bool,2> options = {
-			config.search2D && focusPoints >= detect.minObservations.focus,
-			config.probe2D
-		};
-		int opt = -1;
-		for (int i = 0; i < options.size(); i++, dormant.target.detectionCycle++)
-		{
-			if (!options[dormant.target.detectionCycle%options.size()]) continue;
-			opt = dormant.target.detectionCycle%options.size();
+			TargetDetectionConfig config = dormantIt->target.detectionConfig;
+			int &optCycle = dormantIt->target.detectionCycle;
+
+			// Cycle through methods to use (per target)
+			std::array<bool,2> options = {
+				config.search2D && focusPoints >= detect.minObservations.focus,
+				config.probe2D && !singleCamera // Needs valid focusPos
+			};
+			opt = -1;
+			for (int i = 0; i < options.size(); i++, optCycle++)
+			{
+				if (!options[optCycle%options.size()]) continue;
+				opt = optCycle%options.size();
+				break;
+			}
+			optCycle = (optCycle+1)%4;
+			if (opt == -1) continue;
+
 			break;
 		}
-		dormant.target.detectionCycle = (dormant.target.detectionCycle+1)%4;
 
-		if (opt != -1)
+		if (dormantIt != pipeline.tracking.dormantTargets.end())
 		{
+			pipeline.tracking.dormantTargets.splice(pipeline.tracking.dormantTargets.end(), pipeline.tracking.dormantTargets, dormantIt);
+			DormantTarget &dormant = pipeline.tracking.dormantTargets.back();
+			TargetDetectionConfig config = dormant.target.detectionConfig;
+
 			bool useProbe = opt == 1;
 
 			LOG(LDetection2D, LDarn, opt == 1?
@@ -1077,11 +1108,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				dormant.id, dormant.label.c_str(), (int)dormant.target.calib.markers.size());
 
 			// Prepare selection of points
-			std::vector<std::vector<int>> detectionPoints2DAsync(calibs.size());
+			std::vector<Cluster2D> detectionPoints2DAsync(calibs.size());
 			std::vector<Cluster2D const *> detectionPoints2DSync(calibs.size());
 			for (int c = 0; c < calibs.size(); c++)
 			{
-				int cIndex = cluster.camClusters[c];
+				int cIndex = clusters[c];
 				if (cIndex < 0) continue;
 				// TODO: Track clusters in 3D (1/2) - would allow nearby points below cluster limit to be used here
 				detectionPoints2DAsync[c] = clusters2D[c][cIndex];
@@ -1094,14 +1125,14 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				pipeline.tracking.asyncDetectionStop = {};
 				pipeline.tracking.asyncDetectTargetID = dormant.id;
 				threadPool.push([&pipeline](int, std::stop_token stopToken, std::shared_ptr<FrameRecord> frameRec,
-					std::vector<CameraCalib> &calibs, std::vector<std::vector<int>> &detectionPoints2D,
+					std::vector<CameraCalib> &calibs, std::vector<Cluster2D> &detectionPoints2D,
 					bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget dormant)
 				{ // Working with copy of dormant tracker
 					detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
 						useProbe, focus, pos, probeCount, std::move(dormant));
 					pipeline.tracking.asyncDetection = false;
 				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, std::move(calibs), std::move(detectionPoints2DAsync),
-					useProbe, focusCamera, cluster.center, config.probeCount, dormant);
+					useProbe, focusCamera, focusPos, config.probeCount, dormant);
 			}
 			else
 			{
@@ -1110,7 +1141,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (useProbe)
 				{ // Probe target against clusters points
 					dormant.target.match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
-						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, cluster.center,
+						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync, focusPos,
 						pipeline.cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
 				}
 				else

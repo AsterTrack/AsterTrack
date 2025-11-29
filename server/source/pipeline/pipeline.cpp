@@ -180,17 +180,13 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 		checkSequenceHealth(params, *std::get<0>(lock), *std::get<1>(lock), frame->num, update || (periodicCheck == 0));
 	}
 
-	if (pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Automatic)
-	{ // TODO: Reformulate camera calibration for future continuous calibration
-		// Then point calibration would just being explicit instructions by UI to camera calibration and sequence2D
-		// And continuous calibration would be a background algorithm to optimise camera calibration based on tracking data
-		UpdatePointCalibration(pipeline, cameras, frame);
-	}
+	// Handles initial point calibration via explicit instructions by UI to calibrate cameras from sequence2D data
+	// Handles continuous calibration in the background or via explicit instruction by UI to optimise camera calibration using tracking database
+	UpdatePointCalibration(pipeline, cameras, frame);
 
-	if (pipeline.phase == PHASE_Calibration_Target)// || pipeline.phase == PHASE_Automatic)
-	{
-		UpdateTargetCalibration(pipeline, cameras, frame->num);
-	}
+	// Handles initial target calibration via explicit instructions by UI to calibrate new targets from sequence2D data
+	// Handles continuous calibration in the background or via explicit instruction by UI to optimise target calibrations using tracking database
+	UpdateTargetCalibration(pipeline, cameras, frame->num);
 
 	frame->finishedProcessing = true;
 	pipeline.frameNum = frame->num;
@@ -227,14 +223,8 @@ void UpdatePipelineStatus(PipelineState &pipeline)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
-	if (pipeline.phase == PHASE_Calibration_Point)
-	{
-		UpdatePointCalibrationStatus(pipeline);
-	}
-	else if (pipeline.phase == PHASE_Calibration_Target)
-	{
-		UpdateTargetCalibrationStatus(pipeline);
-	}
+	UpdatePointCalibrationStatus(pipeline);
+	UpdateTargetCalibrationStatus(pipeline);
 }
 
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */

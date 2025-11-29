@@ -676,12 +676,16 @@ void InterfaceState::UpdatePipelinePointCalib()
 			ptCalib.control->stop_source.request_stop();
 		}
 		ImGui::SameLine();
-		if (ptCalib.settings.typeFlags & 0b001)
+		if (ptCalib.settings.typeFlags & 0b0001)
 		{
 			ImGui::TextUnformatted("Reconstructing Geometry...");
 		}
-		else if (ptCalib.settings.typeFlags & 0b010)
+		else if (ptCalib.settings.typeFlags & 0b0010)
 		{
+			ImGui::Text("Optimising %d/%d...", ptCalib.state->numSteps, ptCalib.settings.maxSteps);
+		}
+		else if (ptCalib.settings.typeFlags & 0b1000)
+		{ // Target-specific, started from tracking database optimisation
 			ImGui::Text("Optimising %d/%d...", ptCalib.state->numSteps, ptCalib.settings.maxSteps);
 		}
 	}

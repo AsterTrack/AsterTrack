@@ -41,7 +41,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "unsupported/Eigen/NonLinearOptimization"
 
 #include <cassert>
-
+#include <stop_token>
 
 
 template<typename Scalar>
@@ -75,7 +75,10 @@ struct ReprojectionError
 	// Information about optimised parameters
 	int m_paramCount, m_tgtParamIndex, m_paramCameras;
 	std::vector<int> m_paramTarget, m_errorTarget;
+	float m_targetOptTolerance = 1.0f;
 	OptimisationOptions m_options;
+
+	std::stop_token stopToken;
 
 	std::vector<VectorX<Scalar>> m_tgtPosesVec;
 
@@ -173,6 +176,8 @@ struct ReprojectionError
 	template<typename DiffScalar = Scalar>
 	int operator()(const VectorX<DiffScalar> &calibParams, VectorX<DiffScalar> &errors)
 	{
+		if (stopToken.stop_requested()) return -1;
+
 		// Setup camera parameters
 		std::vector<CameraCalib_t<DiffScalar>> cameras(m_cameras.size());
 		for (int c = 0; c < m_cameras.size(); c++)
@@ -225,11 +230,13 @@ struct ReprojectionError
 			tgtIndex++;
 		}
 
-		return 0;
+		return stopToken.stop_requested()? -1 : 0;
 	}
 
 	int df(const VectorX<Scalar> &calibParams, JacobianType &jacobian) const
 	{
+		if (stopToken.stop_requested()) return -1;
+
 		TimePoint_t s1, s2;
 
 		/* s1 = sclock::now();tgtIndex
@@ -346,6 +353,8 @@ struct ReprojectionError
 			}
 		}, calibParams.head(m_paramCameras), jacobian.block(0, 0, m_pointSamples, m_paramCameras));
 
+		if (stopToken.stop_requested()) return -1;
+
 		// Prepare target parameters and calculate errors
 		std::vector<TargetParams<Scalar>> targetParams(m_data->targets.size());
 		int tgtIndex = 0;
@@ -369,11 +378,15 @@ struct ReprojectionError
 			}
 		}, calibParams.head(m_paramCameras), jacobian.block(m_pointSamples, 0, m_targetSamples, m_paramCameras));
 
+		if (stopToken.stop_requested()) return -1;
+
 		if constexpr ((Options & OptTgtMotionOpt) == OptTgtMotionOpt)
 		{ // Structure parameters for target errors
 			int tgtIndex = 0;
 			for (auto &target : m_data->targets)
 			{
+				if (stopToken.stop_requested()) return -1;
+
 				VectorX<Scalar> posesVec = m_tgtPosesVec[tgtIndex];
 
 				int paramStart = m_paramTarget[tgtIndex], paramLen = m_paramTarget[tgtIndex+1]-paramStart;
@@ -385,7 +398,7 @@ struct ReprojectionError
 				{
 					TargetStructure<Scalar> tgtStruct = targetParams[tgtIndex].structure;
 					readTargetStructure<Scalar>(tgtStruct, target, params);
-					auto stats = optimiseTargetPoseErrors<Scalar>(cameras, target, tgtStruct, posesVec, errors, 1);
+					auto stats = optimiseTargetPoseErrors<Scalar>(cameras, target, tgtStruct, posesVec, errors, m_targetOptTolerance);
 					//statAccum[stats.first] += stats.second;
 				}, calibParams.segment(paramStart, paramLen), jacobian.block(errorStart, paramStart, errorLen, paramLen), 10);
 
@@ -409,6 +422,8 @@ struct ReprojectionError
 				int tgtIndex = 0;
 				for (auto &target : m_data->targets)
 				{
+					if (stopToken.stop_requested()) return -1;
+
 					int tgtStructureCnt = numTgtStruct(m_options, target);
 					int paramStart = m_paramTarget[tgtIndex], paramLen = tgtStructureCnt;
 					int errorStart = m_errorTarget[tgtIndex], errorLen = m_errorTarget[tgtIndex+1]-errorStart;
@@ -430,6 +445,8 @@ struct ReprojectionError
 				int tgtIndex = 0;
 				for (auto &target : m_data->targets)
 				{
+					if (stopToken.stop_requested()) return -1;
+
 					int errorIndex = m_errorTarget[tgtIndex];
 					int paramIndex = m_paramTarget[tgtIndex] + numTgtStruct(m_options, target);
 					TargetParams<Scalar> tgtParam = targetParams[tgtIndex];
@@ -481,26 +498,61 @@ struct ReprojectionError
 
 		//jacobian = numericFullJac;
 
-		return 1; // <0 : abort, =0 : success, >0 : num function evaluation
+		// <0 : abort, =0 : success, >0 : num function evaluation
+		return stopToken.stop_requested()? -1 : 1;
 	}
 
 	int dfs(const VectorX<Scalar> &calibParams, Eigen::SparseMatrix<Scalar> &jacobian) const
 	{
-		JacobianType jacDense(m_totalSamples, m_paramCount);
-		df(calibParams, jacDense);
-		jacobian.setZero();
-		for (int i = 0; i < m_totalSamples; i++)
+		// Calculate upper bound (usually many times higher than actually needed)
+		int size = m_paramCameras * (m_pointSamples + m_targetSamples);
+		if constexpr ((Options & OptTgtMotionOpt) == OptTgtMotionOpt)
 		{
-			for (int j = 0; j < m_paramCount; j++)
+			int tgtIndex = 0;
+			for (auto &target : m_data->targets)
 			{
-				if (jacDense(i,j) != 0.0)
-				{
-					jacobian.insert(i,j) = jacDense(i,j);
-				}
+				int paramLen = m_paramTarget[tgtIndex+1]-m_paramTarget[tgtIndex];
+				size +=  paramLen * target.totalSamples;	
+				tgtIndex++;
 			}
 		}
+		else
+		{
+			if (m_options.structure)
+			{
+				for (auto &target : m_data->targets)
+					size += target.markers.size()*3 * target.totalSamples;
+			}
+			if (m_options.motion)
+			{
+				size += 6 * m_targetSamples;
+			}
+		}
+
+		// NOTE: Writing directly into sparse matrix has been tried (via allocating block, then copying to sparse)
+		// But it turned out slower for most matrices (e.g. 12 vs 1 second)
+		// The conversion from dense to sparse is pretty much optimal (besides checking the whole matrix for NNZ)
+		// The only advantage is memory used on initial allocation of the dense matrix
+		// but processing time makes large matrices where such an allocation is problematic unrealistic anyway
+		JacobianType jacDense(m_totalSamples, m_paramCount);
+		int ret = df(calibParams, jacDense);
+		if (ret < 0) return ret;
+
+		jacobian.setZero();
 		jacobian.makeCompressed();
-		return 1;
+		jacobian.reserve(size);
+		for (int j = 0; j < m_paramCount; j++)
+		{
+			jacobian.startVec(j);
+			for (int i = 0; i < m_totalSamples; i++)
+			{
+				if (jacDense(i,j) != 0.0)
+					jacobian.insertBackByOuterInner(j, i) = jacDense(i,j);
+			}
+		}
+		jacobian.finalize();
+		jacobian.makeCompressed();
+		return ret;
 	}
 
 	/**

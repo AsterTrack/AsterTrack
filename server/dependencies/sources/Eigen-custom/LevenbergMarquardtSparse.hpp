@@ -22,6 +22,7 @@
 #include "lmparSparse.hpp"
 
 #include <chrono>
+#include <stop_token>
 
 namespace Eigen { 
 
@@ -95,6 +96,8 @@ public:
     Index iter;
     Scalar fnorm, gnorm;
     bool useExternalScaling; 
+
+    std::stop_token stopToken;
 
     Scalar lm_param(void) { return par; }
 private:
@@ -313,11 +316,19 @@ LevenbergMarquardtSparse<FunctorType,Scalar>::minimizeOneStep(FVectorType  &x)
         nfev += df_ret;
     else njev++;
 
+    if (stopToken.stop_requested())
+        return LevenbergMarquardtSpace::UserAsked;
+
     /* compute the qr factorization of the jacobian. */
     wa2 = colwise_blueNorm_impl(fjac);
 
+    if (stopToken.stop_requested())
+        return LevenbergMarquardtSpace::UserAsked;
+
     typedef Eigen::SparseQR<JacobianType, Eigen::COLAMDOrdering<int>> QRFAC;
     QRFAC qrfac(fjac);
+    if (stopToken.stop_requested())
+        return LevenbergMarquardtSpace::UserAsked;
     fjac = qrfac.matrixR();
     permutation = qrfac.colsPermutation();
 
@@ -358,8 +369,14 @@ LevenbergMarquardtSparse<FunctorType,Scalar>::minimizeOneStep(FVectorType  &x)
 
     do {
 
+        if (stopToken.stop_requested())
+            return LevenbergMarquardtSpace::UserAsked;
+
         /* determine the levenberg-marquardt parameter. */
         internal::lmpar2Sparse<Scalar, QRFAC>(qrfac, diag, qtf, delta, par, wa1);
+
+        if (stopToken.stop_requested())
+            return LevenbergMarquardtSpace::UserAsked;
 
         /* store the direction p and x + p. calculate the norm of p. */
         wa1 = -wa1;

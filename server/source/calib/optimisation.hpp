@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "obs_data.hpp"
 
+#include <stop_token>
+
 /**
  * Optimisation of existing camera calibrations to minimise reprojection error
  */
@@ -109,25 +111,25 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
  * Parameters may include camera extrinsics and intrinsics, target structure and motion, etc.
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor = 1.0f);
+int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor = 1.0f);
 
 /**
  * Optimises a set of parameters (defined by options) to conform to the dataset of observations
  * Parameters may include camera extrinsics and intrinsics, but NOT target parameters, as they would need to be written back to data
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration);
+int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken);
 
 /**
  * Optimises target structure and motion to conform to the dataset of observations
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor = 1.0f);
+int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor = 1.0f);
 
 /**
  * Optimises target structure and motion to conform to the dataset of observations
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor = 1.0f);
+int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor = 1.0f);
 
 #endif // OPTIMISATION_H

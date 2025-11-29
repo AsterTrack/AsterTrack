@@ -36,6 +36,7 @@ extern ctpl::thread_pool threadPool;
 
 static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
 static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
+static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
 static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
 
 
@@ -64,12 +65,6 @@ void ResetPointCalibration(PipelineState &pipeline)
 void UpdatePointCalibrationStatus(PipelineState &pipeline)
 {
 	auto &ptCalib = pipeline.pointCalib;
-
-	std::vector<CameraPipeline*> cameras;
-	cameras.reserve(pipeline.cameras.size());
-	for (auto &cam : pipeline.cameras)
-		cameras.push_back(cam.get());
-
 	if (ptCalib.control)
 	{
 		if (!ptCalib.control->running())
@@ -83,15 +78,22 @@ void UpdatePointCalibrationStatus(PipelineState &pipeline)
 	}
 	else if (ptCalib.planned)
 	{
+		std::vector<CameraPipeline*> cameras;
+		cameras.reserve(pipeline.cameras.size());
+		for (auto &cam : pipeline.cameras)
+			cameras.push_back(cam.get());
+
 		ptCalib.planned = false;
 		ptCalib.control = std::make_shared<ThreadControl>();
 		ptCalib.control->init();
-		if (ptCalib.settings.typeFlags & 0b001)
+		if (ptCalib.settings.typeFlags & 0b0001)
 			ptCalib.control->thread = new std::thread(ThreadCalibrationReconstruction, &pipeline, cameras, ptCalib.control, ptCalib.state);
-		else if (ptCalib.settings.typeFlags & 0b010)
+		else if (ptCalib.settings.typeFlags & 0b0010)
 			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisation, &pipeline, cameras, ptCalib.control, ptCalib.state);
-		else if (ptCalib.settings.typeFlags & 0b100)
+		else if (ptCalib.settings.typeFlags & 0b0100)
 			ptCalib.control->thread = new std::thread(ThreadCalibrationRoom, &pipeline, cameras, ptCalib.control, ptCalib.state);
+		else if (ptCalib.settings.typeFlags & 0b1000)
+			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisationTarget, &pipeline, cameras, ptCalib.control, ptCalib.state);
 		SignalPipelineUpdate();
 	}
 }
@@ -362,7 +364,7 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 
 	if (!stopToken.stop_requested() && state->numSteps < settings.maxSteps)
 	{
-		state->lastStopCode = optimiseCameras(settings.options, pointData, calibs, itUpdate);
+		state->lastStopCode = optimiseCameras(settings.options, pointData, calibs, itUpdate, stopToken);
 		LOGC(LInfo, "%s", getStopCodeText(state->lastStopCode));
 	}
 
@@ -417,6 +419,83 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 	// Update calibration
 	AdoptNewCalibrations(*pipeline, calibs);
 	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
+	SignalCameraCalibUpdate(calibs);
+
+	LOGC(LDebug, "=======================\n");
+}
+
+static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
+{
+	std::stop_token stopToken = control->stop_source.get_token();
+	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
+
+	ScopedLogCategory scopedLogCategory(LOptimisation, true);
+	ScopedLogLevel scopedLogLevel(LInfo);
+
+	LOGC(LInfo, "=======================\n");
+
+	// Copy data
+	auto settings = pipeline->pointCalib.settings;
+	ObsData data = *pipeline->obsDatabase.contextualRLock();
+	std::vector<CameraCalib> calibs(cameras.size());
+	for (int c = 0; c < cameras.size(); c++)
+		calibs[c] = cameras[c]->calib;
+
+	// Perform optimisation step
+	LOGCL("Before optimising with optimisation database:");
+	updateReprojectionErrors(data, calibs);
+
+	auto lastIt = pclock::now();
+	auto itUpdate = [&](OptErrorRes errors)
+	{
+		state->errors = errors;
+		state->numSteps++;
+
+		float dtOpt = dtMS(lastIt, pclock::now());
+		lastIt = pclock::now();
+
+		bool hasNaN = std::isnan(errors.mean) || std::isnan(errors.stdDev) || std::isnan(errors.max);
+		if (hasNaN)
+			LOGC(LWarn, "Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n",
+				state->numSteps, errors.mean, errors.stdDev, errors.max);
+
+		// Update calibration
+		AdoptNewCalibrations(*pipeline, calibs);
+		SignalCameraCalibUpdate(calibs);
+
+		LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
+			errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
+		//LOGC(LDebug, "-- Finished optimisation step in %.2fms + %.2fms", dtOpt, dtMS(lastIt, pclock::now()));
+
+		return !stopToken.stop_requested() && state->numSteps < settings.maxSteps && !hasNaN;
+	};
+
+	if (!stopToken.stop_requested() && state->numSteps < settings.maxSteps)
+	{
+		LOGCL("Optimising camera position:");
+		OptimisationOptions options(true, false, false, false, false);
+		state->lastStopCode = optimiseDataSparse(options, data, calibs, itUpdate, stopToken);
+		LOGC(LInfo, "%s", getStopCodeText(state->lastStopCode));
+	}
+
+	state->complete = !stopToken.stop_requested() && state->numSteps < settings.maxSteps;
+
+	{
+		ScopedLogLevel scopedLogLevel(LInfo);
+		LOGCL("== Finished Optimisations:\n");
+		state->errors = updateReprojectionErrors(data, calibs);
+	}
+
+	if (!stopToken.stop_requested())
+	{
+		LOGC(LInfo, "== Done Optimising Calibration!\n");
+	}
+	else // Since we've already overwrote calibration while calibrating anyway
+		LOGC(LInfo, "== Aborted Optimising Calibration! Accepting results nonetheless!\n");
+
+	// Update calibration
+	AdoptNewCalibrations(*pipeline, calibs);
+	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), data);
 	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LDebug, "=======================\n");

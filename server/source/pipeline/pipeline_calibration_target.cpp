@@ -42,8 +42,9 @@ extern ctpl::thread_pool threadPool;
 
 #include <numeric>
 
-static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr);
-static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state);
+static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_ptr<TargetView> viewPtr);
+static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state);
+static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<PipelineState::TargetOptimisationState> targetPtr);
 
 // ----------------------------------------------------------------------------
 // Target Calibration
@@ -72,10 +73,30 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 {
 	auto &tgtCalib = pipeline.targetCalib;
 
-	std::vector<CameraPipeline*> cameras;
-	cameras.reserve(pipeline.cameras.size());
-	for (auto &cam : pipeline.cameras)
-		cameras.push_back(cam.get());
+	if (tgtCalib.optPlannedForTargetID != 0)
+	{
+		auto state = std::make_shared<PipelineState::TargetOptimisationState>(tgtCalib.optPlannedForTargetID);
+		tgtCalib.optPlannedForTargetID = 0;
+		state->control.init();
+		state->control.thread = new std::thread(ThreadTargetOptimisation, &pipeline, state);
+		tgtCalib.targetOptimisations.contextualLock()->push_back(std::move(state));
+		SignalPipelineUpdate();
+	}
+
+	{
+		auto tgtOpts = tgtCalib.targetOptimisations.contextualLock();
+		for (auto targetIt = tgtOpts->begin(); targetIt != tgtOpts->end();)
+		{
+			auto &target = *targetIt->get();
+			if (target.control.running() && target.control.finished)
+			{
+				target.control.stop();
+				SignalPipelineUpdate();
+				targetIt = tgtOpts->erase(targetIt);
+			}
+			else targetIt++;
+		}
+	}
 
 	for (auto &view : *tgtCalib.views.contextualRLock())
 	{
@@ -91,7 +112,7 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 		{
 			view->planned = false;
 			view->control.init();
-			view->control.thread = new std::thread(ThreadCalibrationTargetView, &pipeline, cameras, view);
+			view->control.thread = new std::thread(ThreadTargetViewReconstruction, &pipeline, view);
 			SignalPipelineUpdate();
 		}
 	}
@@ -115,7 +136,7 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 			tgtCalib.assembly.state = std::make_shared<PipelineState::TargetAssemblyState>();
 			tgtCalib.assembly.control = std::make_shared<ThreadControl>();
 			tgtCalib.assembly.control->init();
-			tgtCalib.assembly.control->thread = new std::thread(ThreadCalibrationTarget, &pipeline, cameras, tgtCalib.assembly.control, tgtCalib.assembly.state);
+			tgtCalib.assembly.control->thread = new std::thread(ThreadTargetAssembly, &pipeline, tgtCalib.assembly.control, tgtCalib.assembly.state);
 			SignalPipelineUpdate();
 		}
 	}
@@ -238,7 +259,7 @@ static void normaliseTarget(const PipelineState &pipeline, ObsTarget &target, Ob
 	}
 };
 
-static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<TargetView> viewPtr)
+static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_ptr<TargetView> viewPtr)
 {
 	std::stop_token stopToken = viewPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { viewPtr->control.finished = true; });
@@ -254,9 +275,7 @@ static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<Cam
 	if (plan.empty()) return;
 	TargetCalibParameters params = pipeline->targetCalib.params;
 	// Copy camera calibration
-	std::vector<CameraCalib> calibs(cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-		calibs[c] = cameras[c]->calib;
+	std::vector<CameraCalib> calibs = pipeline->getCalibs();
 	// Copy OptTarget
 	ObsData obsData;
 	obsData.targets.push_back(*viewPtr->target.contextualRLock());
@@ -392,7 +411,7 @@ static void ThreadCalibrationTargetView(PipelineState *pipeline, std::vector<Cam
 		do
 		{
 			continueOptimisation = false;
-			viewPtr->state.lastStopCode = optimiseTargets(obsData, calibs, itUpdate, tolerances);
+			viewPtr->state.lastStopCode = optimiseTargets(obsData, calibs, itUpdate, stopToken, tolerances);
 		}
 		while (continueOptimisation && viewPtr->state.lastStopCode < 0);
 		LOGC(LDebug, "%s", getStopCodeText(viewPtr->state.lastStopCode));
@@ -478,7 +497,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const std::vector<MarkerSequences> &observations,
 	SubsampleTargetParameters params, TargetAquisitionParameters aquisition,
 	OptimisationOptions &options, int maxSteps, float tolerances, TargetOutlierErrors outliers,
-	std::stop_token &stop, std::function<void(OptErrorRes)> update = [](OptErrorRes){})
+	std::stop_token &stopToken, std::function<void(OptErrorRes)> update = [](OptErrorRes){})
 {
 	ObsData obsData = {};
 	OptErrorRes startErrors = getTargetErrorDist(calibs, target);
@@ -564,7 +583,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 				getTargetErrorDist(calibs, obsData.targets.front()).rmse*PixelFactor, obsData.targets.front().totalSamples);
 		}
 
-		continueOptimisation = !stop.stop_requested() && steps < maxSteps && !hasNaN;
+		continueOptimisation = !stopToken.stop_requested() && steps < maxSteps && !hasNaN;
 		if (filtered || resampled) return false; // Restart optimisation as data changed
 		return continueOptimisation;
 	};
@@ -572,7 +591,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	do
 	{
 		continueOptimisation = false;
-		lastStopCode = optimiseTargets(obsData, calibs, itUpdate, tolerances);
+		lastStopCode = optimiseTargets(obsData, calibs, itUpdate, stopToken, tolerances);
 	}
 	while (continueOptimisation && lastStopCode < 0);
 
@@ -915,7 +934,7 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 	return targetViews[bestBase]; // new shared_ptr
 }
 
-static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state)
+static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::TargetAssemblyState> state)
 {
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 	std::stop_token stopToken = control->stop_source.get_token();
@@ -934,9 +953,7 @@ static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraP
 	// Copy observation database
 	std::vector<MarkerSequences> observations = pipeline->seqDatabase.contextualRLock()->markers;
 	// Copy camera calibration
-	std::vector<CameraCalib> calibs(cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-		calibs[c] = cameras[c]->calib;
+	std::vector<CameraCalib> calibs = pipeline->getCalibs();
 
 	// TODO: Formulate proper plan for future of target calibration
 	// Currently it is still a very manual process, so UI should be able to intervene in the algorithm
@@ -1358,4 +1375,95 @@ static void ThreadCalibrationTarget(PipelineState *pipeline, std::vector<CameraP
 	SignalPipelineUpdate();
 
 	LOGC(LInfo, "=======================\n");
+}
+
+static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<PipelineState::TargetOptimisationState> targetPtr)
+{
+	std::stop_token stopToken = targetPtr->control.stop_source.get_token();
+	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { targetPtr->control.finished = true; });
+
+	ScopedLogCategory scopedLogCategory(LOptimisation, true);
+	ScopedLogContext scopedLogContext(targetPtr->targetID); // Need something visible in the UI
+	ScopedLogLevel scopedLogLevel(LDebug);
+
+	LOGC(LDebug, "=======================\n");
+
+	// Copy data
+	ObsData data;
+	std::vector<TargetCalibration3D> tgtCalibs;
+	for (auto &tgt  : pipeline->obsDatabase.contextualRLock()->targets)
+	{
+		if (tgt.trackerID != targetPtr->targetID) continue;
+		data.targets.emplace_back(tgt);
+		for (auto &tracker : pipeline->tracking.trackedTargets)
+			if (tracker.id == targetPtr->targetID)
+				tgtCalibs.push_back(tracker.target.calib);
+		for (auto &tracker : pipeline->tracking.dormantTargets)
+			if (tracker.id == targetPtr->targetID)
+				tgtCalibs.push_back(tracker.target.calib);
+		assert(data.targets.size() == tgtCalibs.size());
+	}
+	if (data.targets.empty()) return;
+	auto params = pipeline->targetCalib.params.post;
+	std::vector<CameraCalib> calibs = pipeline->getCalibs();
+
+	LOGCL("Before optimising with optimisation database:");
+	updateReprojectionErrors(data, calibs);
+
+	auto lastIt = pclock::now();
+	auto itUpdate = [&](OptErrorRes errors)
+	{
+		LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
+			errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
+		lastIt = pclock::now();
+
+		// Update Targets
+		auto tgt = data.targets.begin();
+		for (int t = 0; t < data.targets.size(); t++, tgt++)
+		{
+			// Copy and update target calibration
+			TargetCalibration3D calib = tgtCalibs[t];
+			calib.markers = finaliseTargetMarkers(calibs, *tgt, params);
+			calib.updateMarkers();
+			// Signal server to update calib
+			SignalTargetCalibUpdate(tgt->trackerID, calib);
+		}
+
+		return !stopToken.stop_requested() && targetPtr->numSteps++ < targetPtr->maxSteps;
+	};
+
+	if (!stopToken.stop_requested())
+	{
+		LOGCL("Optimising target markers:");
+		OptimisationOptions options(false, false, false, true, false);
+		optimiseDataSparse(options, data, calibs, itUpdate, stopToken, 1);
+	}
+
+	LOGCL("Done optimising! Applying to database1");
+
+	{ // Update Targets in Database
+		auto db_lock = pipeline->obsDatabase.contextualLock();
+		for (auto &tgtOpt : data.targets)
+		{
+			for (auto &tgtDB : db_lock->targets)
+			{
+				if (std::abs(tgtDB.trackerID) != std::abs(tgtOpt.trackerID)) continue;
+				tgtDB.markers = tgtOpt.markers;
+				auto frameOpt = tgtOpt.frames.begin();
+				for (auto &frameDB : tgtDB.frames)
+				{
+					while (frameOpt != tgtOpt.frames.end() && frameOpt->frame < frameDB.frame)
+						frameOpt++;
+					if (frameOpt == tgtOpt.frames.end()) break;
+					assert (frameOpt->frame == frameDB.frame);
+					// Apply new outliers, new pose, and error
+					tgtDB.outlierSamples += frameDB.samples.size() - frameOpt->samples.size();
+					frameDB = std::move(*frameOpt);
+				}
+				break;
+			}
+		}
+	}
+
+	LOGC(LDebug, "== Finished Optimising Targets!\n");
 }

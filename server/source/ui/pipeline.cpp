@@ -116,8 +116,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	if (pipeline.phase == PHASE_Tracking)
 	{
-		BeginSection("Tracking (?)");
-		ImGui::SetItemTooltip("Any calibrated target will be detected and tracked automatically.\n");
+		ImGui::PushID("Trk");
 
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
 		long frameNum = pipeline.frameNum;
@@ -188,7 +187,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::PopID();
 		}
 
-		EndSection();
+		ImGui::PopID();
+		ImGui::Dummy(ImVec2(0, 4));
 
 		if (displayInternalDebug && visFrame && visState.tracking.focusedTrackerID != 0)
 		{
@@ -200,9 +200,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
 			if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
-				&& trackConfig->type == TrackerConfig::TRACKER_TARGET)
+				&& trackConfig->type == TrackerConfig::TRACKER_TARGET
+				&& ImGui::CollapsingHeader("Target Tracking Debug"))
 			{
-				BeginSection("Tracking Debug");
+				ImGui::PushID("TrkDbg");
 					
 				auto &debugVis = visState.tracking.debug;
 
@@ -282,7 +283,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					ImGui::EndDisabled();
 				}
 
-				EndSection();
+				ImGui::PopID();
 			}
 		}
 	}
@@ -333,110 +334,29 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::PopID();
 			}
 
+			auto &ptCalib = pipeline.pointCalib;
+			auto &tgtCalib = pipeline.targetCalib;
+			ImGui::BeginDisabled(ptCalib.control && ptCalib.control->running());
 			if (ImGui::Button("Optimise Cameras", SizeWidthDiv3()))
 			{
-				threadPool.push([&](int, ObsData data)
-				{
-					auto lastIt = pclock::now();
-					int numSteps = 0, maxSteps = 10;
-					OptErrorRes lastError;
-					auto itUpdate = [&](OptErrorRes errors){
-						lastError = errors;
-						LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
-							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
-						lastIt = pclock::now();
-						return numSteps++ < maxSteps;
-					};
-					auto calibs = pipeline.getCalibs();
-
-					ScopedLogCategory scopedLogCategory(LOptimisation);
-					ScopedLogLevel scopedLogLevel(LInfo);
-					LOGCL("Before optimising with optimisation database:");
-					updateReprojectionErrors(data, calibs);
-
-					LOGCL("Optimising camera position:");
-					OptimisationOptions options(true, false, false, false);
-					optimiseDataSparse(options, data, calibs, itUpdate, 1);
-
-					// Update calibration
-					pipeline.pointCalib.state->errors = lastError;
-					AdoptNewCalibrations(pipeline, calibs);
-					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), data);
-					SignalCameraCalibUpdate(calibs);
-
-				}, *db_lock);
+				ptCalib.settings.typeFlags = 0b1000;
+				ptCalib.settings.maxSteps = ptCalib.state->numSteps + 10;
+				ptCalib.planned = true;
 			}
+			ImGui::EndDisabled();
 			ImGui::SameLine();
-			if (ImGui::Button("Optimise Targets", SizeWidthDiv3()))
+			ImGui::BeginDisabled(visState.target.inspectingTrackerID == 0 || tgtCalib.optPlannedForTargetID != 0);
+			if (ImGui::Button("Optimise Target", SizeWidthDiv3()))
 			{
-				threadPool.push([&](int, ObsData data)
-				{
-					auto lastIt = pclock::now();
-					int numSteps = 0, maxSteps = 5;
-					auto itUpdate = [&](OptErrorRes errors){
-						LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
-							errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
-						lastIt = pclock::now();
-
-						LOGCL("Applying to targets!");
-
-						// Update Targets
-						for (auto &tgtNew : data.targets)
-						{
-							for (auto &tracker : state.trackerConfigs)
-							{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
-								if (tracker.id != tgtNew.trackerID) continue;
-								// Copy and update target calibration
-								TargetCalibration3D calib = tracker.calib;
-								calib.markers = finaliseTargetMarkers(pipeline.getCalibs(), tgtNew, pipeline.targetCalib.params.post);
-								calib.updateMarkers();
-								// Signal server to update calib
-								SignalTargetCalibUpdate(tgtNew.trackerID, calib);
-								break;
-							}
-						}
-
-						return numSteps++ < maxSteps;
-					};
-
-					auto calibs = GetState().pipeline.getCalibs();
-
-					ScopedLogCategory scopedLogCategory(LOptimisation);
-					ScopedLogLevel scopedLogLevel(LInfo);
-					LOGCL("Before optimising with optimisation database:");
-					updateReprojectionErrors(data, calibs);
-
-					LOGCL("Optimising target markers:");
-					OptimisationOptions options(false, false, false, true, false);
-					optimiseDataSparse(options, data, calibs, itUpdate, 1);
-
-					LOGCL("Done optimising! Applying to database1");
-
-					{ // Update Targets in Database
-						auto db_lock = pipeline.obsDatabase.contextualLock();
-						for (auto &tgtOpt : data.targets)
-						{
-							for (auto &tgtDB : db_lock->targets)
-							{
-								if (std::abs(tgtDB.trackerID) != std::abs(tgtOpt.trackerID)) continue;
-								tgtDB.markers = tgtOpt.markers;
-								auto frameOpt = tgtOpt.frames.begin();
-								for (auto &frameDB : tgtDB.frames)
-								{
-									while (frameOpt != tgtOpt.frames.end() && frameOpt->frame < frameDB.frame)
-										frameOpt++;
-									if (frameOpt == tgtOpt.frames.end()) break;
-									assert (frameOpt->frame == frameDB.frame);
-									// Apply new outliers, new pose, and error
-									tgtDB.outlierSamples += frameDB.samples.size() - frameOpt->samples.size();
-									frameDB = std::move(*frameOpt);
-								}
-								break;
-							}
-						}
-					}
-				}, *db_lock);
+				auto tgtOptLock = tgtCalib.targetOptimisations.contextualRLock();
+				auto trackerIt = std::find_if(tgtOptLock->begin(), tgtOptLock->end(),
+					[&](auto &t){ return t->targetID == visState.target.inspectingTrackerID; });
+				if (trackerIt == tgtOptLock->end())
+					tgtCalib.optPlannedForTargetID = visState.target.inspectingTrackerID;
+				else
+					SignalErrorToUser("Already optimising the selected target!");
 			}
+			ImGui::EndDisabled();
 			ImGui::SameLine();
 			if (ImGui::Button("Set Marker FoV", SizeWidthDiv3()))
 			{
@@ -488,14 +408,54 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				*pipeline.obsDatabase.contextualLock() = {};
 			}
 
+			if (ptCalib.control && ptCalib.control->running())
+			{ // Shared with main point calibration
+				if (ImGui::Button(ptCalib.control->stopping()? "Stopping..." : "Stop", ButtonSize))
+				{
+					ptCalib.control->stop_source.request_stop();
+				}
+				ImGui::SameLine();
+				if (ptCalib.settings.typeFlags & 0b0001)
+				{
+					ImGui::TextUnformatted("Reconstructing Camera Geometry...");
+				}
+				else if (ptCalib.settings.typeFlags & 0b0010)
+				{
+					ImGui::Text("Optimising Cameras %d/%d...", ptCalib.state->numSteps, ptCalib.settings.maxSteps);
+				}
+				else if (ptCalib.settings.typeFlags & 0b1000)
+				{ // Target-specific, started from tracking database optimisation
+					ImGui::Text("Optimising Cameras %d/%d...", ptCalib.state->numSteps, ptCalib.settings.maxSteps);
+				}
+			}
+			{
+				auto tgtOptLock = tgtCalib.targetOptimisations.contextualRLock();
+				for (auto &tgt : *tgtOptLock)
+				{
+					ImGui::PushID(tgt->targetID);
+					if (ImGui::Button(tgt->control.stopping()? "Stopping..." : "Stop", ButtonSize))
+						tgt->control.stop_source.request_stop();
+					ImGui::SameLine();
+					auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+						[&](auto &t){ return t.id == tgt->targetID; });
+					if (trackerIt == state.trackerConfigs.end()) continue;
+					ImGui::Text("Optimising '%s' %d/%d...", trackerIt->label.c_str(), tgt->numSteps, tgt->maxSteps);
+					ImGui::PopID();
+				}
+			}
+
 			ImGui::PopID();
 		}
 		else
 			discardTargetSelection();
+	}	
 
-		if (state.mode == MODE_Replay)
+	if (pipeline.phase == PHASE_Tracking && state.mode == MODE_Replay)
+	{
+		if (ImGui::CollapsingHeader("Tracking Results"))
 		{
-			BeginSection("Tracking Results for this replay");
+			ImGui::PushID("TrkRes");
+
 			if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 			{
 				assert(state.recording.segments.size() == state.recording.tracking.size());
@@ -690,7 +650,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::TreePop();
 			}
 
-			EndSection();
+			ImGui::PopID();
 		}
 	}
 	else if (pipeline.phase == PHASE_Calibration_Point)

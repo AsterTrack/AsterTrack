@@ -295,7 +295,7 @@ OptErrorRes updateCameraErrorMaps(const ObsData &data, const std::vector<CameraC
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
 template<int Options>
-int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor)
 {
 	if (data.points.totalSamples == 0 && data.targets.empty())
 	{
@@ -309,11 +309,19 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 		camerasInternal[c] = cameraCalibs[c];
 
 	// Norm the camera transforms and record for later
+	if (options.normaliseScale && !data.targets.empty())
+	{ // TODO: Allow scaling of targets too? Or just don't normalise, probably not worth it
+		LOGC(LError, "Can not normalise scale for optimisation when data contains targets!");
+		return Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
+	}
 	auto norm = setCameraNorms<ScalarInternal>(camerasInternal, options, 1.0);
 
 	// Initialise optimisation error term, preparing the data
 	ReprojectionError<ScalarInternal, Options> errorTerm(camerasInternal, data);
 	errorTerm.setOptimisationOptions(options);
+	errorTerm.stopToken = stopToken;
+	if constexpr (Options & OptTgtMotionOpt)
+		errorTerm.m_targetOptTolerance = toleranceFactor;
 	if (errorTerm.values() < errorTerm.inputs())
 	{
 		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());
@@ -387,15 +395,19 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
 	lm.parameters.xtol = toleranceFactor * 0.001 * PixelSize;
 	lm.parameters.ftol = toleranceFactor * 0.001;
 	lm.parameters.gtol = toleranceFactor * 0.001;
+	if constexpr (Options & OptSparse)
+		lm.stopToken = stopToken;
 	 // Seems to work well enough
 	if (status == Eigen::LevenbergMarquardtSpace::ImproperInputParameters)
 		return status;
 
 	// Optimisation steps
 	OptErrorRes lastError;
-	while (true)
+	while (!stopToken.stop_requested())
 	{
 		status = lm.minimizeOneStep(calibParams);
+		if (status == Eigen::LevenbergMarquardtSpace::UserAsked)
+			break;
 
 		int outlierCount = data.points.outlierSamples;
 		// NOTE: Currently, target outliers are actually removed, so lm.fvec does not actually include them, so no need to compensate for them here
@@ -421,7 +433,7 @@ int optimiseData(const OptimisationOptions &options, ObsData &data, std::vector<
  * Parameters may include camera extrinsics and intrinsics, target structure and motion, etc.
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
-int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor)
 {
 	if (data.points.totalSamples == 0 && data.targets.empty())
 	{
@@ -444,12 +456,15 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 	// Initialise optimisation error term, preparing the data
 	ReprojectionError<ScalarInternal, OPT1> errorTerm1(camerasInternal, data);
 	errorTerm1.setOptimisationOptions(options);
+	errorTerm1.stopToken = stopToken;
 
 	ReprojectionError<ScalarInternal, OPT2> errorTerm2(camerasInternal, data);
 	errorTerm2.setOptimisationOptions(options);
+	errorTerm2.stopToken = stopToken;
 
 	ReprojectionError<ScalarInternal, OPT3> errorTerm3(camerasInternal, data);
 	errorTerm3.setOptimisationOptions(options);
+	errorTerm3.stopToken = stopToken;
 
 	assert(errorTerm1.m_paramCount == errorTerm2.m_paramCount);
 	assert(errorTerm1.m_paramCount == errorTerm3.m_paramCount);
@@ -550,7 +565,7 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 	std::array<OptErrorRes, 3> lastError;
 	std::array<float, 3> totalTime;
 	std::array<int, 3> itCount;
-	while (true)
+	while (!stopToken.stop_requested())
 	{
 		ScopedLogLevel scopedLogLevel(LInfo);
 
@@ -610,9 +625,9 @@ int compareOptimiseData(const OptimisationOptions &options, ObsData &data, std::
 }
 
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor)
 {
-	return optimiseData<OptSparse>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, toleranceFactor);
+	return optimiseData<OptSparse>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, stopToken, toleranceFactor);
 }
 
 /**
@@ -621,11 +636,11 @@ int optimiseDataSparse(const OptimisationOptions &options, const ObsData &data, 
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration)
+int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken)
 {
 	assert(data.targets.empty() || (!options.motion && !options.structure));
 	// Does not make sense to use OptSparse only for points, generally over 10x slower - only benefit is for targets
-	return optimiseData<OptParallel>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, 1.0f);
+	return optimiseData<OptParallel>(options, const_cast<ObsData&>(data), cameraCalibs, iteration, stopToken, 1.0f);
 }
 
 /**
@@ -633,13 +648,13 @@ int optimiseCameras(const OptimisationOptions &options, const ObsData &data, std
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor)
 {
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return optimiseData<OptSparse>(
 		OptimisationOptions(false, false, false, true, false), 
-		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
+		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, stopToken, toleranceFactor);
 }
 
 /**
@@ -647,11 +662,11 @@ int optimiseTargets(const ObsData &data, const std::vector<CameraCalib> &cameraC
  * iteration receives errors each iteration and can return false to abort further optimisation
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, float toleranceFactor)
+int optimiseTargetsCompare(const ObsData &data, const std::vector<CameraCalib> &cameraCalibs, std::function<bool(OptErrorRes)> iteration, std::stop_token stopToken, float toleranceFactor)
 {
 	assert(data.points.points.empty());
 	if (data.targets.empty()) return Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters;
 	return compareOptimiseData(
 		OptimisationOptions(false, false, false, true, false),
-		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, toleranceFactor);
+		const_cast<ObsData&>(data), const_cast<std::vector<CameraCalib>&>(cameraCalibs), iteration, stopToken, toleranceFactor);
 }

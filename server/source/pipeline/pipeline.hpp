@@ -215,6 +215,12 @@ struct PipelineState
 		int numSteps = 0, maxSteps = 0;
 		OptErrorRes errors = {}; // Errors after last proper oprimisation
 	};
+	struct TargetOptimisationState
+	{
+		int targetID;
+		int numSteps = 0, maxSteps = 5;
+		ThreadControl control;
+	};
 	struct
 	{
 		TargetCalibParameters params;
@@ -239,6 +245,9 @@ struct PipelineState
 			std::shared_ptr<TargetAssemblyState> state;
 		} assembly = {};
 		Synchronised<std::vector<std::shared_ptr<TargetAssemblyStage>>> assemblyStages;
+		// Continuous target optimisation routines
+		Synchronised<std::vector<std::shared_ptr<TargetOptimisationState>>> targetOptimisations;
+		int optPlannedForTargetID = 0;
 	} targetCalib = {};
 
 	// Simulation state

@@ -762,7 +762,7 @@ std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &path, 
 	return writeJSON(path, file);
 }
 
-std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset)
+std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 	frameOffset = 0;
@@ -811,13 +811,24 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 		else
 			return asprintf_s("Invalid recording file '%s' - cameras!", path.c_str());
 
-		// Check match with any prior cameras (for segmented/appended recordings)
-		if (!cameras.empty() && parsedCameras.size() != cameras.size())
-			return asprintf_s("Failed to match %d existing cameras against %d cameras in recording file '%s'!", (int)cameras.size(), (int)parsedCameras.size(), path.c_str());
-		for (int c = 0; c < cameras.size(); c++)
-			if (cameras[c].ID != parsedCameras[c].ID)
-				return asprintf_s("Failed to match existing camera #%d against camera #%d in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
-		cameras = std::move(parsedCameras);
+		int cameraOffset = 0;
+		if (separate)
+		{
+			cameraOffset = cameras.size();
+			for (int c = 0; c < parsedCameras.size(); c++)
+				cameras.push_back(parsedCameras[c]);
+		}
+		else
+		{
+			// Check match with any prior cameras (for segmented/appended recordings)
+			// TODO: Allow adding parsedCameras to existing cameras with ID avoidance when flag is set
+			if (!cameras.empty() && parsedCameras.size() != cameras.size())
+				return asprintf_s("Failed to match %d existing cameras against %d cameras in recording file '%s'!", (int)cameras.size(), (int)parsedCameras.size(), path.c_str());
+			for (int c = 0; c < cameras.size(); c++)
+				if (cameras[c].ID != parsedCameras[c].ID)
+					return asprintf_s("Failed to match existing camera #%d against camera #%d in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
+			cameras = std::move(parsedCameras);
+		}
 
 		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
 		TimePoint_t startT;
@@ -840,15 +851,14 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			frame->ID = jsFrame["id"].get<unsigned int>();
 			frame->num = num-frameOffset;
 			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
-			frame->cameras.reserve(cameras.size());
+			frame->cameras.resize(cameras.size());
+			if (jsCameras.size()+cameraOffset > cameras.size())
+				return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
 
-			for (auto &jsCamera : jsCameras)
+			for (int c = 0; c < jsCameras.size(); c++)
 			{
-				if (frame->cameras.size() >= cameras.size())
-					return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
-
-				frame->cameras.push_back({});
-				auto &camera = frame->cameras.back();
+				auto &jsCamera = jsCameras[c];
+				auto &camera = frame->cameras[cameraOffset+c];
 
 				camera.received = jsCamera.contains("blobs") && jsCamera["blobs"].is_array();
 				if (camera.received)
@@ -1164,8 +1174,8 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			auto &jsTrackers = jsFrame["targets"];
 
 			unsigned int num = jsFrame["num"].get<unsigned int>();
-			if (num < frameOffset) continue;
-			if (num >= frameOffset+frames.size()) break;
+			if (num-frameOffset < frames.beginIndex()) continue;
+			if (num-frameOffset >= frames.endIndex()) break;
 
 			auto &framePtr = frames[num-frameOffset];
 			if (!framePtr) continue;
@@ -1235,8 +1245,6 @@ std::optional<ErrorMessage> dumpTrackingResults(std::string &path, const Trackin
 	{
 		if (!frameIt->get()) continue; // No frame recorded, can happen due to record delay (first frames), or dropped frames from hardware
 		const FrameRecord &frame = *frameIt->get();
-		if (frame.trackers.empty())
-			continue;
 		json jsFrame;
 		jsFrame["id"] = frame.ID;
 		jsFrame["num"] = frameOffset + frame.num;

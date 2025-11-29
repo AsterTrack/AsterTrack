@@ -53,10 +53,10 @@ struct VisFrameLock
 	BlockedQueue<std::shared_ptr<FrameRecord>>::View<true> frames;
 	BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator frameIt;
 	bool isRealtimeFrame = true;
-	bool hasFrame = false;
+	bool hasFrame = false, hasCamera = false;
 	VisTargetLock target = {};
 
-    operator bool() const { return hasFrame; }
+    operator bool() const { return hasFrame; } // HasCamera is checked separately
 };
 
 /**

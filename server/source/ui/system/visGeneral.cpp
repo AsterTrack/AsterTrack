@@ -51,16 +51,13 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 	{ // Visualise most recent frame
 		for (int i = 0; i < 50; i++)
 		{ // Find latest processed frame
-			if (!*snapshot.frameIt || !snapshot.frameIt->get()->finishedProcessing);
-			else if (focusCamera >= 0 && !snapshot.frameIt->get()->cameras[focusCamera].received);
-			else break;
+			if (*snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing) break;
 			if (snapshot.frameIt == snapshot.frames.begin()) break;
 			snapshot.frameIt--;
 		}
 	}
 	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
-	if (snapshot.hasFrame && focusCamera >= 0 && !snapshot.frameIt->get()->cameras[focusCamera].received)
-		snapshot.hasFrame = false;
+	snapshot.hasCamera = snapshot.hasFrame && focusCamera >= 0 && focusCamera < snapshot.frameIt->get()->cameras.size() && snapshot.frameIt->get()->cameras[focusCamera].received;
 	return snapshot;
 }
 
@@ -186,7 +183,7 @@ void updateErrorPointsVBO(unsigned int &VBO, const std::vector<Eigen::Vector3f> 
 void updateTargetMarkerVis(const PipelineState &pipeline, const TargetCalibration3D &target,
 	const std::vector<std::vector<int>> &visibleMarker, Eigen::Isometry3f pose, Color8 color, float scale, VisPoint *points)
 {
-	for (int c = 0; c < pipeline.cameras.size(); ++c)
+	for (int c = 0; c < visibleMarker.size(); ++c)
 	{
 		for (const auto &m : visibleMarker[c])
 		{

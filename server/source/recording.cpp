@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "server.hpp"
 #include "config.hpp"
+#include "ui/shared.hpp" // Signals to UI
 
 #include "util/log.hpp"
 
@@ -70,11 +71,16 @@ void parseRecordEntries(std::map<int, Recording> &recordEntries)
 	}
 }
 
-std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append)
+std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate)
 {
+	int prevAdvance = state.simAdvance;
+	int prevIMUs = state.stored.imus.size(), prevCams = state.pipeline.cameras.size();
 	std::vector<CameraConfigRecord> cameras;
 	if (append)
-	{ // Add existing cameras for verification
+	{
+		// Pause replay
+		state.simAdvance = 0;
+		// Add existing cameras for verification
 		cameras.resize(state.pipeline.cameras.size());
 		for (auto &camera : state.pipeline.cameras)
 			cameras[camera->index] = { camera->id, camera->mode.widthPx, camera->mode.heightPx };
@@ -94,7 +100,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	{
 		std::size_t start = state.stored.frames.getView().size();
 		std::size_t offset;
-		auto error = parseRecording(recordEntries.captures[i], cameras, state.stored, offset);
+		auto error = parseRecording(recordEntries.captures[i], cameras, state.stored, offset, separate);
 		if (error) return error;
 		std::size_t count = state.stored.frames.getView().size() - start;
 		state.recording.segments.emplace_back(start, count, offset);
@@ -113,27 +119,83 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	std::move(std::begin(recordEntries.tracking), std::end(recordEntries.tracking), std::back_inserter(state.recording.tracking));
 	state.recording.frames += framesCount;
 
+	std::vector<CameraCalib> cameraCalibs;
+	if (!recordEntries.calib.empty())
+	{ // Parse calibrations
+		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);
+		for (int c = 0; c < cameraCalibs.size(); c++)
+			cameraCalibs[c].index += prevCams;
+		if (error && error->code != ENOENT) return error;
+	}
+
 	LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", framesCount);
+	if (append)
+	{
+		// Add new IMUs
+		state.pipeline.record.imus.reserve(state.stored.imus.size());
+		for (int i = prevIMUs; i < state.stored.imus.size(); i++)
+		{
+			auto imu = std::make_shared<IMURecord>(*state.stored.imus[i]);
+			imu->index = state.pipeline.record.imus.size();
+			state.pipeline.record.imus.push_back(std::move(imu));
+		}
+		if (separate)
+		{
+			// Ensure newly added cameras have a unique ID
+			for (int c = prevCams; c < cameras.size(); c++)
+			{
+				for (int cc = 0; cc < cameras.size(); cc++)
+				{
+					if (cameras[c].ID != cameras[cc].ID) continue;
+					int newID = rand();
+					bool found = false;
+					for (auto &calib : cameraCalibs)
+					{ // If we loaded it's calib, change it's ID
+						if (calib.id != cameras[c].ID) continue;
+						calib.id = newID;
+						found = true;
+						break;
+					}
+					if (!found)
+					{ // If we have not loaded it's calib, find stored calib and ensure it's adopted for the new ID
+						for (auto &calib : state.cameraCalibrations)
+						{
+							if (calib.id != cameras[c].ID) continue;
+							cameraCalibs.push_back(calib);
+							cameraCalibs.back().id = newID;
+						}
+
+					}
+					cameras[c].ID = newID;
+				}
+			}
+			// Add new cameras
+			for (auto cam : cameras)
+				EnsureCamera(state, cam.ID);
+			// Adopt calibrations for new cameras
+			AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
+			{ // Calculate fundamental matrices from calibration
+				auto lock = folly::detail::lock(folly::detail::wlock(state.pipeline.calibration), folly::detail::rlock(state.pipeline.seqDatabase));
+				UpdateCalibrationRelations(state.pipeline, *std::get<0>(lock), *std::get<1>(lock));
+			}
+			SignalServerEvent(EVT_UPDATE_CAMERAS);
+		}
+		// Continue replay
+		state.simAdvance = prevAdvance;
+		state.simAdvance.notify_all();
+		return std::nullopt;
+	}
 	if (state.mode != MODE_None)
 	{
-		if (!append)
-		{
-			LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
-			return "Entered a mode while loading replay!";
-		}
-		return std::nullopt;
+		LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
+		return "Entered a mode while loading replay!";
 	}
 
 	// Setup replay mode with relevant cameras
 	StartReplay(state, cameras);
 
-	if (!recordEntries.calib.empty() && !append)
-	{ // Overwrite any calibrations
-		std::vector<CameraCalib> cameraCalibs;
-		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);
-		if (error && error->code != ENOENT) return error;
-		AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
-	}
+	// Adopt calibrations stored alongside (replacing existing calibrations)
+	AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
 
 	return std::nullopt;
 }

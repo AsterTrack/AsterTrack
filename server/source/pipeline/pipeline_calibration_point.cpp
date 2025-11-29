@@ -478,7 +478,10 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 
 		std::vector<CameraCalib> roomCalib(calibs.size());
 		for (int c = 0; c < calibs.size(); c++)
+		{
+			assert(pipeline.cameras[calibs[c].index]->id == calibs[c].id);
 			roomCalib[c] = pipeline.cameras[calibs[c].index]->calibRoom;
+		}
 
 		Eigen::Matrix3d roomOrientation;
 		Eigen::Affine3d roomTransform;
@@ -519,7 +522,6 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 	for (auto &cam : pipeline.cameras)
 	{
 		cam->calibBackup = cam->calib; // Create backup
-		cam->calib.id = CAMERA_ID_NONE; // Invalidate existing
 		for (auto &calib : calibs)
 		{ // Try to find valid new calibration
 			if (calib.invalid()) continue;

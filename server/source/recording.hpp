@@ -59,6 +59,6 @@ void parseRecordEntries(std::map<int,Recording> &recordEntries);
 /**
  * Loads the recording into state for replay, optionally appending to an existing recording
  */
-HANDLE_ERROR loadRecording(ServerState &state, Recording &&recordEntries, bool append);
+HANDLE_ERROR loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate);
 
 #endif // RECORDING_H

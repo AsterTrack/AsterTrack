@@ -327,17 +327,16 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 {
 	frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
 	TimePoint_t start = sclock::now();
-	std::vector<CameraCalib> calibs = pipeline.getCalibs();
-	// TODO: Only take calibs of cameras actually part of the frame!
-	// Would need to iterate over frame->cameras and take cameras that have points
-	std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
-	std::vector<std::vector<BlobProperty> const *> properties(calibs.size());
-	std::vector<std::vector<int>> remainingPoints2D(calibs.size());
-	std::vector<std::vector<int> const *> relevantPoints2D(calibs.size());
-	for (int c = 0; c < calibs.size(); c++)
+	std::vector<CameraCalib> calibs(frame->cameras.size());
+	std::vector<std::vector<Eigen::Vector2f> const *> points2D(frame->cameras.size());
+	std::vector<std::vector<BlobProperty> const *> properties(frame->cameras.size());
+	std::vector<std::vector<int>> remainingPoints2D(frame->cameras.size());
+	std::vector<std::vector<int> const *> relevantPoints2D(frame->cameras.size());
+	for (int c = 0; c < frame->cameras.size(); c++)
 	{
-		points2D[c] = &frame->cameras[calibs[c].index].points2D;
-		properties[c] = &frame->cameras[calibs[c].index].properties;
+		calibs[c] = pipeline.cameras[c]->calib;
+		points2D[c] = &frame->cameras[c].points2D;
+		properties[c] = &frame->cameras[c].properties;
 		// TODO: Get remainingPoints2D from FrameRecord
 		remainingPoints2D[c].resize(points2D[c]->size());
 		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);

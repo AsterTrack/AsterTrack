@@ -216,7 +216,7 @@ HANDLE_ERROR storeCameraCalibrations(const std::string &path, const std::vector<
 HANDLE_ERROR parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
 HANDLE_ERROR storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig);
 
-HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset);
+HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate);
 HANDLE_ERROR dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
 HANDLE_ERROR parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);

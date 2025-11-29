@@ -450,6 +450,7 @@ static void UpdateCalibrationRelation(const SequenceParameters &params, CameraSy
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations)
 {
+	calibration.verifyCameraCount(pipeline.cameras.size());
 	for (int i = 1; i < pipeline.cameras.size(); i++)
 	{
 		if (pipeline.cameras[i]->calib.invalid())
@@ -465,6 +466,7 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 
 void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences)
 {
+	calibration.verifyCameraCount(pipeline.cameras.size());
 	for (int i = 1; i < pipeline.cameras.size(); i++)
 	{
 		if (pipeline.cameras[i]->calib.invalid())

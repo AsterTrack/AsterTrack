@@ -168,8 +168,7 @@ void InterfaceState::UpdateMainMenuBar()
 	static std::map<int,Recording> recordEntries;
 	if (ImGui::BeginMenu("Replay"))
 	{
-		bool append = state.mode == MODE_Replay;
-		if (ImGui::BeginMenu(append? "Append capture" : "Replay capture", !state.isLoading && (state.mode == MODE_None || append)))
+		auto showCaptureMenus = [&](bool append, bool separate)
 		{
 			cachePaths = true;
 			if (!cachingRecordEntries)
@@ -188,16 +187,30 @@ void InterfaceState::UpdateMainMenuBar()
 					: asprintf_s("Capture %d: %s", entry.number, entry.label.c_str());
 				if (!ImGui::MenuItem(label.c_str())) continue;
 				// Perform read in a separate thread to prevent blocking UI
-				// TODO: Show indication that sample data is still loading - very bad without
-				// e.g. global popup (then OpenPopup)
 				state.isLoading = true;
-				threadPool.push([](int, Recording entry, bool append)
+				threadPool.push([](int, Recording entry, bool append, bool separate)
 				{
-					auto error = loadRecording(GetState(), std::move(entry), append);
+					if (!append && GetState().mode == MODE_Replay)
+						StopReplay(GetState());
+					auto error = loadRecording(GetState(), std::move(entry), append, separate);
 					if (error) SignalErrorToUser(error.value());
 					GetState().isLoading = false;
-				}, entry, append);
+				}, entry, append, separate);
 			}
+		};
+		if (ImGui::BeginMenu("Replay capture", !state.isLoading && (state.mode == MODE_Replay || state.mode == MODE_None)))
+		{
+			showCaptureMenus(false, false);
+			ImGui::EndMenu();
+		}
+		if (state.mode == MODE_Replay && ImGui::BeginMenu("Append similar capture", !state.isLoading))
+		{
+			showCaptureMenus(true, false);
+			ImGui::EndMenu();
+		}
+		if (state.mode == MODE_Replay && ImGui::BeginMenu("Append separate capture", !state.isLoading))
+		{
+			showCaptureMenus(true, true);
 			ImGui::EndMenu();
 		}
 
@@ -208,18 +221,10 @@ void InterfaceState::UpdateMainMenuBar()
 			if (ImGui::MenuItem("Stop Simulation###SimulationToggle"))
 				StopSimulation(state);
 		}
-		else if (state.mode == MODE_Replay)
+		else if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, !state.isLoading && state.mode == MODE_None))
 		{
-			if (ImGui::MenuItem("Stop Replay###SimulationToggle", nullptr, nullptr, !state.isLoading))
-				StopReplay(state);
-		}
-		else
-		{
-			if (ImGui::MenuItem("Start Simulation###SimulationToggle", nullptr, nullptr, !state.isLoading && state.mode == MODE_None))
-			{
-				windows[WIN_CONTROL].open = true;
-				StartSimulation(state);
-			}
+			windows[WIN_CONTROL].open = true;
+			StartSimulation(state);
 		}
 
 		ImGui::EndMenu();

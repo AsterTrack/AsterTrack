@@ -1042,7 +1042,6 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 				frameRecord = std::make_shared<FrameRecord>();
 				auto &loadedRecord = framesStored[frame];
 				assert(loadedRecord->num == frame);
-				assert(loadedRecord->cameras.size() == pipeline.cameras.size());
 				frameRecord->num = loadedRecord->num;
 				frameRecord->ID = loadedRecord->ID;
 				frameRecord->time = state.recording.replayTime + (loadedRecord->time - framesStored.front()->time);
@@ -1085,7 +1084,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 
 				for (auto &cam : state.cameras)
 				{ // Set camera image in cameras
-					if (!frameRecord->cameras[cam->pipeline->index].image)
+					if (frameRecord->cameras.size() <= cam->pipeline->index || !frameRecord->cameras[cam->pipeline->index].image)
 						continue;
 					// Asnynchronously decompress camera image record
 					threadPool.push([&cam](int, std::shared_ptr<CameraImageRecord> imageRecord)

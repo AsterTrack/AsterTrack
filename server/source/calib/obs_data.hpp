@@ -70,7 +70,7 @@ struct ObsTarget
 struct ObsData
 {
 	ObsPointData points = {};
-	std::list<ObsTarget> targets;
+	std::vector<ObsTarget> targets;
 
 	inline std::size_t getValidSamples() const
 	{ // NOT equal to the total samples used in optimisation due to differences in how point & target outliers are handled

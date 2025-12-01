@@ -67,13 +67,21 @@ struct ReevaluateSequenceParameters
 
 struct SubsampleTargetParameters
 {
-	int targetSampleCount = 5000;
-	int maxSelectBatch = 10;
+	int targetMarkerSamples = 1000;
+	int targetCameraSamples = 0;
+	// Dynamic factors to reach equal sample distribution within [marker|camera]
+	float dynamicMarkerFactor = 5.0f;
+	float dynamicCameraFactor = 1.0f;
+	// Frame Sample Factor based on value compared to percentile of [marker|camera]
+	float markerValueDist = 0.5f;
+	float cameraValueDist = 0.5f;
 	float percentile = 0.75f;
-	float sampleFactorPower = 2.0f;
-	float randomStdDev = 0.1f;
-	int resampleInterval = 0; // 5 is fine, but its disabled rn
-	// Resampling is only half implemented, e.g. it discards outliers
+	// Noise ontop of selection
+	float randomStdDev = 5.0f;
+	// How many frames to add at once
+	int frameBatchSize = 20;
+	// How often it should be automatically re-triggered during optimisation (0 is none)
+	int resampleInterval = 0;
 };
 
 struct TrackFrameParameters

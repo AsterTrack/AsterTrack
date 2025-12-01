@@ -595,8 +595,7 @@ template int reevaluateMarkerSequences<true>(const std::vector<CameraCalib> &cal
 template int reevaluateMarkerSequences<false>(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params);
 
-ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const std::vector<MarkerSequences> &observations, const ObsTarget &target,
-	SubsampleTargetParameters params)
+ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, SubsampleTargetParameters params)
 {
 	ObsTarget subsampled = {};
 	subsampled.trackerID = target.trackerID;
@@ -605,24 +604,11 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 	
 	// Now fill frames with randomised most important selection of frames from original target
 
-	/* Address dataset size with sparse selection of optimisation data
-    - As sample size increases, optimisation becomes exponentially (?) slower
-    - Start to subsample dataset to speed up
-    - Pick frames via descending priority:
-        - Markers observed in the fewest frames take priority
-        - Samples matching their sequences weight take priority over weak ones (higher potential for outliers)
-        - Frames with high-value samples (and more of them) take priority 
-    - Calculate frame value dynamically:
-        - value(frame) = sum_over_samples(exp(value(sample) * value(marker)))
-        - value(marker) = 1 / num_samples_of_marker_selected / log(num_samples_of_marker_total)
-        - value(sample) = weight(sample) / weight_75th_percentile(sequence)
-            and maybe   * weight(sample) / weight_75th_percentile(marker)
-        Percentile calculated once from a fixed array of buckets, only value(marker) has to be updated (every time or in intervals) */
-
 	std::pair<int, int> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
 
 	const int MAX_VALUE = 255*4; 
-	typedef std::array<unsigned int, 100> ValueBuckets;
+	const int BUCKET_SIZE = 100;
+	typedef std::array<unsigned int, BUCKET_SIZE> ValueBuckets;
 	auto getPercentile = [](const ValueBuckets &buckets, float percentile)
 	{ // May not be entirely accurate, but is sufficient
 		assert(percentile > 0);
@@ -666,52 +652,34 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 		return camFrameRec.properties[closest].value;
 	};
 
-    // value(sample) = weight(sample) / weight_75th_percentile(sequence)
-	//				 * weight(sample) / weight_75th_percentile(marker)
+	int camCount = frameRecords.getView().back()->cameras.size();
 
-	// Precalculate fixed marker and sequence percentiles
+	// Precalculate fixed marker percentiles
 	std::vector<ValueBuckets> markerValueBuckets(target.markers.size());
-	std::map<const PointSequence*, float> sequencePercentile;
-	for (auto &map : target.markerMap)
+	std::vector<ValueBuckets> cameraValueBuckets(camCount);
+	for (auto &frame : target.frames)
 	{
-		auto &mkObs = observations[map.first];
-		auto range = mkObs.getFrameRange();		
-
-		// Calculate third quartile value of marker and its sequences
-		ValueBuckets &markerBuckets = markerValueBuckets[map.second];
-		std::map<const PointSequence*, ValueBuckets> sequenceBuckets;
-
-		// Iterate over all sequences relevant to the target
-		std::map<int, int> frameMap;
-		getObservationFrameMap(mkObs, frameMap, frameRange.first, frameRange.second);
-		handleMappedSequences(mkObs, frameMap, [&]
-			(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
+		for (auto &sample : frame.samples)
 		{
-			// Instead of looping only over mapped range, handle full sequence
-			ValueBuckets &seqBuckets = sequenceBuckets[&seq];
-			for (int p = 0; p < seq.length(); p++)
-			{
-				// Find blob value by searching in frame records
-				int value = getBlobValue(seq.startFrame + p, c, seq.rawPoints[p]);
-				if (value < 0) continue;
-				// Enter value into bucket of both marker and sequence
-				int bucket = (int)std::floor((float)value/(MAX_VALUE+1) * markerBuckets.size());
-				markerBuckets[bucket]++;
-				seqBuckets[bucket]++;
-			}
-		});
-
-		// Calculate desired percentile of sequence values
-		for (auto &seqBuckets : sequenceBuckets)
-			sequencePercentile[seqBuckets.first] = getPercentile(seqBuckets.second, params.percentile) * MAX_VALUE;
+			int value = getBlobValue(frame.frame, sample.camera, sample.point);
+			if (value < 0) continue;
+			int bucket = (int)std::floor((float)value/(MAX_VALUE+1) * BUCKET_SIZE);
+			int marker = target.markerMap.at(sample.marker);
+			markerValueBuckets[marker][bucket]++;
+			cameraValueBuckets[sample.camera][bucket]++;
+		}
 	}
 	std::vector<float> markerPercentile(target.markers.size());
 	for (int m = 0; m < target.markers.size(); m++)
 		markerPercentile[m] = getPercentile(markerValueBuckets[m], params.percentile) * MAX_VALUE;
+	std::vector<float> cameraPercentile(camCount);
+	for (int c = 0; c < camCount; c++)
+		cameraPercentile[c] = getPercentile(cameraValueBuckets[c], params.percentile) * MAX_VALUE;
 
 	// Precalculate fixed inividual sample factors
 	std::vector<std::vector<float>> frameSampleFactors(target.frames.size());
 	std::vector<int> markerSamples(target.markers.size());
+	std::vector<int> cameraSamples(camCount);
 	for (int f = 0; f < target.frames.size(); f++)
 	{
 		auto &frame = target.frames[f];
@@ -725,45 +693,47 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 				frameSampleFactors[f].push_back(NAN);
 				continue;
 			}
-			// Get sequence and it's value percentile
-			auto &camObs = observations[sample.marker].cameras[sample.camera];
-			auto ptIt = camObs.frame(frame.frame);
-			auto &seq = camObs.sequences[ptIt.seq];
-			float seqPerc = sequencePercentile[&seq];
 			// Get marker percentile
 			int marker = target.markerMap.at(sample.marker);
-			float markerPerc = markerPercentile[marker];
 			// Calculate final sample value
-			frameSampleFactors[f].push_back(value/seqPerc * value/markerPerc);
-			// value(sample) = weight(sample) / weight_75th_percentile(sequence)
-			//				 * weight(sample) / weight_75th_percentile(marker)
+			float markerDist = std::pow(value/markerPercentile[marker], params.markerValueDist);
+			float cameraDist = std::pow(value/cameraPercentile[sample.camera], params.cameraValueDist);
+			frameSampleFactors[f].push_back(markerDist * cameraDist);
+			// value(sample) = weight(sample) / weight_75th_percentile(marker)
 			markerSamples[marker]++;
+			cameraSamples[sample.camera]++;
 		}
 	}
 
-	// value(frame) = sum_over_samples(exp(value(sample) * value(marker)))
-	// value(marker) = 1 / num_samples_of_marker_selected / log(num_samples_of_marker_total)
-
-	// Precalculate fixed marker factors
-	std::vector<float> fixedMarkerFactor(target.markers.size());
-	for (int m = 0; m < target.markers.size(); m++)
-		fixedMarkerFactor[m] = 1.0f / std::log(markerSamples[m]);
+	// Dynamic factors based on markers/cameras
+	std::vector<float> dynamicMarkerFactor(target.markers.size());
+	std::vector<float> dynamicCameraFactor(camCount);
 
 	// Collectors for samples selected
-	markerSamples.clear();
-	markerSamples.resize(target.markers.size());
+	std::vector<int> selectedMarkerSamples(target.markers.size());
+	std::vector<int> selectedCameraSamples(camCount);
 	int totalSamples = 0, totalFrames = 0;
 
 	// Iteratively calculate frame factors and add best in batches
-	const int MAX_FRAME_BATCH = 1000;
+	const int MAX_FRAME_BATCH = 100;
 	std::vector<float> frameFactors;
 	std::vector<bool> frameSelected(target.frames.size());
-
 
 	static std::mt19937 gen = std::mt19937(std::random_device{}());
 	std::normal_distribution<float> noise(0, params.randomStdDev);
 	while (true)
 	{
+		float avgMarkerCount = (float)totalSamples / target.markers.size();
+		float avgCameraCount = (float)totalSamples / camCount;
+		if (avgMarkerCount > params.targetMarkerSamples && avgCameraCount > params.targetCameraSamples)
+			break; // Reached target sample counts (not necessarily on all markers/cameras)
+
+		// Update dynamic factors
+		for (int m = 0; m < target.markers.size(); m++)
+			dynamicMarkerFactor[m] = std::pow(std::log((avgMarkerCount+1) / (selectedMarkerSamples[m]+1) + 1), params.dynamicMarkerFactor);
+		for (int c = 0; c < camCount; c++)
+			dynamicCameraFactor[c] = std::pow(std::log((avgCameraCount+1) / (selectedCameraSamples[c]+1) + 1), params.dynamicCameraFactor);
+
 		// Recalculate frame factors
 		frameFactors.clear();
 		frameFactors.resize(target.frames.size());
@@ -771,25 +741,22 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 		for (int f = 0; f < target.frames.size(); f++)
 		{
 			if (frameSelected[f]) continue;
-			float &frameFactor = frameFactors[f];
-			frameFactor = 0.0f;
-			// value(frame) = sum_over_samples(exp(value(sample) * value(marker)))
-			// value(marker) = 1 / num_samples_of_marker_selected / log(num_samples_of_marker_total)
+			frameFactors[f] = 0.0f;
 			auto &frame = target.frames[f];
 			for (int s = 0; s < frame.samples.size(); s++)
 			{
 				float sampleFac = frameSampleFactors[f][s];
-				if (std::isnan(sampleFac)) continue; // Outlier
+				if (std::isnan(frameSampleFactors[f][s])) continue; // Outlier
 				int marker = target.markerMap.at(frame.samples[s].marker);
-				float markerFac = fixedMarkerFactor[marker] / (markerSamples[marker]+1);
-				frameFactor += std::pow(sampleFac * markerFac, params.sampleFactorPower);
+				int camera = frame.samples[s].camera;
+				frameFactors[f] += frameSampleFactors[f][s] * dynamicMarkerFactor[marker] * dynamicCameraFactor[camera];
 			}
-			frameFactor += noise(gen);
-			bestFrameFactors.max(frameFactor);
+			frameFactors[f] += noise(gen);
+			bestFrameFactors.max(frameFactors[f]);
 		}
 
 		// Get threshold as weakest link of batch
-		int weakest = std::min(params.maxSelectBatch, bestFrameFactors.weakest());
+		int weakest = std::min(params.frameBatchSize, bestFrameFactors.weakest());
 		if (weakest < 0) break; // No more frames to add
 		float factorLimit = bestFrameFactors.rank[weakest];
 
@@ -808,16 +775,23 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 				float sampleFac = frameSampleFactors[f][s];
 				if (std::isnan(sampleFac)) continue; // Outlier
 				int marker = target.markerMap.at(frame.samples[s].marker);
-				markerSamples[marker]++;
+				selectedMarkerSamples[marker]++;
+				selectedCameraSamples[frame.samples[s].camera]++;
 			}
 		}
 		totalFrames += framesAdded;
 		LOG(LTargetCalib, LTrace, "Added batch of %d frames with values %f-%f, total %d samples!",
 			framesAdded, bestFrameFactors.rank[0], factorLimit, totalSamples);
 
-		if (weakest < std::min(params.maxSelectBatch, MAX_FRAME_BATCH)) break; // No more frames to add
-		if (totalSamples > params.targetSampleCount) break;
+		if (weakest+1 < std::min(params.frameBatchSize, MAX_FRAME_BATCH)) break; // No more frames to add
 	}
+
+	LOG(LTargetCalib, LDebug, "Distribution across %d markers:", (int)target.markers.size());
+	for (int m = 0; m < target.markers.size(); m++)
+		LOG(LTargetCalib, LDebug, "    Marker %d with %d / %d samples", m, selectedMarkerSamples[m], markerSamples[m]);
+	LOG(LTargetCalib, LDebug, "Distribution across %d cameras:", camCount);
+	for (int c = 0; c < camCount; c++)
+		LOG(LTargetCalib, LDebug, "    Camera %d with %d / %d samples", c, selectedCameraSamples[c], cameraSamples[c]);
 
 	// Compile final frame selection in correct order
 	subsampled.totalSamples = 0;

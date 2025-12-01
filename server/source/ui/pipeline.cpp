@@ -296,7 +296,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 			auto db_lock = pipeline.obsDatabase.lock();
 			ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
-			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end(); tgtIt++)
+			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end();)
 			{
 				auto tgt = *tgtIt;
 				ImGui::PushID(tgt.trackerID);
@@ -331,6 +331,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						visState.resetVisTarget(false);
 					tgtIt = db_lock->targets.erase(tgtIt);
 				}
+				else tgtIt++;
 				ImGui::PopID();
 			}
 

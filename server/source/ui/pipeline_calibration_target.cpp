@@ -822,8 +822,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				assert(!assembly.planned && !assembly.control);
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				TargetAssemblyBase base = stages_lock->back()->base;
-				auto obs_lock = pipeline.seqDatabase.contextualRLock();
-				base.target = subsampleTargetObservations(pipeline.record.frames, obs_lock->markers, base.target, pipeline.targetCalib.params.assembly.subsampling);
+				base.target = subsampleTargetObservations(pipeline.record.frames, base.target, pipeline.targetCalib.params.assembly.subsampling);
 				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
 				base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));

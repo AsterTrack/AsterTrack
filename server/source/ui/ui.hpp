@@ -456,6 +456,7 @@ public:
 	void UpdatePointCalibParameters(InterfaceWindow &window);
 	void UpdateTargetCalibParameters(InterfaceWindow &window);
 	void UpdateTrackingParameters(InterfaceWindow &window);
+	void UpdateSubsamplingParameters(SubsampleTargetParameters &params, const SubsampleTargetParameters &standard);
 
 	void UpdateLensSelectionTool(InterfaceWindow &window);
 

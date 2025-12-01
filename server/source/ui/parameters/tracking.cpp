@@ -423,6 +423,22 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ScalarProperty<int>("Min Total Samples", "", &params.targetObs.minTotalSamples, &standard.targetObs.minTotalSamples, 0, 100);
 		EndSection();
 
+		BeginSection("Camera Optimisation Subsampling");
+		{
+			auto &params = state.pipeline.params.cont.cameraOptSubsampling;
+			const auto &standard = defaultParams.cont.cameraOptSubsampling;
+			UpdateSubsamplingParameters(params, standard);
+		}
+		EndSection();
+
+		BeginSection("Target Optimisation Subsampling");
+		{
+			auto &params = state.pipeline.params.cont.targetOptSubsampling;
+			const auto &standard = defaultParams.cont.targetOptSubsampling;
+			UpdateSubsamplingParameters(params, standard);
+		}
+		EndSection();
+
 		ImGui::PopID();
 	}
 

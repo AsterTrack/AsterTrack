@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define TRACKING_PARAMETERS_H
 
 #include "target/parameters.hpp"
+#include "calib_target/parameters.hpp"
 
 #include "util/eigendef.hpp"
 
@@ -68,6 +69,13 @@ struct ContinuousOptimisationParameters
 		int minCameraSamples = 4;
 		int minTotalSamples = 15;
 	} targetObs;
+
+	SubsampleTargetParameters targetOptSubsampling = {};
+	SubsampleTargetParameters cameraOptSubsampling = {
+		0, 10000,
+		1.0f, 2.0f,
+		0.0f, 0.0f
+	};
 };
 
 struct TrackingParameters

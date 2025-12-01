@@ -22,6 +22,29 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cmath>
 
+void InterfaceState::UpdateSubsamplingParameters(SubsampleTargetParameters &params, const SubsampleTargetParameters &standard)
+{
+	bool sub = false;
+	sub |= ScalarProperty<int>("Opt Resample Interval", "", &params.resampleInterval, &standard.resampleInterval, 0, 100);
+	sub |= ScalarProperty<int>("Target Marker Samples", "", &params.targetMarkerSamples, &standard.targetMarkerSamples, 0, 10000, 100);
+	sub |= ScalarProperty<int>("Target Camera Samples", "", &params.targetCameraSamples, &standard.targetCameraSamples, 0, 100000, 100);
+	sub |= ScalarProperty<int>("Frame Batch Size", "", &params.frameBatchSize, &standard.frameBatchSize, 0, 100);
+	sub |= ScalarProperty<float>("Percentile", "%", &params.percentile, &standard.percentile, 1, 100, 5.0f, 100, "%.1f");
+	sub |= ScalarProperty<float>("Marker Value Distribution", "", &params.markerValueDist, &standard.markerValueDist, -10, 10, 0.1f);
+	sub |= ScalarProperty<float>("Camera Value Distribution", "", &params.cameraValueDist, &standard.cameraValueDist, -10, 10, 0.1f);
+	sub |= ScalarProperty<float>("Dynamic Marker Factor", "", &params.dynamicMarkerFactor, &standard.dynamicMarkerFactor, 0, 1000, 0.01f);
+	sub |= ScalarProperty<float>("Dynamic Camera Factor", "", &params.dynamicCameraFactor, &standard.dynamicCameraFactor, 0, 1000, 0.01f);
+	sub |= ScalarProperty<float>("Noise Std Dev", "", &params.randomStdDev, &standard.randomStdDev, 0.0001f, 100, 0.01f);
+	if (sub && visState.target.inspectingTrackerID != 0)
+	{
+		for (auto &tgt  : GetState().pipeline.obsDatabase.contextualRLock()->targets)
+		{
+			if (tgt.trackerID != visState.target.inspectingTrackerID) continue;
+			subsampleTargetObservations(GetState().pipeline.record.frames, tgt, params);
+		}
+	}
+}
+
 void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 {
 	if (!window.open)
@@ -120,14 +143,9 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 	if (ImGui::CollapsingHeader("Subsampling Target Data"))
 	{
 		ImGui::PushID("Sub");
-		auto &assembly = calibParams.assembly;
-		const auto &standard = defaultParams.assembly;
-		ScalarProperty<int>("Opt Resample Interval", "", &assembly.subsampling.resampleInterval, &standard.subsampling.resampleInterval, 0, 100);
-		ScalarProperty<int>("Target Sample Count", "", &assembly.subsampling.targetSampleCount, &standard.subsampling.targetSampleCount, 0, 100000, 100);
-		ScalarProperty<int>("Max Frames in Batch", "", &assembly.subsampling.maxSelectBatch, &standard.subsampling.maxSelectBatch, 0, 1000);
-		ScalarProperty<float>("Percentile", "%", &assembly.subsampling.percentile, &standard.subsampling.percentile, 1, 100, 5.0f, 100, "%.1f");
-		ScalarProperty<float>("Frame Sample Power", "", &assembly.subsampling.sampleFactorPower, &standard.subsampling.sampleFactorPower, 0, 10, 0.1f);
-		ScalarProperty<float>("Noise Std Dev", "", &assembly.subsampling.randomStdDev, &standard.subsampling.randomStdDev, 0, 1, 0.01f);
+		auto &params = calibParams.assembly.subsampling;
+		const auto &standard = defaultParams.assembly.subsampling;
+		UpdateSubsamplingParameters(params, standard);
 		ImGui::PopID();
 	}
 

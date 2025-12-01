@@ -97,7 +97,8 @@ const char *getStopCodeText(int status);
  * Calculates, logs and returns overall reprojection errors
  * Returns avg, stdDev, max in -1 to 1 coordinates
  */
-OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCalib> &cameraCalibs);
+OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCalib> &cameraCalibs,
+	bool logFilteredErrors = true, bool logCameraErrors = true, bool logMarkerErrors = false);
 
 /**
  * Calculates, logs and returns overall camera reprojection errors

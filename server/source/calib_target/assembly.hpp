@@ -175,8 +175,7 @@ template<bool APPLY = true>
 int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std::vector<MarkerSequences> &observations, ObsTarget &target,
 	ReevaluateSequenceParameters params);
 
-ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const std::vector<MarkerSequences> &observations,
-	const ObsTarget &target, SubsampleTargetParameters params);
+ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, SubsampleTargetParameters params);
 
 void expandFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
 	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);

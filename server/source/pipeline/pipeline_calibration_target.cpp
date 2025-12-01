@@ -505,7 +505,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 	const bool enableResampling = params.resampleInterval > 0;
 	if (enableResampling)
 	{
-		ObsTarget subsampled = subsampleTargetObservations(frameRecords, observations, target, params);
+		ObsTarget subsampled = subsampleTargetObservations(frameRecords, target, params);
 		LOGC(LDebug, "    Starting optimisation with %fpx for %d total samples, subsampled to %fpx for %d samples",
 			getTargetErrorDist(calibs, target).rmse*PixelFactor, target.totalSamples,
 			getTargetErrorDist(calibs, subsampled).rmse*PixelFactor, subsampled.totalSamples);
@@ -578,7 +578,7 @@ static OptErrorRes optimiseTargetDataLoop(ObsTarget &target, const std::vector<C
 			LOGC(LDebug, "    Optimised to %fpx for %d subsamples, total %fpx for %d samples",
 				getTargetErrorDist(calibs, obsData.targets.front()).rmse*PixelFactor, obsData.targets.front().totalSamples,
 				getTargetErrorDist(calibs, target).rmse*PixelFactor, target.totalSamples);
-			obsData.targets.front() = subsampleTargetObservations(frameRecords, observations, target, params);
+			obsData.targets.front() = subsampleTargetObservations(frameRecords, target, params);
 			LOGC(LDebug, "    Subsampled to %fpx for %d samples",
 				getTargetErrorDist(calibs, obsData.targets.front()).rmse*PixelFactor, obsData.targets.front().totalSamples);
 		}
@@ -1384,7 +1384,7 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 
 	ScopedLogCategory scopedLogCategory(LOptimisation, true);
 	ScopedLogContext scopedLogContext(targetPtr->targetID); // Need something visible in the UI
-	ScopedLogLevel scopedLogLevel(LDebug);
+	ScopedLogLevel scopedLogLevel(LInfo);
 
 	LOGC(LDebug, "=======================\n");
 
@@ -1407,8 +1407,15 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 	auto params = pipeline->targetCalib.params.post;
 	std::vector<CameraCalib> calibs = pipeline->getCalibs();
 
-	LOGCL("Before optimising with optimisation database:");
-	updateReprojectionErrors(data, calibs);
+	// Subsample data
+	ObsData subsampled = {};
+	subsampled.targets.push_back(subsampleTargetObservations(pipeline->record.frames,
+		data.targets.front(), pipeline->params.cont.targetOptSubsampling));
+
+	LOGCL("Before optimising with subsampled tracker database:");
+	updateReprojectionErrors(subsampled, calibs, false, false, true);
+	LOGCL("Before optimising with original tracker database:");
+	updateReprojectionErrors(data, calibs, false, false, true);
 
 	auto lastIt = pclock::now();
 	auto itUpdate = [&](OptErrorRes errors)
@@ -1418,16 +1425,22 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 		lastIt = pclock::now();
 
 		// Update Targets
-		auto tgt = data.targets.begin();
-		for (int t = 0; t < data.targets.size(); t++, tgt++)
+		for (int t = 0; t < subsampled.targets.size(); t++)
 		{
 			// Copy and update target calibration
 			TargetCalibration3D calib = tgtCalibs[t];
-			calib.markers = finaliseTargetMarkers(calibs, *tgt, params);
+			calib.markers = finaliseTargetMarkers(calibs, subsampled.targets[t], params);
 			calib.updateMarkers();
 			// Signal server to update calib
-			SignalTargetCalibUpdate(tgt->trackerID, calib);
+			SignalTargetCalibUpdate(subsampled.targets[t].trackerID, calib);
+			// Update original markers to test against
+			data.targets[t].markers = subsampled.targets[t].markers;
 		}
+
+		LOGCL("Intermediate result with subsampled tracker database:");
+		updateReprojectionErrors(subsampled, calibs, false, false, true);
+		LOGCL("Intermediate result with original tracker database:");
+		updateReprojectionErrors(data, calibs, false, false, true);
 
 		return !stopToken.stop_requested() && targetPtr->numSteps++ < targetPtr->maxSteps;
 	};
@@ -1436,7 +1449,9 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 	{
 		LOGCL("Optimising target markers:");
 		OptimisationOptions options(false, false, false, true, false);
-		optimiseDataSparse(options, data, calibs, itUpdate, stopToken, 1);
+		optimiseDataSparse(options, subsampled, calibs, itUpdate, stopToken, 1);
+
+		// TODO: Edit toleranceFactor
 	}
 
 	LOGCL("Done optimising! Applying to database1");

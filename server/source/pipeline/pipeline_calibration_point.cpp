@@ -441,13 +441,21 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	for (int c = 0; c < cameras.size(); c++)
 		calibs[c] = cameras[c]->calib;
 
-	// Perform optimisation step
-	LOGCL("Before optimising with optimisation database:");
-	updateReprojectionErrors(data, calibs);
+	// Subsample data
+	ObsData subsampled = {};
+	subsampled.targets.push_back(subsampleTargetObservations(pipeline->record.frames,
+		data.targets.front(), pipeline->params.cont.cameraOptSubsampling));
+
+	LOGCL("Before optimising with subsampled tracker database:");
+	updateReprojectionErrors(subsampled, calibs, false, true, false);
+	LOGCL("Before optimising with original tracker database:");
+	updateReprojectionErrors(data, calibs, false, true, false);
 
 	auto lastIt = pclock::now();
 	auto itUpdate = [&](OptErrorRes errors)
 	{
+		LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
+			errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
 		state->errors = errors;
 		state->numSteps++;
 
@@ -463,9 +471,10 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 		AdoptNewCalibrations(*pipeline, calibs);
 		SignalCameraCalibUpdate(calibs);
 
-		LOGC(LInfo, "    Reprojection rmse %.2fpx, %.2fpx +- %.2fpx, max %.2fpx, after %.2fms!",
-			errors.rmse*PixelFactor, errors.mean*PixelFactor, errors.stdDev*PixelFactor, errors.max*PixelFactor, dtMS(lastIt, pclock::now()));
-		//LOGC(LDebug, "-- Finished optimisation step in %.2fms + %.2fms", dtOpt, dtMS(lastIt, pclock::now()));
+		LOGCL("Intermediate result with subsampled tracker database:");
+		updateReprojectionErrors(subsampled, calibs, false, true, false);
+		LOGCL("Intermediate result with original tracker database:");
+		updateReprojectionErrors(data, calibs, false, true, false);
 
 		return !stopToken.stop_requested() && state->numSteps < settings.maxSteps && !hasNaN;
 	};

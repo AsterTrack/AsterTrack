@@ -80,7 +80,8 @@ const char *getStopCodeText(int status)
  * Calculates, logs and returns overall camera reprojection errors
  * Returns avg, stdDev, max in -1 to 1 coordinates
  */
-OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCalib> &cameraCalibs)
+OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCalib> &cameraCalibs,
+	bool logFilteredErrors, bool logCameraErrors, bool logMarkerErrors)
 {
 	if (data.points.totalSamples == 0 && data.targets.empty())
 	{
@@ -108,7 +109,8 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 	errorTerm.calculateError(camerasInternal, errorVec);
 
 	// Calculate outlier limit
-	OptErrorRes errors = logErrorStats("    Errors Unfiltered", errorVec, 0, removedOutlierCount);
+	OptErrorRes errors = logErrorStats(logFilteredErrors? "    Errors Unfiltered" : 
+		"    Errors", errorVec, 0, removedOutlierCount);
 
 	// Per-camera error accumulation
 	VectorX<Scalar> cameraErrors = VectorX<Scalar>::Zero(cameraCalibs.size());
@@ -136,6 +138,8 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 		}
 		point.error /= point.samples.size();
 	}
+
+	index = data.points.totalSamples;
 	for (ObsTarget &target : data.targets)
 	{
 		for (ObsTargetFrame &frame : target.frames)
@@ -152,11 +156,40 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 		}
 	}
 
-	// Get errors and log everything
-	errors = logErrorStats("    Errors Filtered", errorVec, outlierCnt, removedOutlierCount);
-	for (int c = 0; c < cameraCalibs.size(); c++)
-		LOGCL("        Camera %d has %fpx RMSE reprojection error from %d inlier blobs!\n",
-			c, std::sqrt(cameraErrors(c)/cameraBlobCounts[c])*PixelFactor, cameraBlobCounts[c]);
+	// Log additional errors
+
+	if (logFilteredErrors)
+		logErrorStats("    Errors Filtered", errorVec, outlierCnt, removedOutlierCount);
+
+	ScopedLogLevel scopedLogLevel(LDebug);
+
+	if (logCameraErrors)
+	{
+		for (int c = 0; c < cameraCalibs.size(); c++)
+			LOGCL("        Camera %d has %fpx RMSE reprojection error from %d inlier blobs!\n",
+				c, std::sqrt(cameraErrors(c)/cameraBlobCounts[c])*PixelFactor, cameraBlobCounts[c]);
+	}
+
+	index = data.points.totalSamples;
+	for (ObsTarget &target : data.targets)
+	{
+		if (!logMarkerErrors) break;
+		VectorX<Scalar> markerErrors = VectorX<Scalar>::Zero(target.markers.size());
+		std::vector<int> markerBlobCounts(target.markers.size(), 0);
+		for (ObsTargetFrame &frame : target.frames)
+		{
+			for (ObsTargetSample &sample : frame.samples)
+			{
+				int marker = target.markerMap[sample.marker];
+				markerBlobCounts[marker]++;
+				markerErrors(marker) += errorVec(index)*errorVec(index);
+				index++;
+			}
+		}
+		for (int m = 0; m < target.markers.size(); m++)
+			LOGCL("        Target %d Marker %d has %fpx RMSE reprojection error from %d blobs!\n",
+				target.trackerID, m, std::sqrt(markerErrors[m]/markerBlobCounts[m])*PixelFactor, markerBlobCounts[m]);
+	}
 
 	return errors;
 }

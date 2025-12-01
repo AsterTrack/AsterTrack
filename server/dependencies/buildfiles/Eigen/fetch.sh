@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
-#FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
-# Need newer version than old 3.4.0, change to fixed version as soon as one is released
-#FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/master/eigen-master.zip
-FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/8ac2fb077dfcdf9a6fa78a871c494594dfa795b0/eigen-8ac2fb077dfcdf9a6fa78a871c494594dfa795b0.zip
-FETCH_VERSION=master-8ac2fb07
+FETCH_URL=https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.zip
+FETCH_VERSION=5.0.1
 FETCH_NAME=eigen
 FETCH_ARCHIVE=source.zip
 

@@ -33,6 +33,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
+#include <omp.h>
+
 #include <numeric>
 
 // ----------------------------------------------------------------------------
@@ -366,8 +368,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	bool useProbe, int focus, Eigen::Vector3f pos, int probeCount, DormantTarget &&dormant)
 {
 	float procTimeMS;
+	TimePoint_t start = sclock::now();
 	{ // Detect in the first frame
-		TimePoint_t start = sclock::now();
 
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(calibs.size());
 		std::vector<std::vector<BlobProperty> const *> properties(calibs.size());
@@ -401,9 +403,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		}
 
 		LOG(LDetection2D, LInfo, useProbe?
-			"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
-			"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
-			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
+			"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error in %.1fms!\n" :
+			"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error in %.1fms!\n",
+			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor, procTimeMS);
 	}
 
 	Eigen::Isometry3f pose = dormant.target.match2D.pose;
@@ -506,7 +508,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		frameIndex = frameRecordIt.index()-1;
 	}
 
-	LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to most recent processed frame!\n", (int)frameIndex);
+	LOG(LDetection2D, LInfo, "    Detection - Frame %d: Caught up to most recent processed frame after %.1fms!\n", (int)frameIndex, dtMS(start, sclock::now()));
 
 	// Finally, no more frames to catch up on, register as new tracked target
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
@@ -542,7 +544,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
 			if (targetIt->state.lastObsFrame > frameRecord.num || trackRecord.result.isDetected())
 			{ // Initialise filter as good as possible
-				targetIt->state = TrackerState(trackRecord.poseFiltered, frameRecord.time, pipeline.params.track);
+				targetIt->state = TrackerState(trackRecord.poseFiltered, frameRecord.num, frameRecord.time, pipeline.params.track);
 				targetIt->state.lastObsFrame = frameRecord.num;
 				targetIt->state.lastObservation = frameRecord.time;
 				targetIt->state.lastIMUSample = -1;
@@ -664,9 +666,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		trk0 = pclock::now();
 
-		for (auto &tracker : track.trackedTargets)
+		omp_set_num_threads(std::min<int>(track.trackedTargets.size(), pipeline.params.track.maxParallelism));
+	#pragma omp parallel for schedule(dynamic)
+		for (int t = 0; t < track.trackedTargets.size(); t++)
 		{
-			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!\n", tracker.id, tracker.label.c_str(), (int)tracker.target.calib.markers.size());
+			auto &tracker = *std::next(track.trackedTargets.begin(), t);
+			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!",
+				tracker.id, tracker.label.c_str(), (int)tracker.target.calib.markers.size());
 
 			if (tracker.inertial)
 				integrateIMU(tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
@@ -677,6 +683,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				frame->time, frame->num, camCount, pipeline.params.track);
 			tracker.procTimeMS = dtMS(start, sclock::now());
 		}
+		omp_set_num_threads(omp_get_max_threads());
 
 		updateTrackerMistrust(pipeline, frame, track.trackedTargets.size(),
 			[&](int t, const TargetMatch2D* &match, TrackingResult &result, int &freeObs, int &freeProj) -> float&
@@ -692,7 +699,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		for (auto tracker = track.trackedTargets.begin(); tracker != track.trackedTargets.end();)
 		{
 			auto &mistrust = pipeline.params.track.mistrust;
-			bool stillTrusted = tracker->mistrust < mistrust.maxMistrust;
+			float trackerStartup = std::clamp<float>((float)(frame->num - tracker->state.firstObsFrame) / mistrust.mistrustEasePeriod, 0, 1);
+			bool stillTrusted = tracker->mistrust < std::lerp(mistrust.maxMistrustStart, mistrust.maxMistrust, trackerStartup);
 			if (stillTrusted && tracker->result.isTracked())
 			{
 				LOG(LTracking, LDebug, "    Found continuation of target %d (name %s) with %d observations and %.3fpx mean error!\n",

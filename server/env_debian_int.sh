@@ -50,15 +50,15 @@ apt install debian-archive-keyring
 apt update && apt upgrade
 apt install -y gcc g++ ninja-build git cmake python3 binutils-dev
 
-git config --local --add remote.origin.fetch '^refs/heads/users/*'
-git config --local --add remote.origin.fetch '^refs/heads/revert-*'
-git clone --depth 1 --branch llvmorg-21.1.0 https://github.com/llvm/llvm-project.git
+git config --global --add remote.origin.fetch '^refs/heads/users/*'
+git config --global --add remote.origin.fetch '^refs/heads/revert-*'
+git clone --depth 1 --branch llvmorg-21.1.7 https://github.com/llvm/llvm-project.git
 
 pushd llvm-project
 
 GCCVER=\$(gcc -dumpversion | cut -f1 -d.)
 cmake -S llvm -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-	-DLLVM_ENABLE_PROJECTS='clang;lld' -DLLVM_ENABLE_RUNTIMES='libcxx' \
+	-DLLVM_ENABLE_PROJECTS='clang;lld' -DLLVM_ENABLE_RUNTIMES='libcxx;openmp' \
 	-DLIBCXX_CXX_ABI=libstdc++ \
 	-DLIBCXX_CXX_ABI_INCLUDE_PATHS=\"/usr/include/c++/\$GCCVER/;/usr/include/\$(gcc -dumpmachine)/c++/\$GCCVER/\" \
 	-DLLVM_BINUTILS_INCDIR=/usr/include

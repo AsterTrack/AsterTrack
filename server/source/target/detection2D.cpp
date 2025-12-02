@@ -28,6 +28,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "poselib/p3p_ding.hpp"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <random>
 #include <numeric>
@@ -84,6 +86,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 	// Evaluate all possible combinations
 	std::vector<std::pair<int,float>> itResults(rotations.size(), { 0, std::numeric_limits<float>::max() });
 	std::vector<TargetMatch2D> itMatches(rotations.size());
+	omp_set_num_threads(params.maxParallelism);
 #pragma omp parallel for schedule(static, 100)
 	for (int i = 0; i < rotations.size(); i++)
 	{
@@ -145,6 +148,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 			itMatches[i] = targetMatch2D;
 		}
 	}
+	omp_set_num_threads(omp_get_max_threads());
 	if (stopToken.stop_requested())
 		return {};
 
@@ -255,6 +259,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 	// Evaluate all possible combinations
 	std::vector<std::pair<int,float>> itResults(permIndices.size(), { 0, std::numeric_limits<float>::max() });
 	std::vector<Eigen::Isometry3f> itPoses(permIndices.size());
+	omp_set_num_threads(params.maxParallelism);
 #pragma omp parallel for schedule(static, 100)
 	for (int i = 0; i < permIndices.size(); i++)
 	{
@@ -283,6 +288,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 			}
 		}
 	}
+	omp_set_num_threads(omp_get_max_threads());
 	if (stopToken.stop_requested())
 		return {};
 

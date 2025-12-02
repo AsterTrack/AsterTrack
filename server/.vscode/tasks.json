@@ -162,7 +162,7 @@
             "description": "Compiler:",
             "default": "clang-std",
             "type": "pickString",
-            "options": [ "clang-libc", "clang-std", "gcc" ]
+            "options": [ "clang-libc", "clang-std", "gcc (do not use; too slow)" ]
         },
         { // On Linux, allow dependencies to be build with sanitized option on. Release/Debug not needed, all "release"
             "id": "sanitizedOption",

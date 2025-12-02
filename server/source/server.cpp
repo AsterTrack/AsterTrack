@@ -47,6 +47,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <numeric> // iota
 
 #include "ctpl/ctpl.hpp"
+#include <omp.h>
 
 #include "hidapi/hidapi.h"
 
@@ -111,6 +112,8 @@ bool ServerInit(ServerState &state)
 
 	//srand(1111110);
 	srand(time(0)); // Sufficient to get new random values for Eigen::Random every time
+
+	omp_set_num_threads(omp_get_max_threads());
 
 	return true;
 }

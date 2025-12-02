@@ -156,6 +156,7 @@ struct TargetDetectionConfig
 struct TargetDetectionParameters
 {
 	bool useAsyncDetection = true;
+	int maxParallelism = 8;
 	struct
 	{
 		float errorMax = 5.0f*PixelSize;
@@ -193,6 +194,7 @@ struct TargetDetectionParameters
 
 struct TargetTrackingParameters
 {
+	int maxParallelism = 8;
 	// Prediction
 	float minUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;

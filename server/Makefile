@@ -42,29 +42,32 @@ LD=clang++
 cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
 lstd = -lc++ -fopenmp=libomp # --rtlib=compiler-rt -lunwind
 lto = -flto=thin
+STDLIB = libcpp
 else ifeq ($(COMPILER), clang-std)
 # clang compiler
 CXX=clang++
 CC=clang
 LD=clang++
 # gnu libraries (libstdc++ + libgomp)
-cstd = -stdlib=libstdc++ -fopenmp=libgomp -Wno-gcc-compat
-lstd = -lstdc++ -fopenmp=libgomp --rtlib=libgcc -latomic
+cstd = -stdlib=libstdc++ -fopenmp=libomp -Wno-gcc-compat
+lstd = -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic
 lto = -flto=thin
+STDLIB = libstdcpp
 else ifeq ($(COMPILER), gcc)
 # gcc compiler
 CXX=g++
 CC=gcc
 LD=g++
 # gnu libraries (libstdc++ + libgomp)
-cstd = -fopenmp -finline-limit=1000000 -Wno-virtual-move-assign
-lstd = -latomic -lgomp
+cstd = -fopenmp -Wno-virtual-move-assign
+lstd = -fopenmp -latomic
 lto = -flto=auto
 ifeq "$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 14)" "1"
 	lstd += -lstdc++exp
 else
 	lstd += -lstdc++
 endif
+STDLIB = libstdcpp
 endif
 
 
@@ -73,7 +76,9 @@ ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
-cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+endif
 lmode = $(lto)
 mode = release
 
@@ -82,7 +87,9 @@ else ifeq ($(BUILD_TYPE), release-native)
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
 cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
-cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+endif
 lmode = $(lto)
 march = -march=native -mtune=native
 mode = release-native
@@ -90,10 +97,10 @@ mode = release-native
 else ifeq ($(BUILD_TYPE), release-verify)
 # Fast, can verify memory is handled correctly, useful for testing code while not sacrificing much performance
 cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=2
-ifneq '' '$(findstring clang,$(CC))' # clang
+ifeq ($(STDLIB), libcpp)
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
-else # gcc - may technically already break ABI, but doesn't matter for this project
+else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG
 endif
 lmode = -fsanitize=address
@@ -102,24 +109,28 @@ mode = release-verify
 else ifeq ($(BUILD_TYPE), sanitize-thread)
 # Super slow (?), can verify no data races exist
 cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=thread -DPERF=1
-cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+endif
 lmode = -fsanitize=thread
 mode = sanitize-thread
 
 else ifeq ($(BUILD_TYPE), sanitize-memory)
 # Super slow (?), can verify no memory is used uninitialised
 cmode = -O1 -g -DNDEBUG -DEIGEN_NO_DEBUG -fno-omit-frame-pointer -fsanitize=memory -DPERF=1
-cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+endif
 lmode = -fsanitize=memory
 mode = sanitize-memory
 
 else ifeq ($(BUILD_TYPE), sanitize-address)
 # Slow, can verify memory is handled correctly, useful for newly written code
 cmode = -O1 -g -fno-omit-frame-pointer -fsanitize=address -DPERF=1
-ifneq '' '$(findstring clang,$(CC))' # clang
+ifeq ($(STDLIB), libcpp)
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
-else # gcc - may technically already break ABI, but doesn't matter for this project
+else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
 	cmode += -D_GLIBCXX_DEBUG
 endif
 lmode = -fsanitize=address
@@ -128,7 +139,9 @@ mode = sanitize-address
 else ifeq ($(BUILD_TYPE), debug)
 # Slow, for step-through debug
 cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -DEIGEN_NO_DEBUG -DPERF=1
-cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+endif
 lmode = -fsanitize=address
 mode = debug
 
@@ -137,12 +150,15 @@ else ifeq ($(BUILD_TYPE), super-debug)
 # Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
 cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
-ifneq '' '$(findstring clang,$(CC))' # clang
+ifeq ($(STDLIB), libcpp)
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
-else # gcc - may technically already break ABI, but doesn't matter for this project
-	cmode += -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_BACKTRACE
+else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
+	cmode += -D_GLIBCXX_DEBUG
+	ifeq '' '$(findstring clang,$(CC))' # not clang
+		cmode += -D_GLIBCXX_DEBUG_BACKTRACE
+	endif
 endif
 mode = super-debug
 
@@ -151,12 +167,16 @@ else ifeq ($(BUILD_TYPE), super-verify)
 # Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
 cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=1
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
-ifneq '' '$(findstring clang,$(CC))' # clang
+ifeq ($(STDLIB), libcpp)
 # requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
-else # gcc - may technically already break ABI, but doesn't matter for this project
-	cmode += -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_BACKTRACE
+else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
+	cmode += -D_GLIBCXX_DEBUG
+	ifeq '' '$(findstring clang,$(CC))' # not clang
+		cmode += -D_GLIBCXX_DEBUG_BACKTRACE
+	endif
+
 endif
 mode = super-verify
 

@@ -64,10 +64,10 @@ struct ContinuousOptimisationParameters
 {
 	struct
 	{
-		int minStrongCameraSamples = 6;
+		int minStrongCameraSamples = 4;
 		int minStrongCameras = 2;
-		int minCameraSamples = 4;
-		int minTotalSamples = 15;
+		int minCameraSamples = 2;
+		int minTotalSamples = 12;
 	} targetObs;
 
 	SubsampleTargetParameters targetOptSubsampling = {};

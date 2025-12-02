@@ -294,11 +294,14 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		trustMod |= ScalarProperty<float>("High Error Threshold", "px", &params.mistrust.highErrorThreshold, &standard.mistrust.highErrorThreshold, 0, 10, 0.1f, PixelFactor, "%.2f");
 		trustMod |= ScalarProperty<float>("High Error Mistrust", "x", &params.mistrust.highErrorFactor, &standard.mistrust.highErrorFactor, 0, 1000, 1.0f);
 		trustMod |= ScalarProperty<float>("No-Tracking Mistrust", "", &params.mistrust.noTrackingAccum, &standard.mistrust.noTrackingAccum, 0, 1, 0.1f);
-		trustMod |= ScalarProperty<float>("Marker Conflict Mistrust", "", &params.mistrust.conflictedMarkerAccum, &standard.mistrust.conflictedMarkerAccum, 0, 1, 0.05f);
+		trustMod |= ScalarProperty<float>("Marker Conflict Mistrust", "", &params.mistrust.conflictedMarkerAccum, &standard.mistrust.conflictedMarkerAccum, 0, 1, 0.01f);
 		trustMod |= ScalarProperty<float>("Unmatched Pair Mistrust", "", &params.mistrust.unmatchedCertainAccum, &standard.mistrust.unmatchedCertainAccum, 0, 1, 0.001f);
 		trustMod |= ScalarProperty<float>("Free Observations Mistrust", "", &params.mistrust.unmatchedObservationsAccum, &standard.mistrust.unmatchedObservationsAccum, 0, 1, 0.001f);
 		trustMod |= ScalarProperty<float>("Free Projections Mistrust", "", &params.mistrust.unmatchedProjectionsAccum, &standard.mistrust.unmatchedProjectionsAccum, 0, 1, 0.0001f, 1, "%.4f");
+		trustMod |= ScalarProperty<float>("Closeby Observation Range", "x", &params.mistrust.closebyObservationsRange, &standard.mistrust.closebyObservationsRange, 0, 10, 0.01f, 1, "%.4f");
 		trustMod |= ScalarProperty<float>("Maximum Mistrust", "", &params.mistrust.maxMistrust, &standard.mistrust.maxMistrust, 0, 10, 0.1f);
+		trustMod |= ScalarProperty<float>("Start Maximum Mistrust", "", &params.mistrust.maxMistrustStart, &standard.mistrust.maxMistrustStart, 0, 10, 0.1f);
+		trustMod |= ScalarProperty<int>("Start Ease Period", "frames", &params.mistrust.mistrustEasePeriod, &standard.mistrust.mistrustEasePeriod, 0, 100, 10);
 		EndSection();
 
 		BeginSection("Optimisation");
@@ -353,11 +356,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		filterMod |= ScalarProperty<float>("StdDev IMU Quat", "", &params.filter.imu.stdDevIMU, &standard.filter.imu.stdDevIMU, 0, 10, 0.05f, 1000, "%.4f");
 		filterMod |= ScalarProperty<float>("StdDev IMU Accel", "", &params.filter.imu.stdDevAccel, &standard.filter.imu.stdDevAccel, 0, 10, 0.01f, 1000, "%.4f");
 
-		EndSection();
-
-		BeginSection("Tracking Loss");
-		modified |= ScalarProperty<float>("Coast Time", "ms", &params.lostTargetCoastMS, &standard.lostTargetCoastMS, 0, 10000, 0.1f, 1, "%.0f");
-		modified |= ScalarProperty<float>("Min Track Time", "ms", &params.coastMinTrackTime, &standard.coastMinTrackTime, 0, 10000, 0.1f, 1, "%.0f");
 		EndSection();
 
 		modified |= trustMod;

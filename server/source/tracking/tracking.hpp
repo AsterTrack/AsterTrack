@@ -49,11 +49,12 @@ struct TrackerState
 	long lastIMUSample;
 	TimePoint_t lastIMUTime;
 	long lastObsFrame;
+	long firstObsFrame;
 	TimePoint_t lastObservation;
 	TimePoint_t firstObservation;
 
-	TrackerState(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
-		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObservation(time)
+	TrackerState(Eigen::Isometry3f pose, long frame, TimePoint_t time, const TargetTrackingParameters &params) :
+		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObsFrame(frame), firstObservation(time)
 	{
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
@@ -299,12 +300,12 @@ struct OrphanedIMU
 	TrackerObservation pose;
 
 	OrphanedIMU(std::shared_ptr<IMU> &imu, const TargetTrackingParameters &params) :
-		state(orphanedIMUPose, sclock::now(), params),
+		state(orphanedIMUPose, -1, sclock::now(), params),
 		inertial(imu, IMUCalib()),
 		pose(orphanedIMUPose, sclock::now(), params) {}
 	
 	OrphanedIMU(std::shared_ptr<IMU> &&imu, const TargetTrackingParameters &params) :
-		state(orphanedIMUPose, sclock::now(), params),
+		state(orphanedIMUPose, -1, sclock::now(), params),
 		inertial(std::move(imu), IMUCalib()),
 		pose(orphanedIMUPose, sclock::now(), params) {}
 };
@@ -338,7 +339,7 @@ inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f p
 	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
-	state(pose, time, params), pose(pose, time, params)
+	state(pose, frame, time, params), pose(pose, time, params)
 {
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
@@ -357,7 +358,7 @@ inline TrackedMarker::TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos
 	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	marker(std::move(dormant.marker)), inertial(std::move(dormant.inertial)),
-	state(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params), 
+	state(Eigen::Isometry3f(Eigen::Translation3f(pos)), frame, time, params), 
 	pose(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params)
 {
 	state.lastObservation = time;

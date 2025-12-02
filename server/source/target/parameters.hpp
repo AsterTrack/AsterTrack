@@ -229,20 +229,19 @@ struct TargetTrackingParameters
 		float highErrorFactor = 100.0f;
 		float highErrorThreshold = 0.8f*PixelSize;
 		float matchedMarkerFactor = 0.99f;
-		float conflictedMarkerAccum = 0.05f;
-		float unmatchedCertainAccum = 0.015f;
+		float conflictedMarkerAccum = 0.02f;
+		float unmatchedCertainAccum = 0.01f;
 		float unmatchedObservationsAccum = 0.005f;
 		float unmatchedProjectionsAccum = 0.000f;
-		float closebyObservationsRange = 1.0f;
+		float closebyObservationsRange = 0.8f;
 		float maxMistrust = 1.0f;
+		float maxMistrustStart = 0.1f;
+		int mistrustEasePeriod = 50;
 	} mistrust = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};
 	// Filtering
 	TargetFilteringParameters filter = {};
-	// Tracking Loss
-	float lostTargetCoastMS = 100.0f;
-	float coastMinTrackTime = 50.0f;
 };
 
 // Two more used statically, no easy access to TargetDetectionParameters::triDetection, but recorded here nonetheless

@@ -843,7 +843,7 @@ std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraI
 	// TODO: If mode.widthPx != mode.sensorWidth, it might be wrong depending on what the camera is sending
 	Bounds2f fullFrame(0, 0, imageRecord->frameX, imageRecord->frameY);
 	image->boundsRel.min = (image->boundsPx.min.cast<float>() - fullFrame.min).cwiseQuotient(fullFrame.extends());
-	image->boundsRel.max = (image->boundsPx.max.cast<float>() - fullFrame.max).cwiseQuotient(fullFrame.extends());
+	image->boundsRel.max = (image->boundsPx.max.cast<float>() - fullFrame.min).cwiseQuotient(fullFrame.extends());
 	image->image = std::move(imageBuf);
 	image->width = imageRecord->imageX;
 	image->height = imageRecord->imageY;

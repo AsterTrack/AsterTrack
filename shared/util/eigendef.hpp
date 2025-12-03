@@ -287,7 +287,7 @@ struct Bounds
 	inline void overlapWith(const Bounds<Scalar,N> other)
 	{
 		min = min.cwiseMax(other.min);
-		max = min.cwiseMin(other.max);
+		max = max.cwiseMin(other.max);
 	}
 	inline bool includes(const Bounds<Scalar,N> other) const
 	{

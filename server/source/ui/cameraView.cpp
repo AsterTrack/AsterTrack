@@ -1571,7 +1571,7 @@ static void __attribute__ ((optimize("3"))) calculateCameraDistortionMap(const T
 	// But a few highly distorted areas can tank performance, resulting in lags, so hope this is fine
 	// Currently, everything <10ms, so all good
 #if PERF >= 2
-	int tgtSize = 150, itCount = 100;
+	int tgtSize = 200, itCount = 100;
 #elif PERF == 1
 	int tgtSize = 100, itCount = 50;
 #elif PERF == 0
@@ -1586,7 +1586,7 @@ static void __attribute__ ((optimize("3"))) calculateCameraDistortionMap(const T
 		for (int x = 0; x < width; x++)
 		{
 			Eigen::Vector2f pos(((x+0.5f)*2.0f-width)/tgtSize, ((y+0.5f)*2.0f-height)/tgtSize);
-			undistortionTex[y*width + x] = distortPointUnstable(calib, pos, 100, 0.05f*PixelSize);
+			undistortionTex[y*width + x] = distortPointUnstable(calib, pos, itCount, 0.5f*PixelSize);
 		}
 	loadVectorField(visCamera.calibration.undistortionTexID, undistortionTex, width, height);
 	visCamera.calibration.undistortMapScale = Eigen::Vector2f((float)width/tgtSize, (float)height/tgtSize);
@@ -1604,10 +1604,10 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 	Bounds2f imageBounds;
 	if (visCamera.imageVis.undistort)
 	{ // Undistort roughly - since values outside of image could be used, it could be even more unstable than usual
-		imageBounds.include(distortPointUnstable(camera.calib, view.max, 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, view.max, 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, view.min, 100, 1*PixelSize));
-		imageBounds.include(distortPointUnstable(camera.calib, view.min, 100, 1*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.max.x(), view.max.y()), 100, 0.5f*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.max.x(), view.min.y()), 100, 0.5f*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.min.x(), view.max.y()), 100, 0.5f*PixelSize));
+		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.min.x(), view.min.y()), 100, 0.5f*PixelSize));
 	}
 	else
 	 	imageBounds = view;
@@ -1619,7 +1619,7 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 			imageBounds.extends().y()*camera.mode.factorH/2.0f * expansionFactor));
 	Bounds2i pixelBounds(
 		normBounds.min.x()*camera.mode.widthPx, normBounds.min.y()*camera.mode.heightPx,
-		normBounds.max.x()*camera.mode.widthPx, normBounds.max.x()*camera.mode.heightPx);
+		normBounds.max.x()*camera.mode.widthPx, normBounds.max.y()*camera.mode.heightPx);
 	pixelBounds.overlapWith(fullFrame); // Due to expansionFactor and undistortion
 	if (bounds != pixelBounds)
 	{

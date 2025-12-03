@@ -374,9 +374,9 @@ public:
 	bool frameRelevantParametersDirty = false;
 
 	// Sequences state
-	opaque_ptr<TargetViewSequence> seqTarget = NULL;
-	opaque_ptr<Marker2DSequence> seqMarker = NULL;
-	opaque_ptr<TrackingControllerEventSequence> seqEvents = NULL;
+	opaque_ptr<TargetViewSequence> seqTarget;
+	opaque_ptr<Marker2DSequence> seqMarker;
+	opaque_ptr<TrackingControllerEventSequence> seqEvents;
 	bool seqEventsActive = false;
 	long seqJumpToFrame = -1;
 
@@ -402,8 +402,8 @@ public:
 	std::size_t logsFilterPos = 0;
 	bool logsStickToNew = true;
 
-	InterfaceState() { InterfaceInstance = this; }
-	~InterfaceState() { if (InterfaceInstance == this) InterfaceInstance = NULL; }
+	InterfaceState();
+	~InterfaceState();
 
 	bool Init();
 	void Exit();

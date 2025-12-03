@@ -65,6 +65,8 @@ struct wl_resource;
  */
 
 InterfaceState *InterfaceInstance;
+InterfaceState::InterfaceState() { InterfaceInstance = this; }
+InterfaceState::~InterfaceState() { if (InterfaceInstance == this) InterfaceInstance = NULL; }
 
 const int maxRefreshRateHz = 60; // This is further limited to display refresh rate
 const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 50.0f/1000.0f

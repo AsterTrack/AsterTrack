@@ -26,6 +26,8 @@ SOFTWARE.
 #include "imgui.h"
 #include "imgui/imgui_internal.h"
 
+#include <algorithm>
+
 #ifndef IMGUI_CUSTOM_H
 #define IMGUI_CUSTOM_H
 

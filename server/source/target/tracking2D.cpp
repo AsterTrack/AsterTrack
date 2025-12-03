@@ -109,23 +109,6 @@ int shiftPointsAlongAxis(
 }
 
 /**
- * Raise x to the power of integer n.
- * Very quick for small n.
- */
-template<typename T>
-static constexpr inline T pown(T x, unsigned n)
-{
-	T result = 1;
-	while (n)
-	{
-		if (n&1) result *= x;
-		x *= x;
-		n >>= 1;
-	}
-	return result;
-}
-
-/**
  * Matches a relevant set of projected target points to a relevant set of point observations
  */
 bool matchTargetPointsFast(

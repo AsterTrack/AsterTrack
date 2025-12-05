@@ -570,7 +570,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		// Visualise target markers that should be visible
 		projectTarget(projected2D,
 			target, calib, tgtMatch.pose, expandMarkerFoV);
-		visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
+		visualisePoints2D(projected2D, Color{ 0.0, 0.9, 0.6, 0.4f }, 2.0f);
 
 		// Then get the same marker projections but with proper indexes
 		projectTarget(projected2D, relevantProjected2D,
@@ -618,7 +618,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 
 		// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
 		projectTarget(projected2D, target, calib, tgtMatch.pose, expandMarkerFoV);
-		visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
+		visualisePoints2D(projected2D, Color{ 0.0, 0.9, 0.6, 0.4f }, 2.0f);
 
 		// Gather relevant points that were tracked
 		relevantProjected2D.clear();
@@ -655,7 +655,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		projected2D.clear();
 		for (int m = 0; m < targetMatch.markerCount; m++)
 			projected2D.push_back(targetMatch.markers[m].projected);
-		visualisePoints2D(projected2D, Color{ 0.0, 0.8, 0.2, 0.3f }, 2.0f);
+		visualisePoints2D(projected2D, Color{ 0.0, 0.9, 0.6, 0.4f }, 2.0f);
 
 		// Show all considered match pairs
 		if (trkVis.debugFocusPoint >= 0 && trkVis.debugFocusPoint < targetMatch.markerCount)

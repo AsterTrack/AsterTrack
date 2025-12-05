@@ -244,18 +244,20 @@ static void recordTrackerFailedTest(TrackerRecord &record, const TargetMatch2D &
 		record.match2D = match2D;
 	}
 	updateVisibleMarkers(record.visibleMarkers, match2D);
+	// TODO: Record original pose estimate used for search / probe detection as posePredicted
 	if (match2D.pose.matrix().hasNaN())
 	{
 		record.posePredicted.setIdentity();
+		record.poseObserved.setIdentity();
 		record.poseFiltered.setIdentity();
 	}
 	else
 	{ // At least had a candidate
 		record.posePredicted = match2D.pose;
+		record.poseObserved = match2D.pose;
 		record.poseFiltered = match2D.pose;
 	}
 	record.covPredicted.setZero();
-	record.poseObserved.setIdentity();
 	record.covObserved.setZero();
 	record.covFiltered.setZero();
 }

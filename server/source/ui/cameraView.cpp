@@ -291,7 +291,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	{
 		displaySceneLabels(view.vis.observations.labels);
 	}
-	if (state.pipeline.phase == PHASE_Tracking && visState.tracking.debug.frameNum > 0 && visState.tracking.debugMatchingState)
+	if (state.pipeline.phase == PHASE_Tracking && visState.tracking.debug.frameNum > 0 &&
+		visState.tracking.debug.trackerID == visState.tracking.focusedTrackerID && visState.tracking.debugMatchingState)
 	{
 		auto &trkVis = visState.tracking;
 		int camera = view.camera->pipeline->index;
@@ -1117,7 +1118,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			}
 
 			auto &debugVis = visState.tracking.debug;
-			if (debugVis.frameNum > 0 && debugVis.frameNum < frame->num)
+			if (debugVis.frameNum > 0 && debugVis.frameNum != frame->num)
 				debugVis = {}; // Any one camera can reset
 			if (displayInternalDebug && visState.tracking.debugMatchingState &&
 				debugVis.frameNum == frame->num && debugVis.trackerID == visState.tracking.focusedTrackerID)
@@ -1156,6 +1157,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				}
 				if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 
+				float expandMarkerFoV = pipeline.params.track.expandMarkerFoV / pipeline.params.track.normaliseDistance
+					* (record.posePredicted.translation() - calib.transform.translation().cast<float>()).norm();
+
 				if (visState.tracking.showSearchBounds)
 				{ // Show search bounds
 					// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
@@ -1168,6 +1172,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				}
 
 				Color colVisible = Color{ 0.0, 0.8, 0.2, 0.3f };
+				Color colVisibleF = Color{ 0.0, 0.9, 0.6, 0.4f };
 				Color colMatched = Color{ 0.8, 0.0, 0.2, 0.6f };
 				Color colFiltered = Color{ 0.4f, 0.1f, 0.5f, 0.8f };
 				Color colPredicted = Color{ 0.2, 0.5, 0.7, 0.4f };
@@ -1175,12 +1180,11 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				if (visState.tracking.showTargetObserved && record.result.isTracked())
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-					projectTarget(projected2D, tracker.calib, calib,
-						record.poseObserved, pipeline.params.track.expandMarkerFoV);
-					visualisePoints2D(projected2D, colVisible, 2.0f);
+					projectTarget(projected2D, tracker.calib, calib, record.poseObserved, expandMarkerFoV);
+					visualisePoints2D(projected2D, record.id == visState.tracking.focusedTrackerID? colVisibleF : colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					if (record.visibleMarkers.size() > camera.pipeline->index)
+					if (record.visibleMarkers.size() > camera.pipeline->index && record.id == visState.tracking.focusedTrackerID)
 					{
 						projectTarget(projected2D, tracker.calib, calib,
 							record.visibleMarkers[camera.pipeline->index], record.poseObserved);
@@ -1190,15 +1194,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 
 				if (visState.tracking.showTargetPredicted)
 				{
-					projectTarget(projected2D, tracker.calib, calib,
-						record.posePredicted, pipeline.params.track.expandMarkerFoV);
+					projectTarget(projected2D, tracker.calib, calib, record.posePredicted, expandMarkerFoV);
 					visualisePoints2D(projected2D, colPredicted, 2.0f);
 				}
 
 				if (visState.tracking.showTargetFilteredCamera && record.result.isTracked())
 				{
-					projectTarget(projected2D, tracker.calib, calib,
-						record.poseFiltered, pipeline.params.track.expandMarkerFoV);
+					projectTarget(projected2D, tracker.calib, calib, record.poseFiltered, expandMarkerFoV);
 					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}
 			}

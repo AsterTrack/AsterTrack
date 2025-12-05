@@ -127,8 +127,8 @@ struct VisualisationState
 
 	bool showMarkerTrails = false;
 	bool showMarkerRays = false;
-	bool show3DClusters = true;
-	bool show2DClusters = true;
+	bool show3DClusters = false;
+	bool show2DClusters = false;
 
 	struct
 	{

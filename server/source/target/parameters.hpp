@@ -192,6 +192,22 @@ struct TargetDetectionParameters
 	} minObservations;
 };
 
+struct TargetMistrustParameters
+{
+	float noTrackingAccum = 0.2f;
+	float highErrorFactor = 100.0f;
+	float highErrorThreshold = 0.8f*PixelSize;
+	float matchedMarkerFactor = 0.98f;
+	float conflictedMarkerAccum = 0.02f;
+	float unmatchedCertainAccum = 0.01f;
+	float unmatchedObservationsAccum = 0.005f;
+	float unmatchedProjectionsAccum = 0.0005f;
+	float closebyObservationsRange = 0.8f;
+	float maxMistrust = 1.0f;
+	float maxMistrustStart = 0.3f;
+	int mistrustEasePeriod = 50;
+};
+
 struct TargetTrackingParameters
 {
 	int maxParallelism = 8;
@@ -226,20 +242,7 @@ struct TargetTrackingParameters
 		float maxTotalError = 2.0f*PixelSize;
 	} quality = {};
 	// Mistrust
-	struct {
-		float noTrackingAccum = 0.2f;
-		float highErrorFactor = 100.0f;
-		float highErrorThreshold = 0.8f*PixelSize;
-		float matchedMarkerFactor = 0.99f;
-		float conflictedMarkerAccum = 0.02f;
-		float unmatchedCertainAccum = 0.01f;
-		float unmatchedObservationsAccum = 0.005f;
-		float unmatchedProjectionsAccum = 0.000f;
-		float closebyObservationsRange = 0.8f;
-		float maxMistrust = 1.0f;
-		float maxMistrustStart = 0.1f;
-		int mistrustEasePeriod = 50;
-	} mistrust = {};
+	TargetMistrustParameters mistrust = {};
 	// Optimisation
 	TargetOptimisationParameters opt = {};
 	// Filtering

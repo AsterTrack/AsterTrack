@@ -763,7 +763,11 @@ static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *st
 		{}
 		else if (pipeline.frameNum+1 < frames.endIndex())
 		{ // Process most recent fully-received frame (may skip frames!)
-			std::shared_ptr<FrameRecord> frame = frames.back(); // new shared_ptr
+			std::shared_ptr<FrameRecord> frame;
+			if (pipeline.frameNum+3 < frames.endIndex())
+				frame = frames.back(); // new shared_ptr
+			else // Process realtime unless 2 more frames are already waiting, then skip 2
+				frame = frames[pipeline.frameNum+1];
 
 			auto start = sclock::now();
 			ProcessFrame(pipeline, frames.back()); // new shared_ptr

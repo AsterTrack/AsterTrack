@@ -215,9 +215,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					points2D[c] = &frameRecord.cameras[c].points2D;
 					properties[c] = &frameRecord.cameras[c].properties;
+					relevantPoints2D[c] = &remainingPoints2D[c];
+					// Consider all points for tracking, as would the original target tracking
 					remainingPoints2D[c].resize(points2D[c]->size());
 					std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-					relevantPoints2D[c] = &remainingPoints2D[c];
 				}
 
 				if (ImGui::Button("Debug target matching", SizeWidthFull()))

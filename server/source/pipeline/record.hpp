@@ -262,8 +262,9 @@ struct FrameRecord
 	// This is mostly for visualisation
 	std::vector<Cluster3D> cluster2DTri;
 
-	// TODO: Put remainingPoints2D and other intermediate results in here?
-	// Both target calibration (tryTrackFrame) and async detection2D (retroactivelyTrackFrame) would benefit
+	// Points not used for tracking during realtime processing
+	// Useful for retroactive tracking e.g. after a detection
+	std::vector<std::vector<int>> remainingPoints2D;
 };
 
 /**

@@ -333,17 +333,13 @@ static void retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &trac
 	std::vector<CameraCalib> calibs(frame->cameras.size());
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(frame->cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(frame->cameras.size());
-	std::vector<std::vector<int>> remainingPoints2D(frame->cameras.size());
 	std::vector<std::vector<int> const *> relevantPoints2D(frame->cameras.size());
 	for (int c = 0; c < frame->cameras.size(); c++)
 	{
 		calibs[c] = pipeline.cameras[c]->calib;
 		points2D[c] = &frame->cameras[c].points2D;
 		properties[c] = &frame->cameras[c].properties;
-		// TODO: Get remainingPoints2D from FrameRecord
-		remainingPoints2D[c].resize(points2D[c]->size());
-		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-		relevantPoints2D[c] = &remainingPoints2D[c];
+		relevantPoints2D[c] = &frame->remainingPoints2D[c];
 	}
 
 	if (tracker.inertial)
@@ -611,16 +607,19 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	std::vector<CameraCalib> calibs(cameras.size());
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(cameras.size());
-	std::vector<std::vector<int>> remainingPoints2D(calibs.size());
 	std::vector<std::vector<int> const *> relevantPoints2D(calibs.size());
+	std::vector<std::vector<int>> &remainingPoints2D = frame->remainingPoints2D;
+	remainingPoints2D.resize(pipeline.cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		calibs[c]= cameras[c]->calib;
 		points2D[c] = &frame->cameras[calibs[c].index].points2D;
 		properties[c] = &frame->cameras[calibs[c].index].properties;
-		remainingPoints2D[c].resize(points2D[c]->size());
-		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-		relevantPoints2D[c] = &remainingPoints2D[c];
+		relevantPoints2D[c] = &frame->remainingPoints2D[calibs[c].index];
+		// Clear and initialise useable points. If we ever do separated processing groups of cameras, this might want to use existing remainingPoints2D 
+		auto &rem = frame->remainingPoints2D[calibs[c].index];
+		rem.resize(points2D[c]->size());
+		std::iota(rem.begin(), rem.end(), 0);
 	}
 
 	auto &track = pipeline.tracking;
@@ -632,12 +631,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		for (int c = 0; c < calibs.size(); c++)
 		{
 			int i = calibs[c].index;
-			remainingPoints2D[c].erase(std::remove_if(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), [&](int p) {
+			remainingPoints2D[i].erase(std::remove_if(remainingPoints2D[i].begin(), remainingPoints2D[i].end(), [&](int p) {
 				for (auto &match : targetMatch2D.points2D[i])
 					if (match.second == p)
 						return true;
 				return false;
-			}), remainingPoints2D[c].end());			
+			}), remainingPoints2D[i].end());			
 		}
 		// Find and efficiently remove triangulated points if they are occupied
 		triIndices.erase(std::remove_if(triIndices.begin(), triIndices.end(), [&](int p) {
@@ -1019,12 +1018,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	std::vector<std::vector<Cluster2DStats>> cluster2DStats(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{ // 2D Point clustering
-		clusters2D[c] = dbscanSubset<2,float,int>(*points2D[c], remainingPoints2D[c], clustering.blob2DCluster.maxDistance, clustering.blob2DCluster.minPoints);
+		clusters2D[c] = dbscanSubset<2,float,int>(*points2D[c], remainingPoints2D[calibs[c].index], clustering.blob2DCluster.maxDistance, clustering.blob2DCluster.minPoints);
 		cluster2DStats[c].resize(clusters2D[c].size());
 		for (int i = 0; i < clusters2D[c].size(); i++)
 			cluster2DStats[c][i] = calculateClusterStats2D(clusters2D[c][i], *points2D[c]);
 
-		LOG(LCluster, LDebug, "Camera %d: Clustered %d/%d relevant points into %d groups:", calibs[c].index, (int)remainingPoints2D[c].size(), (int)points2D[c]->size(), (int)clusters2D[c].size());
+		LOG(LCluster, LDebug, "Camera %d: Clustered %d/%d relevant points into %d groups:", calibs[c].index, (int)relevantPoints2D[c]->size(), (int)points2D[c]->size(), (int)clusters2D[c].size());
 		for (int i = 0; i < clusters2D[c].size(); i++)
 		{
 			LOG(LCluster, LDebug, "    Cluster has %d 2D points, variance of %fx%fpx!", (int)clusters2D[c][i].size(),

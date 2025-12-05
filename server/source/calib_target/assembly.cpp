@@ -824,15 +824,9 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 		properties[c] = &frameRecord->cameras[c].properties;
 	}
 
-	// TODO: Get remainingPoints2D from FrameRecord
-	std::vector<std::vector<int>> remainingPoints2D(frameRecord->cameras.size());
 	std::vector<std::vector<int> const *> relevantPoints2D(frameRecord->cameras.size());
 	for (int c = 0; c < frameRecord->cameras.size(); c++)
-	{
-		remainingPoints2D[c].resize(points2D[c]->size());
-		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-		relevantPoints2D[c] = &remainingPoints2D[c];
-	}
+		relevantPoints2D[c] = &frameRecord->remainingPoints2D[c];
 
 	TargetTracking2DData internalData(frameRecord->cameras.size());
 	CovarianceMatrix covariance = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;

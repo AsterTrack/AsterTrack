@@ -1180,9 +1180,12 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 					visualisePoints2D(projected2D, colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					projectTarget(projected2D, tracker.calib, calib,
-						record.visibleMarkers[camera.pipeline->index], record.poseObserved);
-					visualisePoints2D(projected2D, colMatched, 2.0f);
+					if (record.visibleMarkers.size() > camera.pipeline->index)
+					{
+						projectTarget(projected2D, tracker.calib, calib,
+							record.visibleMarkers[camera.pipeline->index], record.poseObserved);
+						visualisePoints2D(projected2D, colMatched, 2.0f);
+					}
 				}
 
 				if (visState.tracking.showTargetPredicted)

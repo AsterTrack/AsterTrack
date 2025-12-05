@@ -43,6 +43,7 @@ extern ctpl::thread_pool threadPool;
 
 void ResetTrackingPipeline(PipelineState &pipeline)
 {
+	pipeline.tracking.asyncDetectionStop.request_stop();
 	pipeline.tracking.trackedMarkers.clear();
 	pipeline.tracking.trackedTargets.clear();
 	pipeline.tracking.dormantTargets.clear();
@@ -58,23 +59,15 @@ void InitTrackingPipeline(PipelineState &pipeline)
 	// Trackers (both markers and targets) will be added when triggered, and IMUs reassigned
 }
 
-/**
- * Create a tracked target record for given target id
- */
-static TrackerRecord& createTrackerRecord(std::shared_ptr<FrameRecord> &frame, int id, TrackingResult result, float procTimeMS)
+static TrackerRecord& enterTrackerRecord(std::shared_ptr<FrameRecord> &frame, TrackerRecord &&record)
 {
+	// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (5/5)
 	auto trackRecord = std::find_if(frame->trackers.begin(), frame->trackers.end(),
-		[&](auto &t){ return t.id == id; });
-	if (trackRecord == frame->trackers.end())
-	{ // Enter into frame record
-		frame->trackers.push_back({ id, result, procTimeMS });
-		return frame->trackers.back();
-	}
-	// May happen in replay mode when jumping back and re-tracking area
-	trackRecord->result = result; // Update
-	trackRecord->procTimeMS = procTimeMS;
-	trackRecord->mistrust = 0.0f;
-	return *trackRecord;
+		[&](auto &t){ return t.id == record.id; });
+	assert(trackRecord == frame->trackers.end());
+	assert(frame->trackers.empty() || frame->trackers.size() < frame->trackers.capacity());
+	frame->trackers.push_back(std::move(record));
+	return frame->trackers.back();
 }
 
 /**
@@ -199,7 +192,9 @@ static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, con
 	}
 }
 
-static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTarget &tracker, TrackerRecord &record)
+static void recordTrackerFailedTest(TrackerRecord &record, const TargetMatch2D &match2D, bool keepInternalData);
+
+static void recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTarget &tracker, TrackerRecord &record)
 {
 	record.mistrust = tracker.mistrust;
 	if (record.result.isTracked())
@@ -220,14 +215,22 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
 		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
 	}
 	recordTrackerInertial(record, tracker.inertial, pipeline.keepInternalData);
-	return record;
 }
 
 static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTarget &tracker)
 {
-	TrackerRecord &record = createTrackerRecord(frame, tracker.id, tracker.result, tracker.procTimeMS);
+	TrackerRecord record = { tracker.id, tracker.result, tracker.procTimeMS };
 	recordTrackingResult(pipeline, frame, tracker, record);
-	return record;
+	return enterTrackerRecord(frame, std::move(record));
+}
+
+static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const DormantTarget &dormant, TrackingResult result, float procTimeMS)
+{
+	assert(result.isProbe());
+	TrackerRecord record = { dormant.id, result, procTimeMS };
+	if (result.isState(TrackingResult::PROBED_2D) || result.isState(TrackingResult::SEARCHED_2D))
+		recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
+	return enterTrackerRecord(frame, std::move(record));
 }
 
 /**
@@ -325,9 +328,8 @@ static inline void updateTrackerMistrust(PipelineState &pipeline, const std::sha
 	}
 }
 
-static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &tracker, std::shared_ptr<FrameRecord> &frame)
+static void retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &tracker, std::shared_ptr<FrameRecord> &frame)
 {
-	frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
 	TimePoint_t start = sclock::now();
 	std::vector<CameraCalib> calibs(frame->cameras.size());
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(frame->cameras.size());
@@ -357,9 +359,6 @@ static TrackerRecord &retroactivelyTrackFrame(PipelineState &pipeline, TrackedTa
 
 	tracker.result.setFlag(TrackingResult::CATCHING_UP);
 	tracker.procTimeMS = dtMS(start, sclock::now());
-	auto &record = recordTrackingResult(pipeline, frame, tracker);
-	frame->finishedProcessing = true;
-	return record;
 }
 
 static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame,
@@ -396,8 +395,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total
 			|| dormant.target.match2D.error.mean > (useProbe? pipeline.params.detect.probe.errorMax : pipeline.params.detect.search.errorMax))
 		{
-			auto &record = createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D, procTimeMS);
-			recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
+			recordTrackingResult(pipeline, frame, dormant, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D, procTimeMS);
 			frame->finishedProcessing = true;
 			return false;
 		}
@@ -425,7 +423,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	TimePoint_t lastTimestamp = frame->time;
 	std::size_t frameIndex = frame->num;
 
-	{
+	for (int i = 0; i < 2; i++)
+	{ // Do twice to reduce chance of blocking realtime processing for too long
 		auto framesRecord = pipeline.record.frames.getView<false>();
 		if (frameIndex >= framesRecord.endIndex())
 		{ // FrameRecords were cleared while starting detection, abort
@@ -446,7 +445,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-			TrackerRecord &trackRecord = retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
+			retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
+			TrackerRecord &trackRecord = recordTrackingResult(pipeline, *frameRecordIt, tracker);
 			if (!trackRecord.result.isTracked())
 			{ // Don't record as real loss since this is retroactive
 				LOG(LDetection2D, LDarn, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
@@ -490,8 +490,8 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 				LOG(LDetection2D, LDebug, "    Detection - Frame %d: Caught up to a frame already tracked!\n", (int)frameRecordIt.index());
 				return true; // Already tracked, maybe detected by 3D triangulation detection
 			}
-
-			TrackerRecord &trackRecord = retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
+			retroactivelyTrackFrame(pipeline, tracker, *frameRecordIt);
+			TrackerRecord &trackRecord = recordTrackingResult(pipeline, *frameRecordIt, tracker);
 			if (!trackRecord.result.isTracked())
 			{ // Don't record as real loss since this is retroactive
 				LOG(LDetection2D, LDarn, "    Detection - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
@@ -512,9 +512,11 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 
 	// Finally, no more frames to catch up on, register as new tracked target
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
-	assert(erased == 1);
-	pipeline.tracking.trackedTargets.push_back(std::move(tracker));
-	SignalTrackerDetected(tracker.id);
+	if (erased == 1)
+	{
+		pipeline.tracking.trackedTargets.push_back(std::move(tracker));
+		SignalTrackerDetected(tracker.id);
+	}
 	return true;
 }
 
@@ -585,7 +587,7 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 		updateTrackerMistrust(pipeline, *frameRecordIt, frameRecord.trackers.size(),
 			[&](int t, const TargetMatch2D* &match, TrackingResult &result, int &freeObs, int &freeProj) -> float&
 		{
-			auto &record = frameRecord.trackers[t];
+			auto &record = *std::next(frameRecord.trackers.begin(), t);
 			match = &record.match2D;
 			result = record.result;
 			freeObs = record.freeObservations;
@@ -696,22 +698,27 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			return tracker->mistrust;
 		});
 
-		for (auto tracker = track.trackedTargets.begin(); tracker != track.trackedTargets.end();)
+		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (2/5)
+		// Preallocate memory for these trackers + potential future detection
+		frame->trackers.reserve(track.trackedTargets.size() + 1);
+		assert(frame->trackers.empty());
+
+		for (auto &tracker : track.trackedTargets)
 		{
 			auto &mistrust = pipeline.params.track.mistrust;
-			float trackerStartup = std::clamp<float>((float)(frame->num - tracker->state.firstObsFrame) / mistrust.mistrustEasePeriod, 0, 1);
-			bool stillTrusted = tracker->mistrust < std::lerp(mistrust.maxMistrustStart, mistrust.maxMistrust, trackerStartup);
-			if (stillTrusted && tracker->result.isTracked())
+			float trackerStartup = std::clamp<float>((float)(frame->num - tracker.state.firstObsFrame) / mistrust.mistrustEasePeriod, 0, 1);
+			bool stillTrusted = tracker.mistrust < std::lerp(mistrust.maxMistrustStart, mistrust.maxMistrust, trackerStartup);
+			if (stillTrusted && tracker.result.isTracked())
 			{
 				LOG(LTracking, LDebug, "    Found continuation of target %d (name %s) with %d observations and %.3fpx mean error!\n",
-					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+					tracker.id, tracker.label.c_str(), tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 
-				if (tracker->inertial)
-					postCorrectIMU(*tracker, tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
+				if (tracker.inertial)
+					postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
 
 				// Occupy all 2D points of tracked target
-				occupyTargetMatches(tracker->target.match2D);
-				recordTrackingResult(pipeline, frame, *tracker);
+				occupyTargetMatches(tracker.target.match2D);
+				recordTrackingResult(pipeline, frame, tracker);
 
 				/* if (targetMatch2D.error.mean*PixelFactor > 0.5 && IsDebugging())
 				{
@@ -723,25 +730,23 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (pipeline.isSimulationMode)
 				{
 					// Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
-					Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(tracker->id);
-					std::pair<double,double> GTErrorOpt = calculatePoseError(gtPose, tracker->pose.observed);
+					Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(tracker.id);
+					std::pair<double,double> GTErrorOpt = calculatePoseError(gtPose, tracker.pose.observed);
 					LOG(LTracking, LDebug, "    GT Opt Tracking Error: %fmm, %fdeg\n", GTErrorOpt.first, GTErrorOpt.second);
-					std::pair<double,double> GTError = calculatePoseError(gtPose, tracker->pose.filtered);
+					std::pair<double,double> GTError = calculatePoseError(gtPose, tracker.pose.filtered);
 					LOG(LTracking, LDebug, "    GT Tracking Error: %fmm, %fdeg\n", GTError.first, GTError.second);
 					if (GTError.first > 10 || GTError.second > 5)
 						LOG(LTracking, LDarn, "=== WAY too high tracking error!!!\n");
 				}
-
-				tracker++;
 			}
 			else
 			{
 				LOG(LTracking, LDarn, "Failed to track target %d (name %s), got %d observations and %.3fpx mean error!\n",
-					tracker->id, tracker->label.c_str(), tracker->target.match2D.error.samples, tracker->target.match2D.error.mean*PixelFactor);
+					tracker.id, tracker.label.c_str(), tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 
 				if (!stillTrusted)
-					tracker->result.setFlag(TrackingResult::REMOVED);
-				recordTrackingResult(pipeline, frame, *tracker);
+					tracker.result.setFlag(TrackingResult::REMOVED);
+				recordTrackingResult(pipeline, frame, tracker);
 
 				if (IsDebugging())
 				{
@@ -753,12 +758,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (!stillTrusted)
 				{ // Push to dormant targets for re-detection
 					LOG(LTracking, LWarn, "Dedcided to drop tracking of target %d (name %s) after increased mistrust!\n",
-						tracker->id, tracker->label.c_str());
-					track.dormantTargets.emplace_back(std::move(*tracker));
-					tracker = track.trackedTargets.erase(tracker);
+						tracker.id, tracker.label.c_str());
 				}
-				else tracker++;
-				continue;
 			}
 		}
 
@@ -958,7 +959,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				}
 				else
 				{
-					createTrackerRecord(frame, dormant.id, TrackingResult::MATCHED_3D, procTimeMS);
+					recordTrackingResult(pipeline, frame, dormant, TrackingResult::MATCHED_3D, procTimeMS);
 					LOG(LTracking, LDebug, "    No good candidate, best has %d points and %fmm RMSE!\n",
 						(int)candidate.points.size(), std::sqrt(candidate.MSE));
 				}
@@ -989,6 +990,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			else
 				dormantIt++;
 		}
+
+		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
+		// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
+		frame->trackers.reserve(frame->trackers.size() + 1);
 	}
 
 	/* { // Add single markers to track
@@ -1162,8 +1167,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total
 					|| dormant.target.match2D.error.mean > (useProbe? pipeline.params.detect.probe.errorMax : pipeline.params.detect.search.errorMax))
 				{
-					auto &record = createTrackerRecord(frame, dormant.id, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D, procTimeMS);
-					recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
+					recordTrackingResult(pipeline, frame, dormant, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D, procTimeMS);
 				}
 				else
 				{
@@ -1186,6 +1190,23 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	det2 = pclock::now();
+
+	if (trackTargets)
+	{ // Move lost trackedTargets to dormantTargets
+		// This is intended to prevent loosing and re-detecting a target in the same frame
+		// That would overwrite the lost result making it harder to debug and hiding issues
+		// We're also relying on frame->trackers to be thread-safe, and appending is, but overwriting is not
+		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (4/5)
+		for (auto tracker = track.trackedTargets.begin(); tracker != track.trackedTargets.end();)
+		{
+			if (tracker->result.hasFlag(TrackingResult::REMOVED))
+			{
+				track.dormantTargets.emplace_back(std::move(*tracker));
+				tracker = track.trackedTargets.erase(tracker);
+			}
+			else tracker++;
+		}
+	}
 
 	// TODO: Properly integrate triangulation records (2/3)
 	frame->triangulations = track.points3D;

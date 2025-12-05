@@ -246,12 +246,20 @@ struct FrameRecord
 	std::vector<CameraFrameRecord> cameras; // indexed like pipeline.cameras
 
 	// Tracking results
+	// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (1/5)
+	// There are two ways to make this thread-safe without synchronisation primitives (since this is data storage):
+	// - std::list, since iterators remain valid even as the list gets appended to
+	// - std::vector preallocated to cover any additional entries (currently limited to 1 due to async detection)
+	// Since this is data storage, std::vector provides a better memory layout
 	std::vector<TrackerRecord> trackers;
+
 	// TODO: Track individual large markers (4/4)
 	// Either store in tracker record or here in separate records
-	std::vector<Eigen::Vector3f> triangulations;
-	// TODO: Properly integrate triangulation records (1/3)
 
+	// TODO: Properly integrate triangulation records (1/3)
+	std::vector<Eigen::Vector3f> triangulations;
+
+	// This is mostly for visualisation
 	std::vector<Cluster3D> cluster2DTri;
 
 	// TODO: Put remainingPoints2D and other intermediate results in here?

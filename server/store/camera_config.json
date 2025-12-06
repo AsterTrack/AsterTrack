@@ -1,21 +1,21 @@
 {
-    "cameras": [
-    ],
-    "configurations": [
-        {
-            "absThreshold": 100,
-            "edgeThreshold": 10,
-            "enableStrobe": true,
-            "filter": 0,
-            "framerate": 120,
-            "gain": 2,
-            "label": "",
-            "resolutionX": 1280,
-            "resolutionY": 800,
-			"shutterSpeed": 20,
-			"strobeLength": 55,
-            "strobeOffset": 0,
-            "synchronised": true
-        }
-    ]
+	"cameras": [
+	],
+	"configurations": [
+		{
+			"absThreshold": 100,
+			"edgeThreshold": 10,
+			"enableStrobe": true,
+			"filter": 0,
+			"framerate": 120,
+			"gain": 2,
+			"label": "",
+			"resolutionX": 1280,
+			"resolutionY": 800,
+			"shutterSpeed": 39,
+			"strobeLength": 112,
+			"strobeOffset": 0,
+			"synchronised": true
+		}
+	]
 }

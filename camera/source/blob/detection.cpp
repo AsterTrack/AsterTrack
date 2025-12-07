@@ -204,7 +204,7 @@ void performBlobDetectionRegionsFetch(uint32_t *mask)
 			}
 		}
 #ifdef BLOB_TRACE
-		printf("  Added region %d (%d, %d) with top %d and left %d\n", pos, x, y, t, l)
+		printf("  Added region %d (%d, %d) with top %d and left %d\n", bgIndex, x, y, t, l);
 #endif
 		blobTiles.push_back({ x, y, t, l, MaxTileCount, MaxTileCount, *ptr });
 	};
@@ -500,7 +500,7 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 			bounds = cluster.bounds.cast<float>();
 			bounds.extendBy(bounds.extends()/2.0f * (s - 1.0f));
 #else // Use circle approximation
-			circle = cluster.centroid;
+			circle = cluster.centroid.homogeneous();
 			circle.z() = std::sqrt((float)cluster.ptCnt / M_PI) * s;
 #endif
 		};
@@ -576,10 +576,8 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 		// Offset blob coordinates by mask offset
 		cluster.centroid.head<2>() += blobOffset.cast<float>();
 #ifdef CALCULATE_BOUNDS_EARLY
-		cluster.bounds.minX += blobOffset.x();
-		cluster.bounds.minY += blobOffset.y();
-		cluster.bounds.maxX += blobOffset.x();
-		cluster.bounds.maxY += blobOffset.y();
+		cluster.bounds.min += blobOffset.cast<uint16_t>();
+		cluster.bounds.max += blobOffset.cast<uint16_t>();
 #endif
 
 		// Approximate blob size if it was a circle
@@ -643,7 +641,7 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 				}
 
 #ifndef CALCULATE_BOUNDS_EARLY
-				cluster->bounds.include(Bounds2<uint16_t>(dotX, dotY, dotX+1, dotY+1));
+				cluster->bounds.include(Bounds2<uint16_t>(dot.x(), dot.y(), dot.x()+1, dot.y()+1));
 #endif
 			}
 		}
@@ -651,7 +649,7 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 #endif
 
 #ifdef BLOB_DEBUG
-	printf("Found %d blobs from %d initial blobs!\n", blobs.size(), blobTemp.size());
+	printf("Found %d blobs from %d initial blobs!\n", blobs.size(), tempBlobs.size());
 #endif
 }
 

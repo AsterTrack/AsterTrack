@@ -17,7 +17,7 @@ set(LINK_FLAGS_RELEASE "")
 set(CMAKE_C_FLAGS "${SYMBOLS_FLAGS} -Werror -Wall -std=gnu17")
 set(CMAKE_C_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer ${SAN}")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
-string(CONCAT CMAKE_CXX_FLAGS "${SYMBOLS_FLAGS} -std=c++17"
+string(CONCAT CMAKE_CXX_FLAGS "${SYMBOLS_FLAGS} -std=c++20"
 	" -Wall -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow"
 	" -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function")
 set(CMAKE_CXX_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer ${SAN}")

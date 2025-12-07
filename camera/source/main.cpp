@@ -1673,7 +1673,7 @@ int main(int argc, char **argv)
 				for (int i = 0; i < clusters.size(); i++)
 				{
 					Cluster &blob = clusters[i];
-					int size = (blob.bounds.maxX-blob.bounds.minX)*(blob.bounds.maxY-blob.bounds.minY);
+					int size = blob.bounds.size();
 					if (size < 1000 && size > maxSz)
 					{
 						maxInd = i;
@@ -1708,10 +1708,10 @@ int main(int argc, char **argv)
 
 					// Write metadata
 					uint16_t *metaData = (uint16_t*)packetBuffer.data();
-					metaData[0] = bounds.minX;
-					metaData[1] = bounds.minY;
-					metaData[2] = bounds.maxX;
-					metaData[3] = bounds.maxY;
+					metaData[0] = bounds.min.x();
+					metaData[1] = bounds.min.y();
+					metaData[2] = bounds.max.x();
+					metaData[3] = bounds.max.y();
 					metaData[4] = (uint16_t)(((double)blob.centroid.x()+0.5) * 65536 / state.camera.width);
 					metaData[5] = (uint16_t)(((double)blob.centroid.y()+0.5) * 65536 / state.camera.height);
 					metaData[6] = (uint16_t)((double)blob.size * 65536 / 256);
@@ -1722,7 +1722,7 @@ int main(int argc, char **argv)
 					for (int y = 0; y < extends.y(); y++)
 					{
 						int imgPos = y*extends.x();
-						int ptrPos = (bounds.minY+y)*srcStride + bounds.minX;
+						int ptrPos = (bounds.min.y()+y)*srcStride + bounds.min.x();
 						comm_write(comms, packet, curFrame->memory + ptrPos, extends.x());
 					}
 					
@@ -1731,7 +1731,7 @@ int main(int argc, char **argv)
 					memset(bitBuf, 0, bitSize);
 					for (int i = 0; i < blob.dots.size(); i++)
 					{
-						Vector2<uint16_t> pt = blob.dots[i] - bounds.min();
+						Vector2<uint16_t> pt = blob.dots[i] - bounds.min;
 						int pos = pt.y()*extends.x() + pt.x();
 						bitBuf[pos/8] |= 1 << (pos % 8);
 					}
@@ -2079,10 +2079,10 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 	//*(uint32_t*)&frameImage.header[8] = blockSize;
 	*(uint8_t*)&largePacket.header[12] = stream.jpegQuality;
 	*(uint8_t*)&largePacket.header[13] = stream.subsampling;
-	*(uint16_t*)&largePacket.header[14] = encBounds.minX;
-	*(uint16_t*)&largePacket.header[16] = encBounds.minY;
-	*(uint16_t*)&largePacket.header[18] = encBounds.maxX;
-	*(uint16_t*)&largePacket.header[20] = encBounds.maxY;
+	*(uint16_t*)&largePacket.header[14] = encBounds.min.x();
+	*(uint16_t*)&largePacket.header[16] = encBounds.min.y();
+	*(uint16_t*)&largePacket.header[18] = encBounds.max.x();
+	*(uint16_t*)&largePacket.header[20] = encBounds.max.y();
 	// Block data in header is filled in as data is sent	
 
 	/* if (state.server.ready && state.uart.ready)

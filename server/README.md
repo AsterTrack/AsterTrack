@@ -98,17 +98,17 @@ Run task "Build" or "Build (clangd)" if you use the clangd extension. Then selec
 
 ### Linux Permissions
 To make sure the program has access to the controller usb device (both for tracking and for flashing):
-- For the firmware: `echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="16c0", ATTR{idProduct}=="05dc", MODE="0660", GROUP="plugdev"' | sudo tee -a /etc/udev/rules.d/00-usb-permissions.rules`
-- For the bootloader: `echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="4348", ATTR{idProduct}=="55e0", MODE="0660", GROUP="plugdev"' | sudo tee -a /etc/udev/rules.d/00-usb-permissions.rules`
-- `sudo udevadm control --reload-rules`
+- For the firmware: `echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="16c0", ATTR{idProduct}=="05dc", MODE="0660", GROUP="sysplugdev"' | sudo tee -a /etc/udev/rules.d/40-astertrack.rules`
+- For the bootloader: `echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="4348", ATTR{idProduct}=="55e0", MODE="0660", GROUP="sysplugdev"' | sudo tee -a /etc/udev/rules.d/40-astertrack.rules`
+- `sudo udevadm control --reload-rules && sudo udevadm trigger`
 
-For this to work, verify that you are already part of the plugdev group:
-`getent group | grep plugdev`
+For this to work, verify that you are already part of the sysplugdev group:
+`groups`
 
 If not, make sure such a group exists and join it:
-- `sudo groupadd plugdev`
-- `sudo usermod -a -G plugdev $USER`
-- and then restart (or log out and back in)
+- `sudo groupadd --system sysplugdev`
+- `sudo usermod -a -G sysplugdev $USER`
+- then restart and verify you are now part of the group
 
 Alternatively, execute the program with sudo (not recommended)
 

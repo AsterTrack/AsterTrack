@@ -19,22 +19,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef COMM_SERVER_H
 #define COMM_SERVER_H
 
-#include "comm/protocol_stream.hpp"
+#include "util/util.hpp"
 
 #include <cstdint>
-#include <vector>
 #include <string>
-#include <atomic>
-#include <mutex>
 #include <thread>
-#include <list>
-#include <memory> // shared_ptr
+#include "util/memory.hpp" // opaque_ptr
 
 /* Structures */
 
-struct ServerCommState;
-struct TrackingCameraCallbacks;
-struct ClientCommState;
+// Forward-declared opaque structs
+struct ClientCommState; // comm/wireless_server_client.hpp
+struct PacketHeader; // comm/packet.hpp
 
 struct TrackingCameraCallbacks
 {
@@ -51,48 +47,11 @@ struct ServerCommState
 	std::atomic<bool> threadRun;
 	std::thread *thread;
 
-	std::list<ClientCommState> clients;
+	std::vector<opaque_ptr<ClientCommState>> clients;
 
 	int socket = -1;
 
 	TrackingCameraCallbacks callbacks;
-};
-
-struct ClientCommState 
-{
-	std::thread *thread;
-
-	int socket = -1;
-	std::mutex writeAccess;
-	ProtocolState protocol = {};
-
-	TrackingCameraCallbacks callbacks;
-
-	std::atomic<bool> enabled = { false }, started = { false }, ready = { false };
-	bool rsp_id = false, rsp_ack = false;
-	int ident_timeout = 0, ident_interval = 0;
-	IdentPacket ownIdent;
-	IdentPacket expIdent;
-	IdentPacket otherIdent;
-
-	ClientCommState() = default;
-	ClientCommState(ClientCommState &&other) noexcept
-	{
-		*this = std::move(other);
-	}
-	ClientCommState& operator=(ClientCommState &&other) noexcept
-	{
-		thread = other.thread;
-		other.thread = nullptr;
-		enabled = other.enabled.load();
-		started = other.started.load();
-		ready = other.ready.load();
-		socket = other.socket;
-		protocol = other.protocol;
-		callbacks = other.callbacks;
-		// TODO: Add other members
-		return *this;
-	}
 };
 
 
@@ -101,9 +60,5 @@ struct ClientCommState
 int ServerInit(std::string port);
 
 void ServerThread(ServerCommState *serverState);
-
-bool comm_writeHeader(ClientCommState &client, PacketTag tag, uint16_t packetLength);
-bool comm_write(ClientCommState &client, const uint8_t *data, uint16_t length);
-void comm_abort(ClientCommState &client);
 
 #endif // COMM_SERVER_H

@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "camera_firmware.hpp"
 #include "tracking_camera.hpp"
 #include "tracking_controller.hpp"
+#include "comm/packet.hpp"
 #include "comm/usb.hpp"
 #include "ui/shared.hpp" // Signals
 #include "util/log.hpp"

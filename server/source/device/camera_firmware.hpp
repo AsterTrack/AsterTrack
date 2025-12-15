@@ -19,12 +19,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef CAMERA_FIRMWARE_H
 #define CAMERA_FIRMWARE_H
 
-#include "comm/packet.hpp"
 #include "util/util.hpp"
 #include "util/synchronised.hpp"
 
 #include <vector>
 
+// Forward-declared opaque structs
+enum FirmwareStatus : uint8_t; // comm/packet.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
 
 struct CameraFirmwareUpdateStatus

@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define TRACKING_CAMERA_H
 
 #include "comm/streaming.hpp" // SyncGroup, FrameID, TruncFrameID
-#include "comm/packet.hpp" // StatPacket
+#include "comm/packet.hpp" // StatPacket, TrCamMode, ...
 #include "pipeline/record.hpp"
 #include "camera_firmware.hpp"
 
@@ -28,14 +28,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/synchronised.hpp"
 #include "util/util.hpp" // TimePoint_t
 
-#include <atomic>
 #include <vector>
 
 // Forward-declared opaque structs
 struct ServerState; // server.hpp
 struct TrackingControllerState; // device/tracking_controller.hpp
 struct CameraPipeline; // pipeline/pipeline.hpp
-struct ClientCommState; // comm/server.hpp
+struct ClientCommState; // comm/wireless_server_client.hpp
 
 struct ImageRequest
 {

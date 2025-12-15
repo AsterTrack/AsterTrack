@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "config.hpp" // Config
 #include "pipeline/pipeline.hpp" // Main processing pipeline
 #include "comm/streaming.hpp" // Streaming blob data in
-#include "comm/server.hpp"
+#include "comm/wireless_server.hpp"
 #include "imu/device.hpp"
 #include "recording.hpp"
 

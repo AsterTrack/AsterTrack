@@ -19,7 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp" // sclock, TimePoint_t
 #include "util/log.hpp"
 
-#include "comm/server.hpp"
+#include "comm/wireless_server.hpp"
+#include "comm/wireless_server_client.hpp"
 #include "comm/socket.hpp"
 #include "comm/protocol_stream.hpp"
 
@@ -48,6 +49,9 @@ static uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg
 #define COMM_PING_INTERVAL 1000
 
 void ClientThread(ClientCommState *clientState);
+
+template<> void OpaqueDeleter<ClientCommState>::operator()(ClientCommState* ptr) const
+{ delete ptr; }
 
 int socket_server_init(const char *port, struct sockaddr_storage* addr)
 {
@@ -202,29 +206,29 @@ void ServerThread(ServerCommState *serverState)
 #endif
 		
 		// Start client thread
-		server.clients.push_back({});
-		ClientCommState &comm = server.clients.back();
-		comm.socket = socket;
-		comm.callbacks = server.callbacks;
+		auto comm = make_opaque<ClientCommState>();
+		comm->socket = socket;
+		comm->callbacks = server.callbacks;
 		VersionDesc version(0, 0, 0); // TODO: Add proper version, pass on from ONE compilation unit (uses TIME!)
-		comm.ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, version);
-		comm.expIdent.device = DEVICE_TRCAM;
-		comm.enabled = true;
-		comm.thread = new std::thread(ClientThread, &comm);
+		comm->ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, version);
+		comm->expIdent.device = DEVICE_TRCAM;
+		comm->enabled = true;
+		comm->thread = new std::thread(ClientThread, comm.get());
+		server.clients.push_back(std::move(comm));
 	}
 
 	LOG(LServer, LDebug, "Server threads closing...\n");
 
 	// Stop client comm
-	for (ClientCommState &client : server.clients)
-		client.enabled = false;
-	for (ClientCommState &client : server.clients)
+	for (auto &client : server.clients)
+		client->enabled = false;
+	for (auto &client : server.clients)
 	{
-		if (client.thread->joinable())
-			client.thread->join();
+		if (client->thread->joinable())
+			client->thread->join();
 	}
-	for (ClientCommState &client : server.clients)
-		socket_close(client.socket);
+	for (auto &client : server.clients)
+		socket_close(client->socket);
 	server.clients.clear();
 	socket_close(server.socket);
 	socket_cleanup();

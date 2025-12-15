@@ -27,6 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "device/tracking_camera.hpp"
 #include "device/parsing.hpp"
 
+#include "comm/wireless_server_client.hpp"
 #include "comm/usb.hpp" // USB Device comm
 
 #include "pipeline/pipeline.hpp"

@@ -30,7 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "dbscan/dbscan.hpp" // For focusing on clusters
 #include "emulation/integration.hpp" // Emulating TrackingCamera BlobDetection on host for visualisation
-#include "comm/usb.hpp" // "Start Streaming" button
+#include "comm/wireless_server_client.hpp" // Opaque client
 #include "device/parsing.hpp" // decompressCameraImageRecord
 #include "device/tracking_camera.hpp"
 #include "device/tracking_controller.hpp"

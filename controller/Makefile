@@ -34,7 +34,7 @@ LOG_FLAGS += -DKERR_LOG
 # Temporary log during debugging
 #LOG_FLAGS += -DTEMP_LOG
 # COMMunication Log - needs WARN_LOG as well
-#LOG_FLAGS += -DCOMM_LOG
+LOG_FLAGS += -DCOMM_LOG
 # Command Debug Log
 #LOG_FLAGS += -DCMDD_LOG
 # USB Driver Debug Log

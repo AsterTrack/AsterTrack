@@ -117,10 +117,10 @@ static inline void writeUARTPacketHeader(UARTPacketRef *packet, struct PacketHea
 	calculateHeaderChecksum(packet->header, packet->headerChecksum);
 }
 
-static inline void writeUARTPacketEnd(UARTPacketRef *packet, uint16_t dataLength)
+static inline void writeUARTPacketEnd(UARTPacketRef *packet, uint16_t endPos)
 {
 	for (int i = 0; i < UART_TRAILING_SEND; i++)
-		packet->data[dataLength+PACKET_CHECKSUM_SIZE+i] = UART_TRAILING_BYTE;
+		packet->data[endPos+i] = UART_TRAILING_BYTE;
 }
 
 static inline void finaliseDirectUARTPacket(void *packet, struct PacketHeader header)
@@ -128,7 +128,7 @@ static inline void finaliseDirectUARTPacket(void *packet, struct PacketHeader he
 	UARTPacketRef *ref = (UARTPacketRef*)packet;
 	writeUARTPacketHeader(ref, header);
 	calculateDirectPacketChecksum(ref->data, header.length, ref->data+header.length);
-	writeUARTPacketEnd(ref, header.length);
+	writeUARTPacketEnd(ref, header.length+PACKET_CHECKSUM_SIZE);
 }
 
 #endif // UART_PROTOCOL_H

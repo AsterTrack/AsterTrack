@@ -31,7 +31,8 @@ struct ProtocolState
 	bool needsErrorScanning = false;
 	unsigned int tail; // Newest byte in buffer
 	unsigned int head; // First unhandled byte or header of current packet
-	unsigned int pos; // First unparsed byte - first data byte of current packet or handled block thereof
+	unsigned int blockPos; // First unparsed byte - first data byte of current packet or handled block thereof
+	unsigned int blockLen; // Length of currently unhandled block
 	unsigned int mrk; // First byte not checked for parity/framing errors
 	bool isHeader;
 	bool isCmd; // If we are currently in a packet - head and pos point to header and data respectively
@@ -39,8 +40,8 @@ struct ProtocolState
 	bool cmdACK;
 	bool validChecksum;
 	PacketHeader header;
-	unsigned int cmdSz;
-	unsigned int cmdPos;
+	unsigned int cmdSz; // Data size of the current packet, same as header.length
+	unsigned int cmdPos; // First data byte of current packet (fixed offset after head when in packet)
 	bool cmdSkip; // Ignore current packet. Requires call to fetchCmd/handleCmdBlock afer rcvCmd returns true to clear the flag
 	bool cmdEnd; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error
 	bool cmdErr; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error

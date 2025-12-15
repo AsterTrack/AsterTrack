@@ -537,12 +537,16 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
 			UARTPacketRef *packet = allocateUARTPacket(header.length);
 			packet->data[0] = TRCAM_STANDBY;
+		#if PACKET_CHECKSUM_SIZE == 4 // Precalculated CRC32
 			packet->data[1] = 0xD2;
 			packet->data[2] = 0x02;
 			packet->data[3] = 0xEF;
 			packet->data[4] = 0x8D;
+		#else
+			#error "Change precalculated CRC32!"
+		#endif
 			writeUARTPacketHeader(packet, header);
-			writeUARTPacketEnd(packet, header.length);
+			writeUARTPacketEnd(packet, header.length + PACKET_CHECKSUM_SIZE);
 			for (int i = 0; i < UART_PORT_COUNT; i++)
 			{
 				if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
@@ -1136,15 +1140,15 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Request to send a packet to cameras
 		CMDD_STR("+SendPkt:");
 		CMDD_CHARR(INT99_TO_CHARR(req->wValue), ':', INT99_TO_CHARR(req->wLength));
-		uint16_t packetLen = req->wLength - PACKET_CHECKSUM_SIZE;
+		uint16_t packetLen = req->wLength == 0? 0 : (req->wLength - PACKET_CHECKSUM_SIZE);
 		UARTPacketRef *packet = allocateUARTPacket(packetLen);
 		writeUARTPacketHeader(packet, (struct PacketHeader){ .tag = req->wValue, .length = packetLen });
-		memcpy(packet->data, req->data, packetLen + PACKET_CHECKSUM_SIZE); // Copy data and checksum
-		writeUARTPacketEnd(packet, packetLen);
+		memcpy(packet->data, req->data, req->wLength); // Copy data and checksum
+		writeUARTPacketEnd(packet, req->wLength);
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			if (!((req->wIndex >> i)&1) || (camStates[i].comm & CommReady) != CommReady) continue;
-			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND+packetLen, false);
+			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+packetLen, false);
 			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
 				camStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;
@@ -1389,7 +1393,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		COMM_STR("!StrayIdent:");
 		COMM_CHARR(INT9_TO_CHARR(port));
 		COMM_STR("+Reset");
-		return uartd_reset_nak;
+		return uartd_reset;
 	}
 	else
 	{ // Shouldn't happen

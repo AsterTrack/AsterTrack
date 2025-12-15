@@ -32,7 +32,7 @@ void proto_clear(ProtocolState &comm)
 	comm.cmdErr = false;
 	comm.tail = 0;
 	comm.head = 0;
-	comm.pos = 0;
+	comm.blockPos = 0;
 	comm.mrk = 0;
 }
 
@@ -44,7 +44,7 @@ void proto_clean(ProtocolState &comm, bool move)
 		comm.cmdSkip = false;
 		comm.tail = 0;
 		comm.head = 0;
-		comm.pos = 0;
+		comm.blockPos = 0;
 		comm.mrk = 0;
 	}
 	else if (rem > 0 && comm.head > 10 && move)
@@ -52,8 +52,8 @@ void proto_clean(ProtocolState &comm, bool move)
 		memmove(comm.rcvBuf.data(), comm.rcvBuf.data()+comm.head, rem);
 		comm.cmdSkip = false;
 		comm.tail = rem;
-		if (comm.pos <= comm.head) comm.pos = 0;
-		else comm.pos -= comm.head;
+		if (comm.blockPos <= comm.head) comm.blockPos = 0;
+		else comm.blockPos -= comm.head;
 		if (comm.mrk <= comm.head) comm.mrk = 0;
 		else comm.mrk -= comm.head;
 		comm.head = 0;
@@ -85,7 +85,8 @@ static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen
 			if (d+1 >= dataLen)
 			{ // Marked byte inaccessible
 				printf("Received marked byte cut off by data buffer!\n");
-				parseLen = 0; // Essentially delete buffer
+				dataLen = d;
+				parseLen = p;
 				return true;
 			}
 			if (data[d+1] == 0xFF)
@@ -98,7 +99,8 @@ static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen
 				if (d+2 >= dataLen)
 				{ // Marked byte inaccessible
 					printf("Received erroneous marked byte cut off by data buffer!\n");
-					parseLen = 0; // Essentially delete buffer
+					dataLen = d;
+					parseLen = p;
 					return true;
 				}
 				printf("Detected parity/frame error!\n");
@@ -129,17 +131,24 @@ static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen
 static bool scanUntil(ProtocolState &comm, uint32_t target)
 {
 	if (!comm.needsErrorScanning)
-		return target < comm.tail;
+	{
+		if (target <= comm.tail)
+		{ // Done
+			comm.mrk = target;
+			return true;
+		}
+		comm.mrk = comm.tail;
+		return false;
+	}
 	if (comm.mrk < comm.head) comm.mrk = comm.head;
-	if (target < comm.mrk) return true;
+	if (target <= comm.mrk) return true;
 	unsigned int dataLen = comm.tail-comm.mrk, parseLen = target - comm.mrk;
 	if (scanMarkedBlock(comm.rcvBuf.data()+comm.mrk, dataLen, parseLen))
 	{ // Read length had parity/frame error
 		skipToEnd(comm, true);
 		// Consume parsed bytes up until error
-		comm.head = dataLen;
-		comm.mrk = dataLen;
-		comm.pos = dataLen;
+		comm.mrk += dataLen;
+		comm.head = comm.mrk;
 		return false;
 	}
 	// Move yet unscanned, marked buffer forward (removing space used for marking)
@@ -225,50 +234,58 @@ begin:
 		goto begin; // Header erroneous, skip to end
 	}
 	comm.header = parsePacketHeader(comm.rcvBuf.data() + comm.head);
-	unsigned int targetBufferSize = (UART_PACKET_OVERHEAD_SEND+comm.header.length)*3/2;
-	if (targetBufferSize > 10000)
-	{
-		skipToEnd(comm, true);
-		goto begin; // Header erroneous, skip to end
+	if (comm.rcvBuf.size() < comm.head+UART_PACKET_OVERHEAD_SEND+comm.header.length)
+	{ // Move data to the beginning
+		proto_clean(comm, true);
+		if (comm.rcvBuf.size() < UART_PACKET_OVERHEAD_SEND+comm.header.length)
+		{ // Increase buffer size for long packets, accounting for marked bytes and final checksum
+			unsigned int targetBufferSize = (UART_PACKET_OVERHEAD_SEND+comm.header.length)*3/2;
+			comm.rcvBuf.resize(targetBufferSize);
+		}
 	}
-	if (comm.rcvBuf.size() < targetBufferSize)
-	{ // Increase buffer size for long packets, accounting for marked bytes and final checksum
-		comm.rcvBuf.resize(targetBufferSize);
-	}
-	comm.pos = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE;
+	comm.cmdPos = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE;
 	comm.cmdSz = comm.header.length;
+	// Skip packet if header is not validated
 	comm.isCmd = true;
-	comm.cmdSkip = true; // If header not validated, will skip
+	comm.cmdSkip = true;
+	// Initialise block data
+	comm.blockPos = comm.cmdPos;
+	comm.blockLen = 0;
 	return true;
 }
 
 bool proto_fetchCmd(ProtocolState &comm)
 { // Command ID is valid, wait until it's received in full
 	comm.cmdSkip = false;
-	unsigned int end = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE+comm.cmdSz+PACKET_CHECKSUM_SIZE;
-	if (scanUntil(comm, end+UART_TRAILING_RECV))
-	{ // Received in full, comm.mrk is now at end
-		comm.cmdPos = comm.pos; // Save data pos
-		comm.pos = end; // Advance to after command
-		comm.head = end; // Also advance to after command
+	unsigned int endData = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE+comm.cmdSz;
+	unsigned int endPacket = comm.cmdSz > 0? endData+PACKET_CHECKSUM_SIZE : endData;
+	bool done = scanUntil(comm, endPacket+UART_TRAILING_RECV);
+	// Update block data
+	comm.blockPos += comm.blockLen;
+	comm.blockLen = std::min(comm.mrk, endData) - comm.blockPos;
+	if (done)
+	{ // Received in full
+		comm.head = endPacket; // Advance to after command
 		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, comm.head, comm.rcvBuf[comm.head-1], comm.rcvBuf[comm.head], comm.rcvBuf[comm.head+1]);
 		skipToEnd(comm, false);
 
-		// Verify packet checksum
-		uint8_t *packetChecksum = comm.rcvBuf.data()+comm.cmdPos+comm.cmdSz;
-		uint8_t checksum[PACKET_CHECKSUM_SIZE];
-		if (comm.header.tag < PACKET_HOST_COMM)
-			calculateDirectPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
-		else
-			calculateForwardPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
 		comm.validChecksum = true;
-		for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
-		{
-			if (checksum[i] != packetChecksum[i])
+		if (comm.cmdSz > 0)
+		{ // Verify packet checksum
+			uint8_t *packetChecksum = comm.rcvBuf.data()+comm.cmdPos+comm.cmdSz;
+			uint8_t checksum[PACKET_CHECKSUM_SIZE];
+			if (comm.header.tag < PACKET_HOST_COMM)
+				calculateDirectPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
+			else
+				calculateForwardPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
+			for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 			{
-				printf("Fully received packet %d of size %d but checksum does not match!\n", comm.header.tag, comm.header.length);
-				comm.validChecksum = false;
-				break;
+				if (checksum[i] != packetChecksum[i])
+				{
+					printf("Fully received packet %d of size %d but checksum does not match!\n", comm.header.tag, comm.header.length);
+					comm.validChecksum = false;
+					break;
+				}
 			}
 		}
 		return true;

@@ -212,6 +212,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 			UARTTR_STR("+D");
 			state->lastComm = start;
 			TimePoint now = GetTimePoint();
+			// NOTE: inData implies state->header.length > 0, so we know we'll get PACKET_CHECKSUM_SIZE
 			uint16_t missingSize = state->header.length + PACKET_CHECKSUM_SIZE - state->dataPos;
 			uint16_t blockSize = end - pos;
 			bool complete = blockSize >= missingSize;
@@ -280,13 +281,13 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 				resp = uartd_handle_header(port);
 				if (resp == uartd_reset)
 				{ // Bad state, reset port
-					WARN_STR("!UartNaked");
+					WARN_STR("!UartHeaderReset");
 					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
 					break;
 				}
 				else if (resp == uartd_reset_nak)
 				{ // Bad state, reset port
-					WARN_STR("!UartHeaderBad");
+					WARN_STR("!UartHeaderReject");
 					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
 					break;
 				}

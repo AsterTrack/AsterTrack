@@ -583,7 +583,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (!camera->sync && (packet.header.tag == PACKET_FRAME_SIGNAL || packet.header.isStreamPacket()))
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LTrace, "Camera %d (Port %d) send a streaming packet but was not set up for streaming!\n", camera->id, port);
+				LOG(LStreaming, LTrace, "Camera %d (Port %d) sent a streaming packet but was not set up for streaming!\n", camera->id, port);
 				return;
 			}
 
@@ -677,6 +677,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data,
 	int length, void *userState, std::shared_ptr<void> &userDevice, bool success)
 {
+	// TODO: Do shared_ptr to ensure it's still here - it may not be
 	TrackingControllerState &controller = *static_cast<TrackingControllerState*>(userDevice.get());
 	ServerState &state = *(ServerState *)userState;
 	auto clearControlRequest = [&](TrackingControllerState::USBRequest &request, const char* label)

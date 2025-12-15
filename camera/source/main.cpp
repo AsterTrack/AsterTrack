@@ -27,6 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <fstream>
 #include <execinfo.h>
 #include <signal.h>
+#include <filesystem>
 
 // Console and UART
 #include <termios.h>
@@ -252,7 +253,15 @@ int main(int argc, char **argv)
 
 	// Should be read from permanent, unique file in shell
 	if (state.id == 0)
-		state.id = rand();
+	{
+		if (std::filesystem::exists("/mnt/mmcblk0p2/config/id"))
+		{
+			std::ifstream fileBuffer("/mnt/mmcblk0p2/config/id", std::ios::in | std::ios::binary);
+			fileBuffer.read((char*)&state.id, 4);
+			printf("Read ID %d from config!\n", state.id);
+		}
+		else state.id = rand();
+	}
 
 	// Check MCU presence
 	bool hasMCU = false;

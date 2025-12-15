@@ -182,9 +182,6 @@ int main (void)
 	{ // Init AsterTrack server
 		if (!ServerInit(StateInstance))
 			return -1;
-		atexit([](){
-			ServerExit(StateInstance);
-		});
 	}
 
 	LOGC(LInfo, "=======================\n");

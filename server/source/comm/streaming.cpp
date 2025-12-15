@@ -331,14 +331,16 @@ SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameI
 	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
 	if (!frame)
 	{ // Missed SOF
-		LOG(LStreaming, LDarn, "Camera received streaming packet announcement for frame %d but frame SOF wasn't registered yet!\n", EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LDarn, "Camera %d received streaming packet announcement for frame %d but frame SOF wasn't registered yet!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (frame->cameras[index].announced)
 	{ // Duplicate packet from past frame?
-		LOG(LStreaming, LWarn, "Camera announced packet for frame %d (SOF %fms ago) but it was already announced and frame is %s processed!\n",
-			frameID, dtMS(frame->SOF, sclock::now()), frame->finallyProcessed? "finally" : (frame->previouslyProcessed? "partially" : "not"));
+		LOG(LStreaming, LWarn, "Camera %d announced packet for frame %d (SOF %fms ago) but it was already announced and frame is %s processed!\n",
+			sync.cameras[index]->id, frameID, dtMS(frame->SOF, sclock::now()),
+			frame->finallyProcessed? "finally" : (frame->previouslyProcessed? "partially" : "not"));
 		return nullptr;
 	}
 	frame->expecting++;
@@ -355,13 +357,15 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
 	if (!frame)
 	{ // Missed SOF
-		LOG(LStreaming, LDarn, "Camera received streaming packet header for frame %d but frame SOF wasn't registered yet!\n", EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LDarn, "Camera %d received streaming packet header for frame %d but frame SOF wasn't registered yet!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Missed Announcement
-		LOG(LStreaming, LDarn, "Camera received streaming packet header for frame %d but it wasn't announced!\n", frame->ID);
+		LOG(LStreaming, LDarn, "Camera %d received streaming packet header for frame %d but it wasn't announced!\n",
+			sync.cameras[index]->id, frame->ID);
 		// The stream processing might not be waiting for this frame, but we may still process it
 		// Just because the announcement packet had e.g. a wrong checksum, doesn't make the streaming data invalid
 		//return nullptr;
@@ -370,7 +374,8 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 	}
 	if (frame->cameras[index].receiving)
 	{ // Duplicate packet from past frame?
-		LOG(LStreaming, LWarn, "Camera received streaming packet header for frame %d but it was already receiving a packet!\n", frame->ID);
+		LOG(LStreaming, LWarn, "Camera %d received streaming packet header for frame %d but it was already receiving a packet!\n",
+			sync.cameras[index]->id, frame->ID);
 		return nullptr;
 	}
 	frame->cameras[index].receiving = true;
@@ -399,18 +404,21 @@ SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameI
 	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
 	if (!frame)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d(%d) but frame wasn't recorded at all!\n", EstimateFullFrameID(sync, frameID), frameID);
+		LOG(LStreaming, LWarn, "Camera %d, received complete streaming packet for frame %d(%d) but frame wasn't recorded at all!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera received streaming packet block for frame %d(%d) but it wasn't announced and header wasn't received!\n", frame->ID, frameID);
+		LOG(LStreaming, LWarn, "Camera %d, received streaming packet block for frame %d(%d) but it wasn't announced and header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID, frameID);
 		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera received streaming packet block for frame %d(%d) but header wasn't received!\n", frame->ID, frameID);
+		LOG(LStreaming, LWarn, "Camera %d, received streaming packet block for frame %d(%d) but header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID, frameID);
 		return nullptr;
 	}
 	if (frame->finallyProcessed)
@@ -433,18 +441,21 @@ SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrame
 	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
 	if (!frame)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera received complete streaming packet for frame %d but frame wasn't recorded at all!\n", EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LError, "Camera %d, received complete streaming packet for frame %d but frame wasn't recorded at all!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d but it wasn't announced and header wasn't received!\n", frame->ID);
+		LOG(LStreaming, LWarn, "Camera %d, received complete streaming packet for frame %d but it wasn't announced and header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID);
 		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera received complete streaming packet for frame %d but header wasn't received!\n", frame->ID);
+		LOG(LStreaming, LWarn, "Camera %d, received complete streaming packet for frame %d but header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID);
 		return nullptr;
 	}
 	frame->cameras[index].complete = true;

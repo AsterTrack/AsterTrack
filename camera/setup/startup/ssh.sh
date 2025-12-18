@@ -33,7 +33,7 @@ for ALG in $ALGORITHMS; do
 	cp $KEY.pub $SSH_DIR
 done
 
-if [[ -f /mnt/mmcblk0p2/config/wireless_autoconnect ]]; then
+if [[ -f /mnt/mmcblk0p2/config/wireless_autoconnect && -f /mnt/mmcblk0p2/config/enable_ssh ]]; then
 	# Start OpenSSH
 	/usr/local/etc/init.d/openssh start
 fi

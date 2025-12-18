@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <fcntl.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 //#include <netinet/tcp.h>
 //#include <limits.h>
@@ -37,6 +38,7 @@ struct ServerConnection
 void *server_init(std::string host, std::string port)
 {
 	ServerConnection *socket = new ServerConnection();
+	socket->sock = -1;
 	socket->host = host;
 	socket->port = port;
 	return socket;
@@ -52,23 +54,21 @@ void server_deinit(void *port)
 int socket_client_init(const char *server, const char *port, struct sockaddr_storage* addr)
 {
 	struct addrinfo hints = {};
-	hints.ai_family = AF_INET; // tinycore by default does not support IPv6, though support could be added
+	hints.ai_family = AF_UNSPEC; // tinycore by default does not support IPv6, though support could be added
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
-	hints.ai_flags = AI_PASSIVE;
+	hints.ai_flags = AI_ALL;
 
 	struct addrinfo *server_addr;
 	int status = getaddrinfo(server, port, &hints, &server_addr);
 	if (status != 0)
 	{
-		printf("Failed to get addr info: %s\n", gai_strerror(status));
+		printf("Failed to get addr info from '%s:%s': %s (%d)\n", server, port, gai_strerror(status), status);
+		if (status == EAI_SYSTEM)
+			printf("System error: %s (%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	*addr = *((sockaddr_storage*)server_addr->ai_addr);
-	if (server_addr->ai_next != NULL)
-	{
-		printf("Got more options than just one!\n");
-	}
 
 	int sock = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
 	if (sock < 0)
@@ -81,6 +81,7 @@ int socket_client_init(const char *server, const char *port, struct sockaddr_sto
 	status = connect(sock, server_addr->ai_addr, server_addr->ai_addrlen);
 	if (status < 0)
 	{
+		close(sock);
 		freeaddrinfo(server_addr);
 		return -1;
 	}
@@ -92,19 +93,13 @@ int socket_client_init(const char *server, const char *port, struct sockaddr_sto
 
 bool server_start(void *port)
 {
+	if (port == NULL)
+		return false;
 	ServerConnection &socket = *((ServerConnection*)port);
 	struct sockaddr_storage server_addr;
 	socket.sock = socket_client_init(socket.host.c_str(), socket.port.c_str(), &server_addr);
 	if (socket.sock < 0)
-	{
-		if (socket.sock > -4)
-		{
-			printf("Server address was %s:%d!\n", getIPString(&server_addr), getPort(&server_addr));
-			printf("Server address was %s!\n", getAddrString(&server_addr).c_str());
-		}
 		return false;
-	}
-	printf("Connected to server %s:%d!\n", getIPString(&server_addr), getPort(&server_addr));
 	printf("Connected to server %s!\n", getAddrString(&server_addr).c_str());
 	int flags = fcntl(socket.sock, F_GETFL, 0);
 	fcntl(socket.sock, F_SETFL, flags | O_NONBLOCK);
@@ -122,8 +117,9 @@ void server_stop(void *port)
 	if (port == NULL)
 		return;
 	ServerConnection &socket = *((ServerConnection*)port);
-	if (socket.sock != 0)
+	if (socket.sock != -1)
 		close(socket.sock);
+	socket.sock = -1;
 }
 
 int server_read(void *port, uint8_t *buf, uint32_t len)
@@ -174,4 +170,12 @@ void server_flush(void *port)
 {
 	ServerConnection &socket = *((ServerConnection*)port);
 	tcdrain(socket.sock);
+}
+
+int server_getTXQueue(void *port)
+{
+	int txQueue;
+	ServerConnection &socket = *((ServerConnection*)port);
+	ioctl(socket.sock, TIOCOUTQ, &txQueue);
+	return txQueue;
 }

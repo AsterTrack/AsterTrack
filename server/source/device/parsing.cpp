@@ -326,6 +326,8 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		}
 		else if (existing)
 		{
+			// TODO: CameraCheckDisconnected amd ReadStatusPacket both check timeouts before camera is removed (1/2)
+			// This here retains the controller association, might not be necessary
 			auto camState = *controller.cameras[i]->state.contextualRLock();
 			if (dtMS(camState.lastConnecting, sclock::now()) < 1000)
 				continue; // Show camera reconnecting message (might be switching between MCU and Pi)
@@ -383,16 +385,15 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		for (auto add : addedCams)
 		{ // Genuinely newly connected, not moved
 			camsGained++;
-			std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, add.first);
-			// Set up connection to controller
 			auto contIt = std::find_if(state.controllers.begin(), state.controllers.end(),
 				[&](auto &cont){ return cont.get() == &controller; });
 			if (contIt == state.controllers.end())
 			{
-				LOG(LDefault, LError, "Could not find controller - was it removed already? Missing synchronisation!\n");
+				LOG(LDefault, LError, "Could not find controller when adding camera - was it removed already?\n");
 				return false;
 			}
-			camera->controller = *contIt; // new shared_ptr
+			std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, add.first, *contIt);
+			camera->controller = *contIt; // Set both in EnsureCamera and here in case camera existed already
 			camera->port = add.second;
 			LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", camera->id, camera->port);
 			controller.cameras[add.second] = std::move(camera);
@@ -434,10 +435,6 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				camState->error.recovered = true;
 				camState->error.encountered = false;
 				updatedCameras = true;
-			}
-			if (camState->error.recovered && dtMS(camState->error.recoverTime, sclock::now()) > 10000)
-			{ // Reset recovered state so any future interruptions are not associated with past error we recovered from
-				camState->error.recovered = false;
 			}
 		}
 		if (commState == CommPiReady) camState->hadPiConnected = true;
@@ -905,13 +902,24 @@ bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, 
 	auto &wireless = camera.config.wireless;
 
 	bool newlyConnected = wireless.wifiStatus != WIRELESS_STATUS_CONNECTED;
-	wireless.wifiStatus = (WirelessConfigStatus)data[0];
-	wireless.sshStatus = (WirelessConfigStatus)data[1];
-	wireless.serverStatus = (WirelessConfigStatus)data[2];
-	// 2 free byte for future use
+	WirelessConfig prevConfig = wireless.lastConfig;
+	wireless.lastConfig = (WirelessConfig)data[0];
+	wireless.wifiStatus = (WirelessStatus)(data[1] & WIRELESS_STATUS_MASK);
+	wireless.sshStatus = (WirelessStatus)(data[2] & WIRELESS_STATUS_MASK);
+	wireless.serverStatus = (WirelessStatus)(data[3] & WIRELESS_STATUS_MASK);
+	wireless.wifiFlags = (WirelessStatus)(data[1] & WIRELESS_STATUS_FLAGS);
+	wireless.sshFlags = (WirelessStatus)(data[2] & WIRELESS_STATUS_FLAGS);
+	wireless.serverFlags = (WirelessStatus)(data[3] & WIRELESS_STATUS_FLAGS);
+	// 1 free byte for future use
 	uint8_t errorLen = data[5];
 	uint8_t SSIDLen = data[6];
 	uint8_t IPLen = data[7];
+
+	if (wireless.lastConfig != prevConfig)
+	{ // Config changed. Ideally, setConfig should already be lastConfig
+		// But sometimes, cameras changes more configs than requested (e.g. when disabling wifi), or changes on its own
+		wireless.setConfig = wireless.lastConfig;
+	}
 
 	const uint8_t *ptr = data + WIRELESS_PACKET_HEADER;
 	if (errorLen > 0)

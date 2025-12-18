@@ -19,6 +19,7 @@ set(SERVER
 	app.cpp server.cpp config.cpp simulation.cpp
 	comm/usb.cpp comm/protocol_packet.cpp
 	comm/streaming.cpp comm/timesync.cpp
+	comm/wireless_server.cpp
 	device/tracking_device.cpp device/parsing.cpp
 	io/vrpn.cpp
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp
@@ -33,6 +34,9 @@ set(SERVER
 )
 set(SERVER_SHARED
 	util/image.cpp
+	hash/crc32.cpp
+	hash/sha256.cpp
+	comm/protocol_stream.cpp
 )
 set(INTERFACE
 	ui/ui.cpp ui/menu.cpp

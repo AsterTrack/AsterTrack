@@ -41,6 +41,7 @@ SOFTWARE.
 #endif
 
 #define SOCKET_ERR_NUM (WSAGetLastError())
+#define SOCKET_ERR_STR (strerror(WSAGetLastError()))
 #define VALID_SOCKET(sock) (sock != INVALID_SOCKET)
 
 #elif defined(__unix__)
@@ -54,6 +55,7 @@ SOFTWARE.
 #include <limits.h>
 
 #define SOCKET_ERR_NUM errno
+#define SOCKET_ERR_STR (strerror(errno))
 #define SOCKET int	// Because Windows uses unsigned int for socket...
 #define VALID_SOCKET(sock) (sock >= 0)
 
@@ -122,11 +124,11 @@ std::string getAddrString(struct sockaddr_storage *addr)
 	else
 	{
 		if (addr->ss_family == AF_INET)
-			return std::string(host_name) + " (" + std::string(host_num) + ") :" + std::string(port);
+			return std::string(host_name) + " (" + std::string(host_num) + ") :: " + std::string(port);
 		else if (addr->ss_family == AF_INET6)
-			return std::string(host_name) + " ([" + std::string(host_num) + "]) :" + std::string(port);
+			return std::string(host_name) + " ([" + std::string(host_num) + "]) :: " + std::string(port);
 		else
-			return std::string(host_name) + " (unknown family) :" + std::string(port);
+			return std::string(host_name) + " (unknown family) :: " + std::string(port);
 	}
 }
 

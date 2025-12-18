@@ -32,12 +32,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct WirelessState
 {
 	std::thread *monitorThread;
-    std::mutex mutex;
+	std::mutex mutex;
 	std::atomic<bool> monitor;
-    WirelessConfig config, changed;
-	WirelessConfigStatus wifi, ssh, server;
-	bool updateConfig, sendStatus;
-    TimePoint_t lastStatus, lastCheck;
+
+	WirelessConfig config, changed; // Temporary configuration
+	WirelessStatus wifi, ssh, server; // Current status
+	WirelessStatus wifiFlags, sshFlags, serverFlags; // Current flags
+	std::string serverHost, serverPort; // Cached server configuration
+
+	bool sendStatus;
+	TimePoint_t lastStatus, lastCheck;
 	std::string SSID, IP, error;
 };
 

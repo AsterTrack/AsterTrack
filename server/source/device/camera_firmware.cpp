@@ -182,7 +182,7 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 	}
 
 	// Send update plan to camera (specific to camera)
-	int size = FIRMWARE_PACKET_HEADER+PACKET_CHECKSUM_SIZE;
+	int size = FIRMWARE_PACKET_HEADER;
 	for (int i : transfers)
 	{
 		auto &transfer = update.transfers[i];
@@ -235,7 +235,7 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 	}
 
 	camState.setupTime = sclock::now();
-	bool success = camState.camera->sendPacket(PACKET_FW_PREPARE, FWPacket.data(), FWPacket.size(), true);
+	bool success = camState.camera->sendPacket(PACKET_FW_PREPARE, FWPacket.data(), FWPacket.size());
 	auto status = camState.camera->firmware->contextualLock();
 	status->lastActivity = sclock::now();
 	if (success)
@@ -289,13 +289,13 @@ static void CamerasSendFirmwareBlock(FirmwareUpdatePlan &update, FirmwareTransfe
 
 static bool CameraApplyFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState)
 {
-	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER+PACKET_CHECKSUM_SIZE);
+	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER);
 	*(uint16_t*)(FWPacket.data()+0) = update.ID;
 	// 8 free bytes for future use
 
 	camState.applyTime = sclock::now();
 	camState.lastRequest = sclock::now();
-	bool success = camState.camera->sendPacket(PACKET_FW_APPLY, FWPacket.data(), FWPacket.size(), true);
+	bool success = camState.camera->sendPacket(PACKET_FW_APPLY, FWPacket.data(), FWPacket.size());
 	auto status = camState.camera->firmware->contextualLock();
 	if (success)
 	{
@@ -313,7 +313,7 @@ static bool CameraApplyFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmware
 
 static bool CameraSendFirmwareStatus(FirmwareUpdatePlan &update, TrackingCameraState &camera, FirmwareStatusType type, uint8_t status = 0, uint8_t transfer = 0)
 {
-	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER+PACKET_CHECKSUM_SIZE);
+	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER);
 	*(uint16_t*)(FWPacket.data()+0) = update.ID;
 	// 1 free bytes for future use
 	*(uint8_t*)(FWPacket.data()+3) = (uint8_t)type;
@@ -321,7 +321,7 @@ static bool CameraSendFirmwareStatus(FirmwareUpdatePlan &update, TrackingCameraS
 	*(uint8_t*)(FWPacket.data()+5) = transfer;
 	// 4 free bytes for future use
 
-	bool success = camera.sendPacket(PACKET_FW_STATUS, FWPacket.data(), FWPacket.size(), true);
+	bool success = camera.sendPacket(PACKET_FW_STATUS, FWPacket.data(), FWPacket.size());
 	if (!success)
 	{
 		LOG(LFirmwareUpdate, LWarn, "Camera %d failed to send status request packet!", camera.id);

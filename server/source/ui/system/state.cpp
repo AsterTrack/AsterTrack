@@ -367,17 +367,24 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
 	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySendCommand;
 
-	if ((status.commState & CommReady) != CommReady)
-	{
-		// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
-		if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+	if (camera.controller && status.commState != CommPiReady)
+	{ // UART comms to camera not established
+		if (status.commState == CommMCUReady)
+			statusMsgs.push_back("Camera is connected and starting up...");
+		else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			statusMsgs.push_back("Camera is trying to reconnect...");
+		else if (camera.client)
+			statusMsgs.push_back("Camera is only connected wirelessly.");
 		else
-			statusMsgs.push_back("Camera is disconnected");
+			statusMsgs.push_back("Camera is disconnected from controller.");
 	}
-	else if (status.commState == CommMCUReady)
-	{
-		statusMsgs.push_back("Camera is connected and starting up...");
+
+	if (!camera.client && status.hadServerConnected)
+	{ // Server comms to camera not established
+		if (dtMS(status.lastWirelessConnection, sclock::now()) < 1000)
+			statusMsgs.push_back("Camera wireless connection dropped out.");
+		else if (!camera.controller)
+			statusMsgs.push_back("Camera server connection is disconnected.");
 	}
 
 	// Display recent error
@@ -410,35 +417,46 @@ std::string getStatusText(const TrackingCameraState &camera)
 
 	if (status.error.encountered)
 	{
-		if ((status.commState & CommReady) != CommReady)
-		{
-			// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
-			if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
-				return asprintf_s("Camera encountered error '%s' and is currently trying to reconnect.", ErrorTag_String[status.error.code]);
+		if (camera.controller && status.commState != CommPiReady)
+		{ // UART comms to camera not established
+			if (status.commState == CommMCUReady)
+				return asprintf_s("Camera encountered error '%s' and is currently recovering.", ErrorTag_String[status.error.code]);
+			else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+				return asprintf_s("Camera encountered error '%s' and is trying to reconnect.", ErrorTag_String[status.error.code]);
 			else
 				return asprintf_s("Camera encountered error '%s' and is disconnected.", ErrorTag_String[status.error.code]);
 		}
-		else
-		{
-			assert(status.commState == CommMCUReady);
+
+		if (!camera.client && status.hadServerConnected)
+		{ // Server comms to camera not established
 			return asprintf_s("Camera encountered error '%s' and is currently recovering.", ErrorTag_String[status.error.code]);
 		}
+
+		// Either some comms did not disconnect YET after error, or they reconnected but failed to set error state to recovered
+		return asprintf_s("Camera encountered error '%s'.", ErrorTag_String[status.error.code]);
 	}
-	else if ((status.commState & CommReady) != CommReady)
-	{
-		// Currently this implies (status.hadMCUConnected || status.hadPiConnected)
-		if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+
+	if (camera.controller && status.commState != CommPiReady)
+	{ // UART comms to camera not established
+		if (status.commState == CommMCUReady)
+			return "Camera is connected and starting up...";
+		else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			return "Camera is trying to reconnect...";
+		else if (camera.client)
+			return "Camera is only connected wirelessly.";
 		else
-			return "Camera is disconnected";
+			return "Camera is disconnected from controller.";
 	}
-	else if (status.commState == CommMCUReady)
-	{
-		return "Camera is connected and starting up...";
+
+	if (!camera.client && status.hadServerConnected)
+	{ // Server comms to camera not established
+		if (dtMS(status.lastWirelessConnection, sclock::now()) < 1000)
+			return "Camera wireless connection dropped out.";
+		else if (!camera.controller)
+			return "Camera is disconnected from server.";
 	}
-	else
-	{
-		assert(status.commState == CommPiReady);
+
+	{ // Camera is connected - may want to display past error it recovered from, or abnormal streaming state
 		if (status.error.recovered && abnormalStreamingState)
 		{
 			return asprintf_s("Camera recovered from error '%s' but is not yet streaming!", ErrorTag_String[status.error.code]);
@@ -447,18 +465,23 @@ std::string getStatusText(const TrackingCameraState &camera)
 		{
 			return asprintf_s("Camera recovered from error '%s'", ErrorTag_String[status.error.code]);
 		}
-		else if (abnormalStreamingState)
-		{ // May happen if controller stopped streaming on it's own and told cameras to stop, too
-			// e.g. when server hung for several seconds in debug
-			return "Camera is not streaming!";
-		}
-		else if (status.error.code != ERROR_NONE)
-		{
-			return asprintf_s("Camera is working properly.\n Last Error was '%s'.", ErrorTag_String[status.error.code]);
-		}
+
+		std::string state, postfix = "";
+		// May happen if controller stopped streaming on it's own and told cameras to stop, too
+		// e.g. when server hung for several seconds in debug
+		state = abnormalStreamingState? "not streaming!" : "working properly.";
+		if (status.error.code != ERROR_NONE)
+			postfix = asprintf_s("\nLast Error was '%s'.", ErrorTag_String[status.error.code]);
+		if (camera.controller && !camera.client)
+			return "Camera is connected to a controller and " + state + postfix;
+		else if (!camera.controller && camera.client)
+			return "Camera is connected to the server and " + state + postfix;
+		else if (camera.controller && camera.client)
+			return "Camera is connected to both a controller and the server and " + state + postfix;
 		else
-		{
-			return "Camera is working properly.";
+		{ // This really should not happen
+			assert(false);
+			return "Camera is currently not connected." + postfix;
 		}
 	}
 }

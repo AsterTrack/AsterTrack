@@ -73,7 +73,9 @@ struct IconSet
 	ImTextureID orbit, detach, vdots;
 	ImTextureID controller, camera;
 	ImTextureID imu_calib, imu_track, imu_lost;
-	ImTextureID wireless, no_wireless, server, no_server, ssh, no_ssh;
+	// Wireless config
+	ImTextureID config_disabled;
+	ImTextureID wireless, ssh, server, rtdata;
 };
 
 struct InterfaceWindow

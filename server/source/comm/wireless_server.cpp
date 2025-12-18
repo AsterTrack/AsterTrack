@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/wireless_server_client.hpp"
 #include "comm/socket.hpp"
 #include "comm/protocol_stream.hpp"
+#include "comm/uart.h" // Use same format as UART just to share protocol_stream
+#include "comm/packet.hpp"
 
 #include <fcntl.h>
 #include <thread>
@@ -38,25 +40,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 typedef std::chrono::steady_clock sclock;
 
 // ID of connected UART device and acknowledgement of own ID
-static uint8_t msg_ack[1+PACKET_HEADER_SIZE], msg_nak[1+PACKET_HEADER_SIZE], msg_ping[1+PACKET_HEADER_SIZE];
+static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
 
 // UART Identification and connection
-#define COMM_PING_TIMEOUT 3000
-#define COMM_RESET_TIMEOUT 500
-#define COMM_IDENT_INTERVAL std::chrono::milliseconds(10)
-#define COMM_IDENT_CYCLES 50 // Ident timeout is COMM_IDENT_CYCLES*COMM_SLEEP_INTERVAL
-#define COMM_INTERVAL std::chrono::microseconds(100)
-#define COMM_PING_INTERVAL 1000
+#define COMM_RESET_TIMEOUT_MS		100		// Timeout beween comm loss and next try
+#define COMM_INTERVAL_US			10000
+#define COMM_PING_INTERVAL_MS		100
+#define COMM_PING_TIMEOUT_MS		1000
 
-void ClientThread(ClientCommState *clientState);
+void ClientThread(std::stop_token stop_token, ClientCommState *clientState);
 
 template<> void OpaqueDeleter<ClientCommState>::operator()(ClientCommState* ptr) const
 { delete ptr; }
 
-int socket_server_init(const char *port, struct sockaddr_storage* addr)
+int socket_server_init(const char *port)
 {
 	struct addrinfo hints = {};
-	hints.ai_family = AF_INET6;
+	hints.ai_family = AF_INET6; // Should be able to accept IPv4 as well on most systems
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_PASSIVE;
@@ -75,9 +75,10 @@ int socket_server_init(const char *port, struct sockaddr_storage* addr)
 	if (status != 0)
 	{
 		LOG(LServer, LError, "Failed to get addr info: %s\n", gai_strerror(status));
+		if (status == EAI_SYSTEM)
+			LOG(LServer, LError, "System error: %s (%d)\n", strerror(errno), errno);
 		return -1;
 	}
-	*addr = *((sockaddr_storage*)server_addr->ai_addr);
 	if (server_addr->ai_next != NULL)
 	{
 		LOG(LServer, LDebug, "Got more options than just one!\n");
@@ -121,21 +122,15 @@ int socket_server_init(const char *port, struct sockaddr_storage* addr)
 
 	freeaddrinfo(server_addr);
 
-	// Init predefined messages
-	msg_ping[0] = '#';
-	struct PacketHeader header(PACKET_PING, 0);
-	storePacketHeader(header, msg_ping+1);
-	msg_nak[0] = '#';
-	header.tag = PACKET_NAK;
-	storePacketHeader(header, msg_nak+1);
-	msg_ack[0] = '#';
-	header.tag = PACKET_ACK;
-	storePacketHeader(header, msg_ack+1);
-	
 	return sock;
 }
 
-int ServerInit(std::string port)
+std::string WirelessServerGetHostname()
+{
+	return getHostnameString();
+}
+
+int WirelessServerInit(std::string port)
 {
 	if (socket_initialise())
 	{
@@ -143,22 +138,22 @@ int ServerInit(std::string port)
 		return 0;
 	}
 
-	struct sockaddr_storage server_addr;
-	int socket = socket_server_init(port.c_str(), &server_addr);
+	int socket = socket_server_init(port.c_str());
 	if (socket < 0)
 	{
-		LOG(LServer, LDebug, "Server address was %s:%d!\n", getIPString(&server_addr), getPort(&server_addr));
-		LOG(LServer, LDebug, "Server address was %s!\n", getAddrString(&server_addr).c_str());
 		socket_cleanup();
 		return 0;
 	}
-	LOG(LServer, LDebug, "Server address is %s:%d!\n", getIPString(&server_addr), getPort(&server_addr));
-	LOG(LServer, LDebug, "Server address is %s!\n", getAddrString(&server_addr).c_str());
-	LOG(LServer, LDebug, "Local server address is %s:%d!\n", getHostnameString(), getPort(&server_addr));
+
+	// Init predefined messages
+	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
+	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
+	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
+
 	return socket;
 }
 
-void ServerThread(ServerCommState *serverState)
+void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverState)
 {
 	ServerCommState &server = *serverState;
 
@@ -178,7 +173,7 @@ void ServerThread(ServerCommState *serverState)
 #endif
 
 	LOG(LServer, LDebug, "Waiting for server connections...\n");
-	while (server.threadRun)
+	while (!stop_token.stop_requested())
 	{
 		struct sockaddr_storage client_addr;
 		socklen_t addr_size = sizeof(client_addr);
@@ -186,18 +181,16 @@ void ServerThread(ServerCommState *serverState)
 		if (socket < 0)
 		{
 #if defined(_WIN32)
-			int err = WSAGetLastError();
-			if (err != WSAEWOULDBLOCK)
-				LOG(LServer, LDebug, "Failed to accept connection: %s (%d)\n", strerror(err), err);
+			#warn "Verify socket error handling!"
+			if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 #elif defined(__unix__)
 			// All these are acceptable: ENETDOWN, EPROTO, ENOPROTOOPT, EHOSTDOWN, ENONET, EHOSTUNREACH, EOPNOTSUPP, or ENETUNREACH
-			if (!(errno == EAGAIN || errno == EWOULDBLOCK))
-				LOG(LServer, LDebug, "Failed to accept connection: %s (%d)\n", strerror(errno), errno);
+			if (!(SOCKET_ERR_NUM == EAGAIN || SOCKET_ERR_NUM == EWOULDBLOCK))
 #endif
+				LOG(LServer, LDebug, "Failed to accept connection: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 			continue;
 		}
-		LOG(LServer, LInfo, "Connected to client %s:%d!\n", getIPString(&client_addr), getPort(&client_addr));
-		LOG(LServer, LInfo, "Connected to client %s!\n", getAddrString(&client_addr).c_str());
+		LOG(LServer, LDebug, "Connected to client %s!\n", getAddrString(&client_addr).c_str());
 #if defined(_WIN32)
 		ioctlsocket(socket, FIONBIO, &mode);
 #elif defined(__unix__)
@@ -212,8 +205,7 @@ void ServerThread(ServerCommState *serverState)
 		VersionDesc version(0, 0, 0); // TODO: Add proper version, pass on from ONE compilation unit (uses TIME!)
 		comm->ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, version);
 		comm->expIdent.device = DEVICE_TRCAM;
-		comm->enabled = true;
-		comm->thread = new std::thread(ClientThread, comm.get());
+		comm->thread = new std::jthread(ClientThread, comm.get());
 		server.clients.push_back(std::move(comm));
 	}
 
@@ -221,33 +213,27 @@ void ServerThread(ServerCommState *serverState)
 
 	// Stop client comm
 	for (auto &client : server.clients)
-		client->enabled = false;
-	for (auto &client : server.clients)
-	{
-		if (client->thread->joinable())
-			client->thread->join();
-	}
+		delete client->thread;
 	for (auto &client : server.clients)
 		socket_close(client->socket);
 	server.clients.clear();
 	socket_close(server.socket);
 	socket_cleanup();
+
+	LOG(LServer, LDebug, "All server threads closed!\n");
 }
 
 inline void comm_reset(ClientCommState &comm)
 {
-	comm.ident_timeout = 0;
-	comm.ident_interval = 0;
-	comm.rsp_ack = false;
-	comm.rsp_id = false;
 	comm.ready = false;
+	comm.rsp_id = false;
+	comm.rsp_ack = false;
 	proto_clear(comm.protocol);
 }
 
 inline void comm_close(ClientCommState &comm)
 {
-	comm.callbacks.onDisconnect(comm);
-	comm.enabled = false;
+	comm.thread->request_stop();
 }
 
 inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint16_t length)
@@ -259,22 +245,52 @@ inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint
 #endif
 	if (ret < 0)
 	{
-		LOG(LServer, LWarn, "Socket error on send: %s (%d)\n", strerror(SOCKET_ERR_NUM), SOCKET_ERR_NUM);
 #if defined(_WIN32)
-		if (ret == EPIPE)
+		#warn "Verify socket error handling!"
+		if (SOCKET_ERR_NUM == WSAECONNRESET || SOCKET_ERR_NUM == WSAECONNRESET)
 #elif defined(__unix__)
-		if (ret == EPIPE)
+		if (SOCKET_ERR_NUM == EPIPE)
 #endif
 		{
 			comm_close(comm);
 			return false;
 		}
+		LOG(LServer, LWarn, "Socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 	}
 	return true;
 }
 
-inline int comm_read_internal(ClientCommState &comm)
+inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 {
+	struct timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = timeoutUS;
+
+	// Return values for select indicating events in camera file descriptor
+	fd_set readFD;
+	FD_ZERO(&readFD);
+	FD_SET(comm.socket, &readFD);
+
+	// Wait for changes from camera file descriptor
+	int status = select(comm.socket + 1, &readFD, nullptr, nullptr, &timeout);
+	if (status < 0)
+	{ // Error
+#if defined(_WIN32)
+		#warn "Verify socket error handling!"
+		if (SOCKET_ERR_NUM != EAGAIN)
+#elif defined(__unix__)
+		if (SOCKET_ERR_NUM != EAGAIN)
+#endif
+		{
+			comm_close(comm);
+			return -1;
+		}
+		return 0;
+	}
+	if (FD_ISSET(comm.socket, &readFD) == 0)
+		return 0;
+	proto_clean(comm.protocol, true);
+
 #if defined(_WIN32)
 	int num = recv(comm.socket, (char *)comm.protocol.rcvBuf.data()+comm.protocol.tail, comm.protocol.rcvBuf.size()-comm.protocol.tail, 0);
 #elif defined(__unix__)
@@ -282,31 +298,32 @@ inline int comm_read_internal(ClientCommState &comm)
 #endif
 	if (num < 0)
 	{
-/*#if defined(_WIN32)
-		int err = WSAGetLastError();
-		LOG(LServer, LError, "WSA returned error %d on read\n", err);
-		if (err != WSAEWOULDBLOCK)
+#if defined(_WIN32)
+		#warn "Verify socket error handling!"
+		LOG(LServer, LError, "Socket error on read: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 		{
- 			LOG(LServer, LError, "Received error num %d, resetting comm!\n", err);
+ 			LOG(LServer, LError, "Resetting comm!\n");
 			comm_close(comm);
 			return -1;
 		}
-#elif defined(__unix__)*/
-		if (errno == EBADF)
+#elif defined(__unix__)
+		if (SOCKET_ERR_NUM == EBADF)
 		{
 			LOG(LServer, LError, "Bad file descriptor (EBADF)!\n");
 			comm_close(comm);
 			return -1;
 		}
-		else if (errno != EAGAIN && errno != EWOULDBLOCK)
+		else if (SOCKET_ERR_NUM != EAGAIN && SOCKET_ERR_NUM != EWOULDBLOCK)
 		{
- 			LOG(LServer, LError, "Socket error on read: %s (%d) - resetting comm!\n", strerror(errno), errno);
-			comm_close(comm);
+ 			LOG(LServer, LError, "Socket error on read: %s (%d) - resetting comm!\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+			comm_close(comm); // Stop thread
 			return -1;
 		}
-//#endif
+#endif
 		return 0;
 	}
+	comm.protocol.tail += num;
 	return num;
 }
 
@@ -318,32 +335,6 @@ inline void comm_flush(ClientCommState &comm)
 #endif
 }
 
-bool comm_writeHeader(ClientCommState &comm, PacketTag tag, uint16_t packetLength)
-{
-	if (comm.ready)
-	{
-		uint8_t buffer[1+PACKET_HEADER_SIZE];
-		buffer[0] = '#';
-		const PacketHeader header(tag, packetLength);
-		storePacketHeader(header, buffer+1);
-		return comm_write_internal(comm, buffer, sizeof(buffer));
-	}
-	return false;
-}
-
-bool comm_write(ClientCommState &comm, const uint8_t *data, uint16_t length)
-{
-	if (comm.ready)
-	{
-		if (comm_write_internal(comm, data, length))
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-
 void comm_abort(ClientCommState &comm)
 {
 	if (comm_write_internal(comm, msg_nak, sizeof(msg_nak)))
@@ -353,162 +344,194 @@ void comm_abort(ClientCommState &comm)
 	}
 }
 
+void comm_NAK(ClientCommState &comm)
+{
+	if (comm_write_internal(comm, msg_nak, sizeof(msg_nak)))
+		comm_flush(comm);
+}
+
+inline void comm_ACK(ClientCommState &comm)
+{
+	if (comm_write_internal(comm, msg_ack, sizeof(msg_ack)))
+		comm_flush(comm);
+}
+
 static void comm_identify(ClientCommState &comm)
 {
-	const PacketHeader header(PACKET_IDENT, IDENT_PACKET_SIZE);
-	uint8_t buffer[1+PACKET_HEADER_SIZE+IDENT_PACKET_SIZE];
-	buffer[0] = '#';
-	storePacketHeader(header, buffer+1);
-	storeIdentPacket(comm.ownIdent, buffer+(1+PACKET_HEADER_SIZE));
-	if (comm_write_internal(comm, buffer, sizeof(buffer)))
+	uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
+	UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
+	storeIdentPacket(comm.ownIdent, packet->data);
+	finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
+	if (comm_write_internal(comm, (uint8_t*)packet, sizeof(identBuffer)))
 		comm_flush(comm);
 	LOG(LServer, LDebug, "Sent identification packet!\n");
 }
 
-void ClientThread(ClientCommState *clientState)
+bool comm_write(ClientCommState &comm, PacketTag tag, const uint8_t *data, uint16_t length)
+{
+	thread_local std::vector<uint8_t> packetBuffer;
+	packetBuffer.resize(UART_PACKET_OVERHEAD_SEND + (length > 0? length : -PACKET_CHECKSUM_SIZE));
+	UARTPacketRef *packet = (UARTPacketRef*)packetBuffer.data();
+	writeUARTPacketHeader(packet, PacketHeader(tag, length));
+	if (length > 0)
+	{ // Write appropriate checksum
+		memcpy(packet->data, data, length);
+		if (tag >= PACKET_HOST_COMM)
+			calculateForwardPacketChecksum(packet->data, length, packet->data+length);
+		else // We should not be sending these packets, but do allow for it
+			calculateDirectPacketChecksum(packet->data, length, packet->data+length);
+		writeUARTPacketEnd(packet, length+PACKET_CHECKSUM_SIZE);
+	}
+	else // No checksum
+		writeUARTPacketEnd(packet, length);
+	bool success = comm_write_internal(comm, packetBuffer.data(), packetBuffer.size());
+	if (success) comm_flush(comm);
+	return success;
+}
+
+void ClientThread(std::stop_token stop_token, ClientCommState *clientState)
 {
 	ClientCommState &comm = *clientState;
 	ProtocolState &proto = comm.protocol;
 
 	ScopedLogContext ServerLogContext(clientState->socket);
 
-	TimePoint_t time_start, time_lastPing, time_read;
-	time_start = sclock::now();
+	TimePoint_t time_begin, time_read, time_start, time_lastPing;
+	time_begin = sclock::now();
 
-	while (comm.enabled)
+	while (!stop_token.stop_requested())
 	{
-		if (comm.rsp_id && comm.rsp_ack)
-			goto phase_idle;
 
 		/* Identification Step */
 
 phase_identification:
 
-		if (!comm.enabled)
+		if (stop_token.stop_requested())
 			break;
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		comm.ident_timeout = 0;
-		comm.ident_interval = 0;
-
-		if (!comm.enabled)
-			break;
-
-		// Send own ID
-		comm_identify(comm);
-
-		while (comm.enabled)
+		while (!stop_token.stop_requested())
 		{ // Identification loop to make sure communication works
 
-			int num = comm_read_internal(comm);
-			if (num < 0) break;
-			if (proto_rcvCmd(proto))
+			int num = comm_read_internal(comm, COMM_INTERVAL_US);
+			if (num < 0)
+			{ // Error
+				printf("TCP error during identification!\n");
+				comm_NAK(comm);
+				comm_close(comm); // Stop thread
+				break;
+			}
+			bool prevInCmd = proto.isCmd;
+			bool newToParse = num > 0;
+			while (!stop_token.stop_requested() && newToParse && proto_rcvCmd(proto))
 			{ // Got a new command to handle
-				if (proto.cmdNAK)
+				if (proto.header.tag == PACKET_NAK)
 				{ // NAK received
-					LOG(LServer, LWarn, "NAK Received, resetting comm!\n");
-					comm_reset(comm);
-					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT));
-					goto phase_identification;
-				}
-				else if (proto.cmdACK && !comm.rsp_ack)
-				{ // ACK received
-					LOG(LServer, LDebug, "Acknowledged!\n");
-					comm.rsp_ack = true;
-				}
-				else if (proto.header.tag == PACKET_IDENT && proto_fetchCmd(proto))
-				{ // Received full id command
-					bool correct = proto.cmdSz == IDENT_PACKET_SIZE;
-					if (correct)
+					if (proto_fetchCmd(proto))
 					{
-						IdentPacket rcvIdent = parseIdentPacket(proto.rcvBuf.data()+proto.cmdPos);
-						correct = (rcvIdent.device&comm.expIdent.device) != 0 
-							&& rcvIdent.type == comm.ownIdent.type
-							&& rcvIdent.version.major == comm.ownIdent.version.major
-							&& rcvIdent.version.minor >= comm.ownIdent.version.minor;
-						if (correct)
-						{ // Proper identity
-							LOG(LServer, LDebug, "Identified communication partner!\n");
-							comm.rsp_id = true;
-							if (comm_write_internal(comm, msg_ack, sizeof(msg_ack)))
-							{
-								comm_flush(comm);
-								if (!comm.rsp_ack) // Send own ID
-									comm_identify(comm);
-							}
-							else
-								break;
-							comm.otherIdent = rcvIdent;
-						}
-					}
-					if (!correct)
-					{ // Wrong identity
-						LOG(LServer, LDebug, "Failed to identify communication partner!\n");
-						comm_abort(comm);
-						std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT));
+						LOG(LServer, LWarn, "Identification rejected (NAK)!");
+						comm_reset(comm);
+						std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 						goto phase_identification;
 					}
 				}
-				if (comm.rsp_id && comm.rsp_ack)
-				{ // Comm is ready
-					LOG(LServer, LDebug, "Comm is ready!\n");
-					comm.ready = true;
-					proto_clear(proto);
-					if (comm.callbacks.onIdentify)
-						comm.callbacks.onIdentify(comm);
-					goto phase_idle;
+				else if (proto.header.tag == PACKET_ACK)
+				{ // ACK received
+					if (proto_fetchCmd(proto))
+					{
+						if (!comm.rsp_id)
+						{ // Was not expecting an ACK
+							LOG(LServer, LDarn, "Received unexpected ACK during identification!");
+							comm_abort(comm);
+							goto phase_identification;
+						}
+						LOG(LServer, LDebug, "Identification accepted!");
+						comm.ready = true;
+						if (comm.callbacks.onIdentify)
+							comm.callbacks.onIdentify(comm);
+						goto phase_comm;
+					}
 				}
-			}
-
-			// Count timeout from first interaction
-			if (comm.rsp_ack || comm.rsp_id) comm.ident_timeout++;
-			if (comm.ident_timeout > COMM_IDENT_CYCLES)
-			{ // Identification timeout, send NAK
-				LOG(LServer, LWarn, "Identification timeout exceeded, resetting comm!\n");
-				comm_abort(comm);
-				std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT));
-				goto phase_identification;
-			}
-
-			if (!comm.rsp_ack && !comm.rsp_id)
-			{
-				comm.ident_interval++;
-				if (comm.ident_interval > 50)
-				{ // UART ID packet send timeout
-					comm_identify(comm);
-					comm.ident_interval = 0;
+				else if (proto.header.tag == PACKET_IDENT)
+				{
+					if (proto_fetchCmd(proto))
+					{ // Received full identification command (implicit acknowledgement of own identification)
+						bool correct = proto.cmdSz == IDENT_PACKET_SIZE && proto.validChecksum;
+						if (correct)
+						{
+							IdentPacket rcvIdent = parseIdentPacket(proto.rcvBuf.data()+proto.cmdPos);
+							correct = (rcvIdent.device&comm.expIdent.device) != 0 
+								&& rcvIdent.type == comm.ownIdent.type
+								&& rcvIdent.version.major == comm.ownIdent.version.major
+								&& rcvIdent.version.minor >= comm.ownIdent.version.minor;
+							// TODO: Deal with versions
+							if (correct)
+							{ // Proper identity
+								LOG(LServer, LDebug, "Valid identification response received!");
+								comm.rsp_id = true;
+								comm.otherIdent = rcvIdent;
+								comm_identify(comm);
+							}
+						}
+						if (!correct)
+						{
+							LOG(LServer, LDebug, "Invalid identification response received!");
+							comm_abort(comm);
+							goto phase_identification;
+						}
+					}
+					else
+					{
+						LOG(LServer, LDebug, "Received unexpected or unknown tag %d!", proto.header.tag);
+						comm_abort(comm);
+						goto phase_identification;
+					}
 				}
-			}
 
-			std::this_thread::sleep_for(COMM_IDENT_INTERVAL);
+				// Continue parsing if the current command was handled fully
+				int rem = proto.tail-proto.head;
+				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd;
+				num = 0;
+			}
 		}
 
 
-		/* Setup phase */
+		/* Comm phase */
 
-phase_idle:
+phase_comm:
 
-		if (!comm.enabled)
+		if (stop_token.stop_requested())
 			break;
 
+		//ResetTimeSync(comm.sync.time);
+
+		time_start = sclock::now();
+
 		time_read = sclock::now();
-		while (comm.enabled)
-		{ // Setup packets and start blob detection command
-			int num = comm_read_internal(comm);
-			if (num < 0) break;
+		while (!stop_token.stop_requested())
+		{
+			int num = comm_read_internal(comm, COMM_INTERVAL_US);
+			TimePoint_t receiveTime = sclock::now();
+			if (num < 0)
+			{ // Error
+				printf("TCP error during communications!\n");
+				comm_NAK(comm);
+				comm_close(comm); // Stop thread
+				break;
+			}
 			else if (num > 0) time_read = sclock::now();
 			bool prevInCmd = proto.isCmd;
-			bool newToParse = true;
-			while (newToParse && proto_rcvCmd(proto))
+			bool newToParse = num > 0;
+			while (!stop_token.stop_requested() && newToParse && proto_rcvCmd(proto))
 			{ // Got a new command to handle
-				if (proto.cmdNAK)
+				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
 				{ // NAK received
 					LOG(LServer, LWarn, "NAK Received, resetting comm!\n");
 					comm_reset(comm);
+					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 					goto phase_identification;
 				}
-				else if (proto.cmdACK)
-				{ // NAK received
+				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
+				{ // ACK received
 					LOG(LServer, LDebug, "Redundant ACK Received!\n");
 				}
 				else if (proto.header.tag == PACKET_PING)
@@ -517,58 +540,69 @@ phase_idle:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
-					if (proto_fetchCmd(proto))
-						LOG(LServer, LDebug, "Received redundant identification packet!\n");
+					LOG(LServer, LWarn, "Received redundant identification packet!\n");
+					comm_abort(comm);
+					goto phase_identification;
 				}
 				else
 				{ // Parse in blocks for lowest latency
 					bool skip = false;
 					if (!prevInCmd && comm.callbacks.onReceivePacketHeader)
-						skip = !comm.callbacks.onReceivePacketHeader(comm, proto.header);
+						skip = !comm.callbacks.onReceivePacketHeader(comm, proto.header, receiveTime);
 					if (skip)
 					{ // TODO: Switch to proper skipping
 						// This does NOT properly skip it with full size, but considers the header to be erroneous and starts searching for the next immediately
 						proto.cmdSkip = true;
 						LOG(LServer, LDebug, "Skipping command %d!\n", proto.header.tag);
+						prevInCmd = false;
 					}
 					else
 					{
-						int len = proto_handleCmdBlock(proto);
-						if (len != 0 && comm.callbacks.onReceivePacketBlock)
-							comm.callbacks.onReceivePacketBlock(comm, proto.header, proto.rcvBuf.data()+proto.cmdPos, len);
+						bool done = proto_fetchCmd(proto);
+						LOG(LServer, LTrace, "Received packet %d, block %d bytes, total %d / %d bytes%s\n",
+							proto.header.tag, proto.blockLen, proto.blockPos + proto.blockLen - proto.cmdPos, proto.cmdSz, done? (proto.validChecksum? ", valid" : ", invalid") : "");
+
+						if (proto.blockLen != 0 && comm.callbacks.onReceivePacketBlock)
+							comm.callbacks.onReceivePacketBlock(comm, proto.header, proto.rcvBuf.data()+proto.blockPos, proto.blockLen, receiveTime);
+						if (done && comm.callbacks.onReceivePacket)
+							comm.callbacks.onReceivePacket(comm, proto.header, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz, receiveTime, !proto.validChecksum);
+						prevInCmd = !done;
 					}
 				}
 
 				// Continue parsing if the current command was handled fully
-				int rem = proto.tail-proto.head;
-				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
+				newToParse = proto.tail > proto.head && !proto.cmdSkip && !proto.isCmd;
 				num = 0;
-				if (newToParse)
-					LOG(LServer, LDebug, "Continuing parsing of %d remaining bytes\n", rem);
 			}
 
 			// Check timeout
 			// TODO: Add toggle for timeout, not needed for TCP, only for UART
 			TimePoint_t curClock = sclock::now();
 			int elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(curClock - time_read).count();
-			if (elapsedMS > COMM_PING_TIMEOUT)
+			if (elapsedMS > COMM_PING_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
 				LOG(LServer, LWarn, "Ping dropped out, resetting comm!\n");
 				comm_abort(comm);
-				comm.callbacks.onDisconnect(comm);
+				if (comm.callbacks.onDisconnect)
+					comm.callbacks.onDisconnect(comm);
 				break;
 			}
 			elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(curClock - time_lastPing).count();
-			if (elapsedMS > COMM_PING_INTERVAL)
+			if (elapsedMS > COMM_PING_INTERVAL_MS)
 			{ // Send ping
 				if (comm_write_internal(comm, msg_ping, sizeof(msg_ping)))
 					comm_flush(comm);
 				time_lastPing = curClock;
 			}
 
-			std::this_thread::sleep_for(COMM_INTERVAL);
-
 			fflush(stdout);
 		}
+
+		if (stop_token.stop_requested())
+			break;
 	}
+
+	LOG(LServer, LDebug, "Stopping server comm thread!\n");
+	if (comm.callbacks.onDisconnect)
+		comm.callbacks.onDisconnect(comm);
 }

@@ -40,4 +40,6 @@ void server_submit(void *port);
 
 void server_flush(void *port);
 
+int server_getTXQueue(void *port);
+
 #endif // SERVER_H

@@ -33,10 +33,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Predefined messages
 static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
 
-// UART Identification and connection
-#define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming
+// Identification and connection
+// TODO: Parametrise values and pick optimal for both UART and Wifi
+#define COMM_PING_TIMEOUT_MS		500		// Controller/Server sends a ping every 100ms when not already streaming
+											// 250ms is good for Controller, Server needs higher timeout
 #define COMM_RESET_TIMEOUT_MS		100		// Timeout beween comm loss and next try
-#define COMM_IDENT_TIMEOUT_MS		10		// Timeout between sending identification and requiring a response - should be << 1ms
+#define COMM_IDENT_TIMEOUT_MS		50		// Timeout between sending identification and requiring a response
+ 											// should be << 1ms for UART, < 50ms for wifi
 #define COMM_IDENT_BACKOFF_MS		1000	// Additional backoff interval between failed identifications attempts to not spam log
 #define COMM_INTERVAL_US			500
 
@@ -57,6 +60,7 @@ struct PacketSendingHandle
 };
 
 CommList comms;
+CommMedium realTimeAff = COMM_MEDIUM_UART, largeDataAff = COMM_MEDIUM_WIFI;
 
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium)
 {
@@ -276,7 +280,7 @@ static void comm_identify(CommState &comm)
 	UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
 	storeIdentPacket(comm.ownIdent, packet->data);
 	finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
-	if (comm_write_internal(comm, (uint8_t*)packet, UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE))
+	if (comm_write_internal(comm, (uint8_t*)packet, sizeof(identBuffer)))
 		comm_flush(comm);
 }
 
@@ -301,12 +305,15 @@ phase_start:
 		if (!comm.enabled)
 			break;
 
-		while (!comm.started)
+		while (!comm.started && comm.enabled)
 		{
 			comm.started = comm.start(comm.port);
 			comm_reset(comm);
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			std::this_thread::sleep_for(std::chrono::milliseconds(comm.started? 10 : 1000));
 		}
+
+		if (!comm.enabled)
+			break;
 
 		if (comm.ready)
 			goto phase_comm;
@@ -379,7 +386,6 @@ phase_identification:
 								comm.ready = true;
 								comm_ACK(comm);
 								comm.otherIdent = rcvIdent;
-								proto_clear(proto);
 								ident_backoff = 0;
 								goto phase_comm;
 							}
@@ -401,15 +407,17 @@ phase_identification:
 				}
 
 				// Continue parsing if the current command was handled fully
-				int rem = proto.tail-proto.head;
-				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
+				newToParse = proto.tail > proto.head && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
 				num = 0;
 			}
 
 			if (dtMS(time_ident, sclock::now()) > COMM_IDENT_TIMEOUT_MS)
 			{ // Identification timeout
 				printf("Identification timeout exceeded, trying again!\n");
+				comm_NAK(comm);
 				std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
+				comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
+				comm_reset(comm);
 				goto phase_identification;
 			}
 		}
@@ -459,6 +467,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
+					printf("Unexpected Identification received, dropping existing comms!\n");	
 					comm_abort(comm);
 					goto phase_identification;
 				}
@@ -674,7 +683,7 @@ phase_comm:
 
 			// Check timeout
 			// TODO: Add toggle for timeout, not needed for TCP, only for UART
-			if (dtMS(time_read, sclock::now()) > UART_COMM_TIMEOUT_MS)
+			if (dtMS(time_read, sclock::now()) > COMM_PING_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
 				printf("Ping dropped out, resetting comm!\n");
 				comm_abort(comm);

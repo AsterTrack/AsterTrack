@@ -205,6 +205,7 @@ SERVER_CPP = \
 	app.cpp server.cpp config.cpp simulation.cpp recording.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp \
 	comm/streaming.cpp comm/timesync.cpp \
+	comm/wireless_server.cpp \
 	device/tracking_controller.cpp device/tracking_camera.cpp \
 	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp \
 	io/vrpn.cpp io/vrpn_imu.cpp \
@@ -217,13 +218,12 @@ SERVER_CPP = \
 	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp \
 	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp \
 	tracking/cluster.cpp tracking/tracking.cpp
-#comm/server.cpp
 
 SERVER_SHARED_CPP = \
 	util/image.cpp \
 	hash/crc32.cpp \
-	hash/sha256.cpp
-#comm/protocol_stream.cpp
+	hash/sha256.cpp \
+	comm/protocol_stream.cpp
 SERVER_SHARED_C =
 
 SERVER_DEP_CPP = \

@@ -32,7 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct ClientCommState 
 {
-	std::thread *thread;
+	std::jthread *thread;
 
 	int socket = -1;
 	std::mutex writeAccess;
@@ -40,7 +40,7 @@ struct ClientCommState
 
 	TrackingCameraCallbacks callbacks;
 
-	std::atomic<bool> enabled = { false }, started = { false }, ready = { false };
+	std::atomic<bool> ready = { false };
 	bool rsp_id = false, rsp_ack = false;
 	int ident_timeout = 0, ident_interval = 0;
 	IdentPacket ownIdent;
@@ -56,8 +56,6 @@ struct ClientCommState
 	{
 		thread = other.thread;
 		other.thread = nullptr;
-		enabled = other.enabled.load();
-		started = other.started.load();
 		ready = other.ready.load();
 		socket = other.socket;
 		protocol = other.protocol;
@@ -67,8 +65,7 @@ struct ClientCommState
 	}
 };
 
-bool comm_writeHeader(ClientCommState &client, PacketTag tag, uint16_t packetLength);
-bool comm_write(ClientCommState &client, const uint8_t *data, uint16_t length);
-void comm_abort(ClientCommState &client);
+bool comm_write(ClientCommState &comm, PacketTag tag, const uint8_t *data, uint16_t length);
+void comm_abort(ClientCommState &comm);
 
 #endif // COMM_SERVER_CLIENT_H

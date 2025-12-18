@@ -128,11 +128,12 @@ struct TrackingCameraState
 	// Unique ID stored on-device (generated on first boot)
 	int32_t id = 0;
 	// UART & Server comm
+	bool enableUART;
 	CommState uart = {};
 	std::string serialName = "/dev/ttyAMA0";
 	CommState server = {};
 	std::string server_host = "";
-	std::string server_port = "8888";
+	std::string server_port = "48532";
 	WirelessState wireless = {};
 	FirmwareUpdateState firmware = {};
 	FirmwareUpdateFlags postFirmwareActions = FW_FLAGS_NONE;

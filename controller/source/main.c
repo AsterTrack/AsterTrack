@@ -1148,7 +1148,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			if (!((req->wIndex >> i)&1) || (camStates[i].comm & CommReady) != CommReady) continue;
-			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+packetLen, false);
+			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+req->wLength, false);
 			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
 				camStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;

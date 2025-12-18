@@ -116,6 +116,8 @@ bool ServerInit(ServerState &state)
 
 	omp_set_num_threads(omp_get_max_threads());
 
+	state.server.host = WirelessServerGetHostname();
+
 	return true;
 }
 
@@ -333,7 +335,8 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	return camera;
 }
 
-std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id)
+std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id,
+	std::shared_ptr<TrackingControllerState> controller, ClientCommState *serverClient)
 {
 	auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.cameras.end())
@@ -342,6 +345,9 @@ std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID i
 	std::shared_ptr<TrackingCameraState> camera = std::make_shared<TrackingCameraState>();
 	camera->id = id;
 	camera->pipeline = EnsureCameraPipeline(state, id);
+	// Apply source comm here under dev_lock to prevent race-condition with CameraCheckDisconnected of DeviceSupervisorThread
+	camera->controller = std::move(controller);
+	camera->client = serverClient;
 	state.cameras.push_back(camera); // new shared_ptr
 	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 1/3
 	return camera;
@@ -359,20 +365,16 @@ std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id)
 // Device Mode
 // ----------------------------------------------------------------------------
 
-// TODO: Reevaluate need for wifi connection to cameras and potentially re-enable server
-// It did work at some point, and setting up wifi on cameras on-demand from server is working now
-// Would allow to transfer larger amounts of data like full quality images that are less latency-critical but require large bandwidth
-// Of course, might be possible to have the cameras only connect through wifi, but I fail to see the use for now
-// If going fully wireless, better use a designated protocol for it like nrf24s have
-// TimeSync over wireless would be horrible
-
-/* static void StartDeviceServer(ServerState &state)
+void StartWirelessServer(ServerState &state)
 {
-	if (state.server.threadRun)
+	if (state.server.thread)
 		return;
 	LOG(LServer, LInfo, "Starting network server!\n");
 	// Init server
-	state.server.socket = ServerInit("8888");
+	if (state.server.portSet.empty())
+		state.server.portSet = "45732";
+	state.server.portUsed = state.server.portSet;
+	state.server.socket = WirelessServerInit(state.server.portUsed);
 	if (state.server.socket == 0)
 	{
 		LOG(LServer, LError, "Could not start network server!\n");
@@ -381,16 +383,27 @@ std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id)
 	state.server.callbacks.userData1 = &state;
 	state.server.callbacks.onIdentify = [](ClientCommState &client) { // Find or setup camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
-		std::shared_ptr<TrackingCameraState> camera = DeviceSetupCamera(state, client.otherIdent.id);
-		LOG(LServer, LInfo, "Established server connection to camera with id %d!\n", camera->id);
+		LOG(LServer, LInfo, "Established server connection to camera with id %d!\n", client.otherIdent.id);
+		// Setup camera with server connection
+		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, client.otherIdent.id, nullptr, &client);
+		camera->client = &client; // Set both in EnsureCamera and here in case camera existed already
+		client.callbacks.userData2 = camera;
+		{
+			auto camState = camera->state.contextualLock();
+			camState->hadServerConnected = true;
+			// Clear any possible error state
+			if (camState->error.encountered && dtMS(camState->error.time, sclock::now()) > 1000)
+			{ // Might need this overlap protection to prevent race-conditions
+				camState->error.recoverTime = sclock::now();
+				camState->error.recovered = true;
+				camState->error.encountered = false;
+			}
+		}
 		// Setup stream subsystem
 		if (!camera->sync)
 		{ // Init with internal sync if no controller is known to be connected
-			SetCameraSyncNone(state.stream, camera);
+			SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / 144);
 		}
-		// Setup connection
-		camera->client = &client;
-		client.callbacks.userData2 = camera;
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	};
 	state.server.callbacks.onDisconnect = [](ClientCommState &client) { // Remove camera
@@ -398,114 +411,130 @@ std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id)
 		if (client.callbacks.userData2)
 		{ // Camera was already identified
 			TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
+			client.callbacks.userData2 = nullptr;
+			{
+				auto state = camera.state.contextualLock();
+				state->lastWirelessConnection = sclock::now();
+			}
 			camera.client = NULL;
-			if (DeviceCheckCameraDisconnect(state, camera))
-			{
-				LOG(LServer, LWarn, "Camera with id %d lost server connection, now unreachable! Total %d cameras connected!\n",
-					camera.id, (int)state.cameras.size());
-			}
-			else
-			{
-				LOG(LServer, LWarn, "Camera with id %d lost server connection!\n", camera.id);
-			}
+			LOG(LServer, LInfo, "Camera with id %d lost server connection!\n", camera.id);
+			// If camera is now unreachable, DeviceSupervisorThread will wait for it to reconnect before removing it entirely
 		}
 		else
 		{
 			LOG(LServer, LWarn, "Lost connection to camera before it could be identified!\n");
 		}
-
 	};
-	state.server.callbacks.onReceivePacketHeader = [](ClientCommState &client, PacketHeader &header)
+	state.server.callbacks.onReceivePacketHeader = [](ClientCommState &client, PacketHeader &header, TimePoint_t receiveTime)
 	{
+		assert(client.callbacks.userData2);
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
-		std::shared_lock dev_lock(state.deviceAccessMutex);
 		if (header.tag == PACKET_FRAME_SIGNAL)
 		{ // Frame is starting to be processed
-			// TODO: This is only for cameras solely connected over wifi. Unimportant, should outright remove TimeSync here
-			if (camera.sync && camera.sync->source == SYNC_NONE)
-			{ // No sync, this is only source for SOF timing, estimate actual SOF
-				LOG(LStreaming, LTrace, "Camera %d announced packet for frame %d!\n", camera.id, header.frameID);
-				// Update estimate of SOF (assuming regular SOFs)
-				TimePoint_t timeSOF = sclock::now() - std::chrono::microseconds(8000);
-				//timeSOF = UpdateSOFPredictions(*camera.sync, header.frameID, timeSOF);
-				RegisterSOF(*camera.sync, header.frameID, timeSOF);
-				RegisterCameraFrame(camera, header.frameID);
+			std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+			if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
+			if (!camera.sync)
+			{
+				LOG(LStreaming, LTrace, "Wireless Camera %d send a streaming packet but was not set up for streaming!\n", camera.id);
+				return false;
 			}
+			auto sync_lock = camera.sync->contextualLock();
+			if (sync_lock->source == SYNC_NONE)
+			{ // No sync, this is only source for SOF timing, estimate actual SOF
+				// Update estimate of SOF (assuming regular SOFs)
+				TimePoint_t timeSOF = receiveTime - std::chrono::microseconds(8000);
+				//timeSOF = UpdateSOFPredictions(*camera.sync, header.frameID, timeSOF);
+				RegisterSOF(*sync_lock, header.frameID, timeSOF);
+			}
+			auto frame = RegisterCameraFrame(*sync_lock, camera.syncIndex, header.frameID);
+			if (frame)
+				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for frame %d!\n", camera.id, frame->ID);
+			else
+				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for non-existant frame with ID %d!\n", camera.id, header.frameID);
 			return true;
 		}
-		auto parse_lock = camera.parse.contextualLock();
-		// Check if a packet of same tag is currently being parsed
-		for (auto &recv : parse_lock->receiving)
+		else if (header.isStreamPacket())
 		{
-			if (recv.second->header.tag == header.tag)
+			std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+			if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
+			if (!camera.sync)
 			{
-				LOG(LStreaming, LDebug, "Server received new packet of tag %d (%d) before last (%d) finished parsing with %d/%d bytes read\n",
-					header.tag, header.frameID, recv.second->header.frameID, (int)recv.second->received, recv.second->header.length);
+				LOG(LStreaming, LTrace, "Wireless Camera %d sent a streaming packet but was not set up for streaming!\n", camera.id);
+				return false;
 			}
-		}
-		int headerBlockID = header.frameID * header.tag;
-		std::shared_ptr<ParsePacket> parsePacket = RegisterPacketHeader(*parse_lock, header, headerBlockID);
-		if (header.isStreamPacket())
-		{ // Register that camera is receiving frame data
-			RegisterStreamPacket(camera, header.frameID, sclock::now(), parsePacket);
+			if (!RegisterStreamPacket(*camera.sync->contextualLock(), camera.syncIndex, header.frameID, receiveTime))
+			{
+				LOG(LStreaming, LTrace, "Wireless Camera %d sent a streaming packet but was not set up for streaming!\n", camera.id);
+				return false;
+			}
 		}
 		return true;
 	};
-	state.server.callbacks.onReceivePacketBlock = [](ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int len)
+	state.server.callbacks.onReceivePacketBlock = [](ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int len, TimePoint_t receiveTime)
 	{
+		assert(client.callbacks.userData2);
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
-		std::shared_lock dev_lock(state.deviceAccessMutex);
+		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
 		// Update statistics of streaming packet
 		if (header.isStreamPacket())
 		{
-			if (!RegisterStreamBlock(camera, header.frameID))
+			if (!RegisterStreamBlock(*camera.sync->contextualLock(), camera.syncIndex, header.frameID))
 			{
 				LOG(LParsing, LError, "---- Received stream block for non-existant frame %d or unregistered stream packet!\n", header.frameID);
 			}
 		}
-		// Continue parsing packet
-		int headerBlockID = header.frameID * header.tag;
-		auto parse_lock = camera.parse.contextualLock();
-		std::shared_ptr<ParsePacket> parsePacket = ParsePacketBlock(*parse_lock, data, len, headerBlockID);
-		if (parsePacket && parsePacket->complete)
-		{ // Successfully read block
-			if (parsePacket->erroneous)
-			{
-				LOG(LStreaming, LDebug, "---- Failed to read packet with tag %d for frame %d!\n", header.tag, header.frameID);
-			}
-			if (header.isStreamPacket())
-			{
-				LOG(LParsing, LTrace, "Parsed final block of streaming packet with tag %d\n", header.tag);
-				RegisterStreamPacketComplete(camera, *parse_lock, header.frameID, false);
-				MaintainStreamState(state.stream);
+	};
+	state.server.callbacks.onReceivePacket = [](ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int len, TimePoint_t receiveTime, bool erroneous)
+	{
+		assert(client.callbacks.userData2);
+		ServerState &state = *((ServerState*)client.callbacks.userData1);
+		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
+		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
+		if (header.isStreamPacket())
+		{
+			auto cameraFrame = ReadStreamingPacket(camera, header, data, len, erroneous);
+			int blobCount = cameraFrame.rawPoints2D.size();
+			auto sync_lock = camera.sync->contextualLock();
+			SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera.syncIndex, header.frameID, std::move(cameraFrame), erroneous);
+			if (frame)
+			{ // Packet existed for frame
+				LOG(LStreaming, LTrace, "Camera %d (TCP) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
+					camera.id, header.tag, frame->ID, frame->ID&0xFF, blobCount);
+				if (frame->previouslyProcessed)
+				{
+					LOG(LStreaming, LTrace, "---- Camera %d finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
+						camera.id, frame->ID, blobCount, dtMS(frame->SOF, sclock::now()), dtMS(frame->lastProcessed, sclock::now()));
+				}
 			}
 			else
 			{
-				LOG(LParsing, LTrace, "Parsed final block of general packet with tag %d\n", header.tag);
-				ReadCameraPacket(camera, *parsePacket);
+				LOG(LParsing, LError, "---- Completed stream packet for non-existant frame %d or unregistered stream packet!\n", header.frameID);
 			}
-			ClearPacketBlock(*parse_lock, headerBlockID);
-			// FrameRecord might still reference it if isStreamPacket, but that's fine since it's a shared_ptr
+		}
+		else
+		{
+			ReadCameraPacket(camera, header, data, len, erroneous);
 		}
 	};
+
 	// Start comm thread
-	state.server.threadRun = true;
-	state.server.thread = new std::thread(ServerThread, &state.server);
+	state.server.thread = new std::jthread(WirelessServerThread, &state.server);
 }
 
-static void StopDeviceServer(ServerState &state)
+void StopWirelessServer(ServerState &state)
 {
-	if (!state.server.threadRun)
+	if (!state.server.thread)
 		return;
 	LOG(LServer, LInfo, "Stopping network server!\n");
+	state.server.portUsed.clear();
 	// Join server thread, it will do cleanup
-	state.server.threadRun = false;
-	if (state.server.thread != NULL && state.server.thread->joinable())
-		state.server.thread->join();
+	delete state.server.thread;
 	state.server.thread = NULL;
-} */
+}
 
 bool StartDeviceMode(ServerState &state)
 {
@@ -531,7 +560,8 @@ bool StartDeviceMode(ServerState &state)
 	// Connect new controllers
 	DetectNewControllers(state);
 
-	//StartDeviceServer(state);
+	// Start server for wireless cameras
+	StartWirelessServer(state);
 
 	// Start device supervisor thread
 	assert(state.coprocessingThread == NULL);
@@ -548,6 +578,8 @@ void StopDeviceMode(ServerState &state)
 	if (state.mode != MODE_Device)
 		return;
 	LOG(LDefault, LInfo, "Disconnecting!\n");
+	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
+	state.mode = MODE_None;
 
 	// Join coprocessing thread
 	state.parsing_cv.notify_all();
@@ -558,25 +590,27 @@ void StopDeviceMode(ServerState &state)
 	if (state.isStreaming)
 		StopStreaming(state);
 
-	// Disconnect from controllers
+	// Disconnect from controllers and their wired-only cameras
 	while (!state.controllers.empty())
 		DisconnectController(state, *state.controllers.back());
 
-	// Stop server and disconnect from cameras
-	//StopDeviceServer(state);
+	// Stop wireless server
+	StopWirelessServer(state);
+
+	// Disconnect from all remaining wireless cameras
+	while (!state.cameras.empty())
+		CameraCheckDisconnected(state, *state.cameras.back());
 
 	// Diconnect IMU providers
 	state.imuProviders.contextualLock()->clear();
 	hid_exit();
-
 	for (auto &tracker : state.trackerConfigs)
-	{
 		tracker.imu = nullptr;
-	}
+
+	assert(state.controllers.empty());
+	assert(state.cameras.empty());
 
 	// Reset state
-	state.mode = MODE_None;
-	assert(state.controllers.empty() && state.cameras.empty());
 	ResetPipelineState(state.pipeline);
 
 	SignalServerEvent(EVT_MODE_DEVICE_STOP);
@@ -599,6 +633,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		it++;
 
 		TimePoint_t now = sclock::now();
+
+		std::shared_lock dev_lock(state.deviceAccessMutex);
 
 #if !defined(_WIN32)
 		// Does work, but takes over a second on windows because no hotplugging support
@@ -624,6 +660,18 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			}
 
 			HandleController(state, controller);
+		}
+
+		// Check for any disconnected cameras (due to both UART / Wifi link being inactive for a period of time)
+		for (int c = 0; c < state.cameras.size(); c++)
+		{
+			int id = state.cameras[c]->id;
+			if (CameraCheckDisconnected(state, *state.cameras[c]))
+			{
+				LOG(LCameraDevice, LWarn, "Camera %d had no remaining communication links!\n", id);
+				c--;
+				continue;
+			}
 		}
 
 		if (dtMS(lastIOCheck, now) > 10)
@@ -743,6 +791,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		{ // Update status of background processes even when not streaming (anymore)
 			UpdatePipelineStatus(state.pipeline);
 		}
+
+		dev_lock.unlock();
 
 		// Interval only affects IMU polling rate, not USB packets by controllers
 		int interval = imusRegistered? (state.lowLatencyIMU? 1 : 1) : 20;

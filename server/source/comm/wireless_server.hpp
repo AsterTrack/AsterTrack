@@ -38,27 +38,33 @@ struct TrackingCameraCallbacks
 	std::shared_ptr<void> userData2 = NULL;
 	void (*onIdentify)(ClientCommState &client);
 	void (*onDisconnect)(ClientCommState &client);
-	bool (*onReceivePacketHeader)(ClientCommState &client, PacketHeader &header);
-	void (*onReceivePacketBlock)(ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int length);
+	bool (*onReceivePacketHeader)(ClientCommState &client, PacketHeader &header, TimePoint_t receiveTime);
+	void (*onReceivePacketBlock)(ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int length, TimePoint_t receiveTime);
+	void (*onReceivePacket)(ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int length, TimePoint_t receiveTime, bool erroneous);
 };
 
 struct ServerCommState 
 {
-	std::atomic<bool> threadRun;
-	std::thread *thread;
+	std::jthread *thread;
 
 	std::vector<opaque_ptr<ClientCommState>> clients;
 
 	int socket = -1;
 
 	TrackingCameraCallbacks callbacks;
+
+	std::string portSet = "48532";
+	std::string portUsed;
+	std::string host;
 };
 
 
 /* Functions */
 
-int ServerInit(std::string port);
+std::string WirelessServerGetHostname();
 
-void ServerThread(ServerCommState *serverState);
+int WirelessServerInit(std::string port);
+
+void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverState);
 
 #endif // COMM_SERVER_H

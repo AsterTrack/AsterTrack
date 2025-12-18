@@ -40,6 +40,7 @@ static void configSerialPort(int uartFD, uint32_t baud, bool markErrors)
 {
 	struct termios2 tty = {};
 
+	// NOTE: Change uart_getBytesPerUS when bits get changed
 	tty.c_cflag &= ~PARENB; // Clear parity bit, disabling parity
 	//tty.c_cflag |= PARENB; // Set parity bit, enabling parity checks
 	//tty.c_cflag &= ~PARODD; // Use even parity
@@ -178,7 +179,7 @@ void uart_configure(void *port, uint32_t rate)
 	uart.baudrate = rate;
 }
 
-float uart_getBitsPerUS(void *port)
+float uart_getBytesPerUS(void *port)
 {
 	UartPort &uart = *((UartPort*)port);
 	// 1 Start, 8 Data, 2 Stop, 1 Parity

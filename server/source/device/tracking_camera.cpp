@@ -30,45 +30,58 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/log.hpp"
 
-bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int length, bool writeChecksum)
+bool TrackingCameraState::hasComms()
+{
+	if (client && client->ready) return true;
+	if (controller && state.contextualRLock()->commState == CommPiReady) return true;
+	return false;
+}
+
+bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int length)
 {
 	if (state.contextualRLock()->error.encountered)
 	{
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
-	if (state.contextualRLock()->commState != CommPiReady)
+	if (!hasComms())
 	{
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is not started up yet!", id);
 		return false;
 	}
-	if (writeChecksum)
-	{
-		assert(length > PACKET_CHECKSUM_SIZE);
-		if (tag >= PACKET_HOST_COMM)
-			calculateForwardPacketChecksum(data, length-PACKET_CHECKSUM_SIZE, data+length-PACKET_CHECKSUM_SIZE);
-		else // We should not be sending these packets, but do allow for it
-			calculateDirectPacketChecksum(data, length-PACKET_CHECKSUM_SIZE, data+length-PACKET_CHECKSUM_SIZE);
-		LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(data+length-PACKET_CHECKSUM_SIZE));
+	if (client && client->ready && length > 100)
+	{ // Prefer wireless for "larger" packets
+		return comm_write(*client, tag, data, (uint16_t)length);
 	}
-	else assert(length == 0);
-	if (controller)
-	{
+	else if (controller && state.contextualRLock()->commState == CommPiReady)
+	{ // Prefer UART for small packets
+		thread_local std::vector<uint8_t> packetBuffer;
+		if (length > 0)
+		{
+			packetBuffer.resize(length + PACKET_CHECKSUM_SIZE);
+			memcpy(packetBuffer.data(), data, length);
+			if (tag >= PACKET_HOST_COMM)
+				calculateForwardPacketChecksum(packetBuffer.data(), length, packetBuffer.data()+length);
+			else // We should not be sending these packets, but do allow for it
+				calculateDirectPacketChecksum(packetBuffer.data(), length, packetBuffer.data()+length);
+			LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(packetBuffer.data()+length));
+		}
+		else
+			packetBuffer.clear();
 		return comm_submit_control_data(controller->comm, COMMAND_OUT_SEND_PACKET,
-			(uint16_t)tag, (uint16_t)(1<<port), data, (uint16_t)length) >= 0;
+			(uint16_t)tag, (uint16_t)(1<<port), packetBuffer.data(), (uint16_t)packetBuffer.size()) >= 0;
 	}
-	/* else if (client && client->ready)
-	{
-		return comm_writeHeader(*client, tag, (uint16_t)length)
-			&& comm_write(*client, data, (uint16_t)length);
-	} */
+	else if (client && client->ready)
+	{ // Fall back to wireless for small packets
+		return comm_write(*client, tag, data, (uint16_t)length);
+	}
 	else
 		return false;
 }
 
 bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 {
-	if (state.contextualRLock()->commState != CommPiReady)
+	if (!hasComms())
 	{
 		LOG(LCameraDevice, LError, "Camera %d requesting mode failed because it has not started up yet!", id);
 		return false;
@@ -85,9 +98,9 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 			id, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 		return false;
 	}
-	uint8_t modePacket[1+PACKET_CHECKSUM_SIZE];
+	uint8_t modePacket[1];
 	modePacket[0] = setMode;
-	if (!sendPacket(PACKET_CFG_MODE, modePacket, sizeof(modePacket), true))
+	if (!sendPacket(PACKET_CFG_MODE, modePacket, sizeof(modePacket)))
 	{
 		LOG(LCameraDevice, LWarn, "Camera %d failed to send packet to request mode %x!", id, setMode);
 		return false;
@@ -149,6 +162,18 @@ bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera)
 {
 	if (camera.client || camera.controller)
 		return false;
+	if (state.mode == MODE_Device)
+	{ // If in Device mode and not leaving it, retain cameras for a bit
+		auto camState = *camera.state.contextualRLock(); // copy
+		if (camState.hadServerConnected && dtMS(camState.lastWirelessConnection, sclock::now()) < 10000)
+			return false;
+		// TODO: CameraCheckDisconnected amd ReadStatusPacket both check timeouts before camera is removed (2/2)
+		// This here acts once controller association is gone, may be enough
+		// Though this one will retain cameras even when controller got removed, other would immediately remove cameras. Not sure which is desired
+		//if ((camState.hadMCUConnected || camState.hadPiConnected) && 
+		//	(dtMS(camState.lastConnected, sclock::now()) < 1000 || dtMS(camState.lastConnecting, sclock::now()) < 5000))
+		//	return false;
+	}
 	// No other connection, remove camera
 
 	std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
@@ -179,7 +204,7 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because controller is not in streaming mode anymore!", camera->id);
 		return false;
 	}
-	if (camera->state.contextualRLock()->commState != CommPiReady)
+	if (!camera->hasComms())
 	{
 		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because it has not started up yet!", camera->id);
 		return false;
@@ -215,62 +240,79 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 
 void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 {
-	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	CameraConfig &config = state.cameraConfig.configurations[state.cameraConfig.cameraConfigs[device.id]];
 	ConfigPacket packet = {};
 	packet.width = config.width;
 	packet.height = config.height;
 	if (device.sync && device.sync->contextualRLock()->source != SYNC_NONE)
+	{
 		packet.fps = config.framerate;
+		packet.extTrig = config.synchronised;
+	}
 	else
+	{
 		packet.fps = 144;
+		packet.extTrig = false;
 		// TODO: Implement control over FPS in free-running cameras
 		// Currently not sure how to instruct the OV9281 to do so. Also unimportant
 		// Same in SetupSyncGroups
+	}
 	packet.shutterSpeed = config.exposure;
 	packet.analogGain = config.gain;
-	packet.extTrig = config.synchronised;
 	packet.strobe = config.enableStrobe;
 	// TODO: Implement control over filter switcher on both Pi and STM32
 	//packet.filter = 
 	packet.strobeOffset = config.strobeOffset;
 	packet.strobeLength = config.strobeLength;
 	packet.blobProc = config.blobProcessing;
-	uint8_t setup[CONFIG_PACKET_SIZE+PACKET_CHECKSUM_SIZE];
+	uint8_t setup[CONFIG_PACKET_SIZE];
 	storeConfigPacket(packet, setup);
-	device.sendPacket(PACKET_CFG_SETUP, setup, sizeof(setup), true);
+	device.sendPacket(PACKET_CFG_SETUP, setup, sizeof(setup));
 }
-bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
+
+bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action)
 {
-	if (device.state.contextualRLock()->commState != CommPiReady) return false;
 	// Send wireless config to Tracking Camera
 	auto &wireless = device.config.wireless;
 
-	WirelessActions actions = WIRELESS_ACTIONS_NONE;
+	std::vector<WirelessAction> actions;
+	if (action != WIRELESS_ACTION_NONE)
+		actions.push_back(action);
 
-	bool sendCreds = wireless.config & WIRELESS_CONFIG_WIFI; // Or credentials should be stored, etc.
+	bool sendCreds = wireless.setConfig & WIRELESS_CONFIG_WIFI;
 	std::size_t credSize = sendCreds? state.wpa_supplicant_conf.size() : 0;
 	if (credSize > 2000)
 	{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE
-		// Implement feedback on failure in UI
 		LOG(LGUI, LWarn, "wpa_supplicant is too long to send over control transfers!");
 		credSize = 0;
 		return false;
 	}
-	std::vector<uint8_t> packet(WIRELESS_PACKET_HEADER + credSize + PACKET_CHECKSUM_SIZE);
-	packet[0] = wireless.config;
-	packet[1] = actions;
+	bool serverEnabled = wireless.setConfig & WIRELESS_CONFIG_SERVER;
+	if (state.server.host.empty())
+		state.server.host = WirelessServerGetHostname();
+	assert(!state.server.portUsed.empty());
+	std::string hostStr = state.server.host + ":" + state.server.portUsed;
+	uint8_t hostSize = serverEnabled? hostStr.size() : 0;
+	std::vector<uint8_t> packet(WIRELESS_PACKET_HEADER + credSize + hostSize + actions.size());
+	packet[0] = wireless.setConfig;
+	packet[1] = actions.size();
 	packet[2] = credSize >> 8;
 	packet[3] = credSize & 0xFF;
-	// 4 free byte for future use
+	packet[4] = hostSize;
+	// 3 free byte for future use
+	for (int i = 0; i < actions.size(); i++)
+		packet[WIRELESS_PACKET_HEADER+i] = actions[i];
 	if (credSize > 0)
-		memcpy(packet.data()+WIRELESS_PACKET_HEADER, state.wpa_supplicant_conf.data(), credSize);
+		memcpy(packet.data()+WIRELESS_PACKET_HEADER+actions.size(), state.wpa_supplicant_conf.data(), credSize);
+	if (hostSize > 0)
+		memcpy(packet.data()+WIRELESS_PACKET_HEADER+actions.size()+credSize, hostStr.data(), hostSize);
 
 	wireless.sendTime = sclock::now();
 	wireless.error.clear(); // Clear past failure
-	device.sendPacket(PACKET_CFG_WIFI, packet.data(), packet.size(), true);
+	device.sendPacket(PACKET_CFG_WIFI, packet.data(), packet.size());
 	return true;
 }
+
 /**
  * Mode 0: Image Stream off
  * Mode 1: Image Stream every X frames
@@ -278,9 +320,8 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device)
  */
 static void CameraSendImageRequest(TrackingCameraState &device, uint8_t mode, ImageRequest &request)
 {
-	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	// Send image request to Tracking Camera
-	std::vector<uint8_t> stream((mode > 0? 12 : 1) + PACKET_CHECKSUM_SIZE);
+	std::vector<uint8_t> stream(mode > 0? 12 : 1);
 	stream[0] = mode;
 	if (mode > 0)
 	{
@@ -292,18 +333,19 @@ static void CameraSendImageRequest(TrackingCameraState &device, uint8_t mode, Im
 		stream[10] = request.jpegQuality;
 		stream[11] = request.frame;
 	}
-	device.sendPacket(PACKET_CFG_IMAGE, stream.data(), stream.size(), true);
+	device.sendPacket(PACKET_CFG_IMAGE, stream.data(), stream.size());
 }
+
 void CameraUpdateStream(TrackingCameraState &device)
 {
 	CameraSendImageRequest(device, device.config.imageStreaming.enabled, device.config.imageStreaming.request);
 }
+
 void CameraUpdateVis(TrackingCameraState &device)
 {
-	if (device.state.contextualRLock()->commState != CommPiReady) return;
 	// Send vis config to Tracking Camera
 	auto &config = device.config.hdmiVis;
-	std::vector<uint8_t> vis((config.enabled? 8 : 1) + PACKET_CHECKSUM_SIZE);
+	std::vector<uint8_t> vis(config.enabled? 8 : 1);
 	vis[0] = config.enabled;
 	if (vis[0])
 	{ // Width, Height, interval in frames
@@ -313,5 +355,5 @@ void CameraUpdateVis(TrackingCameraState &device)
 		vis[6] = config.displayFrame;
 		vis[7] = config.displayBlobs;
 	}
-	device.sendPacket(PACKET_CFG_VIS, vis.data(), vis.size(), true);
+	device.sendPacket(PACKET_CFG_VIS, vis.data(), vis.size());
 }

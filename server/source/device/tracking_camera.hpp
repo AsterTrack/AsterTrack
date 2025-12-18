@@ -74,7 +74,8 @@ struct TrackingCameraState
 	inline bool hasSetStreaming() const { return (modeSet.mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 	inline bool isStreaming() const { return (mode&TRCAM_FLAG_STREAMING) == TRCAM_FLAG_STREAMING; }
 
-	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length, bool writeChecksum);
+	bool hasComms();
+	bool sendPacket(PacketTag tag, uint8_t *data, unsigned int length);
 	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
 	void recvModeSet(uint8_t mode);
 
@@ -105,9 +106,10 @@ struct TrackingCameraState
 
 	struct Wireless
 	{ // Wireless configuration
-		WirelessConfig config = WIRELESS_CONFIG_SSH;
+		WirelessConfig lastConfig, setConfig;
 		// Actual reported state:
-		WirelessConfigStatus wifiStatus, sshStatus, serverStatus;
+		WirelessStatus wifiStatus, sshStatus, serverStatus;
+		WirelessStatus wifiFlags, sshFlags, serverFlags;
 		std::string SSID, IP, error;
 		TimePoint_t sendTime;
 		TimePoint_t errorTime;
@@ -184,8 +186,9 @@ struct TrackingCameraState
 	};
 	struct Status
 	{
-		bool hadPiConnected, hadMCUConnected;
+		bool hadPiConnected, hadMCUConnected, hadServerConnected;
 		TimePoint_t lastConnected, lastConnecting;
+		TimePoint_t lastWirelessConnection;
 		ControllerCommState commState;
 		Errors error;
 	};
@@ -200,7 +203,7 @@ bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera);
 bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraState> &camera);
 
 void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
-bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device);
+bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action = WIRELESS_ACTION_NONE);
 void CameraUpdateStream(TrackingCameraState &device);
 void CameraUpdateVis(TrackingCameraState &device);
 

@@ -49,7 +49,7 @@ void uart_flush(void *port);
 
 int uart_getTXQueue(void *port);
 
-float uart_getBitsPerUS(void *port);
+float uart_getBytesPerUS(void *port);
 
 void uart_configure(void *port, uint32_t rate);
 

@@ -295,6 +295,7 @@ if [[ $AUTOCONNECT_WIFI = "True" ]]; then
 		echo "Setting up wifi credentials to enable autoconnect..."
 		cp $STORAGE_PATH/wpa_supplicant.conf $MOUNT_DATA/config/
 		touch $MOUNT_DATA/config/wireless_autoconnect
+		touch $MOUNT_DATA/config/enable_ssh
 	else
 		echo "Cannot setup wifi autoconnect, missing wifi credentials!"
 	fi

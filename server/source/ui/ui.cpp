@@ -620,11 +620,10 @@ bool InterfaceState::Init()
 		ICON_LOAD(imu_lost)
 
 		ICON_LOAD(wireless)
-		ICON_LOAD(no_wireless)
-		ICON_LOAD(server)
-		ICON_LOAD(no_server)
 		ICON_LOAD(ssh)
-		ICON_LOAD(no_ssh)
+		ICON_LOAD(server)
+		ICON_LOAD(rtdata)
+		ICON_LOAD(config_disabled)
 
 		if (iconLoadFailures > 0)
 			SignalErrorToUser(asprintf_s("Failed to load %d icons - check Logging view!", iconLoadFailures));

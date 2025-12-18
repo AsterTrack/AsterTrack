@@ -150,7 +150,7 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 				state.id = std::stoi(optarg);
 				break;
 			case 'u':
-				state.uart.enabled = true;
+				state.enableUART = true;
 				if (optarg && *optarg)
 					state.serialName = std::string(optarg);
 				break;
@@ -165,7 +165,11 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 'y':
 				state.server_host = std::string(optarg);
-				state.server.enabled = !state.server_host.empty();
+				if (!state.server_host.empty())
+				{ // If there's a wifi connection setup, this will start the server
+					state.wireless.config = (WirelessConfig)(state.wireless.config | WIRELESS_CONFIG_SERVER);
+					state.wireless.changed = (WirelessConfig)(state.wireless.changed | WIRELESS_CONFIG_SERVER);
+				}
 				break;
 			case 'z':
 				state.server_port = std::string(optarg);

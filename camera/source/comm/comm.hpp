@@ -50,11 +50,10 @@ struct CommList
 		// Nothing ready, doesn't matter which comm to select
 		return nullptr;
 	}
-
-	operator CommState*() { return get(COMM_MEDIUM_UART); }
 };
 
 extern CommList comms;
+extern CommMedium realTimeAff, largeDataAff;
 
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium);
 void comm_disable(CommState &comm);

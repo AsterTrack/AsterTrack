@@ -361,7 +361,7 @@ install_package()
 		# Delete package and stop script if MD5 sum is wrong
 		rm "$pkg"
 		DEPENDENCIES=
-		echo "Could not install $pkg, MD5 mismatch!"
+		echo "Could not install $pkg, MD5 mismatch! Perhaps the package was previously downloaded from a different repository?"
 		return 1
 	fi
 

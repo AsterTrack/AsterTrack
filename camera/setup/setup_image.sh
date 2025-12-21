@@ -20,7 +20,7 @@ if [[ "$EUID" != 0 ]]; then
 fi
 
 RUNTIME_DEP="libv4l2.tcz libjpeg-turbo.tcz libgpiod.tcz gcc_libs.tcz" # gcc_libs.tcz for libatomic
-COMPILE_DEP="libjpeg-turbo-dev.tcz libgpiod-dev.tcz cmake.tcz compiletc.tcz "
+COMPILE_DEP="libjpeg-turbo-dev.tcz libgpiod-dev.tcz cmake.tcz compiletc.tcz bc.tcz"
 WIRELESS_DEP="firmware-brcmwifi.tcz firmware-rpi-wifi.tcz wifi.tcz openssh.tcz ntp.tcz"
 ZEROCONF_DEP="dbus.tcz avahi.tcz nss-mdns.tcz" # so that hostname is announced, else have to use IP
 DEV_DEP="bash.tcz gdb.tcz nano.tcz i2c-tools.tcz gpiod.tcz" # bash only for VS Code remote development

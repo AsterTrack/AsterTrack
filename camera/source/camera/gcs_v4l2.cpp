@@ -138,6 +138,23 @@ static int32_t Read16Bit(unsigned int fd, uint16_t reg)
 	return value;
 }
 
+static int16_t Read8Bit(unsigned int fd, uint16_t reg)
+{
+	uint8_t value;
+	unsigned char REG[2] = { (uint8_t)(reg>>8), (uint8_t)(reg&0xFF) };
+	struct i2c_msg I2C_MSG[] = {
+		{ 0x60, 0, sizeof(REG), REG },
+		{ 0x60, I2C_M_RD, 1, &value },
+	};
+	struct i2c_rdwr_ioctl_data I2C_READ = { I2C_MSG, 2 };
+	if (ioctl(fd, I2C_RDWR, &I2C_READ) < 0)
+	{
+		printf("Failed to read 8bit register! %d: %s\n", errno, strerror(errno));
+		return -1;
+	}
+	return value;
+}
+
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 int gcs_findCamera()
 {
@@ -430,17 +447,15 @@ void gcs_updateParameters(GCS *gcs)
 	if (i2c_fd < 0)
 		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 
-	if (i2c_fd >= 0)
-	{
-		// Set vblank (time between last frame and new frame - used to set FPS)
-		// TODO: respect gcs->cameraParams->fps if NOT gcs->cameraParams->extTrig
-		// These are already set as constants in the OV9281 set as constant
-		#define MIN_VBLANK_1280x800 110 // VTS of 110+800
-		#define MIN_VBLANK_640x400 22 // VTS of 22+400
-		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
-			printf("Failed to set vblank to minimum!\n");
-	}
+	// Set hblank (extra time between lines)
+	// TODO: What does this even mean for a global shutter sensor?
+	if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, 0, 0)))
+		printf("Failed to set hblank to minimum!\n");
 
+	// Set vblank (extra time between last frame and new frame - used to set FPS)
+	// TODO: respect gcs->cameraParams->fps if NOT gcs->cameraParams->extTrig
+	if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
+		printf("Failed to set vblank to minimum!\n");
 
 	// Digital camera gain not supported by OV9281 camera / driver
 	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))

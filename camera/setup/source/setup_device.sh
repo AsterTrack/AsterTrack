@@ -170,19 +170,18 @@ core_freq=500
 sdram_freq_min=450
 sdram_freq=500
 #sdram_freq=450
-
 #over_voltage=0
 #over_voltage_min=-4
-# Increase GPU memory (256 is fine)
+
+# Increase GPU memory (32 is fine)
 gpu_mem=$GPU_MEM_SIZE
 #gpu_mem=368
 #cma_lwm=16
 #cma_hwm=32
 #cma_offline_start=16
-# Enable access to camera I2C10, used to configure the OV9281
+
+# Enable access to camera I2C10, used to communicate with the camera from userspace
 dtparam=i2c_vc=on
-# Load built-in Kernel driver for OV9281 camera
-dtoverlay=ov9281,media-controller=0
 # Alternatively switch bt to mini-uart and fix VC frequency to 300Mhz, but bt will be slow
 dtoverlay=disable-bt
 # Init PL011 clock to allow up to 3MBaud
@@ -191,16 +190,25 @@ dtoverlay=disable-bt
 init_uart_clock=144000000
 # Setup I2C1 for communicating with the STM32 bootloader
 dtparam=i2c_arm=on,i2c_arm_baudrate=400000
+
+# Load device tree overlay for OV9281 (but default driver is suppressed - we still need this overlay for our own driver)
+dtoverlay=ov9281,media-controller=0
+#dtoverlay=ov9281,media-controller=0,clk-continuous
+# Tried setting clk-continuous so default OV9282 driver uses continuous clocks
+# This allows setting HBLANK down to to 176 instead of 250 (HTS to 728 instead of 765 for 1280 width)
+# While this worked, it also resulted in no frames sent by camera
+# With prior OV9281 driver in piCore 14, HBLANK of 176 was normal, and allowed for exposures beyond 270us (which now result in framedrops)
+# So instead, we patch and recompile the new OV9282 driver to always use continuous MIPI clocks, and it works great
 " >> $MOUNT_BOOT/config.txt
 
 # Copy backup to package path
 cp $MOUNT_BOOT/config.txt $STORAGE_PATH/config.txt
 
-#sed -i -e 1's/$/ new_option &/' $MOUNT_BOOT/cmdline.txt
+# Prevent default ov9282 driver from loading automatically, we'll load the driver during boot
+sed -i -e 1's/$/ blacklist=ov9282 &/' $MOUNT_BOOT/cmdline.txt
 
 # Copy startup scripts
 cp $STARTUP_PATH/* "$DATA_PATH/opt/"
-cp $STARTUP_PATH/.filetool.lst "$DATA_PATH/opt/"
 
 # Copy scripts for program interaction and building
 cp $SCRIPTS_PATH/* "$BUILD_PATH/"
@@ -208,10 +216,23 @@ cp $SCRIPTS_PATH/* "$BUILD_PATH/"
 
 echo "Copying program and sources..."
 
+if [[ -d "$STORAGE_PATH/drivers" ]]; then
+	# Copy any prebuilt camera drivers
+	cp -r $STORAGE_PATH/drivers $BUILD_PATH/
+elif [[ $AUTOCONNECT_WIFI != "True" ]]; then
+	echo "No camera drivers available, to build them on-device the camera needs internet to download the sources!"
+	echo "Alternatively, download them manually and put them in the storage partition (which gets created on first boot)"
+	echo "Read kernel driver build scripts for more info."
+	exit 1
+fi
+
 if [[ $FORCE_BUILD != "True" ]]; then
 	# Copy existing TrackingCamera build if it exists
 	if [[ -d "$STORAGE_PATH/TrackingCamera" ]]; then
 		cp -r $STORAGE_PATH/TrackingCamera $BUILD_PATH/
+	else
+		echo "No TrackingCamera binaries available - will have to be built on-device!"
+		echo "Make sure to use an image that has all the dependencies to compile it!" 
 	fi
 fi
 

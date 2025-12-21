@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# Ensure swap partition exists and is used (requires reboot after first creation)
-/opt/swap.sh
+# Ensure setup of swap and storage partitions (requires reboot after first creation)
+/opt/part.sh
 
 # Setup and connect wifi if configured
 /opt/wifi.sh &
@@ -36,7 +36,13 @@ done
 
 if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then
 	# Program binary wasn't installed, assume we are equipped to build
-	/home/tc/build_release.sh 1> /mnt/mmcblk0p2/build.log 2> /mnt/mmcblk0p2/build.err
+	/home/tc/build_release.sh 1> /mnt/mmcblk0p4/build.log 2> /mnt/mmcblk0p4/build.err
 fi
+
+if [[ ! -f /home/tc/drivers/ov9281.ko ]]; then
+	/home/tc/drivers_auto_build.sh 1> /mnt/mmcblk0p4/build_drivers.log 2> /mnt/mmcblk0p4/build_drivers.err
+fi
+
+/home/tc/drivers_load_modules.sh
 
 /home/tc/run.sh

@@ -7,8 +7,10 @@ compile_commands.json
 build/
 
 # Setup scripts
-setup/storage
-setup/data
-setup/download
 setup/*.img
+setup/data
+setup/storage
+setup/download
+setup/storage_*
+setup/download_*
 setup/search_repo_*

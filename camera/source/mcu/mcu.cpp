@@ -39,7 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <linux/i2c-dev.h>
 
 const char *i2c_port = "/dev/i2c-1";
-unsigned int i2c_fd;
+unsigned int i2c_fd = -1;
 
 const char *gpio_chipname = "/dev/gpiochip0";
 unsigned int PIN_BOOT0 = 27;

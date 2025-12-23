@@ -56,6 +56,7 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"uart",				optional_argument,	0,	'u' },
 		{"server-host",			required_argument,	0,	'y' }, // Dev only
 		{"server-port",			required_argument,	0,	'z' }, // Dev only
+		{"nocomms",			no_argument,		0,	'n' }, // Dev only	
 		{"s",					no_argument,		0,	'x' },
 		{"sync",				no_argument,		0,	'x' },
 		{"nostrobe",			no_argument,		0,	'o' },
@@ -82,6 +83,7 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 "    -df, --display-frame         Set to display frame on screen\n"
 "    --display WxHxF              Set display resolution and interval (in frames) (640x480x10)\n"
 "    -u,  --uart [=port]          Set to communicate over UART to wait for commands - optionally set uart port (/dev/ttyAMA0)\n"
+"    --nocomms                    Explicitly don't wait for any comms\n"
 "    -s,  --sync                  Set camera to frame sync mode\n"
 "    --nostrobe                   Set camera to NOT output frame exposure on the strobe pin\n"
 "    --nostatlog                  Do NOT log frame statistics. Improves performance significantly when printed to screen. \n"
@@ -173,6 +175,9 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 'z':
 				state.server_port = std::string(optarg);
+				break;
+			case 'n':
+				state.noComms = true;
 				break;
 			case 'h':
 			default:

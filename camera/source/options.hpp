@@ -157,7 +157,7 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 					state.serialName = std::string(optarg);
 				break;
 			case 'x':
-				state.camera.extTrig = true;
+				state.camera.extTrig = 1;
 				break;
 			case 'o':
 				state.camera.strobe = false;

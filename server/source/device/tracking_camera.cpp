@@ -210,6 +210,15 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 		return false;
 	}
 
+	// Setup sync group
+	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 3/4
+	// Remove this, should already be set up at this point
+	auto &config = state.cameraConfig.getCameraConfig(camera->id);
+	if (config.synchronised && camera->controller && camera->controller->sync)
+		SetCameraSync(*state.stream.contextualLock(), camera, camera->controller->sync);
+	else
+		SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / config.framerate);
+
 	// Send setup data incase it didn't already happen
 	CameraUpdateSetup(state, *camera);
 
@@ -219,16 +228,6 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 
 	// Give camera some time to configure itself
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-	// Setup sync group
-	if (state.cameraConfig.getCameraConfig(camera->id).synchronised && camera->controller
-		&& camera->controller->sync && camera->controller->sync->contextualRLock()->source != SYNC_NONE)
-	{ // TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 3/3 - Remove this
-		SetCameraSync(*state.stream.contextualLock(), camera, camera->controller->sync);
-	}
-	else {
-		SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / 144);
-	}
 
 	// Communicate with camera to start streaming (startup time is high)
 	return camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
@@ -240,22 +239,21 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 
 void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 {
-	CameraConfig &config = state.cameraConfig.configurations[state.cameraConfig.cameraConfigs[device.id]];
+	CameraConfig &config = state.cameraConfig.getCameraConfig(device.id);
 	ConfigPacket packet = {};
 	packet.width = config.width;
 	packet.height = config.height;
-	if (device.sync && device.sync->contextualRLock()->source != SYNC_NONE)
-	{
-		packet.fps = config.framerate;
-		packet.extTrig = config.synchronised;
+	if (device.sync)
+	{ // Use already set-up sync groups, do not parse config again
+		auto sync_lock = device.sync->contextualRLock();
+		packet.fps = 1000.0f / sync_lock->frameIntervalMS;
+		packet.extTrig = sync_lock->source != SYNC_NONE;
 	}
 	else
-	{
-		packet.fps = 144;
+	{ // Should not happen, all cameras should have a sync group
+		LOG(LCameraDevice, LError, "Sync group of camera has not been set up yet!");
+		packet.fps = config.framerate;
 		packet.extTrig = false;
-		// TODO: Implement control over FPS in free-running cameras
-		// Currently not sure how to instruct the OV9281 to do so. Also unimportant
-		// Same in SetupSyncGroups
 	}
 	packet.shutterSpeed = config.exposure;
 	packet.analogGain = config.gain;

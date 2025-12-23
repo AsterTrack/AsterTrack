@@ -63,6 +63,7 @@ struct GCS_FrameBuffer
 	VCSM_BUFFER vcsm;
 	int32_t DMAFD = -1;
 };
+
 struct GCS
 {
 	// Flags
@@ -70,8 +71,11 @@ struct GCS
 	uint8_t error = 0;
 	uint8_t frameWaiting = 0;
 
+	SENSOR_NUM sensor;
+
 	// Camera parameters
 	GCS_CameraParams *cameraParams = NULL;
+	int usedWidth, usedHeight, usedStride;
 
 	int fd = -1;
 	int bufferCount = 0;
@@ -83,12 +87,10 @@ struct GCS
 
 int gcs_setParameter(GCS *gcs, uint32_t id, uint32_t value, uint32_t max)
 {
-	int status;
-
 	struct v4l2_queryctrl ctrlQuery;
 	memset(&ctrlQuery, 0, sizeof ctrlQuery);
 	ctrlQuery.id = id;
-	status = ioctl(gcs->fd, VIDIOC_QUERYCTRL, &ctrlQuery);
+	int status = ioctl(gcs->fd, VIDIOC_QUERYCTRL, &ctrlQuery);
 	if (status) return status;
 
 	struct v4l2_control ctrl;
@@ -101,6 +103,41 @@ int gcs_setParameter(GCS *gcs, uint32_t id, uint32_t value, uint32_t max)
 	if (ctrl.value < ctrlQuery.minimum)
 		ctrl.value = ctrlQuery.minimum;
 	status = ioctl(gcs->fd, VIDIOC_S_CTRL, &ctrl);
+	return status;
+}
+
+int gcs_getParameterRange(GCS *gcs, uint32_t id, uint32_t &min, uint32_t &max)
+{
+	struct v4l2_queryctrl ctrlQuery;
+	memset(&ctrlQuery, 0, sizeof ctrlQuery);
+	ctrlQuery.id = id;
+	int status = ioctl(gcs->fd, VIDIOC_QUERYCTRL, &ctrlQuery);
+	min = ctrlQuery.minimum;
+	max = ctrlQuery.maximum;
+	return status;
+}
+
+int gcs_getParameterValue(GCS *gcs, uint32_t id, uint32_t &value)
+{
+	struct v4l2_control ctrl;
+	memset(&ctrl, 0, sizeof ctrl);
+	ctrl.id = id;
+	int status = ioctl(gcs->fd, VIDIOC_G_CTRL, &ctrl);
+	value = ctrl.value;
+	return status;
+}
+
+int gcs_readPixelRate(GCS *gcs, int64_t &pixelRate)
+{
+	struct v4l2_ext_control ctrl = {};
+	ctrl.id = V4L2_CID_PIXEL_RATE;
+	struct v4l2_ext_controls ctrlQuery = {};
+	ctrlQuery.ctrl_class = V4L2_CID_IMAGE_PROC_CLASS;
+	ctrlQuery.which = V4L2_CTRL_WHICH_CUR_VAL;
+	ctrlQuery.count = 1;
+	ctrlQuery.controls = &ctrl;
+	int status = ioctl(gcs->fd, VIDIOC_G_EXT_CTRLS, &ctrlQuery);
+	pixelRate = ctrl.value64;
 	return status;
 }
 
@@ -155,28 +192,28 @@ static int16_t Read8Bit(unsigned int fd, uint16_t reg)
 	return value;
 }
 
-/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
-int gcs_findCamera()
+/* Returns SENSOR_NUM for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+SENSOR_NUM gcs_findCamera()
 {
 	// Tell OV9281 camera to enable strobe (to force LEDs off as a temporary hardware fix)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 	if (i2c_fd < 0)
 	{
 		printf("Failed to address camera over I2C! %s\n", strerror(errno));
-		return -1;
+		return SENSOR_ERROR;
 	}
 	
-	bool validSensor = false;
+	SENSOR_NUM sensor = SENSOR_INVALID;
 
 	// Identify OV9281
 	int32_t CHIP_ID = Read16Bit(i2c_fd, 0x300A);		
 	if (CHIP_ID == 0x9281)
-		validSensor = true;
+		sensor = SENSOR_OV9281;
 	else
 		printf("Read wrong chip ID! ID is %x (expected %x)\n", CHIP_ID, 0x9281);
 	
 	close(i2c_fd);
-	return validSensor? 1 : 0;
+	return sensor;
 }
 
 
@@ -220,6 +257,9 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 	printf("Format: %ux%u, stride %u, size %u\n",
 		getFormat.fmt.pix.width, getFormat.fmt.pix.height,
 		getFormat.fmt.pix.bytesperline, getFormat.fmt.pix.sizeimage);
+	gcs->usedWidth = getFormat.fmt.pix.width;
+	gcs->usedHeight = getFormat.fmt.pix.height;
+	gcs->usedStride = getFormat.fmt.pix.bytesperline;
 	gcs->cameraParams->width = getFormat.fmt.pix.width;
 	gcs->cameraParams->height = getFormat.fmt.pix.height;
 	gcs->cameraParams->stride = getFormat.fmt.pix.bytesperline;
@@ -258,6 +298,8 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 
 		gcs->buffers[i].DMAFD = dup(gcs->buffers[i].vcsm.fd);
 	}
+
+	gcs->sensor = gcs_findCamera();
 
 ////	printf("Set up GCS!\n");
 
@@ -399,7 +441,7 @@ void gcs_stop(GCS *gcs)
 	}*/
 
 	// Directly access camera I2C (i2c-vs)
-	if (gcs->cameraParams->extTrig)
+	if (gcs->cameraParams->extTrig && gcs->sensor == SENSOR_OV9281)
 	{ // TODO: Make sure that OV9281 driver is loaded
 		unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 		if (i2c_fd < 0)
@@ -447,17 +489,37 @@ void gcs_updateParameters(GCS *gcs)
 	if (i2c_fd < 0)
 		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 
-	// Set hblank (extra time between lines)
-	// TODO: What does this even mean for a global shutter sensor?
-	if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, 0, 0)))
-		printf("Failed to set hblank to minimum!\n");
+	{
+		uint32_t minHBlank, maxHBlank;
+		if ((status = gcs_getParameterRange(gcs, V4L2_CID_HBLANK, minHBlank, maxHBlank)))
+			printf("Failed to get hblank range!\n");
 
-	// Set vblank (extra time between last frame and new frame - used to set FPS)
-	// TODO: respect gcs->cameraParams->fps if NOT gcs->cameraParams->extTrig
-	if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
-		printf("Failed to set vblank to minimum!\n");
+		uint32_t minVBlank, maxVBlank;
+		if ((status = gcs_getParameterRange(gcs, V4L2_CID_VBLANK, minVBlank, maxVBlank)))
+			printf("Failed to get vblank range!\n");
 
-	// Digital camera gain not supported by OV9281 camera / driver
+		int64_t pixelRate;
+		if ((status = gcs_readPixelRate(gcs, pixelRate)))
+			printf("Failed to get pixel rate!\n");
+
+		// Set hblank (extra time between lines)
+		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, minHBlank, 0)))
+			printf("Failed to set hblank to minimum!\n");
+
+		// Calculate vblank to achieve the desired FPS
+		double magicScaleFactor = gcs->sensor == SENSOR_OV9281? 0.96 : 1.0f;
+		int64_t desiredVBlank = pixelRate * magicScaleFactor / (gcs->cameraParams->fps * (gcs->usedWidth+minHBlank)) - gcs->usedHeight;
+		uint32_t setVBlank = std::clamp<int64_t>(desiredVBlank, minVBlank, maxVBlank);
+		float predFps = (double)pixelRate * magicScaleFactor / ((gcs->usedWidth+minHBlank) * (gcs->usedHeight+setVBlank));
+		printf("Setting vblank to %d (desired %lld) to get FPS %.2f (desired %d)!\n",
+			setVBlank, desiredVBlank, predFps, gcs->cameraParams->fps);
+
+		// Set vblank (time between last frame and new frame - used to set FPS)
+		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, setVBlank, 0)))
+			printf("Failed to set vblank to %d!\n", setVBlank);
+	}
+
+	// Digital camera gain not supported by OV9281 driver
 	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))
 	//	printf("Failed to set digital camera gain!\n");
 	if ((status = gcs_setParameter(gcs, V4L2_CID_ANALOGUE_GAIN, gcs->cameraParams->analogGain, 16)))
@@ -469,7 +531,7 @@ void gcs_updateParameters(GCS *gcs)
 	if (i2c_fd >= 0)
 	{ // Now modify camera streaming behaviour
 
-		if (gcs->cameraParams->extTrig)
+		if (gcs->cameraParams->extTrig == 1 && gcs->sensor == SENSOR_OV9281)
 		{
 			// Switch to external trigger mode (max 120Hz) - FSIN as frame trigger
 			unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x00 };		// Put camera in standby
@@ -497,7 +559,7 @@ void gcs_updateParameters(GCS *gcs)
 					printf("Failed to write extTrig register %d! %d: %s\n", i, errno, strerror(errno));
 			}
 		}
-		/* else
+		/* else if (gcs->cameraParams->extTrig == 2 && gcs->sensor == SENSOR_OV9281)
 		{
 			// Switch to frame sync mode (max 144Hz) - FSIN as frame sync
 			unsigned char SC_MODE_SELECT[3] = { 0x01, 0x00, 0x01 };		// Keep camera in streaming mode
@@ -537,7 +599,7 @@ void gcs_updateParameters(GCS *gcs)
 			}
 		} */
 
-		if (gcs->cameraParams->strobe)
+		if (gcs->cameraParams->strobe && gcs->sensor == SENSOR_OV9281)
 		{
 			// Set strobe and ILPWM to output, leave FSIN as input
 			unsigned char SC_CTRL_06[3] = { 0x30, 0x06, 0b00001100 };

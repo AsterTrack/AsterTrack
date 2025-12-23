@@ -45,7 +45,6 @@ struct GCS_CameraParams
 	uint32_t stride;
 	uint16_t fps;
 	uint32_t shutterSpeed;
-	uint32_t iso;
 	uint8_t digitalGain;
 	uint8_t analogGain;
 	uint8_t grayscale;
@@ -53,27 +52,21 @@ struct GCS_CameraParams
 	uint8_t strobe;
 	int32_t strobeOffset;
 	uint32_t strobeLength;
-	uint8_t disableEXP;
-	uint8_t disableAWB;
-	uint32_t disableISPBlocks;
 };
 
-/* Disable ISP Blocks */
-// https://www.raspberrypi.org/forums/viewtopic.php?f=43&t=175711
-// (1 << 2); // Black Level Compensation
-// (1 << 3); // Lens Shading
-// (1 << 5); // White Balance Gain
-// (1 << 7); // Defective Pixel Correction
-// (1 << 9); // Crosstalk
-// (1 << 18); // Gamma
-// (1 << 22); // Sharpening
-// (1 << 24); // Some Color Conversion
+enum SENSOR_NUM
+{
+	SENSOR_ERROR = -1,
+	SENSOR_INVALID = 0,
+	SENSOR_OV9281
+};
+
 
 /* Opaque GPU Camera Stream structure */
 struct GCS;
 
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
-int gcs_findCamera();
+SENSOR_NUM gcs_findCamera();
 
 /* Creates a GCS (camera stream) instance. Requires cameraParams to stay allocated until gcs_destroy is called. It is used to update actual parameters, such as width, and stride, as well as update parameters for gcs_updateParameters */
 GCS *gcs_create(GCS_CameraParams *cameraParams);

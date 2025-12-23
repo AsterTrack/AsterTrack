@@ -349,7 +349,7 @@ std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID i
 	camera->controller = std::move(controller);
 	camera->client = serverClient;
 	state.cameras.push_back(camera); // new shared_ptr
-	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 1/3
+	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 1/4
 	return camera;
 }
 
@@ -1392,7 +1392,7 @@ bool StartStreaming(ServerState &state)
 
 void StopStreaming(ServerState &state)
 {
-	if (state.mode == MODE_None || !state.isStreaming)
+	if (!state.isStreaming)
 		return;
 	LOG(LDefault, LInfo, "Stopping stream!\n");
 

@@ -221,7 +221,8 @@ void ParseControllerPackets(ServerState &state, TrackingControllerState &control
 static void SetupSyncGroups(ServerState &state)
 {
 	auto stream_lock = state.stream.contextualLock();
-	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 2/3 - Remove this
+	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 2/4
+	// Adapt this to use more explicit config and set it up in EnsureCamera & during controller setup
 
 	// Setup sync groups
 	std::shared_ptr<Synchronised<SyncGroup>> masterSync;
@@ -257,31 +258,19 @@ static void SetupSyncGroups(ServerState &state)
 		// Select sync source for controller
 		controller->sync = masterSync? masterSync : controller->syncGen;
 
-		// Enter cameras into sync group
-		for (int c = 0; c < controller->cameras.size(); c++)
-		{
-			if (controller->cameras[c])
-			{
-				SetCameraSync(*stream_lock, controller->cameras[c], controller->sync);
-			}
-		}
 	}
 
 	// Reset sync group states
 	ResetStreamState(*stream_lock);
 
-	for (auto &cam : state.cameras)
+	// Enter cameras into sync group
+	for (auto &camera : state.cameras)
 	{
-		if (cam->sync)
-		{
-			// TODO: Implement control over FPS in free-running cameras
-			// also see other TODO on this (same in DeviceUpdateCameraSetup)
-			// E.g. OV9281 drivers cannot set framerate yet
-			// So its always running at 144Hz for 1280x800 and 253Hz for 640x400
-			auto sync_lock = cam->sync->contextualLock();
-			if (sync_lock->source == SYNC_NONE)
-				sync_lock->frameIntervalMS = 1000.0f / 144;
-		}
+		auto &config = state.cameraConfig.getCameraConfig(camera->id);
+		if (config.synchronised && camera->controller && camera->controller->sync)
+			SetCameraSync(*stream_lock, camera, camera->controller->sync);
+		else
+			SetCameraSyncNone(*stream_lock, camera, 1000.0f / config.framerate);
 	}
 }
 
@@ -382,6 +371,9 @@ void DevicesStartStreaming(ServerState &state)
 	// Give controllers some time to establish a time sync, not strictly needed
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
+	// Configure sync groups
+	SetupSyncGroups(state);
+
 	for (auto &cam : state.cameras)
 	{
 		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming
@@ -408,9 +400,6 @@ void DevicesStartStreaming(ServerState &state)
 	}
 	TimePoint_t modeSetTime = sclock::now();
 	TimePoint_t modeSetTimeout = sclock::now() + std::chrono::milliseconds(500);
-
-	// Configure sync groups
-	SetupSyncGroups(state);
 
 	// Set external sync source for relevant controllers
 	for (auto &controller : state.controllers)

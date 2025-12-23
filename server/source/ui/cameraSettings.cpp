@@ -63,38 +63,31 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			}
 		}
 
-		bool updateDevice = false; // Need to update devices with new configuration if it changed
+		bool updateConfig = false, updateSyncGroup = false; // Need to update devices with new configuration if it changed
 
 		BeginSection("Camera");
 		ImGui::BeginDisabled(state.isStreaming);
-		updateDevice |= ScalarInput2<int>("Resolution", "", &config.width, &config.height, 64, 9999);
-		// Synchronised toggle to attach or detach it from it's host controllers framerate
-		updateDevice |= CheckboxInput("Synchronised", &config.synchronised);
+		updateConfig |= ScalarInput2<int>("Resolution", "", &config.width, &config.height, 64, 9999);
 		ImGui::EndDisabled();
-		if (!config.synchronised)
-		{ // Show framerate field, but cannot set it yet
-			ImGui::BeginDisabled(true);
-			config.framerate = 144; // Free-running camera currently runs at max framerate
-			updateDevice |= ScalarInput<int>("Framerate", "Hz", &config.framerate, 20, 144);
-			// Low framerates currently result in an integer overflow because the timer is precise
-			ImGui::EndDisabled();
-		}
+		// Synchronised toggle to attach or detach it from it's host controllers framerate
+		updateSyncGroup |= CheckboxInput("Synchronised", &config.synchronised);
+		updateSyncGroup |= ScalarInput<int>("Free Framerate", "Hz", &config.framerate, 5, 144);
 		{
 			float fac = 7.62f, off = 5.2f; // Experimentally determined by visually comparing brightness between strobe changes
 			float exposureUS = config.exposure*fac + off;
-			updateDevice |= ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
+			updateConfig |= ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
 			config.exposure = (int)std::round((exposureUS-off)/fac);
 		}
 		{
 			float fac = 8.0f/3.0f, offLen = fac; // Experimentally determined with Oscilloscope
 			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + offLen;
-			updateDevice |= ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
-			updateDevice |= ScalarInput<float>("Strobe Offset", "us", &offsetUS, 0, 255*fac, fac, 1, "%.1f");
+			updateConfig |= ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
+			updateConfig |= ScalarInput<float>("Strobe Offset", "us", &offsetUS, 0, 255*fac, fac, 1, "%.1f");
 			// TODO: Negative strobe offset should also work, but doesn't currently - min: -255*fac
 			config.strobeOffset = int(offsetUS/fac + (std::signbit(offsetUS)? -0.5f : 0.5f));
 			config.strobeLength = std::lround((lengthUS-offLen)/fac);
 		}
-		updateDevice |= ScalarInput<int>("Gain", "x", &config.gain, 1, 16);
+		updateConfig |= ScalarInput<int>("Gain", "x", &config.gain, 1, 16);
 		EndSection();
 
 		auto &proc = config.blobProcessing;
@@ -102,13 +95,13 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		if (CheckboxInput("Share Blob Processing Parameters", &config.shareBlobProcessing))
 		{
 			if (config.shareBlobProcessing)
-			{
+			{ // Copy from other shared ones if available
 				for (auto &cfg : state.cameraConfig.configurations)
 				{
 					if (cfg.shareBlobProcessing)
 						config.blobProcessing = cfg.blobProcessing;
 				}
-				updateDevice = true;
+				updateConfig = true;
 			}
 		}
 
@@ -184,42 +177,58 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 		ImGui::Separator();
 
-		updateDevice |= updateProc;
-		if (updateDevice)
+		updateConfig |= updateSyncGroup;
+		updateConfig |= updateProc;
+		if (updateConfig)
 		{
 			state.cameraConfigDirty = true;
-			if (updateProc && config.shareBlobProcessing)
+		}
+		if (updateProc && config.shareBlobProcessing)
+		{
+			for (auto &cfg : state.cameraConfig.configurations)
 			{
-				for (auto &cfg : state.cameraConfig.configurations)
-				{
-					if (cfg.shareBlobProcessing && &config != &cfg)
-						cfg.blobProcessing = config.blobProcessing;
-				}
+				if (cfg.shareBlobProcessing && &config != &cfg)
+					cfg.blobProcessing = config.blobProcessing;
 			}
 		}
-		if (updateDevice && state.mode == MODE_Device)
+		if (updateSyncGroup && state.mode == MODE_Device)
+		{
+			for (auto &camera : state.cameras)
+			{
+				auto cfgMap = state.cameraConfig.cameraConfigs.find(camera->id);
+				if (cfgMap->second != configIndex) continue;
+
+				// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 4/4
+				// Adapt and move this to where we update the sync group configuration
+				if (config.synchronised && camera->controller && camera->controller->sync)
+					SetCameraSync(*state.stream.contextualLock(), camera, camera->controller->sync);
+				else
+					SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / config.framerate);
+			}
+		}
+		if (updateConfig && state.mode == MODE_Device)
 		{
 			LOG(LGUI, LDebug, "Updating setup with new values!\n");
-			for (auto &cam : state.cameras)
+			for (auto &camera : state.cameras)
 			{
-				auto cfgMap = state.cameraConfig.cameraConfigs.find(cam->id);
-				if (cfgMap == state.cameraConfig.cameraConfigs.end())
-					continue;
-				auto &cfg = state.cameraConfig.configurations[cfgMap->second];
-				if (cfgMap->second != configIndex && !(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
-					continue;
-				auto mode = getCameraMode(state, cam->id);
+				auto cfgMap = state.cameraConfig.cameraConfigs.find(camera->id);
+				if (cfgMap->second != configIndex)
+				{ // Not using the updated config, but if they share parameters, then update anyway
+					if (cfgMap == state.cameraConfig.cameraConfigs.end())
+						continue;
+					auto &cfg = state.cameraConfig.configurations[cfgMap->second];
+					if (!(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
+						continue;
+				}
+				auto mode = getCameraMode(state, camera->id);
 				if (state.isStreaming)
-					assert(cam->pipeline->mode.widthPx == mode.widthPx && cam->pipeline->mode.heightPx == mode.heightPx);
+					assert(camera->pipeline->mode.widthPx == mode.widthPx && camera->pipeline->mode.heightPx == mode.heightPx);
 				else
-					cam->pipeline->mode = mode;
-				CameraUpdateSetup(state, *cam);
+					camera->pipeline->mode = mode;
+				CameraUpdateSetup(state, *camera);
 			}
-			// TODO:: Implement UI for assigning controllers and their cameras to sync groups
-			// Currently, updating "synchronised" status also needs to re-setup sync groups
-			// See "Devices" window, should probably happen there
 		}
-		else if (updateDevice && state.mode == MODE_Replay)
+		if (updateProc && state.mode == MODE_Replay)
 		{
 			for (auto &view : cameraViews)
 			{
@@ -300,6 +309,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 	BeginSection("Controller Configuration");
 
 	bool updateFPS = ScalarInput<int>("Framerate", "Hz", &state.controllerConfig.framerate, 20, 144);
+	// Low framerates currently result in an integer overflow in controller because the timer is precise
 
 	// But this will not be handled here in the future anyway, framerate/sync group should be handled by a separate window for device setup
 	if (updateFPS && state.isStreaming)
@@ -312,6 +322,11 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 				controller->syncGen->contextualLock()->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
 				// TODO: Temp workaround to get any frames at all for free-running cameras
 				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, state.controllerConfig.framerate, 0);
+				for (auto &camera : controller->cameras)
+				{
+					if (camera && camera->sync == controller->sync)
+						CameraUpdateSetup(state, *camera);
+				}
 			}
 		}
 	}

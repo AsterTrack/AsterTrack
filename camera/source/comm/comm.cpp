@@ -543,10 +543,10 @@ phase_comm:
 					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= CONFIG_PACKET_SIZE)
 					{
 						ConfigPacket packet = parseConfigPacket(&proto.rcvBuf[proto.cmdPos]);
-						printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %c, strobe? %c (%d)\n",
+						printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
 							packet.width, packet.height, packet.fps, packet.shutterSpeed,
 							packet.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,
-							packet.extTrig? 'y' : 'n', packet.strobe? 'y' : 'n', packet.strobeLength);
+							packet.extTrig, packet.strobe? 'y' : 'n', packet.strobeLength);
 						state.newConfigPacket = packet;
 						state.updateSetupQPU = true;
 						state.updateSetupCPU = true;

@@ -550,15 +550,15 @@ int main(int argc, char **argv)
 #ifdef RUN_CAMERA
 
 		// Init camera subsystem
-		int gcsSensor = gcs_findCamera();
-		if (gcsSensor == -1)
+		SENSOR_NUM gcsSensor = gcs_findCamera();
+		if (gcsSensor == SENSOR_ERROR)
 		{
 			printf("Failed to open camera I2C!\n");
 			error = ERROR_GCS_NO_I2C;
 			if (handleError())
 				break;
 		}
-		else if (gcsSensor == 0)
+		else if (gcsSensor == SENSOR_INVALID)
 		{
 			printf("Failed to identify camera sensor!\n");
 			error = ERROR_GCS_NO_SENSOR;

@@ -175,7 +175,7 @@ bool handleError(bool NAK = true, std::string backtrace = "")
 	for (int c = 0; c < COMM_MEDIUM_MAX; c++)
 	{
 		CommState* comm = comms.medium[c];
-		if (!comm && !comm->ready) continue;
+		if (!comm || !comm->ready) continue;
 		bool serious = error != ERROR_GCS_TIMEOUT;
 		void *packet = comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
 		comm_write(comm, packet, (uint8_t*)&error, 1);
@@ -249,6 +249,14 @@ int main(int argc, char **argv)
 	if (!options_read(state, argc, argv))
 		return -1;
 
+	// Modify tty to allow for non-blocking input (for console & ssh, but not background execution)
+	isConsole = isatty(STDIN_FILENO);
+	if (isConsole)
+	{
+		printf("Running in console!\n");
+		setConsoleRawMode();
+	}
+
 	srand((unsigned int)time(NULL));
 
 	// Should be read from permanent, unique file in shell
@@ -308,11 +316,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	atexit(vcsm_exit);
-
-	// Modify tty to allow for non-blocking input (for console & ssh, but not background execution)
-	isConsole = isatty(STDIN_FILENO);
-	if (isConsole)
-		setConsoleRawMode();
 
 	// Init visualisation resources
 	state.visualisation.fbfd = setupFrameBuffer(&state.visualisation.vinfo, &state.visualisation.finfo, false);
@@ -435,8 +438,6 @@ int main(int argc, char **argv)
 	});
 	// Server will be started by initWirelessMonitor if wifi is enabled, either due to configuration or requested by console
 
-	bool needsComms = comm_anyEnabled(comms);
-
 
 	// ---- Wireless ----
 
@@ -456,7 +457,7 @@ int main(int argc, char **argv)
 
 		// ---- Initialise based on communication ---
 
-		if (!state.server.enabled && !state.uart.enabled)
+		if (state.noComms)
 		{ // Skip to streaming in interactive mode (likely on the console)
 			state.curMode.streaming = true;
 			state.curMode.mode = TRCAM_MODE_BLOB;
@@ -470,13 +471,13 @@ int main(int argc, char **argv)
 			state.curMode.opt = TRCAM_OPT_NONE;
 		}
 
-		while ((state.server.enabled || state.uart.enabled) && !state.curMode.streaming)
+		while (!state.noComms && !state.curMode.streaming)
 		{ // Wait for a connected communications channel to instruct a stream start
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			if (isConsole)
 			{ // Check input
 				char cin;
-				if (read(STDIN_FILENO, &cin, 1) == 1)
+				while (read(STDIN_FILENO, &cin, 1) == 1)
 				{
 					if (cin == 'q')
 					{ // Complete stop of program requested
@@ -885,7 +886,7 @@ int main(int argc, char **argv)
 					bool sentTimeoutError = false;
 					while (gcs_waitForFrameBuffer(gcs, 1000) == 0 && !abortStreaming)
 					{
-						if (needsComms && !comm_anyReady(comms))
+						if (!state.noComms && !comm_anyReady(comms))
 						{
 							printf("== Lost comms! Stopping streaming! ==\n");
 							state.curMode.streaming = false;
@@ -1299,14 +1300,14 @@ int main(int argc, char **argv)
 
 		TimePoint_t time_lastStatCheck = sclock::now();
 		time_start = sclock::now();
-		int time_debug_interval = 100;
+		int time_debug_interval = 200;
 		int frameNum_lastStatCheck = 0;
 
-		while (state.curMode.streaming)
+		while (running && state.curMode.streaming)
 		{
 			numFrames++;
 
-			if (needsComms && !comm_anyReady(comms))
+			if (!state.noComms && !comm_anyReady(comms))
 			{
 				printf("Lost comms! Stopping streaming!\n");
 				state.curMode.streaming = false;
@@ -1315,10 +1316,10 @@ int main(int argc, char **argv)
 				break;
 			}
 
-			if (isConsole && numFrames % 10 == 0)
+			if (isConsole)
 			{ // Check input
 				char cin;
-				if (read(STDIN_FILENO, &cin, 1) == 1)
+				while (read(STDIN_FILENO, &cin, 1) == 1)
 				{
 					if (cin == 'q')
 					{ // Complete stop of program requested

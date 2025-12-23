@@ -128,6 +128,7 @@ struct TrackingCameraState
 	// Unique ID stored on-device (generated on first boot)
 	int32_t id = 0;
 	// UART & Server comm
+	bool noComms;
 	bool enableUART;
 	CommState uart = {};
 	std::string serialName = "/dev/ttyAMA0";

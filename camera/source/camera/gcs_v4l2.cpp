@@ -489,6 +489,7 @@ void gcs_updateParameters(GCS *gcs)
 	if (i2c_fd < 0)
 		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 
+	if (gcs->cameraParams->extTrig != 1)
 	{
 		uint32_t minHBlank, maxHBlank;
 		if ((status = gcs_getParameterRange(gcs, V4L2_CID_HBLANK, minHBlank, maxHBlank)))
@@ -502,10 +503,6 @@ void gcs_updateParameters(GCS *gcs)
 		if ((status = gcs_readPixelRate(gcs, pixelRate)))
 			printf("Failed to get pixel rate!\n");
 
-		// Set hblank (extra time between lines)
-		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, minHBlank, 0)))
-			printf("Failed to set hblank to minimum!\n");
-
 		// Calculate vblank to achieve the desired FPS
 		double magicScaleFactor = gcs->sensor == SENSOR_OV9281? 0.96 : 1.0f;
 		int64_t desiredVBlank = pixelRate * magicScaleFactor / (gcs->cameraParams->fps * (gcs->usedWidth+minHBlank)) - gcs->usedHeight;
@@ -514,9 +511,23 @@ void gcs_updateParameters(GCS *gcs)
 		printf("Setting vblank to %d (desired %lld) to get FPS %.2f (desired %d)!\n",
 			setVBlank, desiredVBlank, predFps, gcs->cameraParams->fps);
 
+		// Set hblank (extra time between lines)
+		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, minHBlank, 0)))
+			printf("Failed to set hblank to minimum!\n");
+
 		// Set vblank (time between last frame and new frame - used to set FPS)
 		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, setVBlank, 0)))
 			printf("Failed to set vblank to %d!\n", setVBlank);
+	}
+	else
+	{
+		// Set hblank (extra time between lines)
+		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, 0, 0)))
+			printf("Failed to set hblank to minimum!\n");
+
+		// Set vblank (time between last frame and new frame - used to set FPS)
+		if ((status = gcs_setParameter(gcs, V4L2_CID_VBLANK, 0, 0)))
+			printf("Failed to set vblank to minimum!\n");
 	}
 
 	// Digital camera gain not supported by OV9281 driver

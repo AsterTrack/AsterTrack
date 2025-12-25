@@ -265,7 +265,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 	comm.blockLen = std::min(comm.mrk, endData) - comm.blockPos;
 	if (done)
 	{ // Received in full
-		comm.head = endPacket; // Advance to after command
+		comm.head = std::max(comm.head, endPacket-20); // Advance towards end of packet (buffer to account for dropped bytes)
 		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, comm.head, comm.rcvBuf[comm.head-1], comm.rcvBuf[comm.head], comm.rcvBuf[comm.head+1]);
 		skipToEnd(comm, false);
 

@@ -112,11 +112,9 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 void TrackingCameraState::recvModeSet(uint8_t recvMode)
 {
 	bool toggleStreaming = (mode & TRCAM_FLAG_STREAMING) != (recvMode & TRCAM_FLAG_STREAMING);
-	/* if (modeSet.mode != (TrCamMode)recvMode)
-	{ // Might happen due to error message
-		LOG(LCameraDevice, LWarn, "Camera %d left mode %x and entered mode %x which was not requested (mode %x requested %fms ago)!",
-			id, mode, recvMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
-	} */
+	// NOTE: recvMode might genuinely be != modeSet
+	// E.g. error may force camera to change mode on its own
+	// Or some modes, e.g. BGCALIB with Options ACCEPT/DISCARD, proceed to enter different modes (BLOB)
 	mode = (TrCamMode)recvMode;
 	modeSet.mode = (TrCamMode)recvMode;
 	if (toggleStreaming && modeSet.handleIndividually)
@@ -135,25 +133,14 @@ bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
 			receiving.background.contextualLock()->tiles.clear();
 			if (GetState().isStreaming)
 				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB);
-			return false;
 		case BG_RESET:
 			receiving.background.contextualLock()->tiles.clear();
-			return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
+			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
 		case BG_ACCEPT:
-			if (!sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT))
-				return false;
-			if (GetState().isStreaming)
-				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			else
-				return sendModeSet(TRCAM_STANDBY);
+			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT);
 		case BG_DISCARD:
 			receiving.background.contextualLock()->tiles.clear();
-			if (!sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET))
-				return false;
-			if (GetState().isStreaming)
-				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			else
-				return sendModeSet(TRCAM_STANDBY);
+			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_DISCARD);
 	}
 	return false;
 }

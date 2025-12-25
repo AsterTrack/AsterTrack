@@ -1353,6 +1353,21 @@ int main(int argc, char **argv)
 						printf("Init Background Calibration!\n");
 						initBackgroundCalibration();
 					}
+					else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
+					{ // Reset current mask (and temp mask)
+						printf("Resetting stored Background Calibration!\n");
+						resetBackgroundCalibration();
+					}
+					else if (newMode.opt == TRCAM_OPT_BGCALIB_DISCARD)
+					{ // Accept temp mask as current mask
+						if (state.curMode.mode == TRCAM_MODE_BGCALIB)
+						{
+							printf("Discarding Background Calibration!\n");
+							resetBackgroundCalibration();
+						}
+						newMode.mode = TRCAM_MODE_BLOB;
+						newMode.opt = TRCAM_OPT_NONE;
+					}
 					else if (newMode.opt == TRCAM_OPT_BGCALIB_ACCEPT)
 					{ // Accept temp mask as current mask
 						if (state.curMode.mode == TRCAM_MODE_BGCALIB)
@@ -1360,19 +1375,16 @@ int main(int argc, char **argv)
 							printf("Accepting Background Calibration!\n");
 							acceptBackgroundCalibration();
 						}
-					}
-					else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
-					{ // Reset current mask (and temp mask)
-						printf("Resetting stored Background Calibration!\n");
-						resetBackgroundCalibration();
+						newMode.mode = TRCAM_MODE_BLOB;
+						newMode.opt = TRCAM_OPT_NONE;
 					}
 				}
+				printf("New mode: streaming: %d, mode: %d, opt: %d\n", newMode.streaming, newMode.mode, newMode.opt);
 				state.curMode = newMode;
-				printf("New mode: streaming: %d, mode: %d, opt: %d\n", state.curMode.streaming, state.curMode.mode, state.curMode.opt);
 
 				// Notify host of mode change
 				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
-				uint8_t mode = (uint8_t)state.newModeRaw;
+				uint8_t mode = (uint8_t)(newMode.streaming? TRCAM_FLAG_STREAMING : 0) | newMode.mode | newMode.opt;
 				CommState* comm = comms.get(realTimeAff);
 				void *packet = comm_packet(comm, PacketHeader(PACKET_MODE, 1));
 				comm_write(comm, packet, &mode, 1);

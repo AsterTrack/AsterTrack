@@ -493,7 +493,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 		const char* obsPathFmt = "dump/marker_observations_%d.json";
 		std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
 		// Copy camera ids
-		std::vector<int> cameraIDs;
+		std::vector<CameraID> cameraIDs;
 		for (auto &cam : pipeline.cameras)
 			cameraIDs.push_back(cam->id);
 		// Write to path
@@ -509,7 +509,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 		if (i > 0)
 		{
 			std::string obsPath = asprintf_s(obsPathFmt, i);
-			std::vector<int> cameraIDs;
+			std::vector<CameraID> cameraIDs;
 			SequenceData observations;
 			auto error = parseSequenceDatabase(obsPath, cameraIDs, observations);
 			if (error)

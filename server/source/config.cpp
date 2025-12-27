@@ -97,6 +97,15 @@ std::optional<ErrorMessage> readJSON(const std::string &path, json &data)
 	return std::nullopt;
 }
 
+CameraID parseCameraID(json &jsID)
+{
+	// Previously written and interpreted as a int32_t, now as uint32_t. Convert negative sign to larger uint32_t.
+	int64_t parseID = jsID.get<int64_t>();
+	CameraID ID = std::abs(parseID);
+	if (parseID < 0) ID |= 0x80000000;
+	return ID;
+}
+
 int findHighestFileEnumeration(const char* path, const char* nameFormat, const char *extension, bool allowTrailingString)
 {
 	if (!std::filesystem::exists(std::filesystem::path(path))) return -1;
@@ -245,7 +254,7 @@ std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, Camer
 				{
 					if (cam["id"].empty() || !cam["id"].is_number_integer()) continue;
 					if (cam["configuration"].empty() || !cam["configuration"].is_number_integer()) continue;
-					int id = cam["id"].get<int>();
+					CameraID id = parseCameraID(cam["id"]);
 					int cfg = cam["configuration"].get<int>();
 					if (cfg >= configMap.configurations.size()) continue;
 					configMap.cameraConfigs[id] = cfg;
@@ -396,7 +405,7 @@ std::optional<ErrorMessage> parseCameraCalibrations(const std::string &path, std
 					// Parse intrinsic calibration
 					if (jsCamera.contains("id"))
 					{
-						calib.id = jsCamera["id"].get<int>();
+						calib.id = parseCameraID(jsCamera["id"]);
 					}
 					if (jsCamera.contains("f"))
 					{
@@ -791,13 +800,13 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 				if (jsCamera.is_object())
 				{
 					if (!jsCamera.contains("id")) return asprintf_s("Invalid recording file '%s' - camera ID!", path.c_str());
-					parsedCameras.emplace_back(jsCamera["id"].get<CameraID>(),
+					parsedCameras.emplace_back(parseCameraID(jsCamera["id"]),
 						jsCamera.contains("frameX")? jsCamera["frameX"].get<int>() : 1280,
 						jsCamera.contains("frameY")? jsCamera["frameY"].get<int>() : 800
 					);
 				}
 				else if (jsCamera.is_number_integer())
-					parsedCameras.emplace_back(jsCamera.get<CameraID>(), 1280, 800);
+					parsedCameras.emplace_back(parseCameraID(jsCamera), 1280, 800);
 				else
 					return asprintf_s("Invalid recording file '%s' - camera ID!", path.c_str());
 			}
@@ -1384,7 +1393,7 @@ std::optional<ErrorMessage> dumpSequenceDatabase(const std::string &path, const 
 	// Write camera map
 	file["observations"]["cameras"] = json::array();
 	auto &cameraMap = file["observations"]["cameras"];
-	for (int id : cameraIDs)
+	for (CameraID id : cameraIDs)
 		cameraMap.push_back(id);
 
 	// Write observations

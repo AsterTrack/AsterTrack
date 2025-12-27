@@ -27,6 +27,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef uint32_t CameraID;
+
 enum TrCamMode
 {
 	TRCAM_STANDBY					= 0b00000000,
@@ -446,13 +448,13 @@ struct IdentPacket
 {
 	enum DeviceTag device; // What type of device/interface
 	enum InterfaceTag type; // What type of device/interface
-	int id; // Device ID (only relevant for camera rn)
+	CameraID id; // Device ID (only relevant for camera rn)
 	union VersionDesc version;
 
 #ifdef __cplusplus
 	IdentPacket() {}
 	IdentPacket(enum DeviceTag Device, enum InterfaceTag Type, union VersionDesc Version) : device(Device), type(Type), id(0), version(Version) {}
-	IdentPacket(int id, enum DeviceTag Device, enum InterfaceTag Type, union VersionDesc Version) : device(Device), type(Type), id(id), version(Version) {}
+	IdentPacket(CameraID id, enum DeviceTag Device, enum InterfaceTag Type, union VersionDesc Version) : device(Device), type(Type), id(id), version(Version) {}
 #endif
 };
 

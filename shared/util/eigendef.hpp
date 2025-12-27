@@ -61,7 +61,7 @@ using Vector3 = Eigen::Matrix<Scalar, 3, 1>;
 template<typename Scalar>
 using Vector2 = Eigen::Matrix<Scalar, 2, 1>;
 
-typedef int CameraID;
+typedef uint32_t CameraID;
 const CameraID CAMERA_ID_NONE = 0;
 
 template<typename Scalar>

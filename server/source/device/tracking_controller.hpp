@@ -51,7 +51,7 @@ struct ControllerEventLog
 
 struct TrackingControllerState
 {
-	int id = 0;
+	uint32_t id = 0;
 
 	// Cameras connected to it
 	std::vector<std::shared_ptr<TrackingCameraState>> cameras;

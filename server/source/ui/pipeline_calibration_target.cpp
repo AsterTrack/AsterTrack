@@ -29,7 +29,7 @@ static bool ensureSequencesSaved(const PipelineState &pipeline, const SequenceDa
 	if (savedSequencesLastFrame == sequences.lastRecordedFrame)
 		return true;
 	// Copy camera ids
-	std::vector<int> cameraIDs;
+	std::vector<CameraID> cameraIDs;
 	for (auto &cam : pipeline.cameras)
 		cameraIDs.push_back(cam->id);
 	// Write accompanying sequences
@@ -43,7 +43,7 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 {
 	if (savedSequencesLastFrame == 0 || savedSequencesLastFrame > sequences.lastRecordedFrame)
 	{
-		std::vector<int> cameraIDs;
+		std::vector<CameraID> cameraIDs;
 		SequenceData loadedSequences;
 		auto error = parseSequenceDatabase("dump/target_calib_sequences.json", cameraIDs, loadedSequences);
 		if (error)

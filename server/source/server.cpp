@@ -276,7 +276,7 @@ CameraMode getCameraMode(ServerState &state, CameraID id)
 	return CameraMode(config.width, config.height);
 }
 
-static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, int id)
+static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, CameraID id)
 {
 	auto cam = std::find_if(state.pipeline.cameras.begin(), state.pipeline.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.pipeline.cameras.end())
@@ -665,7 +665,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		// Check for any disconnected cameras (due to both UART / Wifi link being inactive for a period of time)
 		for (int c = 0; c < state.cameras.size(); c++)
 		{
-			int id = state.cameras[c]->id;
+			CameraID id = state.cameras[c]->id;
 			if (CameraCheckDisconnected(state, *state.cameras[c]))
 			{
 				LOG(LCameraDevice, LWarn, "Camera %d had no remaining communication links!\n", id);

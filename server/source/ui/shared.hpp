@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-typedef int CameraID; // util/eigendef.hpp
+typedef uint32_t CameraID; // util/eigendef.hpp
 
 extern "C" {
 

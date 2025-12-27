@@ -126,7 +126,7 @@ struct TrackingCameraState
 	// Logging options
 	bool writeStatLogs = true;
 	// Unique ID stored on-device (generated on first boot)
-	int32_t id = 0;
+	CameraID id = 0;
 	// UART & Server comm
 	bool noComms;
 	bool enableUART;

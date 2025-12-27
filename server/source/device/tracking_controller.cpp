@@ -377,7 +377,7 @@ void DevicesStartStreaming(ServerState &state)
 	for (auto &cam : state.cameras)
 	{
 		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming
-			|| cam->state.contextualRLock()->commState != CommPiReady))
+			|| cam->state.contextualRLock()->commState != COMM_SBC_READY))
 			continue;
 
 		// Send setup data incase it didn't already happen

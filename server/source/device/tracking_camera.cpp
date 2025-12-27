@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 bool TrackingCameraState::hasComms()
 {
 	if (client && client->ready) return true;
-	if (controller && state.contextualRLock()->commState == CommPiReady) return true;
+	if (controller && state.contextualRLock()->commState == COMM_SBC_READY) return true;
 	return false;
 }
 
@@ -53,7 +53,7 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 	{ // Prefer wireless for "larger" packets
 		return comm_write(*client, tag, data, (uint16_t)length);
 	}
-	else if (controller && state.contextualRLock()->commState == CommPiReady)
+	else if (controller && state.contextualRLock()->commState == COMM_SBC_READY)
 	{ // Prefer UART for small packets
 		thread_local std::vector<uint8_t> packetBuffer;
 		if (length > 0)

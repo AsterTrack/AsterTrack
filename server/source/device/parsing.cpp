@@ -305,11 +305,11 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		uint8_t *camData = data + 5+i*7;
 		ControllerCommState commState = (ControllerCommState)camData[0];
 		int32_t id = *(int32_t*)(camData+1);
-		if ((commState&CommReady) == CommReady)
+		if ((commState&COMM_READY) == COMM_READY)
 		{
-			if (commState == CommPiReady)
+			if (commState == COMM_SBC_READY)
 				camsConnected++;
-			else if (commState == CommMCUReady)
+			else if (commState == COMM_MCU_READY)
 				camsConnecting++;
 			if (id == 0 && !existing) newCamsConnecting++;
 			if (id == 0) continue;
@@ -427,7 +427,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		ControllerCommState commState = (ControllerCommState)camData[0];
 		bool cameraEnabled = camData[5];
 		bool frameSyncEnabled = camData[6];
-		if (commState == CommPiReady)
+		if (commState == COMM_SBC_READY)
 		{ // Clear any possible error state
 			if (camState->error.encountered && dtMS(camState->error.time, sclock::now()) > 1000)
 			{ // Might need this overlap protection to prevent race-conditions
@@ -437,10 +437,10 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				updatedCameras = true;
 			}
 		}
-		if (commState == CommPiReady) camState->hadPiConnected = true;
-		else if (commState == CommMCUReady) camState->hadMCUConnected = true;
-		if ((commState&CommReady) == CommReady) camState->lastConnected = sclock::now();
-		else if (commState != CommNoCon) camState->lastConnecting = sclock::now();
+		if (commState == COMM_SBC_READY) camState->hadPiConnected = true;
+		else if (commState == COMM_MCU_READY) camState->hadMCUConnected = true;
+		if ((commState&COMM_READY) == COMM_READY) camState->lastConnected = sclock::now();
+		else if (commState != COMM_NO_CONN) camState->lastConnecting = sclock::now();
 		if (camState->commState != commState)
 			updatedCameras = true;
 		camState->commState = commState;

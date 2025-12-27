@@ -396,7 +396,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			UARTPacketRef *packet = NULL;
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
-				if (camStates[i].comm != CommPiReady) continue;
+				if (camStates[i].comm != COMM_SBC_READY) continue;
 				TimeSpan timeSinceLastTimeSync = now - portStates[i].lastTimeSync;
 				if (timeSinceLastTimeSync < UART_TIME_SYNC_INTERVAL) continue;
 				if (!packet)
@@ -496,7 +496,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		// Check UART timeouts
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i++)
 		{
-			if (camStates[i].comm == CommNoCon) continue;
+			if (camStates[i].comm == COMM_NO_CONN) continue;
 			TimeSpan timeSinceLastComm = now - portStates[i].lastComm;
 			if (timeSinceLastComm > UART_COMM_TIMEOUT)
 			{ // Reset Comm after silence
@@ -515,9 +515,9 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		{ // Send ping occasionally
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
-				if ((camStates[i].comm & CommReady) != CommReady)
+				if ((camStates[i].comm & COMM_READY) != COMM_READY)
 					continue; // Comms not set up, doesn't need ping
-				if ((camStates[i].comm == CommPiReady) && frameSignalSource == FrameSignal_Generating && (now - portStates[i].lastComm) < UART_PING_INTERVAL)
+				if ((camStates[i].comm == COMM_SBC_READY) && frameSignalSource == FrameSignal_Generating && (now - portStates[i].lastComm) < UART_PING_INTERVAL)
 					continue; // Already sending packets regularly, and camera is sending streaming-related packets back, doesn't need ping
 				uartd_send(i, msg_ping, sizeof(msg_ping), true);
 			}
@@ -549,7 +549,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			writeUARTPacketEnd(packet, header.length + PACKET_CHECKSUM_SIZE);
 			for (int i = 0; i < UART_PORT_COUNT; i++)
 			{
-				if (camStates[i].comm == CommPiReady && camStates[i].cameraEnabled)
+				if (camStates[i].comm == COMM_SBC_READY && camStates[i].cameraEnabled)
 					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
 				camStates[i].frameSyncEnabled = false;
 			}
@@ -693,7 +693,7 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 		finaliseDirectUARTPacket(packet, header);
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 		{
-			if (camStates[i].comm == CommPiReady)
+			if (camStates[i].comm == COMM_SBC_READY)
 			{
 				uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SOF_PACKET_SIZE, false);
 				portStates[i].lastTimeSync = SOF;
@@ -1130,7 +1130,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		enabledSyncPinsGPIOD = 0;
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			camStates[i].frameSyncEnabled = req->wIndex >> i;
+			camStates[i].frameSyncEnabled = (req->wIndex >> i) & 1;
 			if (camStates[i].frameSyncEnabled)
 				enabledSyncPinsGPIOD |= GPIOD_SYNC_PIN[i];
 		}
@@ -1147,7 +1147,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		writeUARTPacketEnd(packet, req->wLength);
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			if (!((req->wIndex >> i)&1) || (camStates[i].comm & CommReady) != CommReady) continue;
+			if (!((req->wIndex >> i) & 1) || (camStates[i].comm & COMM_READY) != COMM_READY) continue;
 			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+req->wLength, false);
 			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
@@ -1294,7 +1294,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	CameraState *cam = &camStates[port];
 	Source *source = &packetHub.sources[port];
 
-	if ((cam->comm & CommReady) != CommReady)
+	if ((cam->comm & COMM_READY) != COMM_READY)
 	{ // Identification phase
 		if (state->header.tag == PACKET_IDENT)
 		{ // Identification
@@ -1306,9 +1306,9 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		}
 		else if (state->header.tag == PACKET_ACK)
 		{
-			if ((cam->comm&CommReady) == CommID)
+			if ((cam->comm&COMM_READY) == COMM_HAS_ID)
 			{ // Received acknowledgement of own identity
-				cam->comm |= CommACK;
+				cam->comm |= COMM_GOT_ACK;
 				COMM_STR("/Connected:");
 				COMM_CHARR(INT9_TO_CHARR(port));
 				return uartd_accept;
@@ -1505,7 +1505,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 
 	if (state->header.tag == PACKET_IDENT)
 	{ // Identification
-		if ((cam->comm & CommReady) == CommReady)
+		if ((cam->comm & COMM_READY) == COMM_READY)
 		{ // Why are we here?
 			return uartd_reset_nak;
 		}
@@ -1538,12 +1538,12 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 			return uartd_reset_nak;
 		}
 		// Idenfication verified
-		cam->comm = CommID;
 		cam->identity = ident;
+		cam->comm = COMM_HAS_ID;
 		if (ident.device == DEVICE_TRCAM)
-			cam->comm |= CommPi;
+			cam->comm |= COMM_SBC;
 		else if (ident.device == DEVICE_TRCAM_MCU)
-			cam->comm |= CommMCU;
+			cam->comm |= COMM_MCU;
 		COMM_STR("/Identified:");
 		COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device));
 		// Send own identification in response
@@ -1657,11 +1657,11 @@ void TIM6_IRQHandler()
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			uint8_t camLEDState = 0b00;
-			if ((camStates[i].comm & CommReady) == CommReady)
+			if ((camStates[i].comm & COMM_READY) == COMM_READY)
 			{
 				camLEDState |= 0b01;
 			}
-			if (camStates[i].comm & CommReady)
+			if (camStates[i].comm & COMM_READY)
 			{
 				TimeSpan timeSinceLastComm = now - portStates[i].lastComm;
 				TimeSpan timeoutBlink = (enforceTimeSync? 50 : 800)*TICKS_PER_MS;

@@ -123,7 +123,7 @@ static bool CameraValidState(std::shared_ptr<TrackingCameraState> &camera)
 		LOG(LCameraDevice, LError, "Camera %d updating firmware failed because it is still recovering from an error!", camera->id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
-	if (camera->state.contextualRLock()->commState != CommPiReady)
+	if (camera->state.contextualRLock()->commState != COMM_SBC_READY)
 	{
 		LOG(LFirmwareUpdate, LError, "Camera %d updating firmware failed because it has not started up yet!", camera->id);
 		return false;

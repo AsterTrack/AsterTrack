@@ -367,11 +367,11 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
 	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySendCommand;
 
-	if (camera.controller && status.commState != CommPiReady)
+	if (camera.controller && status.commState != COMM_SBC_READY)
 	{ // UART comms to camera not established
-		if (status.commState == CommMCUReady)
+		if (status.commState == COMM_MCU_READY)
 			statusMsgs.push_back("Camera is connected and starting up...");
-		else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+		else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			statusMsgs.push_back("Camera is trying to reconnect...");
 		else if (camera.client)
 			statusMsgs.push_back("Camera is only connected wirelessly.");
@@ -417,11 +417,11 @@ std::string getStatusText(const TrackingCameraState &camera)
 
 	if (status.error.encountered)
 	{
-		if (camera.controller && status.commState != CommPiReady)
+		if (camera.controller && status.commState != COMM_SBC_READY)
 		{ // UART comms to camera not established
-			if (status.commState == CommMCUReady)
+			if (status.commState == COMM_MCU_READY)
 				return asprintf_s("Camera encountered error '%s' and is currently recovering.", ErrorTag_String[status.error.code]);
-			else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+			else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
 				return asprintf_s("Camera encountered error '%s' and is trying to reconnect.", ErrorTag_String[status.error.code]);
 			else
 				return asprintf_s("Camera encountered error '%s' and is disconnected.", ErrorTag_String[status.error.code]);
@@ -436,11 +436,11 @@ std::string getStatusText(const TrackingCameraState &camera)
 		return asprintf_s("Camera encountered error '%s'.", ErrorTag_String[status.error.code]);
 	}
 
-	if (camera.controller && status.commState != CommPiReady)
+	if (camera.controller && status.commState != COMM_SBC_READY)
 	{ // UART comms to camera not established
-		if (status.commState == CommMCUReady)
+		if (status.commState == COMM_MCU_READY)
 			return "Camera is connected and starting up...";
-		else if ((status.commState & CommReady) != CommNoCon || dtMS(status.lastConnecting, sclock::now()) < 1000)
+		else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			return "Camera is trying to reconnect...";
 		else if (camera.client)
 			return "Camera is only connected wirelessly.";

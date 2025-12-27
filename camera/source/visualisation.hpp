@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 static void vis_visualise(const VisualisationState &vis, const std::vector<Cluster> &blobs, const std::vector<Cluster> &pastBlobs, uint8_t *srcBuf, int srcWidth, int srcHeight, int srcStride)
 {
-	if (vis.fbfd == 0)
+	if (vis.fbfd < 0)
 		return;
 	void *fbp = lock_fb(vis.fbfd, vis.finfo.smem_len);
 	if ((intptr_t)fbp == -1)

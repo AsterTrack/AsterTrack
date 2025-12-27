@@ -61,7 +61,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers
 //#define LOG_QPU
 #define LOG_SHORT
-//#define LOG_DROPS
+#define LOG_DROPS
 //#define LOG_TIMING
 
 bool isZero2 = false;
@@ -74,6 +74,7 @@ const int emulBufCnt = 4;
 bool isConsole;
 struct termios terminalSettings;
 static void setConsoleRawMode();
+static char getConsoleChar();
 
 
 // Static initialised members (for atexit)
@@ -319,11 +320,11 @@ int main(int argc, char **argv)
 
 	// Init visualisation resources
 	state.visualisation.fbfd = setupFrameBuffer(&state.visualisation.vinfo, &state.visualisation.finfo, false);
-	state.visualisation.initialised = state.visualisation.fbfd != 0;
+	state.visualisation.initialised = state.visualisation.fbfd >= 0;
 	if (!state.visualisation.initialised)
 		printf("Failed to initialise visualisation with framebuffer!\n");
 	atexit([]{ // Close at exit
-		if (state.visualisation.fbfd != 0)
+		if (state.visualisation.fbfd >= 0)
 			close(state.visualisation.fbfd);
 	});
 
@@ -476,8 +477,8 @@ int main(int argc, char **argv)
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			if (isConsole)
 			{ // Check input
-				char cin;
-				while (read(STDIN_FILENO, &cin, 1) == 1)
+				char cin = getConsoleChar();
+				if (cin)
 				{
 					if (cin == 'q')
 					{ // Complete stop of program requested
@@ -1318,8 +1319,8 @@ int main(int argc, char **argv)
 
 			if (isConsole)
 			{ // Check input
-				char cin;
-				while (read(STDIN_FILENO, &cin, 1) == 1)
+				char cin = getConsoleChar();
+				if (cin)
 				{
 					if (cin == 'q')
 					{ // Complete stop of program requested
@@ -2187,4 +2188,25 @@ static void setConsoleRawMode()
 	termSet.c_cc[VMIN] = 0;
 	termSet.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSANOW, &termSet);
+}
+
+static char getConsoleChar()
+{
+	struct timeval timeout = { 0, 0 };
+	// Set FD to STDIN
+	fd_set readFD;
+	FD_ZERO(&readFD);
+	FD_SET(STDIN_FILENO, &readFD);
+	// Check STDIN for bytes
+	int status = select(STDIN_FILENO + 1, &readFD, nullptr, nullptr, &timeout);
+	if (status < 0) return 0;
+	if (!FD_ISSET(STDIN_FILENO, &readFD)) return 0;
+	// STDIN has bytes
+	TimePoint_t startWait = sclock::now();
+	char cin;
+	int ret = read(STDIN_FILENO, &cin, 1);
+	if (ret == 1) return cin;
+	if (ret < 0)
+		printf("Failed to read console input: %d, %s (%c)\n", ret, strerror(errno), errno);
+	return 0;
 }

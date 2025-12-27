@@ -69,7 +69,7 @@ struct VisualisationState
 {
 	bool initialised = false;
 	bool enabled = false;
-	int fbfd = 0;
+	int fbfd = -1;
 	struct fb_var_screeninfo vinfo;
 	struct fb_fix_screeninfo finfo;
 	bool displayBlobs = false;

@@ -88,6 +88,7 @@ struct UartPort
 void* uart_init(std::string serial)
 {
 	UartPort *port = new UartPort();
+	port->fd = -1;
 	port->port = serial;
 	port->baudrate = UART_BAUD_RATE_SAFE;
 	return port;

@@ -75,13 +75,15 @@ int setupFrameBuffer(
 {
 	// Open the file for reading and writing
 	int fbfd = open("/dev/fb0", O_RDWR);
-	if (!fbfd) {
+	if (fbfd < 0)
+	{
 		printf("Error: cannot open framebuffer device.\n");
-		return 0;
+		return -1;
 	}
 
 	// Get variable screen information
-	if (ioctl(fbfd, FBIOGET_VSCREENINFO, vinfo)) {
+	if (ioctl(fbfd, FBIOGET_VSCREENINFO, vinfo))
+	{
 		printf("Error reading variable FrameBuffer information.\n");
 		goto fberror;
 	}
@@ -91,13 +93,15 @@ int setupFrameBuffer(
 
 	// Modify and push vinfo
 	//vinfo.bits_per_pixel = 16;
-	if (ioctl(fbfd, FBIOPUT_VSCREENINFO, vinfo)) {
+	if (ioctl(fbfd, FBIOPUT_VSCREENINFO, vinfo))
+	{
 	    printf("Error setting variable information.\n");
 		goto fberror;
 	}
 
 	// Get fixed screen information
-	if (ioctl(fbfd, FBIOGET_FSCREENINFO, finfo)) {
+	if (ioctl(fbfd, FBIOGET_FSCREENINFO, finfo))
+	{
 		printf("Error reading fixed FrameBuffer information.\n");
 		goto fberror;
 	}
@@ -116,5 +120,5 @@ int setupFrameBuffer(
 
 	fberror:
 	close(fbfd);
-	return 0;
+	return -1;
 }

@@ -60,7 +60,7 @@ VCSM_BUFFER vcsm_malloc(uint32_t size)
 		printf("vcsm_malloc: size is 0!\n");
 		return alloc;
 	}
-	if (vcsm_fd == -1)
+	if (vcsm_fd < 0)
 	{
 		printf("vcsm_malloc: VCSM uninitialised!\n");
 		return alloc;
@@ -72,7 +72,7 @@ VCSM_BUFFER vcsm_malloc(uint32_t size)
 	cma_alloc.size = size_aligned;
 	cma_alloc.num = 1;
 	cma_alloc.cached = VC_SM_CMA_CACHE_NONE;
-	cma_alloc.handle = 0;
+	cma_alloc.handle = -1;
 	if (ioctl(vcsm_fd, VC_SM_CMA_IOCTL_MEM_ALLOC, &cma_alloc) < 0)
 	{
 		printf("vcsm_malloc: ioctl failed!\n");

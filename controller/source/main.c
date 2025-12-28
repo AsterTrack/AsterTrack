@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "usbd_conf.h"
 #include "power_control.h"
 #include "config.h"
+#include "comm/controller.h"
 
 
 /* Defines */
@@ -98,19 +99,17 @@ static volatile uint32_t enabledSyncPinsGPIOD; // Stage 5
 typedef struct
 {
 	enum ControllerCommState comm;
-	struct IdentPacket identity;
+	struct IdentPacket identitySBC;
+	struct IdentPacket identityMCU;
 	uint8_t packetBuffer[UART_TEMP_PACKET_BUF];
 	uint16_t packetSize;
 
-	// Streaming state
-	bool cameraEnabled; // TODO: Needed? Probably not. But nice to know
-	bool frameSyncEnabled;
+	enum ControllerPortStatus status;
 } CameraState;
 CameraState camStates[UART_PORT_COUNT];
 
 // Sync source setup (Stage 3)
-enum FrameSignalSource { FrameSignal_None, FrameSignal_Generating, FrameSignal_External };
-static volatile enum FrameSignalSource frameSignalSource; // Stage 3
+static volatile enum ControllerSyncConfig syncSource; // Stage 3
 static volatile uint32_t framerate;
 static volatile uint32_t frametimeUS;
 
@@ -294,7 +293,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			uartd_process_port(p);
 		} */
 
-		if (frameSignalSource != FrameSignal_None && cachedFrameID != curFrameID)
+		if (syncSource != SYNC_CFG_NONE && cachedFrameID != curFrameID)
 		{ // Send SOF packet to both host and cameras
 			// This is not super time-critical as it is properly timestamped, so do in main loop not interrupt
 
@@ -547,7 +546,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			{
 				if ((camStates[i].comm & COMM_READY) != COMM_READY)
 					continue; // Comms not set up, doesn't need ping
-				if ((camStates[i].comm == COMM_SBC_READY) && frameSignalSource == FrameSignal_Generating && (now - portStates[i].lastComm) < UART_PING_INTERVAL)
+				if ((camStates[i].comm == COMM_SBC_READY) && syncSource == SYNC_CFG_GEN_RATE && (now - portStates[i].lastComm) < UART_PING_INTERVAL)
 					continue; // Already sending packets regularly, and camera is sending streaming-related packets back, doesn't need ping
 				uartd_send(i, msg_ping, sizeof(msg_ping), true);
 			}
@@ -567,7 +566,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
 			UARTPacketRef *packet = allocateUARTPacket(header.length);
 			packet->data[0] = TRCAM_STANDBY;
-		#if PACKET_CHECKSUM_SIZE == 4 // Precalculated CRC32
+		#if PACKET_CHECKSUM_SIZE == 4 && TRCAM_STANDBY == 0 // Precalculated CRC32
 			packet->data[1] = 0xD2;
 			packet->data[2] = 0x02;
 			packet->data[3] = 0xEF;
@@ -579,9 +578,9 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			writeUARTPacketEnd(packet, header.length + PACKET_CHECKSUM_SIZE);
 			for (int i = 0; i < UART_PORT_COUNT; i++)
 			{
-				if (camStates[i].comm == COMM_SBC_READY && camStates[i].cameraEnabled)
+				if (camStates[i].comm == COMM_SBC_READY && (camStates[i].status & PORT_CAM_STREAMING))
 					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
-				camStates[i].frameSyncEnabled = false;
+				camStates[i].status &= ~PORT_SYNC_ENABLED;
 			}
 
 			// Stage 3: Disable frame sync
@@ -936,9 +935,9 @@ void usbd_close_interface()
 	curFrameID = 0;
 	cachedFrameID = 0;
 	SYNC_Reset();
-	if (frameSignalSource == FrameSignal_Generating)
+	if (syncSource == SYNC_CFG_GEN_RATE)
 		StopTimer(TIM3);
-	frameSignalSource = FrameSignal_None;
+	syncSource = SYNC_CFG_NONE;
 
 	// Stage 2: Disable time sync
 	enforceTimeSync = false;
@@ -987,43 +986,51 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 	}
 	else if (req->bRequest == COMMAND_IN_STATUS)
 	{ // Request to report controller status
-		USBC_STR("+Iterate");
-		uint8_t *buf = (uint8_t*)&usbd->status.data_buf[sizeof(usbd_ctlreq)];
-	
-		// Controller status
-		const int CONTROLLER_STATUS_SIZE = 4;
-		uint8_t *controllerStatus = buf + 0;
-		controllerStatus[0] = ((commChannelsOpen? 1:0) << 0)
-			| ((enforceTimeSync? 1:0) << 1)
-			| ((frameSignalSource == FrameSignal_External? 1:0) << 2)
-			| ((frameSignalSource != FrameSignal_Generating? 1:0) << 3);
-		// Controller timestamp (not really necessary)
-		TimeSpan timeSinceStartupMS = GetTimeSinceMS(startup);
-		controllerStatus[1] = (timeSinceStartupMS >> 0)&0xFF;
-		controllerStatus[2] = (timeSinceStartupMS >> 1)&0xFF;
-		controllerStatus[3] = (timeSinceStartupMS >> 2)&0xFF;
-
-		// Reporting port states
-		uint8_t *portStatus = buf + CONTROLLER_STATUS_SIZE;
+		const int CONTROLLER_STATUS_SIZE = 8;
 		const int PORT_STATUS_SIZE = 7;
-		const int PORTS_STATUS_SIZE = 1+UART_PORT_COUNT*PORT_STATUS_SIZE;
-		portStatus[0] = UART_PORT_COUNT;
+		const int PORTS_STATUS_SIZE = UART_PORT_COUNT*PORT_STATUS_SIZE;
+		if (req->wLength < CONTROLLER_STATUS_SIZE+PORTS_STATUS_SIZE)
+		{
+			USBC_STR("!StatusSize");
+			return usbd_nak;
+		}
+		USBC_STR("+Status");
+
+		// Controller state
+		uint8_t *controllerState = req->data;
+		enum ControllerStatusFlags status = CONTROLLER_IDLE;
+		if (commChannelsOpen) status |= CONTROLLER_COMM_CHANNELS;
+		if (enforceTimeSync) status |= CONTROLLER_TIME_SYNC;
+		*(controllerState++) = status;
+		*(controllerState++) = syncSource;
+		*(controllerState++) = 0x00; // Reserved
+		uint8_t ports = UART_PORT_COUNT; // Number of channels sent in this report
+		*(controllerState++) = (ports << 4) | (powerInState & 0xF);
+		uint16_t PDMV = GetMillivoltsPD();
+		uint16_t ExtMV = GetMillivoltsExt();
+		*(controllerState++) = PDMV >> 8;
+		*(controllerState++) = PDMV & 0xFF;
+		*(controllerState++) = ExtMV >> 8;
+		*(controllerState++) = ExtMV & 0xFF;
+
+		// Port state
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			int base = 1+i*PORT_STATUS_SIZE;
-			portStatus[base+0] = camStates[i].comm;
-			INFO_CHARR(UI8_TO_HEX_ARR(camStates[i].comm), ':');
-			uint8_t *ID = (uint8_t*)&camStates[i].identity.id;
-			portStatus[base+1] = ID[0];
-			portStatus[base+2] = ID[1];
-			portStatus[base+3] = ID[2];
-			portStatus[base+4] = ID[3];
-			portStatus[base+5] = camStates[i].cameraEnabled;
-			portStatus[base+6] = camStates[i].frameSyncEnabled;
-			// Because this does not work on RISC-V... target address is not aligned
-			//*((int32_t*)&buf[base+1]) = camStates[i].identity.id;
+			CameraState *camState = &camStates[i];
+			uint8_t *portState = req->data + CONTROLLER_STATUS_SIZE + i*PORT_STATUS_SIZE;
+			*(portState++) = camState->comm;
+			*(portState++) = camState->status;
+			*(portState++) = 0x00; // Reserved
+			uint8_t *ID = (uint8_t*)&camState->identityMCU.id;
+			if (camState->comm == COMM_SBC_READY) ID = (uint8_t*)&camState->identitySBC.id;
+			//*((int32_t*)portStatus) = *ID; // This RISC-V ISA does not support unaligned 4-byte writes
+			*(portState++) = ID[0];
+			*(portState++) = ID[1];
+			*(portState++) = ID[2];
+			*(portState++) = ID[3];
 		}
-		usbd->status.data_ptr = buf;
+
+		usbd->status.data_ptr = req->data;
 		usbd->status.data_count = CONTROLLER_STATUS_SIZE+PORTS_STATUS_SIZE;
 		return usbd_ack;
 	}
@@ -1116,12 +1123,12 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Stage 3: Request to disable all sync sources
 		CMDD_STR("+SyncRst");
 		SYNC_Reset();
-		if (frameSignalSource == FrameSignal_Generating)
+		if (syncSource == SYNC_CFG_GEN_RATE)
 			StopTimer(TIM3);
-		frameSignalSource = FrameSignal_None;
+		syncSource = SYNC_CFG_NONE;
 		// Reset Sync Mask implicitly
 		for (int i = 0; i < UART_PORT_COUNT; i++)
-			camStates[i].frameSyncEnabled = false;
+			camStates[i].status &= ~PORT_SYNC_ENABLED;
 		enabledSyncPinsGPIOD = 0;
 		return usbd_ack;
 	}
@@ -1129,10 +1136,10 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Stage 3: Request to setup external sync source
 		CMDD_STR("+SyncExt");
 		SYNC_Reset();
-		if (frameSignalSource == FrameSignal_Generating)
+		if (syncSource == SYNC_CFG_GEN_RATE)
 			StopTimer(TIM3);
 		SYNC_Input_Init();
-		frameSignalSource = FrameSignal_External;
+		syncSource = SYNC_CFG_EXT_TRIG;
 		return usbd_ack;
 	}
 	else if (req->bRequest == COMMAND_OUT_SYNC_GENERATE)
@@ -1150,7 +1157,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		SYNC_Output_Init();
 		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
 		cachedFrameID = 0;
-		frameSignalSource = FrameSignal_Generating;
+		syncSource = SYNC_CFG_GEN_RATE;
 		return usbd_ack;
 	}
 	else if (req->bRequest == COMMAND_OUT_SYNC_MASK)
@@ -1160,9 +1167,13 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		enabledSyncPinsGPIOD = 0;
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
-			camStates[i].frameSyncEnabled = (req->wIndex >> i) & 1;
-			if (camStates[i].frameSyncEnabled)
+			if ((req->wIndex >> i) & 1)
+			{
+				camStates[i].status |= PORT_SYNC_ENABLED;
 				enabledSyncPinsGPIOD |= GPIOD_SYNC_PIN[i];
+			}
+			else
+				camStates[i].status &= ~PORT_SYNC_ENABLED;
 		}
 		return usbd_ack;
 	}
@@ -1181,7 +1192,10 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+req->wLength, false);
 			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
-				camStates[i].cameraEnabled = req->data[0]&TRCAM_FLAG_STREAMING;
+				if (req->data[0]&TRCAM_FLAG_STREAMING)
+					camStates[i].status |= PORT_CAM_STREAMING;
+				else
+					camStates[i].status &= ~PORT_CAM_STREAMING;
 			}
 		}
 		return usbd_ack;
@@ -1388,8 +1402,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		else if (state->header.tag == PACKET_ERROR)
 		{ // Snoop in, and stop streaming already
 			// If the error is serious, camera software will send a NAK and restart anyways, in which case this is not necessary
-			cam->cameraEnabled = false;
-			cam->frameSyncEnabled = false;
+			cam->status &= ~(PORT_CAM_STREAMING | PORT_SYNC_ENABLED);
 			enabledSyncPinsGPIOD &= ~(GPIOD_SYNC_PIN[port]);
 		}
 
@@ -1568,12 +1581,17 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 			return uartd_reset_nak;
 		}
 		// Idenfication verified
-		cam->identity = ident;
 		cam->comm = COMM_HAS_ID;
 		if (ident.device == DEVICE_TRCAM)
+		{
 			cam->comm |= COMM_SBC;
+			cam->identitySBC = ident;
+		}
 		else if (ident.device == DEVICE_TRCAM_MCU)
+		{
 			cam->comm |= COMM_MCU;
+			cam->identityMCU = ident;
+		}
 		COMM_STR("/Identified:");
 		COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device));
 		// Send own identification in response
@@ -1605,7 +1623,7 @@ void TIM3_IRQHandler()
 
 	// Reset IRQ flag
 	TIM_SR(TIM3) = 0;
-	if (frameSignalSource != FrameSignal_Generating)
+	if (syncSource != SYNC_CFG_GEN_RATE)
 	{
 		LOG_EVT_INT(CONTROLLER_INTERRUPT_SYNC_GEN, false);
 		return;

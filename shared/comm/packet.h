@@ -213,17 +213,6 @@ __attribute__((used)) static const char *ErrorTag_String[ERROR_MAX] =
 	"Camera program exception (pipe)"
 };
 
-enum ControllerCommState {
-	COMM_NO_CONN = 0,
-	COMM_HAS_ID = 1,
-	COMM_GOT_ACK = 2,
-	COMM_MCU = 4,
-	COMM_SBC = 8,
-	COMM_READY = COMM_HAS_ID | COMM_GOT_ACK,
-	COMM_MCU_READY = COMM_MCU | COMM_READY,
-	COMM_SBC_READY = COMM_SBC | COMM_READY,
-};
-
 enum CommMedium
 {
 	COMM_MEDIUM_UART = 0,

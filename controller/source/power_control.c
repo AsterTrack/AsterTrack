@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ch32v30x_gpio.h"
 
 #include "power_control.h"
+#include "comm/controller.h"
 #include "compat.h"
 #include "util.h"
 

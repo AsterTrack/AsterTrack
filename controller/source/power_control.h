@@ -27,14 +27,6 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
-enum ControllerPowerState
-{
-	POWER_WAITING,
-	POWER_PD_IN,
-	POWER_EXT_IN,
-	POWER_PD_IN_EXT_OUT
-};
-
 extern volatile enum ControllerPowerState powerInState;
 
 void EnableADCs();

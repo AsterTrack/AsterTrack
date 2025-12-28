@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/protocol_packet.hpp" // PacketProtocolState
 #include "comm/timesync.hpp" // TimeSync
 #include "comm/timingRecord.hpp" // TimingRecord
+#include "comm/controller.h"
 
 #include "util/blocked_vector.hpp"
 #include "util/synchronised.hpp"
@@ -60,30 +61,30 @@ struct TrackingControllerState
 	// USB device comms
 	std::shared_ptr<USBCommState> comm;
 
+	// USB Control transfer status
 	struct USBRequest
 	{
 		std::atomic<int> transfer = { -1 };
 		TimePoint_t submitted;
 		bool stalling;
 	};
-	// Control transfer status
 	USBRequest debugReq, eventReq, packetReq, statusReq;
 
+	// State of each USB endpoint for ensuring continuity and time sync
 	struct USBEndpoint
 	{
 		uint8_t counter = -1;
 		TimePoint_t lastReceived;
 	};
-	// State of each USB endpoint for ensuring continuity and time sync
 	std::vector<USBEndpoint> endpoints;
 
+	// Queue of packets to parse in supervisor thread, so that USB thread stays free to time usb packets accurately
 	struct USBPacket
 	{
 		TimePoint_t receiveTime;
 		int endpoint;
 		std::vector<uint8_t> data;
 	};
-	// Queue of packets to parse in supervisor thread, so that USB thread stays free to time usb packets accurately
 	Synchronised<std::queue<USBPacket>> packetQueue;
 
 	// Port states for assembling packets from USB blocks
@@ -95,6 +96,16 @@ struct TrackingControllerState
 	// Sync Groups this controller belongs to
 	std::shared_ptr<Synchronised<SyncGroup>> sync;
 	std::shared_ptr<Synchronised<SyncGroup>> syncGen; // If set, this controller generates/shares the sync for this group
+
+	// Reported device status
+	struct
+	{
+		ControllerStatusFlags flags;
+		ControllerSyncConfig syncCfg;
+		Hysteresis<float, 1, 0.7f> voltagePD;
+		Hysteresis<float, 1, 0.7f> voltageExt;
+		ControllerPowerState powerState;
+	} status = {};
 
 	// Event Log
 	BlockedQueue<ControllerEventLog, 4096> eventLog;

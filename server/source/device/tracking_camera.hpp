@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/streaming.hpp" // SyncGroup, FrameID, TruncFrameID
 #include "comm/packet.hpp" // StatPacket, TrCamMode, ...
+#include "comm/controller.h" // ControllerCommState
 #include "pipeline/record.hpp"
 #include "camera_firmware.hpp"
 

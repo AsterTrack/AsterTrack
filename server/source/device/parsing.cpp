@@ -267,34 +267,41 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 
 bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, uint8_t *data, int length)
 {
-	if (length < 5)
+	const int CONTROLLER_STATUS_SIZE = 8;
+	const int PORT_STATUS_SIZE = 7;
+	if (length < CONTROLLER_STATUS_SIZE)
 	{
-		LOG(LControllerDevice, LError, "Received malformed data of length %d < 5!\n", length);
+		LOG(LControllerDevice, LError, "Received malformed status packet of length %d < %d!\n", length, CONTROLLER_STATUS_SIZE);
 		return false;
 	}
-	uint8_t controllerStatus = data[0];
-	bool commChannelsOpen = (controllerStatus >> 0) & 1;
-	bool enforceTimeSync = (controllerStatus >> 1) & 1;
-	bool frameSignalExt = (controllerStatus >> 2) & 1;
-	bool frameSignalGen = (controllerStatus >> 3) & 1;
-	if (state.isStreaming != (commChannelsOpen && enforceTimeSync))
+	std::shared_lock dev_lock(state.deviceAccessMutex);
+
+	controller.status.flags = (ControllerStatusFlags)data[0];
+	controller.status.syncCfg = (ControllerSyncConfig)data[1];
+	uint8_t reserved = data[2];
+	uint8_t portCount = data[3] >> 4;
+	controller.status.powerState = (ControllerPowerState)(data[3] & 0xF);
+	controller.status.voltagePD.update((data[4] << 8 | data[5]) / 1000.0f);
+	controller.status.voltageExt.update((data[6] << 8 | data[7]) / 1000.0f);
+
+	if (length != (CONTROLLER_STATUS_SIZE + portCount*PORT_STATUS_SIZE))
+	{
+		LOG(LControllerDevice, LError, "Received malformed data of length %d, port count %d!\n",
+			length, portCount);
+		return false;
+	}
+	if (state.isStreaming != (controller.status.flags & CONTROLLER_COMM_CHANNELS) ||
+		state.isStreaming != (controller.status.flags & CONTROLLER_TIME_SYNC) ||
+		(!state.isStreaming && controller.status.syncCfg != SYNC_CFG_NONE))
 	{ // TODO: Spammed when state changes, so make sure the last change is actually some time ago
 		// E.g. if this is right after streaming started, but controller hasn't been fully instructed yet
 		// However there is a valid use case, e.g. when host dropped out (lagged, went to sleep, etc.)
 		// The controller has a timeout so it might silently stop streaming in these cases, which to the host is unexpected once it wakes up
-		LOG(LControllerDevice, LDarn, "Potentially erroneous state! %sstreaming, state: comm channels %s, time sync %s, %ssyncing cameras!\n",
-			state.isStreaming? "" : "not ", commChannelsOpen? "open" : "closed", enforceTimeSync? "on" : "off", (frameSignalExt || frameSignalGen)? "" : "not ");
+		LOG(LControllerDevice, LDarn, "Potentially erroneous state! %sstreaming, state: comm channels %s, time sync %s!\n",
+			state.isStreaming? "" : "not ", (controller.status.flags & CONTROLLER_COMM_CHANNELS)? "open" : "closed", (controller.status.flags & CONTROLLER_TIME_SYNC)? "on" : "off",
+			(controller.status.syncCfg != SYNC_CFG_NONE)? "" : "not ");
 	}
-	float secondsSinceStartup = ((data[1] << 00) | (data[2] << 1) | (data[3] << 2)) / 1000.0f;
-	int portCount = data[4];
-	if (length != (portCount*7 + 5))
-	{
-		LOG(LControllerDevice, LError, "Received malformed data of length %d, port count %d, seconds since startup %f!\n",
-			length, portCount, secondsSinceStartup);
-		return false;
-	}
-
-	std::shared_lock dev_lock(state.deviceAccessMutex);
+	// TODO: Double check sync configuration the same way?
 
 	// Step 1: Check addition or removal of cameras
 	int camsConnected = 0, camsConnecting = 0, newCamsConnecting = 0;
@@ -302,14 +309,15 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	for (int i = 0; i < portCount; i++)
 	{
 		bool existing = controller.cameras.size() > i && controller.cameras[i] != NULL;
-		uint8_t *camData = data + 5+i*7;
-		ControllerCommState commState = (ControllerCommState)camData[0];
-		int32_t id = *(int32_t*)(camData+1);
-		if ((commState&COMM_READY) == COMM_READY)
+		uint8_t *portState = data + CONTROLLER_STATUS_SIZE + i*PORT_STATUS_SIZE;
+		ControllerCommState portComms = (ControllerCommState)portState[0];
+		static_assert(sizeof(CameraID) == 4);
+		CameraID id = *(CameraID*)(portState+3);
+		if ((portComms&COMM_READY) == COMM_READY)
 		{
-			if (commState == COMM_SBC_READY)
+			if (portComms == COMM_SBC_READY)
 				camsConnected++;
-			else if (commState == COMM_MCU_READY)
+			else if (portComms == COMM_MCU_READY)
 				camsConnecting++;
 			if (id == 0 && !existing) newCamsConnecting++;
 			if (id == 0) continue;
@@ -423,11 +431,11 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		if (!controller.cameras[i]) continue;
 		auto camState = controller.cameras[i]->state.contextualLock();
 		// TODO: Change camera iteration packet to include version of cameras? Or implement a separate query?
-		uint8_t *camData = data + 5+i*7;
-		ControllerCommState commState = (ControllerCommState)camData[0];
-		bool cameraEnabled = camData[5];
-		bool frameSyncEnabled = camData[6];
-		if (commState == COMM_SBC_READY)
+		uint8_t *portState = data + CONTROLLER_STATUS_SIZE + i*PORT_STATUS_SIZE;
+		ControllerCommState portComms = (ControllerCommState)portState[0];
+		ControllerPortStatus portStatus = (ControllerPortStatus)portState[1];
+		uint8_t reserved = portState[2];
+		if (portComms == COMM_SBC_READY)
 		{ // Clear any possible error state
 			if (camState->error.encountered && dtMS(camState->error.time, sclock::now()) > 1000)
 			{ // Might need this overlap protection to prevent race-conditions
@@ -437,13 +445,13 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 				updatedCameras = true;
 			}
 		}
-		if (commState == COMM_SBC_READY) camState->hadPiConnected = true;
-		else if (commState == COMM_MCU_READY) camState->hadMCUConnected = true;
-		if ((commState&COMM_READY) == COMM_READY) camState->lastConnected = sclock::now();
-		else if (commState != COMM_NO_CONN) camState->lastConnecting = sclock::now();
-		if (camState->commState != commState)
+		if (portComms == COMM_SBC_READY) camState->hadPiConnected = true;
+		else if (portComms == COMM_MCU_READY) camState->hadMCUConnected = true;
+		if ((portComms&COMM_READY) == COMM_READY) camState->lastConnected = sclock::now();
+		else if (portComms != COMM_NO_CONN) camState->lastConnecting = sclock::now();
+		if (camState->commState != portComms)
 			updatedCameras = true;
-		camState->commState = commState;
+		camState->commState = portComms;
 	}
 	if (updatedCameras)
 		SignalServerEvent(EVT_UPDATE_INTERFACE);

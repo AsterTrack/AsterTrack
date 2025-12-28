@@ -49,7 +49,7 @@ LOG_FLAGS += -DCOMM_LOG
 # Power Control Logs
 LOG_FLAGS += -DPOW_LOG
 # ADC Voltage Logs
-LOG_FLAGS += -DADC_LOG
+#LOG_FLAGS += -DADC_LOG
 # UART Hardware Debug Log
 #LOG_FLAGS += -DUART_LOG
 # UART Hardware Debug Traces

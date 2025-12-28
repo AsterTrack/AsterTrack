@@ -552,21 +552,4 @@ inline Eigen::Matrix<Scalar,2,1> undistortPoint(const CameraCalib_t<CalibScalar>
 	return camera.principalPoint.template cast<Scalar>() + p * camera.f;
 }
 
-/**
- * Raise x to the power of integer n.
- * Very quick for small n.
- */
-template<typename T>
-static constexpr inline T pown(T x, unsigned n)
-{
-	T result = 1;
-	while (n)
-	{
-		if (n&1) result *= x;
-		x *= x;
-		n >>= 1;
-	}
-	return result;
-}
-
 #endif // EIGEN_UTIL_H

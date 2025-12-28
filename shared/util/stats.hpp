@@ -248,4 +248,45 @@ struct MultipleExtremum
 template<typename Scalar>
 using DualExtremum = MultipleExtremum<Scalar, 2>;
 
+
+/**
+ * Raise x to the power of integer n.
+ * Very quick for small n.
+ */
+template<typename T>
+static constexpr inline T pown(T x, unsigned n)
+{
+	T result = 1;
+	while (n)
+	{
+		if (n&1) result *= x;
+		x *= x;
+		n >>= 1;
+	}
+	return result;
+}
+
+/**
+ * Keeps a value from changing excessively within a given range
+ */
+template<typename Scalar, int Precision = 2, float Factor = 1.5f>
+struct Hysteresis
+{
+	float raw, rounded;
+
+	Hysteresis() : raw(NAN), rounded(NAN) {}
+
+	float update(float value)
+	{
+		raw = value;
+		if (std::isnan(rounded))
+			return rounded = value;
+		int power = pown(10, Precision);
+		Scalar hysteresis = (Scalar)Factor / power;
+		if (std::abs(value-rounded) > hysteresis)
+			rounded = std::roundf(value * power) / power;
+		return rounded;
+	}
+};
+
 #endif // STATS_H

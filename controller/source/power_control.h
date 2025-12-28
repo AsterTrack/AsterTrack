@@ -16,45 +16,48 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef __CONFIG_H
-#define __CONFIG_H
+#ifndef ANALOG_H
+#define ANALOG_H
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-#include "compat.h"
-
+#include <stdint.h>
 #include <stdbool.h>
 
-// SYNC pins
-
-#define CAM_PORT_COUNT			8       // Should match UART_PORT_COUNT in uartd_conf.h
-
-__attribute__((used)) static uint32_t GPIOD_SYNC_PIN[CAM_PORT_COUNT] = {
-	GPIO_PIN_8, GPIO_PIN_9, GPIO_PIN_10, GPIO_PIN_11, GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_13, GPIO_PIN_12
+enum ControllerPowerState
+{
+	POWER_WAITING,
+	POWER_PD_IN,
+	POWER_EXT_IN,
+	POWER_PD_IN_EXT_OUT
 };
 
-// SYNC IO pin(s) on GPIOB
+extern volatile enum ControllerPowerState powerInState;
 
-const static uint32_t GPIOB_SYNC_IO_PINS = GPIO_PIN_8;
+void EnableADCs();
+void DisableADCs();
+bool AreADCsActive();
 
-// SYNC IO EXTI lines
+void SetAnalogWatchdogPDIn();
+void SetAnalogWatchdogExtIn();
+void SetAnalogWatchdogPDSrc();
+void SetAnalogWatchdogExtSrc();
+void SetAnalogWatchdogOff();
 
-const static uint32_t GPIOE_SYNC_EXTI_LINES = EXTI_LINE_3;
+bool IsInInputRange(uint32_t mv);
+uint32_t GetMillivoltsPD();
+uint32_t GetMillivoltsExt();
 
-
-// Functions
-
-void Setup_Peripherals();
-
-void SYNC_Output_Init();
-void SYNC_Input_Init();
-void SYNC_Reset();
+bool EnablePowerPDIn();
+bool EnablePowerExtIn();
+bool EnablePowerExtOut();
+void DisablePowerIn();
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __CONFIG_H */
+#endif /* __USB_DRIVER_H */

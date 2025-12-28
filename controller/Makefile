@@ -46,6 +46,10 @@ LOG_FLAGS += -DCOMM_LOG
 # USB PD Debug Log
 #LOG_FLAGS += -DUSBPD_LOG
 #LOG_FLAGS += -DPD_CAPS
+# Power Control Logs
+LOG_FLAGS += -DPOW_LOG
+# ADC Voltage Logs
+LOG_FLAGS += -DADC_LOG
 # UART Hardware Debug Log
 #LOG_FLAGS += -DUART_LOG
 # UART Hardware Debug Traces
@@ -72,6 +76,7 @@ source/config.c \
 source/usb_driver.c \
 source/uart_driver.c \
 source/pd_driver.c \
+source/power_control.c \
 dependencies/PDlib/source/fusb302b.c \
 dependencies/PDlib/source/policy_engine_states.c \
 dependencies/PDlib/source/policy_engine.c \

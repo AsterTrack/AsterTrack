@@ -335,6 +335,26 @@ do { \
 #define USBPD_STR(...) do {} while(false)
 #endif
 
+#if POW_LOG
+#define POW_BUF LOG_BUF
+#define POW_CHARR LOG_CHARR
+#define POW_STR LOG_STR
+#else
+#define POW_BUF(...) do {} while(false)
+#define POW_CHARR(...) do {} while(false)
+#define POW_STR(...) do {} while(false)
+#endif
+
+#if ADC_LOG
+#define ADC_BUF LOG_BUF
+#define ADC_CHARR LOG_CHARR
+#define ADC_STR LOG_STR
+#else
+#define ADC_BUF(...) do {} while(false)
+#define ADC_CHARR(...) do {} while(false)
+#define ADC_STR(...) do {} while(false)
+#endif
+
 #if UART_LOG
 #define UART_CHARR LOG_CHARR
 #define UART_STR LOG_STR

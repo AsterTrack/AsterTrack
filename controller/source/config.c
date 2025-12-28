@@ -18,10 +18,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ch32v30x_rcc.h"
 #include "ch32v30x_gpio.h"
-//#include "ch32v30x_adc.h"
 
 #include "config.h"
 #include "pd_driver.h"
+#include "power_control.h"
 #include "util.h"
 
 void Setup_Peripherals()
@@ -52,7 +52,7 @@ void Setup_Peripherals()
 
 	{ // TIM3 is used for SOF/Sync timer
 		// Set Timer interrupts
-		NVIC_SetPriority(TIM3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+		NVIC_SetPriority(TIM3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 4, 0));
 		NVIC_EnableIRQ(TIM3_IRQn);
 
 		// Initialise Timer
@@ -131,18 +131,54 @@ void Setup_Peripherals()
 
 	// Setup Power Input toggles
 	GPIO_CFG(GPIOE, GPIO_PIN_7, GPIO_PP_OUT | GPIO_Speed_2MHz); // External Power I/O
-	GPIO_CFG(GPIOE, GPIO_PIN_8, GPIO_PP_OUT | GPIO_Speed_2MHz); // USB-C Power In
+	GPIO_CFG(GPIOE, GPIO_PIN_8, GPIO_PP_OUT | GPIO_Speed_2MHz); // USB-C PD Power In
 
-	// Select External Power
-	GPIO_SET(GPIOE, GPIO_PIN_7);
-	GPIO_SET(GPIOE, GPIO_PIN_8);
+	DisablePowerIn();
 
 	// Setup Power Voltage Reads
 
-	// Enable ADC
-	/* RCC->APB2PCENR |= RCC_APB2Periph_ADC1;
-	ADC1->CTLR2 |= ADC_ADON;
-	RCC->CFGR0 |= RCC_ADCPRE_DIV8; // Hah, good joke. Can't operate with PCLK2 at 144MHz because it has a max divider of 8 and cannot operate over 14MHz */
+	// Reset ADC
+	RCC->APB2PRSTR |= RCC_APB2Periph_ADC1;
+	RCC->APB2PRSTR &= ~RCC_APB2Periph_ADC1;
+	RCC->APB2PRSTR |= RCC_APB2Periph_ADC2;
+	RCC->APB2PRSTR &= ~RCC_APB2Periph_ADC2;
+
+	// RM says maximum ADC clock is 14Mhz.
+	// So can't operate with PCLK2 at 144MHz because ADCPRE has a max divider of 8, and 18Mhz > 14Mhz
+	// But, one chinese forum post mentions it supports up to 36Mhz, so surely they're right!
+	// https://bbs.21ic.com/icview-3481199-1-1.html
+	// Lowering PCKL2 requires running UART1 at 4MBaud, or running the whole CPU at 112Mhz and ALL UARTs at 7MBaud
+	// Since these drawbacks are significant, we're instead running the ADC at 18Mhz and accepting any oddities:
+	// So far observed only one anomaly: Regular Channel 1 does not apply the Sample Time reliably
+	// No matter which channel I map Regular Channel 1 to, it seems to use a sample time of 0 (11+0 ADCCLK) half the time
+	// This results in very unreliable readings, making Regular Channel 1 useless
+	// Regular Channel 0 is unaffected, other channels have not been tested, only ADC1 has been tested
+	// So since we only need two channels anyway, we use both ADC1 and ADC2 with 1 channel each
+
+	// Setup ADC Clocks
+	RCC->CFGR0 = (RCC->CFGR0 & ~RCC_ADCPRE) | RCC_ADCPRE_DIV8;
+	RCC->APB2PCENR |= RCC_APB2Periph_ADC1;
+	RCC->APB2PCENR |= RCC_APB2Periph_ADC2;
+
+	// Configure ADC
+	ADC1->CTLR1 = 0; // Just one channel to measure
+	ADC1->CTLR2 = ADC_CONT; // Enable continuous conversion
+	ADC2->CTLR1 = 0; // Just one channel to measure
+	ADC2->CTLR2 = ADC_CONT; // Enable continuous conversion
+
+	// Configure ADC channels
+	ADC1->SAMPTR2 = 0b101 << 27; // Select 11+55.5 ADCCLK Sample Time for Channel 9
+	ADC1->RSQR1 = 1 << 20; // Set number of regular channels to 1
+	ADC1->RSQR3 = (9 << 0); // Set as Input 9 (PD)
+	ADC2->SAMPTR2 = 0b101 << 24; // Select 11+55.5 ADCCLK Sample Time for Channel 8
+	ADC2->RSQR1 = 1 << 20; // Set number of regular channels to 1
+	ADC2->RSQR3 = (8 << 0); // Set Input 8 (Ext)
+	// -> Timings result in both ADCs sampling every 3.7us (11+55.5 CLK @ 18Mhz)
+
+	// Enable IRQ for ADC for Analog Watchdog
+	// High priority since it might be a spike in voltage that requires quickly cutting power
+	NVIC_SetPriority(ADC1_2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_EnableIRQ(ADC1_2_IRQn);
 
 
 	// -- RESET/FLASH BUTTON --
@@ -314,7 +350,7 @@ void SYNC_Input_Init()
 	GPIO_RESET(GPIOE, GPIO_PIN_2);
 
 	// Setup NVIC interrupt handlers for EXTI line
-	NVIC_SetPriority(EXTI3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0)); // Same priority as SOF timer
+	NVIC_SetPriority(EXTI3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 4, 0)); // Same priority as SOF timer
 	NVIC_EnableIRQ(EXTI3_IRQn);
 
 	// Select port E for EXTI line

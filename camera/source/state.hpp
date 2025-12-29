@@ -109,7 +109,6 @@ struct TrackingCameraState
 	};
 	// QPU options
 	std::string codeFile = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
-	std::string mcuFile = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
 	bool enableQPU[12] = { 1,1,1,0, 1,1,0,1, 1,0,1,0 };
 	// TODO: Some QPUs do not work with this qpu code (bug), disable them
 	// Do not waste too much time on this, I already did. These cores don't work with this specific code

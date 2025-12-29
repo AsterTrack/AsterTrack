@@ -52,13 +52,17 @@ gpiod_line_config *line_config;
 gpiod_line_settings *line_boot0, *line_reset;
 gpiod_line_request *line_request;
 
+std::string mcu_flash_file = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
 
 std::mutex mcu_mutex;
 std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
 TimePoint_t lastPing;
-bool mcu_identified;
+
+bool mcu_exists;
 bool mcu_active;
+bool mcu_intentional_bootloader;
+
 
 static bool i2c_init();
 static bool i2c_probe();
@@ -71,8 +75,57 @@ static bool mcu_send_ping();
 
 static void mcu_thread();
 
+
+bool mcu_initial_connect()
+{
+	if (!mcu_init())
+		return false;
+	
+	std::unique_lock lock(mcu_mutex);
+	if (mcu_probe())
+	{ // MCU responded, start monitoring it
+		mcu_monitor();
+		return true;
+	}
+	// Could not contact MCU, probe bootloader and check if recovery is required
+
+	if (mcu_probe_bootloader())
+	{ // If MCU is in bootloader mode for some reason, reset it and attempt to contact it again
+		mcu_reconnect();
+	}
+
+	if (!mcu_active)
+	{ // MCU is still not responding, it is either not available in hardware, or bricked
+		if (!mcu_switch_bootloader())
+		{ // Could not reboot it into bootloader even via GPIO - likely not available in hardware
+			printf("Could not find MCU!\n");
+		}
+		else if (!mcu_verify_program(mcu_flash_file))
+		{ // MCU firmware is just bricked, and we have a differing firmware to try
+			printf("MCU is bricked with differing firmware, will re-flash!\n");
+			if (mcu_flash_program(mcu_flash_file))
+				printf("Successfully re-flashed MCU in attempt to recover it!\n");
+			mcu_reconnect();
+		}
+		else
+		{ // MCU firmware is likely bricked (did not connect after reset)
+			printf("MCU is bricked, but no differing firmware is available to attempt a recovery with!\n");
+			mcu_reconnect();
+		}
+	}
+
+	if (mcu_exists)
+	{ // Start monitoring MCU only if its available in hardware (e.g. we were able to contact it or its bootloader)
+		mcu_monitor();
+	}
+
+	return mcu_active;
+}
+
 bool mcu_init()
 {
+	mcu_active = false;
+	mcu_exists = false;
 	bool i2c = i2c_init();
 	bool gpio = gpio_init();
 	return i2c && gpio;
@@ -82,13 +135,35 @@ bool mcu_probe()
 {
 	if (i2c_fd < 0) return false;
 
-	mcu_active = i2c_probe();
-	if (mcu_active)
+	if (i2c_probe())
 	{
-		mcu_identified = true;
-		printf("Verified existance of MCU!\n");
+		if (!mcu_exists)
+			printf("Verified existance of MCU!\n");
+		if (!mcu_active)
+			printf("Connected with MCU!\n");
+		mcu_active = true;
+		mcu_exists = true;
 	}
+	else mcu_active = false;
 	return mcu_active;
+}
+
+bool mcu_reconnect()
+{
+	// Whether we reflashed it or not, reset it into normal mode and try again
+	mcu_reset();
+	if (mcu_probe())
+		return true;
+	printf("Failed to reconnect to the MCU!\n");
+	if (mcu_probe_bootloader())
+		printf("MCU is still in the bootloader!\n");
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	mcu_reset();
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	if (mcu_probe())
+		return true;
+	printf("Still can't reconnect to the MCU after further reset!\n");
+	return false;
 }
 
 void mcu_monitor()
@@ -113,6 +188,17 @@ void mcu_cleanup()
 		i2c_cleanup();
 }
 
+static bool handle_i2c_error()
+{
+	if (errno == EBADF)// || errno == ETIMEDOUT)
+	{
+		mcu_active = false;
+		i2c_init();
+		return true;
+	}
+	return false;
+}
+
 static void mcu_thread()
 {
 	while (!stop_thread.load())
@@ -120,12 +206,16 @@ static void mcu_thread()
 		if (mcu_active && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
 		{
 			std::unique_lock lock(mcu_mutex);
+			if (!mcu_active)
+				continue;
 			mcu_send_ping();
 			lastPing = sclock::now();
 		}
-		if (!mcu_active && dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS)
+		if (!mcu_active && dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS && !mcu_intentional_bootloader)
 		{
 			std::unique_lock lock(mcu_mutex);
+			if (mcu_active || mcu_intentional_bootloader)
+				continue;
 			lastPing = sclock::now();
 			mcu_active = i2c_probe();
 			if (mcu_active)
@@ -145,6 +235,8 @@ void mcu_reset()
 {
 	if (!gpio_chip) return;
 
+	printf("Resetting MCU...\n");
+
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
 	if (gpiod_line_request_set_values(line_request, values_reset))
@@ -158,16 +250,19 @@ void mcu_reset()
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+	mcu_intentional_bootloader = false;
 }
 
 bool mcu_probe_bootloader()
 {
 	if (i2c_fd < 0) return false;
 
-	if (bootloaderGet() == RES_OK || mcu_switch_bootloader())
+	if (bootloaderGet() == RES_OK)
 	{
 		printf("MCU bootloader was found!\n");
-		mcu_identified = true;
+		mcu_exists = true;
+		mcu_active = false;
 		return true;
 	}
 	return false;
@@ -179,15 +274,15 @@ bool mcu_switch_bootloader()
 	{
 		printf("Requesting MCU to switch to bootloader...\n");
 		mcu_active = false;
-		unsigned char REG_ID[1] = { MCU_SWITCH_BOOTLOADER };
+		unsigned char REG_ID[] = { MCU_SWITCH_BOOTLOADER };
 		struct i2c_msg I2C_MSG[] = {
 			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
 		};
-		struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 1 };
+		struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 		if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 		{
 			printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
-			if (errno == EBADF) i2c_init();
+			handle_i2c_error();
 			return false;
 		}
 
@@ -196,6 +291,8 @@ bool mcu_switch_bootloader()
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
+			mcu_exists = true;
+			mcu_intentional_bootloader = true;
 			return true;
 		}
 		else
@@ -229,6 +326,8 @@ bool mcu_switch_bootloader()
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
+			mcu_exists = true;
+			mcu_intentional_bootloader = true;
 			return true;
 		}
 		else
@@ -312,13 +411,16 @@ bool mcu_verify_program(std::string filename)
 		bytes_read = fs.gcount();
 		if (bytes_read == 0) break;
 		curr_block++;
-		printf("Slave MCU IAP: Verifying block: %d,block size: %d\n", curr_block, bytes_read);
+		printf("Verifying block: %d, block size: %d\n", curr_block, bytes_read);
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		ret = verifyPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
+		{
+			printf("Block differs: %d, block size: %d!\n", curr_block, bytes_read);
 			break;
+		}
 
 		incrementAddress(loadAddress, bytes_read);
 		memset(block, 0xff, bytes_read);
@@ -331,16 +433,15 @@ bool mcu_verify_program(std::string filename)
 static bool mcu_send_ping()
 {
 	if (i2c_fd < 0) return false;
-	unsigned char REG_ID[1] = { MCU_PING };
+	unsigned char REG_ID[] = { MCU_PING };
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
 	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 1 };
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to send I2C message to MCU (ping)! %d: %s\n", errno, strerror(errno));
-		if (errno == EBADF) i2c_init();
-		mcu_active = false;
+		handle_i2c_error();
 		return false;
 	}
 	return true;
@@ -364,24 +465,23 @@ static bool i2c_probe()
 {
 	if (i2c_fd < 0) return false;
 
-	unsigned char REG_ID[1] = { MCU_REG_ID };
+	unsigned char REG_ID[] = { MCU_REG_ID };
 	uint8_t MCU_ID;
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, 1, &MCU_ID },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_ID), &MCU_ID },
 	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, 2 };
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to read MCU ID register! %d: %s\n", errno, strerror(errno));
-		if (errno == EBADF) i2c_init();
+		handle_i2c_error();
 		return false;
 	}
 
 	if (MCU_ID != MCU_I2C_ID)
 	{
 		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_ID, MCU_I2C_ID);
-		if (errno == EBADF) i2c_init();
 		return false;
 	}
 

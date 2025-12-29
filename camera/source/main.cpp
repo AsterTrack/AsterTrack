@@ -82,7 +82,6 @@ static TrackingCameraState state = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
 ErrorTag error = ERROR_NONE;
-bool hasMCU;
 
 static ctpl::thread_pool threadPool(6);
 static std::atomic<bool> isVisualising, isPreparingFrame;
@@ -272,42 +271,8 @@ int main(int argc, char **argv)
 		else state.id = rand();
 	}
 
-	// Check MCU presence
-	bool hasMCU = false;
-	if (mcu_init())
-	{
-		std::unique_lock lock(mcu_mutex);
-		hasMCU = mcu_probe();
-		if (!hasMCU && mcu_probe_bootloader())
-		{
-			hasMCU = true;
-			if (!mcu_verify_program(state.mcuFile))
-			{
-				printf("MCU is bricked with invalid firmware, will re-flash!\n");
-				if (mcu_flash_program(state.mcuFile))
-					printf("Successfully re-flashed MCU in attempt to recover it!\n");
-			}
-			else
-			{
-				printf("MCU is bricked, but firmware has been validated!\n");
-			}
-			// Whether we reflashed it or not, reset it into normal mode and try again
-			mcu_reset();
-			if (!mcu_probe())
-			{
-				printf("Failed to reconnect to the MCU!\n");
-				if (mcu_probe_bootloader())
-					printf("MCU is still in the bootloader!\n");
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-				mcu_reset();
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-				if (!mcu_probe())
-					printf("Still can't reconnect to the MCU after further reset!\n");
-			}
-		}
-		if (hasMCU)
-			mcu_monitor();
-	}
+	// Init, detect, recover, connect with, and monitor MCU
+	mcu_initial_connect();
 	atexit(mcu_cleanup);
 
 	// Init VCSM
@@ -486,19 +451,29 @@ int main(int argc, char **argv)
 					}
 					else if (cin == 'e')
 					{
+						std::unique_lock lock(mcu_mutex);
 						mcu_reset();
 					}
 					else if (cin == 'b')
 					{
+						std::unique_lock lock(mcu_mutex);
 						mcu_switch_bootloader();
 					}
 					else if (cin == 'f')
 					{
-						mcu_flash_program(state.mcuFile);
+						std::unique_lock lock(mcu_mutex);
+						if (!mcu_probe_bootloader())
+							printf("MCU is not in bootloader!\n");
+						else
+						 	mcu_flash_program(mcu_flash_file);
 					}
 					else if (cin == 'v')
 					{
-						mcu_verify_program(state.mcuFile);
+						std::unique_lock lock(mcu_mutex);
+						if (!mcu_probe_bootloader())
+							printf("MCU is not in bootloader!\n");
+						else
+						 	mcu_verify_program(mcu_flash_file);
 					}
 				}
 			}

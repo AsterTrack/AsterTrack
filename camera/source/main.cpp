@@ -450,6 +450,23 @@ int main(int argc, char **argv)
 						else
 						 	mcu_verify_program(mcu_flash_file);
 					}
+					else if (cin == 's')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_sync_info();
+					}
+					else if (cin == 'g')
+					{
+						std::unique_lock lock(mcu_mutex);
+						MCU_StoredInfo info;
+						if (mcu_fetch_info(info))
+							receivedInfoFromMCU(std::move(info));
+					}
+					else if (cin == 'u')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_update_id(cameraID);
+					}
 				}
 			}
 

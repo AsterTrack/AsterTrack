@@ -46,6 +46,7 @@ source/main.c \
 source/rgbled.c \
 source/rgbled_anims.c \
 source/version.c \
+source/otp.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c \
 targets/ARM/source/i2c_arm_ll.c \
@@ -95,7 +96,7 @@ ASM_SOURCES = $(ASM_SOURCES_$(DEVICE))
 
 # ----- Link script -----
 
-LDSCRIPT_STM32G030 = targets/ARM/link_STM32G030K6Tx.ld
+LDSCRIPT_STM32G030 = targets/ARM/link_STM32G030K8Tx.ld
 LDSCRIPT = $(LDSCRIPT_$(DEVICE))
 
 

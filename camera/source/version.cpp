@@ -31,6 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <linux/i2c-dev.h>
 
 CameraID cameraID = 0;
+bool isStored = false, isOverwritten = false;
 std::string id_file = "/mnt/mmcblk0p2/config/id";
 
 // Version and build number
@@ -41,6 +42,8 @@ VersionDesc sbcFWVersion(0, 1, 0);
 #define FIRMWARE_DESCRIPTOR "dev"
 #endif
 std::string sbcFWDescriptor = FIRMWARE_DESCRIPTOR;
+
+MCU_StoredInfo mcuStoredInfo;
 
 int numCPUCores = 0;
 
@@ -67,6 +70,7 @@ static void loadCameraID(CameraID overrideID)
 	if (overrideID != 0)
 	{ // Passed in by argument
 		cameraID = overrideID;
+		isOverwritten = true;
 	}
 	else if (std::filesystem::exists(id_file))
 	{ // Read from SD card storage
@@ -77,6 +81,7 @@ static void loadCameraID(CameraID overrideID)
 		{
 			idFS.seekg(0);
 			idFS.read((char*)&cameraID, 4);
+			isStored = true;
 			printf("Read ID %u from config!\n", cameraID);
 		}
 		else
@@ -93,4 +98,41 @@ void gatherInfo(CameraID overrideID)
 {
 	gatherSBCInfo();
 	loadCameraID(overrideID);
+}
+
+/* Returns whether MCU should be instructed to update its own stored ID */
+bool receivedInfoFromMCU(MCU_StoredInfo &&info)
+{
+	printf("Received Camera Serial %.8x%.8x, Camera ID #%u, Camera MCU FW v.%d.%d.%d.%d\n",
+		info.hardwareSerial.serial1, info.hardwareSerial.serial2, info.cameraID,
+		info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build);
+	printf("    Additionally received %d subpart serial numbers, and MCU Unique ID #%.8x%.8x%.8x\n",
+		info.subpartSerials.size(), info.mcuUniqueID[0], info.mcuUniqueID[1], info.mcuUniqueID[2]);
+	if (!info.mcuHWDescriptor.empty())
+		printf("    MCU HW Descriptor: %s\n", info.mcuHWDescriptor.c_str());
+	if (!info.mcuFWDescriptor.empty())
+		printf("    MCU FW Descriptor: %s\n", info.mcuFWDescriptor.c_str());
+	mcuStoredInfo = std::move(info);
+	if (mcuStoredInfo.cameraID == 0 || mcuStoredInfo.cameraID == (CameraID)-1)
+	{ // Update ID stored in MCU with current stored/generated
+		printf("MCU had no ID stored, updating MCUs ID!\n");
+		return true;
+	}
+	else if (cameraID != mcuStoredInfo.cameraID)
+	{ // IDs differ, perhaps SD card got reflashed / exchanged
+		if (isStored)
+			printf("Have different ID stored, updating MCUs ID!\n");
+		else if (isOverwritten)
+			printf("Had different overwritten ID, updating MCUs ID!\n");
+		else
+		{ // Else adopt MCUs ID
+			printf("Adopting MCUs ID!\n");
+			cameraID = mcuStoredInfo.cameraID;
+			std::ofstream id_stream(id_file, std::ios::binary);
+			id_stream.write((char*)&cameraID, sizeof(CameraID));
+			return false; // Don't update MCU ID
+		}
+		return true; // Update MCU ID
+	}
+	return false;
 }

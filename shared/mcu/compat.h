@@ -240,6 +240,18 @@ static inline void StopTimer(TIM_TypeDef *TIM)
 #endif
 
 
+#ifdef STM32G030xx_H
+#define FLASH_PAGE_SIZE		0x0800
+#define FLASH_CONFIG_PAGE	31
+#define PERSISTENT_CONFIG ((volatile uint32_t*)(FLASH_BASE + FLASH_PAGE_SIZE * FLASH_CONFIG_PAGE))
+
+#define OTP_BASE			0x1FFF7000
+#define FAKE_OTP_PAGE		30
+#define FAKE_OTP_BASE		(FLASH_BASE + FLASH_PAGE_SIZE * FAKE_OTP_PAGE)
+#define OTP ((volatile uint32_t*)FAKE_OTP_BASE)
+#endif
+
+
 #ifdef __cplusplus
 }
 #endif

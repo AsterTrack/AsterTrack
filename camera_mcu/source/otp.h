@@ -16,29 +16,16 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef VERSION_H
-#define VERSION_H
+#ifndef OTP_H
+#define OTP_H
 
-#include "comm/packet.h"
-#include "mcu/mcu.hpp"
+#include <stdint.h>
 
-#include <string>
+extern uint8_t OTP_Version;
+extern uint8_t OTP_HwStringData[];
+extern uint16_t OTP_HwStringLength;
 
-extern uint32_t cameraID;
-extern std::string id_file;
+void otp_read();
+uint8_t otp_get_subparts(uint32_t *target, uint16_t maxCount);
 
-extern VersionDesc sbcFWVersion;
-extern std::string sbcFWDescriptor;
-
-extern MCU_StoredInfo mcuStoredInfo;
-
-extern int numCPUCores;
-
-// Get Camera ID, Firmware and Hardware Versions/Info, etc.
-// Both from config files, system drivers
-void gatherInfo(CameraID overrideID = 0);
-
-/* Returns whether MCU should be instructed to update its own stored ID */
-bool receivedInfoFromMCU(MCU_StoredInfo &&info);
-
-#endif // VERSION_H
+#endif // OTP_H

@@ -221,6 +221,27 @@ enum CameraMCUFlashConfig ReadFlashConfiguration()
 		return MCU_FLASH_UNKNOWN;
 }
 
+#define FLASH_SR_ERRORS (FLASH_SR_OPERR  | FLASH_SR_PROGERR | FLASH_SR_WRPERR | \
+						 FLASH_SR_PGAERR | FLASH_SR_SIZERR  | FLASH_SR_PGSERR | \
+						 FLASH_SR_MISERR | FLASH_SR_FASTERR | \
+						 FLASH_SR_OPTVERR)
+
+static bool UnlockFlash()
+{
+	if (FLASH->CR & FLASH_CR_LOCK)
+	{
+		while (FLASH->SR & FLASH_SR_BSY1);
+
+		// Unlock FLASH->CR
+		FLASH->KEYR = 0x45670123U;
+		FLASH->KEYR = 0xCDEF89ABU;
+
+		if (FLASH->CR & FLASH_CR_LOCK)
+			return false;
+	}
+	return true;
+}
+
 enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config)
 {
 	enum CameraMCUFlashConfig currentConfig = ReadFlashConfiguration();
@@ -236,15 +257,9 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 
 	// Update configuration
 
-	if (FLASH->CR & FLASH_CR_LOCK)
-	{
-		// Unlock FLASH->CR
-		FLASH->KEYR = 0x45670123U;
-		FLASH->KEYR = 0xCDEF89ABU;
+	if (!UnlockFlash())
+		return MCU_FLASH_ERROR;
 
-		if (FLASH->CR & FLASH_CR_LOCK)
-			return MCU_FLASH_ERROR;
-	}
 	if (FLASH->CR & FLASH_CR_OPTLOCK)
 	{
 		// Unlock Options
@@ -257,13 +272,10 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 
 	__disable_irq();
 
-	#define FLASH_SR_ERRORS (FLASH_SR_OPERR  | FLASH_SR_PROGERR | FLASH_SR_WRPERR | \
-							FLASH_SR_PGAERR | FLASH_SR_SIZERR  | FLASH_SR_PGSERR |  \
-							FLASH_SR_MISERR | FLASH_SR_FASTERR |   \
-							FLASH_SR_OPTVERR);
+	while (FLASH->SR & FLASH_SR_BSY1);
 
 	// Clear error status
-	FLASH->SR |= FLASH_SR_ERRORS;
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
 
 	// Default OPTR: 0xDFFFE1AA
 	if (config == MCU_FLASH_DEBUG_SWD)
@@ -285,16 +297,15 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 		FLASH->OPTR = 0xDEFFE1AA;
 	}
 
-	// Wait for any flash operation to finish
-	while (FLASH->SR & FLASH_SR_BSY1);
-
 	// Write option byte to flash
 	FLASH->CR |= FLASH_CR_OPTSTRT;
 
-	// Wait for write to finish
+	// Wait for operation to finish
 	while (FLASH->SR & FLASH_SR_BSY1);
 
-	uint32_t error = FLASH->SR & FLASH_SR_ERRORS;
+	// Read and clear error status
+	uint16_t error = FLASH->SR & FLASH_SR_ERRORS;
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
 
 	// Lock Options and FLASH->CR again
 	FLASH->CR = FLASH_CR_LOCK | FLASH_CR_OPTLOCK;
@@ -305,6 +316,172 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 		return MCU_FLASH_ERROR;
 
 	return config;
+}
+
+__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+uint16_t EraseFlashPage(uint16_t page)
+{
+	if (!UnlockFlash())
+		return 1;
+
+	__disable_irq();
+
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Clear error status
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
+
+	// Erase page in flash
+	FLASH->CR &= ~FLASH_CR_PNB_Msk;
+	FLASH->CR |= FLASH_CR_PER | ((page << FLASH_CR_PNB_Pos) & FLASH_CR_PNB_Msk);
+	FLASH->CR |= FLASH_CR_STRT;
+
+	// Wait for operation to finish
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Clear flash erase flag
+	FLASH->CR &= ~(FLASH_CR_PER | FLASH_CR_PNB_Msk);
+
+	// Read and clear error status
+	uint16_t error = FLASH->SR & FLASH_SR_ERRORS;
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
+
+	// Lock FLASH->CR again
+	FLASH->CR |= FLASH_CR_LOCK;
+
+	__enable_irq();
+
+	return error;
+}
+
+__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
+{
+	if (length == 0 || (length & 1) || length > 256)
+		return 10;
+
+	if (!UnlockFlash())
+		return 1;
+
+	__disable_irq();
+
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Clear error status
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
+
+	// Enter flash programming mode
+	FLASH->CR |= FLASH_CR_PG;
+
+	uint32_t error = 0;
+	for (int i = 0; i < length/2; i++)
+	{
+		address[i*2+0] = data[i*2+0];
+		__ISB();
+		address[i*2+1] = data[i*2+1];
+
+		while (FLASH->SR & FLASH_SR_BSY1);
+
+		// Clear EOP and check errors
+		bool EOP = FLASH->SR & FLASH_SR_EOP;
+		FLASH->SR |= FLASH_SR_EOP;
+		error = FLASH->SR & FLASH_SR_ERRORS;
+		if (!EOP || error) break;
+	}
+
+	// Clear any errors
+	FLASH->SR |= FLASH_SR_ERRORS;
+
+	// Exist flash programming mode
+	FLASH->CR &= ~FLASH_CR_PG;
+
+	// Lock FLASH->CR again
+	FLASH->CR = FLASH_CR_LOCK;
+
+	__enable_irq();
+
+	return error;
+}
+
+__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
+{
+	if (length == 0 || (length & 1) || length > 256)
+		return 10;
+
+	if (((uint32_t)address) & 0b111)
+		return 10;
+
+	uint16_t page = ((uint32_t)address - FLASH_BASE) / FLASH_PAGE_SIZE;
+	uint16_t pageEnd = ((uint32_t)(address+length-1) - FLASH_BASE) / FLASH_PAGE_SIZE;
+	if (page != pageEnd)
+		return 10;
+
+	if (!UnlockFlash())
+		return 1;
+
+	__disable_irq();
+
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Clear error status
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
+
+	// Erase page in flash
+	FLASH->CR &= ~FLASH_CR_PNB_Msk;
+	FLASH->CR |= FLASH_CR_PER | ((page << FLASH_CR_PNB_Pos) & FLASH_CR_PNB_Msk);
+	FLASH->CR |= FLASH_CR_STRT;
+
+	// Wait for operation to finish
+	while (FLASH->SR & FLASH_SR_BSY1);
+
+	// Clear flash erase flag
+	FLASH->CR &= ~(FLASH_CR_PER | FLASH_CR_PNB_Msk);
+
+	// Read and clear error status
+	uint16_t error = FLASH->SR & FLASH_SR_ERRORS;
+	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
+
+	if (error)
+	{
+		// Lock FLASH->CR again
+		FLASH->CR |= FLASH_CR_LOCK;
+
+		__enable_irq();
+
+		return error;
+	}
+
+	// Enter flash programming mode
+	FLASH->CR |= FLASH_CR_PG;
+
+	for (int i = 0; i < length/2; i++)
+	{
+		address[i*2+0] = data[i*2+0];
+		__ISB();
+		address[i*2+1] = data[i*2+1];
+
+		while (FLASH->SR & FLASH_SR_BSY1);
+
+		// Clear EOP and check errors
+		bool EOP = FLASH->SR & FLASH_SR_EOP;
+		FLASH->SR |= FLASH_SR_EOP;
+		error = FLASH->SR & FLASH_SR_ERRORS;
+		if (!EOP || error) break;
+	}
+
+	// Clear any errors
+	FLASH->SR |= FLASH_SR_ERRORS;
+
+	// Exist flash programming mode
+	FLASH->CR &= ~FLASH_CR_PG;
+
+	// Lock FLASH->CR again
+	FLASH->CR = FLASH_CR_LOCK;
+
+	__enable_irq();
+
+	return error;
 }
 
 void SwitchToBootloader()

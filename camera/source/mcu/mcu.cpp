@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/timesync.hpp"
 #include "comm/commands.h"
 #include "stm32_bootloader.hpp"
+#include "version.hpp"
 
 #include "util/util.hpp"
 
@@ -140,7 +141,10 @@ bool mcu_probe()
 		if (!mcu_exists)
 			printf("Verified existance of MCU!\n");
 		if (!mcu_active)
+		{
 			printf("Connected with MCU!\n");
+			mcu_sync_info();
+		}
 		mcu_active = true;
 		mcu_exists = true;
 	}
@@ -219,7 +223,10 @@ static void mcu_thread()
 			lastPing = sclock::now();
 			mcu_active = i2c_probe();
 			if (mcu_active)
+			{ // Reconnected, exchange info again (might have changed)
 				printf("Reconnected with MCU!\n");
+				mcu_sync_info();
+			}
 			else if (mcu_probe_bootloader())
 			{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader?
 				printf("MCU is in the bootloader!\n");
@@ -445,6 +452,115 @@ static bool mcu_send_ping()
 		return false;
 	}
 	return true;
+}
+
+static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint16_t length)
+{
+	if (i2c_fd < 0) return false;
+
+	std::vector<uint8_t> INFO_DATA(2+length);
+	unsigned char FETCH_CMD[] = { stringID };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)INFO_DATA.size(), INFO_DATA.data() },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (get descriptor)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+
+	uint16_t received = (INFO_DATA[0] << 8) | INFO_DATA[1];
+	if (received != length)
+		printf("Requested string %d of length %d but received string of length %d!\n", stringID, length, received);
+	uint16_t strlen = std::min(received, length);
+	descriptor = std::string((char*)INFO_DATA.data()+2, strlen);
+	return true;
+}
+
+bool mcu_fetch_info(MCU_StoredInfo &info)
+{
+	if (i2c_fd < 0) return false;
+
+	uint8_t INFO_DATA[MCU_INFO_MAX_LENGTH];
+	uint8_t FETCH_VERSION = 1; // Request up to this version, may receive lower version
+	unsigned char FETCH_CMD[] = { MCU_FETCH_INFO, FETCH_VERSION };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(INFO_DATA), INFO_DATA },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (fetch info)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+
+	FETCH_VERSION = INFO_DATA[0]; // Actually received version
+	if (FETCH_VERSION != 1) return false; // Currently only supported version
+	info.mcuOTPVersion = INFO_DATA[1]; // Should not concern us too much, but may be of interest in interpreting the data
+
+	uint8_t *ptr = INFO_DATA+8;
+	memcpy(&info.cameraID, ptr, sizeof(CameraID));
+	ptr += sizeof(CameraID);
+	memcpy(&info.mcuFWVersion, ptr, sizeof(VersionDesc));
+	ptr += sizeof(VersionDesc);
+	memcpy(&info.hardwareSerial, ptr, sizeof(HardwareSerial));
+	ptr += sizeof(HardwareSerial);
+	memcpy(&info.mcuUniqueID, ptr, 3*sizeof(uint32_t));
+	ptr += 3*sizeof(uint32_t);
+
+	if (INFO_DATA[2] <= 8)
+	{
+		info.subpartSerials.resize(INFO_DATA[2]);
+		memcpy(info.subpartSerials.data(), ptr, INFO_DATA[2]*sizeof(uint64_t));
+	}
+
+	uint16_t hwStrLen = (INFO_DATA[4] << 8) | INFO_DATA[5];
+	if (!mcu_fetch_descriptor(info.mcuHWDescriptor, MCU_GET_HW_STR, hwStrLen))
+		return false;
+
+	uint16_t fwStrLen = (INFO_DATA[6] << 8) | INFO_DATA[7];
+	if (!mcu_fetch_descriptor(info.mcuFWDescriptor, MCU_GET_FW_STR, fwStrLen))
+		return false;
+
+	return true;
+}
+
+bool mcu_update_id(CameraID cameraID)
+{
+	if (i2c_fd < 0) return false;
+
+	printf("Updating MCU CameraID to #%u!\n", cameraID);
+
+	uint8_t *ID_ARR = (uint8_t*)&cameraID;
+	unsigned char UPDATE_CMD[] = { MCU_UPDATE_ID, ID_ARR[0], ID_ARR[1], ID_ARR[2], ID_ARR[3] };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(UPDATE_CMD), UPDATE_CMD },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (update ID)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+	return true;
+}
+
+void mcu_sync_info()
+{
+	MCU_StoredInfo info;
+	if (mcu_fetch_info(info))
+	{ // Successfully fetche info from MCU
+		if (receivedInfoFromMCU(std::move(info)))
+		{ // Had differing camera IDs and need to tell MCU to update it
+			mcu_update_id(cameraID);
+		}
+	}
 }
 
 static bool i2c_init()

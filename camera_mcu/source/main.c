@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #if defined(STM32G0)
 #include "stm32g030xx.h"
 #include "stm32g0xx_ll_gpio.h"
+#include "stm32g0xx_ll_utils.h"
 #endif
 #include "compat.h"
 
@@ -28,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "rgbled.h"
 #include "comm/commands.h"
 #include "config_impl.h"
+#include "otp.h"
 
 
 /* Defines */
@@ -86,6 +88,7 @@ volatile bool piWantsBootloader;
 volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
+volatile CameraID cameraIDToWrite = 0;
 
 
 /* Functions */
@@ -93,7 +96,7 @@ volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = 0, .type = INTERFACE_UART, .version = firmwareVersion };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = PERSISTENT_CONFIG[0], .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -217,6 +220,30 @@ int main(void)
 			// Should never get here
 			rgbled_animation(&LED_ANIM_FLASH_BAD);
 			while (true);
+		}
+
+		if (cameraIDToWrite)
+		{
+			CameraID cameraIDWrite = cameraIDToWrite;
+			cameraIDToWrite = 0;
+			// Signal write state
+			rgbled_transition(LED_BOOTLOADER, 0);
+			delayMS(100);
+			// Write config
+			uint32_t config[] = { cameraIDWrite, 0 };
+			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint32_t));
+			// Signal result
+			if (error == 1)
+				rgbled_transition(LED_UART_ERROR, 0);
+			else if (error)
+				rgbled_transition(LED_ERROR_3, 0);
+			else if (config[0] != PERSISTENT_CONFIG[0] && config[1] != PERSISTENT_CONFIG[1])
+				rgbled_transition(LED_ERROR_4, 0);
+			else
+				rgbled_transition(LED_ACTIVE, 0);
+			ReturnToDefaultLEDState(2000);
+			// Update identification packet to use new ID
+			uart_set_identification();
 		}
 
 		/* // Automatic switching of filter switcher for testing
@@ -614,12 +641,38 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 		case MCU_PING:
 			// Nothing to do
 			return true;
-			break;
+		case MCU_UPDATE_ID:
+		{
+			if (len != sizeof(CameraID))
+			{
+				rgbled_transition(LED_ERROR_1, 0);
+				ReturnToDefaultLEDState(2000);
+				return false;
+			}
+			CameraID id;
+			memcpy(&id, data, sizeof(CameraID));
+			if (id == 0)
+			{
+				rgbled_transition(LED_ERROR_2, 0);
+				ReturnToDefaultLEDState(2000);
+				return true;
+			}
+			else if (PERSISTENT_CONFIG[0] == id)
+			{
+				rgbled_transition(LED_STANDBY, 0);
+				ReturnToDefaultLEDState(1000);
+			}
+			else
+			{ // Tell main thread to write to flash
+				cameraIDToWrite = id;
+			}
+			return true;
+		}
 		default:
 			return false;
-			break;
 	}
 }
+
 
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
 {
@@ -631,6 +684,60 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		case MCU_REG_ID:
 			response[0] = MCU_I2C_ID;
 			return 1;
+		case MCU_FETCH_INFO:
+		{
+			otp_read();
+
+			// This is a critical packet, so make sure misinterpretations can not happen
+			uint8_t Packet_Version = 1;
+			if (len > 0 && data[0] != 0 && data[0] < Packet_Version)
+				Packet_Version = data[0];
+			// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
+
+			// Write packet header
+			response[0] = Packet_Version;		// Fetch Info packet version
+			response[1] = OTP_Version; 			// OTP Format Version
+			response[2] = 0; 					// Sub-Part Count
+			response[3] = 0; 					// Reserved
+			
+			// Write string lengths for separate request
+			response[4] = OTP_HwStringLength >> 8;
+			response[5] = OTP_HwStringLength & 0xFF;
+			response[6] = firmwareDescriptorLength >> 8;
+			response[7] = firmwareDescriptorLength & 0xFF;
+
+			uint32_t *packet32 = ((uint32_t*)response);
+			packet32[2] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
+			packet32[3] = firmwareVersion.num;	// MCU Firmware Version
+			packet32[4] = OTP[2];				// 64-Bit Camera Serial Number Word 1
+			packet32[5] = OTP[3];				// 64-Bit Camera Serial Number Word 2
+			packet32[6] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
+			packet32[7] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
+			packet32[8] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
+
+			response[2] = otp_get_subparts(packet32 + MCU_INFO_LENGTH, MCU_INFO_MAX_SUBPARTS);
+
+			#if MCU_INFO_LENGTH != 9
+			#error Make sure to keep MCU_FETCH_INFO backwards compatible in all ways!
+			#endif
+
+			return (MCU_INFO_LENGTH + response[2]*2) * sizeof(uint32_t);
+		}
+		case MCU_GET_HW_STR:
+		{
+			// We assume OTP has already been read - otherwise, the Pi would not know the length to read
+			response[0] = OTP_HwStringLength >> 8;
+			response[1] = OTP_HwStringLength & 0xFF;
+			memcpy(response+2, OTP_HwStringData, OTP_HwStringLength);
+			return 2 + OTP_HwStringLength;
+		}
+		case MCU_GET_FW_STR:
+		{
+			response[0] = firmwareDescriptorLength >> 8;
+			response[1] = firmwareDescriptorLength & 0xFF;
+			memcpy(response+2, firmwareDescriptor, firmwareDescriptorLength);
+			return 2 + firmwareDescriptorLength;
+		}
 		default:
 			// TODO: Error?
 			return 0;

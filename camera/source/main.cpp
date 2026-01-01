@@ -55,6 +55,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp"
 
+#include "version.hpp"
+
 #include "vcsm/vcsm.hpp"
 
 #define RUN_CAMERA	// Have the camera supply frames (else: emulate camera buffers)
@@ -63,9 +65,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define LOG_SHORT
 #define LOG_DROPS
 //#define LOG_TIMING
-
-bool isZero2 = false;
-int numCPUCores = 0;
 
 // Number of emulated buffers to iterate over if RUN_CAMERA is not defined
 const int emulBufCnt = 4;
@@ -259,17 +258,8 @@ int main(int argc, char **argv)
 
 	srand((unsigned int)time(NULL));
 
-	// Should be read from permanent, unique file in shell
-	if (state.id == 0)
-	{
-		if (std::filesystem::exists("/mnt/mmcblk0p2/config/id"))
-		{
-			std::ifstream fileBuffer("/mnt/mmcblk0p2/config/id", std::ios::in | std::ios::binary);
-			fileBuffer.read((char*)&state.id, 4);
-			printf("Read ID %d from config!\n", state.id);
-		}
-		else state.id = rand();
-	}
+	// Gather information about the firmware and hardware on this camera
+	gatherInfo(state.id);
 
 	// Init, detect, recover, connect with, and monitor MCU
 	mcu_initial_connect();
@@ -302,15 +292,6 @@ int main(int argc, char **argv)
 	atexit([]{ // Close at exit
 		qpu_destroyBase(&base);
 	});
-
-	{
-		std::string modelName(128, 0);
-		std::ifstream stream("/proc/device-tree/model");
-		stream.read((char*)modelName.data(), modelName.capacity());
-		modelName.resize(stream.gcount());
-		isZero2 = modelName.find("Zero 2");
-		numCPUCores = std::thread::hardware_concurrency();
-	}
 
 	// TODO: Proper Thread Core distribution
 	// Assuming 4-core
@@ -351,10 +332,6 @@ int main(int argc, char **argv)
 
 	comm_init();
 
-	// TODO: update versions
-	VersionDesc version(0, 0, 0);
-	IdentPacket ident (state.id, DEVICE_TRCAM, (InterfaceTag)0, version);
-
 	// UART communications
 	{ // Init whether used or not, might be enabled later on
 		state.uart.protocol.needsErrorScanning = true;
@@ -366,8 +343,7 @@ int main(int argc, char **argv)
 		state.uart.write = uart_write;
 		state.uart.submit = uart_submit;
 		state.uart.flush = uart_flush;
-		state.uart.ownIdent = ident;
-		state.uart.ownIdent.type = INTERFACE_UART;
+		state.uart.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_UART, sbcFWVersion);
 		state.uart.expIdent.device = DEVICE_TRCONT;
 		state.uart.started = false;
 	}
@@ -393,8 +369,7 @@ int main(int argc, char **argv)
 		state.server.write = server_write;
 		state.server.submit = server_submit;
 		state.server.flush = server_flush;
-		state.server.ownIdent = ident;
-		state.server.ownIdent.type = INTERFACE_SERVER;
+		state.server.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_SERVER, sbcFWVersion);
 		state.server.expIdent.device = DEVICE_SERVER;
 		state.server.started = false;
 	}
@@ -801,7 +776,7 @@ int main(int argc, char **argv)
 		StatPacket::Incidents incidents = {};
 		// Limits achievable on Zero 1 and Zero 2 without overclocking, with some spikes
 		uint16_t awaitLimit = 1000000/state.camera.fps,
-			skipLimit = isZero2? 30 : 10, // Yes, really
+			skipLimit = 30,
 			accessLimit = 10,
 			procLimit = 2500,
 			handleLimit = 50,

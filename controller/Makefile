@@ -77,6 +77,7 @@ source/usb_driver.c \
 source/uart_driver.c \
 source/pd_driver.c \
 source/power_control.c \
+source/version.c \
 dependencies/PDlib/source/fusb302b.c \
 dependencies/PDlib/source/policy_engine_states.c \
 dependencies/PDlib/source/policy_engine.c \
@@ -181,6 +182,9 @@ LDFLAGS = $(COPTIONS) \
 #######################################
 # BUILD TARGETS
 #######################################
+
+# Force rebuild of version which includes a build indentifier
+$(shell touch source/version.c >/dev/null)
 
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 

@@ -45,6 +45,7 @@ C_SOURCES_ARM_LL = \
 source/main.c \
 source/rgbled.c \
 source/rgbled_anims.c \
+source/version.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c \
 targets/ARM/source/i2c_arm_ll.c \
@@ -157,6 +158,9 @@ LDFLAGS = $(COPTIONS) \
 #######################################
 # BUILD TARGETS
 #######################################
+
+# Force rebuild of version which includes a build indentifier
+$(shell touch source/version.c >/dev/null)
 
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 

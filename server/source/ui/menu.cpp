@@ -29,6 +29,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
+// Found in version.cpp
+extern VersionDesc serverVersion;
+extern std::string serverVersionDescriptor;
+
 
 void InterfaceState::UpdateMainMenuBar()
 {
@@ -454,9 +458,22 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::OpenPopup("About AsterTrack");
 		aboutPopupOpened = true;
 	}
-	if (ImGui::BeginPopupModal("About AsterTrack", &aboutPopupOpened, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize))
+	if (ImGui::BeginPopupModal("About AsterTrack", &aboutPopupOpened, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
 	{
-		ImGui::Text("AsterTrack AsterTrack\n\n"
+		ImGui::Text("Server Version %d.%d.%d (Build %d - %s)",
+			serverVersion.major, serverVersion.minor, serverVersion.patch, serverVersion.build, serverVersionDescriptor.c_str());
+
+		ImGui::SeparatorText("Third-Party Licenses");
+		ImGui::TextUnformatted("See the license folder in the directory of the program");
+		ImGui::TextUnformatted("Or see an up-to-date online version: ");
+		ImGui::SameLine(0, 0);
+		ImGui::TextLinkOpenURL("here", "https://github.com/AsterTrack/AsterTrack/tree/main/server/licenses");
+
+		ImGui::SeparatorText("AsterTrack Server License");
+		ImGui::BeginChild("LicenseFrame", ImVec2(0,0),
+			ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize |
+			ImGuiChildFlags_Borders | ImGuiChildFlags_FrameStyle);
+		ImGui::TextUnformatted(
 			"Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors\n"
 			"\n"
 			"This program is free software: you can redistribute it and/or modify\n"
@@ -471,6 +488,8 @@ void InterfaceState::UpdateMainMenuBar()
 			"\n"
 			"You should have received a copy of the GNU General Public License\n"
 			"along with this program.  If not, see <https://www.gnu.org/licenses/>.");
+		ImGui::EndChild();
+
 		ImGui::EndPopup();
 	}
 

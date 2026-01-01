@@ -48,6 +48,10 @@ static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_
 #define COMM_PING_INTERVAL_MS		100
 #define COMM_PING_TIMEOUT_MS		1000
 
+// Found in version.cpp
+extern VersionDesc serverVersion;
+extern std::string serverVersionDescriptor;
+
 void ClientThread(std::stop_token stop_token, ClientCommState *clientState);
 
 template<> void OpaqueDeleter<ClientCommState>::operator()(ClientCommState* ptr) const
@@ -202,8 +206,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		auto comm = make_opaque<ClientCommState>();
 		comm->socket = socket;
 		comm->callbacks = server.callbacks;
-		VersionDesc version(0, 0, 0); // TODO: Add proper version, pass on from ONE compilation unit (uses TIME!)
-		comm->ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, version);
+		comm->ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, serverVersion);
 		comm->expIdent.device = DEVICE_TRCAM;
 		comm->thread = new std::jthread(ClientThread, comm.get());
 		server.clients.push_back(std::move(comm));
@@ -459,11 +462,11 @@ phase_identification:
 						if (correct)
 						{
 							IdentPacket rcvIdent = parseIdentPacket(proto.rcvBuf.data()+proto.cmdPos);
-							correct = (rcvIdent.device&comm.expIdent.device) != 0 
-								&& rcvIdent.type == comm.ownIdent.type
-								&& rcvIdent.version.major == comm.ownIdent.version.major
-								&& rcvIdent.version.minor >= comm.ownIdent.version.minor;
-							// TODO: Deal with versions
+							correct = (rcvIdent.device&comm.expIdent.device) != 0 && rcvIdent.type == comm.ownIdent.type;
+							// TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
+							if (rcvIdent.version.major != comm.ownIdent.version.major)
+								LOG(LServer, LWarn, "Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
+									comm.ownIdent.version.major, comm.ownIdent.version.minor, rcvIdent.version.major, rcvIdent.version.minor);
 							if (correct)
 							{ // Proper identity
 								LOG(LServer, LDebug, "Valid identification response received!");

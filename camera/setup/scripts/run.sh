@@ -3,15 +3,14 @@
 cd /home/tc
 
 ARCH=$(uname -m)
-ID=$(cat /mnt/mmcblk0p2/config/id | od -N 4 -A n -t d4)
 LOGPATH=/home/tc/trcam.log
 
 while :
 do
         echo "===================================" | tee $LOGPATH
-        echo "Tracking Program for $ARCH with ID $ID" | tee $LOGPATH
+        echo "Tracking Program for $ARCH" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
-        sudo /home/tc/TrackingCamera/TrackingCamera_$ARCH --program /home/tc/TrackingCamera/qpu_blob_tiled_min.bin -id $ID --nostatlog -u 2>&1 | tee $LOGPATH
+        sudo /home/tc/TrackingCamera/TrackingCamera_$ARCH --program /home/tc/TrackingCamera/qpu_blob_tiled_min.bin --nostatlog -u 2>&1 | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
         echo "Tracking Program exited, restarting" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH

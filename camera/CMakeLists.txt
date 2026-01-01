@@ -47,6 +47,7 @@ set(SOURCES
 	source/mcu/mcu.cpp
 	source/mcu/stm32_bootloader.cpp
 	source/blob/detection.cpp
+	source/version.cpp
 	source/main.cpp
 	../shared/util/image.cpp
 	../shared/comm/protocol_stream.cpp
@@ -85,18 +86,24 @@ set(QPU_PROGRAM_SOURCES
 # Setup VC4ASM build target to compile all ASM source files
 add_custom_target(qpu_programs)
 foreach (file ${QPU_PROGRAM_SOURCES})
-    get_filename_component(file_name ${file} NAME_WE)
-    add_custom_command(
+	get_filename_component(file_name ${file} NAME_WE)
+	add_custom_command(
 		OUTPUT ${file_name}.bin
 		DEPENDS ${file}
-	    COMMAND vc4asm -V -o ${CMAKE_CURRENT_BINARY_DIR}/${file_name}.bin ${CMAKE_SOURCE_DIR}/${file}
+		COMMAND vc4asm -V -o ${CMAKE_CURRENT_BINARY_DIR}/${file_name}.bin ${CMAKE_CURRENT_SOURCE_DIR}/${file}
 	)
-    add_custom_target(${file_name}
+	add_custom_target(${file_name}
 		DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${file_name}.bin
 	)
 	add_dependencies(qpu_programs ${file_name})
 endforeach()
 
-# Make sure they are build by default
-add_dependencies(TrackingCamera_armv6l qpu_programs)
-add_dependencies(TrackingCamera_armv7l qpu_programs)
+# Force rebuild of version which includes a build indentifier
+add_custom_target(
+	recompile_info
+	COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/source/version.cpp
+)
+
+# Add custom targets as dependencies
+add_dependencies(TrackingCamera_armv6l qpu_programs recompile_info)
+add_dependencies(TrackingCamera_armv7l qpu_programs recompile_info)

@@ -54,9 +54,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 static void InitPacketHub();
 static void SetupPacketHubSinks();
 
+void version_init();
+
 /* Variables */
 
-union VersionDesc version; // Initialised at the beginning
+// Firmware Version Information initialised in version_init
+extern union VersionDesc firmwareVersion;
+extern const char* firmwareDescriptor;
+extern const uint32_t firmwareDescriptorLength;
 
 // PacketHub is responsible for distributing data from UART sources to USB sinks
 static Hub packetHub;
@@ -150,7 +155,7 @@ volatile TimePoint lastUARTActivity;
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = version };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -213,7 +218,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	startup = GetTimePoint();
 
 	// Initialise version
-	version = GetVersion(0, 0, 0);
+	version_init();
 
 #if defined(ENABLE_EVENTS)
 	for (int i = 0; i < CONTROLLER_EVENT_MAX; i++)
@@ -1570,15 +1575,14 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
 			return uartd_reset_nak;
 		}
-		if (ident.version.major != ownIdent.version.major || ident.version.minor != ownIdent.version.minor)
-		{ // TODO: Deal with versions, controller should be able to update older versions anyway
+		if (ident.version.major != ownIdent.version.major)
+		{ // TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
 			WARN_STR("!VersionMismatch:");
 			WARN_CHARR(INT9_TO_CHARR(port));
 			WARN_STR("+Cont:v");
 			WARN_CHARR(INT99_TO_CHARR(ownIdent.version.major), '.', INT99_TO_CHARR(ownIdent.version.minor));
 			WARN_STR("+Cam:v");
 			WARN_CHARR(INT99_TO_CHARR(ident.version.major), '.', INT99_TO_CHARR(ident.version.minor));
-			return uartd_reset_nak;
 		}
 		// Idenfication verified
 		cam->comm = COMM_HAS_ID;

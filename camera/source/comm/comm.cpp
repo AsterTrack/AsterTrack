@@ -373,11 +373,11 @@ phase_identification:
 						if (correct)
 						{
 							IdentPacket rcvIdent = parseIdentPacket(proto.rcvBuf.data()+proto.cmdPos);
-							correct = (rcvIdent.device&comm.expIdent.device) != 0 
-								&& rcvIdent.type == comm.ownIdent.type
-								&& rcvIdent.version.major == comm.ownIdent.version.major
-								&& rcvIdent.version.minor >= comm.ownIdent.version.minor;
-							// TODO: Deal with versions
+							correct = (rcvIdent.device&comm.expIdent.device) != 0 && rcvIdent.type == comm.ownIdent.type;
+							// TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
+							if (rcvIdent.version.major != comm.ownIdent.version.major)
+								printf("Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
+									comm.ownIdent.version.major, comm.ownIdent.version.minor, rcvIdent.version.major, rcvIdent.version.minor);
 							if (correct)
 							{ // Proper identity
 								printf("Valid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));

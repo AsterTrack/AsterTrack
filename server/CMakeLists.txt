@@ -16,7 +16,7 @@ endif()
 
 # Accumulate sources
 set(SERVER
-	app.cpp server.cpp config.cpp simulation.cpp
+	app.cpp server.cpp config.cpp simulation.cpp version.cpp
 	comm/usb.cpp comm/protocol_packet.cpp
 	comm/streaming.cpp comm/timesync.cpp
 	comm/wireless_server.cpp
@@ -175,6 +175,13 @@ if(MSVC)
 	add_custom_command(TARGET astertrack POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${LIB_DIR}/libusb/libusb-1.0.dll" $<TARGET_FILE_DIR:astertrack>)
 
+	# Force rebuild of version which includes a build indentifier
+	add_custom_target(
+		recompile_info
+		COMMAND copy /b ${CMAKE_CURRENT_SOURCE_DIR}/source/version.cpp +,,
+	)
+	add_dependencies(astertrack recompile_info)
+
 else()
 	set(LIB_DIR "${PROJECT_SOURCE_DIR}/dependencies/lib/linux")
 
@@ -201,4 +208,12 @@ else()
 	if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	else() # GCC
 	endif()
+
+	# Force rebuild of version which includes a build indentifier
+	add_custom_target(
+		recompile_info
+		COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/source/version.cpp
+	)
+	add_dependencies(astertrack recompile_info)
+
 endif()

@@ -202,7 +202,7 @@ lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 
 # Define all source files to be compiled
 SERVER_CPP = \
-	app.cpp server.cpp config.cpp simulation.cpp recording.cpp \
+	app.cpp server.cpp config.cpp simulation.cpp recording.cpp version.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp \
 	comm/streaming.cpp comm/timesync.cpp \
 	comm/wireless_server.cpp \
@@ -320,6 +320,9 @@ checkLibs := $(shell test -d "$(libdir)/vrpn"; echo $$?)
 ifneq ($(checkLibs),0)
   $(error vrpn library is missing ($(libdir)/vrpn), make sure to build dependencies)
 endif
+
+# Force rebuild of version which includes a build indentifier
+$(shell touch source/version.cpp >/dev/null)
 
 all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static copybinaries
 

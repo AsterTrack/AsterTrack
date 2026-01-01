@@ -413,7 +413,7 @@ union VersionDesc
 	VersionDesc() {}
 	VersionDesc(uint8_t verMajor, uint8_t verMinor, uint8_t verPatch) : major(verMajor), minor(verMinor), patch(verPatch)
 	{
-		build = 0; //(uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);
+		build = (uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);
 	}
 #endif
 };
@@ -425,7 +425,7 @@ static inline union VersionDesc GetVersion(uint8_t verMajor, uint8_t verMinor, u
 	version.major = verMajor;
 	version.minor = verMinor;
 	version.patch = verPatch;
-	version.build = 0; //(uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);
+	version.build = (uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);
 	return version;
 }
 #endif

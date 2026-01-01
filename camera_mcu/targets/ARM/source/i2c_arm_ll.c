@@ -37,11 +37,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define I2C_ADDRESS_MATCH (MCU_I2C_ADDRESS << 1) // Needs to be left-shifted to fit register
 
-static enum CameraMCUCommand command;
 static uint8_t receiveBuffer[256];
 static uint8_t transmitBuffer[256];
 static uint8_t transmitLength;
-static int receiveCounter, transmitCounter;
+static uint16_t receiveCounter, transmitCounter;
 static bool processedRX = false;
 
 
@@ -55,6 +54,8 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 
 void i2c_driver_init()
 {
+	LL_I2C_Disable(I2C1);
+
 	// GPIO Clocks are already active
 
 	// DMA & UART Peripheral clock enable
@@ -97,13 +98,10 @@ void i2c_driver_init()
 	NVIC_SetPriority(I2C1_IRQn, 2);
 	NVIC_EnableIRQ(I2C1_IRQn);
 
-	LL_I2C_Enable(I2C1);
-
 	// Enable I2C1 interrupts
-	LL_I2C_EnableIT_ADDR(I2C1);
-	LL_I2C_EnableIT_NACK(I2C1);
-	LL_I2C_EnableIT_ERR(I2C1);
-	LL_I2C_EnableIT_STOP(I2C1);
+	I2C1->CR1 |= I2C_CR1_ERRIE | I2C_CR1_STOPIE | I2C_CR1_NACKIE | I2C_CR1_ADDRIE | I2C_CR1_RXIE | I2C_CR1_TXIE;
+
+	LL_I2C_Enable(I2C1);
 }
 
 
@@ -118,53 +116,42 @@ void I2C1_IRQHandler(void)
 	// So Start TX has to flush last transfers garbage byte from TXDR by setting TXE
 	// There's no event for processing, so first TX Byte event will process the request
 
-	if (LL_I2C_IsActiveFlag_ADDR(I2C1))
-	{
-		if (LL_I2C_GetAddressMatchCode(I2C1) == I2C_ADDRESS_MATCH)
-		{ // Address matches own address
-			LL_I2C_ClearFlag_ADDR(I2C1);
+	uint32_t ISR = I2C1->ISR;
 
-			if (LL_I2C_GetTransferDirection(I2C1) == LL_I2C_DIRECTION_READ)
+	if (ISR & I2C_ISR_ADDR)
+	{
+		I2C1->ICR |= I2C_ICR_ADDRCF;
+
+		uint8_t addr = (ISR&I2C_ISR_ADDCODE) >> I2C_ISR_ADDCODE_Pos << 1;
+		if (addr == I2C_ADDRESS_MATCH)
+		{ // Address matches own address
+			if (ISR & I2C_ISR_DIR)
 			{ // Prepare to transmit data
 
 				// Flush data in TXDR before writing first byte
-				LL_I2C_ClearFlag_TXE(I2C1);
-
-				// Enable TX interrupt
-				LL_I2C_EnableIT_TX(I2C1);
+				I2C1->ISR |= I2C_ISR_TXE;
 
 				// Can reset TX counter here or later when processing
 				transmitCounter = 0;
 			}
 			else
 			{ // Prepare to receive command ( + potentially data)
-				command = MCU_CMD_NONE;
 				receiveCounter = 0;
 				processedRX = false;
 			}
 		}
-		else
-		{ // Not being addressed (perhaps general call if enabled)
-			LL_I2C_ClearFlag_ADDR(I2C1);
-		}
+		// Not being addressed after all (perhaps general call if enabled)
 	}
-	else if (LL_I2C_IsActiveFlag_NACK(I2C1))
+	else if (ISR & I2C_ISR_NACKF)
 	{ // End of TX
-		LL_I2C_ClearFlag_NACK(I2C1);
+		I2C1->ICR |= I2C_ICR_NACKCF;
 	}
-	else if (LL_I2C_IsActiveFlag_RXNE(I2C1))
+	else if (ISR & I2C_ISR_RXNE)
 	{
-		if (receiveCounter == 0)
-		{ // Receiving command byte
-			command = (enum CameraMCUCommand)LL_I2C_ReceiveData8(I2C1);
-		}
-		else
-		{ // Receiving further data
-			receiveBuffer[receiveCounter-1] = LL_I2C_ReceiveData8(I2C1);
-		}
+		receiveBuffer[receiveCounter] = I2C1->RXDR;
 		receiveCounter++;
 	}
-	else if (LL_I2C_IsActiveFlag_TXIS(I2C1))
+	else if (ISR & I2C_ISR_TXIS)
 	{
 		if (!processedRX)
 		{ // First TX after receiving, process RX data
@@ -172,29 +159,30 @@ void I2C1_IRQHandler(void)
 			transmitCounter = 0;
 			processedRX = true;
 			if (receiveCounter > 0)
-				transmitLength = i2cd_prepare_response(command, receiveBuffer, receiveCounter-1, transmitBuffer);
+				transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, receiveCounter-1, transmitBuffer);
 		}
 
 		if (transmitCounter < transmitLength)
 		{ // Write next byte
-			LL_I2C_TransmitData8(I2C1, transmitBuffer[transmitCounter]);
+			I2C1->TXDR = transmitBuffer[transmitCounter];
 		}
 		else
 		{ // Might be last byte, won't be sent. Or Pi is doing something strange.
-			LL_I2C_TransmitData8(I2C1, 0x00);
+			I2C1->TXDR = 0x00;
 		}
 		transmitCounter++;
 	}
-	else if (LL_I2C_IsActiveFlag_STOP(I2C1))
+	else if (ISR & I2C_ISR_STOPF)
 	{ // Stopping RX or TX
-		LL_I2C_ClearFlag_STOP(I2C1);
+		I2C1->ICR |= I2C_ICR_STOPCF;
 
 		if (!processedRX && receiveCounter > 0)
 		{ // Just received data without expectation to respond, handle
-			i2cd_handle_command(command, receiveBuffer, receiveCounter-1);
+			processedRX = true;
+			i2cd_handle_command((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, receiveCounter-1);
 		}
 	}
-	else if (!LL_I2C_IsActiveFlag_TXE(I2C1))
+	else if (!(ISR & I2C_ISR_TXE))
 	{
 		// Currently transmitting data, and TXDR is not empty, so all good
 	}

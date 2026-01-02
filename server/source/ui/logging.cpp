@@ -81,10 +81,12 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 				logsStickToNew = false;
 		}
 
-		float preWidth1 = 50.0f;
-		float preWidth2 = 60.0f;
-		float startLevel = ImGui::GetCursorPosX() + preWidth1;
-		float startLog = startLevel + preWidth2;
+		ImGui::PushFont(fonts.imgui, fonts.imgui->LegacySize);
+
+		float catWidth = ImGui::CalcTextSize("WWWW").x + ImGui::GetStyle().ItemSpacing.x;
+		float levelWidth = ImGui::CalcTextSize("WWWWW").x + ImGui::GetStyle().ItemSpacing.x;
+		float startLevel = ImGui::GetCursorPosX() + catWidth;
+		float startLog = startLevel + levelWidth;
 		bool focusVisible = false;
 
 		{ // Base derived text colors on base color - not perfect, but better than nothing
@@ -103,7 +105,7 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		}
 
 		{ // Has some glitching sometimes, scrollbar shows you can go down further, but it refuses, resulting in visual glitching
-			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, ImGui::GetStyle().ItemSpacing.y));
 			// Has no StyleVar ID
 			ImVec2 extraPad = ImGui::GetStyle().TouchExtraPadding;
 			ImGui::GetStyle().TouchExtraPadding = ImVec2(0,0);
@@ -194,6 +196,8 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 			logsStickToNew = true;
 		else if (logsStickToNew && logDirty)
 			ImGui::SetScrollHereY(1.0f);
+		
+		ImGui::PopFont();
 	}
 	ImGui::EndChild();
 

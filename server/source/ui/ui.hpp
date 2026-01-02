@@ -342,6 +342,10 @@ public:
 	IconSet lightModeIcons, darkModeIcons;
 	IconSet &icons() { return isDarkMode? darkModeIcons : lightModeIcons; }
 	ImVec2 iconSize() { return ImVec2(ImGui::GetFontSize()*6/5, ImGui::GetFontSize()); }
+	ImFont *defaultFont;
+	struct {
+		ImFont *imgui, *icon, *karla, *notoSans;
+	} fonts;
 
 	// Window state
 	ImGuiID dockspaceID;
@@ -426,7 +430,6 @@ public:
 	static void StyleSizingDefault(ImGuiStyle *dst = nullptr);
 	static void StyleSizingAsterDark(ImGuiStyle *dst = nullptr);
 	static void StyleColorsAsterDark(ImGuiStyle* dst = nullptr);
-	static void StyleSelectFont(std::string name = "");
 
 	void UpdateMainMenuBar();
 

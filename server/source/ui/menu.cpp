@@ -156,9 +156,11 @@ void InterfaceState::UpdateMainMenuBar()
 				ImGui::StyleColorsClassic();
 			ImGui::Separator();
 			if (ImGui::MenuItem("Karla Font"))
-				StyleSelectFont("Karla");
+				defaultFont = fonts.karla;
 			if (ImGui::MenuItem("NotoSans Font"))
-				StyleSelectFont("NotoSans");
+				defaultFont = fonts.notoSans;
+			if (ImGui::MenuItem("ImGui Default Font"))
+				defaultFont = fonts.imgui;
 			ImGui::EndMenu();
 		}
 		if (ImGui::MenuItem("Reset Layout"))
@@ -473,6 +475,7 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::BeginChild("LicenseFrame", ImVec2(0,0),
 			ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize |
 			ImGuiChildFlags_Borders | ImGuiChildFlags_FrameStyle);
+		ImGui::PushFont(fonts.imgui, fonts.imgui->LegacySize);
 		ImGui::TextUnformatted(
 			"Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors\n"
 			"\n"
@@ -488,6 +491,7 @@ void InterfaceState::UpdateMainMenuBar()
 			"\n"
 			"You should have received a copy of the GNU General Public License\n"
 			"along with this program.  If not, see <https://www.gnu.org/licenses/>.");
+		ImGui::PopFont();
 		ImGui::EndChild();
 
 		ImGui::EndPopup();

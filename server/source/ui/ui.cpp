@@ -83,8 +83,7 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader);
 static void closePlatformWindow(GLFWwindow *windowHandle);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
-static std::string loadedFont, selectedFont;
-static void updateFont();
+static ImFont* loadFont(const std::string font, int size_pixels);
 static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
 static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
 static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line);
@@ -228,7 +227,7 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 void InterfaceState::UpdateUI()
 {
-	updateFont();
+	ImGui::PushFont(defaultFont);
 
 	std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
@@ -303,6 +302,8 @@ void InterfaceState::UpdateUI()
 
 	// Render UI out to a DrawData list, for later GL rendering
 	ImGui::Render();
+
+	ImGui::PopFont();
 }
 
 void InterfaceState::RenderUI(bool fullUpdate)
@@ -525,8 +526,11 @@ bool InterfaceState::Init()
 
 	StyleSizingAsterDark();
 	StyleColorsAsterDark();
-	StyleSelectFont();
-	updateFont();
+	fonts.karla = loadFont("resources/fonts/" "Karla-Regular-Latin.ttf", 17);
+	fonts.notoSans = loadFont("resources/fonts/" "NotoSans-Regular-Latin.ttf", 17);
+	fonts.icon = loadFont("resources/fonts/" "LineAwesome-Regular-Icon.ttf", 17);
+	fonts.imgui = loadFont("", 13);
+	defaultFont = fonts.karla;
 
 	{ // Read/Write custom UI state settings
 		ImGuiSettingsHandler uiStateHandler;
@@ -1109,39 +1113,33 @@ void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
 	colors[ImGuiCol_ModalWindowDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
-void InterfaceState::StyleSelectFont(std::string name)
+static ImFont* loadFont(const std::string font, int size_pixels)
 {
-	if (name.empty())
-		selectedFont = "Karla";
-	else selectedFont = name;
-}
-
-static void updateFont()
-{
-	if (loadedFont == selectedFont) return;
-	loadedFont = selectedFont;
 	ImFontConfig config;
 	config.OversampleH = 2;
 	config.OversampleV = 2;
-	std::string latinFont = "resources/fonts/" + selectedFont + "-Regular-Latin.ttf";
-	std::string iconFont = "resources/fonts/LineAwesome-Regular-Icon.ttf";
-	if (std::filesystem::exists(latinFont))
+
+	static bool complained = false;
+	if (font.empty())
 	{
-		auto &io = ImGui::GetIO(); 
-		io.Fonts->Clear();
-		io.Fonts->AddFontFromFileTTF(latinFont.c_str(), 17, &config);
-		io.Fonts->AddFontFromFileTTF(iconFont.c_str(), 17, &config);
+		return ImGui::GetIO().Fonts->AddFontDefault(&config);
 	}
-	else if (std::filesystem::exists("../" + latinFont))
+	else if (std::filesystem::exists(font))
 	{
-		printf("'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n", latinFont.c_str());
-		LOG(LDefault, LError, "'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!", latinFont.c_str());
+		return ImGui::GetIO().Fonts->AddFontFromFileTTF(font.c_str(), size_pixels, &config);
 	}
-	else
+	else if (!complained && std::filesystem::exists("../" + font))
 	{
-		printf("'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!\n", latinFont.c_str());
-		LOG(LDefault, LError, "'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!", latinFont.c_str());
+		printf("'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!\n", font.c_str());
+		LOG(LDefault, LError, "'%s' not found in working directory but in parent directory! Make sure to run AsterTrack in the program root directory!", font.c_str());
 	}
+	else if (!complained)
+	{
+		printf("'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!\n", font.c_str());
+		LOG(LDefault, LError, "'%s' not found in working directory! Make sure to run AsterTrack in the program root directory!", font.c_str());
+	}
+	complained = true;
+	return nullptr;
 }
 
 /* ImGui Settings for UI-related persistency */

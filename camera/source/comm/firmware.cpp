@@ -55,7 +55,7 @@ static void SendBlockStatus(TrackingCameraState &state, CommState &comm, Firmwar
 	SendFirmwareStatusPacket(state, comm, (uint8_t)FW_STATUS_BLOCK, (uint8_t)status, transfer, block);
 }
 
-static bool validateFirmwarePacket(TrackingCameraState &state, uint8_t *data, uint16_t length)
+static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *data, uint16_t length)
 {
 	if (length < FIRMWARE_PACKET_HEADER)
 	{
@@ -122,7 +122,7 @@ static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 	return FW_STATUS_TRANSFERRED;
 }
 
-bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length)
+bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
 
@@ -193,7 +193,7 @@ bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, uint8_t *d
 	return true;
 }
 
-bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length)
+bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
 	if (state.firmware.mainComm != &comm) return false;
@@ -256,7 +256,7 @@ bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, uint8_t *
 	return true;
 }
 
-bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length)
+bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
 	if (state.firmware.mainComm != &comm) return false;
@@ -440,7 +440,7 @@ void PostFirmwareUpdateActions(TrackingCameraState &state)
 	state.postFirmwareActions = FW_FLAGS_NONE;
 }
 
-bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length)
+bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
 

@@ -286,7 +286,7 @@ void fillWirelessStatusPacket(TrackingCameraState &state, std::vector<uint8_t> &
 	wireless.error.clear();
 }
 
-bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length)
+bool parseWirelessConfigPacket(TrackingCameraState &state, const uint8_t *packet, uint16_t length)
 {
 	WirelessState &wireless = state.wireless;
 	if (length < 8) return false;

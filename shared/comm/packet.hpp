@@ -168,7 +168,7 @@ struct ConfigPacket
 };
 #define CONFIG_PACKET_SIZE			66
 
-static inline struct ConfigPacket parseConfigPacket(uint8_t data[CONFIG_PACKET_SIZE])
+static inline struct ConfigPacket parseConfigPacket(const uint8_t data[CONFIG_PACKET_SIZE])
 {
 	struct ConfigPacket config;
 	config.width = *(uint16_t*)&data[0];

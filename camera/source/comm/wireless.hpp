@@ -54,6 +54,6 @@ void stopWirelessMonitor(TrackingCameraState &state);
 
 void fillWirelessStatusPacket(TrackingCameraState &state, std::vector<uint8_t> &packet);
 
-bool parseWirelessConfigPacket(TrackingCameraState &state, uint8_t *packet, uint16_t length);
+bool parseWirelessConfigPacket(TrackingCameraState &state, const uint8_t *packet, uint16_t length);
 
 #endif // WIRELESS_H

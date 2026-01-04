@@ -75,10 +75,10 @@ struct FirmwareUpdateState
 	}
 };
 
-bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length);
-bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length);
-bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length);
-bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, uint8_t *data, uint16_t length);
+bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
+bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
+bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
+bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
 
 bool ApplyFirmwareUpdate(TrackingCameraState &state);
 void PostFirmwareUpdateActions(TrackingCameraState &state);

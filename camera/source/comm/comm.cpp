@@ -19,8 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm.hpp"
 #include "comm/protocol_stream.hpp"
 #include "timesync.hpp"
-#include "wireless.hpp"
-#include "firmware.hpp"
+#include "parsing.hpp"
 
 #include "util/util.hpp"
 
@@ -538,140 +537,11 @@ phase_comm:
 						// TODO: Initiate identification after a further timeout
 					}
 				} */
-				else if (proto.header.tag == PACKET_CFG_SETUP)
-				{ // Received setup packet
-					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= CONFIG_PACKET_SIZE)
-					{
-						ConfigPacket packet = parseConfigPacket(&proto.rcvBuf[proto.cmdPos]);
-						printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
-							packet.width, packet.height, packet.fps, packet.shutterSpeed,
-							packet.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,
-							packet.extTrig, packet.strobe? 'y' : 'n', packet.strobeLength);
-						state.newConfigPacket = packet;
-						state.updateSetupQPU = true;
-						state.updateSetupCPU = true;
-					}
-				}
-				else if (proto.header.tag == PACKET_CFG_MODE)
-				{ // Mode set
-					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= 1)
-					{
-						uint8_t modePacket = proto.rcvBuf[proto.cmdPos];
-						TrackingCameraMode newMode = {};
-						newMode.streaming = (modePacket&TRCAM_FLAG_STREAMING) != 0;
-						if (newMode.streaming)
-						{
-							uint8_t modeSwitch = modePacket&TRCAM_MODE_MASK;
-							uint8_t mode;
-							for (mode = 7; mode > 0; mode--)
-								if (modeSwitch >> mode) break;
-							uint8_t optMask = 0xFF >> (8-mode);
-							newMode.mode = (TrCamMode)(modeSwitch&(~optMask));
-							newMode.opt = (TrCamMode)(modeSwitch&optMask);
-						}
-						while (state.updateMode)
-							std::this_thread::sleep_for(std::chrono::milliseconds(1));
-						state.newModeRaw = (TrCamMode)modePacket;
-						state.newMode = newMode;
-						state.updateMode = true;
-					}
-				}
-				else if (proto.header.tag == PACKET_CFG_WIFI)
+				else if (ReceivePacketHeader(comm, proto.header))
 				{
-					if (proto_fetchCmd(proto) && proto.validChecksum)
+					if (proto_fetchCmd(proto))
 					{
-						parseWirelessConfigPacket(state, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
-					}
-				}
-				else if (proto.header.tag == PACKET_CFG_IMAGE)
-				{
-					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= 1)
-					{
-						ImageStreamState stream = {};
-						stream.enabled = proto.rcvBuf[proto.cmdPos+0] != 0;
-						bool oneshot = proto.rcvBuf[proto.cmdPos+0] == 2;
-						if (stream.enabled && proto.cmdSz >= 12)
-						{
-							stream.bounds = Bounds2<int>(
-								*((uint16_t*)&proto.rcvBuf[proto.cmdPos+1]),
-								*((uint16_t*)&proto.rcvBuf[proto.cmdPos+3]),
-								*((uint16_t*)&proto.rcvBuf[proto.cmdPos+5]),
-								*((uint16_t*)&proto.rcvBuf[proto.cmdPos+7])
-							);
-
-							stream.subsampling = proto.rcvBuf[proto.cmdPos+9];
-							stream.jpegQuality = proto.rcvBuf[proto.cmdPos+10];
-							stream.frame = proto.rcvBuf[proto.cmdPos+11];
-
-							/* if (oneshot)
-							{
-								printf("Requested image of frame %d in rect (%d,%d)x(%d,%d) subsampled %d at %d quality\n",
-									stream.frame,
-									stream.bounds.minX, stream.bounds.minY, stream.bounds.maxX, stream.bounds.maxY,
-									stream.subsampling, stream.jpegQuality);
-							}
-							else
-							{
-								printf("Requested streaming every %d frames in rect (%d,%d)x(%d,%d) subsampled %d at %d quality\n",
-									stream.frame,
-									stream.bounds.minX, stream.bounds.minY, stream.bounds.maxX, stream.bounds.maxY,
-									stream.subsampling, stream.jpegQuality);
-							} */
-						}
-						else
-							printf("Frame streaming disabled!\n");
-
-						if (oneshot)
-							state.imageRequests.push(stream);
-						else
-							state.streaming = stream;
-					}
-				}
-				else if (proto.header.tag == PACKET_CFG_VIS)
-				{
-					if (proto_fetchCmd(proto) && proto.validChecksum)
-					{
-						state.visualisation.enabled = proto.rcvBuf[proto.cmdPos+0];
-						if (state.visualisation.enabled)
-						{
-							state.visualisation.displayFrame = proto.rcvBuf[proto.cmdPos+0];
-							state.visualisation.width = *((uint16_t*)&proto.rcvBuf[proto.cmdPos+1]);
-							state.visualisation.height = *((uint16_t*)&proto.rcvBuf[proto.cmdPos+3]);
-							state.visualisation.interval = 1000000/proto.rcvBuf[proto.cmdPos+5];
-							state.visualisation.displayFrame = proto.rcvBuf[proto.cmdPos+6];
-							state.visualisation.displayBlobs = proto.rcvBuf[proto.cmdPos+7];
-							printf("Visualisation at %dx%d every %d frames!\n", state.visualisation.width, state.visualisation.height, state.visualisation.interval);
-						}
-						else
-							printf("Visualisation disabled!\n");
-					}
-				}
-				else if (proto.header.tag == PACKET_FW_PREPARE)
-				{ // Prepare to receive a firmware file
-					if (proto_fetchCmd(proto) && proto.validChecksum)
-					{
-						SetupFirmwareUpdate(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
-					}
-				}
-				else if (proto.header.tag == PACKET_FW_BLOCK)
-				{ // Prepare to receive a firmware file
-					if (proto_fetchCmd(proto) && proto.validChecksum)
-					{
-						ReceiveFirmwareBlock(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
-					}
-				}
-				else if (proto.header.tag == PACKET_FW_APPLY)
-				{ // Prepare to receive a firmware file
-					if (proto_fetchCmd(proto) && proto.validChecksum)
-					{
-						ReceiveFirmwareApplyRequest(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
-					}
-				}
-				else if (proto.header.tag == PACKET_FW_STATUS)
-				{ // Requesting a status that might have gone lost in transfer, or update cancel request
-					if (proto_fetchCmd(proto) && proto.validChecksum)
-					{
-						ReceiveFirmwareStatus(state, comm, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz);
+						ReceivePacketData(state, comm, proto.header, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz, !proto.validChecksum);
 					}
 				}
 

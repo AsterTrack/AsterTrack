@@ -38,6 +38,7 @@ set(SOURCES
 	source/qpu/qpu_info.c
 	source/util/fbUtil.c
 	source/vcsm/vcsm.cpp
+	source/comm/parsing.cpp
 	source/comm/comm.cpp
 	source/comm/server.cpp
 	source/comm/uart.cpp

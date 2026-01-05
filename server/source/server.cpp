@@ -577,6 +577,11 @@ void StopDeviceMode(ServerState &state)
 {
 	if (state.mode != MODE_Device)
 		return;
+
+	// Stop streaming
+	if (state.isStreaming)
+		StopStreaming(state);
+
 	LOG(LDefault, LInfo, "Disconnecting!\n");
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 	state.mode = MODE_None;
@@ -585,10 +590,6 @@ void StopDeviceMode(ServerState &state)
 	state.parsing_cv.notify_all();
 	delete state.coprocessingThread;
 	state.coprocessingThread = NULL;
-
-	// Stop streaming
-	if (state.isStreaming)
-		StopStreaming(state);
 
 	// Disconnect from controllers and their wired-only cameras
 	while (!state.controllers.empty())

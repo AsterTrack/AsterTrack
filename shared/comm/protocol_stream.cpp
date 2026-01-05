@@ -265,9 +265,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 	comm.blockLen = std::min(comm.mrk, endData) - comm.blockPos;
 	if (done)
 	{ // Received in full
-		comm.head = std::max(comm.head, endPacket-20); // Advance towards end of packet (buffer to account for dropped bytes)
-		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, comm.head, comm.rcvBuf[comm.head-1], comm.rcvBuf[comm.head], comm.rcvBuf[comm.head+1]);
-		skipToEnd(comm, false);
+		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, endPacket, comm.rcvBuf[endPacket-1], comm.rcvBuf[endPacket], comm.rcvBuf[endPacket+1]);
 
 		comm.validChecksum = true;
 		if (comm.cmdSz > 0)
@@ -287,6 +285,17 @@ bool proto_fetchCmd(ProtocolState &comm)
 					break;
 				}
 			}
+		}
+
+		if (comm.validChecksum)
+		{ // Advance to end, trailing bytes should be right there
+			comm.head = endPacket;
+			skipToEnd(comm, false);
+		}
+		else
+		{ // Advance towards end with some buffer for dropped bytes, and search rest for trailing bytes
+			comm.head = std::max<long>(comm.cmdPos, (long)endPacket-20);
+			skipToEnd(comm, true);
 		}
 		return true;
 	}

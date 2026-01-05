@@ -150,6 +150,14 @@ static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t 
 	}
 }
 
+struct LargePacketHeader
+{
+	uint32_t totalSize;
+	uint32_t blockOffset;
+	uint32_t blockSize;
+	uint8_t data[];
+};
+
 
 /**
  * Configuration of camera parameters

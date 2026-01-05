@@ -60,14 +60,27 @@ void comm_close(CommState &comm);
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium);
 void comm_disable(CommState &comm);
 
-/* Start sending a packet to host */
+/* Direct packet sending functions assuming full control over comm TX */
 bool comm_packet(CommState *commPtr, PacketHeader header);
 void comm_write(CommState *commPtr, const uint8_t *data, uint32_t length);
 void comm_submit(CommState *commPtr);
 
+/* Send packet immediately, assuming full control over comm TX */
+bool comm_send_immediate(CommState *commPtr, PacketHeader header, const uint8_t *data);
+/* Send part of a large packet, depending on budget, assuming full control over comm TX */
+int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<uint8_t> &data, std::vector<uint8_t> &largePacketHeader, int budget, int &sent);
+/* Queue packet to be send via comm in it's respective controlling thread */
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data);
+/* Queue large packet to be send (in blocks, if necessary) via comm in it's respective controlling thread */
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader);
+
+/* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data);
+/* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data);
+/* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data);
+/* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data);
 
 void comm_NAK(CommState &comm);

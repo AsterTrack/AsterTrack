@@ -44,9 +44,17 @@ struct TrackingCameraMode
 	uint8_t opt = TRCAM_OPT_NONE;
 };
 
+struct CommPacket
+{
+	PacketHeader header;
+	std::vector<uint8_t> data;
+	std::vector<uint8_t> largePacketHeader;
+};
+
 struct CommState 
 {
 	bool enabled = false, started = false, ready = false, writing = false;
+	CommMedium medium;
 	ProtocolState protocol = {};
 	IdentPacket ownIdent = {};
 	IdentPacket expIdent = {};
@@ -56,6 +64,9 @@ struct CommState
 	CRC32 crc;
 	int sentSize;
 	int totalSize;
+
+	bool realtimeControlled;
+	std::queue<CommPacket> packetQueue;
 
 	std::thread *thread;
 	void *port;

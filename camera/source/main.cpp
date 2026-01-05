@@ -149,7 +149,7 @@ static void sendWirelessStatusPacket(TrackingCameraState &state);
 
 static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream);
 
-static int sendLargePacketData(TrackingCameraState &state, int commTimeUS);
+static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTimeUS);
 
 /* Functions */
 
@@ -1392,7 +1392,7 @@ int main(int argc, char **argv)
 			}
 
 			// Allow sending from now until processing is expected to end, at which point we need to send the results with low latency
-			bytesSentAccum += sendLargePacketData(state, avgTimes.cpu-200);
+			bytesSentAccum += sendInterleavedQueuedPackets(state, avgTimes.cpu-200);
 
 			// Increase clock rate after boot (likely has to be done through linux CPU governor, not directly)
 			//printf("======\nHad ARM Core clock rate of %dMhz!\n", getClockRate(base.mb, 3)/1000000);
@@ -1565,6 +1565,13 @@ int main(int argc, char **argv)
 			}
 
 			CommState* rtComm = comms.get(realTimeAff);
+			if (rtComm && !rtComm->realtimeControlled)
+			{ // Ensure this comm medium is the only one flagged
+				for (auto &comm : comms.medium)
+					if (comm)
+						comm->realtimeControlled = false;
+				rtComm->realtimeControlled = true;
+			}
 			if (rtComm)
 			{ // Create blob report
 				TimePoint_t t0 = sclock::now();
@@ -1704,14 +1711,14 @@ int main(int argc, char **argv)
 						comm_write(rtComm, packetBuffer.data(), packetLength);
 						comm_submit(rtComm);
 					}
-					//comm_send(realTimeAff, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF), packetBuffer.data());
+					//comm_send(rtComm, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF), packetBuffer.data());
 					bytesSentAccum += packetLength;
 					curTimes.send += dtUS(t0, sclock::now());
 				}
 				else 
 				{ // Write empty packet
 					TimePoint_t t0 = sclock::now();
-					comm_send(realTimeAff, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF), nullptr);
+					comm_send(rtComm, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF), nullptr);
 					curTimes.send += dtUS(t0, sclock::now());
 				}
 			}
@@ -1779,7 +1786,7 @@ int main(int argc, char **argv)
 
 			// Allow sending from start of comm until next frame is passed to CPU, at which point we need to send a SOF to host software
 			// Assumes near constant QPU processing time
-			bytesSentAccum += sendLargePacketData(state, avgInterval*1000 - dtUS(time_cpu_begin, sclock::now()) - 500);
+			bytesSentAccum += sendInterleavedQueuedPackets(state, avgInterval*1000 - dtUS(time_cpu_begin, sclock::now()) - 500);
 			// TODO: Very often doesn't send in time, something is likely off in the calculations
 
 			TimePoint_t time_report_end = sclock::now();
@@ -1911,6 +1918,10 @@ int main(int argc, char **argv)
 			bytesSentAccum = 0;
 		}
 
+		for (auto &comm : comms.medium)
+			if (comm)
+				comm->realtimeControlled = false;
+
 		// Handle error now, cleanup is uncertain
 		bool abort = error != ERROR_NONE && handleError();
 
@@ -1997,38 +2008,24 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 		printf("Encoded image %dx%d, %dKB, to %dKB with quality %d%%!\n",
 			dH, dV, (dH*dV/1024), (int)jpegData.size()/1024, stream.quality);
 	} */
-	
-	// Wait for last frame to be sent
-	int it = 0;
-	while (largePacket.sending || it > 20)
-		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-	if (largePacket.sending)
-	{ // Still sending data of last frame, probably an error, so discard it
-		if (state.writeStatLogs)
-			printf("Failed to send previous frame!\n");
-		largePacket.sending = false;
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	
-	// Write header
-	*(uint32_t*)&largePacket.header[0] = jpegData.size();
-	//*(uint32_t*)&frameImage.header[4] = blockOffset;
-	//*(uint32_t*)&frameImage.header[8] = blockSize;
-	*(uint8_t*)&largePacket.header[12] = stream.jpegQuality;
-	*(uint8_t*)&largePacket.header[13] = stream.subsampling;
-	*(uint16_t*)&largePacket.header[14] = encBounds.min.x();
-	*(uint16_t*)&largePacket.header[16] = encBounds.min.y();
-	*(uint16_t*)&largePacket.header[18] = encBounds.max.x();
-	*(uint16_t*)&largePacket.header[20] = encBounds.max.y();
-	// Block data in header is filled in as data is sent	
+	// Prepare large packet header
+	std::vector<uint8_t> largePacketHeader(sizeof(LargePacketHeader)+10);
+	LargePacketHeader *largePacket = (LargePacketHeader*)largePacketHeader.data();
+	largePacket->totalSize = jpegData.size();
+	largePacket->blockOffset = 0;
+	largePacket->blockSize = jpegData.size();
+	largePacket->data[0] = stream.jpegQuality;
+	largePacket->data[1] = stream.subsampling;
+	*(uint16_t*)&largePacket->data[2] = encBounds.min.x();
+	*(uint16_t*)&largePacket->data[4] = encBounds.min.y();
+	*(uint16_t*)&largePacket->data[6] = encBounds.max.x();
+	*(uint16_t*)&largePacket->data[8] = encBounds.max.y();
 
-	// Tell main thread to interleave sending large data in between frames
-	largePacket.data.swap(jpegData);
-	largePacket.sendProgress = 0;
-	largePacket.sending = true;
-	largePacket.ID = frame.ID;
-	largePacket.tag = PACKET_IMAGE;
+	// Queue send
+	comm_queue_send(comms.get(largeDataAff),
+		PacketHeader(PACKET_IMAGE, 0, frame.ID),
+		std::move(jpegData), largePacketHeader);
 
 	TimePoint_t t3 = sclock::now();
 	/* if (state.writeStatLogs)
@@ -2050,22 +2047,17 @@ static void sendWirelessStatusPacket(TrackingCameraState &state)
 	comm_send(realTimeAff, PacketHeader(PACKET_WIRELESS, statusPacket.size()), std::move(statusPacket));
 }
 
-static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
+static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTimeUS)
 {
-	if (!largePacket.sending) return 0;
 	// Interleave packet with low-latency comm to not disrupt it
 
-	CommState* comm = comms.get(largeDataAff);
-	if (!comm)
+	CommState* comm = comms.get(realTimeAff);
+	if (!comm || comm->packetQueue.empty())
 		return 0;
 
 	// Calculate rough budget left to send bytes
 	int budget = 0;
-	if (comm != comms.get(realTimeAff))
-	{ // No need to implement pseudo-time-sharing
-		budget = largePacket.data.size() - largePacket.sendProgress + 10000;
-	}
-	else if (comm == &state.uart)
+	if (comm == &state.uart)
 	{ // Account for bytes still in TX queue
 		budget = (int)(uart_getBytesPerUS(state.uart.port) * commTimeUS);
 		budget -= uart_getTXQueue(state.uart.port);
@@ -2073,42 +2065,57 @@ static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
 	else if (comm == &state.server)
 	{ // Not sure if this makes much sense for wireless
 		budget = 15.0f/8 * commTimeUS; // Assume 15Mbit/s, 15-30 is realistic per device, but spectrum is shared
-		int queue = server_getTXQueue(state.server.port);
-		budget -= queue;
+		budget -= server_getTXQueue(state.server.port);
 	}
-	if (budget < 100)
-		return 0;
 
-
-	// Calculate how many bytes to send efficiently
-	budget = std::min(budget, PACKET_MAX_LENGTH);
-	if (comm == &state.uart)
-	{ // If there's a lot of data, prioritise optimising USB throughput by using multiples of OPT_PACKET_SIZE
-		int numUSBPackets = std::max(1, (int)std::floor(budget / OPT_PACKET_SIZE));
-		budget = std::min(budget, numUSBPackets * OPT_PACKET_SIZE);
-		// TODO: OPT_PACKET_SIZE is lower bound assuming a packet header for each USB packet, could go higher if numUSBPackets > 1
-	}
-	int numBytes = budget - sizeof(largePacket.header);
-	int bytesLeft = largePacket.data.size() - largePacket.sendProgress;
-	if (numBytes >= bytesLeft) numBytes = bytesLeft;
-	else if (bytesLeft-numBytes < 100) numBytes = bytesLeft;
-
-	// Send as many bytes
-	assert(largePacket.sendProgress < largePacket.data.size());
-	*(uint32_t*)&largePacket.header[4] = largePacket.sendProgress;
-	*(uint32_t*)&largePacket.header[8] = numBytes;
-	if (comm_packet(comm, PacketHeader(largePacket.tag, sizeof(largePacket.header)+numBytes, largePacket.ID)))
+	int sentTotal = 0;
+	while (budget > 10 && !comm->packetQueue.empty())
 	{
-		comm_write(comm, largePacket.header, sizeof(largePacket.header));
-		comm_write(comm, largePacket.data.data()+largePacket.sendProgress, numBytes);
-		comm_submit(comm);
+		auto &packet = comm->packetQueue.front();
+		if (!packet.largePacketHeader.empty())
+		{ // Interleave in blocks
+			// Calculate how many bytes to send efficiently
+			int largeBudget = std::min(budget, PACKET_MAX_LENGTH);
+			if (comm == &state.uart)
+			{ // If there's a lot of data, prioritise optimising USB throughput by using multiples of OPT_PACKET_SIZE
+				int numUSBPackets = std::max(1, (int)std::floor(largeBudget / OPT_PACKET_SIZE));
+				largeBudget = std::min(largeBudget, numUSBPackets * OPT_PACKET_SIZE);
+				// TODO: OPT_PACKET_SIZE is lower bound assuming a packet header for each USB packet, could go higher if numUSBPackets > 1
+			}
+			int sent = 0;
+			int ret = comm_send_block(comm, packet.header, packet.data, packet.largePacketHeader, largeBudget, sent);
+			if (ret > 0)
+			{
+				budget -= sent;
+				sentTotal += sent;
+				// Sent data, but not done, likely exchausting budget
+				if (ret == 1) break;
+				// Done, remove packet and continue
+				if (ret == 2)
+					comm->packetQueue.pop();
+			}
+			else
+			{
+				// Failed to send any data, maybe budget too small
+				// TODO: Consider interleaving smaller packets further down in the queue
+				break;
+			}
+		}
+		else if (comm_send_immediate(comm, packet.header, packet.data.data()))
+		{ // Sent packet, substract from budget and continue
+			budget -= packet.data.size();
+			sentTotal += packet.data.size();
+			comm->packetQueue.pop();
+		}
+		else
+		{ // Failed to send packet
+			printf("Failed to send queued packet interleaved with realtime data!\n");
+			comm->packetQueue.pop();
+		}
 	}
-	else numBytes = 0;
-	largePacket.sendProgress += numBytes;
-	if (largePacket.sendProgress == largePacket.data.size())
-		largePacket.sending = false;
-	return numBytes;
-};
+
+	return sentTotal;
+}
 
 /* Sets console to raw mode which among others allows for non-blocking input, even over SSH */
 static void setConsoleRawMode()

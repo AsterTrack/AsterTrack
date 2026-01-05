@@ -42,6 +42,9 @@ static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_
 #define COMM_IDENT_BACKOFF_MS		1000	// Additional backoff interval between failed identifications attempts to not spam log
 #define COMM_INTERVAL_US			500
 
+CommList comms;
+CommMedium realTimeAff = COMM_MEDIUM_UART, largeDataAff = COMM_MEDIUM_WIFI;
+
 void comm_init()
 {
 	// Init predefined messages
@@ -50,13 +53,11 @@ void comm_init()
 	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
 }
 
-CommList comms;
-CommMedium realTimeAff = COMM_MEDIUM_UART, largeDataAff = COMM_MEDIUM_WIFI;
-
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium)
 {
 	assert(medium >= 0 && medium < COMM_MEDIUM_MAX);
 	comm.enabled = true;
+	comm.medium = medium;
 	if (!comm.thread)
 		comm.thread = new std::thread(CommThread, &comm, state);
 	comms.medium[medium] = &comm;
@@ -67,6 +68,14 @@ void comm_disable(CommState &comm)
 	auto pos = std::find(comms.medium.begin(), comms.medium.end(), &comm);
 	if (pos != comms.medium.end())
 		*pos = nullptr;
+	// Don't know with what affinity packets were queued, just send them through any means necessary
+	CommState *altComm = comms.get(realTimeAff);
+	while (!comm.packetQueue.empty())
+	{
+		if (altComm)
+			altComm->packetQueue.push(std::move(comm.packetQueue.front()));
+		comm.packetQueue.pop();
+	}
 	comm.enabled = false;
 	if (comm.thread && comm.thread->joinable())
 		comm.thread->join();
@@ -141,7 +150,7 @@ void comm_submit(CommState *commPtr)
 	comm.writeAccess.unlock();
 }
 
-bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
+bool comm_send_immediate(CommState *commPtr, PacketHeader header, const uint8_t *data)
 {
 	if (comm_packet(commPtr, header))
 	{
@@ -152,11 +161,69 @@ bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
 	return true;
 }
 
+int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<uint8_t> &data, std::vector<uint8_t> &largePacketHeader, int budget, int &sent)
+{
+	sent = 0;
+	if (budget < 100) return 0;
+	LargePacketHeader *largePacket = (LargePacketHeader*)largePacketHeader.data();
+	int numBytes = budget - largePacketHeader.size();
+	int bytesLeft = largePacket->totalSize - largePacket->blockOffset;
+	if (numBytes >= bytesLeft) numBytes = bytesLeft;
+	else if (bytesLeft-numBytes < 100) numBytes = bytesLeft;
+
+	// Send as many bytes
+	largePacket->blockSize = numBytes;
+	header.length = largePacketHeader.size() + numBytes;
+	if (comm_packet(commPtr, header))
+	{
+		comm_write(commPtr, largePacketHeader.data(), largePacketHeader.size());
+		comm_write(commPtr, data.data()+largePacket->blockOffset, largePacket->blockSize);
+		comm_submit(commPtr);
+	}
+	else return -1;
+	largePacket->blockOffset += largePacket->blockSize;
+	largePacket->blockSize = 0;
+	sent = numBytes;
+	return largePacket->blockOffset >= largePacket->totalSize? 2 : 1;
+}
+
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
+{
+	if (!commPtr) return false;
+	commPtr->packetQueue.emplace(header, std::move(data));
+	return true;
+}
+
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader)
+{
+	if (!commPtr) return false;
+	commPtr->packetQueue.emplace(header, std::move(data), std::move(largePacketHeader));
+	return true;
+}
+
+bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
+{
+	if (!commPtr) return false;
+	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
+	{ // Need to enqueue for different controlling thread to send
+		std::vector<uint8_t> packet(header.length);
+		memcpy(packet.data(), data, header.length);
+		return comm_queue_send(commPtr, header, std::move(packet));
+	}
+	else
+		return comm_send_immediate(commPtr, header, data);
+}
+
 bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (data.size() != header.length)
-		return false;
-	return comm_send(commPtr, header, data.data());
+	if (!commPtr) return false;
+	if (data.size() != header.length) return false;
+	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
+	{ // Need to enqueue for different controlling thread to send
+		return comm_queue_send(commPtr, header, std::move(data));
+	}
+	else
+		return comm_send_immediate(commPtr, header, data.data());
 }
 
 bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data)
@@ -166,9 +233,7 @@ bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data)
 
 bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (data.size() != header.length)
-		return false;
-	return comm_send(comms.get(comm), header, data.data());
+	return comm_send(comms.get(comm), header, std::move(data));
 }
 
 inline void comm_reset(CommState &comm)
@@ -559,6 +624,26 @@ phase_comm:
 				printf("Ping dropped out, resetting comm!\n");
 				comm_abort(comm);
 				break;
+			}
+
+			// Parsing done, now send from packet queue if it's not handled by main thread for realtime data
+			while (!comm_ptr->realtimeControlled && !comm.packetQueue.empty())
+			{
+				auto &packet = comm.packetQueue.front();
+				if (!packet.largePacketHeader.empty())
+				{ // Send large packet all at once since it's not realtime-relevant
+					int sent = 0;
+					int ret = comm_send_block(comm_ptr, packet.header, packet.data, packet.largePacketHeader, std::numeric_limits<int>::max(), sent);
+					if (ret != 2)
+					{ // Not fully sent, should not occur
+						printf("Failed to send large packet from comm thread!\n");
+					}
+				}
+				else if (!comm_send_immediate(comm_ptr, packet.header, packet.data.data()))
+				{ // Failed to send queued packet
+					printf("Failed to send queued packet from comm thread!\n");
+				}
+				comm.packetQueue.pop();
 			}
 
 			fflush(stdout);

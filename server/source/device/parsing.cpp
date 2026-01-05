@@ -290,14 +290,14 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			length, portCount);
 		return false;
 	}
-	if (state.isStreaming != (controller.status.flags & CONTROLLER_COMM_CHANNELS) ||
-		state.isStreaming != (controller.status.flags & CONTROLLER_TIME_SYNC) ||
+	if (state.isStreaming != (bool)(controller.status.flags & CONTROLLER_COMM_CHANNELS) ||
+		state.isStreaming != (bool)(controller.status.flags & CONTROLLER_TIME_SYNC) ||
 		(!state.isStreaming && controller.status.syncCfg != SYNC_CFG_NONE))
 	{ // TODO: Spammed when state changes, so make sure the last change is actually some time ago
 		// E.g. if this is right after streaming started, but controller hasn't been fully instructed yet
 		// However there is a valid use case, e.g. when host dropped out (lagged, went to sleep, etc.)
 		// The controller has a timeout so it might silently stop streaming in these cases, which to the host is unexpected once it wakes up
-		LOG(LControllerDevice, LDarn, "Potentially erroneous state! %sstreaming, state: comm channels %s, time sync %s!\n",
+		LOG(LControllerDevice, LDarn, "Potentially erroneous state! %sstreaming, state: comm channels %s, time sync %s, controller %ssynced!\n",
 			state.isStreaming? "" : "not ", (controller.status.flags & CONTROLLER_COMM_CHANNELS)? "open" : "closed", (controller.status.flags & CONTROLLER_TIME_SYNC)? "on" : "off",
 			(controller.status.syncCfg != SYNC_CFG_NONE)? "" : "not ");
 	}

@@ -30,10 +30,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // comm_write ...
 // comm_submit (releases mutex)
 // Optionally, comm_flush (wait for write)
-
-void comm_init();
-
-void comm_close(CommState &comm);
+// OR:
+// comm_send
 
 struct CommList
 {
@@ -55,13 +53,22 @@ struct CommList
 extern CommList comms;
 extern CommMedium realTimeAff, largeDataAff;
 
+
+void comm_init();
+void comm_close(CommState &comm);
+
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium);
 void comm_disable(CommState &comm);
 
 /* Start sending a packet to host */
-void* comm_packet(CommState *commPtr, PacketHeader header);
-void comm_write(CommState *commPtr, void* packet, const uint8_t *data, uint32_t length);
-void comm_submit(CommState *commPtr, void* packet);
+bool comm_packet(CommState *commPtr, PacketHeader header);
+void comm_write(CommState *commPtr, const uint8_t *data, uint32_t length);
+void comm_submit(CommState *commPtr);
+
+bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data);
+bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data);
+bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data);
+bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data);
 
 void comm_NAK(CommState &comm);
 

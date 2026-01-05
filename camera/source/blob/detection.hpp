@@ -57,7 +57,7 @@ void cleanBlobDetection();
 void initBackgroundCalibration();
 void acceptBackgroundCalibration();
 void resetBackgroundCalibration();
-std::vector<uint8_t> updateBackgroundCalibration();
+void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles);
 std::vector<uint8_t> getTempBGTiles();
 
 #endif // BLOB_DETECTION_H

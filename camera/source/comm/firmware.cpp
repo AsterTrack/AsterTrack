@@ -37,9 +37,7 @@ static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm
 	*(uint8_t*)(FWPacket.data()+5) = transfer;
 	*(uint16_t*)(FWPacket.data()+6) = block;
 
-	void *packet = comm_packet(&comm, PacketHeader(PACKET_FW_STATUS, FWPacket.size()));
-	comm_write(&comm, packet, FWPacket.data(), FWPacket.size());
-	comm_submit(&comm, packet);
+	comm_send(&comm, PacketHeader(PACKET_FW_STATUS, FWPacket.size()), std::move(FWPacket));
 }
 
 static void SendUpdateStatus(TrackingCameraState &state, CommState &comm, FirmwareStatus status)

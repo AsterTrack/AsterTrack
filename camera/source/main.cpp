@@ -176,12 +176,14 @@ bool handleError(bool NAK = true, std::string backtrace = "")
 		CommState* comm = comms.medium[c];
 		if (!comm || !comm->ready) continue;
 		bool serious = error != ERROR_GCS_TIMEOUT;
-		void *packet = comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size()));
-		comm_write(comm, packet, (uint8_t*)&error, 1);
-		comm_write(comm, packet, (uint8_t*)&serious, 1);
-		comm_write(comm, packet, (uint8_t*)backtrace.data(), backtrace.size());
-		comm_submit(comm, packet);
-		comm_flush(*comm);
+		if (comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size())))
+		{
+			comm_write(comm, (uint8_t*)&error, 1);
+			comm_write(comm, (uint8_t*)&serious, 1);
+			comm_write(comm, (uint8_t*)backtrace.data(), backtrace.size());
+			comm_submit(comm);
+			comm_flush(*comm);
+		}
 		if (NAK)
 			comm_NAK(*comm);
 	}
@@ -499,10 +501,7 @@ int main(int argc, char **argv)
 				// No change, but need to notify host anyway
 				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
 				uint8_t mode = (uint8_t)TRCAM_STANDBY;
-				CommState* comm = comms.get(realTimeAff);
-				void *packet = comm_packet(comm, PacketHeader(PACKET_MODE, 1));
-				comm_write(comm, packet, &mode, 1);
-				comm_submit(comm, packet);
+				comm_send(realTimeAff, PacketHeader(PACKET_MODE, 1), &mode);
 			}
 
 			if (state.wireless.sendStatus)
@@ -1352,10 +1351,7 @@ int main(int argc, char **argv)
 				// Notify host of mode change
 				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
 				uint8_t mode = (uint8_t)(newMode.streaming? TRCAM_FLAG_STREAMING : 0) | newMode.mode | newMode.opt;
-				CommState* comm = comms.get(realTimeAff);
-				void *packet = comm_packet(comm, PacketHeader(PACKET_MODE, 1));
-				comm_write(comm, packet, &mode, 1);
-				comm_submit(comm, packet);
+				comm_send(realTimeAff, PacketHeader(PACKET_MODE, 1), &mode);
 
 				if (!state.curMode.streaming)
 				{
@@ -1390,9 +1386,9 @@ int main(int argc, char **argv)
 			} */
 
 			{ // Announce to controller that frame is being processed
-				CommState* comm = comms.get(realTimeAff);
-				void *packet = comm_packet(comm, PacketHeader(PACKET_FRAME_SIGNAL, 0, curFrame->ID&0xFF));
-				comm_submit(comm, packet);
+				CommState* rtComm = comms.get(realTimeAff);
+				if (comm_packet(rtComm, PacketHeader(PACKET_FRAME_SIGNAL, 0, curFrame->ID&0xFF)))
+					comm_submit(rtComm);
 			}
 
 			// Allow sending from now until processing is expected to end, at which point we need to send the results with low latency
@@ -1553,63 +1549,32 @@ int main(int argc, char **argv)
 
 			if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 			{
-				std::vector<uint8_t> bgTiles = updateBackgroundCalibration();
-				if (bgTiles.size() > 0)
+				Vector2<uint8_t> extends = (layout.validMaskRect.extends()/8).cast<uint8_t>();
+				std::vector<uint8_t> bgTiles(2);
+				bgTiles[0] = extends.x();
+				bgTiles[1] = extends.y();
+				updateBackgroundCalibration(bgTiles);
+				if (bgTiles.size() > 2)
 				{
-					//printf("Added %d new tiles to the background mask!\n", bgTiles.size());
-					CommState* comm = comms.get(largeDataAff);
-					if (comm)
-					{ // Create mask report
-						TimePoint_t t0 = sclock::now();
-
-						void *packet = comm_packet(comm, PacketHeader(PACKET_BGTILES, bgTiles.size()+2));
-						Vector2<uint8_t> extends = (layout.validMaskRect.extends()/8).cast<uint8_t>();
-						comm_write(comm, packet, extends.data(), 2);
-						comm_write(comm, packet, (uint8_t*)bgTiles.data(), bgTiles.size());
-						comm_submit(comm, packet);
-						//comm_flush(comm);
-						bytesSentAccum += 2+bgTiles.size();
-
-						curTimes.send += dtUS(t0, sclock::now());
-					}
+					//printf("Added %d new tiles to the background mask!\n", bgTiles.size()/2-1));
+					TimePoint_t t0 = sclock::now();
+					comm_send(largeDataAff, PacketHeader(PACKET_BGTILES, bgTiles.size()), std::move(bgTiles));
+					bytesSentAccum += bgTiles.size();
+					curTimes.send += dtUS(t0, sclock::now());
 				}
 			}
 
-			CommState* comm = comms.get(realTimeAff);
-			if (comm)
+			CommState* rtComm = comms.get(realTimeAff);
+			if (rtComm)
 			{ // Create blob report
 				TimePoint_t t0 = sclock::now();
 
 				int reportLength = STREAM_PACKET_HEADER_SIZE + STREAM_PACKET_BLOB_SIZE * clusters.size();
-				void *packet = comm_packet(comm, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF));
-
-				// Send blob individually
-				/* uint16_t blobData[3]; // uint32_t blobData;
-				for (int i = 0; i < blobs.size(); i++)
-				{
-					Cluster *blob = &blobs[i];
-					int blobX = (int)(((double)blob->centroid.x()+0.5) * 65536 / state.camera.width);
-					int blobY = (int)(((double)blob->centroid.y()+0.5) * 65536 / state.camera.height);
-					int blobS = std::min((int)(blob->centroid.S * 2), 255);
-					blobData[0] = blobX;
-					blobData[1] = blobY;
-					blobData[2] = (blobS & 0xFF) | ((blobs[i].quality & 0xFF) << 8);
-					// Alternative 32bit
-					//int blobX = (int)((double)blob->centroid.x() * 16383 / state.camera.width);
-					//int blobY = (int)((double)blob->centroid.y() * 16383 / state.camera.height);
-					//int blobS = std::min((int)(blob->centroid.S * 2), 255);
-					//blobData = (blobX << 0) | (blobY << 14)
-					//		|  << 22
-					//		| (blobColor & ((1<<4)-1)) << 28;
-					// Write
-					comm_write(comm, (uint8_t*)blobData, sizeof(blobData));
-				} */
-
-				// Individualy comm_write sadly add an idle pause that splits up packets on the controller's end.
-				// Thus it is better to send one big comm_write (ignoring the comm_submit checksum bit, doesn't appear to be split ususally)
+				if (packetBuffer.size() < reportLength)
+					packetBuffer.resize(reportLength*3/2);
+				static_assert(STREAM_PACKET_HEADER_SIZE == 0);
 
 				// Fill in blob data
-				packetBuffer.resize(reportLength);
 				uint8_t *blobData = &packetBuffer[STREAM_PACKET_HEADER_SIZE];
 				for (int i = 0; i < clusters.size(); i++)
 				{
@@ -1633,23 +1598,19 @@ int main(int argc, char **argv)
 			//		blobData[i] = data;
 				}
 
-				// Send blob report
-				comm_write(comm, packet, packetBuffer.data(), packetBuffer.size());
-
-				// Submit
-				comm_submit(comm, packet);
-				//comm_flush(comm);
-
+				if (comm_packet(rtComm, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF)))
+				{
+					comm_write(rtComm, packetBuffer.data(), reportLength);
+					comm_submit(rtComm);
+				}
+				//comm_send(realTimeAff, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF), packetBuffer.data());
 				bytesSentAccum += packetBuffer.size();
-
 				curTimes.send += dtUS(t0, sclock::now());
 			}
 
 			if (state.curMode.mode == TRCAM_MODE_VISUAL)
 			{ // Visual Debug mode
 				// TODO: Deprecate Visual Debug. Have full blob detection emulation instead 
-
-				CommState* comm = comms.get(realTimeAff);
 
 				// Select blob to debug
 				int maxInd = -1, maxSz = 4;
@@ -1687,7 +1648,8 @@ int main(int argc, char **argv)
 
 					// Write header
 					int packetLength = metaSize + imgSize + bitSize + ptSize;
-					void *packet = comm_packet(comm, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF));
+					if (packetBuffer.size() < packetLength)
+						packetBuffer.resize(packetLength*3/2);
 
 					// Write metadata
 					uint16_t *metaData = (uint16_t*)packetBuffer.data();
@@ -1699,18 +1661,18 @@ int main(int argc, char **argv)
 					metaData[5] = (uint16_t)(((double)blob.centroid.y()+0.5) * 65536 / state.camera.height);
 					metaData[6] = (uint16_t)((double)blob.size * 65536 / 256);
 					metaData[7] = (edgeRefined.size() & 0xFFFF);
-					comm_write(comm, packet, (uint8_t*)metaData, metaSize);
 
 					// Read out image data from bounds
+					uint8_t *imgData = (uint8_t*)metaData + metaSize;
 					for (int y = 0; y < extends.y(); y++)
 					{
 						int imgPos = y*extends.x();
 						int ptrPos = (bounds.min.y()+y)*srcStride + bounds.min.x();
-						comm_write(comm, packet, curFrame->memory + ptrPos, extends.x());
+						memcpy(imgData + imgPos, curFrame->memory + ptrPos, extends.x());
 					}
 					
 					// Write bit buf
-					uint8_t *bitBuf = packetBuffer.data();
+					uint8_t *bitBuf = imgData + imgSize;
 					memset(bitBuf, 0, bitSize);
 					for (int i = 0; i < blob.dots.size(); i++)
 					{
@@ -1718,10 +1680,9 @@ int main(int argc, char **argv)
 						int pos = pt.y()*extends.x() + pt.x();
 						bitBuf[pos/8] |= 1 << (pos % 8);
 					}
-					comm_write(comm, packet, bitBuf, bitSize);
 					
 					// Write points
-					uint8_t *ptBuf = packetBuffer.data();
+					uint8_t *ptBuf = bitBuf + bitSize;
 					/* for (int i = 0; i < edgeRefined.size(); i++)
 					{
 						Vector2<float> pt = edgeRefined[i] - bounds.min().cast<float>();
@@ -1734,24 +1695,23 @@ int main(int argc, char **argv)
 						ptBuf[i*3+1] = (dat >> 8)&0xFF;
 						ptBuf[i*3+2] = (dat >> 0)&0xFF;
 					} */
-					comm_write(comm, packet, ptBuf, ptSize);
 
 					//printf("Selected blob %d of size %d = %dx%d (%d, %d, %d, %d) with %d points, size %f, as debug target! Total report length is %d!\n",
 					//	maxInd, maxSz, extends.x(), extends.y(), blob.bounds.minX, blob.bounds.minY, blob.bounds.maxX, blob.bounds.maxY, blob.ptCnt, blob.centroid.S, blobPayloadLength);
 
-					// Send blob report
-					comm_submit(comm, packet);
-					//comm_flush(comm);
-
-					bytesSentAccum += metaSize + imgSize + bitSize + ptSize;
+					if (comm_packet(rtComm, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF)))
+					{
+						comm_write(rtComm, packetBuffer.data(), packetLength);
+						comm_submit(rtComm);
+					}
+					//comm_send(realTimeAff, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF), packetBuffer.data());
+					bytesSentAccum += packetLength;
 					curTimes.send += dtUS(t0, sclock::now());
 				}
 				else 
 				{ // Write empty packet
 					TimePoint_t t0 = sclock::now();
-					void *packet = comm_packet(comm, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF));
-					comm_submit(comm, packet);
-					//comm_flush(comm);
+					comm_send(realTimeAff, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF), nullptr);
 					curTimes.send += dtUS(t0, sclock::now());
 				}
 			}
@@ -1861,8 +1821,6 @@ int main(int argc, char **argv)
 				uint32_t deltaUS = dtUS(time_lastStatCheck, currentTime);
 				uint32_t temperature = getTemperature(base.mb);
 
-				CommState* comm = comms.get(largeDataAff);
-				if (comm)
 				{
 					StatPacket stats;
 					stats.header.frame = numFrames;
@@ -1877,9 +1835,7 @@ int main(int argc, char **argv)
 					uint8_t statPacket[STAT_PACKET_SIZE];
 					storeStatPacket(stats, statPacket);
 					// Send packet
-					void *packet = comm_packet(comm, PacketHeader(PACKET_STAT, sizeof(statPacket)));
-					comm_write(comm, packet, statPacket, sizeof(statPacket));
-					comm_submit(comm, packet);
+					comm_send(largeDataAff, PacketHeader(PACKET_STAT, sizeof(statPacket)), statPacket);
 				}
 
 				if (state.writeStatLogs)
@@ -2087,15 +2043,11 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 
 static void sendWirelessStatusPacket(TrackingCameraState &state)
 {
-	CommState* comm = comms.get(realTimeAff);
-	if (!comm) return;
 	state.wireless.sendStatus = false;
 	state.wireless.lastStatus = sclock::now();
 	std::vector<uint8_t> statusPacket;
 	fillWirelessStatusPacket(state, statusPacket);
-	void *packet = comm_packet(comm, PacketHeader(PACKET_WIRELESS, statusPacket.size()));
-	comm_write(comm, packet, statusPacket.data(), statusPacket.size());
-	comm_submit(comm, packet);
+	comm_send(realTimeAff, PacketHeader(PACKET_WIRELESS, statusPacket.size()), std::move(statusPacket));
 }
 
 static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
@@ -2145,10 +2097,13 @@ static int sendLargePacketData(TrackingCameraState &state, int commTimeUS)
 	assert(largePacket.sendProgress < largePacket.data.size());
 	*(uint32_t*)&largePacket.header[4] = largePacket.sendProgress;
 	*(uint32_t*)&largePacket.header[8] = numBytes;
-	void *packet = comm_packet(comm, PacketHeader(largePacket.tag, sizeof(largePacket.header)+numBytes, largePacket.ID));
-	comm_write(comm, packet, largePacket.header, sizeof(largePacket.header));
-	comm_write(comm, packet, largePacket.data.data()+largePacket.sendProgress, numBytes);
-	comm_submit(comm, packet);
+	if (comm_packet(comm, PacketHeader(largePacket.tag, sizeof(largePacket.header)+numBytes, largePacket.ID)))
+	{
+		comm_write(comm, largePacket.header, sizeof(largePacket.header));
+		comm_write(comm, largePacket.data.data()+largePacket.sendProgress, numBytes);
+		comm_submit(comm);
+	}
+	else numBytes = 0;
 	largePacket.sendProgress += numBytes;
 	if (largePacket.sendProgress == largePacket.data.size())
 		largePacket.sending = false;

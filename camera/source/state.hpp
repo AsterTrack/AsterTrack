@@ -46,12 +46,16 @@ struct TrackingCameraMode
 
 struct CommState 
 {
-	std::mutex writeAccess;
 	bool enabled = false, started = false, ready = false, writing = false;
 	ProtocolState protocol = {};
 	IdentPacket ownIdent = {};
 	IdentPacket expIdent = {};
 	IdentPacket otherIdent = {};
+
+	std::mutex writeAccess;
+	CRC32 crc;
+	int sentSize;
+	int totalSize;
 
 	std::thread *thread;
 	void *port;

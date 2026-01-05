@@ -702,20 +702,18 @@ void resetBackgroundCalibration()
 	storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 }
-std::vector<uint8_t> updateBackgroundCalibration()
+void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
 { // Add all tiles that had a blob on them to the background mask
-	std::vector<uint8_t> bgList;
 	for (int i = 0; i < blobTiles.size(); i++)
 	{
 		int bgIndex = (blobTiles[i].y/2)*tileW + blobTiles[i].x;
 		if (!tempBackgroundMask.test(bgIndex))
 		{
 			tempBackgroundMask.set(bgIndex);
-			bgList.push_back(blobTiles[i].x);
-			bgList.push_back(blobTiles[i].y/2);
+			bgTiles.push_back(blobTiles[i].x);
+			bgTiles.push_back(blobTiles[i].y/2);
 		}
 	}
-	return bgList;
 }
 std::vector<uint8_t> getTempBGTiles()
 {

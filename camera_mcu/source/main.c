@@ -131,6 +131,7 @@ int main(void)
 	lastUARTActivity = GetTimePoint();
 	uartState = UART_None;
 	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
+	GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN); // Disable Interrupt
 
 	// Init LEDs to default state
 	rgbled_init();

@@ -49,9 +49,10 @@ unsigned int PIN_INT = 17;
 
 gpiod_chip *gpio_chip;
 gpiod_request_config *req_config;
-gpiod_line_config *line_config;
-gpiod_line_settings *line_boot0, *line_reset;
-gpiod_line_request *line_request;
+gpiod_line_config *line_config_out, *line_config_in;
+gpiod_line_settings *line_boot0, *line_reset, *line_int;
+gpiod_line_request *line_request_out, *line_request_in;
+gpiod_edge_event_buffer *edge_events;
 
 std::string mcu_flash_file = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
 
@@ -207,34 +208,58 @@ static void mcu_thread()
 {
 	while (!stop_thread.load())
 	{
-		if (mcu_active && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
+		if (!mcu_active)
 		{
-			std::unique_lock lock(mcu_mutex);
-			if (!mcu_active)
-				continue;
-			mcu_send_ping();
-			lastPing = sclock::now();
-		}
-		if (!mcu_active && dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS && !mcu_intentional_bootloader)
-		{
-			std::unique_lock lock(mcu_mutex);
-			if (mcu_active || mcu_intentional_bootloader)
-				continue;
-			lastPing = sclock::now();
-			mcu_active = i2c_probe();
-			if (mcu_active)
-			{ // Reconnected, exchange info again (might have changed)
-				printf("Reconnected with MCU!\n");
-				mcu_sync_info();
+			if (dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS && !mcu_intentional_bootloader)
+			{
+				std::unique_lock lock(mcu_mutex);
+				if (mcu_active || mcu_intentional_bootloader)
+					continue;
+				lastPing = sclock::now();
+				mcu_active = i2c_probe();
+				if (mcu_active)
+				{ // Reconnected, exchange info again (might have changed)
+					printf("Reconnected with MCU!\n");
+					mcu_sync_info();
+				}
+				else if (mcu_probe_bootloader())
+				{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader?
+					printf("MCU is in the bootloader!\n");
+					mcu_reset();
+				}
 			}
-			else if (mcu_probe_bootloader())
-			{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader?
-				printf("MCU is in the bootloader!\n");
-				mcu_reset();
-			}
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			continue;
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		int events = gpiod_line_request_wait_edge_events(line_request_in, 10*1000*1000);
+		if (events < 0)
+		{
+			printf("Failed to detect interrupts from MCU!\n");
+			continue;
+		}
+		if (!mcu_active)
+		{ // MCU disconnected while in the loop
+			continue;
+		}
+		
+		if (events > 0)
+		{ // Detected edge events, clear event buffer
+			events = gpiod_line_request_read_edge_events(line_request_in, edge_events, 16);
+			if (events < 0) printf("Failed to read interrupts from MCU!\n");
+			//else printf("Detected %d interrupt events!\n", events);
+
+			// TODO: Clue to read status packet
+		}
+
+		if (events <= 0 && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
+		{
+			std::unique_lock lock(mcu_mutex);
+			if (!mcu_active) continue;
+			if (!mcu_send_ping()) mcu_active = false;
+			lastPing = sclock::now();
+		}
 	}
 }
 
@@ -246,14 +271,14 @@ void mcu_reset()
 
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
-	if (gpiod_line_request_set_values(line_request, values_reset))
+	if (gpiod_line_request_set_values(line_request_out, values_reset))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 	// BOOT0, RESET
 	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-	if (gpiod_line_request_set_values(line_request, values_normal))
+	if (gpiod_line_request_set_values(line_request_out, values_normal))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -313,21 +338,21 @@ bool mcu_switch_bootloader()
 
 		// BOOT0, RESET
 		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
-		if (gpiod_line_request_set_values(line_request, values_reset))
+		if (gpiod_line_request_set_values(line_request_out, values_reset))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
 		// BOOT0, RESET
 		gpiod_line_value values_boot[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-		if (gpiod_line_request_set_values(line_request, values_boot))
+		if (gpiod_line_request_set_values(line_request_out, values_boot))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
 		// BOOT0, RESET
 		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-		if (gpiod_line_request_set_values(line_request, values_normal))
+		if (gpiod_line_request_set_values(line_request_out, values_normal))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
@@ -632,16 +657,24 @@ static bool gpio_init()
 	req_config = nullptr;
 	//req_config = gpiod_request_config_new();
 
-	line_config = gpiod_line_config_new();
-	if (line_config)
-		line_boot0 = gpiod_line_settings_new();
-	if (line_boot0)
-		line_reset = gpiod_line_settings_new();
-
-	if (!line_config || !line_boot0 || !line_reset)
+	line_config_out = gpiod_line_config_new();
+	line_config_in = gpiod_line_config_new();
+	if (!line_config_out || !line_config_in)
 	{
-		printf("Failed open GPIO Chip 0! %d: %s\n", errno, strerror(errno));
-		gpiod_chip_close(gpio_chip);
+		printf("Failed create line config! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
+	}
+
+	line_boot0 = gpiod_line_settings_new();
+	line_reset = gpiod_line_settings_new();
+	line_int = gpiod_line_settings_new();
+
+	if (!line_boot0 || !line_reset || !line_int)
+	{
+		printf("Failed create line settings! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
 	}
 
 	gpiod_line_settings_set_direction(line_boot0, GPIOD_LINE_DIRECTION_OUTPUT);
@@ -654,24 +687,32 @@ static bool gpio_init()
 	gpiod_line_settings_set_active_low(line_reset, false);
 	gpiod_line_settings_set_output_value(line_reset, GPIOD_LINE_VALUE_INACTIVE);
 
-	if (gpiod_line_config_add_line_settings(line_config, &PIN_BOOT0, 1, line_boot0))
+	gpiod_line_settings_set_direction(line_int, GPIOD_LINE_DIRECTION_INPUT);
+	gpiod_line_settings_set_bias(line_int, GPIOD_LINE_BIAS_PULL_UP); // Technically we already have a pull-up in hardware
+	gpiod_line_settings_set_edge_detection(line_int, GPIOD_LINE_EDGE_FALLING);
+
+	if (gpiod_line_config_add_line_settings(line_config_out, &PIN_BOOT0, 1, line_boot0) ||
+		gpiod_line_config_add_line_settings(line_config_out, &PIN_NRST, 1, line_reset) ||
+		gpiod_line_config_add_line_settings(line_config_in, &PIN_INT, 1, line_int))
 	{
-		printf("Failed to add line setting for BOOT0 to GPIO! %d: %s\n", errno, strerror(errno));
+		printf("Failed to add line setting to GPIO line config! %d: %s\n", errno, strerror(errno));
 		gpio_cleanup();
 		return false;
 	}
 
-	if (gpiod_line_config_add_line_settings(line_config, &PIN_NRST, 1, line_reset))
-	{
-		printf("Failed to add line setting for NRST to GPIO! %d: %s\n", errno, strerror(errno));
-		gpio_cleanup();
-		return false;
-	}
-
-	line_request = gpiod_chip_request_lines(gpio_chip, req_config, line_config);
-	if (!line_request)
+	line_request_out = gpiod_chip_request_lines(gpio_chip, req_config, line_config_out);
+	line_request_in = gpiod_chip_request_lines(gpio_chip, req_config, line_config_in);
+	if (!line_request_out || !line_request_in)
 	{
 		printf("Failed to request lines for GPIO! %d: %s\n", errno, strerror(errno));
+		gpio_cleanup();
+		return false;
+	}
+
+	edge_events = gpiod_edge_event_buffer_new(16);
+	if (!edge_events)
+	{
+		printf("Failed to request GPIO edge event buffer! %d: %s\n", errno, strerror(errno));
 		gpio_cleanup();
 		return false;
 	}
@@ -681,22 +722,30 @@ static bool gpio_init()
 
 static void gpio_cleanup()
 {
-	if (line_request)
-		gpiod_line_request_release(line_request);
+	if (edge_events) gpiod_edge_event_buffer_free(edge_events);
 
-	gpiod_line_settings_free(line_boot0);
-	gpiod_line_settings_free(line_reset);
-	gpiod_line_config_free(line_config);
+	if (line_request_out) gpiod_line_request_release(line_request_out);
+	if (line_request_in) gpiod_line_request_release(line_request_in);
 
-	if (req_config)
-		gpiod_request_config_free(req_config);
+	if (line_boot0) gpiod_line_settings_free(line_boot0);
+	if (line_reset) gpiod_line_settings_free(line_reset);
+	if (line_int) gpiod_line_settings_free(line_int);
 
-	gpiod_chip_close(gpio_chip);
+	if (line_config_out) gpiod_line_config_free(line_config_out);
+	if (line_config_in) gpiod_line_config_free(line_config_in);
 
-	line_request = nullptr;
+	if (req_config) gpiod_request_config_free(req_config);
+
+	if (gpio_chip) gpiod_chip_close(gpio_chip);
+
+	edge_events = nullptr;
+	line_request_out = nullptr;
+	line_request_in = nullptr;
 	line_boot0 = nullptr;
 	line_reset = nullptr;
-	line_config  = nullptr;
+	line_int = nullptr;
+	line_config_out  = nullptr;
+	line_request_in = nullptr;
 	req_config = nullptr;
 	gpio_chip = nullptr;
 }

@@ -184,10 +184,13 @@ gpu_mem=$GPU_MEM_SIZE
 dtparam=i2c_vc=on
 # Alternatively switch bt to mini-uart and fix VC frequency to 300Mhz, but bt will be slow
 dtoverlay=disable-bt
-# Init PL011 clock to allow up to 3MBaud
-#init_uart_clock=48000000
-# Init PL011 clock to allow up to 9MBaud
-init_uart_clock=144000000
+# Init PL011 reference clock for 8MBaud
+# Source is 500Mhz, with integer divider
+# PL011 has fractional divider with 1/64 steps ontop of that
+# For 8MBaud, we need a UART Clock of 128Mhz since it uses 16x sampling
+# Only way: 500Mhz / 2 for 250Mhz, 250Mhz / (1 + 61/64) = 128Mhz
+# Or with 0.4% error: / 3 / (1 + 19/64) for 128.51Mhz
+init_uart_clock=250000000
 # Setup I2C1 for communicating with the STM32 bootloader
 dtparam=i2c_arm=on,i2c_arm_baudrate=400000
 

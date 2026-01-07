@@ -90,7 +90,7 @@ void Setup_Peripherals()
 
 	{
 		// Set TIM1 interrupts
-		NVIC_SetPriority(TIM1_BRK_UP_TRG_COM_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
+		NVIC_SetPriority(TIM1_BRK_UP_TRG_COM_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
 		NVIC_EnableIRQ(TIM1_BRK_UP_TRG_COM_IRQn);
 
 		// Initialise TIM1
@@ -178,7 +178,7 @@ void Setup_Peripherals()
 	if (SYNC_PIN == GPIO_PIN_9 && SYNC_GPIO_X == GPIOB)
 	{
 		// Setup NVIC interrupt handler for EXTI line 9
-		NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0)); // Same priority as SOF timer
+		NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
 		NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 		// Select PB (0x01) for EXTI Line 9 - so PB9

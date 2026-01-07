@@ -194,11 +194,11 @@ void uart_driver_init()
 	LL_DMA_SetDataLength(u.DMA, u.DMA_CH_TX, TX_LEN);
 	LL_DMA_EnableChannel(u.DMA, u.DMA_CH_TX); */
 
-	NVIC_SetPriority(u.uartIRQ_RX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_SetPriority(u.uartIRQ_RX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
 	NVIC_EnableIRQ(u.uartIRQ_RX);
-	NVIC_SetPriority(u.dmaIRQ_RX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_SetPriority(u.dmaIRQ_RX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
 	NVIC_EnableIRQ(u.dmaIRQ_RX);
-	NVIC_SetPriority(u.dmaIRQ_TX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_SetPriority(u.dmaIRQ_TX, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
 	NVIC_EnableIRQ(u.dmaIRQ_TX);
 
 	// Enable UART and DMA RX
@@ -251,6 +251,10 @@ void USART1_IRQHandler()
 	{ // RX IDLE
 		LL_USART_ClearFlag_IDLE(UART[0].uart);
 		uartd_process_port(0, DMA_TAIL(0));
+	}
+	if (LL_USART_IsActiveFlag_ORE(UART[0].uart))
+	{ // Overrun Error
+		LL_USART_ClearFlag_ORE(UART[0].uart);
 	}
 	if (LL_USART_IsActiveFlag_NE(UART[0].uart))
 	{ // Noise Error

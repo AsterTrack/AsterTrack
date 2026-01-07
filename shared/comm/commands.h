@@ -48,6 +48,11 @@ enum CameraMCUCommand
 	MCU_SWITCH_BOOTLOADER
 };
 
+// Leading Zeros before the actual packet
+// May be inserted in case clock-stretching is not used to give MCU time to process commands
+// Currently, clock-stretching is used, as the Pi-Specific clock-stretching-bug does not seem to manifest
+#define MCU_LEADING_BYTES		0
+
 // Maximum length of MCU_FETCH_INFO
 #define MCU_INFO_LENGTH			(2 + 7)
 #define MCU_INFO_MAX_SUBPARTS	8

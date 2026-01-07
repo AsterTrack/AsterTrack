@@ -461,7 +461,7 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 {
 	if (i2c_fd < 0) return false;
 
-	std::vector<uint8_t> INFO_DATA(2+length);
+	std::vector<uint8_t> INFO_DATA(MCU_LEADING_BYTES+2+length);
 	unsigned char FETCH_CMD[] = { stringID };
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
@@ -475,11 +475,12 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 		return false;
 	}
 
-	uint16_t received = (INFO_DATA[0] << 8) | INFO_DATA[1];
+	uint8_t *packet = INFO_DATA.data()+MCU_LEADING_BYTES;
+	uint16_t received = (packet[0] << 8) | packet[1];
 	if (received != length)
 		printf("Requested string %d of length %d but received string of length %d!\n", stringID, length, received);
 	uint16_t strlen = std::min(received, length);
-	descriptor = std::string((char*)INFO_DATA.data()+2, strlen);
+	descriptor = std::string((char*)packet+2, strlen);
 	return true;
 }
 
@@ -487,7 +488,7 @@ bool mcu_fetch_info(MCU_StoredInfo &info)
 {
 	if (i2c_fd < 0) return false;
 
-	uint8_t INFO_DATA[MCU_INFO_MAX_LENGTH];
+	uint8_t INFO_DATA[MCU_LEADING_BYTES+MCU_INFO_MAX_LENGTH];
 	uint8_t FETCH_VERSION = 1; // Request up to this version, may receive lower version
 	unsigned char FETCH_CMD[] = { MCU_FETCH_INFO, FETCH_VERSION };
 	struct i2c_msg I2C_MSG[] = {
@@ -502,11 +503,16 @@ bool mcu_fetch_info(MCU_StoredInfo &info)
 		return false;
 	}
 
-	FETCH_VERSION = INFO_DATA[0]; // Actually received version
-	if (FETCH_VERSION != 1) return false; // Currently only supported version
-	info.mcuOTPVersion = INFO_DATA[1]; // Should not concern us too much, but may be of interest in interpreting the data
+	uint8_t *packet = INFO_DATA+MCU_LEADING_BYTES;
+	FETCH_VERSION = packet[0]; // Actually received version
+	if (FETCH_VERSION != 1)
+	{
+		printf("Fetch info packet version %d is unsupported!\n", FETCH_VERSION);
+		return false;
+	}
+	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
 
-	uint8_t *ptr = INFO_DATA+8;
+	uint8_t *ptr = packet+8;
 	memcpy(&info.cameraID, ptr, sizeof(CameraID));
 	ptr += sizeof(CameraID);
 	memcpy(&info.mcuFWVersion, ptr, sizeof(VersionDesc));
@@ -516,17 +522,17 @@ bool mcu_fetch_info(MCU_StoredInfo &info)
 	memcpy(&info.mcuUniqueID, ptr, 3*sizeof(uint32_t));
 	ptr += 3*sizeof(uint32_t);
 
-	if (INFO_DATA[2] <= 8)
+	if (packet[2] <= 8)
 	{
-		info.subpartSerials.resize(INFO_DATA[2]);
-		memcpy(info.subpartSerials.data(), ptr, INFO_DATA[2]*sizeof(uint64_t));
+		info.subpartSerials.resize(packet[2]);
+		memcpy(info.subpartSerials.data(), ptr, packet[2]*sizeof(uint64_t));
 	}
 
-	uint16_t hwStrLen = (INFO_DATA[4] << 8) | INFO_DATA[5];
+	uint16_t hwStrLen = (packet[4] << 8) | packet[5];
 	if (!mcu_fetch_descriptor(info.mcuHWDescriptor, MCU_GET_HW_STR, hwStrLen))
 		return false;
 
-	uint16_t fwStrLen = (INFO_DATA[6] << 8) | INFO_DATA[7];
+	uint16_t fwStrLen = (packet[6] << 8) | packet[7];
 	if (!mcu_fetch_descriptor(info.mcuFWDescriptor, MCU_GET_FW_STR, fwStrLen))
 		return false;
 
@@ -585,10 +591,10 @@ static bool i2c_probe()
 	if (i2c_fd < 0) return false;
 
 	unsigned char REG_ID[] = { MCU_REG_ID };
-	uint8_t MCU_ID;
+	uint8_t MCU_ID[MCU_LEADING_BYTES+1];
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_ID), &MCU_ID },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_ID), MCU_ID },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
@@ -598,9 +604,9 @@ static bool i2c_probe()
 		return false;
 	}
 
-	if (MCU_ID != MCU_I2C_ID)
+	if (MCU_ID[MCU_LEADING_BYTES] != MCU_I2C_ID)
 	{
-		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_ID, MCU_I2C_ID);
+		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_ID[MCU_LEADING_BYTES], MCU_I2C_ID);
 		return false;
 	}
 

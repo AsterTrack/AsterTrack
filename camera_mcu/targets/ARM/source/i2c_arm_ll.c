@@ -21,33 +21,38 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g0xx_ll_gpio.h"
 #include "stm32g0xx_ll_i2c.h"
 #include "stm32g0xx_ll_rcc.h"
+#include "stm32g0xx_ll_dma.h"
 #endif
 
-#include "comm/commands.h"
+#include "i2c_driver.h"
 #include "config_impl.h"
+#include "mcu/util.h"
 
 #include <stdint.h>
 
-/* Timing register value is computed with the STM32CubeMX Tool,
-* Fast Mode @400kHz with I2CCLK = 64 MHz,
-* rise time = 100ns, fall time = 10ns
-* Timing Value = (uint32_t)0x00C0216C
-*/
-#define I2C_TIMING               __LL_I2C_CONVERT_TIMINGS(0x0, 0xC, 0x0, 0x21, 0x6C) // 0x00C0216C
+// Timing register values
+//#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x0, 0xC, 0x0, 0x21, 0x6C) // @400kHz, 64 MHz I2CCLK, 100ns rise time, 10ns fall time (STM32CubeMX)
+//#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x0, 0xC, 0x0, 0x40, 0x4f) // @400kHz, 64 MHz I2CCLK, 100ns rise time, 10ns fall time (code, no analog filter)
+//#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x0, 0xC, 0x0, 0x3D, 0x4C) // @400kHz, 64 MHz I2CCLK, 100ns rise time, 10ns fall time (code, WITH analog filter)
+//#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x1, 0xA, 0x2, 0x18, 0x27) // @400kHz, 64 MHz I2CCLK, 250ns rise time, 100ns fall time (code, no analog filter)
+//#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x0, 0x6, 0x0, 0x14, 0x1a) // @1MHz, 64 MHz I2CCLK, 60ns rise time, 10ns fall time (code, WITH analog filter)
+#define I2C_TIMING		__LL_I2C_CONVERT_TIMINGS(0x0, 0xC, 0x0, 0x21, 0x6C) // @400kHz, 64 MHz I2CCLK, 100ns rise time, 10ns fall time (STM32CubeMX)
 
-#define I2C_ADDRESS_MATCH (MCU_I2C_ADDRESS << 1) // Needs to be left-shifted to fit register
+#define I2C_ADDRESS_MATCH	(MCU_I2C_ADDRESS << 1) // Match 7-bit address to 8bit space in register
+
+// TODO: Rasberry Pi has Problems with clock stretching, so ideally we'll disable it to avoid future problems
+// See https://www.advamation.com/knowhow/raspberrypi/rpi-i2c-bug.html
+// But enabling it leaves us no time to prepare bytes to send after RX
+// So we have to determine the first byte to send before fully handling the received data
+// Hence need to have at least 1 leading byte (value 0x00) the SBC knows to discard (MCU_LEADING_BYTES)
+// No actual issues have been observed yet, so we keep clock stretching on for now
+// But perhaps keeping the leading bytes just in case to prevent any protocol changes would be good... 
+// NOSTRECH with no leading bytes will NOT work - ZERO reaction time for ISR to parse RX and prepare TX
+#define I2C_USE_CLOCK_STRETCHING	(true || MCU_LEADING_BYTES == 0)
+#define I2C_PREPENDED_BYTES			(MCU_LEADING_BYTES > 1? (MCU_LEADING_BYTES-1) : 0) // Prepended bytes in addition to the first leading byte
 
 static uint8_t receiveBuffer[256];
 static uint8_t transmitBuffer[256];
-static uint8_t transmitLength;
-static uint16_t receiveCounter, transmitCounter;
-static bool processedRX = false;
-
-
-/* Application Functions */
-
-bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len);
-uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256]);
 
 
 /* Driver Functions */
@@ -89,105 +94,160 @@ void i2c_driver_init()
 #endif
 
 	// Init I2C
+	static_assert(I2C_USE_CLOCK_STRETCHING || (MCU_LEADING_BYTES > 0));
+	if (!I2C_USE_CLOCK_STRETCHING)
+		LL_I2C_DisableClockStretching(I2C1);
+	LL_I2C_EnableAnalogFilter(I2C1);
 	LL_I2C_SetTiming(I2C1, I2C_TIMING);
 	LL_I2C_SetOwnAddress1(I2C1, I2C_ADDRESS_MATCH, LL_I2C_OWNADDRESS1_7BIT);
 	LL_I2C_EnableOwnAddress1(I2C1);
 	//LL_I2C_EnableGeneralCall(I2C1);
 	LL_I2C_SetMode(I2C1, LL_I2C_MODE_I2C);
 
-	NVIC_SetPriority(I2C1_IRQn, 2);
+	// Enable UART DMA TX & RX
+	LL_I2C_EnableDMAReq_TX(I2C1);
+	LL_I2C_EnableDMAReq_RX(I2C1);
+
+	// Setup DMAMUX found on STM32G0 series
+	#define DMA_CH_RX DMA_CHANNEL_4
+	#define DMA_CH_TX DMA_CHANNEL_5
+	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_RX, LL_DMAMUX_REQ_I2C1_RX);
+	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_TX, LL_DMAMUX_REQ_I2C1_TX);
+
+	// Setup respective DMA Channel for UART RX
+	LL_DMA_SetDataTransferDirection(DMA1, DMA_CH_RX, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+	LL_DMA_SetChannelPriorityLevel(DMA1, DMA_CH_RX, LL_DMA_PRIORITY_HIGH);
+	LL_DMA_SetMode(DMA1, DMA_CH_RX, LL_DMA_MODE_NORMAL);
+	LL_DMA_SetPeriphIncMode(DMA1, DMA_CH_RX, LL_DMA_PERIPH_NOINCREMENT);
+	LL_DMA_SetMemoryIncMode(DMA1, DMA_CH_RX, LL_DMA_MEMORY_INCREMENT);
+	LL_DMA_SetPeriphSize(DMA1, DMA_CH_RX, LL_DMA_PDATAALIGN_BYTE);
+	LL_DMA_SetMemorySize(DMA1, DMA_CH_RX, LL_DMA_MDATAALIGN_BYTE);
+	LL_DMA_SetPeriphAddress(DMA1, DMA_CH_RX, (uint32_t)&I2C1->RXDR);
+	LL_DMA_SetMemoryAddress(DMA1, DMA_CH_RX, (uint32_t)receiveBuffer);
+	LL_DMA_SetDataLength(DMA1, DMA_CH_RX, sizeof(receiveBuffer));
+
+	// Setup respective DMA Channel for UART TX
+	LL_DMA_SetDataTransferDirection(DMA1, DMA_CH_TX, LL_DMA_DIRECTION_MEMORY_TO_PERIPH);
+	LL_DMA_SetChannelPriorityLevel(DMA1, DMA_CH_TX, LL_DMA_PRIORITY_HIGH);
+	LL_DMA_SetMode(DMA1, DMA_CH_TX, LL_DMA_MODE_NORMAL);
+	LL_DMA_SetPeriphIncMode(DMA1, DMA_CH_TX, LL_DMA_PERIPH_NOINCREMENT);
+	LL_DMA_SetMemoryIncMode(DMA1, DMA_CH_TX, LL_DMA_MEMORY_INCREMENT);
+	LL_DMA_SetPeriphSize(DMA1, DMA_CH_TX, LL_DMA_PDATAALIGN_BYTE);
+	LL_DMA_SetMemorySize(DMA1, DMA_CH_TX, LL_DMA_MDATAALIGN_BYTE);
+	LL_DMA_SetPeriphAddress(DMA1, DMA_CH_TX, (uint32_t)&I2C1->TXDR);
+
+	if (I2C_USE_CLOCK_STRETCHING)
+		NVIC_SetPriority(I2C1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
+	else // Absolutely need to react to ISR within the send time of the first MCU_LEADING_BYTES
+		NVIC_SetPriority(I2C1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
 	NVIC_EnableIRQ(I2C1_IRQn);
 
 	// Enable I2C1 interrupts
-	I2C1->CR1 |= I2C_CR1_ERRIE | I2C_CR1_STOPIE | I2C_CR1_NACKIE | I2C_CR1_ADDRIE | I2C_CR1_RXIE | I2C_CR1_TXIE;
+	I2C1->CR1 |= I2C_CR1_ERRIE | I2C_CR1_STOPIE | I2C_CR1_NACKIE | I2C_CR1_ADDRIE;
 
 	LL_I2C_Enable(I2C1);
+	if (MCU_LEADING_BYTES > 0)
+	{ // Alread need to set first leading byte to send on next TX Start
+		I2C1->TXDR = 0x00;
+	}
 }
 
 
 /** I2C global interrupt handler */
 
+uint32_t GetRXLength()
+{
+	return sizeof(receiveBuffer) - LL_DMA_GetDataLength(DMA1, DMA_CH_RX);
+}
+
 void I2C1_IRQHandler(void)
 {
-	// Sequence is different from events on the line, for some reason:
-	// RX 1			Start RX, 			RX Bytes, 			STOP 
-	// RX 1 + TX 1:	Start RX, Start TX, RX Bytes, TX Bytes, STOP
-	// TX Byte will occur one more than is actually queried (filling next byte)
-	// So Start TX has to flush last transfers garbage byte from TXDR by setting TXE
-	// There's no event for processing, so first TX Byte event will process the request
-
 	uint32_t ISR = I2C1->ISR;
 
 	if (ISR & I2C_ISR_ADDR)
 	{
-		I2C1->ICR |= I2C_ICR_ADDRCF;
-
 		uint8_t addr = (ISR&I2C_ISR_ADDCODE) >> I2C_ISR_ADDCODE_Pos << 1;
 		if (addr == I2C_ADDRESS_MATCH)
 		{ // Address matches own address
 			if (ISR & I2C_ISR_DIR)
 			{ // Prepare to transmit data
+				TimePoint start = GetTimePoint();
 
-				// Flush data in TXDR before writing first byte
-				I2C1->ISR |= I2C_ISR_TXE;
+				// Handle RX data to determine TX data
+				uint8_t transmitLength = 0;
+				if (LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX) && GetRXLength() > 0)
+					transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, GetRXLength()-1, transmitBuffer+I2C_PREPENDED_BYTES);
+				LL_DMA_DisableChannel(DMA1, DMA_CH_RX);
 
-				// Can reset TX counter here or later when processing
-				transmitCounter = 0;
+				// Prepare TX data with further leading bytes and a trailing byte which will reset TXDR to 0 after expected transmit length has been reached
+				for (int i = 0; i < I2C_PREPENDED_BYTES; i++)
+					transmitBuffer[i] = 0;
+				transmitBuffer[transmitLength] = 0;
+
+				if (MCU_LEADING_BYTES == 0)
+				{ // Prepare first byte and setup to DMA the rest
+					I2C1->TXDR = transmitBuffer[0];
+					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitBuffer+1);
+					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, I2C_PREPENDED_BYTES+transmitLength-1+1);
+				}
+				else
+				{ // First leading byte is already in TXDR, setup to DMA the rest
+					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitBuffer);
+					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, I2C_PREPENDED_BYTES+transmitLength+1);
+				}
+				LL_DMA_EnableChannel(DMA1, DMA_CH_TX);
+
+				if (I2C_USE_CLOCK_STRETCHING)
+				{ // RPi Clock Stretching bug requires this ISR to take at least 1/2 I2CLK
+					// At 400kHz that is just above 1us, so ensure we spend at least 2 in this ISR
+					while (GetTimePoint() < start+2*TICKS_PER_US);
+				}
 			}
 			else
 			{ // Prepare to receive command ( + potentially data)
-				receiveCounter = 0;
-				processedRX = false;
+				LL_DMA_SetMemoryAddress(DMA1, DMA_CH_RX, (uint32_t)receiveBuffer);
+				LL_DMA_SetDataLength(DMA1, DMA_CH_RX, sizeof(receiveBuffer));
+				LL_DMA_EnableChannel(DMA1, DMA_CH_RX);
 			}
 		}
-		// Not being addressed after all (perhaps general call if enabled)
+		// Else not being addressed after all (perhaps general call if enabled)
+
+		I2C1->ICR |= I2C_ICR_ADDRCF;
 	}
-	else if (ISR & I2C_ISR_NACKF)
+	if (ISR & I2C_ISR_STOPF)
+	{ // Stopping RX or TX
+
+		if (MCU_LEADING_BYTES == 0)
+			I2C1->ISR |= I2C_ISR_TXE; // Clear last TX data
+		else // Ensure first byte written is 0 on next TX start
+			I2C1->TXDR = 0x00;
+		// NOTE: If I2C_USE_CLOCK_STRETCHING, we could do this in TX start, since sending will wait for the TX start handling
+		// but with NOSTRETCH, this first byte gives us important additional reaction time to prepare remaining TX bytes
+
+		// Unless SBC starts sending STOP in between its TX and RX, this will only handle commands that don't expect a response
+		if (LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX) && GetRXLength() > 0)
+			i2cd_handle_command((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, GetRXLength()-1);
+
+		// Disable whatever DMA channel was active just now
+		LL_DMA_DisableChannel(DMA1, DMA_CH_RX);
+		LL_DMA_DisableChannel(DMA1, DMA_CH_TX);
+
+		I2C1->ICR |= I2C_ICR_STOPCF;
+	}
+	if (ISR & I2C_ISR_NACKF)
 	{ // End of TX
 		I2C1->ICR |= I2C_ICR_NACKCF;
 	}
-	else if (ISR & I2C_ISR_RXNE)
-	{
-		receiveBuffer[receiveCounter] = I2C1->RXDR;
-		receiveCounter++;
+	if (ISR & I2C_ISR_OVR)
+	{ // Overrun/Underrun
+		I2C1->ICR |= I2C_ICR_OVRCF;
 	}
-	else if (ISR & I2C_ISR_TXIS)
-	{
-		if (!processedRX)
-		{ // First TX after receiving, process RX data
-			transmitLength = 0;
-			transmitCounter = 0;
-			processedRX = true;
-			if (receiveCounter > 0)
-				transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, receiveCounter-1, transmitBuffer);
-		}
-
-		if (transmitCounter < transmitLength)
-		{ // Write next byte
-			I2C1->TXDR = transmitBuffer[transmitCounter];
-		}
-		else
-		{ // Might be last byte, won't be sent. Or Pi is doing something strange.
-			I2C1->TXDR = 0x00;
-		}
-		transmitCounter++;
+	if (ISR & I2C_ISR_ARLO)
+	{ // Arbitration lost
+		I2C1->ICR |= I2C_ICR_ARLOCF;
 	}
-	else if (ISR & I2C_ISR_STOPF)
-	{ // Stopping RX or TX
-		I2C1->ICR |= I2C_ICR_STOPCF;
-
-		if (!processedRX && receiveCounter > 0)
-		{ // Just received data without expectation to respond, handle
-			processedRX = true;
-			i2cd_handle_command((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, receiveCounter-1);
-		}
-	}
-	else if (!(ISR & I2C_ISR_TXE))
-	{
-		// Currently transmitting data, and TXDR is not empty, so all good
-	}
-	else
-	{
-		// TODO: Handle as error?
+	if (ISR & I2C_ISR_BERR)
+	{ // Bus error
+		I2C1->ICR |= I2C_ICR_BERRCF;
 	}
 }

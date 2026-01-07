@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "rgbled.h"
 #include "comm/commands.h"
 #include "config_impl.h"
+#include "i2c_driver.h"
 #include "otp.h"
 
 
@@ -47,9 +48,6 @@ typedef enum
 } UART_STATE;
 
 /* Function Prototypes */
-
-// I2C Driver
-void i2c_driver_init();
 
 void version_init();
 

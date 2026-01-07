@@ -37,6 +37,7 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 	ImVec2 consoleSize(winSize.x-160, winSize.y);
 	ImVec2 sideWinSize(160, winSize.y);
 
+	std::shared_lock lock(GetApp().logContentAccess);
 	static std::size_t selectedLog = -1, focusedLog = -1;
 	GetApp().logEntries.delete_culled();
 	auto logs = GetApp().logEntries.getView();

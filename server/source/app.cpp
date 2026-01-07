@@ -257,7 +257,7 @@ void AppState::SignalInterfaceClosed()
 
 void AppState::FlushLog()
 {
-	std::unique_lock lock(logIteratorAccess);
+	std::shared_lock lock(logContentAccess);
 	auto logs = logEntries.getView();
 	auto flushStart = logs.pos(std::max(lastFlushed, logs.beginIndex()));
 	for (auto entry = flushStart; entry != logs.end(); entry++)
@@ -406,14 +406,14 @@ int PrintLogCont(LogCategory category, LogLevel level, int context, const char *
 
 	bool foundCont = false;
 	{
-		std::unique_lock lock(GetApp().logIteratorAccess);
 		auto logs = GetApp().logEntries.getView<false>();
 		auto cont = logs.end();
 		int search = 50;
 		while (search-- > 0 && cont-- != logs.begin())
 		{ // Append to last continued log entry
 			if (cont->category == category && cont->context == context)
-			{
+			{ // Append to existing log - ensure nothing is reading
+				std::unique_lock lock(GetApp().logContentAccess);
 				cont->log.insert(cont->log.end(), entry.log.begin(), entry.log.end());
 				foundCont = true;
 				break;

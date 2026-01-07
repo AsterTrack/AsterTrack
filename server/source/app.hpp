@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/blocked_vector.hpp"
 
 #include <fstream>
+#include <shared_mutex>
 
 class AppState;
 extern AppState AppInstance;
@@ -44,7 +45,7 @@ public:
 	BlockedQueue<LogEntry, 1024*16> logEntries;
 	std::ofstream logFile;
 	std::size_t lastFlushed;
-	std::mutex logIteratorAccess;
+	std::shared_mutex logContentAccess; // Protects readers from modifications to existing log entries
 
 	void FlushLog();
 	void SignalQuitApp();

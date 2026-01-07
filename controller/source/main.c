@@ -110,6 +110,10 @@ typedef struct
 	uint16_t packetSize;
 
 	enum ControllerPortStatus status;
+
+	TimePoint lastTimeSync;
+	uint8_t lastAnnounceID;
+	uint8_t lastStreamID;
 } CameraState;
 CameraState camStates[UART_PORT_COUNT];
 
@@ -419,7 +423,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i ++)
 			{
 				if (camStates[i].comm != COMM_SBC_READY) continue;
-				TimeSpan timeSinceLastTimeSync = now - portStates[i].lastTimeSync;
+				TimeSpan timeSinceLastTimeSync = now - camStates[i].lastTimeSync;
 				if (timeSinceLastTimeSync < UART_TIME_SYNC_INTERVAL) continue;
 				if (!packet)
 				{
@@ -430,7 +434,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 					finaliseDirectUARTPacket(packet, header);
 				}
 				uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SYNC_PACKET_SIZE, false);
-				portStates[i].lastTimeSync = now;
+				camStates[i].lastTimeSync = now;
 			}
 		}
 
@@ -730,7 +734,7 @@ static void sendSOFPackets(uint32_t frameID, TimePoint SOF)
 			if (camStates[i].comm == COMM_SBC_READY)
 			{
 				uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+SOF_PACKET_SIZE, false);
-				portStates[i].lastTimeSync = SOF;
+				camStates[i].lastTimeSync = SOF;
 			}
 		}
 	}
@@ -1397,15 +1401,15 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 		if (state->header.tag == PACKET_FRAME_SIGNAL)
 		{
-			if (state->header.frameID != (state->lastAnnounceID+1)%256)
+			if (state->header.frameID != (cam->lastAnnounceID+1)%256)
 				DEBUG_CHARR('/', INT9_TO_CHARR(port), 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
-			state->lastAnnounceID = state->header.frameID;
+			cam->lastAnnounceID = state->header.frameID;
 		}
 		else if (state->header.tag == PACKET_BLOB)
 		{
-			if (state->header.frameID != (state->lastStreamID+1)%256)
+			if (state->header.frameID != (cam->lastStreamID+1)%256)
 				DEBUG_CHARR('/', INT9_TO_CHARR(port), 'S', 'S', 'P', INT99_TO_CHARR(state->lastStreamID), ':', INT99_TO_CHARR(state->header.frameID));
-			state->lastStreamID = state->header.frameID;
+			cam->lastStreamID = state->header.frameID;
 		}
 		else if (state->header.tag == PACKET_ERROR)
 		{ // Snoop in, and stop streaming already

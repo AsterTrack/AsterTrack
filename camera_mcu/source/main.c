@@ -32,6 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "config_impl.h"
 #include "i2c_driver.h"
 #include "otp.h"
+#include "mcu/timesync.h"
 
 
 /* Defines */
@@ -86,6 +87,13 @@ volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 volatile CameraID cameraIDToWrite = 0;
+
+// Frame and Time sync
+struct time_sync timesync;	// Current estimate of controller-MCU-time relationship
+TimePoint lastTimeSync;		// Synced time of last packet with time sync
+uint32_t lastFrameID;		// ID of last frame (received or generated)
+TimePoint lastFrameTime;	// Intended synced time of last frame
+TimePoint lastFrameSync;	// Actual local time of last frame (FSIN signal)
 
 
 /* Functions */
@@ -472,13 +480,12 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_SOF)
-	{ // Received sof packet
+	{ // Received packet indicating an immediate Start of Frame
 		lastMarker = GetTimePoint();
 
-#if !defined(USE_SYNC)
+#if !defined(BOARD_OLD)
 		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
-		delayUS(FSIN_PULSE_WIDTH_US);
-		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		lastFrameSync = GetTimePoint();
 #endif
 
 		return uartd_accept;
@@ -577,17 +584,35 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 
 	if (state->header.tag == PACKET_SYNC)
 	{ // Received sync packet
+		if (state->header.length < SYNC_PACKET_SIZE)
+			return uartd_ignore;
+		struct SyncPacket packet = parseSyncPacket(receive.packetBuffer);
+		// Update time sync
+		uint64_t controllerTimeUS = rebase_timestamp(&timesync, packet.timeUS, 1 << 24, (1 << 21)*3); // bias 75% newer, 25% older 
+		lastTimeSync = update_time_synced(&timesync, controllerTimeUS, state->lastPacketTime);
 		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_SOF)
-	{
-		if (state->header.frameID != (state->lastAnnounceID+1)%256)
-			WARN_CHARR('/', 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
-		state->lastAnnounceID = state->header.frameID;
-		
-		// Already set camera FSIN
-
-		//state->lastPacketTime;
+	{ // Received packet indicating an immediate Start of Frame
+		if (state->header.length < SOF_PACKET_SIZE)
+			return uartd_ignore;
+		struct SOFPacket packet = parseSOFPacket(receive.packetBuffer);
+		// Update time sync
+		uint64_t controllerTimeUS = rebase_timestamp(&timesync, packet.timeUS, 1 << 24, (1 << 21)*3); // bias 75% newer, 25% older 
+		lastTimeSync = update_time_synced(&timesync, controllerTimeUS, state->lastPacketTime / TICKS_PER_US);
+		// Record ID and time of last frame
+		if (packet.frameID != (lastFrameID+1)%256)
+			WARN_CHARR('/', 'S', 'F', 'S', INT99_TO_CHARR(lastFrameID), ':', INT99_TO_CHARR(packet.frameID));
+		lastFrameID = packet.frameID;
+		lastFrameTime = lastTimeSync;
+		// Tell SBC to fetch status packet with new frame ID
+		GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+		// Reset FSIN after desired pulse width
+#if !defined(BOARD_OLD)
+		TimePoint frameSyncEnd = lastFrameSync + FSIN_PULSE_WIDTH_US * TICKS_PER_US;
+		while (GetTimePoint() < frameSyncEnd);
+		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+#endif
 		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_CFG_MODE)

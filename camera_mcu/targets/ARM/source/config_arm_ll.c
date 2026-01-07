@@ -206,7 +206,7 @@ void Setup_Peripherals()
 
 	// -- EXTI --
 
-#if defined(BOARD_OLD) && defined(USE_SYNC)
+#if defined(BOARD_OLD)
 	if (SYNC_PIN == GPIO_PIN_9 && SYNC_GPIO_X == GPIOB)
 	{
 		// Setup NVIC interrupt handler for EXTI line 9
@@ -279,13 +279,15 @@ void ADC1_IRQHandler()
 	}
 }
 
+extern TimePoint lastFrameSync;
 void EXTI4_15_IRQHandler(void) __IRQ;
 void EXTI4_15_IRQHandler()
 {
-#if defined(BOARD_OLD) && defined(USE_SYNC)
+#if defined(BOARD_OLD)
 	if (EXTI->RPR1 & LL_EXTI_LINE_9)
 	{ // Interrupt pending
 
+		lastFrameSync = GetTimePoint();
 		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
 		delayUS(FSIN_PULSE_WIDTH_US);
 		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);

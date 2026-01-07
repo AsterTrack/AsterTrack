@@ -60,9 +60,6 @@ typedef struct
 	TimePoint resetTimer;
 	TimePoint lastComm;
 	TimePoint lastPacketTime;
-	TimePoint lastTimeSync;
-	uint8_t lastAnnounceID;
-	uint8_t lastStreamID;
 
 	// Positions to keep track of which data has been queued and which has been sent/processed
 

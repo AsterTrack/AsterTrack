@@ -66,10 +66,8 @@ void Setup_Peripherals()
 	// Set Flash Latency for 64MHz
 	LL_FLASH_SetLatency(LL_FLASH_LATENCY_2);
 
-	// Configure PLL to 64MHz for both SYSCLK and ADC
-	// TODO: Can set ADC clock up to 122Mhz with this
+	// Configure PLL to 64MHz for SYSCLK
 	LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSI, LL_RCC_PLLM_DIV_1, 8, LL_RCC_PLLR_DIV_2);
-	//LL_RCC_PLL_ConfigDomain_ADC(LL_RCC_PLLSOURCE_HSI, LL_RCC_PLLM_DIV_1, 8, LL_RCC_PLLP_DIV_8);
 	LL_RCC_PLL_Enable();
 	LL_RCC_PLL_EnableDomain_SYS();
 	//LL_RCC_PLL_EnableDomain_ADC();
@@ -177,6 +175,35 @@ void Setup_Peripherals()
 	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_ADC_PIN, LL_GPIO_MODE_ANALOG);
 
 
+	// -- ADC --
+
+	// Reset ADC
+	RCC->APBRSTR2 |= RCC_APBRSTR2_ADCRST;
+	RCC->APBRSTR2 &= ~RCC_APBRSTR2_ADCRST;
+
+	// Setup ADC Clocks
+	RCC->CCIPR = (RCC->CCIPR & ~RCC_CCIPR_ADCSEL_Msk); // Default, SYSCLK
+	RCC->APBENR2 |= RCC_APBENR2_ADCEN;
+	ADC1_COMMON->CCR |= (0b1011 << ADC_CCR_PRESC_Pos); // SYSCLK / 256 = 250Khz
+
+	// Configure ADC
+	ADC1->CFGR1 = ADC_CFGR1_CONT | ADC_CFGR1_OVRMOD; // Enable continuous conversion, writing the latest value in the data register
+	ADC1->CFGR2 = 0;
+
+	// Configure ADC channels
+	ADC1->SMPR = 0b111 << ADC_SMPR_SMP1_Pos; // Select 12.5+160.5 ADCCLK Sample Time
+	static_assert(VSENSE_GPIO_X == GPIOA);
+	static_assert(GPIO_PIN_0 == ADC_CHSELR_CHSEL0 && GPIO_PIN_2 == ADC_CHSELR_CHSEL2);
+	ADC1->CHSELR = ADC_CHSELR_CHSEL2;
+	while (ADC1->ISR & ADC_ISR_CCRDY);
+	// -> Timings result in ADC sampling every 692us (12.5+160.5 CLK @ 0.25Mhz)
+
+	// Enable IRQ for ADC for Analog Watchdog
+	// High priority since it might be a spike in voltage that requires quickly cutting power
+	NVIC_SetPriority(ADC1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
+	NVIC_EnableIRQ(ADC1_IRQn);
+
+
 	// -- EXTI --
 
 #if defined(BOARD_OLD) && defined(USE_SYNC)
@@ -194,6 +221,62 @@ void Setup_Peripherals()
 		EXTI->IMR1 |= LL_EXTI_LINE_9; // Enable interrupt generation
 	}
 #endif
+}
+
+void EnableADC()
+{
+	if (ADC1->CR & ADC_CR_ADEN)
+		return; // Currently converting, so on
+	while (ADC1->CR);
+
+	// Start ADC Calibration
+	ADC1->CR |= ADC_CR_ADCAL;
+	while (ADC1->CR & ADC_CR_ADCAL);
+
+	// Enable ADC
+	ADC1->CR |= ADC_CR_ADEN;
+	while (!(ADC1->ISR & ADC_ISR_ADRDY));
+
+	// Start continuous conversion
+	ADC1->CR |= ADC_CR_ADSTART;
+
+	// Setup Analog Watchdog
+	ADC1->CFGR1 |= ADC_CFGR1_AWD1EN | ADC_CFGR1_AWD1SGL | (0 << ADC_CFGR1_AWD1CH_Pos);
+	ADC1->IER |= ADC_IER_AWD1IE;
+	// Set AWD thresholds
+	ADC1->AWD1TR = ((21000 * 4095 / (23 * 3300)) << ADC_AWD1TR_HT1_Pos) | ((9000 * 4095 / (23 * 3300)) << ADC_AWD1TR_LT1_Pos);
+}
+
+void DisableADC()
+{
+	// Disable Analog Watchdog
+	ADC1->CFGR1 &= ~(ADC_CFGR1_AWD1EN | ADC_CFGR1_AWD1SGL | ADC_CFGR1_AWD1CH_Msk);
+	ADC1->IER &= ~ADC_IER_AWD1IE;
+
+	// Stop current conversion
+	ADC1->CR |= ADC_CR_ADSTP;
+	while (ADC1->CR & ADC_CR_ADSTP);
+
+	// Place ADC in power-down mode
+	ADC1->CR |= ADC_CR_ADDIS;
+}
+
+uint32_t GetMillivolts()
+{
+	return (ADC1->DR & 0xFFF) * 23 * 3300 / 4095;
+}
+
+void ADC1_IRQHandler(void) __IRQ;
+void ADC1_IRQHandler()
+{
+	if (ADC1->ISR & ADC_ISR_AWD1)
+	{ // Interrupt pending
+		ADC1->ISR = ADC_ISR_AWD1;
+		uint32_t voltage = GetMillivolts();
+		// TODO: Handle - or don't. Nothing we can do here.
+		// If camera is alive (still/already), notify it
+		GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+	}
 }
 
 void EXTI4_15_IRQHandler(void) __IRQ;

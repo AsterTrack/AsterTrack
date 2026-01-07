@@ -141,6 +141,10 @@ extern "C"
 
 void Setup_Peripherals();
 
+void EnableADC();
+void DisableADC();
+uint32_t GetMillivolts();
+
 enum CameraMCUFlashConfig ReadFlashConfiguration();
 enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config);
 

@@ -186,6 +186,9 @@ int main(void)
 	i2c_driver_init();
 #endif
 
+	// Start continuously measuring power supply voltage
+	EnableADC();
+
 	// Bring filter switcher into default position
 	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 
@@ -701,7 +704,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[0] = states >> 8;
 			response[1] = states & 0xFF;
 			// Latest supply voltage reading from ADC 
-			uint16_t powerMV = 0;
+			uint16_t powerMV = GetMillivolts();
 			response[2] = powerMV >> 8;
 			response[3] = powerMV & 0xFF;
 			// Timestamp for timesync

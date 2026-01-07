@@ -130,7 +130,7 @@ else
 	MCU =
 endif
 
-COMMON_FLAGS = -Wall -fdata-sections -ffunction-sections -funsigned-char
+COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char
 #COMMON_FLAGS += -flto=auto
 COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
 

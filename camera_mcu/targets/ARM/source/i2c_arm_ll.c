@@ -64,7 +64,7 @@ void i2c_driver_init()
 	LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
 
 	// AFIO
-	//static_assert(I2C_SCL_PIN < GPIO_PIN_8 && I2C_SDA_PIN < GPIO_PIN_8);
+	static_assert(I2C_SCL_PIN < GPIO_PIN_8 && I2C_SDA_PIN < GPIO_PIN_8);
 	LL_GPIO_SetAFPin_0_7(I2C_SXX_GPIO_X, I2C_SCL_PIN, LL_GPIO_AF_6);
 	LL_GPIO_SetAFPin_0_7(I2C_SXX_GPIO_X, I2C_SDA_PIN, LL_GPIO_AF_6);
 

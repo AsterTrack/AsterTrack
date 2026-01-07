@@ -184,7 +184,5 @@ void uart_configure(void *port, uint32_t rate)
 float uart_getBytesPerUS(void *port)
 {
 	UartPort &uart = *((UartPort*)port);
-	// 1 Start, 8 Data, 2 Stop, 1 Parity
-	int bitsPerByte = 1+8+2;//+1;
-	return (float)uart.baudrate / 1000000 / bitsPerByte;
+	return (float)uart.baudrate / 1000000 / UART_BAUD_PER_BYTE;
 }

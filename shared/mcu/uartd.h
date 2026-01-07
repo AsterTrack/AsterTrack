@@ -33,7 +33,10 @@ extern "C"
 
 /* Structures */
 
-typedef struct {
+typedef struct
+{
+	uint32_t baudrate;
+
 	// Buffer state
 	uint8_t *bufferPtr;
 	//uint_fast16_t sentPos; // Not used, protection is assumed by large UART buffer, hard to keep track of with shared buffers anyway

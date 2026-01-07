@@ -105,10 +105,11 @@ void uartd_init()
 	{
 		UART_IO[i].rx_buffer = (uint8_t*)((uint32_t)UART_IO[i].rx_alloc + UART_HEADROOM);
 		portStates[i].bufferPtr = UART_IO[i].rx_buffer;
+		portStates[i].baudrate = UART_BAUD_RATE_SAFE;
 		uartd_handle_reset(i);
 	}
 
-	uart_driver_init();
+	uart_driver_init(UART_BAUD_RATE_SAFE);
 }
 
 /** Send data over UART port */
@@ -192,7 +193,7 @@ static inline void skipToEnd(PortState *state)
 
 /** Process received data over UART */
 extern volatile TimePoint lastUARTActivity;
-static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast16_t end)
+static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, uint_fast16_t end, TimePoint interruptTime, uint_fast16_t bytesAhead)
 {
 	TimePoint start = GetTimePoint();
 	// TODO: Log fracturing of packets when spearate comm_write are used instead of a block-write. Not optimal.
@@ -210,7 +211,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 		if (state->inData)
 		{ // Handle data in blocks
 			UARTTR_STR("+D");
-			state->lastComm = start;
+			state->lastComm = interruptTime;
 			TimePoint now = GetTimePoint();
 			// NOTE: inData implies state->header.length > 0, so we know we'll get PACKET_CHECKSUM_SIZE
 			uint16_t missingSize = state->header.length + PACKET_CHECKSUM_SIZE - state->dataPos;
@@ -249,7 +250,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 		else if (state->inHeader)
 		{ // Continue to read header
 			UARTTR_STR("P");
-			state->lastComm = start;
+			state->lastComm = interruptTime;
 			TimePoint now = GetTimePoint();
 			while (state->headerPos < PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE && pos < end)
 				state->headerRaw[state->headerPos++] = state->bufferPtr[pos++];
@@ -347,11 +348,14 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 			}
 			else
 			{ // Found first header byte after leading bytes
-				state->numLeading = 0;
 				state->inHeader = true;
 				state->headerPos = 0;
 				state->headerPtr = state->bufferPtr+pos;
-				state->lastPacketTime = start; // For timesync purposes
+				// Account for delta between first byte of header and interrupt time (which can be assumed to be sending at full speed, as IDLE line would cause interrupt, too)
+				uint64_t bytesFromHeaderToInterrupt = bytesAhead + end - pos - state->numLeading;
+				uint32_t ticksFromHeaderToInterrupt = (bytesFromHeaderToInterrupt * UART_BAUD_PER_BYTE * 1000000) / state->baudrate;
+				state->lastPacketTime = interruptTime - ticksFromHeaderToInterrupt*TICKS_PER_US; // For timesync purposes
+				state->numLeading = 0;
 				UARTTR_STR("#");
 			}
 		}
@@ -382,6 +386,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 
 void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 {
+	TimePoint interruptTime = GetTimePoint();
 	PortState *state = &portStates[port];
 	if (GetTimeSinceMS(state->resetTimer) < UART_RESET_TIMEOUT_MS)
 	{
@@ -397,20 +402,20 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	{ // One continuous range
 		len = tail-state->parsePos;
 
-		resp = uartd_process_data(port, state->parsePos, tail);
+		resp = uartd_process_data(port, state->parsePos, tail, interruptTime, 0);
 	}
 	else if (state->parsePos > tail)
 	{ // Two ranges, at start and end of ringbuffer
 		len = UART_RX_BUFFER_SIZE+tail-state->parsePos;
 
-		resp = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE);
+		resp = uartd_process_data(port, state->parsePos, UART_RX_BUFFER_SIZE, interruptTime, tail);
 
 		TimeSpan dT = GetTimeSinceUS(state->lastComm);
 		if (resp != uartd_reset && resp != uartd_reset_nak && tail > 0)
 		{
 			TimePoint now = GetTimePoint();
 			state->parsePos = 0;
-			resp = uartd_process_data(port, 0, tail);
+			resp = uartd_process_data(port, 0, tail, interruptTime, 0);
 		}
 	}
 	if (resp == uartd_reset)

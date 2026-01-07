@@ -76,7 +76,7 @@ void uart_configure_baudrate(int port, uint32_t baudrate)
 	}
 }
 
-void uart_driver_init()
+void uart_driver_init(uint32_t baudrate)
 {
 	// GPIO Clocks are already active
 
@@ -130,18 +130,16 @@ void uart_driver_init()
 	//LL_USART_SetTXFIFOThreshold(u.uart, LL_USART_FIFOTHRESHOLD_1_4);
 	//LL_USART_SetRXFIFOThreshold(u.uart, LL_USART_FIFOTHRESHOLD_1_4);
 	//LL_USART_DisableFIFO(u.uart);
-#if defined(STM32G0)
-	if (UART_BAUD_RATE_SAFE > 4000000)
+	if (baudrate > SYSCLKFRQ*1000000/16)
 	{
-		LL_USART_SetBaudRate(u.uart, PCLK, LL_USART_PRESCALER_DIV1, LL_USART_OVERSAMPLING_8, UART_BAUD_RATE_SAFE);
+		LL_USART_SetBaudRate(u.uart, PCLK, LL_USART_PRESCALER_DIV1, LL_USART_OVERSAMPLING_8, baudrate);
 		LL_USART_SetOverSampling(u.uart, LL_USART_OVERSAMPLING_8);
 	}
 	else
 	{
-		LL_USART_SetBaudRate(u.uart, PCLK, LL_USART_PRESCALER_DIV1, LL_USART_OVERSAMPLING_16, UART_BAUD_RATE_SAFE);
+		LL_USART_SetBaudRate(u.uart, PCLK, LL_USART_PRESCALER_DIV1, LL_USART_OVERSAMPLING_16, baudrate);
 		LL_USART_SetOverSampling(u.uart, LL_USART_OVERSAMPLING_16);		
 	}
-#endif
 	LL_USART_ConfigAsyncMode(u.uart);
 	// UART RX Interrupt (IDLE)
 	LL_USART_EnableIT_IDLE(u.uart);

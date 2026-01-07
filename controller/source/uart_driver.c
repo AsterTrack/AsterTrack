@@ -174,7 +174,7 @@ void uart_configure_baudrate(int port, uint32_t baudrate)
 	}
 }
 
-void uart_driver_init()
+void uart_driver_init(uint32_t baudrate)
 {
 	// GPIO Clocks are already active
 
@@ -199,7 +199,7 @@ void uart_driver_init()
 		//u.uart->CTLR1 = USART_WordLength_9b | USART_Parity_Even | USART_Mode_Tx | USART_Mode_Rx;
 		u.uart->CTLR2 = USART_StopBits_2;
 		u.uart->CTLR3 = USART_HardwareFlowControl_None;
-		uart_configure_baudrate(i, UART_BAUD_RATE_SAFE);
+		uart_configure_baudrate(i, baudrate);
 		// UART RX Interrupt (IDLE)
 		u.uart->CTLR1 |= USART_CTLR1_IDLEIE;
 		// UART RX Parity Error Interrupt (PEIE)

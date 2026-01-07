@@ -31,6 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define UART_BAUD_RATE_SAFE		8000000
 #define UART_BAUD_RATE_MAX		8000000
+#define UART_BAUD_PER_BYTE		(1+8+2)		// 1 Start, 8 Data, 2 Stop, No Parity
 
 /**
  * Bytes used ahead of and after packets on error-prone, stream-like interfaces (like UART)

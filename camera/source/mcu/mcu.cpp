@@ -359,18 +359,17 @@ bool mcu_flash_program(std::string filename)
 	fs.seekg(0, std::ios::end);
 	std::size_t size = fs.tellg();
 	fs.seekg(0);
-	int pages = size/2048; // 2KB Page size of STM32G0
-	pages = std::min(pages+2, 16);
+	int pages = (size+2047)/2048; // 2KB Page size of STM32G0
 
 	for (int i = 0; i < pages; i++)
 	{
 		ret = bootloaderErasePages(i, 1);
 		if (ret == RES_FAIL)
 		{
-			printf("Slave MCU IAP: Failed to erase page\n");
+			printf("MCU Flash: Failed to erase page %d\n", i);
 			return false;
 		}
-		printf("Slave MCU IAP: erased page\n");
+		printf("MCU Flash: MCU IAP: Erased page %d\n", i);
 	}
 
 	uint8_t loadAddress[4] = {0x08, 0x00, 0x00, 0x00};
@@ -382,23 +381,27 @@ bool mcu_flash_program(std::string filename)
 		bytes_read = fs.gcount();
 		if (bytes_read == 0) break;
 		curr_block++;
-		printf("Slave MCU IAP: Writing block: %d,block size: %d\n", curr_block, bytes_read);
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		printf("MCU Flash: Writing block %d of size %d\n", curr_block, bytes_read);
 
 		ret = flashPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
+		{
+			printf("MCU Flash: Failed to write block %d / %d, size %d!\n", curr_block, (size+sizeof(block)-1) / sizeof(block), bytes_read);
 			break;
+		}
 
 		ret = verifyPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
+		{
+			printf("MCU Flash: Failed to verify block %d / %d, size %d!\n", curr_block, (size+sizeof(block)-1) / sizeof(block), bytes_read);
 			break;
+		}
 
 		incrementAddress(loadAddress, bytes_read);
 		memset(block, 0xff, bytes_read);
 	}
 	if (ret != RES_FAIL)
-		printf("Successfully flashed MCU program!\n");
+		printf("MCU Flash: Successfully flashed MCU program!\n");
 	return ret != RES_FAIL;
 }
 
@@ -418,14 +421,14 @@ bool mcu_verify_program(std::string filename)
 		bytes_read = fs.gcount();
 		if (bytes_read == 0) break;
 		curr_block++;
-		printf("Verifying block: %d, block size: %d\n", curr_block, bytes_read);
+		printf("MCU Flash: Verifying block %d of size %d\n", curr_block, bytes_read);
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		ret = verifyPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
 		{
-			printf("Block differs: %d, block size: %d!\n", curr_block, bytes_read);
+			printf("MCU Flash: Block %d of size %d differs!\n", curr_block, bytes_read);
 			break;
 		}
 
@@ -433,7 +436,7 @@ bool mcu_verify_program(std::string filename)
 		memset(block, 0xff, bytes_read);
 	}
 	if (ret != RES_FAIL)
-		printf("Successfully verified MCU program!\n");
+		printf("MCU Flash: Successfully verified MCU program!\n");
 	return ret != RES_FAIL;
 }
 

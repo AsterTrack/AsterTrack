@@ -117,7 +117,7 @@ libusb_context_int *comm_init_context();
 void comm_exit_context(libusb_context_int *context);
 
 std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *context);
-void comm_disconnect(std::shared_ptr<USBCommState> &state);
+void comm_disconnect(std::shared_ptr<USBCommState> state);
 
 bool comm_startStream(std::shared_ptr<USBCommState> &state);
 bool comm_stopStream(std::shared_ptr<USBCommState> &state);

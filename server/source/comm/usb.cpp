@@ -291,9 +291,9 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 	}
 	libusb->controlCancelFree = false;
 	libusb->blockTransfers = false;
-	return libusb->controlCancelCounter == CTRL_NUM_TRANSFERS*2;
+	return libusb->controlCancelCounter == expectedCancelled;
 }
-static void comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransfers)
+static bool comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransfers)
 {
 	// Cancel transfers and wait for them to be freed
 	libusb->streamCancelFree = freeTransfers;
@@ -336,6 +336,7 @@ static void comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransf
 	}
 
 	libusb->streamCancelFree = false;
+	return libusb->intCancelCounter == expectedCancelled;
 }
 
 std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *libusb_context)
@@ -511,18 +512,17 @@ std::vector<std::shared_ptr<USBCommState>> comm_connect(libusb_context_int *libu
 	libusb_context->deviceAccess.unlock();
 	return addedDevices;
 }
-void comm_disconnect(std::shared_ptr<USBCommState> &state)
+void comm_disconnect(std::shared_ptr<USBCommState> state)
 {
 	if (state->driver_state == NULL) return;
 	libusb_state_int *libusb = state->driver_state;
 	libusb_context_int *libusb_context = libusb->context;
 	bool connected = state->deviceConnected;
 	state->deviceConnected = false;
-	state->userDevice = nullptr;
 	// Disconnect comms
-	comm_stopStream(state);
+	bool fullyCancelledStream = !state->commStreaming || comm_stopStream(state);
 	// Cancel and free control transfers
-	comm_cancelControlTransfers(libusb, true);
+	bool fullyCancelledControl = comm_cancelControlTransfers(libusb, true);
 	// Release interface
 	libusb_release_interface(libusb->devHandle, USBD_INTERFACE);
 
@@ -541,11 +541,16 @@ void comm_disconnect(std::shared_ptr<USBCommState> &state)
 	{
 		if (dev->first == libusb->devHandle)
 		{
-			delete state->driver_state;
 			libusb_context->connectedDevices.erase(dev);
 			break;
 		}
 	}
+	if (!fullyCancelledStream || !fullyCancelledControl)
+		LOG(LUSB, LWarn, "Could not fully cancel transfers, cannot properly clean up USB device!");
+	// Despite any failure to cancel transfers, loosing reference of state will clean up userDevice anyway
+	// So just need to risk not-yet-cancelled transfers potentially accessing deallocated memory
+	state->userDevice = nullptr; // Delete reference to device
+	delete state->driver_state; // Delete driver state
 	libusb_context->deviceAccess.unlock();
 }
 
@@ -620,16 +625,17 @@ bool comm_stopStream(std::shared_ptr<USBCommState> &state)
 	libusb_state_int *libusb = state->driver_state;
 
 	// Cancel and free stream transfers
-	comm_cancelStreamTransfers(libusb, true);
+	bool fullyCancelled = comm_cancelStreamTransfers(libusb, true);
 
 	int code = libusb_set_interface_alt_setting(libusb->devHandle, USBD_INTERFACE, 0);
 	if (code != 0)
 	{
 		LOG(LUSB, LWarn, "Failed to reset device interface!\n");
+		return false;
 	}
 
 	libusb->usbAltSetting = -1;
-	return true;
+	return fullyCancelled;
 }
 
 int comm_check_free_control_requests(std::shared_ptr<USBCommState> &state)
@@ -867,6 +873,7 @@ static void onControlSent(libusb_transfer *transfer)
 static void onControlResponse(libusb_transfer *transfer)
 {
 	USBCommState *state = (USBCommState*)transfer->user_data;
+	if (!state->deviceConnected) return;
 	libusb_state_int *libusb = state->driver_state;
 	struct libusb_control_setup *setup = (struct libusb_control_setup*)transfer->buffer;
 
@@ -899,6 +906,7 @@ static void onInterruptIN(libusb_transfer *transfer)
 {
 	auto receiveTime = sclock::now();
 	USBCommState *state = (USBCommState*)transfer->user_data;
+	if (!state->deviceConnected) return;
 	int ep = transfer->endpoint&0xF;
 	//LOG(LUSB, LTrace, "|%d:%d\n", ep, transfer->actual_length);
 

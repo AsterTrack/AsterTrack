@@ -36,7 +36,7 @@ struct TrackingCameraCallbacks
 {
 	void *userData1 = NULL;
 	std::shared_ptr<void> userData2 = NULL;
-	void (*onIdentify)(ClientCommState &client);
+	bool (*onIdentify)(ClientCommState &client);
 	void (*onDisconnect)(ClientCommState &client);
 	bool (*onReceivePacketHeader)(ClientCommState &client, PacketHeader &header, TimePoint_t receiveTime);
 	void (*onReceivePacketBlock)(ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int length, TimePoint_t receiveTime);

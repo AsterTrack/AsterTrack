@@ -384,6 +384,8 @@ void StartWirelessServer(ServerState &state)
 	state.server.callbacks.onIdentify = [](ClientCommState &client) { // Find or setup camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		LOG(LServer, LInfo, "Established server connection to camera with id %d!\n", client.otherIdent.id);
+		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+		if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
 		// Setup camera with server connection
 		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, client.otherIdent.id, nullptr, &client);
 		camera->client = &client; // Set both in EnsureCamera and here in case camera existed already
@@ -405,6 +407,7 @@ void StartWirelessServer(ServerState &state)
 			SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / 144);
 		}
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
+		return true;
 	};
 	state.server.callbacks.onDisconnect = [](ClientCommState &client) { // Remove camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);

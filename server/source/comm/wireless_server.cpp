@@ -450,7 +450,8 @@ phase_identification:
 						LOG(LServer, LDebug, "Identification accepted!");
 						comm.ready = true;
 						if (comm.callbacks.onIdentify)
-							comm.callbacks.onIdentify(comm);
+							if (!comm.callbacks.onIdentify(comm))
+								break;
 						goto phase_comm;
 					}
 				}

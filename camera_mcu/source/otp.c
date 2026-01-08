@@ -31,6 +31,7 @@ uint8_t OTP_Version; // Assume OTP not written, disable parsing
 uint8_t OTP_LenMainData, OTP_MaxSubParts, OTP_MaxHWString; // Lengths in 64Bit blocks
 uint8_t OTP_HwStringData[100*8]; // Ensure >= OTP_MaxHWString
 uint16_t OTP_HwStringLength;
+uint8_t OTP_NumSubParts;
 
 void otp_read()
 {
@@ -89,29 +90,38 @@ void otp_read()
 			OTP_HwStringLength--;
 	}
 	else OTP_HwStringLength = 0;
+
+	// These 64Bit-Blocks are optional sub-part IDs
+	OTP_NumSubParts = 0;
+	for (int s = 0; s < OTP_MaxSubParts; s++)
+	{
+		uint8_t otpIndex = OTP_LenMainData + s*2;
+		if (!(OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1))
+			OTP_NumSubParts = s+1; // Update count of explicitly specified sub-parts
+	}
 }
 
 uint8_t otp_get_subparts(uint32_t *target, uint16_t maxCount)
 {
-    // These 64Bit-Blocks are optional sub-part IDs
-    // Need to be continuous, their index is their identifier
-    if (maxCount > OTP_MaxSubParts)
-        maxCount = OTP_MaxSubParts;
-    uint8_t subParts = 0;
-    for (int s = 0; s < maxCount; s++)
-    {
-        uint8_t otpIndex = OTP_LenMainData + s*2;
-        if (OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1)
-        { // Denote unwritten sub-parts with invalid serial number 0
-            target[s*2 + 0] = 0;
-            target[s*2 + 1] = 0;
-        }
-        else
-        { // Write sub-part serial number (or 0 for explicitly unused sub-parts)
-            target[s*2 + 0] = OTP[otpIndex+0];
-            target[s*2 + 1] = OTP[otpIndex+1];
-            subParts = s+1; // Update count of explicitly specified sub-parts
-        }
-    }
-    return subParts;
+	// These 64Bit-Blocks are optional sub-part IDs
+	// Need to be continuous, their index is their identifier
+	if (maxCount > OTP_MaxSubParts) maxCount = OTP_MaxSubParts;
+	if (maxCount > OTP_NumSubParts) maxCount = OTP_NumSubParts;
+	uint8_t subParts = 0;
+	for (int s = 0; s < maxCount; s++)
+	{
+		uint8_t otpIndex = OTP_LenMainData + s*2;
+		if (OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1)
+		{ // Denote unwritten sub-parts with invalid serial number 0
+			target[s*2 + 0] = 0;
+			target[s*2 + 1] = 0;
+		}
+		else
+		{ // Write sub-part serial number (or 0 for explicitly unused sub-parts)
+			target[s*2 + 0] = OTP[otpIndex+0];
+			target[s*2 + 1] = OTP[otpIndex+1];
+			subParts = s+1; // Update count of explicitly specified sub-parts
+		}
+	}
+	return subParts;
 }

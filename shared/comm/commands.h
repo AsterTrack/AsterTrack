@@ -42,6 +42,7 @@ enum CameraMCUCommand
 	MCU_FETCH_INFO,	// Get Info (ID, serial, harware rev, etc.) stored on MCU
 	MCU_GET_HW_STR,	// Get Hardware Descriptor String stored in OTP
 	MCU_GET_FW_STR,	// Get Firmware Descriptor String stored in firmware
+	MCU_GET_PARTS,	// Get list of Subpart Serial IDs stored in OTP
 	MCU_UPDATE_ID,	// Tell MCU to update its ID with the one stored on the Pi
 
 	MCU_COMMANDS = 32,
@@ -53,12 +54,9 @@ enum CameraMCUCommand
 // Currently, clock-stretching is used, as the Pi-Specific clock-stretching-bug does not seem to manifest
 #define MCU_LEADING_BYTES		0
 
-// Maximum length of MCU_FETCH_INFO
-#define MCU_INFO_LENGTH			(2 + 7)
-#define MCU_INFO_MAX_SUBPARTS	8
-#define MCU_INFO_MAX_LENGTH		((MCU_INFO_LENGTH + MCU_INFO_MAX_SUBPARTS*2) * sizeof(uint32_t))
-
+// Length of MCU_FETCH_INFO (may increase as long as backwards-compatibility is kept)
+#define MCU_INFO_MAX_LENGTH		((2 + 7) * sizeof(uint32_t))
 // Non-Zero Separator in strings indicating separate texts
-#define MCU_MULTI_TEXT_SEP '\2' // Unicode Text Start
+#define MCU_MULTI_TEXT_SEP		'\2' // Unicode Text Start
 
 #endif // COMMANDS_H

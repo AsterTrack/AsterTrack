@@ -500,6 +500,8 @@ static bool mcu_send_ping()
 static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint16_t length)
 {
 	if (i2c_fd < 0) return false;
+	descriptor.clear();
+	if (length == 0) return true;
 
 	std::vector<uint8_t> INFO_DATA(MCU_LEADING_BYTES+2+length);
 	unsigned char FETCH_CMD[] = { stringID };
@@ -521,6 +523,36 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 		printf("Requested string %d of length %d but received string of length %d!\n", stringID, length, received);
 	uint16_t strlen = std::min(received, length);
 	descriptor = std::string((char*)packet+2, strlen);
+	return true;
+}
+
+static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
+{
+	if (i2c_fd < 0) return false;
+	subparts.clear();
+	if (count == 0) return true;
+
+	std::vector<uint8_t> INFO_DATA(MCU_LEADING_BYTES+2+count*sizeof(uint64_t));
+	unsigned char FETCH_CMD[] = { MCU_GET_PARTS };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)INFO_DATA.size(), INFO_DATA.data() },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (get subparts)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+
+	uint8_t *packet = INFO_DATA.data()+MCU_LEADING_BYTES;
+	uint8_t received = packet[1];
+	if (received != count)
+		printf("Requested %d subpart serial IDs but received %d!\n", count, received);
+	received = std::min(received, count);
+	subparts.resize(received);
+	memcpy(subparts.data(), packet+2, received*sizeof(uint64_t));
 	return true;
 }
 
@@ -562,11 +594,9 @@ bool mcu_fetch_info(MCU_StoredInfo &info)
 	memcpy(&info.mcuUniqueID, ptr, 3*sizeof(uint32_t));
 	ptr += 3*sizeof(uint32_t);
 
-	if (packet[2] <= 8)
-	{
-		info.subpartSerials.resize(packet[2]);
-		memcpy(info.subpartSerials.data(), ptr, packet[2]*sizeof(uint64_t));
-	}
+	uint8_t subpartCount = packet[2];
+	if (!mcu_fetch_subparts(info.subpartSerials, subpartCount))
+		return false;
 
 	uint16_t hwStrLen = (packet[4] << 8) | packet[5];
 	if (!mcu_fetch_descriptor(info.mcuHWDescriptor, MCU_GET_HW_STR, hwStrLen))

@@ -704,7 +704,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			// Write packet header
 			response[0] = Packet_Version;		// Fetch Info packet version
 			response[1] = OTP_Version; 			// OTP Format Version
-			response[2] = 0; 					// Sub-Part Count
+			response[2] = OTP_NumSubParts; 		// Sub-Part Count
 			response[3] = 0; 					// Reserved
 			
 			// Write string lengths for separate request
@@ -722,13 +722,8 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			packet32[7] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
 			packet32[8] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
 
-			response[2] = otp_get_subparts(packet32 + MCU_INFO_LENGTH, MCU_INFO_MAX_SUBPARTS);
-
-			#if MCU_INFO_LENGTH != 9
-			#error Make sure to keep MCU_FETCH_INFO backwards compatible in all ways!
-			#endif
-
-			return (MCU_INFO_LENGTH + response[2]*2) * sizeof(uint32_t);
+			static_assert(MCU_INFO_MAX_LENGTH == (9 * sizeof(uint32_t)));
+			return MCU_INFO_MAX_LENGTH;
 		}
 		case MCU_GET_HW_STR:
 		{
@@ -744,6 +739,12 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[1] = firmwareDescriptorLength & 0xFF;
 			memcpy(response+2, firmwareDescriptor, firmwareDescriptorLength);
 			return 2 + firmwareDescriptorLength;
+		}
+		case MCU_GET_PARTS:
+		{
+			response[0] = 0;
+			response[1] = otp_get_subparts((uint32_t*)(response+2), OTP_NumSubParts);
+			return 2 + response[1]*sizeof(uint64_t);
 		}
 		default:
 			// TODO: Error?

@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 extern uint8_t OTP_Version;
 extern uint8_t OTP_HwStringData[];
 extern uint16_t OTP_HwStringLength;
+extern uint8_t OTP_NumSubParts;
 
 void otp_read();
 uint8_t otp_get_subparts(uint32_t *target, uint16_t maxCount);

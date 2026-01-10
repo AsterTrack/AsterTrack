@@ -80,7 +80,7 @@ static char getConsoleChar();
 static TrackingCameraState state = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
-ErrorTag error = ERROR_NONE;
+ErrorTag errorCode = ERROR_NONE;
 
 static ctpl::thread_pool threadPool(6);
 static std::atomic<bool> isVisualising, isPreparingFrame;
@@ -167,15 +167,18 @@ static void LeaveStreamingState()
 	state.imageRequests = {};
 }
 
-bool handleError(bool NAK = true, std::string backtrace = "")
+bool handleError(ErrorTag error, bool serious = true, std::string backtrace = "")
 {
 	if (error < ERROR_MAX)
 		fprintf(stderr, "Encountered Error %d: %s!\n", (int)error, ErrorTag_String[(int)error]);
+	else
+		fprintf(stderr, "Encountered Invalid Error %d!\n", (int)error);
+	if (serious)
+		errorCode = error;
 	for (int c = 0; c < COMM_MEDIUM_MAX; c++)
 	{
 		CommState* comm = comms.medium[c];
 		if (!comm || !comm->ready) continue;
-		bool serious = error != ERROR_GCS_TIMEOUT;
 		if (comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size())))
 		{
 			comm_write(comm, (uint8_t*)&error, 1);
@@ -183,11 +186,14 @@ bool handleError(bool NAK = true, std::string backtrace = "")
 			comm_write(comm, (uint8_t*)backtrace.data(), backtrace.size());
 			comm_submit(comm);
 			comm_flush(*comm);
+			printf("    Sent error packet via comm medium %d!\n", comm->medium);
 		}
-		if (NAK)
+		else
+			printf("    Failed to send error packet via comm medium %d!\n", comm->medium);
+		if (serious)
 			comm_NAK(*comm);
 	}
-	return true;
+	return serious;
 }
 
 void crash_handler(int signal)
@@ -206,6 +212,7 @@ void crash_handler(int signal)
 		btstr.push_back('\0');
 	}
 	free(btcharr);
+	ErrorTag error;
 	switch(signal)
 	{
 		case SIGILL:
@@ -227,8 +234,8 @@ void crash_handler(int signal)
 			error = ERROR_EXCEPTION_UNKNOWN;
 			break;
 	}
-	if (handleError(true, btstr))
-		exit(error);
+	handleError(error, true, btstr);
+	exit(error);
 }
 
 int main(int argc, char **argv)
@@ -521,15 +528,13 @@ int main(int argc, char **argv)
 		if (gcsSensor == SENSOR_ERROR)
 		{
 			printf("Failed to open camera I2C!\n");
-			error = ERROR_GCS_NO_I2C;
-			if (handleError())
+			if (handleError(ERROR_GCS_NO_I2C))
 				break;
 		}
 		else if (gcsSensor == SENSOR_INVALID)
 		{
 			printf("Failed to identify camera sensor!\n");
-			error = ERROR_GCS_NO_SENSOR;
-			if (handleError())
+			if (handleError(ERROR_GCS_NO_SENSOR))
 				break;
 		}
 
@@ -537,8 +542,7 @@ int main(int argc, char **argv)
 		if (gcs == NULL)
 		{
 			printf("Failed to initialise camera!\n");
-			error = ERROR_GCS_CREATE;
-			if (handleError())
+			if (handleError(ERROR_GCS_CREATE))
 				break;
 		}
 #else // Camera emulation buffers
@@ -583,8 +587,7 @@ int main(int argc, char **argv)
 		{ // Shouldn't actually fail, just basic init
 			printf("-- Failed to initialize blob detection! --\n");
 			cleanup_camera();
-			error = ERROR_INIT_BD;
-			if (handleError())
+			if (handleError(ERROR_INIT_BD))
 				break;
 		}
 		if (state.curMode.mode == TRCAM_MODE_BGCALIB)
@@ -645,8 +648,7 @@ int main(int argc, char **argv)
 			cleanup_qpu_resources();
 			cleanup_blob_detect();
 			cleanup_camera();
-			error = ERROR_QPU_ENABLE;
-			if (handleError())
+			if (handleError(ERROR_QPU_ENABLE))
 				break;
 		}
 		printf("-- QPU Enabled --\n");
@@ -701,8 +703,7 @@ int main(int argc, char **argv)
 			cleanup_qpu_resources();
 			cleanup_blob_detect();
 			cleanup_camera();
-			error = ERROR_GCS_START;
-			if (handleError())
+			if (handleError(ERROR_GCS_START))
 				break;
 		}
 		printf("-- Camera Stream started --\n");
@@ -849,8 +850,9 @@ int main(int argc, char **argv)
 				auto waitForFrame = [&]() -> bool
 				{
 					// Wait for a frame to be received in the VideoCore
-					TimePoint_t waitStart = sclock::now(), errorSent;
-					bool sentTimeoutError = false;
+					TimePoint_t waitStart = sclock::now();
+					bool sentMinorTimeout = false;
+					int minorWait = qpu_it < 10? 100 : 10, seriousWait = 500;
 					while (gcs_waitForFrameBuffer(gcs, 1000) == 0 && !abortStreaming)
 					{
 						if (!state.noComms && !comm_anyReady(comms))
@@ -859,27 +861,21 @@ int main(int argc, char **argv)
 							state.curMode.streaming = false;
 							state.curMode.mode = TRCAM_STANDBY;
 							state.curMode.opt = TRCAM_OPT_NONE;
-							abortStreaming = true;
-							break;
+							return true;
 						}
 						long waitTimeUS = dtUS(waitStart, sclock::now());
 						long waitFrames = waitTimeUS*state.camera.fps/1000000;
-						if (waitFrames > (qpu_it < 10? 100 : 10) && (!sentTimeoutError || dtMS(errorSent, sclock::now()) > 1000))
+						if ((waitFrames > minorWait && !sentMinorTimeout) || waitFrames > seriousWait)
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
 								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
-							errorSent = sclock::now();
-							sentTimeoutError = true;
-							error = ERROR_GCS_TIMEOUT;
-							handleError(false);
-							if (waitFrames > 100)
-							{
-								abortStreaming = true;
-								break;
-							}
+							sentMinorTimeout = true;
+							// Notify host
+							if (handleError(ERROR_GCS_TIMEOUT, waitFrames > seriousWait))
+								return true;
 						}
 					}
-					return abortStreaming;
+					return false;
 				};
 				if (waitForFrame())
 					break;
@@ -911,9 +907,8 @@ int main(int argc, char **argv)
 				if (frameHeader == NULL || advanceFrames == 0)
 				{
 					printf("== GCS returned NULL frame with error flag %d! ==\n", gcs_readErrorFlag(gcs));
-					error = ERROR_GCS_REQUEST;
-					abortStreaming = true;
-					break;
+					if (handleError(ERROR_GCS_REQUEST))
+						break;
 				}
 
 				TimePoint_t time_cur = sclock::now();
@@ -937,8 +932,8 @@ int main(int argc, char **argv)
 					{
 						printf("== GCS failed to return frame buffer with error flag %d while skipping delayed! ==\n", gcs_readErrorFlag(gcs));
 						error = ERROR_GCS_RETURN;
-						abortStreaming = true;
-						break;
+						if (handleError())
+							break;
 					}
 					TimePoint_t waitStart = sclock::now();
 					if (waitForFrame())
@@ -948,8 +943,8 @@ int main(int argc, char **argv)
 					{
 						printf("== GCS returned NULL frame with error flag %d after skipping delayed! ==\n", gcs_readErrorFlag(gcs));
 						error = ERROR_GCS_REQUEST;
-						abortStreaming = true;
-						break;
+						if (handleError())
+							break;
 					}
 					// Update values
 					advanceFrames++;
@@ -1131,9 +1126,8 @@ int main(int argc, char **argv)
 				if (!locked)
 				{
 					printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
-					error = ERROR_MEM_ACCESS;
-					abortStreaming = true;
-					break;
+					if (handleError(ERROR_MEM_ACCESS))
+						break;
 				}
 
 				uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
@@ -1160,8 +1154,8 @@ int main(int argc, char **argv)
 				{
 					printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
 					error = ERROR_MEM_ACCESS;
-					abortStreaming = true;
-					break;
+					if (handleError())
+						break;
 				}
 
 				uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
@@ -1203,9 +1197,8 @@ int main(int argc, char **argv)
 				if (code != 0)
 				{
 					printf("== %.2fms: QPU: Failed to process frame! ==\n", dtMS(time_start, sclock::now()));
-					error = ERROR_QPU_STALL_MSK;
-					abortStreaming = true;
-					break;
+					if (handleError(ERROR_QPU_STALL_MSK))
+						break;
 				}
 
 				TimePoint_t t4 = sclock::now();
@@ -1252,6 +1245,7 @@ int main(int argc, char **argv)
 				recordIncident(incidents.proc, dtUS(t3, t4), procLimit);
 				recordIncident(incidents.handle, dtUS(t4, t5), handleLimit);
 			}
+			abortStreaming = true;
 			static_cast<void>(frameReady.try_lock());
 			frameReady.unlock();
 		});
@@ -1930,9 +1924,6 @@ int main(int argc, char **argv)
 			if (comm)
 				comm->realtimeControlled = false;
 
-		// Handle error now, cleanup is uncertain
-		bool abort = error != ERROR_NONE && handleError();
-
 		printf("-- Blob Detection Stopping --\n");
 
 		abortStreaming = true;
@@ -1967,15 +1958,14 @@ int main(int argc, char **argv)
 
 		nice(0); // Normal priority
 
-		if (abort)
+		if (errorCode != ERROR_NONE)
 			break;
-		error = ERROR_NONE;
 
 	} // while (running)
 
 	printf("------------------------\n");
 
-	return error != ERROR_NONE? error : EXIT_SUCCESS;
+	return errorCode != ERROR_NONE? errorCode : EXIT_SUCCESS;
 }
 
 static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream)

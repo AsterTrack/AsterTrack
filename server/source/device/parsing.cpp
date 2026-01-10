@@ -529,7 +529,8 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 	}
 
 	// Implicitly assume mode change
-	camera.recvModeSet(TRCAM_STANDBY);
+	if (error.serious)
+		camera.recvModeSet(TRCAM_STANDBY);
 
 	// Update error state
 	camera.state.contextualLock()->error = error;

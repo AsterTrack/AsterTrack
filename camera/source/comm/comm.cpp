@@ -85,7 +85,7 @@ void comm_disable(CommState &comm)
 
 bool comm_packet(CommState *commPtr, PacketHeader header)
 {
-	if (!commPtr || !commPtr->ready || commPtr->writing) return false;
+	if (!commPtr || !commPtr->ready) return false;
 	CommState &comm = *commPtr;
 	if (header.tag < PACKET_HOST_COMM)
 	{

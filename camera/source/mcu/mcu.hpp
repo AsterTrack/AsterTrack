@@ -29,8 +29,8 @@ extern std::string mcu_flash_file;
 
 extern std::mutex mcu_mutex;
 
-extern bool mcu_exists;
-extern bool mcu_active;
+extern volatile bool mcu_exists;
+extern volatile bool mcu_active;
 
 struct MCU_StoredInfo
 {

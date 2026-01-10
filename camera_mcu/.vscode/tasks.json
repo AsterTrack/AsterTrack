@@ -27,7 +27,8 @@
 			"label": "Flash using stlink",
 			"type": "shell",
 			"group": "test",
-			"command": "st-flash write build/TrackingCameraMCU.bin 0x08000000",
+			"command": "st-flash --reset write build/TrackingCameraMCU.bin 0x08000000",
+            "dependsOn": [ "Build (clangd)" ]
 		},
 		{
 			"label": "Flash using STM32_Programmer_CLI",
@@ -38,7 +39,8 @@
 			"windows": {
 				"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf", // For ST-Link using programmer
 				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/TrackingCameraMCU.elf" // For serial programmer, pick correct COM port
-			}
+			},
+            "dependsOn": [ "Build (clangd)" ]
 		},
 	],
     "inputs": [

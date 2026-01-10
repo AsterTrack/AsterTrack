@@ -368,7 +368,7 @@ int main(void)
 			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
 		}
-		else if (piIsBooted && uartState != UART_CamPi)
+		else if (piIsBooted && uartState == UART_CamMCU)
 		{ // Pi started corresponding, hand over UART control automatically
 			EnterUARTPortZone(0);
 			if (uartState == UART_CamMCU)

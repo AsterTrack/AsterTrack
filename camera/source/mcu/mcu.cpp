@@ -61,9 +61,9 @@ std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
 TimePoint_t lastPing;
 
-bool mcu_exists;
-bool mcu_active;
-bool mcu_intentional_bootloader;
+volatile bool mcu_exists;
+volatile bool mcu_active;
+volatile bool mcu_intentional_bootloader;
 
 
 static bool i2c_init();
@@ -85,16 +85,12 @@ bool mcu_initial_connect()
 	
 	std::unique_lock lock(mcu_mutex);
 	if (mcu_probe())
-	{ // MCU responded, start monitoring it
-		mcu_monitor();
+	{ // MCU responded
 		return true;
 	}
-	// Could not contact MCU, probe bootloader and check if recovery is required
 
-	if (mcu_probe_bootloader())
-	{ // If MCU is in bootloader mode for some reason, reset it and attempt to contact it again
-		mcu_reconnect();
-	}
+	// Perhaps MCU is in bootloader mode or an invalid state, reset it and attempt to contact it again
+	mcu_reconnect();
 
 	if (!mcu_active)
 	{ // MCU is still not responding, it is either not available in hardware, or bricked
@@ -116,11 +112,6 @@ bool mcu_initial_connect()
 		}
 	}
 
-	if (mcu_exists)
-	{ // Start monitoring MCU only if its available in hardware (e.g. we were able to contact it or its bootloader)
-		mcu_monitor();
-	}
-
 	return mcu_active;
 }
 
@@ -140,14 +131,17 @@ bool mcu_probe()
 	if (i2c_probe())
 	{
 		if (!mcu_exists)
+		{
 			printf("Verified existance of MCU!\n");
+			mcu_exists = true;
+			mcu_monitor();
+		}
 		if (!mcu_active)
 		{
 			printf("Connected with MCU!\n");
+			mcu_active = true;
 			mcu_sync_info();
 		}
-		mcu_active = true;
-		mcu_exists = true;
 	}
 	else mcu_active = false;
 	return mcu_active;
@@ -164,6 +158,7 @@ bool mcu_reconnect()
 		printf("MCU is still in the bootloader!\n");
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	mcu_reset();
+	i2c_init();
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	if (mcu_probe())
 		return true;
@@ -174,9 +169,11 @@ bool mcu_reconnect()
 void mcu_monitor()
 {
 	lastPing = sclock::now();
-	stop_thread = false;
 	if (!mcu_comm_thread)
+	{
+		stop_thread = false;
 		mcu_comm_thread = new std::thread(mcu_thread);
+	}
 }
 
 void mcu_cleanup()
@@ -185,6 +182,7 @@ void mcu_cleanup()
 	if (mcu_comm_thread && mcu_comm_thread->joinable())
 		mcu_comm_thread->join();
 	delete mcu_comm_thread;
+	mcu_comm_thread = nullptr;
 
 	if (gpio_chip)
 		gpio_cleanup();
@@ -195,7 +193,7 @@ void mcu_cleanup()
 
 static bool handle_i2c_error()
 {
-	if (errno == EBADF)// || errno == ETIMEDOUT)
+	if (errno == EBADF || errno == ETIMEDOUT)
 	{
 		mcu_active = false;
 		i2c_init();
@@ -249,7 +247,7 @@ static void mcu_thread()
 				printf("Failed to detect interrupts from MCU!\n");
 				continue;
 			}
-			if (events > 0)
+			else if (events > 0)
 			{ // Detected edge events, clear event buffer
 				events = gpiod_line_request_read_edge_events(line_request_in, edge_events, 16);
 				if (events < 0) printf("Failed to read interrupts from MCU!\n");
@@ -270,10 +268,11 @@ static void mcu_thread()
 		{
 			std::unique_lock lock(mcu_mutex);
 			if (!mcu_active) continue;
-			if (!mcu_send_ping()) mcu_active = false;
+			mcu_send_ping();
 			lastPing = sclock::now();
 		}
 	}
+	printf("Stopping MCU monitor!\n");
 }
 
 void mcu_reset()
@@ -281,6 +280,9 @@ void mcu_reset()
 	if (!gpio_chip) return;
 
 	printf("Resetting MCU...\n");
+
+	mcu_active = false;
+	mcu_intentional_bootloader = false;
 
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
@@ -295,8 +297,6 @@ void mcu_reset()
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-	mcu_intentional_bootloader = false;
 }
 
 bool mcu_probe_bootloader()

@@ -429,7 +429,7 @@ int main(int argc, char **argv)
 					else if (cin == 'e')
 					{
 						std::unique_lock lock(mcu_mutex);
-						mcu_reset();
+						mcu_reconnect();
 					}
 					else if (cin == 'b')
 					{
@@ -457,7 +457,7 @@ int main(int argc, char **argv)
 						std::unique_lock lock(mcu_mutex);
 						mcu_sync_info();
 					}
-					else if (cin == 'g')
+					else if (cin == 'd')
 					{
 						std::unique_lock lock(mcu_mutex);
 						MCU_StoredInfo info;
@@ -1299,7 +1299,15 @@ int main(int argc, char **argv)
 					}
 					else if (cin == 'e')
 					{
-						mcu_reset();
+						std::unique_lock lock(mcu_mutex);
+						mcu_reconnect();
+					}
+					else if (cin == 'd')
+					{
+						std::unique_lock lock(mcu_mutex);
+						MCU_StoredInfo info;
+						if (mcu_fetch_info(info))
+							receivedInfoFromMCU(std::move(info));
 					}
 				}
 			}

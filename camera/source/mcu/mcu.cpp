@@ -229,15 +229,32 @@ static void mcu_thread()
 				}
 			}
 
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			continue;
 		}
 
-		int events = gpiod_line_request_wait_edge_events(line_request_in, 10*1000*1000);
-		if (events < 0)
-		{
-			printf("Failed to detect interrupts from MCU!\n");
-			continue;
+		// Read interrupt line directly, just in case we missed it
+		int events = 0;
+		gpiod_line_value value_int[1];
+		if (gpiod_line_request_get_values(line_request_in, value_int))
+			printf("Failed to get interrupt GPIO pin state! %d: %s\n", errno, strerror(errno));
+		else if (value_int[0] == GPIOD_LINE_VALUE_INACTIVE)
+			events = 1; // Interrupt line is pulled low
+
+		if (events == 0)
+		{ // Wait for interrupt line to be pulled low
+			events = gpiod_line_request_wait_edge_events(line_request_in, 50*1000*1000);
+			if (events < 0)
+			{
+				printf("Failed to detect interrupts from MCU!\n");
+				continue;
+			}
+			if (events > 0)
+			{ // Detected edge events, clear event buffer
+				events = gpiod_line_request_read_edge_events(line_request_in, edge_events, 16);
+				if (events < 0) printf("Failed to read interrupts from MCU!\n");
+				//else printf("Detected %d interrupt events!\n", events);
+			}
 		}
 		if (!mcu_active)
 		{ // MCU disconnected while in the loop
@@ -245,11 +262,7 @@ static void mcu_thread()
 		}
 		
 		if (events > 0)
-		{ // Detected edge events, clear event buffer
-			events = gpiod_line_request_read_edge_events(line_request_in, edge_events, 16);
-			if (events < 0) printf("Failed to read interrupts from MCU!\n");
-			//else printf("Detected %d interrupt events!\n", events);
-
+		{ // Interrupt line signals events available
 			// TODO: Clue to read status packet
 		}
 

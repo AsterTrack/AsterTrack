@@ -44,6 +44,7 @@ enum CameraMCUCommand
 	MCU_GET_FW_STR,	// Get Firmware Descriptor String stored in firmware
 	MCU_GET_PARTS,	// Get list of Subpart Serial IDs stored in OTP
 	MCU_UPDATE_ID,	// Tell MCU to update its ID with the one stored on the Pi
+	MCU_GET_STATUS,	// Get Status
 
 	MCU_COMMANDS = 32,
 	MCU_SWITCH_BOOTLOADER
@@ -58,5 +59,7 @@ enum CameraMCUCommand
 #define MCU_INFO_MAX_LENGTH		((2 + 7) * sizeof(uint32_t))
 // Non-Zero Separator in strings indicating separate texts
 #define MCU_MULTI_TEXT_SEP		'\2' // Unicode Text Start
+
+#define MCU_STATUS_LENGTH		12
 
 #endif // COMMANDS_H

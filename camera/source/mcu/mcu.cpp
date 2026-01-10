@@ -263,7 +263,10 @@ static void mcu_thread()
 		
 		if (events > 0)
 		{ // Interrupt line signals events available
-			// TODO: Clue to read status packet
+			std::unique_lock lock(mcu_mutex);
+			if (!mcu_active) continue;
+			mcu_get_status();
+			lastPing = sclock::now();
 		}
 
 		if (events <= 0 && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
@@ -640,6 +643,69 @@ void mcu_sync_info()
 			mcu_update_id(cameraID);
 		}
 	}
+}
+
+bool mcu_get_status()
+{
+	if (i2c_fd < 0) return false;
+
+	uint8_t STATUS_DATA[MCU_LEADING_BYTES+MCU_STATUS_LENGTH];
+	unsigned char FETCH_CMD[] = { MCU_GET_STATUS };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(STATUS_DATA), STATUS_DATA },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+
+	uint8_t *packet = STATUS_DATA+MCU_LEADING_BYTES;
+	
+	uint16_t states = (packet[0] << 8) | packet[1];
+
+	static enum FilterSwitchCommand pastFilterState = FILTER_KEEP;
+	enum FilterSwitchCommand filterState = (enum FilterSwitchCommand)((states >> 14) & 0b11);
+	if (pastFilterState != filterState)
+	{
+		pastFilterState = filterState;
+		if (filterState == FILTER_SWITCH_INFRARED)
+			printf("Filter set to show infrared light!\n");
+		else if (filterState == FILTER_SWITCH_VISIBLE)
+			printf("Filter set to show visible light!\n");
+		else
+			printf("Filter switcher in unknown state!\n");
+	}
+
+	static TimePoint_t lastVoltageReadTime = sclock::now();
+	uint16_t powerMV = (packet[2] << 8) | packet[3];
+	if (powerMV < 10000 || powerMV > 22000 || dtMS(lastVoltageReadTime, sclock::now()) > 1000)
+	{
+		lastVoltageReadTime = sclock::now();
+		printf("Voltage is %.4fV\n", powerMV/1000.0f);
+	}
+
+	uint16_t timestampUS = (packet[4] << 8) | packet[5];
+
+	static uint8_t lastReceivedFrameID = 0;
+	uint8_t lastFrameID = packet[6];
+	uint16_t usSinceFrameID = (packet[7] << 8) | packet[8];
+	if (usSinceFrameID < 0xFFFF)
+	{
+		if (lastReceivedFrameID != lastFrameID && ((lastReceivedFrameID+1)%256) != lastFrameID)
+			printf("Received odd frame ID %d %.2fms ago - previous one %d!\n", lastFrameID, usSinceFrameID/1000.0f, lastReceivedFrameID); 
+		lastReceivedFrameID = lastFrameID;
+	}
+
+	uint8_t queueSize = packet[9];
+	uint8_t packetSize = (packet[10] << 8) | packet[11];
+	if (queueSize > 0)
+		printf("%d packets are queued, next of size %d!\n", queueSize, packetSize);
+
+	return true;
 }
 
 static bool i2c_init()

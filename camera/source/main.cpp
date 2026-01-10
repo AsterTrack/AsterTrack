@@ -482,6 +482,11 @@ int main(int argc, char **argv)
 						if (mcu_fetch_info(info))
 							receivedInfoFromMCU(std::move(info));
 					}
+					else if (cin == 'g')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_get_status();
+					}
 					else if (cin == 'u')
 					{
 						std::unique_lock lock(mcu_mutex);
@@ -1319,6 +1324,11 @@ int main(int argc, char **argv)
 						MCU_StoredInfo info;
 						if (mcu_fetch_info(info))
 							receivedInfoFromMCU(std::move(info));
+					}
+					else if (cin == 'g')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_get_status();
 					}
 				}
 			}

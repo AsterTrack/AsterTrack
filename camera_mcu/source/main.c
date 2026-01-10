@@ -267,7 +267,8 @@ int main(void)
 			static TimePoint lastFSStatus;
 			if (target != FILTER_KEEP)
 			{ // Wish to switch filter
-				UpdateFilterSwitcher(target);
+				if (UpdateFilterSwitcher(target))
+					GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 				if (showingFSStatus != target)
 					rgbled_transition(target == FILTER_SWITCH_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
 				showingFSStatus = target;
@@ -691,6 +692,34 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		case MCU_REG_ID:
 			response[0] = MCU_I2C_ID;
 			return 1;
+		case MCU_GET_STATUS:
+		{
+			// Reset interrupt flag
+			GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN);
+			// 16bits of various states
+			uint16_t states = ((filterSwitcherState & 0b11) << 14);
+			response[0] = states >> 8;
+			response[1] = states & 0xFF;
+			// Latest supply voltage reading from ADC 
+			uint16_t powerMV = 0;
+			response[2] = powerMV >> 8;
+			response[3] = powerMV & 0xFF;
+			// Timestamp for timesync
+			uint16_t timestampUS = 0; // TImestamp of this packet
+			response[4] = timestampUS >> 8;
+			response[5] = timestampUS & 0xFF;
+			// Last frame info for framesync (using timestamp as reference to more easily encode when frametime was too long ago)
+			response[6] = 0; // last frame ID
+			TimeSpan usSinceFrame = 0; // time since frame sync
+			response[7] = usSinceFrame >> 8;
+			response[8] = usSinceFrame & 0xFF;
+			// State of queued packets from controller intended for SBC
+			response[9] = 0; // Queue size
+			uint16_t packetSize = 0; // might not need 16bit, but to be safe
+			response[10] = packetSize >> 8;
+			response[11] = packetSize & 0xFF;
+			return MCU_STATUS_LENGTH;
+		}
 		case MCU_FETCH_INFO:
 		{
 			otp_read();

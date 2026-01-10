@@ -58,5 +58,6 @@ bool mcu_verify_program(std::string filename);
 void mcu_sync_info();
 bool mcu_fetch_info(MCU_StoredInfo &info);
 bool mcu_update_id(CameraID cameraID);
+bool mcu_get_status();
 
 #endif // MCU_H

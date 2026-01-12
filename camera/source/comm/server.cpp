@@ -32,7 +32,6 @@ struct ServerConnection
 	int sock;
 	std::string host;
 	std::string port;
-	std::mutex writeAccess;
 };
 
 void *server_init(std::string host, std::string port)
@@ -122,13 +121,6 @@ void server_stop(void *port)
 	socket.sock = -1;
 }
 
-int server_read(void *port, uint8_t *buf, uint32_t len)
-{
-	ServerConnection &socket = *((ServerConnection*)port);
-	return read(socket.sock, buf, len);
-//	return recv(socket.sock, buf, len);
-}
-
 int server_wait(void *port, uint32_t timeoutUS)
 {
 	ServerConnection &socket = *((ServerConnection*)port);
@@ -147,13 +139,18 @@ int server_wait(void *port, uint32_t timeoutUS)
 	return FD_ISSET(socket.sock, &readFD);
 }
 
+int server_read(void *port, uint8_t *buf, uint32_t len)
+{
+	ServerConnection &socket = *((ServerConnection*)port);
+	return read(socket.sock, buf, len);
+//	return recv(socket.sock, buf, len);
+}
+
 int server_write(void *port, const uint8_t *buf, uint32_t len)
 {
 	ServerConnection &socket = *((ServerConnection*)port);
-	socket.writeAccess.lock();
 	int wr = send(socket.sock, buf, len, MSG_NOSIGNAL);
 //	int wr = write(socket.sock, buf, len);
-	socket.writeAccess.unlock();
 	return wr;
 }
 

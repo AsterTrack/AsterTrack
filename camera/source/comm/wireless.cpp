@@ -31,6 +31,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 static const std::filesystem::path configPath("/mnt/mmcblk0p2/config");
 
+extern CommState serverComms;
+
 static bool hasWifiHardware()
 {
 	return std::system("iwconfig wlan0 2>&1 | grep -q 'No such device'") != 0;
@@ -227,8 +229,8 @@ void initWirelessMonitor(TrackingCameraState &state)
 			state.wireless.config = (WirelessConfig)(state.wireless.config | WIRELESS_CONFIG_SERVER);
 			state.wireless.server = WIRELESS_STATUS_ENABLED;
 			printf("Initiating server connection to %s:%s...\n", state.wireless.serverHost.c_str(), state.wireless.serverPort.c_str());
-			state.server.port = server_init(state.wireless.serverHost, state.wireless.serverPort);
-			comm_enable(state.server, &state, COMM_MEDIUM_WIFI);
+			serverComms.port = server_init(state.wireless.serverHost, state.wireless.serverPort);
+			comm_enable(serverComms, &state, COMM_MEDIUM_WIFI);
 
 			if (realtimeDataUseServer())
 			{
@@ -536,27 +538,27 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 
 			if (hasWifi && (config & WIRELESS_CONFIG_SERVER))
 			{
-				if (state->server.enabled && (changed & WIRELESS_CONFIG_SERVER))
+				if (serverComms.enabled && (changed & WIRELESS_CONFIG_SERVER))
 				{
 					printf("Restarting server connection...\n");
-					comm_disable(state->server);
-					server_deinit(state->server.port);
+					comm_disable(serverComms);
+					server_deinit(serverComms.port);
 				}
-				if (!state->server.enabled)
+				if (!serverComms.enabled)
 				{
 					printf("Initiating server connection...\n");
-					state->server.port = server_init(wireless.serverHost, wireless.serverPort);
-					comm_enable(state->server, state, COMM_MEDIUM_WIFI);
+					serverComms.port = server_init(wireless.serverHost, wireless.serverPort);
+					comm_enable(serverComms, state, COMM_MEDIUM_WIFI);
 				}
 				wireless.server = WIRELESS_STATUS_ENABLED;
 			}
 			else
 			{
-				if (state->server.enabled)
+				if (serverComms.enabled)
 				{
 					printf("Stopping server connection...\n");
-					comm_disable(state->server);
-					server_deinit(state->server.port);
+					comm_disable(serverComms);
+					server_deinit(serverComms.port);
 				}
 				wireless.config = (WirelessConfig)(wireless.config & ~WIRELESS_CONFIG_SERVER);
 				if (!(config & WIRELESS_CONFIG_SERVER))
@@ -567,7 +569,7 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 					wireless.server = WIRELESS_STATUS_ERROR;
 			}
 
-			if (hasWifi && state->server.enabled && (config & WIRELESS_CONFIG_RTDATA))
+			if (hasWifi && serverComms.enabled && (config & WIRELESS_CONFIG_RTDATA))
 				realTimeAff = COMM_MEDIUM_WIFI;
 			else
 			{

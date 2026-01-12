@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define COMM_H
 
 #include "../state.hpp"
-#include "comm/uart.h"
+#include "comm/protocol_stream.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -32,6 +32,42 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Optionally, comm_flush (wait for write)
 // OR:
 // comm_send
+
+struct CommPacket
+{
+	PacketHeader header;
+	std::vector<uint8_t> data;
+	std::vector<uint8_t> largePacketHeader;
+};
+
+struct CommState 
+{
+	bool enabled = false, started = false, ready = false, writing = false, error = false;
+	CommMedium medium;
+	ProtocolState protocol = {};
+	IdentPacket ownIdent = {};
+	IdentPacket expIdent = {};
+	IdentPacket otherIdent = {};
+
+	std::mutex writeAccess;
+	CRC32 crc;
+	int sentSize;
+	int totalSize;
+
+	bool realtimeControlled;
+	std::queue<CommPacket> packetQueue;
+
+	std::thread *thread;
+	void *port;
+	bool (*start)(void *port);
+	void (*stop)(void *port);
+	int (*wait)(void *port, uint32_t timeoutUS);
+	void (*configure)(void *port, uint32_t rate);
+	int (*read)(void *port, uint8_t *data, uint32_t length);
+	int (*write)(void *port, const uint8_t *data, uint32_t length);
+	void (*submit)(void *port);
+	void (*flush)(void *port);
+};
 
 struct CommList
 {
@@ -52,10 +88,6 @@ struct CommList
 
 extern CommList comms;
 extern CommMedium realTimeAff, largeDataAff;
-
-
-void comm_init();
-void comm_close(CommState &comm);
 
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium);
 void comm_disable(CommState &comm);
@@ -83,13 +115,8 @@ bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data);
 /* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data);
 
-void comm_NAK(CommState &comm);
-
-inline void comm_flush(CommState &comm)
-{
-	if (comm.started)
-		comm.flush(comm.port);
-}
+bool comm_interject(CommState *commPtr);
+void comm_force_close(CommState *commPtr);
 
 inline bool comm_anyReady(CommList &comms)
 {

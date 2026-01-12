@@ -83,18 +83,11 @@ static TrackingCameraState state = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
 ErrorTag errorCode = ERROR_NONE;
+CommState uartComms = {};
+CommState serverComms = {};
 
 static ctpl::thread_pool threadPool(6);
 static std::atomic<bool> isVisualising, isPreparingFrame;
-static struct
-{
-	bool sending;
-	uint8_t header[22];
-	std::vector<uint8_t> data;
-	int sendProgress;
-	uint8_t ID;
-	PacketTag tag;
-} largePacket;
 // Keeping track of frame buffers
 static std::mutex frameAccess;
 struct FrameBuffer
@@ -181,19 +174,25 @@ bool handleError(ErrorTag error, bool serious = true, std::string backtrace = ""
 	{
 		CommState* comm = comms.medium[c];
 		if (!comm || !comm->ready) continue;
+		if (serious && !comm_interject(comm))
+		{ // Have to assume we can't wait for other threads to finish sending, so interject, if we can't give up
+			printf("    Failed to interject comms %d in error handling!\n", comm->medium);
+			continue;
+		}
 		if (comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size())))
-		{
+		{ // Send notification of error over this comm medium
 			comm_write(comm, (uint8_t*)&error, 1);
 			comm_write(comm, (uint8_t*)&serious, 1);
 			comm_write(comm, (uint8_t*)backtrace.data(), backtrace.size());
 			comm_submit(comm);
-			comm_flush(*comm);
 			printf("    Sent error packet via comm medium %d!\n", comm->medium);
 		}
 		else
 			printf("    Failed to send error packet via comm medium %d!\n", comm->medium);
 		if (serious)
-			comm_NAK(*comm);
+		{ // If we're going to restart the program, notify comm partner
+			comm_force_close(comm);
+		}
 	}
 	return serious;
 }
@@ -353,52 +352,50 @@ int main(int argc, char **argv)
 
 	// ----Setup Communications ----
 
-	comm_init();
-
 	// UART communications
 	{ // Init whether used or not, might be enabled later on
-		state.uart.protocol.needsErrorScanning = true;
-		state.uart.start = uart_start;
-		state.uart.stop = uart_stop;
-		state.uart.wait = uart_wait;
-		state.uart.configure = uart_configure;
-		state.uart.read = uart_read;
-		state.uart.write = uart_write;
-		state.uart.submit = uart_submit;
-		state.uart.flush = uart_flush;
-		state.uart.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_UART, sbcFWVersion);
-		state.uart.expIdent.device = DEVICE_TRCONT;
-		state.uart.started = false;
+		uartComms.protocol.needsErrorScanning = true;
+		uartComms.start = uart_start;
+		uartComms.stop = uart_stop;
+		uartComms.wait = uart_wait;
+		uartComms.configure = uart_configure;
+		uartComms.read = uart_read;
+		uartComms.write = uart_write;
+		uartComms.submit = uart_submit;
+		uartComms.flush = uart_flush;
+		uartComms.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_UART, sbcFWVersion);
+		uartComms.expIdent.device = DEVICE_TRCONT;
+		uartComms.started = false;
 	}
 	atexit([]{ // Close at exit
-		comm_disable(state.uart);
-		uart_deinit(state.uart.port);
+		comm_disable(uartComms);
+		uart_deinit(uartComms.port);
 	});
 	if (state.enableUART)
 	{
-		state.uart.port = uart_init(state.serialName);
-		comm_enable(state.uart, &state, COMM_MEDIUM_UART);
+		uartComms.port = uart_init(state.serialName);
+		comm_enable(uartComms, &state, COMM_MEDIUM_UART);
 		printf("Initiating UART connection...\n");
 	}
 
 	// Server communications
 	{ // Init whether used or not, might be enabled later on
-		state.server.protocol.needsErrorScanning = false;
-		state.server.start = server_start;
-		state.server.stop = server_stop;
-		state.server.wait = server_wait;
-		state.server.configure = nullptr;
-		state.server.read = server_read;
-		state.server.write = server_write;
-		state.server.submit = server_submit;
-		state.server.flush = server_flush;
-		state.server.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_SERVER, sbcFWVersion);
-		state.server.expIdent.device = DEVICE_SERVER;
-		state.server.started = false;
+		serverComms.protocol.needsErrorScanning = false;
+		serverComms.start = server_start;
+		serverComms.stop = server_stop;
+		serverComms.wait = server_wait;
+		serverComms.configure = nullptr;
+		serverComms.read = server_read;
+		serverComms.write = server_write;
+		serverComms.submit = server_submit;
+		serverComms.flush = server_flush;
+		serverComms.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_SERVER, sbcFWVersion);
+		serverComms.expIdent.device = DEVICE_SERVER;
+		serverComms.started = false;
 	}
 	atexit([]{ // Close at exit
-		comm_disable(state.server);
-		server_deinit(state.server.port);
+		comm_disable(serverComms);
+		server_deinit(serverComms.port);
 	});
 	// Server will be started by initWirelessMonitor if wifi is enabled, either due to configuration or requested by console
 
@@ -977,7 +974,7 @@ int main(int argc, char **argv)
 				frameID += advanceFrames;
 				cumulFramePassedQPU += advanceFrames-1;
 
-				if (state.uart.started && state.camera.extTrig)
+				if (uartComms.started && state.camera.extTrig)
 				{ // Match current frame with frame SOFs from PACKET_SOF
 					// Incase frameID is non-continuous, frameID will hopefully be adopted properly anyway, but cumulFrameNoTrigger will be inaccurate
 
@@ -1391,11 +1388,11 @@ int main(int argc, char **argv)
 					break;
 			}
 
-			/* if (state.uart.ready)
+			/* if (uartComms.ready)
 			{ // Verify the large packet interleaving works by checking the TX queue size
 				// Mostly interested in UART for now
 
-				int txQueue = uart_getTXQueue(state.uart.port);
+				int txQueue = uart_getTXQueue(uartComms.port);
 				if (txQueue > 100)
 				{
 					printf("Failed to constrain large packet blocks to idle times, have %d bytes in TX buffer before sending SOF!\n", txQueue);
@@ -1553,11 +1550,11 @@ int main(int argc, char **argv)
 			TimePoint_t time_report_begin = sclock::now();
 			bytesSentAccum = 0; // Only care for the bytes sent in this section
 
-			if (state.uart.ready)
+			if (uartComms.ready)
 			{ // Verify the large packet interleaving works by checking the TX queue size
 				// Mostly interested in UART for now
 
-				int txQueue = uart_getTXQueue(state.uart.port);
+				int txQueue = uart_getTXQueue(uartComms.port);
 				/* if (txQueue > 0)
 				{
 					printf("Failed to constrain large packet blocks to idle times, have %d bytes in TX buffer before reporting!\n", txQueue);
@@ -2074,15 +2071,15 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 
 	// Calculate rough budget left to send bytes
 	int budget = 0;
-	if (comm == &state.uart)
+	if (comm == &uartComms)
 	{ // Account for bytes still in TX queue
-		budget = (int)(uart_getBytesPerUS(state.uart.port) * commTimeUS);
-		budget -= uart_getTXQueue(state.uart.port);
+		budget = (int)(uart_getBytesPerUS(uartComms.port) * commTimeUS);
+		budget -= uart_getTXQueue(uartComms.port);
 	}
-	else if (comm == &state.server)
+	else if (comm == &serverComms)
 	{ // Not sure if this makes much sense for wireless
 		budget = 15.0f/8 * commTimeUS; // Assume 15Mbit/s, 15-30 is realistic per device, but spectrum is shared
-		budget -= server_getTXQueue(state.server.port);
+		budget -= server_getTXQueue(serverComms.port);
 	}
 
 	int sentTotal = 0;
@@ -2093,7 +2090,7 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 		{ // Interleave in blocks
 			// Calculate how many bytes to send efficiently
 			int largeBudget = std::min(budget, PACKET_MAX_LENGTH);
-			if (comm == &state.uart)
+			if (comm == &uartComms)
 			{ // If there's a lot of data, prioritise optimising USB throughput by using multiples of OPT_PACKET_SIZE
 				int numUSBPackets = std::max(1, (int)std::floor(largeBudget / OPT_PACKET_SIZE));
 				largeBudget = std::min(largeBudget, numUSBPackets * OPT_PACKET_SIZE);

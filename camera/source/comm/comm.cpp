@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/protocol_stream.hpp"
 #include "timesync.hpp"
 #include "parsing.hpp"
+#include "comm/uart.h"
 
 #include "util/util.hpp"
 
@@ -29,9 +30,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cstdio>
 #include <unistd.h>
 #include <sys/prctl.h>
-
-// Predefined messages
-static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
 
 // Identification and connection
 // TODO: Parametrise values and pick optimal for both UART and Wifi
@@ -43,16 +41,20 @@ static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_
 #define COMM_IDENT_BACKOFF_MS		1000	// Additional backoff interval between failed identifications attempts to not spam log
 #define COMM_INTERVAL_US			500
 
+/*
+ * Reading and parsing is done in CommThread
+ * CommThread handles initial connection and sets comm.ready to open comm for non-protocol communication
+ * - CommThread generally handles all writing for other threads via packetQueue
+ * When comm.ready, writing may be claimed by main thread instead iff realTimeAff == comm.medium
+ * - Then, main thread may use comm_packet/write/submit and comm_send_immediate APIs that assume full control to send realtime data
+ * - It will also interleave other non-protocol packets from packetQueue (from CommThread or other threads)
+ * - Protocol packets may still be sent from CommThread, using writeAccess mutex to schedule, but the need for that is exceedingly rare (usually only to stop comms anyway)
+ * - In case a write error occurs while main thread has write control, it may only set the comm.error flag for CommThread to restart comms
+ * Any thread intending to write without assuming full control has to use comm_send / comm_queue_send method to append to packetQueue
+ */
+
 CommList comms;
 CommMedium realTimeAff = COMM_MEDIUM_UART, largeDataAff = COMM_MEDIUM_WIFI;
-
-void comm_init()
-{
-	// Init predefined messages
-	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
-	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
-	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
-}
 
 void comm_enable(CommState &comm, TrackingCameraState *state, CommMedium medium)
 {
@@ -86,7 +88,7 @@ void comm_disable(CommState &comm)
 
 bool comm_packet(CommState *commPtr, PacketHeader header)
 {
-	if (!commPtr || !commPtr->ready) return false;
+	if (!commPtr || !commPtr->ready || commPtr->error) return false;
 	CommState &comm = *commPtr;
 	if (header.tag < PACKET_HOST_COMM)
 	{
@@ -94,13 +96,18 @@ bool comm_packet(CommState *commPtr, PacketHeader header)
 		return false;
 	}
 	comm.writeAccess.lock();
+	if (!commPtr->ready || commPtr->error)
+	{
+		comm.writeAccess.unlock();
+		return false;
+	}
 	// Write packet start
 	UARTPacketRef packet;
 	writeUARTPacketHeader(&packet, header);
 	if (comm.write(comm.port, (uint8_t*)&packet, sizeof(packet)) < 0)
 	{
+		comm.error = true;
 		comm.writeAccess.unlock();
-		comm_close(comm);
 		return false;
 	}
 	// Store ongoing checksum calculation data in handle - may be share among multiple CommStates
@@ -113,14 +120,14 @@ bool comm_packet(CommState *commPtr, PacketHeader header)
 
 void comm_write(CommState *commPtr, const uint8_t *data, uint32_t length)
 {
-	if (!commPtr || !commPtr->ready || !commPtr->writing) return;
+	if (!commPtr || !commPtr->ready || !commPtr->writing || commPtr->error) return;
 	CommState &comm = *commPtr;
 	// Write packet data
 	if (comm.write(comm.port, data, length) < 0)
 	{
 		comm.writing = false;
+		comm.error = true;
 		comm.writeAccess.unlock();
-		comm_close(comm);
 		return;
 	}
 	// Update checksum of block
@@ -131,7 +138,7 @@ void comm_write(CommState *commPtr, const uint8_t *data, uint32_t length)
 
 void comm_submit(CommState *commPtr)
 {
-	if (!commPtr || !commPtr->ready || !commPtr->writing) return;
+	if (!commPtr || !commPtr->ready || !commPtr->writing || commPtr->error) return;
 	CommState &comm = *commPtr;
 	if (comm.sentSize != comm.totalSize)
 		printf("Comm submit after %d of %d bytes got sent!\n", comm.sentSize, comm.totalSize);
@@ -142,11 +149,16 @@ void comm_submit(CommState *commPtr)
 	if (comm.totalSize > 0)
 	{ // Send packet checksum
 		comm.crc.getHash(buffer);
-		comm.write(comm.port, buffer, sizeof(buffer));
+		if (comm.write(comm.port, buffer, sizeof(buffer)) < 0)
+			comm.error = true;
 	}
-	else // Skip packet checksum
-		comm.write(comm.port, buffer+PACKET_CHECKSUM_SIZE, sizeof(buffer)-PACKET_CHECKSUM_SIZE);
-	comm.submit(comm.port);
+	else
+	{ // Skip packet checksum
+		if (comm.write(comm.port, buffer+PACKET_CHECKSUM_SIZE, sizeof(buffer)-PACKET_CHECKSUM_SIZE) < 0)
+			comm.error = true;
+	}
+	if (!comm.error)
+		comm.submit(comm.port);
 	comm.writing = false;
 	comm.writeAccess.unlock();
 }
@@ -190,21 +202,21 @@ int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<u
 
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (!commPtr) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
 	commPtr->packetQueue.emplace(header, std::move(data));
 	return true;
 }
 
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader)
 {
-	if (!commPtr) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
 	commPtr->packetQueue.emplace(header, std::move(data), std::move(largePacketHeader));
 	return true;
 }
 
 bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
 {
-	if (!commPtr) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
 	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
 	{ // Need to enqueue for different controlling thread to send
 		std::vector<uint8_t> packet(header.length);
@@ -217,7 +229,7 @@ bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
 
 bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (!commPtr) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
 	if (data.size() != header.length) return false;
 	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
 	{ // Need to enqueue for different controlling thread to send
@@ -240,7 +252,10 @@ bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data
 inline void comm_reset(CommState &comm)
 {
 	comm.ready = false;
-	comm.writing = false;
+	// Read and discard what came immediately after abort
+	comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
+	std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
+	comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
 	proto_clear(comm.protocol);
 }
 
@@ -248,39 +263,20 @@ inline void comm_stop(CommState &comm)
 {
 	if (comm.started)
 		comm.stop(comm.port);
-	comm.started = comm.ready = false;
-}
-
-void comm_close(CommState &comm)
-{
-	comm_stop(comm);
-	comm_reset(comm);
-}
-
-inline void comm_abort(CommState &comm)
-{
-	comm_NAK(comm);
-	comm_reset(comm);
-	comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
-	std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
-	comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
-	// Read and discard what came immediately after abort
-	comm_reset(comm);
+	comm.started = comm.ready = comm.error = false;
+	proto_clear(comm.protocol);
 }
 
 inline bool comm_write_internal(CommState &comm, const uint8_t *data, uint16_t length)
 { // All internal (protocol) writes are simple messages
 	comm.writeAccess.lock();
 	int ret = comm.write(comm.port, data, length);
-	if (ret < 0)
-	{
-		comm_close(comm);
-		comm.writeAccess.unlock();
-		return false;
-	}
-	comm.submit(comm.port);
+	if (ret >= 0)
+		comm.submit(comm.port);
+	else
+		comm.error = true;
 	comm.writeAccess.unlock();
-	return true;
+	return ret >= 0;
 }
 
 inline int comm_read_internal(CommState &comm, uint32_t timeoutUS)
@@ -291,10 +287,7 @@ inline int comm_read_internal(CommState &comm, uint32_t timeoutUS)
 		if (num < 0)
 		{ // TODO: what kind of errors can wait (select) return?
 			if (errno != EAGAIN)
-			{
-				comm_close(comm);
 				return -1;
-			}
 		}
 		return 0;
 	}
@@ -317,37 +310,40 @@ inline int comm_read_internal(CommState &comm, uint32_t timeoutUS)
 			printf("Received error num %d, resetting comm!\n", errno);
 		// React to error
 		if (errno != EAGAIN && errno != EWOULDBLOCK)
-		{
-			comm_close(comm);
 			return -1;
-		}
 		return 0;
 	}
 	comm.protocol.tail += num;
 	return num;
 }
 
-void comm_NAK(CommState &comm)
+bool comm_interject(CommState *commPtr)
 {
-	if (comm_write_internal(comm, msg_nak, sizeof(msg_nak)))
-		comm_flush(comm);
+	if (!commPtr || !commPtr->ready || commPtr->error) return false;
+	CommState &comm = *commPtr;
+	if (!comm.writing) return true;
+	comm.writing = false;
+	// Interrupting, if we send more than required, that's fine, just can't rely on existing writer finishing their write
+	uint8_t buffer[UART_TRAILING_SEND];
+	for (int i = 0; i < UART_TRAILING_SEND; i++)
+		buffer[i] = UART_TRAILING_BYTE;
+	if (comm.write(comm.port, comm.protocol.rcvBuf.data(), std::min((int)comm.protocol.rcvBuf.size(), comm.totalSize-comm.sentSize+PACKET_CHECKSUM_SIZE)) < 0)
+		comm.error = true;
+	else if (comm.write(comm.port, buffer, UART_TRAILING_SEND) < 0)
+		comm.error = true;
+	comm.writeAccess.unlock();
+	return true;
 }
 
-inline void comm_ACK(CommState &comm)
+void comm_force_close(CommState *commPtr)
 {
-	if (comm_write_internal(comm, msg_ack, sizeof(msg_ack)))
-		comm_flush(comm);
-}
-
-static void comm_identify(CommState &comm)
-{
-	if (!comm.started) return;
-	uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
-	UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
-	storeIdentPacket(comm.ownIdent, packet->data);
-	finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
-	if (comm_write_internal(comm, (uint8_t*)packet, sizeof(identBuffer)))
-		comm_flush(comm);
+	if (!commPtr || !commPtr->ready || commPtr->error) return;
+	CommState &comm = *commPtr;
+	uint8_t msg_nak[UART_PACKET_OVERHEAD_SEND];
+	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
+	comm.write(comm.port, msg_nak, sizeof(msg_nak));
+	comm.flush(comm.port);
+	comm.error = true;
 }
 
 void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
@@ -355,6 +351,12 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	CommState &comm = *comm_ptr;
 	ProtocolState &proto = comm.protocol;
 	TrackingCameraState &state = *state_ptr;
+
+	// Init predefined messages
+	uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
+	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
+	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
+	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
 
 	if (comm.medium == COMM_MEDIUM_UART)
 		prctl(PR_SET_NAME, "Comm_UART");
@@ -377,40 +379,50 @@ phase_start:
 		if (!comm.enabled)
 			break;
 
+		if (comm.error)
+		{
+			printf("Handling error from external thread!\n");
+			comm_stop(comm);
+		}
+
 		while (!comm.started && comm.enabled)
 		{
 			comm.started = comm.start(comm.port);
-			comm_reset(comm);
 			std::this_thread::sleep_for(std::chrono::milliseconds(comm.started? 10 : 1000));
 		}
+		comm.ready = false;
+		proto_clear(comm.protocol);
 
 		if (!comm.enabled)
 			break;
 
-		if (comm.ready)
-			goto phase_comm;
 
 		/* Identification Step */
 
 phase_identification:
 
-		if (!comm.enabled || !comm.started)
+		if (!comm.enabled || !comm.started || comm.error)
 			continue;
 
 		if (ident_backoff++ > 5)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(COMM_IDENT_BACKOFF_MS));
 
-			if (!comm.enabled || !comm.started)
+			if (!comm.enabled || !comm.started || comm.error)
 				continue;
 		}
 
-		// Send own ID
-		printf("Sending identification!\n");
-		comm_identify(comm);
+		{ // Send own ID
+			printf("Sending identification!\n");
+			uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
+			UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
+			storeIdentPacket(comm.ownIdent, packet->data);
+			finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
+			comm_write_internal(comm, (uint8_t*)packet, sizeof(identBuffer));
+		}
 		time_ident = sclock::now();
 
-		while (comm.enabled && comm.started)
+		while (comm.enabled && comm.started && !comm.error)
 		{ // Identification loop to make sure communication works
 
 			fflush(stdout);
@@ -418,14 +430,14 @@ phase_identification:
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
-				printf("UART error during identification!\n");
-				comm_NAK(comm);
-				comm_close(comm);
+				printf("Read error during identification!\n");
+				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+				comm_stop(comm);
 				goto phase_start;
 			}
 			bool prevInCmd = proto.isCmd;
 			bool newToParse = num > 0;
-			while (newToParse && proto_rcvCmd(proto))
+			while (newToParse && proto_rcvCmd(proto) && !comm.error)
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK)
 				{ // NAK received
@@ -433,7 +445,6 @@ phase_identification:
 					{
 						printf("Identification rejected (NAK) %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
 						comm_reset(comm);
-						std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 						goto phase_identification;
 					}
 				}
@@ -456,7 +467,7 @@ phase_identification:
 								if (!comm.started)
 									break;
 								comm.ready = true;
-								comm_ACK(comm);
+								comm_write_internal(comm, msg_ack, sizeof(msg_ack));
 								comm.otherIdent = rcvIdent;
 								ident_backoff = 0;
 								goto phase_comm;
@@ -467,14 +478,16 @@ phase_identification:
 						else
 							printf("Invalid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
 						// Wrong identity
-						comm_abort(comm);
+						comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+						comm_reset(comm);
 						goto phase_identification;
 					}
 				}
 				else
 				{
 					printf("Received unexpected or unknown tag %d!\n", proto.header.tag);
-					comm_abort(comm);
+					comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+					comm_reset(comm);
 					goto phase_identification;
 				}
 
@@ -486,9 +499,7 @@ phase_identification:
 			if (dtMS(time_ident, sclock::now()) > COMM_IDENT_TIMEOUT_MS)
 			{ // Identification timeout
 				printf("Identification timeout exceeded, trying again!\n");
-				comm_NAK(comm);
-				std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
-				comm.read(comm.port, comm.protocol.rcvBuf.data(), comm.protocol.rcvBuf.size());
+				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_reset(comm);
 				goto phase_identification;
 			}
@@ -499,7 +510,7 @@ phase_identification:
 
 phase_comm:
 
-		if (!comm.enabled || !comm.started)
+		if (!comm.enabled || !comm.started || comm.error)
 			continue;
 
 		ResetTimeSync(state.sync.time);
@@ -507,13 +518,14 @@ phase_comm:
 		time_start = sclock::now();
 
 		time_read = sclock::now();
-		while (comm.enabled && comm.started)
+		while (comm.enabled && comm.started && !comm.error)
 		{
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
-				comm_NAK(comm);
-				comm_close(comm);
+				printf("Read error during communications!\n");
+				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+				comm_stop(comm);
 				goto phase_start;
 			}
 			else if (num > 0) time_read = sclock::now();
@@ -525,7 +537,6 @@ phase_comm:
 				{ // NAK received
 					printf("NAK Received, resetting comm!\n");
 					comm_reset(comm);
-					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 					goto phase_identification;
 				}
 				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
@@ -539,8 +550,9 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
-					printf("Unexpected Identification received, dropping existing comms!\n");	
-					comm_abort(comm);
+					printf("Unexpected Identification received, dropping existing comms!\n");
+					comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+					comm_reset(comm);
 					goto phase_identification;
 				}
 				else if (proto.header.tag == PACKET_SYNC)
@@ -574,7 +586,7 @@ phase_comm:
 					if (comm.configure)
 						comm.configure(comm, baudrate);
 					else
-						comm_NAK(comm);
+						comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 					time_rate_timeout = sclock::now() + std::chrono::milliseconds(timeout);
 					in_rate_config = true;
 					required_verified = verfication_blocks
@@ -586,12 +598,12 @@ phase_comm:
 					bool correctChecksum = true;
 					if (correctChecksum)
 					{
-						comm_ACK(comm);
+						comm_write_internal(comm, msg_ack, sizeof(msg_ack));
 						successful_verified++;
 					}
 					else
 					{
-						comm_NAK(comm);
+						comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 						unsuccessful_verified++;
 					}
 
@@ -629,7 +641,8 @@ phase_comm:
 			if (dtMS(time_read, sclock::now()) > COMM_PING_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
 				printf("Ping dropped out, resetting comm!\n");
-				comm_abort(comm);
+				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+				comm_reset(comm);
 				break;
 			}
 
@@ -644,17 +657,26 @@ phase_comm:
 					if (ret != 2)
 					{ // Not fully sent, should not occur
 						printf("Failed to send large packet from comm thread!\n");
+						comm.packetQueue.pop();
+						break;
 					}
 				}
 				else if (!comm_send_immediate(comm_ptr, packet.header, packet.data.data()))
 				{ // Failed to send queued packet
 					printf("Failed to send queued packet from comm thread!\n");
+					comm.packetQueue.pop();
+					break;
 				}
 				comm.packetQueue.pop();
 			}
 
 			fflush(stdout);
 		}
+
+		if (comm.error)
+			printf("Comms got interrupted because of a write error in another thread!\n");
+		else
+			printf("Comms got interrupted for unknown reason!\n");
 	}
 
 	comm_stop(comm);

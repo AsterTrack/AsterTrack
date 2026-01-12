@@ -31,7 +31,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 #include "camera/gcs.hpp"
 #include "comm/packet.hpp"
-#include "comm/protocol_stream.hpp"
 #include "comm/timesync.hpp"
 #include "comm/firmware.hpp"
 #include "comm/wireless.hpp"
@@ -42,42 +41,6 @@ struct TrackingCameraMode
 	bool streaming = false;
 	TrCamMode mode = TRCAM_STANDBY;
 	uint8_t opt = TRCAM_OPT_NONE;
-};
-
-struct CommPacket
-{
-	PacketHeader header;
-	std::vector<uint8_t> data;
-	std::vector<uint8_t> largePacketHeader;
-};
-
-struct CommState 
-{
-	bool enabled = false, started = false, ready = false, writing = false;
-	CommMedium medium;
-	ProtocolState protocol = {};
-	IdentPacket ownIdent = {};
-	IdentPacket expIdent = {};
-	IdentPacket otherIdent = {};
-
-	std::mutex writeAccess;
-	CRC32 crc;
-	int sentSize;
-	int totalSize;
-
-	bool realtimeControlled;
-	std::queue<CommPacket> packetQueue;
-
-	std::thread *thread;
-	void *port;
-	bool (*start)(void *port);
-	void (*stop)(void *port);
-	int (*wait)(void *port, uint32_t timeoutUS);
-	void (*configure)(void *port, uint32_t rate);
-	int (*read)(void *port, uint8_t *data, uint32_t length);
-	int (*write)(void *port, const uint8_t *data, uint32_t length);
-	void (*submit)(void *port);
-	void (*flush)(void *port);
 };
 
 struct VisualisationState
@@ -144,9 +107,7 @@ struct TrackingCameraState
 	// UART & Server comm
 	bool noComms;
 	bool enableUART;
-	CommState uart = {};
 	std::string serialName = "/dev/ttyAMA0";
-	CommState server = {};
 	std::string server_host = "";
 	std::string server_port = "48532";
 	WirelessState wireless = {};

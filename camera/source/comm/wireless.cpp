@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp"
 #include "util/system.hpp"
 
+#include <sys/prctl.h>
 #include <thread>
 #include <fstream>
 #include <filesystem>
@@ -456,6 +457,8 @@ bool parseWirelessConfigPacket(TrackingCameraState &state, const uint8_t *packet
 
 static void WirelessMonitorThread(TrackingCameraState *state)
 {
+	prctl(PR_SET_NAME, "Wireless_Monitor");
+
 	WirelessState &wireless = state->wireless;
 	bool sendStatus = true;
 	bool needIP = false;

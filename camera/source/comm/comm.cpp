@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cstdint>
 #include <cstdio>
 #include <unistd.h>
+#include <sys/prctl.h>
 
 // Predefined messages
 static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
@@ -355,11 +356,17 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	ProtocolState &proto = comm.protocol;
 	TrackingCameraState &state = *state_ptr;
 
+	if (comm.medium == COMM_MEDIUM_UART)
+		prctl(PR_SET_NAME, "Comm_UART");
+	else if (comm.medium == COMM_MEDIUM_WIFI)
+		prctl(PR_SET_NAME, "Comm_Wireless");
+	else
+		prctl(PR_SET_NAME, "Comm_Unknown");
+	nice(-20); // Highest priority
+
 	TimePoint_t time_begin, time_read, time_ident, time_start;
 	time_begin = sclock::now();
 	int ident_backoff = 0;
-
-	nice(-20); // Highest priority
 	while (comm.enabled)
 	{
 

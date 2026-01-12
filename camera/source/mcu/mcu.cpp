@@ -35,6 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <gpiod.h>
 
+#include <sys/prctl.h>
 #include <sys/ioctl.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
@@ -204,6 +205,8 @@ static bool handle_i2c_error()
 
 static void mcu_thread()
 {
+	prctl(PR_SET_NAME, "MCU_Monitor");
+
 	while (!stop_thread.load())
 	{
 		if (!mcu_active)

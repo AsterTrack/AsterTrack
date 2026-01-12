@@ -32,6 +32,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Console and UART
 #include <termios.h>
 #include "util/fbUtil.h"
+// Native threads
+#include <sys/prctl.h>
 
 #include "qpu/qpu_program.h"
 #include "qpu/qpu_info.h"
@@ -198,16 +200,22 @@ bool handleError(ErrorTag error, bool serious = true, std::string backtrace = ""
 
 void crash_handler(int signal)
 {
-	fprintf(stderr, "Error Signal %d:\n", signal);
+	int thread_id = syscall(SYS_gettid);
+	char thread_name[16] = {0 };
+	prctl(PR_GET_NAME, thread_name);
+	fprintf(stderr, "Error Signal %d in thread '%s':\n", signal, thread_name);
+	// Fetch backtrace
 	void *array[32];
 	size_t size = backtrace(array, 32);
 	backtrace_symbols_fd(array, size, STDERR_FILENO);
 	char **btcharr = backtrace_symbols(array, size);
 	// This is not displaying line number, only functions.
 	// TODO: Use libbacktrace for perfect backtrace
-	std::string btstr;
+	std::string btstr = thread_name;
+	btstr.append(":\0");
 	for (int i = 0; i < size; i++)
 	{
+		fprintf(stderr, "%s\n", btcharr[i]);
 		btstr.append(btcharr[i]);
 		btstr.push_back('\0');
 	}
@@ -230,6 +238,9 @@ void crash_handler(int signal)
 		case SIGPIPE:
 			error = ERROR_EXCEPTION_PIPE;
 			break;
+		case SIGABRT:
+			error = ERROR_EXCEPTION_ABORT;
+			break;
 		default:
 			error = ERROR_EXCEPTION_UNKNOWN;
 			break;
@@ -244,6 +255,8 @@ int main(int argc, char **argv)
 
 	// ---- Init Application ----
 
+	prctl(PR_SET_NAME, "Thread_CPU");
+
 	// Setup handler to catch segfaults
 	struct sigaction action;
 	action.sa_handler = crash_handler;
@@ -252,6 +265,7 @@ int main(int argc, char **argv)
 	sigaction(SIGFPE, &action, NULL);
 	sigaction(SIGSEGV, &action, NULL);
 	sigaction(SIGPIPE, &action, NULL);
+	sigaction(SIGABRT, &action, NULL);
 
 	// Read and validate arguments
 	if (!options_read(state, argc, argv))
@@ -814,6 +828,7 @@ int main(int argc, char **argv)
 		std::atomic<bool> abortStreaming = { false };
 		std::thread *qpuThread = new std::thread([&]()
 		{
+			prctl(PR_SET_NAME, "Thread_QPU");
 			nice(-18); // Very high priority
 			/*cpu_set_t set;
 			CPU_ZERO(&set);
@@ -1501,6 +1516,7 @@ int main(int argc, char **argv)
 				for (int i = 0; i < oldClusters.size(); i++)
 				{
 					threadPool.push([&](int, int index){
+						prctl(PR_SET_NAME, "Worker_Blob");
 						nice(-10); // Medium-High priority
 						TimePoint_t t0 = sclock::now();
 
@@ -1735,6 +1751,7 @@ int main(int argc, char **argv)
 					static std::vector<Cluster> pastBlobs, curBlobs;
 					curBlobs = clusters;
 					threadPool.push([&](int, std::shared_ptr<FrameBuffer> frame){
+						prctl(PR_SET_NAME, "Worker_Vis");
 						nice(20); // Low priority
 						TimePoint_t t0 = sclock::now();
 
@@ -1752,6 +1769,7 @@ int main(int argc, char **argv)
 				&& !isPreparingFrame.exchange(true))
 			{ // Send image of current frame as part of continous streaming
 				threadPool.push([&](int, std::shared_ptr<FrameBuffer> frame, ImageStreamState stream){
+					prctl(PR_SET_NAME, "Worker_Stream");
 					nice(20); // Low priority
 					TimePoint_t start = sclock::now();
 					if (prepareImageStreamingPacket(*frame, stream))
@@ -1771,6 +1789,7 @@ int main(int argc, char **argv)
 				std::shared_ptr<FrameBuffer> &reqFrame = curFrame; // For imageRequest.frame
 
 				threadPool.push([&](int, std::shared_ptr<FrameBuffer> frame, ImageStreamState stream){
+					prctl(PR_SET_NAME, "Worker_Oneshot");
 					nice(20); // Low priority
 					//TimePoint_t start = sclock::now();
 					if (prepareImageStreamingPacket(*frame, stream))

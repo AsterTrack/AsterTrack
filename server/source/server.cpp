@@ -413,15 +413,19 @@ void StartWirelessServer(ServerState &state)
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		if (client.callbacks.userData2)
 		{ // Camera was already identified
+			if (client.callbacks.userData2.use_count() == 1)
+				LOG(LServer, LWarn, "Disconnecting camera was already erased from devices!\n");
 			TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
-			client.callbacks.userData2 = nullptr;
 			{
 				auto state = camera.state.contextualLock();
 				state->lastWirelessConnection = sclock::now();
 			}
+			if (client.callbacks.userData2.use_count() == 1)
+				LOG(LServer, LWarn, "Disconnecting camera was already erased from devices!\n");
 			camera.client = NULL;
 			LOG(LServer, LInfo, "Camera with id %d lost server connection!\n", camera.id);
 			// If camera is now unreachable, DeviceSupervisorThread will wait for it to reconnect before removing it entirely
+			client.callbacks.userData2 = nullptr;
 		}
 		else
 		{

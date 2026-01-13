@@ -71,13 +71,19 @@ void comm_disable(CommState &comm)
 	auto pos = std::find(comms.medium.begin(), comms.medium.end(), &comm);
 	if (pos != comms.medium.end())
 		*pos = nullptr;
-	// Don't know with what affinity packets were queued, just send them through any means necessary
-	CommState *altComm = comms.get(realTimeAff);
-	while (!comm.packetQueue.empty())
-	{
+	{ // Don't know with what affinity packets were queued, just send them through any means necessary
+		std::unique_lock lock(comm.queueMutex);
+		CommState *altComm = comms.get(realTimeAff);
 		if (altComm)
-			altComm->packetQueue.push(std::move(comm.packetQueue.front()));
-		comm.packetQueue.pop();
+			altComm->queueMutex.lock();
+		while (!comm.packetQueue.empty())
+		{
+			if (altComm)
+				altComm->packetQueue.push(std::move(comm.packetQueue.front()));
+			comm.packetQueue.pop();
+		}
+		if (altComm)
+			altComm->queueMutex.unlock();
 	}
 	comm.enabled = false;
 	if (comm.thread && comm.thread->joinable())
@@ -203,6 +209,7 @@ int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<u
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
 	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	std::unique_lock lock(commPtr->queueMutex);
 	commPtr->packetQueue.emplace(header, std::move(data));
 	return true;
 }
@@ -210,6 +217,7 @@ bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader)
 {
 	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	std::unique_lock lock(commPtr->queueMutex);
 	commPtr->packetQueue.emplace(header, std::move(data), std::move(largePacketHeader));
 	return true;
 }
@@ -646,7 +654,10 @@ phase_comm:
 				break;
 			}
 
+			fflush(stdout);
+
 			// Parsing done, now send from packet queue if it's not handled by main thread for realtime data
+			std::unique_lock lock(comm.queueMutex);
 			while (!comm_ptr->realtimeControlled && !comm.packetQueue.empty())
 			{
 				auto &packet = comm.packetQueue.front();
@@ -669,8 +680,6 @@ phase_comm:
 				}
 				comm.packetQueue.pop();
 			}
-
-			fflush(stdout);
 		}
 
 		if (comm.error)

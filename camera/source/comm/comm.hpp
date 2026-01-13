@@ -56,6 +56,7 @@ struct CommState
 
 	bool realtimeControlled;
 	std::queue<CommPacket> packetQueue;
+	std::mutex queueMutex;
 
 	std::thread *thread;
 	void *port;

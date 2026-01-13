@@ -2083,6 +2083,7 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 	}
 
 	int sentTotal = 0;
+	std::unique_lock lock(comm->queueMutex);
 	while (budget > 10 && !comm->packetQueue.empty())
 	{
 		auto &packet = comm->packetQueue.front();
@@ -2102,11 +2103,9 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 			{
 				budget -= sent;
 				sentTotal += sent;
-				// Sent data, but not done, likely exchausting budget
+				// Sent data, but not done, likely exhausting budget
 				if (ret == 1) break;
-				// Done, remove packet and continue
-				if (ret == 2)
-					comm->packetQueue.pop();
+				// Else done, remove packet and continue
 			}
 			else
 			{
@@ -2119,13 +2118,13 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 		{ // Sent packet, substract from budget and continue
 			budget -= packet.data.size();
 			sentTotal += packet.data.size();
-			comm->packetQueue.pop();
 		}
 		else
 		{ // Failed to send packet
 			printf("Failed to send queued packet interleaved with realtime data!\n");
-			comm->packetQueue.pop();
 		}
+		// Remove packet and continue
+		comm->packetQueue.pop();
 	}
 
 	return sentTotal;

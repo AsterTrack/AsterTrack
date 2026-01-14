@@ -62,6 +62,8 @@ std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
 TimePoint_t lastPing;
 
+TimeSync timesync;
+
 volatile bool mcu_exists;
 volatile bool mcu_active;
 volatile bool mcu_intentional_bootloader;
@@ -656,12 +658,21 @@ bool mcu_get_status()
 		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(STATUS_DATA), STATUS_DATA },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	TimePoint_t requestTime = sclock::now();
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
 		return false;
 	}
+	TimePoint_t receiveTime = sclock::now();
+	long roundtripTimeUS = dtUS(requestTime, receiveTime);
+	const int observedRoundtripUS = 430;
+	const int // Just estimate of fixed delays, they don't exactly add up to the observed roundtrip time
+		transmitUS = ((sizeof(FETCH_CMD)+1)*9 + 2)*1000/400,
+		receiveUS = (sizeof(STATUS_DATA)*9 + 2)*1000/400 + 10;
+	TimePoint_t estSendTime = receiveTime - std::chrono::microseconds(receiveUS);
+	bool timingReliable = std::abs(roundtripTimeUS - observedRoundtripUS) < 20;
 
 	uint8_t *packet = STATUS_DATA+MCU_LEADING_BYTES;
 	
@@ -689,6 +700,13 @@ bool mcu_get_status()
 	}
 
 	uint16_t timestampUS = (packet[4] << 8) | packet[5];
+	if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
+		ResetTimeSync(timesync);
+	TimePoint_t sendTime;
+	if (timingReliable)
+		sendTime = UpdateTimeSync(timesync, timestampUS, 1<<16, estSendTime);
+	else sendTime = GetTimeSynced(timesync, timestampUS, 1<<16);
+	long responseTimeUS = dtUS(sendTime, receiveTime);
 
 	static uint8_t lastReceivedFrameID = 0;
 	uint8_t lastFrameID = packet[6];

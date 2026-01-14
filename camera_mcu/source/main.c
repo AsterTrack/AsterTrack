@@ -733,7 +733,8 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[2] = powerMV >> 8;
 			response[3] = powerMV & 0xFF;
 			// Timestamp for timesync
-			uint16_t timestampUS = 0; // TImestamp of this packet
+			TimePoint timestamp = GetTimePoint();
+			uint16_t timestampUS = (timestamp / TICKS_PER_US) & 0xFFFF;
 			response[4] = timestampUS >> 8;
 			response[5] = timestampUS & 0xFF;
 			// Last frame info for framesync (using timestamp as reference to more easily encode when frametime was too long ago)

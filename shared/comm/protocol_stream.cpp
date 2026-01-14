@@ -50,8 +50,9 @@ void proto_clean(ProtocolState &comm, bool move)
 	else if (rem > 0 && comm.head > 10 && move)
 	{ // Unhandled data waiting, move data ahead in buffer (disallowed if data of current command has to be retained)
 		memmove(comm.rcvBuf.data(), comm.rcvBuf.data()+comm.head, rem);
-		comm.cmdSkip = false;
 		comm.tail = rem;
+		if (comm.cmdPos <= comm.head) comm.cmdPos = 0;
+		else comm.cmdPos -= comm.head;
 		if (comm.blockPos <= comm.head) comm.blockPos = 0;
 		else comm.blockPos -= comm.head;
 		if (comm.mrk <= comm.head) comm.mrk = 0;
@@ -149,12 +150,16 @@ static bool scanUntil(ProtocolState &comm, uint32_t target)
 		// Consume parsed bytes up until error
 		comm.mrk += dataLen;
 		comm.head = comm.mrk;
+		assert(dataLen >= parseLen);
+		assert(comm.head <= comm.tail);
 		return false;
 	}
 	// Move yet unscanned, marked buffer forward (removing space used for marking)
 	memcpy(comm.rcvBuf.data()+comm.mrk+parseLen, comm.rcvBuf.data()+comm.mrk+dataLen, comm.tail-(comm.mrk+dataLen));
 	comm.mrk += parseLen;
 	comm.tail += parseLen-dataLen;
+	assert(dataLen >= parseLen);
+	assert(comm.head <= comm.tail);
 	return comm.mrk >= target;
 }
 
@@ -192,9 +197,16 @@ begin:
 	if (comm.head >= comm.tail) return false;
 	//printf("Parsing from %d to %d\n", comm.head, comm.tail);
 	if (comm.cmdSkip)
-	{ // Did not signal to fetch full command, skip to end 
-		printf("Skipping header %d!\n", comm.header.tag);
+	{ // Did not signal to fetch full command, skip to end
+		unsigned int endData = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE+comm.cmdSz;
+		unsigned int endPacket = comm.cmdSz > 0? endData+PACKET_CHECKSUM_SIZE : endData;
+		bool done = scanUntil(comm, endPacket+UART_TRAILING_RECV);
+		if (!done) return false;
+		// Received end of packet, skip to it (with margin incase of dropped bytes), and search for trailing bytes
+		comm.cmdSkip = false;
+		comm.head = std::max<long>(comm.cmdPos, (long)endPacket-20);
 		skipToEnd(comm, false);
+		assert(comm.head <= comm.tail);
 	}
 	if (comm.isCmd)
 	{ // If current command exist, make skippable, no further parsing needed
@@ -297,6 +309,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 			comm.head = std::max<long>(comm.cmdPos, (long)endPacket-20);
 			skipToEnd(comm, true);
 		}
+		assert(comm.head <= comm.tail);
 		return true;
 	}
 	// Move receive head to beginning of buffer to make it easier to parse packet once it does arrive

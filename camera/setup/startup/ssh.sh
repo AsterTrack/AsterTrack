@@ -18,7 +18,7 @@ mkdir -p $SSH_STORE
 mkdir -p $SSH_DIR
 
 # Sadly have to generate all keys, else openssh will generate them itself anyway
-ALGORITHMS="rsa dsa ecdsa ed25519"
+ALGORITHMS="rsa ecdsa ed25519"
 
 for ALG in $ALGORITHMS; do
 	KEY=$SSH_STORE/ssh_host_${ALG}_key

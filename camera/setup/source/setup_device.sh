@@ -391,6 +391,11 @@ install_package()
 	return 0
 }
 
+# Remove all preinstalled packages - they might be out of date
+# Significant because openssh, openssl, and worse, ca-certificates are preinstalled
+# So without deleting them, they'll be out of date - a potential security issue
+rm $PKG_PATH/*
+
 # Recursively download, verify, and install dependencies
 while [[ -n "$DEPENDENCIES" ]]; do
 	PACKAGES=$DEPENDENCIES

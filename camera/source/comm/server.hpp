@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void *server_init(std::string host, std::string port);
 
-void server_deinit(void *port);
+void server_deinit(void **portPtr);
 
 bool server_start(void *port);
 

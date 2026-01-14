@@ -94,11 +94,12 @@ void* uart_init(std::string serial)
 	return port;
 }
 
-void uart_deinit(void *port)
+void uart_deinit(void **portPtr)
 {
-	if (port == NULL)
+	if (portPtr == NULL || *portPtr == NULL)
 		return;
-	delete (UartPort*)port;
+	delete (UartPort*)*portPtr;
+	*portPtr = NULL;
 }
 
 bool uart_start(void *port)

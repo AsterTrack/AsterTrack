@@ -369,7 +369,7 @@ int main(int argc, char **argv)
 	}
 	atexit([]{ // Close at exit
 		comm_disable(uartComms);
-		uart_deinit(uartComms.port);
+		uart_deinit(&uartComms.port);
 	});
 	if (state.enableUART)
 	{
@@ -395,7 +395,7 @@ int main(int argc, char **argv)
 	}
 	atexit([]{ // Close at exit
 		comm_disable(serverComms);
-		server_deinit(serverComms.port);
+		server_deinit(&serverComms.port);
 	});
 	// Server will be started by initWirelessMonitor if wifi is enabled, either due to configuration or requested by console
 

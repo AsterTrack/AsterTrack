@@ -31,7 +31,7 @@ SOFTWARE.
 
 void* uart_init(std::string serial);
 
-void uart_deinit(void *port);
+void uart_deinit(void **portPtr);
 
 bool uart_start(void *port);
 

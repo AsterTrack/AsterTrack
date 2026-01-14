@@ -542,7 +542,7 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 				{
 					printf("Restarting server connection...\n");
 					comm_disable(serverComms);
-					server_deinit(serverComms.port);
+					server_deinit(&serverComms.port);
 				}
 				if (!serverComms.enabled)
 				{
@@ -558,7 +558,7 @@ static void WirelessMonitorThread(TrackingCameraState *state)
 				{
 					printf("Stopping server connection...\n");
 					comm_disable(serverComms);
-					server_deinit(serverComms.port);
+					server_deinit(&serverComms.port);
 				}
 				wireless.config = (WirelessConfig)(wireless.config & ~WIRELESS_CONFIG_SERVER);
 				if (!(config & WIRELESS_CONFIG_SERVER))

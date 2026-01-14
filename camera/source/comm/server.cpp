@@ -43,11 +43,12 @@ void *server_init(std::string host, std::string port)
 	return socket;
 }
 
-void server_deinit(void *port)
+void server_deinit(void **portPtr)
 {
-	if (port == NULL)
+	if (portPtr == NULL || *portPtr == NULL)
 		return;
-	delete (ServerConnection*)port;
+	delete (ServerConnection*)*portPtr;
+	*portPtr = NULL;
 }
 
 int socket_client_init(const char *server, const char *port, struct sockaddr_storage* addr)

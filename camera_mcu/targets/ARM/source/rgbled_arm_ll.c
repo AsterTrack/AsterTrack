@@ -220,7 +220,7 @@ void rgbled_stop()
 
 	// Set ready timer (potentially with additional delay if no wakeup is required for a while)
 	TimePoint now = GetTimePoint();
-	readyEarliest = now + 50 * TICKS_PER_MS;
+	readyEarliest = now + 50 * TICKS_PER_US; // Latch time of 50us
 	if (readyEarliest < wakeupEarliest)
 		rgbled_set_ready_timer(wakeupEarliest - now);
 	else
@@ -251,13 +251,18 @@ void rgbled_lock()
 {
 	USE_LOCKS();
 	LOCK();
-	// Acts as an assertion. Locks up if assumption fails, in which case, more IRQs use the LEDs than intended
+	// If locked, we are interrupting a lower priority IRQ or the main thread
+	// That indicates this calling IRQs has not been accounted for in below IRQ
+	// TODO: Rework
+	if (locked) BREAK();
+	// Acts as an assertion (will eventually trigger watchdog)
 	while (locked);
 	locked = true;
 	NVIC_DisableIRQ(TIM16_IRQn);
 	NVIC_DisableIRQ(DMA1_Channel1_IRQn);
 	NVIC_DisableIRQ(USART1_IRQn);
 	NVIC_DisableIRQ(DMA1_Channel2_3_IRQn);
+	NVIC_DisableIRQ(I2C1_IRQn);
 	UNLOCK();
 }
 
@@ -270,6 +275,7 @@ void rgbled_unlock()
 	NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 	NVIC_EnableIRQ(USART1_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
+	NVIC_EnableIRQ(I2C1_IRQn);
 	UNLOCK();
 }
 

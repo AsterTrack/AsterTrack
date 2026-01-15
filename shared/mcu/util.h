@@ -465,7 +465,13 @@ extern volatile uint64_t usCounter;
 
 static inline __attribute__((always_inline)) TimePoint GetTimePoint()
 { // Unit: us
-	return usCounter + TIM1->CNT;
+begin:
+	uint16_t usAdd = TIM1->CNT;
+	TimePoint point = usCounter;
+	// To avoid a race condition when TIM1 rolls over, re-read if a rollover happened while reading the values
+	if (usAdd > TIM1->CNT)
+		goto begin;
+	return point + usAdd;
 }
 
 #endif

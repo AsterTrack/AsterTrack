@@ -36,50 +36,50 @@ extern "C"
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOA
-const static uint32_t RJLED_GREEN_PIN = GPIO_PIN_4;
-const static uint32_t RJLED_ORANGE_PIN = GPIO_PIN_7;
+#define RJLED_GREEN_PIN GPIO_PIN_4
+#define RJLED_ORANGE_PIN GPIO_PIN_7
 
 // WS2812 Pin
 #define WS2812_GPIO_X GPIOA
-const static uint32_t WS2812_PIN = GPIO_PIN_6;
+#define WS2812_PIN GPIO_PIN_6
 
 // UART Select Pin
 #define UARTSEL_GPIO_X GPIOA
-const static uint32_t UARTSEL_PIN = 0;
+#define UARTSEL_PIN 0
 
 // Filter Switcher Actuator Pins
 #define FILTERSW_GPIO_X GPIOB
-const static uint32_t FILTERSW_INFRARED_PIN = GPIO_PIN_0;
-const static uint32_t FILTERSW_VISIBLE_PIN = GPIO_PIN_1;
-const static uint32_t FILTERSW_PIN_SLEEP = GPIO_PIN_2;
+#define FILTERSW_INFRARED_PIN GPIO_PIN_0
+#define FILTERSW_VISIBLE_PIN GPIO_PIN_1
+#define FILTERSW_PIN_SLEEP GPIO_PIN_2
 
 // Sync Input pin
 #define SYNC_GPIO_X GPIOB
-const static uint32_t SYNC_PIN = GPIO_PIN_9;
+#define SYNC_PIN GPIO_PIN_9
 
 // Camera FSIN pin
 #define FSIN_GPIO_X GPIOA
-const static uint32_t CAMERA_FSIN_PIN = GPIO_PIN_8;
+#define CAMERA_FSIN_PIN GPIO_PIN_8
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
-const static uint32_t CAMERA_STROBE_PIN = 0;
+#define CAMERA_STROBE_PIN 0
 
 // Button input pins
 #define BUTTONS_GPIO_X GPIOA
-const static uint32_t BUTTON_BOTTOM_PIN = GPIO_PIN_1;
-const static uint32_t BUTTON_TOP_PIN = GPIO_PIN_2;
+#define BUTTON_BOTTOM_PIN GPIO_PIN_1
+#define BUTTON_TOP_PIN GPIO_PIN_2
 
 // VSense ADC pin
 #define VSENSE_GPIO_X GPIOA
-const static uint32_t VSENSE_ADC_PIN = GPIO_PIN_0;
+#define VSENSE_ADC_PIN GPIO_PIN_0
 
 // Pi I2C pins
 #define I2C_SXX_GPIO_X GPIOB
-const static uint32_t I2C_SCL_PIN = GPIO_PIN_6;
-const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
+#define I2C_SCL_PIN GPIO_PIN_6
+#define I2C_SDA_PIN GPIO_PIN_7
 #define I2C_INT_GPIO_X GPIOB
-const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
+#define I2C_INT_PIN GPIO_PIN_8
 
 #define WWDG_TIMEOUT 0x7F
 
@@ -87,51 +87,51 @@ const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOB
-const static uint32_t RJLED_GREEN_PIN = GPIO_PIN_1;
-const static uint32_t RJLED_ORANGE_PIN = GPIO_PIN_0;
+#define RJLED_GREEN_PIN GPIO_PIN_1
+#define RJLED_ORANGE_PIN GPIO_PIN_0
 
 // WS2812 Pin
 #define WS2812_GPIO_X GPIOB
-const static uint32_t WS2812_PIN = GPIO_PIN_8;
+#define WS2812_PIN GPIO_PIN_8
 
 // UART Select Pin
 #define UARTSEL_GPIO_X GPIOA
-const static uint32_t UARTSEL_PIN = GPIO_PIN_3;
+#define UARTSEL_PIN GPIO_PIN_3
 
 // Filter Switcher Actuator Pins
 #define FILTERSW_GPIO_X GPIOA
-const static uint32_t FILTERSW_INFRARED_PIN = GPIO_PIN_6;
-const static uint32_t FILTERSW_VISIBLE_PIN = GPIO_PIN_7;
-const static uint32_t FILTERSW_PIN_SLEEP = 0;
+#define FILTERSW_INFRARED_PIN GPIO_PIN_6
+#define FILTERSW_VISIBLE_PIN GPIO_PIN_7
+#define FILTERSW_PIN_SLEEP 0
 
 // Sync Input pin
 #define SYNC_GPIO_X GPIOB
 #define SYNC_GPIO_IDX 0x01  // EXTI Port Index
-const static uint32_t SYNC_PIN = 0;
+#define SYNC_PIN 0
 
 // Camera FSIN pin
 #define FSIN_GPIO_X GPIOA
-const static uint32_t CAMERA_FSIN_PIN = GPIO_PIN_4;
+#define CAMERA_FSIN_PIN GPIO_PIN_4
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
-const static uint32_t CAMERA_STROBE_PIN = GPIO_PIN_9;
+#define CAMERA_STROBE_PIN GPIO_PIN_9
 
 // Button input pins
 #define BUTTONS_GPIO_X GPIOA
-const static uint32_t BUTTON_BOTTOM_PIN = GPIO_PIN_0;
-const static uint32_t BUTTON_TOP_PIN = GPIO_PIN_1;
+#define BUTTON_BOTTOM_PIN GPIO_PIN_0
+#define BUTTON_TOP_PIN GPIO_PIN_1
 
 // VSense ADC pin
 #define VSENSE_GPIO_X GPIOA
-const static uint32_t VSENSE_ADC_PIN = GPIO_PIN_2;
+#define VSENSE_ADC_PIN GPIO_PIN_2
 
 // Pi I2C pins
 #define I2C_SXX_GPIO_X GPIOB
-const static uint32_t I2C_SCL_PIN = GPIO_PIN_6;
-const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
+#define I2C_SCL_PIN GPIO_PIN_6
+#define I2C_SDA_PIN GPIO_PIN_7
 #define I2C_INT_GPIO_X GPIOA
-const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
+#define I2C_INT_PIN GPIO_PIN_8
 
 #define WWDG_TIMEOUT 0x7F
 

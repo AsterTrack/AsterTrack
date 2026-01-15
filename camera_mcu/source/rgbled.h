@@ -32,7 +32,7 @@ extern "C"
 #define RGBLED_COUNT 4
 
 // Update interval to use for smooth animations and transitions
-#define RGB_UPDATE_INTERVAL_MS 10
+#define RGB_UPDATE_INTERVAL_MS 50
 
 enum LED_INTERPOLATION {
 	INTER_UNDEFINED = 0,

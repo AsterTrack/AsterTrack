@@ -79,8 +79,12 @@ static void lerp_process(uint8_t *source, uint8_t *target, uint8_t *output, floa
 {
 	if (value > 1) value = 1;
 	if (value < 0) value = 0;
+	// Some optimisation to ensure -O0 doesn't take even longer
+	float fac1 = (1-value) * factor;
+	float fac2 = value * factor;
 	for (int i = 0; i < RGBLED_COUNT*3; i++)
-		output[i] = (int)(((float)source[i] * (1-value) + (float)target[i] * value) * factor);
+		output[i] = (int)((float)source[i] * fac1 + (float)target[i] * fac2);
+	// TODO: These 26 float multiplications take ~135us in total (~5us per FLOP)
 }
 
 static float get_lerp()
@@ -179,7 +183,7 @@ void rgbled_ready_callback()
 		return;
 
 	TimePoint next_update = GetTimePoint();
-	if (next_update + 100*TICKS_PER_US > transition_end)
+	if (next_update + (RGB_UPDATE_INTERVAL_MS*TICKS_PER_MS)/10 > transition_end)
 	{ // At end of transition
 		struct LED_Animation *anim = current_animation;
 		if (anim == NULL)

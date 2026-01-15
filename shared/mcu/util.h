@@ -500,12 +500,18 @@ static inline __attribute__((always_inline)) TimeSpan GetMS(TimePoint point)
 
 static inline __attribute__((always_inline)) TimeSpan GetTimeSpanUS(TimePoint pointA, TimePoint pointB)
 {
-	return (int64_t)(pointB - pointA) / TICKS_PER_US;
+	if (pointB > pointA)
+		return +(TimeSpan)((pointB - pointA) / TICKS_PER_US);
+	else
+		return -(TimeSpan)((pointA - pointB) / TICKS_PER_US);
 }
 
 static inline __attribute__((always_inline)) TimeSpan GetTimeSpanMS(TimePoint pointA, TimePoint pointB)
 {
-	return (int64_t)(pointB - pointA) / TICKS_PER_MS;
+	if (pointB > pointA)
+		return +(TimeSpan)((pointB - pointA) / TICKS_PER_MS);
+	else
+		return -(TimeSpan)((pointA - pointB) / TICKS_PER_MS);
 }
 
 static inline __attribute__((always_inline)) TimeSpan GetTimeSinceUS(TimePoint point)

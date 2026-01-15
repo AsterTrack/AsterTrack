@@ -298,12 +298,6 @@ int main(void)
 
 		now = GetTimePoint();
 
-		// Indicate UART activity on orange LED
-		if (GetTimeSpanMS(lastMarker, now) < 20)
-			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-		else
-			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-
 		// Simple blinking of green LED to indicate activity
 		static TimePoint lastPowerLEDToggle = 0;
 		static bool powerLEDToggle = false;
@@ -342,12 +336,13 @@ int main(void)
 		// Check UART timeouts
 		if (uartState == UART_CamMCU)
 		{
-			TimeSpan timeSinceLastComm = GetTimeSpanMS(state->lastComm, lastTimeCheck);
+			TimeSpan timeSinceLastComm = GetTimeSinceMS(state->lastComm);
 			if (timeSinceLastComm > UART_COMM_TIMEOUT_MS || timeSinceLastComm < -1)
 			{ // Reset Comm after silence
 				EnterUARTPortZone(0); // Mostly for the debug
-				uartd_nak_int(0);
 				uartd_reset_port_int(0);
+				delayUS(10);
+				uartd_nak_int(0);
 				WARN_CHARR('/', 'T', 'M', 'O'); // TiMeOut
 				LeaveUARTPortZone(0);
 			}
@@ -356,32 +351,47 @@ int main(void)
 
 #if defined(USE_I2C)
 		if (piIsBooted && GetTimeSpanMS(lastPiComm, now) > MCU_COMM_TIMEOUT_MS)
-		{ // Pi stopped corresponding, clear booted flag and take back UART control
 			piIsBooted = false;
+		if (uartState == UART_CamPi && !piIsBooted)
+		{ // Pi stopped corresponding, clear booted flag and take back UART control
 			EnterUARTPortZone(0);
 			uartState = UART_None;
+
+			// Grab UART control from SBC, and notify SBC
 			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 			delayUS(100);
+
+			// Properly notify controller with a NAK
+			uartd_reset_port_int(0);
+			delayUS(10);
+			uartd_nak_int(0);
 			// TODO: Switching UART Control - Properly notify controller of switch
 			//uartd_send_int(0, msg_sw_mcu, sizeof(msg_sw_mcu), true);
-			uartd_nak_int(0);
-			uartd_reset_port(0);
+
 			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
 		}
-		else if (piIsBooted && uartState == UART_CamMCU)
+		else if (uartState != UART_CamPi && piIsBooted)
 		{ // Pi started corresponding, hand over UART control automatically
 			EnterUARTPortZone(0);
-			if (uartState == UART_CamMCU)
-			{
-				// TODO: Switching UART Control - Properly notify controller of switch
-				//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
-				uartd_nak_int(0);
-				uartd_reset_port(0);
-			}
-			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
 			uartState = UART_CamPi;
+
+			// Properly notify controller with a NAK, whether comms were ready or not
+			uartd_reset_port_int(0);
+			delayUS(10);
+			uartd_nak_int(0);
+
 			LeaveUARTPortZone(0);
+
+			SafeDelayMS(1);
+
+			// Pass UART control to SBC during reset timeout, and notify SBC
+			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+
 			ReturnToDefaultLEDState(100);
 		}
 #endif
@@ -406,8 +416,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 				return uartd_accept;
 			}
 			ERR_STR("#IdentWrongSize:");
-			uartd_nak_int(port);
-			return uartd_reset;
+			return uartd_reset_nak;
 		}
 		else if (state->header.tag == PACKET_NAK)
 		{
@@ -418,8 +427,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Invalid packet before identification
 			COMM_STR("!Unexpected:");
 			COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag));
-			uartd_nak_int(port);
-			return uartd_reset;
+			return uartd_reset_nak;
 		}
 	}
 	else if (uartState == UART_CamMCU)
@@ -439,8 +447,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		else if (state->header.tag == PACKET_IDENT)
 		{ // Redundant identification
 			WARN_CHARR('/', 'I', 'R', 'D');
-			uartd_nak_int(port);
-			return uartd_reset;
+			return uartd_reset_nak;
 		}
 		else if (state->header.tag == PACKET_SYNC)
 		{ // Received sync packet

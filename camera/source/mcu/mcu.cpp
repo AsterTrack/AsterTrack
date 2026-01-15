@@ -95,7 +95,7 @@ bool mcu_initial_connect()
 
 	if (!mcu_active)
 	{ // MCU is still not responding, it is either not available in hardware, or bricked
-		if (!mcu_switch_bootloader())
+		if (!mcu_probe_bootloader() && !mcu_switch_bootloader())
 		{ // Could not reboot it into bootloader even via GPIO - likely not available in hardware
 			printf("Could not find MCU!\n");
 		}
@@ -194,11 +194,10 @@ void mcu_cleanup()
 
 static bool handle_i2c_error()
 {
-	if (errno == EBADF || errno == ETIMEDOUT)
+	mcu_active = false;
+	if (errno == EBADF)
 	{
-		mcu_active = false;
 		i2c_init();
-		return true;
 	}
 	return false;
 }

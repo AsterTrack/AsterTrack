@@ -1371,7 +1371,10 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		}
 		else if (state->header.tag == PACKET_NAK)
 		{
-			COMM_STR("!IdentNAKed:"); 
+			if (cam->comm == COMM_HAS_ID)
+				COMM_STR("!IdentNAKed:"); 
+			else
+				COMM_STR("!StrayNAK:"); 
 			COMM_CHARR(INT9_TO_CHARR(port));
 			return uartd_reset;
 		}
@@ -1441,7 +1444,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		COMM_STR("!StrayIdent:");
 		COMM_CHARR(INT9_TO_CHARR(port));
 		COMM_STR("+Reset");
-		return uartd_reset;
+		return uartd_reset_nak;
 	}
 	else
 	{ // Shouldn't happen

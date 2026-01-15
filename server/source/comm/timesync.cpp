@@ -59,6 +59,12 @@ uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_
 // Get real-time of full timestamp
 TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 {
+	if (time.measurements < 2)
+	{
+		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!\n", 
+			time.measurements);
+		return sclock::now();
+	}
 	long passed = ((long long)timestamp) - time.lastTimestamp;
 	passed = (long)((double)passed * (1.0+time.drift) + time.driftAccum);
 	TimePoint_t synced = time.lastTime + std::chrono::microseconds(passed);
@@ -74,6 +80,12 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 // Get real-time of timestamp of specified bit depth within past ~overflow us
 TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t overflow)
 {
+	if (time.measurements < 2)
+	{
+		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!\n", 
+			time.measurements);
+		return sclock::now();
+	}
 	assert((overflow & (overflow-1)) == 0); // Else use %overflow instead of &(overflow-1)
 	long long usPassed = shortDiff<uint64_t, long long>(time.lastTimestamp&(overflow-1), timestamp, overflow/2, overflow-1);
 	TimePoint_t synced = time.lastTime + std::chrono::microseconds((long long)(usPassed * (1.0+time.drift) + time.driftAccum));

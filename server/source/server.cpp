@@ -434,42 +434,38 @@ void StartWirelessServer(ServerState &state)
 	};
 	state.server.callbacks.onReceivePacketHeader = [](ClientCommState &client, PacketHeader &header, TimePoint_t receiveTime)
 	{
-		assert(client.callbacks.userData2);
+		if (!header.isStreamPacket() && header.tag != PACKET_FRAME_SIGNAL)
+			return true;
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
+		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+		if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
+		assert(client.callbacks.userData2);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
+		if (!camera.sync)
+		{
+			LOG(LStreaming, LTrace, "Wireless Camera %d send a streaming packet but was not set up for streaming!\n", camera.id);
+			return false;
+		}
 		if (header.tag == PACKET_FRAME_SIGNAL)
 		{ // Frame is starting to be processed
-			std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-			if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
-			if (!camera.sync)
-			{
-				LOG(LStreaming, LTrace, "Wireless Camera %d send a streaming packet but was not set up for streaming!\n", camera.id);
-				return false;
-			}
 			auto sync_lock = camera.sync->contextualLock();
 			if (sync_lock->source == SYNC_NONE)
 			{ // No sync, this is only source for SOF timing, estimate actual SOF
 				// Update estimate of SOF (assuming regular SOFs)
 				TimePoint_t timeSOF = receiveTime - std::chrono::microseconds(8000);
 				//timeSOF = UpdateSOFPredictions(*camera.sync, header.frameID, timeSOF);
-				RegisterSOF(*sync_lock, header.frameID, timeSOF);
+				FrameID frameID = EstimateFullFrameID(*sync_lock, header.frameID);
+				RegisterSOF(*sync_lock, frameID, timeSOF);
 			}
 			auto frame = RegisterCameraFrame(*sync_lock, camera.syncIndex, header.frameID);
 			if (frame)
-				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for frame %d!\n", camera.id, frame->ID);
+				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for frame %d (%d)!\n", camera.id, frame->ID, header.frameID);
 			else
 				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for non-existant frame with ID %d!\n", camera.id, header.frameID);
 			return true;
 		}
 		else if (header.isStreamPacket())
 		{
-			std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-			if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
-			if (!camera.sync)
-			{
-				LOG(LStreaming, LTrace, "Wireless Camera %d sent a streaming packet but was not set up for streaming!\n", camera.id);
-				return false;
-			}
 			if (!RegisterStreamPacket(*camera.sync->contextualLock(), camera.syncIndex, header.frameID, receiveTime))
 			{
 				LOG(LStreaming, LTrace, "Wireless Camera %d sent a streaming packet but was not set up for streaming!\n", camera.id);
@@ -480,11 +476,11 @@ void StartWirelessServer(ServerState &state)
 	};
 	state.server.callbacks.onReceivePacketBlock = [](ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int len, TimePoint_t receiveTime)
 	{
-		assert(client.callbacks.userData2);
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
-		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
 		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
 		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
+		assert(client.callbacks.userData2);
+		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
 		// Update statistics of streaming packet
 		if (header.isStreamPacket())
 		{
@@ -590,13 +586,14 @@ void StopDeviceMode(ServerState &state)
 		StopStreaming(state);
 
 	LOG(LDefault, LInfo, "Disconnecting!\n");
-	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
-	state.mode = MODE_None;
 
 	// Join coprocessing thread
 	state.parsing_cv.notify_all();
 	delete state.coprocessingThread;
 	state.coprocessingThread = NULL;
+
+	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
+	state.mode = MODE_None;
 
 	// Disconnect from controllers and their wired-only cameras
 	while (!state.controllers.empty())
@@ -1544,7 +1541,9 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	{
 		// TODO: Ensure frames are processed/appended to frame record in chronological order even between sync groups
 		// This is also complicated IF we allow frame IDs to be arbitrary or duplicate between sync groups
-		LOG(LStreaming, LError, "Dropped frame %d because future frame %d was already recorded - cannot insert in order!", frames.back()->ID, frame.ID);
+		// See note on future frameID plans in record.hpp - space for frames should be pre-determined
+		LOG(LStreaming, LError, "Dropped frame %d because frame %d from %.2fms later was already recorded - cannot insert in order!",
+			frame.ID, frames.back()->ID, dtMS(frame.SOF, frames.back()->time));
 	}
 
 	GetState().processing_cv.notify_one();

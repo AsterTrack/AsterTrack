@@ -198,9 +198,13 @@ static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 	{ // Try to estimate frame interval first
 		auto frameStart = std::find_if(sync.frames.begin(), sync.frames.end(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
 		auto frameEnd = std::find_if(sync.frames.rbegin(), sync.frames.rend(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
-		if (frameStart != sync.frames.end() && frameEnd != sync.frames.rend() && frameEnd->ID > frameStart->ID)
+		if (frameStart != sync.frames.end() && frameEnd != sync.frames.rend() && frameEnd->ID != frameStart->ID)
 		{ // Predicting frame interval
+			if (frameEnd->ID <= frameStart->ID)
+				LOG(LSOF, LWarn, "Can't easily extrapolate externally synced SOF for frame ID %d with only references %d and %d (diff %d) being %.2fms apart\n",
+				frameID, frameStart->ID, frameEnd->ID, frameEnd->ID - frameStart->ID, dtMS<float>(frameStart->SOF, frameEnd->SOF));
 			sync.frameIntervalMS = 0.5f*sync.frameIntervalMS * 0.5f*dtMS<float>(frameStart->SOF, frameEnd->SOF) / (frameEnd->ID - frameStart->ID);
+
 		}
 		else
 		{ // External, unpredictable sync and no way to estimate
@@ -255,14 +259,22 @@ SyncedFrame *GetSyncedFrame(SyncGroup &sync, TruncFrameID frameID, bool create)
 	frame.cameras.resize(sync.cameras.size());
 	frame.ID = EstimateFullFrameID(sync, frameID);
 
-	if (frame.ID > lastSOFID+2)
+	if (frame.ID <= lastSOFID)
 	{
-		LOG(LSOF, LError, "Tried to extrapolate %d >> lastSOFID %d\n", frame.ID, lastSOFID);
+		LOG(LSOF, LWarn, "Somehow extrapolated frame ID %d (%d) from truncated ID %d even with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
+	}
+	else if (frame.ID > lastSOFID+2)
+	{
+		LOG(LSOF, LError, "Tried to extrapolate %d (%d) >> lastSOFID %d\n", frame.ID, frame.ID&0xFF, lastSOFID);
+	}
+	else
+	{
+		LOG(LSOF, LTrace, "Extrapolated frame ID %d (%d) from truncated ID %d with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
 	}
 
 	frame.approxSOF = true;
 	frame.SOF = EstimateSOF(sync, frame.ID);
-	LOG(LStreaming, LDebug, "Extrapolated frame ID from %d to %d using past frames!\n", frameID, frame.ID);
+	LOG(LStreaming, LDebug, "Extrapolated frame ID from %d to %d (%d) using past frames!\n", frameID, frame.ID, frame.ID&0xFF);
 	sync.frames.push_back(std::move(frame));
 	sync.frameCount++;
 	return &sync.frames.back();
@@ -328,11 +340,11 @@ SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameI
 	// TODO: Keep frames as circular buffer
 	// don't require the first camera to announce the frame to have a Frame Record already existing for it
 	// Because currently, no cameras announcing => no SyncedFrame to... record the frame
-	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
+	SyncedFrame *frame = GetSyncedFrame(sync, frameID, true);
 	if (!frame)
 	{ // Missed SOF
-		LOG(LStreaming, LDarn, "Camera %d received streaming packet announcement for frame %d but frame SOF wasn't registered yet!\n",
-			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LDarn, "Camera %d received streaming packet announcement for frame %d (%d) but frame SOF wasn't registered yet!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
@@ -596,8 +608,9 @@ bool MaintainStreamState(StreamState &state)
 						}
 						else
 						{
-							LOG(LStreaming, LDarn, "- Frame %d (%d) with %d packets received must've been announced before currently completed frame %d (%d)! Actual dt: %fms\n",
-								old->ID, old->ID&0xFF, old->receiving, frame->ID, frame->ID&0xFF, dtMS(old->firstPacket, frame->firstPacket));
+							LOG(LStreaming, LDarn, "- Frame %d (%d) with %d packets received must've been announced before currently completed frame %d (%d)!"
+								"SOF Delta %.2fms, but took %.2fms to receive this frame!\n",
+								old->ID, old->ID&0xFF, old->receiving, frame->ID, frame->ID&0xFF, dtMS(frame->SOF, old->SOF), dtMS(frame->SOF, frame->lastBlock));
 						}
 					}
 				}

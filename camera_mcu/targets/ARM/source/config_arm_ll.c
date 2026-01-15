@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g0xx_ll_rcc.h"
 #include "stm32g0xx_ll_system.h"
 #include "stm32g0xx_ll_gpio.h"
-//#include "stm32g0xx_ll_wwdg.h"
+#include "stm32g0xx_ll_wwdg.h"
 //#include "stm32g0xx_ll_pwr.h"
 //#include "stm32g0xx_ll_exti.h"
 //#include "stm32g0xx_ll_tim.h"
@@ -512,6 +512,42 @@ void SwitchToBootloader()
 }
 
 
+void EnableWatchdog()
+{
+	// Setup WWDG to freeze during debugging
+	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_DBGMCU);
+	LL_DBGMCU_APB1_GRP1_FreezePeriph(LL_DBGMCU_APB1_GRP1_WWDG_STOP);
+
+	// Enable Watchdog clock
+	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_WWDG);
+
+	// Setup watchdog to desired interval
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+	LL_WWDG_SetWindow(WWDG, 0x7F);
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	// Should be 4096us currently with full WWDG_TIMEOUT at 0x7F
+	const uint8_t prescaler = 1; // LL_WWDG_PRESCALER_1
+	const uint32_t usTillReset = (WWDG_TIMEOUT - 0x3F) * 4096 * prescaler / SYSCLKFRQ;
+
+	// Prepare watchdog interrupt (mostly used for debug, does not prevent the reset)
+	NVIC_SetPriority(WWDG_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+	NVIC_EnableIRQ(WWDG_IRQn);
+	LL_WWDG_EnableIT_EWKUP(WWDG);
+
+	// Enable
+	LL_WWDG_Enable(WWDG);
+}
+
+void SafeDelayMS(uint16_t ms)
+{
+	TimePoint tgt = GetTimePoint();
+	tgt += ms * TICKS_PER_MS;
+	while (GetTimePoint() < tgt)
+	{ // In addition to waiting, ensure the watchdog doesn't trigger, since we're expected to wait
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	}
+}
+
 /**
  * General IRQ Handlers
  */
@@ -523,18 +559,20 @@ void TIM1_BRK_UP_TRG_COM_IRQHandler()
 	TIM1->SR = 0;
 }
 
-/* void WWDG_IRQHandler(void)
+void WWDG_IRQHandler(void) __IRQ;
+void WWDG_IRQHandler()
 {
-	WARN_CHARR('/', 'W', 'D', 'G');
-	LL_WWDG_SetCounter(WWDG, 0b1000000 | WWDG_TIMEOUT);
+	BREAK();
+	// Could prevent a reset here, but we're relying on it to recover
+	//LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 	LL_WWDG_ClearFlag_EWKUP(WWDG);
-} */
+}
 
 // Handle Hard Fault
 void HardFault_Handler(void) __IRQ;
 void HardFault_Handler()
 {
-	__asm("BKPT #0\n") ; // Break into the debugger
+	BREAK();
 }
 
 /** This function handles Non maskable interrupt. */

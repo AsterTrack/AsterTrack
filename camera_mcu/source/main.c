@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g030xx.h"
 #include "stm32g0xx_ll_gpio.h"
 #include "stm32g0xx_ll_utils.h"
+#include "stm32g0xx_ll_wwdg.h"
 #endif
 #include "compat.h"
 
@@ -37,8 +38,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define FSIN_PULSE_WIDTH_US		10
 #define FILTER_SWITCHER_COIL_PULSE_MS	100
-
-#define WWDG_TIMEOUT			0		// (Timeout+1)*113.77us
 
 typedef enum
 {
@@ -190,11 +189,14 @@ int main(void)
 	// Bring filter switcher into default position
 	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 
+	EnableWatchdog();
+
 	// Start of main loop
 	TimePoint lastLoopIT = GetTimePoint();
 	while (1)
 	{
 		delayUS(10);
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 		TimePoint now = GetTimePoint();
 		TimeSpan loopDiff = GetTimeSpanUS(lastLoopIT, now);
@@ -212,7 +214,7 @@ int main(void)
 		{
 			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
 			rgbled_transition(LED_BOOTLOADER, 0);
-			delayMS(100);
+			SafeDelayMS(100);
 			// Set flag that persists the reset to switch to bootloader
 			*BOOTLOADER_FLAG = BOOTLOADER_KEY;
 			NVIC_SystemReset();
@@ -227,7 +229,7 @@ int main(void)
 			cameraIDToWrite = 0;
 			// Signal write state
 			rgbled_transition(LED_BOOTLOADER, 0);
-			delayMS(100);
+			SafeDelayMS(100);
 			// Write config
 			uint32_t config[] = { cameraIDWrite, 0 };
 			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint32_t));
@@ -359,11 +361,10 @@ int main(void)
 			EnterUARTPortZone(0);
 			uartState = UART_None;
 			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
-			delayUS(1000);
+			delayUS(100);
 			// TODO: Switching UART Control - Properly notify controller of switch
 			//uartd_send_int(0, msg_sw_mcu, sizeof(msg_sw_mcu), true);
 			uartd_nak_int(0);
-			delayUS(10000);
 			uartd_reset_port(0);
 			LeaveUARTPortZone(0);
 			ReturnToDefaultLEDState(100);
@@ -376,7 +377,6 @@ int main(void)
 				// TODO: Switching UART Control - Properly notify controller of switch
 				//uartd_send_int(0, msg_sw_pi, sizeof(msg_sw_pi), true);
 				uartd_nak_int(0);
-				delayUS(10000);
 				uartd_reset_port(0);
 			}
 			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);

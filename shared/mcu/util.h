@@ -104,7 +104,7 @@ static inline uint32_t __get_GINTEN()
 	__enable_irq(); \
 }
 
-#define BREAK() __asm("EBREAK;")
+#define BREAK() __BKPT()
 
 
 /* Debug */

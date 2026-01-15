@@ -81,6 +81,8 @@ const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
 #define I2C_INT_GPIO_X GPIOB
 const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
 
+#define WWDG_TIMEOUT 0x7F
+
 #else
 
 // RJ45 LED pins
@@ -131,6 +133,8 @@ const static uint32_t I2C_SDA_PIN = GPIO_PIN_7;
 #define I2C_INT_GPIO_X GPIOA
 const static uint32_t I2C_INT_PIN = GPIO_PIN_8;
 
+#define WWDG_TIMEOUT 0x7F
+
 #endif
 
 // Functions
@@ -146,6 +150,8 @@ uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t lengt
 uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length);
 
 void SwitchToBootloader();
+void EnableWatchdog();
+void SafeDelayMS(uint16_t ms);
 
 #ifdef __cplusplus
 }

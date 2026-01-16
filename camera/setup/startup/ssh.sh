@@ -26,6 +26,7 @@ for ALG in $ALGORITHMS; do
 	# Generate SSH keys if not available
 	if [[ ! -f $KEY || ! -f $KEY.pub ]]; then
 		ssh-keygen -t ${ALG} -N "" -f $KEY
+		sync
 	fi
 
 	# Make keys accessible for OpenSSH (could also link)

@@ -29,9 +29,11 @@ echo -1 > /proc/sys/kernel/sched_rt_runtime_us
 IDPATH=/mnt/mmcblk0p2/config/id
 if [[ "$(<$IDPATH wc -c)" != 4 ]]; then
 	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
+	sync
 fi
 while [ "$(cat $IDPATH | od -N 4 -A n -t d4)" == 0 ]; do
 	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
+	sync
 done
 
 if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then

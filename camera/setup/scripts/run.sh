@@ -17,7 +17,7 @@ do
         if [[ -f /mnt/mmcblk0p2/config/log ]]; then
                 [ -f /mnt/mmcblk0p2/trcam.log  ] && sudo mv /mnt/mmcblk0p2/trcam.log /mnt/mmcblk0p2/trcam.log.last
                 sudo mv $LOGPATH /mnt/mmcblk0p2/trcam.log
-                echo 3 | sudo tee /proc/sys/vm/drop_caches
+                sync
         fi
         sleep 1s
 done

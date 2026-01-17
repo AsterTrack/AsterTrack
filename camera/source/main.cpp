@@ -79,7 +79,8 @@ static char getConsoleChar();
 
 
 // Static initialised members (for atexit)
-static TrackingCameraState state = {};
+TrackingCameraState state = {};
+FrameSync framesync = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
 ErrorTag errorCode = ERROR_NONE;
@@ -151,9 +152,9 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 static void EnterStreamingState()
 {
 	printf("== Entering camera streaming mode! ==\n");
-	std::unique_lock lock(state.sync.access);
-	state.sync.frameSOFs = {};
-	state.sync.SOF2RecvDelay.reset();
+	std::unique_lock lock(framesync.access);
+	framesync.frameSOFs = {};
+	framesync.SOF2RecvDelay.reset();
 }
 
 static void LeaveStreamingState()
@@ -984,11 +985,10 @@ int main(int argc, char **argv)
 				frameID += advanceFrames;
 				cumulFramePassedQPU += advanceFrames-1;
 
-				if (uartComms.started && state.camera.extTrig)
-				{ // Match current frame with frame SOFs from PACKET_SOF
-					// Incase frameID is non-continuous, frameID will hopefully be adopted properly anyway, but cumulFrameNoTrigger will be inaccurate
+				if ((uartComms.ready || mcu_active) && state.camera.extTrig)
+				{ // Match current frame with frame SOFs from PACKET_SOF - can be assumed to be continuous
 
-					std::unique_lock lock(state.sync.access);
+					std::unique_lock lock(framesync.access);
 					
 					// 7000us at least from trigger signal to a frame being received in the camera
 					// Usually 7150us, with early timesync 7080us - just to be safe from timesync wonkyness, lower
@@ -1005,9 +1005,9 @@ int main(int argc, char **argv)
 					// TODO: Improve. Still yields wrong result. Make use of continuity of frames?
 					// Sometimes, large amounts of SOF packets are dropped (at least for pi, perhaps not for mcu)
 					bool logCase = false;
-					while (!state.sync.frameSOFs.empty())
+					while (!framesync.frameSOFs.empty())
 					{
-						auto SOF = state.sync.frameSOFs.front();
+						auto SOF = framesync.frameSOFs.front();
 						if (SOF.first < frameID)
 						{ // Skipped this frame
 #ifdef LOG_TIMING
@@ -1018,8 +1018,8 @@ int main(int argc, char **argv)
 								logCase = true;
 							}
 #endif
-							state.sync.frameSOFs.pop();
-							if (state.sync.frameSOFs.empty())
+							framesync.frameSOFs.pop();
+							if (framesync.frameSOFs.empty())
 							{
 #ifdef LOG_TIMING
 								if (logCase)
@@ -1031,34 +1031,31 @@ int main(int argc, char **argv)
 						}
 
 						long frameTimeUS = dtUS(SOF.second, time_cur);
-						if (frameTimeUS <= MIN_TRIGGER_TO_FRAME)
+						if (frameTimeUS <= MIN_TRIGGER_TO_FRAME && SOF.first != frameID)
 						{
 #ifdef LOG_TIMING
-							if (state.writeStatLogs || SOF.first != frameID)
-							{
-								if (!logCase) printf("Assuming frame ID to be %d after skipping %d frames\n", frameID, advanceFrames-1);
-								if (SOF.first == frameID)
-									printf("  But SOF for frame ID %d was only %ldus ago - SOF time prediction wrong? Earlier frameID failure? \n",
-										SOF.first, frameTimeUS);
-								else
-									printf("  Next SOF for frame ID %d was only %ldus ago - missed a SOF packet for frame ID %d?\n",
-										SOF.first, frameTimeUS, frameID);
-								printf("  Ended up with initial frame ID %d!\n", frameID);
-								logCase = false;
-							}
+							if (!logCase) printf("Assuming frame ID to be %d after skipping %d frames\n", frameID, advanceFrames-1);
+							if (SOF.first == frameID)
+								printf("  But SOF for frame ID %d was only %ldus ago - SOF time prediction wrong? Earlier frameID failure? \n",
+									SOF.first, frameTimeUS);
+							else
+								printf("  Next SOF for frame ID %d was only %ldus ago - missed a SOF packet for frame ID %d?\n",
+									SOF.first, frameTimeUS, frameID);
+							printf("  Ended up with initial frame ID %d!\n", frameID);
+							logCase = false;
 #endif
 							// Just trust our own prediction for now
 							// But frameID should be considered uncertain now
 							break;
 						}
 						// Possibly this or future SOF
-						state.sync.frameSOFs.pop(); // Consume already
+						framesync.frameSOFs.pop(); // Consume already
 
 						// Check delay model of trigger to receiving the frame through V4L2
-						auto &delayModel = state.sync.SOF2RecvDelay; // Fine without initialisation
-						if (!state.sync.frameSOFs.empty() && frameTimeUS > delayModel.avg + delayModel.stdDev()*2)
+						auto &delayModel = framesync.SOF2RecvDelay; // Fine without initialisation
+						if (!framesync.frameSOFs.empty() && frameTimeUS > delayModel.avg + delayModel.stdDev()*2)
 						{ // Check next frame if it could be our SOF instead
-							auto nextSOF = state.sync.frameSOFs.front();
+							auto nextSOF = framesync.frameSOFs.front();
 							long nextFrameTimeUS = dtUS(nextSOF.second, time_cur);
 							if (nextFrameTimeUS > MIN_TRIGGER_TO_FRAME &&
 								nextFrameTimeUS > delayModel.avg - delayModel.stdDev())
@@ -1095,7 +1092,7 @@ int main(int argc, char **argv)
 						else if (logCase)
 						{
 							printf("  Taking frame ID %d from %ldus ago as the best SOF! Got %d newer SOFs waiting, maximum SOF to receive delay is %d+%dus\n",
-								SOF.first, frameTimeUS, (int)state.sync.frameSOFs.size(), (int)delayModel.avg, (int)delayModel.stdDev()*2);
+								SOF.first, frameTimeUS, (int)framesync.frameSOFs.size(), (int)delayModel.avg, (int)delayModel.stdDev()*2);
 							logCase = false;
 						}
 #endif
@@ -2053,7 +2050,7 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 
 	// Queue send
 	comm_queue_send(comms.get(largeDataAff),
-		PacketHeader(PACKET_IMAGE, 0, frame.ID),
+		PacketHeader(PACKET_IMAGE, 0, frame.ID&0xFF),
 		std::move(jpegData), largePacketHeader);
 
 	TimePoint_t t3 = sclock::now();

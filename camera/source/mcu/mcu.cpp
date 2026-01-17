@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/commands.h"
 #include "stm32_bootloader.hpp"
 #include "version.hpp"
+#include "state.hpp" // framesync
 
 #include "util/util.hpp"
 
@@ -708,6 +709,7 @@ bool mcu_get_status()
 	else sendTime = GetTimeSynced(timesync, timestampUS, 1<<16);
 	long responseTimeUS = dtUS(sendTime, receiveTime);
 
+	static uint32_t lastExtrapolatedFrameID = 0;
 	static uint8_t lastReceivedFrameID = 0;
 	uint8_t lastFrameID = packet[6];
 	uint16_t usSinceFrameID = (packet[7] << 8) | packet[8];
@@ -715,7 +717,16 @@ bool mcu_get_status()
 	{
 		if (lastReceivedFrameID != lastFrameID && ((lastReceivedFrameID+1)%256) != lastFrameID)
 			printf("Received odd frame ID %d %.2fms ago - previous one %d!\n", lastFrameID, usSinceFrameID/1000.0f, lastReceivedFrameID); 
+		lastExtrapolatedFrameID += shortDiff<uint16_t, int>(lastReceivedFrameID, lastFrameID, 5, 255);
+		lastExtrapolatedFrameID = (lastExtrapolatedFrameID&~0xFF) | lastFrameID; // Ensure
 		lastReceivedFrameID = lastFrameID;
+		//printf("Frame ID %d (%d) from %dus ago + %ldus RX - roundtrip of %ldus!\n",
+		//	lastExtrapolatedFrameID, lastFrameID, usSinceFrameID, responseTimeUS, roundtripTimeUS); 
+		TimePoint_t SOF = sendTime - std::chrono::microseconds(usSinceFrameID);
+		std::unique_lock lock(framesync.access);
+		if (framesync.frameSOFs.size() > 5)
+			framesync.frameSOFs.pop();
+		framesync.frameSOFs.emplace(lastExtrapolatedFrameID, SOF);
 	}
 
 	uint8_t queueSize = packet[9];

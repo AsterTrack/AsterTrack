@@ -31,10 +31,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 #include "camera/gcs.hpp"
 #include "comm/packet.hpp"
-#include "comm/timesync.hpp"
 #include "comm/firmware.hpp"
 #include "comm/wireless.hpp"
 #include "blob/parameters.hpp"
+#include "util/stats.hpp"
 
 struct TrackingCameraMode 
 {
@@ -120,12 +120,16 @@ struct TrackingCameraState
 	TrCamMode newModeRaw = TRCAM_STANDBY;
 	TrackingCameraMode newMode = {};
 	ConfigPacket newConfigPacket;
-	struct {
-		std::queue<std::pair<uint32_t, TimePoint_t>> frameSOFs;
-		StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
-		TimeSync time;
-		std::mutex access;
-	} sync = {};
 };
+
+struct FrameSync
+{
+	std::queue<std::pair<uint32_t, TimePoint_t>> frameSOFs;
+	StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
+	std::mutex access;
+};
+
+extern TrackingCameraState state;
+extern FrameSync framesync;
 
 #endif // STATE_H

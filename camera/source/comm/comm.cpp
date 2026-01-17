@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "timesync.hpp"
 #include "parsing.hpp"
 #include "comm/uart.h"
+#include "mcu/mcu.hpp"
 
 #include "util/util.hpp"
 
@@ -359,6 +360,7 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	CommState &comm = *comm_ptr;
 	ProtocolState &proto = comm.protocol;
 	TrackingCameraState &state = *state_ptr;
+	TimeSync timesync;
 
 	// Init predefined messages
 	uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_SEND], msg_ping[UART_PACKET_OVERHEAD_SEND];
@@ -521,13 +523,23 @@ phase_comm:
 		if (!comm.enabled || !comm.started || comm.error)
 			continue;
 
-		ResetTimeSync(state.sync.time);
+		ResetTimeSync(timesync);
 
 		time_start = sclock::now();
 
 		time_read = sclock::now();
 		while (comm.enabled && comm.started && !comm.error)
 		{
+			if (mcu_active)
+			{
+				// UART RX on the Pi has severe problems, it relies on interrupts clearing the 16-byte FIFO within 22us at 8Mbaud
+				// So frequently, there are missed interrupts and thus bytes missing, making UART RX unreliable
+				// That's why frame sync and all control packets are routed through the MCU (and it needs to parse most of the packets anyway)
+				// The only exception are firmware packets, which are too large and already have robust error handling built-in
+				if (timesync.measurements)
+					ResetTimeSync(timesync);
+			}
+
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
@@ -563,27 +575,28 @@ phase_comm:
 					comm_reset(comm);
 					goto phase_identification;
 				}
-				else if (proto.header.tag == PACKET_SYNC)
+				else if (proto.header.tag == PACKET_SYNC && !mcu_active)
 				{ // Received sync packet
 					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= SYNC_PACKET_SIZE)
 					{
 						struct SyncPacket sync = parseSyncPacket(&proto.rcvBuf[proto.cmdPos]);
-						std::unique_lock lock(state.sync.access);
-						if (dtUS(state.sync.time.lastTime, sclock::now()) > 1000000)
-							ResetTimeSync(state.sync.time);
-						UpdateTimeSync(state.sync.time, sync.timeUS, 1<<24, time_read);
+						if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
+							ResetTimeSync(timesync);
+						UpdateTimeSync(timesync, sync.timeUS, 1<<24, time_read);
 					}
 				}
-				else if (proto.header.tag == PACKET_SOF)
+				else if (proto.header.tag == PACKET_SOF && !mcu_active)
 				{ // Received sof packet
 					if (proto_fetchCmd(proto) && proto.validChecksum && proto.cmdSz >= SOF_PACKET_SIZE)
 					{
 						struct SOFPacket sync = parseSOFPacket(&proto.rcvBuf[proto.cmdPos]);
-						std::unique_lock lock(state.sync.access);
-						if (dtUS(state.sync.time.lastTime, sclock::now()) > 1000000)
-							ResetTimeSync(state.sync.time);
-						TimePoint_t SOF = UpdateTimeSync(state.sync.time, sync.timeUS, 1<<24, time_read);
-						state.sync.frameSOFs.emplace(sync.frameID, SOF);
+						if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
+							ResetTimeSync(timesync);
+						TimePoint_t SOF = UpdateTimeSync(timesync, sync.timeUS, 1<<24, time_read);
+						std::unique_lock lock(framesync.access);
+						if (framesync.frameSOFs.size() > 5)
+							framesync.frameSOFs.pop();
+						framesync.frameSOFs.emplace(sync.frameID, SOF);
 						//printf("Corrected SOF read %lldus ago to be %.2fms in the past!\n", std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-time_read).count(), std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-SOF).count()/1000.0f);
 					}
 				}

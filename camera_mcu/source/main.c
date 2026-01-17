@@ -738,8 +738,9 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[4] = timestampUS >> 8;
 			response[5] = timestampUS & 0xFF;
 			// Last frame info for framesync (using timestamp as reference to more easily encode when frametime was too long ago)
-			response[6] = 0; // last frame ID
-			TimeSpan usSinceFrame = 0; // time since frame sync
+			response[6] = lastFrameID & 0xFF;
+			TimeSpan usSinceFrame = GetTimeSpanUS(lastFrameSync, timestamp);
+			if (usSinceFrame > 0xFFFF) usSinceFrame = 0xFFFF;
 			response[7] = usSinceFrame >> 8;
 			response[8] = usSinceFrame & 0xFF;
 			// State of queued packets from controller intended for SBC

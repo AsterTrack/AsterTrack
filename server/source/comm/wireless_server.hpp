@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp"
 
 #include <cstdint>
+#include <vector>
 #include <string>
 #include <thread>
 #include "util/memory.hpp" // opaque_ptr

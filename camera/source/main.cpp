@@ -487,6 +487,11 @@ int main(int argc, char **argv)
 						std::unique_lock lock(mcu_mutex);
 						mcu_update_id(cameraID);
 					}
+					else if (cin == 'i')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_update_id(35236462);
+					}
 				}
 			}
 

@@ -422,12 +422,21 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 	if (page != pageEnd)
 		return 10;
 
-	if (!UnlockFlash())
-		return 1;
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_8);
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	__disable_irq();
 
-	while (FLASH->SR & FLASH_SR_BSY1);
+	if (!UnlockFlash())
+	{
+		__enable_irq();
+
+		LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+		return 1;
+	}
+
+	while (FLASH->SR & FLASH_SR_BSY1)
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear error status
 	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
@@ -438,7 +447,8 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 	FLASH->CR |= FLASH_CR_STRT;
 
 	// Wait for operation to finish
-	while (FLASH->SR & FLASH_SR_BSY1);
+	while (FLASH->SR & FLASH_SR_BSY1)
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear flash erase flag
 	FLASH->CR &= ~(FLASH_CR_PER | FLASH_CR_PNB_Msk);
@@ -454,6 +464,7 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 
 		__enable_irq();
 
+		LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
 		return error;
 	}
 
@@ -462,11 +473,14 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 
 	for (int i = 0; i < length/2; i++)
 	{
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+
 		address[i*2+0] = data[i*2+0];
 		__ISB();
 		address[i*2+1] = data[i*2+1];
 
-		while (FLASH->SR & FLASH_SR_BSY1);
+		while (FLASH->SR & FLASH_SR_BSY1)
+			LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 		// Clear EOP and check errors
 		bool EOP = FLASH->SR & FLASH_SR_EOP;
@@ -475,17 +489,22 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 		if (!EOP || error) break;
 	}
 
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+
 	// Clear any errors
 	FLASH->SR |= FLASH_SR_ERRORS;
 
-	// Exist flash programming mode
+	// Exit flash programming mode
 	FLASH->CR &= ~FLASH_CR_PG;
 
 	// Lock FLASH->CR again
 	FLASH->CR = FLASH_CR_LOCK;
 
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+
 	__enable_irq();
 
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
 	return error;
 }
 

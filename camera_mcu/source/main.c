@@ -189,6 +189,7 @@ int main(void)
 	// Bring filter switcher into default position
 	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 
+	// Start watchdog
 	EnableWatchdog();
 
 	// Start of main loop
@@ -241,8 +242,8 @@ int main(void)
 			else if (config[0] != PERSISTENT_CONFIG[0] && config[1] != PERSISTENT_CONFIG[1])
 				rgbled_transition(LED_ERROR_4, 0);
 			else
-				rgbled_transition(LED_ACTIVE, 0);
-			ReturnToDefaultLEDState(2000);
+				rgbled_transition(LED_STANDBY, 0);
+			ReturnToDefaultLEDState(500);
 			// Update identification packet to use new ID
 			uart_set_identification();
 		}
@@ -652,7 +653,7 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 			if (len != sizeof(CameraID))
 			{
 				rgbled_transition(LED_ERROR_1, 0);
-				ReturnToDefaultLEDState(2000);
+				ReturnToDefaultLEDState(1000);
 				return false;
 			}
 			CameraID id;
@@ -660,13 +661,13 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 			if (id == 0)
 			{
 				rgbled_transition(LED_ERROR_2, 0);
-				ReturnToDefaultLEDState(2000);
+				ReturnToDefaultLEDState(1000);
 				return true;
 			}
 			else if (PERSISTENT_CONFIG[0] == id)
 			{
 				rgbled_transition(LED_STANDBY, 0);
-				ReturnToDefaultLEDState(1000);
+				ReturnToDefaultLEDState(500);
 			}
 			else
 			{ // Tell main thread to write to flash

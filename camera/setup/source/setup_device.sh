@@ -151,6 +151,11 @@ sed -i "s|dtparam=audio=on$|#dtparam=audio=on|" "$MOUNT_BOOT/config.txt"
 #gpu_freq=200
 echo "
 [ALL]
+# Without any core_freq modifications, it seemed stable... until it wasn't
+# Without any overclocks it is stable though so far
+# Narrowed it down to core and/or sdram
+# core_freq=500 seems to cause the kernel panic
+# sdram_freq definitely also causes instability, perhaps the ext4 shutdown request?
 arm_freq=1000
 arm_freq_min=800
 arm_freq_max=1000
@@ -164,11 +169,11 @@ v3d_freq=400
 #v3d_freq=300
 # Core is default 400MHz
 core_freq_min=400
-core_freq=500
+core_freq=400
 #core_freq=400
 # SDRam default is 400-450MHz
-sdram_freq_min=450
-sdram_freq=500
+#sdram_freq_min=450
+#sdram_freq=500
 #sdram_freq=450
 #over_voltage=0
 #over_voltage_min=-4

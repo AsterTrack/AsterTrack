@@ -176,6 +176,9 @@ int main(void)
 	// Initialise version
 	version_init();
 
+	// Read OTP memory
+	otp_read();
+
 #if defined(USE_UART)
 	// Prepare identification to be sent out over UART
 	uart_set_identification();
@@ -752,8 +755,6 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		}
 		case MCU_FETCH_INFO:
 		{
-			otp_read();
-
 			// This is a critical packet, so make sure misinterpretations can not happen
 			uint8_t Packet_Version = 1;
 			if (len > 0 && data[0] != 0 && data[0] < Packet_Version)
@@ -765,7 +766,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[1] = OTP_Version; 			// OTP Format Version
 			response[2] = OTP_NumSubParts; 		// Sub-Part Count
 			response[3] = 0; 					// Reserved
-			
+
 			// Write string lengths for separate request
 			response[4] = OTP_HwStringLength >> 8;
 			response[5] = OTP_HwStringLength & 0xFF;
@@ -775,13 +776,14 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			uint32_t *packet32 = ((uint32_t*)response);
 			packet32[2] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
 			packet32[3] = firmwareVersion.num;	// MCU Firmware Version
-			packet32[4] = OTP[2];				// 64-Bit Camera Serial Number Word 1
-			packet32[5] = OTP[3];				// 64-Bit Camera Serial Number Word 2
-			packet32[6] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
-			packet32[7] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
-			packet32[8] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
+			packet32[4] = OTP[2];				// 96-Bit Camera Serial Number Word 1
+			packet32[5] = OTP[3];				// 96-Bit Camera Serial Number Word 2
+			packet32[6] = OTP[4];				// 96-Bit Camera Serial Number Word 3
+			packet32[7] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
+			packet32[8] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
+			packet32[9] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
 
-			static_assert(MCU_INFO_MAX_LENGTH == (9 * sizeof(uint32_t)));
+			static_assert(MCU_INFO_MAX_LENGTH == (10 * sizeof(uint32_t)));
 			return MCU_INFO_MAX_LENGTH;
 		}
 		case MCU_GET_HW_STR:
@@ -802,8 +804,9 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		case MCU_GET_PARTS:
 		{
 			response[0] = 0;
-			response[1] = otp_get_subparts((uint32_t*)(response+2), OTP_NumSubParts);
-			return 2 + response[1]*sizeof(uint64_t);
+			response[1] = OTP_NumSubParts;
+			otp_get_subparts((uint32_t*)(response+2));
+			return 2 + OTP_NumSubParts*sizeof(uint64_t);
 		}
 		default:
 			// TODO: Error?

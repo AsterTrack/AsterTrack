@@ -46,7 +46,7 @@ void otp_read()
 	switch (OTP_Version)
 	{
 		case 1:
-			OTP_LenMainData = 8;	// Header, HW Serial, 4 Blocks Reserved
+			OTP_LenMainData = 8;	// Header, HW Serial, 5 Blocks Reserved
 			OTP_MaxSubParts = 8;	// 8 64-Bit Serial Numbers for sub-parts
 			OTP_MaxHWString = 100;	// 100 Blocks maximum for HW Descriptor String
 			break;
@@ -65,7 +65,7 @@ void otp_read()
 		// E.g. to allow for product description, and documentation of hardware modifications done after the fact
 		// So any of those strings NEED to be terminated by at least 1 byte of NULL (a full 64Bit of 0s if need be)
 		// Upon encountering a block that has not yet been written, string is terminated again
-		uint8_t otpTextStart = OTP_LenMainData + OTP_MaxSubParts * 2;
+		uint8_t otpTextStart = (OTP_LenMainData + OTP_MaxSubParts) * 2;
 		OTP_HwStringLength = 0;
 		for (int b = 0; b < OTP_MaxHWString; b++)
 		{
@@ -86,7 +86,7 @@ void otp_read()
 			}
 		}
 		// Clear trailing separator - but retain the separators between individual texts
-		if (OTP_HwStringLength > 0 && OTP_HwStringData[OTP_HwStringLength-1] == MCU_MULTI_TEXT_SEP)
+		if (OTP_HwStringLength > 0 && OTP_HwStringLength < OTP_MaxHWString*8 && OTP_HwStringData[OTP_HwStringLength-1] == MCU_MULTI_TEXT_SEP)
 			OTP_HwStringLength--;
 	}
 	else OTP_HwStringLength = 0;
@@ -95,33 +95,22 @@ void otp_read()
 	OTP_NumSubParts = 0;
 	for (int s = 0; s < OTP_MaxSubParts; s++)
 	{
-		uint8_t otpIndex = OTP_LenMainData + s*2;
+		uint8_t otpIndex = (OTP_LenMainData + s) * 2;
 		if (!(OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1))
 			OTP_NumSubParts = s+1; // Update count of explicitly specified sub-parts
 	}
 }
 
-uint8_t otp_get_subparts(uint32_t *target, uint16_t maxCount)
+uint8_t otp_get_subparts(uint32_t *target)
 {
 	// These 64Bit-Blocks are optional sub-part IDs
 	// Need to be continuous, their index is their identifier
-	if (maxCount > OTP_MaxSubParts) maxCount = OTP_MaxSubParts;
-	if (maxCount > OTP_NumSubParts) maxCount = OTP_NumSubParts;
-	uint8_t subParts = 0;
-	for (int s = 0; s < maxCount; s++)
+	for (int s = 0; s < OTP_NumSubParts; s++)
 	{
-		uint8_t otpIndex = OTP_LenMainData + s*2;
-		if (OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1)
-		{ // Denote unwritten sub-parts with invalid serial number 0
-			target[s*2 + 0] = 0;
-			target[s*2 + 1] = 0;
-		}
-		else
-		{ // Write sub-part serial number (or 0 for explicitly unused sub-parts)
-			target[s*2 + 0] = OTP[otpIndex+0];
-			target[s*2 + 1] = OTP[otpIndex+1];
-			subParts = s+1; // Update count of explicitly specified sub-parts
-		}
+		uint8_t otpIndex = (OTP_LenMainData + s) * 2;
+		// Write sub-part serial number (no bits set for explicitly unused sub-parts, all bits set for implicitly unused sub-parts)
+		uint32_t a = OTP[otpIndex+0], b = OTP[otpIndex+1];
+		memcpy(target + s*2 + 0, &a, sizeof(uint32_t));
+		memcpy(target + s*2 + 1, &b, sizeof(uint32_t));
 	}
-	return subParts;
 }

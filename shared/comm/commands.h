@@ -56,7 +56,7 @@ enum CameraMCUCommand
 #define MCU_LEADING_BYTES		0
 
 // Length of MCU_FETCH_INFO (may increase as long as backwards-compatibility is kept)
-#define MCU_INFO_MAX_LENGTH		((2 + 7) * sizeof(uint32_t))
+#define MCU_INFO_MAX_LENGTH		(10 * sizeof(uint32_t))
 // Non-Zero Separator in strings indicating separate texts
 #define MCU_MULTI_TEXT_SEP		'\2' // Unicode Text Start
 

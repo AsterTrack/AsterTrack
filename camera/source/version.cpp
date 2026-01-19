@@ -103,8 +103,8 @@ void gatherInfo(CameraID overrideID)
 /* Returns whether MCU should be instructed to update its own stored ID */
 bool receivedInfoFromMCU(MCU_StoredInfo &&info)
 {
-	printf("Received Camera Serial %.8x%.8x, Camera ID #%u, Camera MCU FW v.%d.%d.%d.%d\n",
-		info.hardwareSerial.serial1, info.hardwareSerial.serial2, info.cameraID,
+	printf("Received Camera Serial %.8x%.8x%.8x, Camera ID #%u, Camera MCU FW v.%d.%d.%d.%d\n",
+		info.hardwareSerial.serial32[0], info.hardwareSerial.serial32[1], info.hardwareSerial.serial32[2], info.cameraID,
 		info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build);
 	printf("    Additionally received %d subpart serial numbers, and MCU Unique ID #%.8x%.8x%.8x\n",
 		info.subpartSerials.size(), info.mcuUniqueID[0], info.mcuUniqueID[1], info.mcuUniqueID[2]);

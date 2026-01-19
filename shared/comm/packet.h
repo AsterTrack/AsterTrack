@@ -238,31 +238,6 @@ enum CameraMCUFlashConfig {
 	MCU_FLASH_USER_ABORTED = 10,
 };
 
-union HardwareSerial
-{
-	uint64_t serial;
-	struct
-	{
-		uint32_t serial1;
-		uint32_t serial2;
-	};
-	struct
-	{
-		uint8_t header : 4;			// Different product classes (Controller/Dongle, Camera, Tracker/Controller, etc.)
-		// Manufacturer:
-		uint8_t type : 4;			// Official, Partner, Third-party, DIY; etc.
-		uint8_t manufacturer;		// Different production facilities, companies, DIY signs
-		// Product:
-		uint8_t product;			// Different product versions / major iterations
-		uint8_t config : 4;			// Descriptive configuration (e.g. camera sensor used, wireless support) - should also have different product
-		uint8_t revision : 4;		// PCB-level revision
-		// Production:
-		uint8_t batch; 				// Different Batches of product
-		uint8_t run;				// Different batches of components (to a degree), different shifts/people
-		uint32_t ID : 16;			// Unique within run, centrally allocated, to make it harder to fake serial numbers		
-	};
-};
-
 /**
  * Checksum size used for packet header during UART comms
  */

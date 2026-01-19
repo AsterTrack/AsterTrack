@@ -113,6 +113,9 @@ void i2c_driver_init()
 	#define DMA_CH_TX DMA_CHANNEL_5
 	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_RX, LL_DMAMUX_REQ_I2C1_RX);
 	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_TX, LL_DMAMUX_REQ_I2C1_TX);
+	LL_DMA_EnableIT_TC(DMA1, DMA_CH_TX);
+	NVIC_SetPriority(I2C1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_EnableIRQ(DMA1_Ch4_5_DMAMUX1_OVR_IRQn);
 
 	// Setup respective DMA Channel for UART RX
 	LL_DMA_SetDataTransferDirection(DMA1, DMA_CH_RX, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
@@ -160,6 +163,7 @@ uint32_t GetRXLength()
 	return sizeof(receiveBuffer) - LL_DMA_GetDataLength(DMA1, DMA_CH_RX);
 }
 
+void I2C1_IRQHandler() __IRQ;
 void I2C1_IRQHandler(void)
 {
 	uint32_t ISR = I2C1->ISR;
@@ -169,6 +173,10 @@ void I2C1_IRQHandler(void)
 		uint8_t addr = (ISR&I2C_ISR_ADDCODE) >> I2C_ISR_ADDCODE_Pos << 1;
 		if (addr == I2C_ADDRESS_MATCH)
 		{ // Address matches own address
+
+			// Disable TXIE for excess reads again
+			I2C1->CR1 &= ~I2C_CR1_TXIE;
+
 			if (ISR & I2C_ISR_DIR)
 			{ // Prepare to transmit data
 				TimePoint start = GetTimePoint();
@@ -234,6 +242,12 @@ void I2C1_IRQHandler(void)
 
 		I2C1->ICR |= I2C_ICR_STOPCF;
 	}
+	if (ISR & I2C_ISR_TXIS)
+	{
+		// Only called when TX DMA of expected data length finished, but SBC reads more
+		// At that point, just write null-bytes
+		I2C1->TXDR = 0x00;
+	}
 	if (ISR & I2C_ISR_NACKF)
 	{ // End of TX
 		I2C1->ICR |= I2C_ICR_NACKCF;
@@ -249,5 +263,15 @@ void I2C1_IRQHandler(void)
 	if (ISR & I2C_ISR_BERR)
 	{ // Bus error
 		I2C1->ICR |= I2C_ICR_BERRCF;
+	}
+}
+
+void DMA1_Ch4_5_DMAMUX1_OVR_IRQHandler() __IRQ;
+void DMA1_Ch4_5_DMAMUX1_OVR_IRQHandler(void)
+{
+	if (LL_DMA_IsActiveFlag_TC5(DMA1))
+	{ // Sent all data, enable TXIE incase there are excess reads
+		I2C1->CR1 |= I2C_CR1_TXIE;
+		LL_DMA_ClearFlag_TC5(DMA1);
 	}
 }

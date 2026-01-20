@@ -196,7 +196,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				if (config.sshStatus == WIRELESS_STATUS_ENABLED)
 					ImGui::Text("SSH is enabled.");
 				else if (config.sshStatus == WIRELESS_STATUS_CONNECTED)
-					ImGui::Text("SSH is enabled.");
+					ImGui::Text("SSH is enabled."); // Camera doesn't express SSH connected status.
 				else if (config.sshStatus == WIRELESS_STATUS_ERROR)
 					ImGui::Text("Failed to set up SSH!");
 				else if (config.sshStatus == WIRELESS_STATUS_DISABLED)
@@ -219,7 +219,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::Text("Status:");
 
 				if (config.serverStatus == WIRELESS_STATUS_ENABLED)
-					ImGui::Text("Server is enabled, but not connected yet.");
+					ImGui::Text("Server is enabled.");  // Camera doesn't express server connection status like this, yet.
 				else if (config.serverStatus == WIRELESS_STATUS_CONNECTED)
 					ImGui::Text("Server connection is established.");
 				else if (config.serverStatus == WIRELESS_STATUS_ERROR)

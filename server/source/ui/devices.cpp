@@ -100,9 +100,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 		// ID Label
 		if (camera.pipeline)
-			ImGui::Text("#%d (%d)", camera.id, camera.pipeline->index);
+			ImGui::Text("#%u (%d)", camera.id, camera.pipeline->index);
 		else
-			ImGui::Text("#%d", camera.id);
+			ImGui::Text("#%u", camera.id);
 
 		auto &wireless = camera.config.wireless;
 		if (wireless.wifiStatus == WIRELESS_STATUS_CONNECTED)
@@ -434,7 +434,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			if (camera->firmware)
 			{
 				auto camStatus = camera->firmware->contextualLock();
-				ImGui::Text("Camera #%d: %s", camera->id, camStatus->text.c_str());
+				ImGui::Text("Camera #%u: %s", camera->id, camStatus->text.c_str());
 				/* if (camStatus->code == FW_STATUS_UPDATED)
 				{
 					ImGui::SetCursorPosX(button.x);
@@ -444,7 +444,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				} */
 			}
 			else if (camera->selectedForFirmware)
-				ImGui::Text("Camera #%d is not part of the firmware update.", camera->id);
+				ImGui::Text("Camera #%u is not part of the firmware update.", camera->id);
 		}
 	}
 	else if (cameraFWUpdateSetup)
@@ -503,7 +503,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		for (auto &camera : state.cameras)
 		{
 			if (camera->selectedForFirmware)
-				ImGui::Text("Camera #%d set to update", camera->id);
+				ImGui::Text("Camera #%u set to update", camera->id);
 		}
 
 		if (ImGui::Button("Flash", SizeWidthFull()))

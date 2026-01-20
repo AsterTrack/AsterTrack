@@ -337,9 +337,9 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		ImGui::SameLine();
 		ImGui::AlignTextToFramePadding();
 		if (view.camera->pipeline)
-			ImGui::Text("#%d (%d)", view.camera->id, view.camera->pipeline->index);
+			ImGui::Text("#%u (%d)", view.camera->id, view.camera->pipeline->index);
 		else
-			ImGui::Text("#%d", view.camera->id);
+			ImGui::Text("#%u", view.camera->id);
 		ImGui::SameLine();
 	}
 

@@ -835,7 +835,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 				return asprintf_s("Failed to match %d existing cameras against %d cameras in recording file '%s'!", (int)cameras.size(), (int)parsedCameras.size(), path.c_str());
 			for (int c = 0; c < cameras.size(); c++)
 				if (cameras[c].ID != parsedCameras[c].ID)
-					return asprintf_s("Failed to match existing camera #%d against camera #%d in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
+					return asprintf_s("Failed to match existing camera #%u against camera #%u in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
 			cameras = std::move(parsedCameras);
 		}
 

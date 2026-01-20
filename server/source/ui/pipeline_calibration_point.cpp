@@ -191,7 +191,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
 				ImGui::AlignTextToFramePadding();
-				ImGui::Text("#%d", camera->id);
+				ImGui::Text("#%u", camera->id);
 
 				ImGui::TableNextColumn();
 				bool noCalib = calib.invalid();
@@ -844,7 +844,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 		{
 			ImGui::TextUnformatted("Transferred prior room calibration successfully by finding cameras that did not move:");
 			for (auto &cam : ptCalib.roomState.unchangedCameras)
-				ImGui::Text("Camera #%d unchanged with relational error %.2fmm", cam.first, cam.second);
+				ImGui::Text("Camera #%u unchanged with relational error %.2fmm", cam.first, cam.second);
 			ImGui::TextUnformatted("NOTE: Whether there even was a prior room calibration is unknown!");
 			ImGui::EndTooltip();
 		}
@@ -856,7 +856,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 		{
 			ImGui::TextUnformatted("Transferred prior room calibration by relying on cameras who might have been re-mounted:");
 			for (auto &cam : ptCalib.roomState.unchangedCameras)
-				ImGui::Text("Camera #%d used within relational error %.2fmm", cam.first, cam.second);
+				ImGui::Text("Camera #%u used within relational error %.2fmm", cam.first, cam.second);
 			ImGui::TextUnformatted("NOTE: Whether there even was a prior room calibration is unknown!");
 			ImGui::EndTooltip();
 		}

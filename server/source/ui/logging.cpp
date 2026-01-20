@@ -249,12 +249,12 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		if (ImGui::Selectable("Copy All"))
 		{
 			int totalSize = 0;
-			for (const auto entry : logs)
+			for (const auto &entry : logs)
 				totalSize += entry.log.length() + 1;
 			std::string logCpy;
 			logCpy.resize(totalSize);
 			int index = 0;
-			for (const auto entry : logs)
+			for (const auto &entry : logs)
 			{
 				memcpy(logCpy.data()+index, entry.log.data(), entry.log.length());
 				index += entry.log.length();

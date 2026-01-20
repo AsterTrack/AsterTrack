@@ -67,6 +67,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	{
 		TrackingCameraState &camera = *cameraPtr;
 		ImGui::PushID(camera.id);
+
+		// Draw Camera Symbol
 		ImVec2 pos = ImGui::GetCursorPos();
 		ImGui::Image(icons().camera, cameraSize);
 		ImRect bb(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
@@ -94,17 +96,56 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 
 		// Detail text
-		//pos.x = bb.Max.x + style.ItemInnerSpacing.x;
 		ImGui::SetCursorPos(pos);
 		ImGui::Indent(bb.GetWidth() + style.ItemInnerSpacing.x);
+		auto &info = camera.storage.info;
+		auto &wireless = camera.config.wireless;
 
 		// ID Label
 		if (camera.pipeline)
 			ImGui::Text("#%u (%d)", camera.id, camera.pipeline->index);
 		else
 			ImGui::Text("#%u", camera.id);
+		ImGui::SameLine();
 
-		auto &wireless = camera.config.wireless;
+		// Information Popup
+		const ImGuiID infoPopupID = ImGui::GetCurrentWindowRead()->GetID("##InfoPopup");
+		if (InlineIconButton(ICON_LA_INFO_CIRCLE))
+			ImGui::OpenPopup(infoPopupID);
+		if (ImGui::BeginComboPopup(infoPopupID, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()),
+			ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge))
+		{
+			auto desc = CameraDescribeInfo(info);
+			if (desc.empty())
+				ImGui::TextUnformatted("Camera has not sent info yet!");
+			else
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("FW & HW Info:");
+				SameLineTrailing(SizeWidthDiv3().x);
+				if (ImGui::Button("Copy", SizeWidthDiv3()))
+				{
+					int totalSize = 0;
+					for (const auto &str : desc)
+						totalSize += str.length() + 1;
+					std::string infoCopy;
+					infoCopy.resize(totalSize);
+					int index = 0;
+					for (const auto &str : desc)
+					{
+						memcpy(infoCopy.data()+index, str.data(), str.length());
+						index += str.length();
+						infoCopy.data()[index++] = '\n';
+					}
+					infoCopy.resize(index);
+					ImGui::SetClipboardText(infoCopy.c_str());
+				}
+				for (auto &str : desc)
+					ImGui::TextUnformatted(str.c_str());
+			}
+			ImGui::EndCombo();
+		}
+
 		if (wireless.wifiStatus == WIRELESS_STATUS_CONNECTED)
 		{ // Have to manually add frame padding
 			ImGui::SameLine();
@@ -189,17 +230,38 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 
 		// Firmware
+		ImGui::BeginGroup();
 		ImGui::Text("FW");
+		if (info.sbcFWVersion.num)
+		{
+			ImGui::SameLine();
+			ImGui::Text("v%d.%d.%d", info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch);
+		}
+		if (info.mcuFWVersion.num)
+		{
+			ImGui::SameLine();
+			ImGui::Text("(v%d.%d.%d)", info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch);
+		}
+		if (!info.sbcFWVersion.num && !info.mcuFWVersion.num)
+		{
+			ImGui::SameLine();
+			ImGui::TextUnformatted("Unknown");
+		}
+		ImGui::EndGroup();
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::Text("SBC Firmware v%d.%d.%d (Build %.2x - %s)",
+				info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch, info.sbcFWVersion.build, info.sbcFWDescriptor.c_str());
+			ImGui::Text("MCU Firmware v%d.%d.%d (Build %.2x - %s)",
+				info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build, info.mcuFWDescriptor.c_str());
+			ImGui::EndTooltip();
+		}
 		ImGui::SameLine();
-		//ImGui::Text("v1.2.4");
-		//ImGui::SameLine();
-		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
 		ImGui::BeginDisabled(state.isStreaming || cameraFWUpdateState);
-		if (ImGui::Button("v1.2.4"))
+		if (InlineIconButton(camera.selectedForFirmware? ICON_LA_BAN"###Update" : ICON_LA_DOWNLOAD"###Update"))
 			camera.selectedForFirmware = !camera.selectedForFirmware;
 		if (camera.selectedForFirmware) cameraFWUpdateSetup = true;
 		ImGui::EndDisabled();
-		ImGui::PopStyleVar();
 
 		ImGui::Unindent(bb.GetWidth() + style.ItemInnerSpacing.x);
 
@@ -431,6 +493,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 		for (auto &camera : state.cameras)
 		{
+			bool currentlyDisconnected = !camera->client && !camera->controller;
 			if (camera->firmware)
 			{
 				auto camStatus = camera->firmware->contextualLock();

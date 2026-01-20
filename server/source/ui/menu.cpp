@@ -462,7 +462,7 @@ void InterfaceState::UpdateMainMenuBar()
 	}
 	if (ImGui::BeginPopupModal("About AsterTrack", &aboutPopupOpened, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
 	{
-		ImGui::Text("Server Version %d.%d.%d (Build %d - %s)",
+		ImGui::Text("Server Version %d.%d.%d (Build %.2x - %s)",
 			serverVersion.major, serverVersion.minor, serverVersion.patch, serverVersion.build, serverVersionDescriptor.c_str());
 
 		ImGui::SeparatorText("Third-Party Licenses");

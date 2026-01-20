@@ -148,4 +148,14 @@ static inline void EndViewToolbar()
 	ImGui::PopStyleVar(4);
 }
 
+static inline bool InlineIconButton(const char *iconLabel)
+{
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+	ImGui::PushStyleColor(ImGuiCol_Button, ImGuiCol_FrameBg);
+	bool pressed = ImGui::Button(iconLabel);
+	ImGui::PopStyleColor();
+	ImGui::PopStyleVar();
+	return pressed;
+}
+
 #endif // IMGUI_CUSTOM_H

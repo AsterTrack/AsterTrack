@@ -106,6 +106,8 @@ static void uart_set_identification()
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
+static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion);
+
 static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
 
 static bool ApplyUserFlashConfiguration();
@@ -713,6 +715,40 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 	}
 }
 
+static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
+{
+	// This is a critical packet, so make sure misinterpretations can not happen
+	uint8_t Packet_Version = 1;
+	if (requestedVersion != 0 && requestedVersion < Packet_Version)
+		Packet_Version = requestedVersion;
+	// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
+
+	// Write packet header
+	response[0] = Packet_Version;		// Fetch Info packet version
+	response[1] = OTP_Version; 			// OTP Format Version
+	response[2] = OTP_NumSubParts; 		// Sub-Part Count
+	response[3] = 0; 					// Reserved
+
+	// Write string lengths for separate request
+	response[4] = OTP_HwStringLength >> 8;
+	response[5] = OTP_HwStringLength & 0xFF;
+	response[6] = firmwareDescriptorLength >> 8;
+	response[7] = firmwareDescriptorLength & 0xFF;
+
+	uint32_t *packet32 = ((uint32_t*)response);
+	packet32[2] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
+	packet32[3] = firmwareVersion.num;	// MCU Firmware Version
+	packet32[4] = OTP[2];				// 96-Bit Camera Serial Number Word 1
+	packet32[5] = OTP[3];				// 96-Bit Camera Serial Number Word 2
+	packet32[6] = OTP[4];				// 96-Bit Camera Serial Number Word 3
+	packet32[7] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
+	packet32[8] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
+	packet32[9] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
+
+	static_assert(MCU_INFO_MAX_LENGTH == (10 * sizeof(uint32_t)));
+	return MCU_INFO_MAX_LENGTH;
+}
+
 
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
 {
@@ -756,36 +792,9 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		}
 		case MCU_FETCH_INFO:
 		{
-			// This is a critical packet, so make sure misinterpretations can not happen
-			uint8_t Packet_Version = 1;
-			if (len > 0 && data[0] != 0 && data[0] < Packet_Version)
-				Packet_Version = data[0];
-			// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
-
-			// Write packet header
-			response[0] = Packet_Version;		// Fetch Info packet version
-			response[1] = OTP_Version; 			// OTP Format Version
-			response[2] = OTP_NumSubParts; 		// Sub-Part Count
-			response[3] = 0; 					// Reserved
-
-			// Write string lengths for separate request
-			response[4] = OTP_HwStringLength >> 8;
-			response[5] = OTP_HwStringLength & 0xFF;
-			response[6] = firmwareDescriptorLength >> 8;
-			response[7] = firmwareDescriptorLength & 0xFF;
-
-			uint32_t *packet32 = ((uint32_t*)response);
-			packet32[2] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
-			packet32[3] = firmwareVersion.num;	// MCU Firmware Version
-			packet32[4] = OTP[2];				// 96-Bit Camera Serial Number Word 1
-			packet32[5] = OTP[3];				// 96-Bit Camera Serial Number Word 2
-			packet32[6] = OTP[4];				// 96-Bit Camera Serial Number Word 3
-			packet32[7] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
-			packet32[8] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
-			packet32[9] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
-
-			static_assert(MCU_INFO_MAX_LENGTH == (10 * sizeof(uint32_t)));
-			return MCU_INFO_MAX_LENGTH;
+			// Response is 8-bit aligned
+			uint8_t requestedVersion = len > 0? data[0] : 0;
+			return fillInfoPacket(response, requestedVersion);
 		}
 		case MCU_GET_HW_STR:
 		{

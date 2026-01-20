@@ -301,6 +301,9 @@ static bool CameraApplyFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmware
 	{
 		status->text = "Applying firmware update...!";
 		status->code = FW_STATUS_REQAPPLY;
+		// Mark info as stale but don't send just yet
+		camState.camera->storage.receivedInfo = false;
+		camState.camera->storage.lastFetchTime = sclock::now();
 	}
 	else
 	{

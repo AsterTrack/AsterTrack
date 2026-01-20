@@ -523,6 +523,9 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 		return false;
 	}
 
+	static_assert(HW_DESC_SEP == MCU_MULTI_TEXT_SEP);
+	// Ensure these are always the same, both camera_mcu and server access their respective versions
+
 	uint8_t *packet = INFO_DATA.data()+MCU_LEADING_BYTES;
 	uint16_t received = (packet[0] << 8) | packet[1];
 	if (received != length)
@@ -562,7 +565,7 @@ static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
 	return true;
 }
 
-bool mcu_fetch_info(MCU_StoredInfo &info)
+bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 {
 	if (i2c_fd < 0) return false;
 
@@ -591,7 +594,7 @@ bool mcu_fetch_info(MCU_StoredInfo &info)
 	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
 
 	uint8_t *ptr = packet+8;
-	memcpy(&info.cameraID, ptr, sizeof(CameraID));
+	memcpy(&config.cameraID, ptr, sizeof(CameraID));
 	ptr += sizeof(CameraID);
 	memcpy(&info.mcuFWVersion, ptr, sizeof(VersionDesc));
 	ptr += sizeof(VersionDesc);
@@ -638,10 +641,12 @@ bool mcu_update_id(CameraID cameraID)
 
 void mcu_sync_info()
 {
-	MCU_StoredInfo info;
-	if (mcu_fetch_info(info))
+	CameraStoredInfo info;
+	CameraStoredConfig config;
+	if (mcu_fetch_info(info, config))
 	{ // Successfully fetche info from MCU
-		if (receivedInfoFromMCU(std::move(info)))
+		receivedInfoFromMCU(std::move(info));
+		if (receivedConfigFromMCU(std::move(config)))
 		{ // Had differing camera IDs and need to tell MCU to update it
 			mcu_update_id(cameraID);
 		}

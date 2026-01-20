@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "parsing.hpp"
 #include "comm/uart.h"
 #include "mcu/mcu.hpp"
+#include "version.hpp"
 
 #include "util/util.hpp"
 
@@ -382,6 +383,7 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	TimePoint_t time_begin, time_read, time_ident, time_start;
 	time_begin = sclock::now();
 	int ident_backoff = 0;
+	bool sentInfo = false;
 	while (comm.enabled)
 	{
 
@@ -529,6 +531,7 @@ phase_comm:
 		ResetTimeSync(timesync);
 
 		time_start = sclock::now();
+		sentInfo = false;
 
 		time_read = sclock::now();
 		while (comm.enabled && comm.started && !comm.error)
@@ -671,6 +674,13 @@ phase_comm:
 			}
 
 			fflush(stdout);
+
+			if (!sentInfo && dtMS(time_start, sclock::now()) > 250)
+			{
+				printf("%s: Sent info packet!\n", commName);
+				sendInfoPacket(comm.medium);
+				sentInfo = true;
+			}
 
 			// Parsing done, now send from packet queue if it's not handled by main thread for realtime data
 			std::unique_lock lock(comm.queueMutex);

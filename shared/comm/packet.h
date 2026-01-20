@@ -63,6 +63,8 @@ enum PacketTag
 	PACKET_PING,			// NOP packet that must be returned
 	PACKET_SYNC,			// Timestamped packet for TimeSync
 	PACKET_SOF,				// Timestamped packet signaling SOF for frameID
+	PACKET_READ_MCU_INFO,	// Request to read serial number and related info from MCU OTP
+	PACKET_WRITE_MCU_INFO,	// Request to program serial number and related info to MCU OTP
 	PACKET_RATE_CONFIG,		// Request to switch baudrate
 	PACKET_RATE_VERIFY,		// Verification data with checksums to test baudrate
 
@@ -88,8 +90,7 @@ enum PacketTag
 	PACKET_FW_BLOCK,		// Send block of a file for firmware update
 	PACKET_FW_STATUS,		// Send status of prior firmware update packet
 	PACKET_FW_APPLY,		// Apply firmware update
-	PACKET_PROGRAM_MCU_INFO,// Tell MCU to program serial number and related info to OTP
-	PACKET_REQUEST_SBC_INFO,// Request SBC & MCU firmware version, MCU/SBC connection status, hardware serial numbers
+	PACKET_CAMERA_INFO,		// Exchange SBC & MCU firmware version, MCU/SBC connection status, hardware serial numbers
 	PACKET_MAX_ID_POSSIBLE = 63
 };
 

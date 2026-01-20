@@ -342,3 +342,31 @@ void CameraUpdateVis(TrackingCameraState &device)
 	}
 	device.sendPacket(PACKET_CFG_VIS, vis.data(), vis.size());
 }
+
+std::vector<std::string> CameraDescribeInfo(const CameraStoredInfo &info)
+{
+	std::vector<std::string> desc;
+	if (info.sbcFWVersion.num == 0 && info.mcuFWVersion.num == 0)
+		return desc;
+	desc.push_back(asprintf_s("SBC Firmware v%d.%d.%d (Build %.2x - %s)",
+		info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch, info.sbcFWVersion.build, info.sbcFWDescriptor.c_str()));
+	desc.push_back(asprintf_s("MCU Firmware v%d.%d.%d (Build %.2x - %s)",
+		info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build, info.mcuFWDescriptor.c_str()));
+	desc.push_back(asprintf_s("SBC: %s", info.sbcHWDescriptor.c_str()));
+	if (!info.mcuHWDescriptorParts.empty())
+	{
+		desc.push_back(asprintf_s("Hardware Descriptor: %s", info.mcuHWDescriptorParts.front().c_str()));
+		for (int i = 1; i < info.mcuHWDescriptorParts.size(); i++)
+			desc.push_back(asprintf_s("    Appended: %s", info.mcuHWDescriptorParts[i].c_str()));
+	}
+	desc.push_back(asprintf_s("Hardware Serial Number: %.8x%.8x%.8x",
+		info.hardwareSerial.serial32[0], info.hardwareSerial.serial32[1], info.hardwareSerial.serial32[2]));
+	for (int i = 0; i < info.subpartSerials.size(); i++)
+		//if (info.subpartSerials[i] != (uint64_t)-1)
+		desc.push_back(asprintf_s("    Subpart %d: %.8x%.8x", i, (uint32_t)(info.subpartSerials[i] >> 32), (uint32_t)info.subpartSerials[i]));
+	desc.push_back(asprintf_s("SBC Revision Code %x, Serial Number: %.8x",
+		info.sbcRevisionCode & 0xFFFFFF, info.sbcSerialNumber));
+	desc.push_back(asprintf_s("MCU Unique ID: %.8x%.8x%.8x",
+		info.mcuUniqueID[0], info.mcuUniqueID[1], info.mcuUniqueID[2]));
+	return desc;
+}

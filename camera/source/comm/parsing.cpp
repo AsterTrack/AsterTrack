@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "wireless.hpp"
 #include "firmware.hpp"
+#include "version.hpp"
 
 #include <thread>
 #include <chrono>
@@ -52,6 +53,8 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 		case PACKET_FW_APPLY:
 		case PACKET_FW_STATUS:
 			return header.length >= FIRMWARE_PACKET_HEADER;
+		case PACKET_CAMERA_INFO:
+			return header.length == 0;
 		default:
 			printf("Received packet header with invalid tag!\n");
 			return false;
@@ -178,6 +181,11 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 		case PACKET_FW_STATUS:
 		{ // Requesting a status that might have gone lost in transfer, or update cancel request
 			return ReceiveFirmwareStatus(state, comm, data, length);
+		}
+		case PACKET_CAMERA_INFO:
+		{
+			sendInfoPacket(comm.medium);
+			return true;
 		}
 		default:
 			printf("Received packet data with unsupported header tag!\n");

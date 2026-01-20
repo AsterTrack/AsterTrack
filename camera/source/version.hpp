@@ -27,10 +27,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 extern uint32_t cameraID;
 extern std::string id_file;
 
-extern VersionDesc sbcFWVersion;
-extern std::string sbcFWDescriptor;
+extern const VersionDesc sbcFWVersion;
+extern const std::string sbcFWDescriptor;
 
-extern MCU_StoredInfo mcuStoredInfo;
+extern CameraStoredInfo storedInfo;
 
 extern int numCPUCores;
 
@@ -38,7 +38,11 @@ extern int numCPUCores;
 // Both from config files, system drivers
 void gatherInfo(CameraID overrideID = 0);
 
+void receivedInfoFromMCU(CameraStoredInfo &&info);
+
 /* Returns whether MCU should be instructed to update its own stored ID */
-bool receivedInfoFromMCU(MCU_StoredInfo &&info);
+bool receivedConfigFromMCU(CameraStoredConfig &&config);
+
+void sendInfoPacket(CommMedium comm);
 
 #endif // VERSION_H

@@ -39,7 +39,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #define WIRELESS_PACKET_HEADER			8
 
-
 enum WirelessStatus {
 	WIRELESS_STATUS_NONE = 0,
 	WIRELESS_STATUS_DISABLED,
@@ -122,6 +121,10 @@ enum FirmwareUpdateFlags : uint8_t
 	FW_REQUIRE_REBOOT = 1,
 	FW_FLASH_MCU = 2,
 };
+
+
+#define CAMERA_INFO_BASE_LENGTH			52
+
 
 static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
 {

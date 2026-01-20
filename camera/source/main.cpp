@@ -479,8 +479,9 @@ int main(int argc, char **argv)
 					else if (cin == 'd')
 					{
 						std::unique_lock lock(mcu_mutex);
-						MCU_StoredInfo info;
-						if (mcu_fetch_info(info))
+						CameraStoredInfo info;
+						CameraStoredConfig config;
+						if (mcu_fetch_info(info, config))
 							receivedInfoFromMCU(std::move(info));
 					}
 					else if (cin == 'g')
@@ -1318,8 +1319,9 @@ int main(int argc, char **argv)
 					else if (cin == 'd')
 					{
 						std::unique_lock lock(mcu_mutex);
-						MCU_StoredInfo info;
-						if (mcu_fetch_info(info))
+						CameraStoredInfo info;
+						CameraStoredConfig config;
+						if (mcu_fetch_info(info, config))
 							receivedInfoFromMCU(std::move(info));
 					}
 					else if (cin == 'g')

@@ -983,6 +983,130 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, c
 	return true;
 }
 
+bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
+{
+	if (erroneous) return false;
+	if (length < CAMERA_INFO_BASE_LENGTH) return false;
+
+	CameraStoredInfo info;
+	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
+
+	uint8_t packetVersion = data[0];
+	if (packetVersion != 1)
+	{
+		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
+		camera.storage.receivedInfo = true;
+		return false;
+	}
+	info.mcuOTPVersion = data[1];
+	uint8_t resv1 = data[2], resv2 = data[3];
+
+	static_assert(sizeof(VersionDesc) == 4);
+	static_assert(sizeof(HardwareSerial) == 12);
+	memcpy(&info.sbcFWVersion.num, &data[4], 4);
+	memcpy(&info.mcuFWVersion.num, &data[8], 4);
+	memcpy(&info.hardwareSerial.serial, &data[12], 12);
+	memcpy(&info.mcuUniqueID, &data[24], 12);
+	memcpy(&info.sbcRevisionCode, &data[36], 4);
+	memcpy(&info.sbcSerialNumber, &data[40], 4);
+
+	int sbcFWDesc = (data[44] << 8) | data[45];
+	int mcuFWDesc = (data[46] << 8) | data[47];
+	int mcuHWDesc = (data[48] << 8) | data[49];
+	int mcuSubparts = ((data[50] << 8) | data[51]);
+	if (length < CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts)
+	{
+		LOG(LParsing, LError, "Camera #%u: Failed to parse info packet of size %d, expected %d + %d + %d + %d + %d!",
+			camera.id, length, CAMERA_INFO_BASE_LENGTH, sbcFWDesc, mcuFWDesc, mcuHWDesc, mcuSubparts);
+		return false;
+	}
+
+	const uint8_t *ptr = data + CAMERA_INFO_BASE_LENGTH;
+	info.sbcFWDescriptor.resize(sbcFWDesc);
+	memcpy(info.sbcFWDescriptor.data(), ptr, sbcFWDesc);
+	ptr += sbcFWDesc;
+	info.mcuFWDescriptor.resize(mcuFWDesc);
+	memcpy(info.mcuFWDescriptor.data(), ptr, mcuFWDesc);
+	ptr += mcuFWDesc;
+	info.mcuHWDescriptor.resize(mcuHWDesc);
+	memcpy(info.mcuHWDescriptor.data(), ptr, mcuHWDesc);
+	ptr += mcuHWDesc;
+	info.subpartSerials.resize(mcuSubparts / sizeof(uint64_t));
+	memcpy(info.subpartSerials.data(), ptr, mcuSubparts % sizeof(uint64_t));
+	ptr += mcuSubparts;
+
+	if ((info.sbcRevisionCode >> 24) == 0xFF)
+	{
+		const char *modelTable[] = {
+			// See https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes
+			"A",
+			"B",
+			"A+",
+			"B+",
+			"2B",
+			"ALPHA",
+			"CM1",
+			"INVALID",
+			"3B",
+			"Zero",
+			"CM3",
+			"INVALID",
+			"Zero W",
+			"3B+",
+			"3A+",
+			"INTERNAL",
+			"CM3+",
+			"4B",
+			"Zero 2 W",
+			"400",
+			"CM4",
+			"CM4S",
+			"INTERNAL",
+			"5",
+			"CM5",
+			"500/500+",
+			"CM5 Lite",
+			"CM0",
+		};
+		info.sbcHWDescriptor = "Raspberry Pi ";
+		if ((info.sbcRevisionCode >> 23) & 0x1)
+		{ // New-Style revision
+			uint16_t model = (info.sbcRevisionCode >> 4) & 0xFF;
+			if (model < sizeof(modelTable)/sizeof(char*))
+				info.sbcHWDescriptor += std::string(modelTable[model]);
+			else
+				info.sbcHWDescriptor += "INVALID MODEL";
+			uint8_t rev = info.sbcRevisionCode & 0xF;
+			if (rev < 9)
+				info.sbcHWDescriptor += std::string(" Rev 1.") + (char)('0'+rev);
+			else
+				info.sbcHWDescriptor += " INVALID REV";
+		}
+		else
+			info.sbcHWDescriptor += "OLD MODEL";
+	}
+	else
+	{
+		info.sbcHWDescriptor = asprintf_s("Unknown SBC %.2x", info.sbcRevisionCode >> 24);
+	}
+
+	if (info.mcuHWDescriptor.size() > 0)
+	{
+		std::string descPart;
+		std::stringstream stream(info.mcuHWDescriptor);
+		while (std::getline(stream, descPart, HW_DESC_SEP))
+			info.mcuHWDescriptorParts.push_back(std::move(descPart));
+	}
+
+	LOG(LParsing, LInfo, "Camera #%u sent information:", camera.id);
+	for (std::string &str : CameraDescribeInfo(info))
+		LOG(LParsing, LInfo, "    %s", str.c_str());
+
+	camera.storage.info = std::move(info);
+	camera.storage.receivedInfo = true;
+	return true;
+}
+
 void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	switch (header.tag)
@@ -1030,6 +1154,11 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 		if (!camera.firmware) break;
 		auto camStatus = camera.firmware->contextualLock();
 		camStatus->packets.emplace_back(data, data+length);
+		break;
+	}
+	case PACKET_CAMERA_INFO:
+	{
+		ReadCameraInfoPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	default:

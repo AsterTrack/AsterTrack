@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/controller.h" // ControllerCommState
 #include "pipeline/record.hpp"
 #include "camera_firmware.hpp"
+#include "mcu/serial.hpp"
 
 #include "util/eigendef.hpp"
 #include "util/synchronised.hpp"
@@ -123,6 +124,14 @@ struct TrackingCameraState
 		Wireless wireless = {};
 	} config = {};
 
+	struct
+	{
+		TimePoint_t lastFetchTime;
+		bool receivedInfo;
+		CameraStoredInfo info = {};
+		CameraStoredConfig config = {};
+	} storage = {};
+
 	bool selectedForFirmware;
 	CameraFirmwareUpdateRef firmware;
 
@@ -207,5 +216,7 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
 bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action = WIRELESS_ACTION_NONE);
 void CameraUpdateStream(TrackingCameraState &device);
 void CameraUpdateVis(TrackingCameraState &device);
+
+std::vector<std::string> CameraDescribeInfo(const CameraStoredInfo &info);
 
 #endif // TRACKING_CAMERA_H

@@ -670,12 +670,19 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		// Check for any disconnected cameras (due to both UART / Wifi link being inactive for a period of time)
 		for (int c = 0; c < state.cameras.size(); c++)
 		{
-			CameraID id = state.cameras[c]->id;
-			if (CameraCheckDisconnected(state, *state.cameras[c]))
+			TrackingCameraState &camera = *state.cameras[c];
+			CameraID id = camera.id;
+			if (CameraCheckDisconnected(state, camera))
 			{
 				LOG(LCameraDevice, LWarn, "Camera %d had no remaining communication links!\n", id);
 				c--;
 				continue;
+			}
+			if (!camera.storage.receivedInfo && camera.hasComms() && dtMS(camera.storage.lastFetchTime, sclock::now()) > 500)
+			{
+				LOG(LCameraDevice, LInfo, "Requesting info from camera #%u", camera.id);
+				camera.storage.lastFetchTime = sclock::now();
+				camera.sendPacket(PACKET_CAMERA_INFO, nullptr, 0);
 			}
 		}
 

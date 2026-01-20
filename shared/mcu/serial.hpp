@@ -19,8 +19,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef SERIAL_H
 #define SERIAL_H
 
-#include <cstdint>
+#include "comm/packet.h"
 
+#include <cstdint>
+#include <string>
+#include <vector>
+
+
+#define HW_DESC_SEP		'\2' // Unicode Text Start
 
 union HardwareSerial
 {
@@ -104,6 +110,32 @@ union HardwareSerial
 		uint8_t run;				// Different shifts/people, different batch of components, etc. - basically increase whenever a major factor changes
 		uint32_t ID;				// Unique within run, centrally allocated, to make it harder to fake serial numbers
 	};
+};
+
+struct CameraStoredInfo
+{
+	VersionDesc sbcFWVersion;			// SBC Firmware Version, embedded in firmware
+	std::string sbcFWDescriptor;		// SBC Firmware Descriptor, embedded in firmware
+	VersionDesc mcuFWVersion;			// MCU Firmware Version, embedded in firmware
+	std::string mcuFWDescriptor;		// MCU Firmware Descriptor, embedded in firmware
+
+	uint8_t mcuOTPVersion;				// Indicates revision in how OTP is formatted, potentially even affecting the format of the following members
+	HardwareSerial hardwareSerial;		// Camera Serial Number (96Bit) stored in MCU OTP, bound to hardware & production
+    std::vector<uint64_t> subpartSerials; // Optional serial numbers of subparts
+	std::string mcuHWDescriptor;		// MCU Hardware Descriptor, written to OTP, may be composed of successively written texts separated by MCU_MULTI_TEXT_SEP
+
+	uint32_t sbcRevisionCode;			// SBC Revision Code identifying Raspberry Pi Model
+	uint32_t sbcSerialNumber;			// SBC Serial Number, 32Bit for Raspberry Pi
+	uint32_t mcuUniqueID[3];			// MCU Chip Unique ID, 96Bit for STM32
+
+	std::string sbcHWDescriptor;		// Inferred from sbcRevisionCode, NOT SENT
+	std::vector<std::string> mcuHWDescriptorParts; // Split mcuHWDescriptor
+};
+
+struct CameraStoredConfig
+{
+	CameraID cameraID; // Camera ID (32bit), stored in MCU Flash, used for unique ID in software
+	// May add further config here, stored either on the MCU Flash or in the SBC storage
 };
 
 #endif // SERIAL_H

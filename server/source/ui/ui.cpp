@@ -83,7 +83,7 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader);
 static void closePlatformWindow(GLFWwindow *windowHandle);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
-static ImFont* loadFont(const std::string font, int size_pixels);
+static ImFont* loadFont(const std::string font, ImFontConfig &config);
 static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
 static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
 static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line);
@@ -227,7 +227,6 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 void InterfaceState::UpdateUI()
 {
-	ImGui::PushFont(defaultFont);
 
 	std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
@@ -239,6 +238,8 @@ void InterfaceState::UpdateUI()
 	OnDemandNewFrame();
 
 	GeneralInput();
+
+	ImGui::PushFont(mainFont);
 
 	// Settings will have been loaded in NewFrame if an imgui.ini file existed
 	static bool firstIteration = true;
@@ -300,10 +301,10 @@ void InterfaceState::UpdateUI()
 		handlingErrors = false;
 	}
 
+	ImGui::PopFont();
+
 	// Render UI out to a DrawData list, for later GL rendering
 	ImGui::Render();
-
-	ImGui::PopFont();
 }
 
 void InterfaceState::RenderUI(bool fullUpdate)
@@ -526,11 +527,36 @@ bool InterfaceState::Init()
 
 	StyleSizingAsterDark();
 	StyleColorsAsterDark();
-	fonts.karla = loadFont("resources/fonts/" "Karla-Regular-Latin.ttf", 17);
-	fonts.notoSans = loadFont("resources/fonts/" "NotoSans-Regular-Latin.ttf", 17);
-	fonts.icon = loadFont("resources/fonts/" "LineAwesome-Regular-Icon.ttf", 17);
-	fonts.imgui = loadFont("", 13);
-	defaultFont = fonts.karla;
+
+	// Load all fonts options with icons merged
+	ImFontConfig configMain;
+	configMain.SizePixels = 17;
+	ImFontConfig configIcon;
+	configIcon.SizePixels = 17;
+	configIcon.MergeMode = true; // Merge icons into main font so no font-switching is required
+	configIcon.GlyphOffset = ImVec2(0, 2); // Adjust height to better integrate into text
+	configIcon.GlyphMinAdvanceX = 17.0f; // Make monospace and mostly square
+	// Load all individual fonts (with icons merged in)
+	fonts.karla = loadFont("resources/fonts/Karla-Regular-Latin.ttf", configMain);
+	loadFont("resources/fonts/LineAwesome-Regular-Icon.ttf", configIcon);
+	loadFont("resources/fonts/LineAwesome-Solid-Icon.ttf", configIcon);
+	fonts.notoSans = loadFont("resources/fonts/NotoSans-Regular-Latin.ttf", configMain);
+	loadFont("resources/fonts/LineAwesome-Regular-Icon.ttf", configIcon);
+	loadFont("resources/fonts/LineAwesome-Solid-Icon.ttf", configIcon);
+	// Default monospace font is only used as "console-like" font, does not need icons
+	configMain.SizePixels = 13;
+	fonts.imgui = loadFont("", configMain);
+	// Choose initial font
+	mainFont = fonts.karla;
+
+	// Load separate icon font not intended for integration into text
+	// Sadly, margins are hard to control, so they don't make for great IconButtons
+	// So we're continuing to use normal image buttons for now
+	ImFontConfig configIconMain;
+	configIconMain.SizePixels = 20;
+	fonts.icon = loadFont("resources/fonts/LineAwesome-Regular-Icon.ttf", configIconMain);
+	configIconMain.MergeMode = true;
+	loadFont("resources/fonts/LineAwesome-Solid-Icon.ttf", configIconMain);
 
 	{ // Read/Write custom UI state settings
 		ImGuiSettingsHandler uiStateHandler;
@@ -1113,9 +1139,8 @@ void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
 	colors[ImGuiCol_ModalWindowDimBg]		= ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 }
 
-static ImFont* loadFont(const std::string font, int size_pixels)
+static ImFont* loadFont(const std::string font, ImFontConfig &config)
 {
-	ImFontConfig config;
 	config.OversampleH = 2;
 	config.OversampleV = 2;
 
@@ -1126,7 +1151,7 @@ static ImFont* loadFont(const std::string font, int size_pixels)
 	}
 	else if (std::filesystem::exists(font))
 	{
-		return ImGui::GetIO().Fonts->AddFontFromFileTTF(font.c_str(), size_pixels, &config);
+		return ImGui::GetIO().Fonts->AddFontFromFileTTF(font.c_str(), 0.0f, &config);
 	}
 	else if (!complained && std::filesystem::exists("../" + font))
 	{

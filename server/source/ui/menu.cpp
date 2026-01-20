@@ -156,11 +156,11 @@ void InterfaceState::UpdateMainMenuBar()
 				ImGui::StyleColorsClassic();
 			ImGui::Separator();
 			if (ImGui::MenuItem("Karla Font"))
-				defaultFont = fonts.karla;
+				mainFont = fonts.karla;
 			if (ImGui::MenuItem("NotoSans Font"))
-				defaultFont = fonts.notoSans;
+				mainFont = fonts.notoSans;
 			if (ImGui::MenuItem("ImGui Default Font"))
-				defaultFont = fonts.imgui;
+				mainFont = fonts.imgui;
 			ImGui::EndMenu();
 		}
 		if (ImGui::MenuItem("Reset Layout"))

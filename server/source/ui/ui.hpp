@@ -31,6 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #endif
 #include "imgui/imgui_internal.h"
 #include "imgui/imgui_custom.hpp"
+#include "../resources/fonts/IconsLineAwesome.h"
 #include "imgui/misc/cpp/imgui_stdlib.h"
 
 #include "gl/visualisation.hpp"
@@ -342,7 +343,8 @@ public:
 	IconSet lightModeIcons, darkModeIcons;
 	IconSet &icons() { return isDarkMode? darkModeIcons : lightModeIcons; }
 	ImVec2 iconSize() { return ImVec2(ImGui::GetFontSize()*6/5, ImGui::GetFontSize()); }
-	ImFont *defaultFont;
+	ImVec2 iconFrame() { return iconSize() + ImGui::GetStyle().FramePadding*2; }
+	ImFont *mainFont;
 	struct {
 		ImFont *imgui, *icon, *karla, *notoSans;
 	} fonts;

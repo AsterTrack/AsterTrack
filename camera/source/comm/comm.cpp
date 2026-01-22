@@ -368,12 +368,15 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
 	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
 
+	// Set name to use for thread and logging
+	const char* commName = "Unknown";
 	if (comm.medium == COMM_MEDIUM_UART)
-		prctl(PR_SET_NAME, "Comm_UART");
+		commName = "UART";
 	else if (comm.medium == COMM_MEDIUM_WIFI)
-		prctl(PR_SET_NAME, "Comm_Wireless");
-	else
-		prctl(PR_SET_NAME, "Comm_Unknown");
+		commName = "Wireless";
+
+	// Set thread properties
+	prctl(PR_SET_NAME, asprintf_s("Comm_%s", commName).c_str());
 	nice(-20); // Highest priority
 
 	TimePoint_t time_begin, time_read, time_ident, time_start;
@@ -391,7 +394,7 @@ phase_start:
 
 		if (comm.error)
 		{
-			printf("Handling error from external thread!\n");
+			printf("%s: Handling error from external thread!\n", commName);
 			comm_stop(comm);
 		}
 
@@ -423,7 +426,7 @@ phase_identification:
 		}
 
 		{ // Send own ID
-			printf("Sending identification!\n");
+			printf("%s: Sending identification!\n", commName);
 			uint8_t identBuffer[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 			UARTPacketRef *packet = (UARTPacketRef*)identBuffer;
 			storeIdentPacket(comm.ownIdent, packet->data);
@@ -440,7 +443,7 @@ phase_identification:
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
-				printf("Read error during identification!\n");
+				printf("%s: Read error during identification!\n", commName);
 				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_stop(comm);
 				goto phase_start;
@@ -453,7 +456,7 @@ phase_identification:
 				{ // NAK received
 					if (proto_fetchCmd(proto))
 					{
-						printf("Identification rejected (NAK) %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+						printf("%s: Identification rejected (NAK) %.2fms after sending!\n", commName, dtMS(time_ident, sclock::now()));
 						comm_reset(comm);
 						goto phase_identification;
 					}
@@ -469,11 +472,11 @@ phase_identification:
 							correct = (rcvIdent.device&comm.expIdent.device) != 0 && rcvIdent.type == comm.ownIdent.type;
 							// TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
 							if (rcvIdent.version.major != comm.ownIdent.version.major)
-								printf("Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
+								printf("%s: Potential Version Mismatch; Own is v%d.%d and Remote is v%d.%d!\n", commName,
 									comm.ownIdent.version.major, comm.ownIdent.version.minor, rcvIdent.version.major, rcvIdent.version.minor);
 							if (correct)
 							{ // Proper identity
-								printf("Valid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+								printf("%s: Valid identification response received %.2fms after sending!\n", commName, dtMS(time_ident, sclock::now()));
 								if (!comm.started)
 									break;
 								comm.ready = true;
@@ -483,10 +486,10 @@ phase_identification:
 								goto phase_comm;
 							}
 							else
-								printf("Incorrect identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+								printf("%s: Incorrect identification response received %.2fms after sending!\n", commName, dtMS(time_ident, sclock::now()));
 						}
 						else
-							printf("Invalid identification response received %.2fms after sending!\n", dtMS(time_ident, sclock::now()));
+							printf("%s: Invalid identification response received %.2fms after sending!\n", commName, dtMS(time_ident, sclock::now()));
 						// Wrong identity
 						comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 						comm_reset(comm);
@@ -495,7 +498,7 @@ phase_identification:
 				}
 				else
 				{
-					printf("Received unexpected or unknown tag %d!\n", proto.header.tag);
+					printf("%s: Received unexpected or unknown tag %d!\n", commName, proto.header.tag);
 					comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 					comm_reset(comm);
 					goto phase_identification;
@@ -508,7 +511,7 @@ phase_identification:
 
 			if (dtMS(time_ident, sclock::now()) > COMM_IDENT_TIMEOUT_MS)
 			{ // Identification timeout
-				printf("Identification timeout exceeded, trying again!\n");
+				printf("%s: Identification timeout exceeded, trying again!\n", commName);
 				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_reset(comm);
 				goto phase_identification;
@@ -543,7 +546,7 @@ phase_comm:
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
-				printf("Read error during communications!\n");
+				printf("%s: Read error during communications!\n", commName);
 				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_stop(comm);
 				goto phase_start;
@@ -555,13 +558,13 @@ phase_comm:
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
 				{ // NAK received
-					printf("NAK Received, resetting comm!\n");
+					printf("%s: NAK Received, resetting comm!\n", commName);
 					comm_reset(comm);
 					goto phase_identification;
 				}
 				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
 				{ // ACK received
-					printf("Redundant ACK Received!\n");
+					printf("%s: Redundant ACK Received!\n", commName);
 				}
 				else if (proto.header.tag == PACKET_PING)
 				{ // Received ping, answer ping
@@ -570,7 +573,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
-					printf("Unexpected Identification received, dropping existing comms!\n");
+					printf("%s: Unexpected Identification received, dropping existing comms!\n", commName);
 					comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 					comm_reset(comm);
 					goto phase_identification;
@@ -661,7 +664,7 @@ phase_comm:
 			// TODO: Add toggle for timeout, not needed for TCP, only for UART
 			if (dtMS(time_read, sclock::now()) > COMM_PING_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
-				printf("Ping dropped out, resetting comm!\n");
+				printf("%s: Ping dropped out, resetting comm!\n", commName);
 				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_reset(comm);
 				break;
@@ -680,14 +683,14 @@ phase_comm:
 					int ret = comm_send_block(comm_ptr, packet.header, packet.data, packet.largePacketHeader, std::numeric_limits<int>::max(), sent);
 					if (ret != 2)
 					{ // Not fully sent, should not occur
-						printf("Failed to send large packet from comm thread!\n");
+						printf("%s: Failed to send large packet from comm thread!\n", commName);
 						comm.packetQueue.pop();
 						break;
 					}
 				}
 				else if (!comm_send_immediate(comm_ptr, packet.header, packet.data.data()))
 				{ // Failed to send queued packet
-					printf("Failed to send queued packet from comm thread!\n");
+					printf("%s: Failed to send queued packet from comm thread!\n", commName);
 					comm.packetQueue.pop();
 					break;
 				}
@@ -696,9 +699,9 @@ phase_comm:
 		}
 
 		if (comm.error)
-			printf("Comms got interrupted because of a write error in another thread!\n");
+			printf("%s: Comms got interrupted because of a write error in another thread!\n", commName);
 		else
-			printf("Comms got interrupted for unknown reason!\n");
+			printf("%s: Comms got interrupted for unknown reason!\n", commName);
 	}
 
 	comm_stop(comm);

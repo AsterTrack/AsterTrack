@@ -8,6 +8,7 @@ build/
 debian-external/
 debian-internal/
 debootstrap/
+package/
 
 # Temporary Outputs
 log.txt
@@ -15,13 +16,14 @@ log_1.txt
 log_2.txt
 imgui.ini
 imgui_log.txt
+*.tar.gz
 # Permanent Outputs
 store
 dump
 
 # Unnecessary sources
-resources/*.xcf
-resources/*.svg
+resources/icons/*.svg
+resources/icons/*.xcf
 
 # Dependency build cache
 dependencies/buildfiles/*/linux

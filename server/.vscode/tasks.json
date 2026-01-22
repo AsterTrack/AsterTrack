@@ -50,6 +50,18 @@
             // Currently, no verify or debug modes are supported due to the options of the clang custom build (bit tricky)
         },
         {
+            "label": "Package AsterTrack Program",
+            "type": "shell",
+            "group": "build",
+            "command": "./package.sh && echo 'Compressing...' && tar -czf AsterTrack_Server.tar.gz package",
+        },
+        {
+            "label": "Install AsterTrack Program",
+            "type": "shell",
+            "group": "build",
+            "command": "./package.sh && ./package/install.sh",
+        },
+        {
             "label": "Run AsterTrack",
             "type": "shell",
             "group": "test",

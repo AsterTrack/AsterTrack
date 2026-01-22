@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AsterTrack Dev
+GenericName=Tracking System Server
+NoDisplay=false
+Comment=The Server Program for the AsterTrack Tracking System
+Icon=/PATH/TO/server/resources/astertrack_icon.svg
+Exec=env OMP_NUM_THREADS=8 /PATH/TO/server/build/astertrack-server
+Path=/PATH/TO/server
+PrefersNonDefaultGPU=false
+StartupNotify=false
+Terminal=false

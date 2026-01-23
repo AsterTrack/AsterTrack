@@ -424,7 +424,7 @@ void uartd_process_port(uint_fast8_t port, uint_fast16_t tail)
 	{
 		uartd_reset_port_int(port); // Interrupts and clears TX
 		delayUS(10);
-		uart_send_dma(port, msg_nak, sizeof(msg_nak));
+		uartd_nak_int(port);
 	}
 	else
 	{

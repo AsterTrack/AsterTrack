@@ -457,7 +457,6 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		else if (state->header.tag == PACKET_NAK)
 		{
 			WARN_CHARR('/', 'N', 'A', 'K');
-			uartState = UART_None;
 			return uartd_reset;
 		}
 		else if (state->header.tag == PACKET_IDENT)
@@ -647,6 +646,8 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 
 void uartd_handle_reset(uint_fast8_t port)
 {
+	if (uartState == UART_CamMCU)
+		uartState = UART_None;
 	rgbled_transition(LED_UART_ERROR, 0);
 	ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
 }

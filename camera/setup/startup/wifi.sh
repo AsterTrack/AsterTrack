@@ -18,7 +18,8 @@ if [[ -f /mnt/mmcblk0p2/config/wireless_autoconnect ]]; then
 	udhcpc -n -i wlan0 -x hostname:$(hostname -s) -F $(hostname -s) &
 fi
 
-if [[ -f /usr/local/bin/ntpd ]]; then
+ntpd --help >> /dev/null 2>&1
+if [[ $? == 0 ]]; then
 	# Start ntp daemon to ensure timesync (even if we connect only later)
 	ntpd --panicgate pool.ntp.org
 fi

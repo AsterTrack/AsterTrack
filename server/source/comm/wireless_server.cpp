@@ -531,6 +531,8 @@ phase_comm:
 				{ // NAK received
 					LOG(LServer, LWarn, "NAK Received, resetting comm!\n");
 					comm_reset(comm);
+					if (comm.callbacks.onDisconnect)
+						comm.callbacks.onDisconnect(comm);
 					std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 					goto phase_identification;
 				}

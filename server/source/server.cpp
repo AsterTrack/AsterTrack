@@ -380,10 +380,22 @@ void StartWirelessServer(ServerState &state)
 	state.server.callbacks.onIdentify = [](ClientCommState &client) { // Find or setup camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		LOG(LServer, LInfo, "Established server connection to camera with id %d!\n", client.otherIdent.id);
-		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-		if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
+		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(50));
+		if (!dev_lock.owns_lock())
+		{ // Likely StopDeviceMode waiting on us to stop thread
+			if (state.mode != MODE_Device)
+				LOG(LServer, LDarn, "Aborted wireless camera connection because we're exiting device mode!\n");
+			else
+			 	LOG(LServer, LError, "Aborted wireless camera connection because of failure to aquire lock for unknown reason!\n");
+			return false;
+		}
 		// Setup camera with server connection
 		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, client.otherIdent.id);
+		if (camera->client)
+		{ // Already had a wireless client connection, perhaps camera crashed and didn't terminate the last connection properly
+			camera->client->thread->request_stop();
+			LOG(LServer, LWarn, "Camera #%u was already wirelessly connected, maybe had a stale connection?", camera->id);
+		}
 		camera->client = &client;
 		client.callbacks.userData2 = camera;
 		{
@@ -412,6 +424,11 @@ void StartWirelessServer(ServerState &state)
 			if (client.callbacks.userData2.use_count() == 1)
 				LOG(LServer, LWarn, "Disconnecting camera was already erased from devices!\n");
 			TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
+			if (camera.client != &client)
+			{
+				LOG(LServer, LWarn, "Stale client connection thread of camera #%u disconnected!\n", camera.id);
+				return;
+			}
 			{
 				auto state = camera.state.contextualLock();
 				state->lastWirelessConnection = sclock::now();

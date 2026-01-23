@@ -1030,13 +1030,16 @@ usbd_respond usbd_control_respond(usbd_device *usbd, usbd_ctlreq *req)
 			*(portState++) = camState->comm;
 			*(portState++) = camState->status;
 			*(portState++) = 0x00; // Reserved
-			uint8_t *ID = (uint8_t*)&camState->identityMCU.id;
-			if (camState->comm == COMM_SBC_READY) ID = (uint8_t*)&camState->identitySBC.id;
-			//*((int32_t*)portStatus) = *ID; // This RISC-V ISA does not support unaligned 4-byte writes
-			*(portState++) = ID[0];
-			*(portState++) = ID[1];
-			*(portState++) = ID[2];
-			*(portState++) = ID[3];
+			CameraID ID = 0;
+			if (camState->comm == COMM_SBC_READY)
+				ID = camState->identitySBC.id;
+			else if (camState->comm == COMM_MCU_READY)
+				ID = camState->identityMCU.id;
+			//*((int32_t*)portStatus) = *((uint32_t*)&ID); // This RISC-V ISA does not support unaligned 4-byte writes
+			*(portState++) = ((uint8_t*)&ID)[0];
+			*(portState++) = ((uint8_t*)&ID)[1];
+			*(portState++) = ((uint8_t*)&ID)[2];
+			*(portState++) = ((uint8_t*)&ID)[3];
 		}
 
 		usbd->status.data_ptr = req->data;
@@ -1607,6 +1610,17 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 		COMM_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device));
 		// Send own identification in response
 		uartd_send_int(port, ownIdentPacket, sizeof(ownIdentPacket), true);
+
+		if (ident.id != 0)
+		{ // If this id was found on a different port before, remove
+			for (int i = 0; i < UART_PORT_COUNT; i++)
+			{
+				if (i == port) continue;
+				if ((camStates[i].comm == COMM_SBC_READY && camStates[i].identitySBC.id == ident.id) ||
+					(camStates[i].comm == COMM_MCU_READY && camStates[i].identityMCU.id == ident.id))
+					uartd_reset_port(i);
+			}
+		}
 
 		TimeSpan dT = GetTimeSinceUS(now);
 		if (dT > 100)

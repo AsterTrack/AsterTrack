@@ -196,6 +196,7 @@ struct TrackingCameraState
 	};
 	struct Status
 	{
+		TimePoint_t lastDeviceChange;
 		bool hadPiConnected, hadMCUConnected, hadServerConnected;
 		TimePoint_t lastConnected, lastConnecting;
 		TimePoint_t lastWirelessConnection;

@@ -145,8 +145,7 @@ bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker);
 
-std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id,
-	std::shared_ptr<TrackingControllerState> controller = nullptr, ClientCommState *serverClient = nullptr);
+std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);
 CameraMode getCameraMode(ServerState &state, CameraID id);
 

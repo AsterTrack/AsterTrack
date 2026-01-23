@@ -145,30 +145,81 @@ bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
 	return false;
 }
 
+static bool CameraControllerDisconnected(const ServerState &state, const TrackingCameraState &camera, const TrackingCameraState::Status &camStatus)
+{
+	if (!camera.controller)
+		return true; // Lost all controller association
+	if ((camStatus.commState&COMM_READY) == COMM_READY)
+		return false; // Currently connected
+	if (dtMS(camStatus.lastConnecting, sclock::now()) < 1000)
+		return false; // Show camera reconnecting message (might be switching between MCU and Pi)
+	if (dtMS(camStatus.lastConnected, sclock::now()) < 5000)
+		return false; // Show camera lost message
+	return true;
+}
+
+static bool CameraServerDisconnected(const ServerState &state, const TrackingCameraState &camera, const TrackingCameraState::Status &camStatus)
+{
+	if (camera.client && camera.client->ready)
+		return false; // Definitely still connected
+	if (camStatus.hadServerConnected && dtMS(camStatus.lastWirelessConnection, sclock::now()) < 10000)
+		return false;
+	return true;
+}
+
 bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera)
 {
-	if (camera.client || camera.controller)
-		return false;
+	TrackingCameraState::Status camStatus = *camera.state.contextualRLock(); // Copy
 	if (state.mode == MODE_Device)
-	{ // If in Device mode and not leaving it, retain cameras for a bit
-		auto camState = *camera.state.contextualRLock(); // copy
-		if (camState.hadServerConnected && dtMS(camState.lastWirelessConnection, sclock::now()) < 10000)
+	{ // Allow certain device states to object to removal
+		if (!CameraServerDisconnected(state, camera, camStatus))
 			return false;
-		// TODO: CameraCheckDisconnected amd ReadStatusPacket both check timeouts before camera is removed (2/2)
-		// This here acts once controller association is gone, may be enough
-		// Though this one will retain cameras even when controller got removed, other would immediately remove cameras. Not sure which is desired
-		//if ((camState.hadMCUConnected || camState.hadPiConnected) && 
-		//	(dtMS(camState.lastConnected, sclock::now()) < 1000 || dtMS(camState.lastConnecting, sclock::now()) < 5000))
-		//	return false;
+		if (!CameraControllerDisconnected(state, camera, camStatus))
+			return false;
+		if (dtMS(camStatus.lastDeviceChange, sclock::now()) < 1000)
+		{ // Prevent high-frequency state changes
+			// Case 1: Just ran EnsureCamera but comms were not set up yet (race condition, though is has been mitigated)
+			// Case 2: Camera moved between two controllers and both are still claiming it. Wait for comm timeout on old one 
+			return false;
+		}
+		if (camStatus.error.encountered && dtMS(camStatus.error.time, sclock::now()) < 10000)
+			return false; // Show camera error message
+		if (camera.firmware)
+		{
+			auto fw = camera.firmware->contextualRLock();
+			if (fw->code == FW_STATUS_REQAPPLY || fw->code == FW_STATUS_UPDATING)
+			{ // Don't remove while it might still be updating
+				if (dtMS(fw->lastActivity, sclock::now()) < 50000)
+				{
+					// TODO: Protect camera ports doing firmware update
+					return false;
+				}
+			}
+			// Even then, info might still be relevant for the UI
+			if (dtMS(fw->lastActivity, sclock::now()) < 10000)
+			{
+				// TODO: Protect camera ports doing firmware update
+				return false;
+			}
+			// TODO: Protect camera ports doing firmware update
+			// May release protection here
+		}
 	}
-	// No other connection, remove camera
+	// Can safely remove camera
 
 	std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
+
+	if (camera.controller)
+	{ // Disassociate from controller
+		camera.controller->cameras[camera.port] = nullptr;
+		camera.controller = nullptr;
+		camera.port = -1;
+	}
 
 	// Clean up stream state
 	RemoveCameraSync(*state.stream.contextualLock(), camera);
 
-	// Keep pipeline camera alive
+	// Keep pipeline camera for the remainder of the session
 
 	// Remove camera device
 	auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [&camera](const auto &c) { return c->id == camera.id; });

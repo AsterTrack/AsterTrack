@@ -303,138 +303,126 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	}
 	// TODO: Double check sync configuration the same way?
 
-	// Step 1: Check addition or removal of cameras
+	// Step 1: Ensure controller port count matches
+	if (controller.cameras.size() != portCount)
+	{ // Adopt controller port count
+		std::unique_lock dev_lock(state.deviceAccessMutex); // controller.cameras, controller.ports
+		if (!controller.ports.empty())
+		{
+			LOG(LControllerDevice, LError, "Controller status packet reports port count %d when previously %d where reported! "
+				"This is not allowed!\n", portCount, (int)controller.ports.size());
+			return false;
+		}
+		controller.cameras.resize(portCount);
+		controller.ports.resize(portCount);
+	}
+
+	// Step 2: Check addition of cameras
 	int camsConnected = 0, camsConnecting = 0, newCamsConnecting = 0;
 	std::vector<std::pair<int32_t,int>> addedCams, removedCams;
 	for (int i = 0; i < portCount; i++)
 	{
-		bool existing = controller.cameras.size() > i && controller.cameras[i] != NULL;
 		uint8_t *portState = data + CONTROLLER_STATUS_SIZE + i*PORT_STATUS_SIZE;
 		ControllerCommState portComms = (ControllerCommState)portState[0];
-		static_assert(sizeof(CameraID) == 4);
 		CameraID id = *(CameraID*)(portState+3);
-		if ((portComms&COMM_READY) == COMM_READY)
-		{
-			if (portComms == COMM_SBC_READY)
-				camsConnected++;
-			else if (portComms == COMM_MCU_READY)
-				camsConnecting++;
-			if (id == 0 && !existing) newCamsConnecting++;
-			if (id == 0) continue;
-			// Cannot add camera without knowing its ID
-			if (!existing)
-			{ // Setup new tracking camera
-				addedCams.emplace_back(id, i);
-			}
-			else if (id != 0 && controller.cameras[i]->id != id)
-			{ // Shouldn't happen, but let's be safe
-				addedCams.emplace_back(id, i);
-				removedCams.emplace_back(controller.cameras[i]->id, i);
-			}
-		}
-		else if (existing)
-		{
-			// TODO: CameraCheckDisconnected amd ReadStatusPacket both check timeouts before camera is removed (1/2)
-			// This here retains the controller association, might not be necessary
-			auto camState = *controller.cameras[i]->state.contextualRLock();
-			if (dtMS(camState.lastConnecting, sclock::now()) < 1000)
-				continue; // Show camera reconnecting message (might be switching between MCU and Pi)
-			if (dtMS(camState.lastConnected, sclock::now()) < 5000)
-				continue; // Show camera lost message
-			if (camState.error.encountered &&
-				dtMS(camState.error.time, sclock::now()) < 10000)
-				continue; // Show camera error message
-			// Might want to further defer removal of errored camera to give it a chance to recover / restart
-			// Detach from controller
-			removedCams.emplace_back(controller.cameras[i]->id, i);
-		}
-	}
+		static_assert(sizeof(CameraID) == 4);
 
-	// Step 1: Apply addition or removal of cameras under unique_lock
-	if (controller.cameras.size() != portCount || !addedCams.empty() || !removedCams.empty())
-	{
-		std::unique_lock dev_lock(state.deviceAccessMutex); // controller.cameras, controller.packetState,
-		if (controller.ports.size() != portCount)
-		{ // Adopt controller port count
-			if (!controller.ports.empty())
-			{
-				LOG(LControllerDevice, LError, "Controller status packet reports port count %d when previously %d where reported! "
-					"This is not allowed!\n", portCount, (int)controller.ports.size());
-				return false;
-			}
-			controller.cameras.resize(portCount);
-			controller.ports.resize(portCount);
+		if ((portComms&COMM_READY) != COMM_READY)
+			continue;
+		if (portComms == COMM_SBC_READY)
+			camsConnected++;
+		else if (portComms == COMM_MCU_READY)
+			camsConnecting++;
+		if (id == 0 && !controller.cameras[i])
+			newCamsConnecting++;
+		if (id == 0)
+			continue;
+		if (controller.cameras[i] && controller.cameras[i]->id == id)
+			continue;
+
+		std::unique_lock dev_lock(state.deviceAccessMutex); // state.cameras, controller.cameras
+
+		if (controller.cameras[i])
+		{ // Another camera was on this port, or it changed IDs
+			auto camera = controller.cameras[i];
+			LOG(LControllerDevice, LWarn, "Controller port %d suddenly reports ID #%u instead of #%u previously!\n", i, id, camera->id);
+			/* if (!camera->state.contextualRLock()->hadPiConnected)
+			{ // Perhaps MCU and SBC disagree on ID and have not properly synced. This should NOT happen.
+				LOG(LControllerDevice, LWarn, "Camera on port %d changed ID from #%u to #%u!\n", i, camera->id, id);
+				// UNTESTED: Accept new ID
+				camera->id = id;
+				camera->pipeline->id = id;
+				if (camera->pipeline->calib.valid())
+					camera->pipeline->calib.id = id;
+				continue;
+			} */
+			// Disconnect other camera before adding new one with new ID
+			camera->controller = nullptr;
+			camera->port = -1;
+			controller.cameras[i] = nullptr;
 		}
-		// Detect moved cameras
-		int camsLost = 0, camsGained = 0, camsMoved = 0;
-		for (auto rem : removedCams)
+
+		// Create camera - or, if already existant, ensure to handle any prior controller association
+		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, id);
+		if (camera->controller && camera->controller.get() != &controller)
+		{ // Already had this camera associated with a different controller
+			if (dtMS(camera->state.contextualRLock()->lastDeviceChange, sclock::now()) < 1000)
+			{ // That other controller replaced and now suppresses this one, expecting this one to time out
+				continue;
+			}
+			LOG(LControllerDevice, LWarn, "Camera #%u appeared on different controller, suppressing old controller!\n", id);
+			camera->state.contextualLock()->lastDeviceChange = sclock::now();
+			camera->controller->cameras[camera->port] = nullptr;
+		}
+		else if (camera->controller.get() == &controller)
+		{ // Already had this camera associated with a different port on this controller, so controller should have already suppressed the other port
+			assert(camera->port >= 0 && camera->port != i); // If this fails, something removed the camera from the controller, but not the controller from the camera
+			LOG(LControllerDevice, LWarn, "Camera #%u appeared on different port!\n", id);
+			camera->state.contextualLock()->lastDeviceChange = sclock::now();
+			camera->controller->cameras[camera->port] = nullptr;
+		}
+		camera->controller = nullptr;
+		camera->port = -1;
+
+		// Associate camera and controller port
+		auto contIt = std::find_if(state.controllers.begin(), state.controllers.end(),
+			[&](auto &cont){ return cont.get() == &controller; });
+		if (contIt == state.controllers.end())
 		{
-			auto add = addedCams.begin();
-			while (add != addedCams.end() && add->first != rem.first) add++;
-			if (add != addedCams.end())
-			{ // Camera moved from one port to the next! Magic!
-				// Reassign port - if something was replaced, it too is either moved or detached
-				controller.cameras[add->second] = controller.cameras[rem.second];
-				controller.cameras[add->second]->port = add->second;
-				controller.cameras[rem.second] = NULL;
-				camsMoved++;
-				addedCams.erase(add);
-			}
-			else
-			{ // Detach from controller
-				controller.cameras[rem.second]->controller = NULL;
-				controller.cameras[rem.second]->port = -1;
-				if (CameraCheckDisconnected(state, *controller.cameras[rem.second]))
-					camsLost++;
-				controller.cameras[rem.second] = NULL;
-				LOG(LDefault, LInfo, "Removed Camera with ID %d from port %d!\n", rem.first, rem.second);
-			}
+			LOG(LDefault, LError, "Could not find controller when adding camera - was it removed already?\n");
+			return false;
 		}
-		for (auto add : addedCams)
-		{ // Genuinely newly connected, not moved
-			camsGained++;
-			auto contIt = std::find_if(state.controllers.begin(), state.controllers.end(),
-				[&](auto &cont){ return cont.get() == &controller; });
-			if (contIt == state.controllers.end())
-			{
-				LOG(LDefault, LError, "Could not find controller when adding camera - was it removed already?\n");
-				return false;
-			}
-			std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, add.first, *contIt);
-			camera->controller = *contIt; // Set both in EnsureCamera and here in case camera existed already
-			camera->port = add.second;
-			LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", camera->id, camera->port);
-			controller.cameras[add.second] = std::move(camera);
-		}
-		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: Lost %d and gained %d cameras, %d connected!\n",
-			camsConnected, portCount, camsConnecting, newCamsConnecting, camsLost, camsGained, (int)state.cameras.size());
+		LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", id, i);
+		camera->controller = *contIt;
+		camera->port = i;
+		controller.cameras[i] = std::move(camera);
+
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
-	else if (controller.newCamerasConnecting != newCamsConnecting)
+
+	// New here means the cameras didn't initialise and sync IDs yet, should only happen with new cameras
+	controller.newCamerasConnecting = newCamsConnecting;
+	if (newCamsConnecting)
 	{
-		LOG(LControllerDevice, LDebug, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: %d!\n",
+		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting (of those %d new). Total: %d!\n",
 			camsConnected, portCount, camsConnecting, newCamsConnecting, (int)state.cameras.size());
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
 	else
-	{
-		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting, %d new. Total: %d!\n",
-			camsConnected, portCount, camsConnecting, newCamsConnecting, (int)state.cameras.size());
-	}
-	// TODO: Rework connecting cameras (1/2)
-	controller.newCamerasConnecting = newCamsConnecting;
+		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting. Total: %d!\n",
+			camsConnected, portCount, camsConnecting, (int)state.cameras.size());
 
 	// Step 3: Update camera states
 	bool updatedCameras = false;
 	for (int i = 0; i < portCount; i++)
 	{
 		if (!controller.cameras[i]) continue;
-		auto camState = controller.cameras[i]->state.contextualLock();
-		// TODO: Change camera iteration packet to include version of cameras? Or implement a separate query?
 		uint8_t *portState = data + CONTROLLER_STATUS_SIZE + i*PORT_STATUS_SIZE;
 		ControllerCommState portComms = (ControllerCommState)portState[0];
 		ControllerPortStatus portStatus = (ControllerPortStatus)portState[1];
 		uint8_t reserved = portState[2];
+
+		auto camState = controller.cameras[i]->state.contextualLock();
 		if (portComms == COMM_SBC_READY)
 		{ // Clear any possible error state
 			if (camState->error.encountered && dtMS(camState->error.time, sclock::now()) > 1000)
@@ -452,6 +440,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		if (camState->commState != portComms)
 			updatedCameras = true;
 		camState->commState = portComms;
+		// If this camera got removed, it'll eventually be disassociated and deleted in CameraCheckDisconnect
 	}
 	if (updatedCameras)
 		SignalServerEvent(EVT_UPDATE_INTERFACE);

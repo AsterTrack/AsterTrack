@@ -169,9 +169,11 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 					cameras[c].ID = newID;
 				}
 			}
-			// Add new cameras
-			for (auto cam : cameras)
-				EnsureCamera(state, cam.ID);
+			{ // Add new cameras
+				std::unique_lock dev_lock(state.deviceAccessMutex); // cameras 
+				for (auto cam : cameras)
+					EnsureCamera(state, cam.ID);
+			}
 			// Adopt calibrations for new cameras
 			AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
 			{ // Calculate fundamental matrices from calibration

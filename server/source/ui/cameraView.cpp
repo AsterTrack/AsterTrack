@@ -76,11 +76,8 @@ static CameraVisMode getVisMode(CameraView &view)
 
 void InterfaceState::ShowConnectingCameraUI(int index)
 {
-	// TODO: Rework connecting cameras (2/2)
-	// This is only for cameras that we KNOW are there, but we don't know their persistent ID yet
-	// Currently, all connecting cameras with unknown IDs (e.g. 0) would appear as one and the same, and we'd get a garbage camera in pipeline
-	// So until we make the MCU (which communicates while Pi is starting) aware of the ID of the Pi, do this temporarily
-	// Not super easy to both make MCU ID-aware, make 100% sure Pi that is booting will use the same ID, and keep backwards compatibility to cameras without MCU
+	// This is only for cameras that we know are there, but we don't know their persistent ID yet
+	// Since the MCU should know the cameras ID, this should only happen for new cameras that have not initialised & synced yet
 
 	ImRect rect = ImGui::GetCurrentWindowRead()->InnerRect;
 	// Black background

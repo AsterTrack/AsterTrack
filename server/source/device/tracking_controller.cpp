@@ -110,7 +110,7 @@ int DetectNewControllers(ServerState &state)
 
 void DisconnectController(ServerState &state, TrackingControllerState &controller)
 {
-	std::unique_lock dev_lock(state.deviceAccessMutex); // controllers
+	std::unique_lock dev_lock(state.deviceAccessMutex); // controllers, controller.cameras
 
 	// Clean up cameras if they are now unconnected
 	for (int c = 0; c < controller.cameras.size(); c++)

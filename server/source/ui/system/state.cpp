@@ -364,11 +364,11 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	// Detect if camera may need a streaming restart
 	bool expectingStreaming = GetState().isStreaming && !status.error.encountered;
 	bool isCameraStreaming = camera.isStreaming();// && camera.state.fsEnabled;
-	bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
-	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySendCommand;
+	bool recentlySentCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
+	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySentCommand;
 
 	if (camera.controller && status.commState != COMM_SBC_READY)
-	{ // UART comms to camera not established
+	{ // Controller comms to camera not established
 		if (status.commState == COMM_MCU_READY)
 			statusMsgs.push_back("Camera is connected and starting up...");
 		else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
@@ -380,11 +380,11 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	}
 
 	if (!camera.client && status.hadServerConnected)
-	{ // Server comms to camera not established
-		if (dtMS(status.lastWirelessConnection, sclock::now()) < 1000)
+	{ // Server client comms to camera not established
+		if (dtMS(status.lastWirelessConnection, sclock::now()) < 5000)
 			statusMsgs.push_back("Camera wireless connection dropped out.");
 		else if (!camera.controller)
-			statusMsgs.push_back("Camera server connection is disconnected.");
+			statusMsgs.push_back("Wireless camera is disconnected.");
 	}
 
 	// Display recent error

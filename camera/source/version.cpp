@@ -147,11 +147,12 @@ bool receivedConfigFromMCU(CameraStoredConfig &&config)
 	}
 	else if (cameraID != config.cameraID)
 	{ // IDs differ, perhaps SD card got reflashed / exchanged
-		if (isStored)
+		/* if (isStored)
 			printf("Have different ID stored, updating MCUs ID!\n");
 		else if (isOverwritten)
 			printf("Had different overwritten ID, updating MCUs ID!\n");
-		else
+		else */
+		// Adopting MCUs ID makes things easier for the server/controller, which already got the ID from the MCU
 		{ // Else adopt MCUs ID
 			printf("Adopting MCUs ID #%u, replacing previous ID #%u!\n", config.cameraID, cameraID);
 			cameraID = config.cameraID;

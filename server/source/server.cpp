@@ -335,19 +335,15 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	return camera;
 }
 
-std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id,
-	std::shared_ptr<TrackingControllerState> controller, ClientCommState *serverClient)
+std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id)
 {
 	auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.cameras.end())
 		return *cam;
-	std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
 	std::shared_ptr<TrackingCameraState> camera = std::make_shared<TrackingCameraState>();
 	camera->id = id;
 	camera->pipeline = EnsureCameraPipeline(state, id);
-	// Apply source comm here under dev_lock to prevent race-condition with CameraCheckDisconnected of DeviceSupervisorThread
-	camera->controller = std::move(controller);
-	camera->client = serverClient;
+	camera->state.contextualLock()->lastDeviceChange = sclock::now();
 	state.cameras.push_back(camera); // new shared_ptr
 	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 1/4
 	return camera;
@@ -387,8 +383,8 @@ void StartWirelessServer(ServerState &state)
 		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
 		if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
 		// Setup camera with server connection
-		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, client.otherIdent.id, nullptr, &client);
-		camera->client = &client; // Set both in EnsureCamera and here in case camera existed already
+		std::shared_ptr<TrackingCameraState> camera = EnsureCamera(state, client.otherIdent.id);
+		camera->client = &client;
 		client.callbacks.userData2 = camera;
 		{
 			auto camState = camera->state.contextualLock();
@@ -877,11 +873,13 @@ void StartSimulation(ServerState &state)
 	state.pipeline.isSimulationMode = true;
 	state.pipeline.keepInternalData = true;
 
-	// Setup cameras
-	for (int c = 0; c < state.config.simulation.cameraDefinitions.size(); c++)
-	{
-		auto camDef = state.config.simulation.cameraDefinitions[c];
-		EnsureCamera(state, camDef.id)->label = asprintf_s("Camera %d", camDef.id);
+	{ // Setup cameras
+		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
+		for (int c = 0; c < state.config.simulation.cameraDefinitions.size(); c++)
+		{
+			auto camDef = state.config.simulation.cameraDefinitions[c];
+			EnsureCamera(state, camDef.id)->label = asprintf_s("Camera %d", camDef.id);
+		}
 	}
 
 	{ // Log testing calibrations
@@ -1276,11 +1274,13 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	state.pipeline.isSimulationMode = false;
 	state.pipeline.keepInternalData = true;
 
-	// Setup cameras
-	for (auto cam : cameras)
-	{
-		EnsureCamera(state, cam.ID);
-		// TODO: Ensure replay camera has the same mode (from image frameX/frameY)? Or not important?
+	{ // Setup cameras
+		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras 
+		for (auto cam : cameras)
+		{
+			EnsureCamera(state, cam.ID);
+			// TODO: Ensure replay camera has the same mode (from image frameX/frameY)? Or not important?
+		}
 	}
 
 	// Setup IMUs

@@ -56,7 +56,7 @@ void version_init();
 // Firmware Version Information initialised in version_init
 extern union VersionDesc firmwareVersion;
 extern const char* firmwareDescriptor;
-extern const uint32_t firmwareDescriptorLength;
+extern const uint16_t firmwareDescriptorLength;
 
 // Times for supervision
 TimePoint startup = 0;

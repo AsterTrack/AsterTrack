@@ -76,16 +76,19 @@ struct StatValue
 		Scalar fac = 1.0/num;
 		Scalar diff = val - avg;
 		avg += diff * fac;
-		if constexpr ((Options & StatDistribution) == StatDistribution)
-		{
-			Scalar diff2 = val - avg;
-			M2 += diff * diff2;
-		}
-		// Floating average
 		if constexpr ((Options & StatFloating) == StatFloating)
-		{
+		{ // Floating average
+			if constexpr ((Options & StatDistribution) == StatDistribution)
+				diff = val - floating;
 			int floatNum = num < floatCount? num : floatCount;
 			floating = (floating*floatNum + val)/(floatNum+1);
+		}
+		if constexpr ((Options & StatDistribution) == StatDistribution)
+		{
+			if constexpr ((Options & StatFloating) == StatFloating)
+				M2 += diff * (val - floating);
+			else
+				M2 += diff * (val - avg);
 		}
 	}
 
@@ -104,9 +107,26 @@ struct StatValue
 		int total = num + o.num;
 		float fac = 1.0f/total;
 		float cAvg = (avg*num + o.avg*o.num) * fac;
+		float cFloat;
+		if constexpr ((Options & StatFloating) == StatFloating && (O & StatFloating) == StatFloating)
+		{ // Approximate
+			int floatNum1 = num < floatCount? num : floatCount;
+			int floatNum2 = o.num < o.floatCount? o.num : o.floatCount;
+			cFloat = (floating*floatNum1 + o.floating*floatNum2)/(floatNum1+floatNum2);
+		}
 		if constexpr ((Options & StatDistribution) == StatDistribution && (O & StatDistribution) == StatDistribution)
 		{
-			float dAvg1 = (avg-cAvg), dAvg2 = (o.avg-cAvg);
+			float dAvg1, dAvg2;
+			if constexpr ((Options & StatFloating) == StatFloating && (O & StatFloating) == StatFloating)
+			{
+				dAvg1 = (floating-cFloat);
+				dAvg2 = (o.floating-cFloat);
+			}
+			else
+			{
+				dAvg1 = (avg-cAvg);
+				dAvg2 = (o.avg-cAvg);
+			}
 			M2 = M2 + dAvg1*dAvg1*num + o.M2 + dAvg2*dAvg2*o.num;
 		}
 		num = total;
@@ -118,11 +138,7 @@ struct StatValue
 			if (max < o.max) max = o.max;
 		}
 		if constexpr ((Options & StatFloating) == StatFloating && (O & StatFloating) == StatFloating)
-		{ // Approximate
-			int floatNum1 = num < floatCount? num : floatCount;
-			int floatNum2 = o.num < o.floatCount? o.num : o.floatCount;
-			floating = (floating*floatNum1 + o.floating*floatNum2)/(floatNum1+floatNum2);
-		}
+			floating = cFloat;
 	}
 
 	/**
@@ -151,6 +167,7 @@ struct StatValue
 };
 
 typedef StatValue<float,StatFloating|StatExtremas|StatDistribution> Statisticsf;
+typedef StatValue<float,StatFloating|StatDistribution> StatFloatDistf;
 typedef StatValue<float,StatExtremas|StatDistribution> StatBlockf;
 typedef StatValue<float,StatDistribution> StatDistf;
 typedef StatValue<float,StatFloating> StatFloatingf;

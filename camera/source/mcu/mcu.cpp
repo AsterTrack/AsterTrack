@@ -65,6 +65,9 @@ TimePoint_t lastPing;
 
 TimeSync timesync;
 
+StatFloatDistf supplyVoltage(100);
+std::atomic<uint16_t> floatingSupplyVoltageMV;
+
 volatile bool mcu_exists;
 volatile bool mcu_active;
 volatile bool mcu_intentional_bootloader;
@@ -263,9 +266,8 @@ static void mcu_thread()
 		{ // MCU disconnected while in the loop
 			continue;
 		}
-		
-		if (events > 0)
-		{ // Interrupt line signals events available
+
+		{ // Interrupt line signals events available, or waited long enough to read another ADC sample
 			std::unique_lock lock(mcu_mutex);
 			if (!mcu_active) continue;
 			mcu_get_status();
@@ -697,12 +699,12 @@ bool mcu_get_status()
 			printf("Filter switcher in unknown state!\n");
 	}
 
-	static TimePoint_t lastVoltageReadTime = sclock::now();
 	uint16_t powerMV = (packet[2] << 8) | packet[3];
-	if (powerMV < 10000 || powerMV > 22000 || dtMS(lastVoltageReadTime, sclock::now()) > 1000)
+	supplyVoltage.update(powerMV/1000.0f);
+	floatingSupplyVoltageMV = supplyVoltage.floating*1000;
+	if (powerMV < 10000 || powerMV > 22000)
 	{
-		lastVoltageReadTime = sclock::now();
-		printf("Voltage is %.4fV\n", powerMV/1000.0f);
+		printf("Voltage extreme of %.4fV (avg %.3fV +- %.3fV)!\n", powerMV/1000.0f, supplyVoltage.floating, supplyVoltage.stdDev()*3);
 	}
 
 	uint16_t timestampUS = (packet[4] << 8) | packet[5];

@@ -849,18 +849,27 @@ std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraI
 bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (erroneous) return false;
-	if (length != STAT_PACKET_SIZE) // && writeStatLogs
+	StatPacket s;
+	if (length == STAT_PACKET_HEADER)
+		s = parseStatPacketHeader(data);
+	else if (length == STAT_PACKET_SIZE)
+		s = parseStatPacket(data);
+	else
 	{
-		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d!\n", (int)length, STAT_PACKET_SIZE);
+		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d / %d!\n", (int)length, STAT_PACKET_HEADER, STAT_PACKET_SIZE);
 		return false;
 	}
-	auto stat_lock = camera.receiving.statistics.contextualLock();
-	uint32_t lastStatFrame = stat_lock->header.frame;
-	*stat_lock = parseStatPacket(data);
-	auto &s = *stat_lock;
+	uint32_t lastStatFrame;
+	{
+		auto stat_lock = camera.receiving.statistics.contextualLock();
+		lastStatFrame = stat_lock->header.frame;
+		*stat_lock = s;
+	}
+	if (length == STAT_PACKET_HEADER)
+		return true;
 	float elapsedS = s.header.deltaUS/1000000.0f;
-	LOG(LCameraDevice, LInfo, "Camera %d, Frame %d, %.2f fps, %.1f\u00B0C\n", camera.id, s.header.frame,
-		(s.header.frame-lastStatFrame)/elapsedS, s.header.tempSOC/100.0f);
+	LOG(LCameraDevice, LInfo, "Camera %d, Frame %d, %.2f fps, %.1f\u00B0C, %.2fV\n", camera.id, s.header.frame,
+		(s.header.frame-lastStatFrame)/elapsedS, s.header.tempSOC/100.0f, s.header.voltage/1000.0f);
 	LOG(LCameraDevice, LInfo, "   Latency %.2fms (qpu %.2f, fetch %.2f, CCL %.2f, "
 		"post %.2f, TX %.2f), Vis: (%dus, %.0fHz), Stream: (%dms, %.0fHz)\n",
 		s.times.latency/1000.0f, s.times.qpu/1000.0f, s.times.fetch/1000.0f,

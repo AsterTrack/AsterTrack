@@ -115,6 +115,14 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		if (ImGui::BeginComboPopup(infoPopupID, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()),
 			ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge))
 		{
+			float supplyVoltage, temperature;
+			{
+				auto stats = camera.receiving.statistics.contextualRLock();
+				supplyVoltage = stats->header.voltage / 1000.0f;
+				temperature = stats->header.tempSOC / 100.0f;
+			}
+			ImGui::Text("SoC Temperature: %.1f\u00B0C, Supply Voltage %.2fV", temperature, supplyVoltage);
+
 			auto desc = CameraDescribeInfo(info);
 			if (desc.empty())
 				ImGui::TextUnformatted("Camera has not sent info yet!");

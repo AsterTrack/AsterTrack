@@ -64,7 +64,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define RUN_CAMERA	// Have the camera supply frames (else: emulate camera buffers)
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers
 //#define LOG_QPU
-#define LOG_SHORT
 #define LOG_DROPS
 //#define LOG_TIMING
 
@@ -142,6 +141,8 @@ inline static void printIncidents(StatPacket::Incidents::Stat &stat, const char 
 }
 
 static void sendWirelessStatusPacket(TrackingCameraState &state);
+
+static void sendSystemStatusPacket(TrackingCameraState &state, long deltaStatUS);
 
 static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream);
 
@@ -252,6 +253,7 @@ void crash_handler(int signal)
 int main(int argc, char **argv)
 {
 	TimePoint_t time_start = sclock::now();
+	TimePoint_t time_lastStatCheck = sclock::now();
 
 	// ---- Init Application ----
 
@@ -537,6 +539,13 @@ int main(int argc, char **argv)
 			if (state.wireless.sendStatus)
 			{ // Notify host of wireless status
 				sendWirelessStatusPacket(state);
+			}
+
+			long deltaStatUS = dtUS(time_lastStatCheck, sclock::now());
+			if (deltaStatUS > 1000000)
+			{ // Send a shortened, non-streaming stat packet every second
+				time_lastStatCheck = sclock::now();
+				sendSystemStatusPacket(state, deltaStatUS);
 			}
 		}
 
@@ -1279,7 +1288,7 @@ int main(int argc, char **argv)
 
 		nice(-15); // High priority
 
-		TimePoint_t time_lastStatCheck = sclock::now();
+		time_lastStatCheck = sclock::now();
 		time_start = sclock::now();
 		int time_debug_interval = 200;
 		int frameNum_lastStatCheck = 0;
@@ -1857,14 +1866,16 @@ int main(int argc, char **argv)
 			if (numFrames % time_debug_interval == 0)
 			{ // Frames per second
 				TimePoint_t currentTime = sclock::now();
-				uint32_t deltaUS = dtUS(time_lastStatCheck, currentTime);
+				uint32_t deltaStatUS = dtUS(time_lastStatCheck, currentTime);
 				uint32_t temperature = getTemperature(base.mb);
+				uint16_t voltageMV = floatingSupplyVoltageMV.load();
 
 				{
 					StatPacket stats;
 					stats.header.frame = numFrames;
-					stats.header.deltaUS = deltaUS;
+					stats.header.deltaUS = deltaStatUS;
 					stats.header.tempSOC = temperature/10; // Not accurate to a thousands anyway, more a tenth
+					stats.header.voltage = voltageMV;
 					stats.header.skipTrigger = std::min(255, skip_count_trigger);
 					stats.header.skipCPU = std::min(255, skip_count_cpu);
 					stats.header.skipQPU = std::min(255, skip_count_qpu);
@@ -1879,22 +1890,17 @@ int main(int argc, char **argv)
 
 				if (state.writeStatLogs)
 				{
-					float elapsedS = deltaUS/1000000.0f;
+					float elapsedS = deltaStatUS/1000000.0f;
 					float fps = time_debug_interval / elapsedS;
 
-#ifdef LOG_SHORT
-					printf("%d: %.1ffps, %.1f°C, ", numFrames, fps, temperature/1000.0f);
+					printf("%d: %.1ffps, %.1f°C, %.2fV, ", numFrames, fps, temperature/1000.0f, voltageMV/1000.0f);
 					printDeltaTimes(avgTimes);
 					if (state.visualisation.enabled)
 						printf(", Vis: (%dus, %.0fHz)", incidents.vis.avg, incidents.vis.occurences/elapsedS);
 					if (state.streaming.enabled)
 						printf(", Stream: (%.2fms, %.0fHz)", (incidents.stream.avg<<8)/1000.0f, incidents.stream.occurences/elapsedS);
 					printf("\n");
-#else
-					//printf("ARM Core clock rate is at %dMhz!\n", getClockRate(base.mb, 3)/1000000);
-					printf("%d frames over %.2fs (%.1ffps), Temp %.1f°C, Latency %.2fms, Processing %.2fms; QPU: %.2fms, CPU: %.2fms (Fetch: %.2fms, CCL: %.2fms, Post: %.2fms, Send: %.2fms)!\n",
-						time_debug_interval, elapsedS, fps, getTemperature(base.mb)/1000.0f, avgTimes.latency, avgTimes.processing, avgTimes.qpu, avgTimes.cpu, avgTimes.fetch, ccl, avgTimes.post, avgTimes.send);
-#endif
+
 					if (incidents.lag.occurences > 0 || skip_count_trigger > 0 || skip_count_qpu > 0 || skip_count_cpu > 0)
 					{
 						printf("%d triggers dropped, %d QPU-dropped, %d CPU-dropped, %d/%d lagged",
@@ -2073,6 +2079,26 @@ static void sendWirelessStatusPacket(TrackingCameraState &state)
 	std::vector<uint8_t> statusPacket;
 	fillWirelessStatusPacket(state, statusPacket);
 	comm_send(realTimeAff, PacketHeader(PACKET_WIRELESS, statusPacket.size()), std::move(statusPacket));
+}
+
+static void sendSystemStatusPacket(TrackingCameraState &state, long deltaStatUS)
+{
+	uint32_t temperature = getTemperature(base.mb);
+	uint16_t voltageMV = floatingSupplyVoltageMV.load();
+	{
+		StatPacket stats = {};
+		stats.header.frame = 0;
+		stats.header.deltaUS = deltaStatUS;
+		stats.header.tempSOC = temperature/10; // Not accurate to a thousands anyway, more a tenth
+		stats.header.voltage = voltageMV;
+		// Write byte representation
+		uint8_t statPacket[STAT_PACKET_HEADER];
+		storeStatPacketHeader(stats, statPacket);
+		// Send packet
+		comm_send(largeDataAff, PacketHeader(PACKET_STAT, sizeof(statPacket)), statPacket);
+	}
+	if (state.writeStatLogs)
+		printf("%.1f°C, %.2fV\n", temperature/1000.0f, voltageMV/1000.0f);
 }
 
 static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTimeUS)

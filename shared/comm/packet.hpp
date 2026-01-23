@@ -361,7 +361,10 @@ struct StatPacket
 		uint32_t frame;
 		uint32_t deltaUS;
 		uint16_t tempSOC;
-		uint8_t skipTrigger, skipQPU, skipCPU;
+		uint16_t voltage;
+		uint16_t reserved1;
+		uint16_t reserved2;
+		uint8_t skipTrigger, skipQPU, skipCPU, resvEvent;
 	} header;
 	union Times {
 		uint16_t data[15];
@@ -381,44 +384,61 @@ struct StatPacket
 		};
 	} incidents;
 };
-#define STAT_PACKET_SIZE			97
+#define STAT_PACKET_HEADER			20
+#define STAT_PACKET_SIZE			(STAT_PACKET_HEADER+30+54)
+
+static inline struct StatPacket parseStatPacketHeader(const uint8_t data[STAT_PACKET_HEADER])
+{ // Header has padding, so need to manually copy
+	struct StatPacket stat;
+	stat.header.frame = *(uint32_t*)&data[0];
+	stat.header.deltaUS = *(uint32_t*)&data[4];
+	stat.header.tempSOC = *(uint16_t*)&data[8];
+	stat.header.voltage = *(uint16_t*)&data[10];
+	stat.header.reserved1 = *(uint16_t*)&data[12];
+	stat.header.reserved2 = *(uint16_t*)&data[14];
+	stat.header.skipTrigger = *(uint8_t*)&data[16];
+	stat.header.skipQPU = *(uint8_t*)&data[17];
+	stat.header.skipCPU = *(uint8_t*)&data[18];
+	uint8_t reservedEvent = *(uint8_t*)&data[19];
+	static_assert(STAT_PACKET_HEADER == 20);
+	return stat;
+}
 
 static inline struct StatPacket parseStatPacket(const uint8_t data[STAT_PACKET_SIZE])
 {
-	struct StatPacket stat;
-	{ // Header has padding, so need to manually copy
-		stat.header.frame = *(uint32_t*)&data[0];
-		stat.header.deltaUS = *(uint32_t*)&data[4];
-		stat.header.tempSOC = *(uint16_t*)&data[8];
-		stat.header.skipTrigger = *(uint8_t*)&data[10];
-		stat.header.skipQPU = *(uint8_t*)&data[11];
-		stat.header.skipCPU = *(uint8_t*)&data[12];
-	}
-	const int base = 13;
+	struct StatPacket stat = parseStatPacketHeader(data);
 	static_assert(sizeof(stat.times) == sizeof(stat.times.data));
-	memcpy(&stat.times, &data[base], sizeof(stat.times));
+	memcpy(&stat.times, &data[STAT_PACKET_HEADER], sizeof(stat.times));
 	static_assert(sizeof(stat.incidents) == sizeof(stat.incidents.data));
-	memcpy(&stat.incidents, &data[base+sizeof(stat.times)], sizeof(stat.incidents));
-	static_assert(STAT_PACKET_SIZE == base+sizeof(stat.times)+sizeof(stat.incidents));
+	memcpy(&stat.incidents, &data[STAT_PACKET_HEADER+sizeof(stat.times)], sizeof(stat.incidents));
+	static_assert(STAT_PACKET_SIZE == STAT_PACKET_HEADER+sizeof(stat.times)+sizeof(stat.incidents));
 	return stat;
+};
+
+static inline void storeStatPacketHeader(const struct StatPacket stat, uint8_t data[STAT_PACKET_HEADER])
+{
+	// Header has padding, so need to manually copy
+	*(uint32_t*)&data[0] = stat.header.frame;
+	*(uint32_t*)&data[4] = stat.header.deltaUS;
+	*(uint16_t*)&data[8] = stat.header.tempSOC;
+	*(uint16_t*)&data[10] = stat.header.voltage;
+	*(uint16_t*)&data[12] = stat.header.reserved1;
+	*(uint16_t*)&data[14] = stat.header.reserved2;
+	*(uint8_t*)&data[16] = stat.header.skipTrigger;
+	*(uint8_t*)&data[17] = stat.header.skipQPU;
+	*(uint8_t*)&data[18] = stat.header.skipCPU;
+	*(uint8_t*)&data[19] = stat.header.resvEvent;
+	static_assert(STAT_PACKET_HEADER == 20);
 };
 
 static inline void storeStatPacket(const struct StatPacket stat, uint8_t data[STAT_PACKET_SIZE])
 {
-	{ // Header has padding, so need to manually copy
-		*(uint32_t*)&data[0] = stat.header.frame;
-		*(uint32_t*)&data[4] = stat.header.deltaUS;
-		*(uint16_t*)&data[8] = stat.header.tempSOC;
-		*(uint8_t*)&data[10] = stat.header.skipTrigger;
-		*(uint8_t*)&data[11] = stat.header.skipQPU;
-		*(uint8_t*)&data[12] = stat.header.skipCPU;
-	}
-	const int base = 13;
+	storeStatPacketHeader(stat, data);
 	static_assert(sizeof(stat.times) == sizeof(stat.times.data));
-	memcpy(&data[base], &stat.times, sizeof(stat.times));
+	memcpy(&data[STAT_PACKET_HEADER], &stat.times, sizeof(stat.times));
 	static_assert(sizeof(stat.incidents) == sizeof(stat.incidents.data));
-	memcpy(&data[base+sizeof(stat.times)], &stat.incidents, sizeof(stat.incidents));
-	static_assert(STAT_PACKET_SIZE == base+sizeof(stat.times)+sizeof(stat.incidents));
+	memcpy(&data[STAT_PACKET_HEADER+sizeof(stat.times)], &stat.incidents, sizeof(stat.incidents));
+	static_assert(STAT_PACKET_SIZE == STAT_PACKET_HEADER+sizeof(stat.times)+sizeof(stat.incidents));
 };
 
 #endif // PACKET_HPP

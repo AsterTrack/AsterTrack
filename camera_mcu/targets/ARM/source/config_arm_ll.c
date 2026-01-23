@@ -184,19 +184,19 @@ void Setup_Peripherals()
 	// Setup ADC Clocks
 	RCC->CCIPR = (RCC->CCIPR & ~RCC_CCIPR_ADCSEL_Msk); // Default, SYSCLK
 	RCC->APBENR2 |= RCC_APBENR2_ADCEN;
-	ADC1_COMMON->CCR |= (0b1011 << ADC_CCR_PRESC_Pos); // SYSCLK / 256 = 250Khz
+	ADC1_COMMON->CCR |= (0b0100 << ADC_CCR_PRESC_Pos); // SYSCLK / 8 = 8Mhz
 
 	// Configure ADC
 	ADC1->CFGR1 = ADC_CFGR1_CONT | ADC_CFGR1_OVRMOD; // Enable continuous conversion, writing the latest value in the data register
 	ADC1->CFGR2 = 0;
 
 	// Configure ADC channels
-	ADC1->SMPR = 0b111 << ADC_SMPR_SMP1_Pos; // Select 12.5+160.5 ADCCLK Sample Time
+	ADC1->SMPR = 0b100 << ADC_SMPR_SMP1_Pos; // Select 12.5+19.5 ADCCLK Sample Time
 	static_assert(VSENSE_GPIO_X == GPIOA);
 	static_assert(GPIO_PIN_0 == ADC_CHSELR_CHSEL0 && GPIO_PIN_2 == ADC_CHSELR_CHSEL2);
 	ADC1->CHSELR = ADC_CHSELR_CHSEL2;
 	while (ADC1->ISR & ADC_ISR_CCRDY);
-	// -> Timings result in ADC sampling every 692us (12.5+160.5 CLK @ 0.25Mhz)
+	// -> Timings result in ADC sampling every 4us (12.5+19.5 CLK @ 8Mhz)
 
 	// Enable IRQ for ADC for Analog Watchdog
 	// High priority since it might be a spike in voltage that requires quickly cutting power

@@ -24,11 +24,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <string>
 #include <mutex>
-#include <vector>
+#include <atomic>
 
 extern std::string mcu_flash_file;
 
 extern std::mutex mcu_mutex;
+
+extern std::atomic<uint16_t> floatingSupplyVoltageMV;
 
 extern volatile bool mcu_exists;
 extern volatile bool mcu_active;

@@ -210,7 +210,7 @@ int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<u
 
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
 	std::unique_lock lock(commPtr->queueMutex);
 	commPtr->packetQueue.emplace(header, std::move(data));
 	return true;
@@ -218,7 +218,7 @@ bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_
 
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
 	std::unique_lock lock(commPtr->queueMutex);
 	commPtr->packetQueue.emplace(header, std::move(data), std::move(largePacketHeader));
 	return true;
@@ -226,7 +226,7 @@ bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_
 
 bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
 	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
 	{ // Need to enqueue for different controlling thread to send
 		std::vector<uint8_t> packet(header.length);
@@ -239,7 +239,7 @@ bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
 
 bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
 	if (data.size() != header.length) return false;
 	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
 	{ // Need to enqueue for different controlling thread to send

@@ -56,7 +56,7 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 		case PACKET_CAMERA_INFO:
 			return header.length == 0;
 		default:
-			printf("Received packet header with invalid tag!\n");
+			printf("Received packet header with invalid tag %d!\n", header.tag);
 			return false;
 	}
 }

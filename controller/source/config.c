@@ -522,8 +522,32 @@ void NMI_Handler(void)
 	ErrorTrap();
 }
 
+void Ecall_M_Mode_Handler(void) __attribute__((naked));
+void Ecall_M_Mode_Handler(void)
+{
+	__asm(
+		//"csrr t0, mcause;"
+		"mv t6, ra;"
+		"csrr ra, mepc;"
+		"EBREAK;"
+	);
+	ErrorTrap();
+}
+
+void Ecall_U_Mode_Handler(void) __attribute__((naked));
+void Ecall_U_Mode_Handler(void)
+{
+	__asm(
+		//"csrr t0, mcause;"
+		"mv t6, ra;"
+		"csrr ra, mepc;"
+		"EBREAK;"
+	);
+	ErrorTrap();
+}
+
 void WWDG_IRQHandler(void) __attribute__((naked));
-void WWDG_IRQHandler()
+void WWDG_IRQHandler(void)
 {
 	//WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
 	WWDG->STATR = 0;

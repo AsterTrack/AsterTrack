@@ -18,6 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ch32v30x.h"
 #include "ch32v30x_gpio.h"
+#include "ch32v30x_rcc.h"
+#include "ch32v30x_wwdg.h"
 #include "compat.h"
 
 #include "util.h"
@@ -44,8 +46,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define USB_COMM_TIMEOUT_STR	1000*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
 
 #define SYNC_PULSE_WIDTH_US		10
-
-#define WWDG_TIMEOUT			(0x40 | 10)
 
 
 /* Function Prototypes */
@@ -205,7 +205,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	
 	//ERR_CHARR('/', 'B', UI32_TO_HEX_ARR(before), 'A', UI32_TO_HEX_ARR(after), 's', UI32_TO_HEX_ARR(start));
 
-	//SystemInit(); // Already called in startup code
 	SysTick->CNT = 0; // Reset SysTick to 0 by writing anything
 
 	// Base setup
@@ -266,12 +265,17 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 	// Initialise Identification
 	uart_set_identification();
 
-	/* RCC->APB1PRSTR |= RCC_APB1Periph_WWDG;
+	RCC->APB1PRSTR |= RCC_APB1Periph_WWDG;
 	RCC->APB1PRSTR &= ~RCC_APB1Periph_WWDG;
 	RCC->APB1PCENR |= RCC_APB1Periph_WWDG;
-	WWDG->CFGR |= WWDG_CFGR_EWI | (WWDG_TIMEOUT & WWDG_CFGR_W);
-	//WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
-	WWDG->CTLR = WWDG_CTLR_WDGA (WWDG_TIMEOUT & WWDG_CTLR_T); */
+
+	NVIC_SetPriority(WWDG_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
+	NVIC_EnableIRQ(WWDG_IRQn);
+
+	const uint8_t prescaler = 1; // WWDG_Prescaler_1 ontop of 36KHz base clock
+	const uint32_t usTillReset = (WWDG_TIMEOUT - 0x3F) * 4096 * prescaler / SYSCLKFRQ;
+	WWDG->CFGR |= WWDG_CFGR_EWI | (WWDG_Prescaler_1) | (0x7F & WWDG_CFGR_W);
+	WWDG->CTLR = WWDG_CTLR_WDGA | (WWDG_TIMEOUT & WWDG_CTLR_T);
 	//RCC->APB1PRSTR |= RCC_APB1Periph_WWDG;
 	//RCC->APB1PRSTR &= ~RCC_APB1Periph_WWDG;
 

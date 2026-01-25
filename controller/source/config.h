@@ -45,6 +45,9 @@ const static uint32_t GPIOB_SYNC_IO_PINS = GPIO_PIN_8;
 const static uint32_t GPIOE_SYNC_EXTI_LINES = EXTI_LINE_3;
 
 
+#define WWDG_TIMEOUT			0x5F
+
+
 // Functions
 
 void Setup_Peripherals();

@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "pd_driver.h"
+#include "config.h"
 #include "util.h"
 
 /* #include "uartd.h"
@@ -42,7 +43,8 @@ void pd_delayUS(uint32_t us)
 	TimePoint tgt = GetTimePoint();
 	tgt += us * TICKS_PER_US;
 	USBPD_CHARR('/', 'D', INT9999_TO_CHARR(us));
-	while (GetTimePoint() < tgt);
+	while (GetTimePoint() < tgt)
+		WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
 	// Or just
 	//delayUS(us);
 }

@@ -72,9 +72,13 @@ static inline uint32_t __get_GINTEN()
 	return __get_GINTENR() != 0x6000;
 }
 
+#define BREAK() __asm("EBREAK;")
+
 #elif defined(STM32)
 
 #define __get_GINTEN __get_PRIMASK
+
+#define BREAK() __BKPT()
 
 #endif
 
@@ -103,8 +107,6 @@ static inline uint32_t __get_GINTEN()
 	} \
 	__enable_irq(); \
 }
-
-#define BREAK() __BKPT()
 
 
 /* Debug */

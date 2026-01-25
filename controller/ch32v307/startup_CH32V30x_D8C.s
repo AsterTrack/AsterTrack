@@ -393,6 +393,10 @@ handle_reset:
 	li t0, 0x0088
 	csrs mstatus, t0
 
+	// Disable WWDG timer during debugging
+	li t0, 0x200
+	csrw 0x7C0, t0
+
 	// Setup vector table address and how it is used (0b11)
  	la t0, _vector_base
 	ori t0, t0, 3

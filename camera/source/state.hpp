@@ -124,7 +124,7 @@ struct TrackingCameraState
 
 struct FrameSync
 {
-	std::queue<std::pair<uint32_t, TimePoint_t>> frameSOFs;
+	std::queue<std::pair<uint8_t, TimePoint_t>> frameSOFs;
 	StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
 	std::mutex access;
 };

@@ -211,6 +211,7 @@ static bool handle_i2c_error()
 static void mcu_thread()
 {
 	prctl(PR_SET_NAME, "MCU_Monitor");
+	nice(-12); // High priority
 
 	while (!stop_thread.load())
 	{
@@ -675,12 +676,11 @@ bool mcu_get_status()
 	}
 	TimePoint_t receiveTime = sclock::now();
 	long roundtripTimeUS = dtUS(requestTime, receiveTime);
-	const int observedRoundtripUS = 430;
+	const int observedRoundtripUS = 390;
 	const int // Just estimate of fixed delays, they don't exactly add up to the observed roundtrip time
 		transmitUS = ((sizeof(FETCH_CMD)+1)*9 + 2)*1000/400,
 		receiveUS = (sizeof(STATUS_DATA)*9 + 2)*1000/400 + 10;
 	TimePoint_t estSendTime = receiveTime - std::chrono::microseconds(receiveUS);
-	bool timingReliable = std::abs(roundtripTimeUS - observedRoundtripUS) < 20;
 
 	uint8_t *packet = STATUS_DATA+MCU_LEADING_BYTES;
 	
@@ -711,29 +711,39 @@ bool mcu_get_status()
 	if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
 		ResetTimeSync(timesync);
 	TimePoint_t sendTime;
-	if (timingReliable)
+	//if (std::abs(roundtripTimeUS - observedRoundtripUS) < 50)
+	if (roundtripTimeUS < 1000)
+	{
 		sendTime = UpdateTimeSync(timesync, timestampUS, 1<<16, estSendTime);
-	else sendTime = GetTimeSynced(timesync, timestampUS, 1<<16);
+	}
+	else
+	{
+		sendTime = GetTimeSynced(timesync, timestampUS, 1<<16);
+		printf("Timing unreliable with roundtrip time of %.2fms, determined send time to be %.2fms ago, with estimation %.2fms\n",
+			roundtripTimeUS/1000.0f, dtMS(sendTime, sclock::now()), dtMS(estSendTime, sclock::now()));
+	}
 	long responseTimeUS = dtUS(sendTime, receiveTime);
 
-	static uint32_t lastExtrapolatedFrameID = 0;
 	static uint8_t lastReceivedFrameID = 0;
 	uint8_t lastFrameID = packet[6];
 	uint16_t usSinceFrameID = (packet[7] << 8) | packet[8];
-	if (usSinceFrameID < 0xFFFF)
+	if (usSinceFrameID < 0xFFFF && lastFrameID != lastReceivedFrameID)
 	{
 		if (lastReceivedFrameID != lastFrameID && ((lastReceivedFrameID+1)%256) != lastFrameID)
 			printf("Received odd frame ID %d %.2fms ago - previous one %d!\n", lastFrameID, usSinceFrameID/1000.0f, lastReceivedFrameID); 
-		lastExtrapolatedFrameID += shortDiff<uint16_t, int>(lastReceivedFrameID, lastFrameID, 5, 255);
-		lastExtrapolatedFrameID = (lastExtrapolatedFrameID&~0xFF) | lastFrameID; // Ensure
 		lastReceivedFrameID = lastFrameID;
 		//printf("Frame ID %d (%d) from %dus ago + %ldus RX - roundtrip of %ldus!\n",
 		//	lastExtrapolatedFrameID, lastFrameID, usSinceFrameID, responseTimeUS, roundtripTimeUS); 
 		TimePoint_t SOF = sendTime - std::chrono::microseconds(usSinceFrameID);
+		if (usSinceFrameID > 1000)
+			printf("Received exceedingly delayed SOF for frame %d from %ldus ago!\n", lastFrameID, usSinceFrameID);
+		else if (dtMS(SOF, sclock::now()) > 1.5f)
+			printf("Frame %d SOF is reported to be from %ldus ago, timesync set it to be %.2fms ago (drift %.5f) with roundtime of %.2fms!\n",
+			lastFrameID, usSinceFrameID, dtMS(SOF, sclock::now()), timesync.drift, roundtripTimeUS/1000.0f);
 		std::unique_lock lock(framesync.access);
 		if (framesync.frameSOFs.size() > 5)
 			framesync.frameSOFs.pop();
-		framesync.frameSOFs.emplace(lastExtrapolatedFrameID, SOF);
+		framesync.frameSOFs.emplace(lastReceivedFrameID, SOF);
 	}
 
 	uint8_t queueSize = packet[9];

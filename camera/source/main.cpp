@@ -65,7 +65,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers
 //#define LOG_QPU
 #define LOG_DROPS
-//#define LOG_TIMING
+#define LOG_TIMING
 
 // Number of emulated buffers to iterate over if RUN_CAMERA is not defined
 const int emulBufCnt = 4;
@@ -898,13 +898,13 @@ int main(int argc, char **argv)
 						}
 						long waitTimeUS = dtUS(waitStart, sclock::now());
 						long waitFrames = waitTimeUS*state.camera.fps/1000000;
-						if ((waitFrames > minorWait && !sentMinorTimeout) || waitFrames > seriousWait)
+						if ((waitFrames >= minorWait && !sentMinorTimeout) || waitFrames >= seriousWait)
 						{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 							printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
 								dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
 							sentMinorTimeout = true;
 							// Notify host
-							if (handleError(ERROR_GCS_TIMEOUT, waitFrames > seriousWait))
+							if (handleError(ERROR_GCS_TIMEOUT, waitFrames >= seriousWait))
 								return true;
 						}
 					}
@@ -918,7 +918,8 @@ int main(int argc, char **argv)
 					std::shared_ptr<FrameBuffer> pastFrame = std::move(frameExchange);
 #ifdef LOG_DROPS
 					if (pastFrame)
-						printf("%.2fms: CPU FRAME DROP ID %d\n", dtMS(time_start, sclock::now()), pastFrame->ID);
+						printf("%lldms: CPU FRAME DROP ID %u\n",
+							std::chrono::duration_cast<std::chrono::milliseconds>(sclock::now() - time_start).count(), pastFrame->ID);
 #endif
 					cumulFramePassedCPU++;
 				}
@@ -933,11 +934,11 @@ int main(int argc, char **argv)
 				TimePoint_t t1 = sclock::now();
 
 				// Get most recent frame
-				unsigned int advanceFrames = 0;
-				void *frameHeader = gcs_requestLatestFrameBuffer(gcs, &advanceFrames);
+				unsigned int obsAdvance = 0;
+				void *frameHeader = gcs_requestLatestFrameBuffer(gcs, &obsAdvance);
 				if (abortStreaming)
 					break;
-				if (frameHeader == NULL || advanceFrames == 0)
+				if (frameHeader == NULL || obsAdvance == 0)
 				{
 					printf("== GCS returned NULL frame with error flag %d! ==\n", gcs_readErrorFlag(gcs));
 					if (handleError(ERROR_GCS_REQUEST))
@@ -946,12 +947,14 @@ int main(int argc, char **argv)
 
 				TimePoint_t time_cur = sclock::now();
 #ifdef LOG_DROPS
-				if (advanceFrames > 1)
-					printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dtMS(time_start, time_cur), advanceFrames-1, frameID);
+				if (obsAdvance > 1)
+					printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dtMS(time_start, time_cur), obsAdvance-1, frameID);
 #endif
 
 				float newInterval = dtMS(time_frameRecv, time_cur);
 				float expInterval = 1000.0f/state.camera.fps;
+				float minInterval = expInterval;
+				int advanceFrames = obsAdvance;
 
 				// Consider waiting a bit more for next frame to reset (accumulated) delay
 				/* float timeDelay = newInterval - expInterval*advanceFrames;
@@ -964,8 +967,7 @@ int main(int argc, char **argv)
 					if (!gcs_returnFrameBuffer(gcs, frameHeader))
 					{
 						printf("== GCS failed to return frame buffer with error flag %d while skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-						error = ERROR_GCS_RETURN;
-						if (handleError())
+						if (handleError(ERROR_GCS_RETURN))
 							break;
 					}
 					TimePoint_t waitStart = sclock::now();
@@ -975,8 +977,7 @@ int main(int argc, char **argv)
 					if (frameHeader == NULL)
 					{
 						printf("== GCS returned NULL frame with error flag %d after skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-						error = ERROR_GCS_REQUEST;
-						if (handleError())
+						if (handleError(ERROR_GCS_REQUEST))
 							break;
 					}
 					// Update values
@@ -984,16 +985,33 @@ int main(int argc, char **argv)
 					time_cur = sclock::now();
 #ifdef LOG_DROPS
 					printf("%.2fms: QPU: SKIPPED %.2fms TO CURRENT FRAME, new interval %ldus\n",
-						dtMS(time_start, time_cur), dtMS(waitStart, time_cur), dtUS(time_SOF, time_cur));
+						dtMS(time_start, time_cur), dtMS(waitStart, time_cur), dtUS(time_frameRecv, time_cur));
 					printf("%.2fms: QPU: Reason: time_diff %.2fms, time_delay %.2fms, advance frames %d, avg processing %.2fms, max delay %.2fms\n",
 						dtMS(time_start, time_cur), newInterval, timeDelay, advanceFrames, avgTimes.processing/1000.0f, maxDelay);
 #endif
 					newInterval = dtMS(time_frameRecv, time_cur);
 				} */
 
+#ifdef LOG_TIMING
+				const char *space = "";
+	#define DEBUG_TIME(str, ...) {\
+		printf("%s" str, space, __VA_ARGS__);\
+		space = "    ";\
+	}
+	#define HAS_LOGGED() (space[0] != '\0')
+#else
+	#define DEBUG_TIME(...) {}
+	#define HAS_LOGGED() false
+#endif
+
 				// Update frameID with advanced frames
-				frameID += advanceFrames;
-				cumulFramePassedQPU += advanceFrames-1;
+				float expFrameIntervals = newInterval / expInterval;
+				float expAdvance = (int)(expFrameIntervals+0.2f);
+				bool likelyDropped = std::abs(expFrameIntervals - obsAdvance) > 1;
+				if (likelyDropped)
+				{
+					DEBUG_TIME("May have dropped frames! %.1f frame times passed, but only got %d new frames!\n", expFrameIntervals, obsAdvance);
+				}
 
 				if ((uartComms.ready || mcu_active) && state.camera.extTrig)
 				{ // Match current frame with frame SOFs from PACKET_SOF - can be assumed to be continuous
@@ -1004,116 +1022,97 @@ int main(int argc, char **argv)
 					// Usually 7150us, with early timesync 7080us - just to be safe from timesync wonkyness, lower
 					const unsigned int MIN_TRIGGER_TO_FRAME = 6800;
 
-					// Assume that any camera frame we received is valid (no false triggers)
-					// With that, assume any SOFs with ID < predID to have been skipped
-					// Do NOT assume we receive a SOF&Trigger for every frameID
-					// TODO: Incase we got a trigger, but SOF was missed (e.g. UART error):
-					//  - Cannot reliably know which frameID it was supposed to be when frameIDs are not continuous
-					//  - Throw frames away or assume continous anyway?
-					// With that, search for the next best frame fitting our frame timing model
-					// Then update our frame timing model with delay from SOF packet to receiving camera frame
-					// TODO: Improve. Still yields wrong result. Make use of continuity of frames?
-					// Sometimes, large amounts of SOF packets are dropped (at least for pi, perhaps not for mcu)
-					bool logCase = false;
+					uint32_t frameIDObs = frameID + obsAdvance;
+					uint32_t frameIDExp = frameID + expAdvance;
+					bool continualFrameSync = false; // If framesync is expected to be continual
+
+					uint32_t frameIDNext = frameIDObs;
+					long frameTimeUSNext = 0;
+
 					while (!framesync.frameSOFs.empty())
 					{
 						auto SOF = framesync.frameSOFs.front();
-						if (SOF.first < frameID)
-						{ // Skipped this frame
-#ifdef LOG_TIMING
-							if (state.writeStatLogs)
-							{
-								if (!logCase) printf("Assuming frame ID to be %d after skipping %d frames\n", frameID, advanceFrames-1);
-								printf("  Skipped frame ID %d from %ldus ago\n", SOF.first, dtUS(SOF.second, time_cur));
-								logCase = true;
+						uint32_t sofFrameIDObs = frameIDObs + shortDiff<uint16_t, int>(frameIDObs&0xFF, SOF.first, 5, 0xFF);
+						uint32_t sofFrameIDExp = frameIDExp + shortDiff<uint16_t, int>(frameIDExp&0xFF, SOF.first, 5, 0xFF);
+						uint32_t SOFID = continualFrameSync? sofFrameIDExp : sofFrameIDObs;
+						long frameTimeUS = dtUS(SOF.second, time_cur);
+						if (sofFrameIDExp != sofFrameIDObs)
+						{ // Drop of frame sync longer than 255-bias frames
+							DEBUG_TIME("Encountered large drop of frame sync - cannot recover frameID from last %u, with next either obs %u or exp %u, SOF either obs %u or exp %u\n",
+								frameID, frameIDObs, frameIDExp, sofFrameIDObs, sofFrameIDExp);
+						}
+						else if (HAS_LOGGED())
+						{
+							DEBUG_TIME("Handling SOF %u with frame time %ldus, with current adjusted frame ID of %d!\n",
+								SOFID, frameTimeUS, frameIDNext);
+						}
+
+						if (frameTimeUS <= MIN_TRIGGER_TO_FRAME && SOFID > frameIDObs)
+						{ // Very likely a future SOF, take current frame ID
+							DEBUG_TIME("Skipping future frame SOF %d (current observed %d), with frame time %ldus\n", SOFID, frameIDObs, frameTimeUS);
+							break;
+						}
+	
+						if (SOFID < frameIDObs)
+						{ // Likely didn't receive SOF in time, so it wasn't accounted for before
+							if (frameTimeUS > MIN_TRIGGER_TO_FRAME+MIN_TRIGGER_TO_FRAME)
+							{ // This really should not be the current frame
+								DEBUG_TIME("Only handling past SOF %d from %ldus ago now when expecting frame %d, with latest frame interval %.2fms!\n", SOFID, frameTimeUS, frameIDObs, newInterval);
+								framesync.frameSOFs.pop();
+								if (framesync.frameSOFs.empty())
+									DEBUG_TIME("Expected obs frame ID %d has no SOF yet!\n", frameIDObs);
+								continue;
 							}
-#endif
+							DEBUG_TIME("Older SOF %d might actually be for current frame %d (frametime %ldus < %d) - adopting and then trying newer SOF!\n",
+								SOFID, frameIDObs, frameTimeUS, MIN_TRIGGER_TO_FRAME+MIN_TRIGGER_TO_FRAME);
+
 							framesync.frameSOFs.pop();
-							if (framesync.frameSOFs.empty())
-							{
-#ifdef LOG_TIMING
-								if (logCase)
-									printf("  Ended up with initial frame ID %d!\n", frameID);
-#endif
-								break;
-							}
+							frameIDNext = SOFID;
+							frameTimeUSNext = frameTimeUS;
 							continue;
 						}
 
-						long frameTimeUS = dtUS(SOF.second, time_cur);
-						if (frameTimeUS <= MIN_TRIGGER_TO_FRAME && SOF.first != frameID)
-						{
-#ifdef LOG_TIMING
-							if (!logCase) printf("Assuming frame ID to be %d after skipping %d frames\n", frameID, advanceFrames-1);
-							if (SOF.first == frameID)
-								printf("  But SOF for frame ID %d was only %ldus ago - SOF time prediction wrong? Earlier frameID failure? \n",
-									SOF.first, frameTimeUS);
-							else
-								printf("  Next SOF for frame ID %d was only %ldus ago - missed a SOF packet for frame ID %d?\n",
-									SOF.first, frameTimeUS, frameID);
-							printf("  Ended up with initial frame ID %d!\n", frameID);
-							logCase = false;
-#endif
-							// Just trust our own prediction for now
-							// But frameID should be considered uncertain now
-							break;
-						}
-						// Possibly this or future SOF
-						framesync.frameSOFs.pop(); // Consume already
+						// Consume this SOF, may take it or a future one
+						framesync.frameSOFs.pop();
+						frameIDNext = SOFID;
+						frameTimeUSNext = frameTimeUS;
 
 						// Check delay model of trigger to receiving the frame through V4L2
-						auto &delayModel = framesync.SOF2RecvDelay; // Fine without initialisation
-						if (!framesync.frameSOFs.empty() && frameTimeUS > delayModel.avg + delayModel.stdDev()*2)
+						if (!framesync.frameSOFs.empty() && frameTimeUS > framesync.SOF2RecvDelay.avg + framesync.SOF2RecvDelay.stdDev()*2)
 						{ // Check next frame if it could be our SOF instead
-							auto nextSOF = framesync.frameSOFs.front();
-							long nextFrameTimeUS = dtUS(nextSOF.second, time_cur);
-							if (nextFrameTimeUS > MIN_TRIGGER_TO_FRAME &&
-								nextFrameTimeUS > delayModel.avg - delayModel.stdDev())
-							{ // Consider next SOF as reference instead, assume we missed previous SOF (trigger missed)
-								bool bothOld = nextFrameTimeUS > delayModel.avg + delayModel.stdDev()*2;
-#ifdef LOG_TIMING
-								if (state.writeStatLogs || bothOld)
-								{
-									if (!logCase) printf("Assuming frame ID to be %d after skipping %d frames\n", frameID, advanceFrames-1);
-									if (!bothOld)
-										printf("  But SOF for frame ID %d was %ldus ago, next SOF for frame ID %d was only %ldus ago - received no trigger for frame ID %d?\n",
-											SOF.first, frameTimeUS, nextSOF.first, nextFrameTimeUS, frameID);
-									else // Both are old, something probably went wrong
-										printf("  SOF for frame ID %d was %ldus ago, for frame ID %d %ldus ago - received no trigger for either?\n",
-											SOF.first, frameTimeUS, nextSOF.first, nextFrameTimeUS);
-									logCase = true;
-								}
-#endif
-								cumulFrameNoTrigger += nextSOF.first-frameID;
-								advanceFrames += nextSOF.first-frameID;
-								frameID = nextSOF.first;
-								continue; // Don't immediately take it, might not be the best one either
-							}
-#ifdef LOG_TIMING
-							else if (logCase)
-							{
-								printf("  Decided against next frame ID %d from %ldus ago, took frame ID %d from %ldus ago \n",
-									nextSOF.first, nextFrameTimeUS, SOF.first, frameTimeUS);
-								logCase = false;
-							}
-#endif
+							DEBUG_TIME("SOF %d (obs %d) is a bit old, frametime %ldus - adopting and then trying newer SOF!\n",
+								SOFID, frameIDObs, frameTimeUS);
+							continue;
 						}
-#ifdef LOG_TIMING
-						else if (logCase)
-						{
-							printf("  Taking frame ID %d from %ldus ago as the best SOF! Got %d newer SOFs waiting, maximum SOF to receive delay is %d+%dus\n",
-								SOF.first, frameTimeUS, (int)framesync.frameSOFs.size(), (int)delayModel.avg, (int)delayModel.stdDev()*2);
-							logCase = false;
-						}
-#endif
+
 						// Take this SOF as reference
-						cumulFrameNoTrigger += SOF.first-frameID;
-						advanceFrames += SOF.first-frameID;
-						frameID = SOF.first;
-						delayModel.update(frameTimeUS);
 						break;
 					}
-					assert(!logCase); // Final log should've been written
+
+					if (HAS_LOGGED())
+					{
+						int noTriggerFrames = frameIDNext - frameIDObs;
+						DEBUG_TIME("-> Ended up with SOF %d, with %d frames passed and %d without trigger!\n", frameIDNext, advanceFrames + noTriggerFrames, noTriggerFrames);
+					}
+
+					if (frameTimeUSNext > 0)
+						framesync.SOF2RecvDelay.update(frameTimeUSNext);
+
+					cumulFramePassedQPU += obsAdvance-1;
+					cumulFrameNoTrigger += frameIDNext - frameIDObs;
+					advanceFrames += frameIDNext - frameIDObs;
+					frameID = frameIDNext;
+				}
+				else
+				{
+					if (likelyDropped && advanceFrames == 1)
+					{
+						cumulFramePassedQPU += obsAdvance-1;
+						cumulFrameNoTrigger += expAdvance - obsAdvance;
+						advanceFrames = expAdvance;
+						DEBUG_TIME("Determined to likely have skipped %d frames with no trigger!\n", advanceFrames);
+					}
+					frameID += advanceFrames;
 				}
 
 				const int gracePeriod = 100;

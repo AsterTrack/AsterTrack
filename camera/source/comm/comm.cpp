@@ -602,7 +602,7 @@ phase_comm:
 						std::unique_lock lock(framesync.access);
 						if (framesync.frameSOFs.size() > 5)
 							framesync.frameSOFs.pop();
-						framesync.frameSOFs.emplace(sync.frameID, SOF);
+						framesync.frameSOFs.emplace(sync.frameID & 0xFF, SOF);
 						//printf("Corrected SOF read %lldus ago to be %.2fms in the past!\n", std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-time_read).count(), std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-SOF).count()/1000.0f);
 					}
 				}

@@ -25,12 +25,9 @@ SOFTWARE.
 
 #include "timesync.hpp"
 
-// TODO: Merge with timesync in camera and put in shared code
-// Currently, servers timesync has gotten more complex due to proper tools, but cameras also just works
-// So without proper tools verifying camera timesync, it is safer to just not change whats not broken on the camera
-
 #include "util/log.hpp"
 
+#include <cinttypes>
 #include <cmath>
 
 // Corrects source timestamp for overflow (within past ~overflow us)
@@ -71,7 +68,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)
 	{
-		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %luus %.2fms in the past, timestamp %luus is %.2fms in the future\n", 
+		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future\n", 
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, -dT/1000.0f);
 	}
 	return synced;
@@ -92,7 +89,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t ove
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)
 	{
-		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %luus %.2fms in the past, timestamp %luus is %.2fms in the future\n", 
+		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future\n", 
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, -dT/1000.0f);
 	}
 	return synced;
@@ -106,11 +103,8 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t ove
 	return GetTimeSynced(time, RebaseSourceTimestamp(time, timestamp, overflow, reference));
 }
 
-std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t measurement)
+TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measurement)
 { // Received packet timestamp with best real-time estimation being measurement
-
-	// Correct for timestamp overflow based on existing timestamps
-	uint64_t fullTimestamp = RebaseSourceTimestamp(time, timestamp, overflow, measurement);
 
 	if (time.measurements++ < 10)
 	{ // Only get minimum offset in first few measurements
@@ -118,11 +112,11 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 		time.lastTimestamp = timestamp;
 		time.syncSwitch.reset();
 		time.diff.reset();
-		return { fullTimestamp, measurement };
+		return measurement;
 	}
 
 	// Predict real-time of timestamp based on time-local estimation of time synchronisation
-	long usPassed = fullTimestamp-time.lastTimestamp;
+	long usPassed = timestamp-time.lastTimestamp;
 	float driftUS = usPassed * (1.0+time.drift) + time.driftAccum;
 	time.driftAccum = driftUS - ((long)driftUS); // Store what we can't apply now in accumulator for next update
 	TimePoint_t timePred = time.lastTime + std::chrono::microseconds((long)driftUS);
@@ -131,10 +125,10 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 	if (usPassed <= 0)
 	{ // Already had a newer packet, this one is delayed and thus measurement is inaccurate
 		if (time.measurements == 0)
-			return { 0, measurement };
-		LOG(LTimesync, LDarn, "Got delayed timestamped packet, reference timestamp %luus %.2fms in the past, timestamp %luus %.2fms in the past, usPassed %ld\n",
+			return measurement;
+		LOG(LTimesync, LDarn, "Got delayed timestamped packet, reference timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us %.2fms in the past, usPassed %ld\n",
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, dtMS(timePred, sclock::now()), usPassed);
-		return { fullTimestamp, timePred };
+		return timePred;
 	}
 
 	// TODO: Adapt values or full strategy based on protocol (USB vs TCP)
@@ -150,8 +144,8 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 	};
 	if (diffUS <= 0 && diffUS > -2000)
 	{ // New minimum, upper bound for the actual time sync
-		LOG(LTimesync, LDebug, "New time sync minimum received, timestamp was predicted to be %ldus ago (including %.2fus drift) but was received %ldus ago\n",
-			dtUS(timePred, sclock::now()), driftUS, dtUS(measurement, sclock::now()));
+		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %ldus ago (including %.2fus drift) but was received %ldus ago\n",
+			dtUS(timePred, sclock::now()), driftUS-usPassed, dtUS(measurement, sclock::now()));
 		float jumpCorrect = diffUS*std::lerp(time.driftDownwardJump, 1.0f, adapt);
 		timePred += std::chrono::microseconds((long)jumpCorrect);
 		time.drift += getDriftCorrection(diffUS-jumpCorrect, usPassed) * time.driftDownwardCorrect;
@@ -189,9 +183,9 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 			//time.diff.update(diffUS / 1000.0f);
 			if (time.measurements > 2)
 			{
-				LOG(LTimesync, LDarn, "! Received timestamp %luus at wrong time, was predicted to be %.2fms ago (including %.2fus drift), "
+				LOG(LTimesync, LDarn, "! Received timestamp %" PRIu64 "us at wrong time, was predicted to be %.2fms ago (including %.2fus drift), "
 					"but was received %.2fms ago, diff usually %.2fms +- %.2fms! Maybe Host lagged.\n", 
-					fullTimestamp, dtMS(timePred, sclock::now()), driftUS, dtMS(measurement, sclock::now()), time.diff.avg, time.diff.stdDev());
+					timestamp, dtMS(timePred, sclock::now()), driftUS, dtMS(measurement, sclock::now()), time.diff.avg, time.diff.stdDev());
 			}
 		}
 	}
@@ -199,11 +193,11 @@ std::pair<uint64_t, TimePoint_t> UpdateTimeSync(TimeSync &time, uint64_t timesta
 	if (valid)
 	{
 		time.lastTime = timePred;
-		time.lastTimestamp = fullTimestamp;
+		time.lastTimestamp = timestamp;
 		time.syncSwitch.reset();
 	}
 
-	return { fullTimestamp, timePred + std::chrono::microseconds(time.timeOffsetUS) };
+	return timePred + std::chrono::microseconds(time.timeOffsetUS);
 }
 
 void ResetTimeSync(TimeSync &time)

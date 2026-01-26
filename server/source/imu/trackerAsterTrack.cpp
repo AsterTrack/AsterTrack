@@ -1,7 +1,7 @@
 
 #include "imu/device.hpp"
 
-#include "comm/timesync.hpp"
+#include "util/timesync.hpp"
 
 #include "util/log.hpp"
 
@@ -158,10 +158,10 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 
 		uint32_t timestampUS = ((uint16_t*)header)[0] << 2;
 		LOGC(LTrace, "Raw receiver timestamp of last packet is %d", timestampUS);
-		auto packetSentSync = UpdateTimeSync(timeSync, timestampUS, 1UL<<18, recvTime);
-		TimePoint_t sentTime = packetSentSync.second;
+		uint64_t timestamp = RebaseSourceTimestamp(timeSync, timestampUS, 1UL<<18, recvTime);
+		TimePoint_t sentTime = UpdateTimeSync(timeSync, timestamp, recvTime);
 		if (timingRecord.recordTimeSync)
-			timingRecord.timeSync.push_back({ packetSentSync.first, sentTime, recvTime });
+			timingRecord.timeSync.push_back({ timestamp, sentTime, recvTime });
 
 		uint8_t *packet = header+HID_HEADER_SIZE;
 		int packets = (size-HID_HEADER_SIZE)/TRACKER_REPORT_SIZE;

@@ -799,12 +799,13 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 			}
 			// Update time sync with the last packet in the endpoint as the newly gathered sample point
 			auto sync_lock = controller.timeSync.contextualLock();
-			std::pair<uint64_t, TimePoint_t> packetSentSync = UpdateTimeSync(*sync_lock, header.lastTimestamp, 1<<24, stats.lastReceived);
+			uint64_t timestamp = RebaseSourceTimestamp(*sync_lock, header.lastTimestamp, 1<<24, stats.lastReceived);
+			TimePoint_t sentTime = UpdateTimeSync(*sync_lock, timestamp, stats.lastReceived);
 			LOG(LTimesync, LTrace, "Packet of size %d had timestamp %uus for last packet received %.2fms ago, estimated to be sent %.2fms ago (this packet was received %.2fms ago)\n",
-				length, header.lastTimestamp, dtMS(stats.lastReceived, sclock::now()), dtMS(packetSentSync.second, sclock::now()), dtMS(receiveTime, sclock::now()));
+				length, header.lastTimestamp, dtMS(stats.lastReceived, sclock::now()), dtMS(sentTime, sclock::now()), dtMS(receiveTime, sclock::now()));
 
-			if (packetSentSync.first > 0 && controller.timingRecord.recordTimeSync)
-				controller.timingRecord.timeSync.push_back({ packetSentSync.first, packetSentSync.second, stats.lastReceived });
+			if (timestamp > 0 && controller.timingRecord.recordTimeSync)
+				controller.timingRecord.timeSync.push_back({ timestamp, sentTime, stats.lastReceived });
 		}
 		stats = { header.counter, receiveTime };
 

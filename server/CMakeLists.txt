@@ -17,8 +17,7 @@ endif()
 # Accumulate sources
 set(SERVER
 	app.cpp server.cpp config.cpp simulation.cpp version.cpp
-	comm/usb.cpp comm/protocol_packet.cpp
-	comm/streaming.cpp comm/timesync.cpp
+	comm/usb.cpp comm/protocol_packet.cpp comm/streaming.cpp
 	comm/wireless_server.cpp
 	device/tracking_device.cpp device/parsing.cpp
 	io/vrpn.cpp
@@ -33,6 +32,7 @@ set(SERVER
 	target/tracking2D.cpp target/tracking3D.cpp
 )
 set(SERVER_SHARED
+	util/timesync.cpp
 	util/image.cpp
 	hash/crc32.cpp
 	hash/sha256.cpp

@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm.hpp"
 #include "comm/protocol_stream.hpp"
-#include "timesync.hpp"
+#include "util/timesync.hpp"
 #include "parsing.hpp"
 #include "comm/uart.h"
 #include "mcu/mcu.hpp"
@@ -588,7 +588,8 @@ phase_comm:
 						struct SyncPacket sync = parseSyncPacket(&proto.rcvBuf[proto.cmdPos]);
 						if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
 							ResetTimeSync(timesync);
-						UpdateTimeSync(timesync, sync.timeUS, 1<<24, time_read);
+						uint64_t timestampUS = RebaseSourceTimestamp(timesync, sync.timeUS, 1<<24, time_read);
+						UpdateTimeSync(timesync, timestampUS, time_read);
 					}
 				}
 				else if (proto.header.tag == PACKET_SOF && !mcu_active)
@@ -598,7 +599,8 @@ phase_comm:
 						struct SOFPacket sync = parseSOFPacket(&proto.rcvBuf[proto.cmdPos]);
 						if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
 							ResetTimeSync(timesync);
-						TimePoint_t SOF = UpdateTimeSync(timesync, sync.timeUS, 1<<24, time_read);
+						uint64_t timestampUS = RebaseSourceTimestamp(timesync, sync.timeUS, 1<<24, time_read);
+						TimePoint_t SOF = UpdateTimeSync(timesync, timestampUS, time_read);
 						std::unique_lock lock(framesync.access);
 						if (framesync.frameSOFs.size() > 5)
 							framesync.frameSOFs.pop();

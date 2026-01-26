@@ -42,7 +42,6 @@ set(SOURCES
 	source/comm/comm.cpp
 	source/comm/server.cpp
 	source/comm/uart.cpp
-	source/comm/timesync.cpp
 	source/comm/wireless.cpp
 	source/comm/firmware.cpp
 	source/mcu/mcu.cpp
@@ -51,6 +50,7 @@ set(SOURCES
 	source/version.cpp
 	source/main.cpp
 	../shared/util/image.cpp
+	../shared/util/timesync.cpp
 	../shared/comm/protocol_stream.cpp
 	../shared/blob/refinement.cpp
 	../shared/blob/blob.cpp

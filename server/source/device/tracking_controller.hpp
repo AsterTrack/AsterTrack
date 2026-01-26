@@ -22,10 +22,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "controller_firmware.hpp"
 #include "comm/packet.h"
 #include "comm/protocol_packet.hpp" // PacketProtocolState
-#include "comm/timesync.hpp" // TimeSync
 #include "comm/timingRecord.hpp" // TimingRecord
 #include "comm/controller.h"
 
+#include "util/timesync.hpp" // TimeSync
 #include "util/blocked_vector.hpp"
 #include "util/synchronised.hpp"
 #include "util/util.hpp"

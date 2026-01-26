@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "mcu.hpp"
-#include "comm/timesync.hpp"
+#include "util/timesync.hpp"
 #include "comm/commands.h"
 #include "stm32_bootloader.hpp"
 #include "version.hpp"
@@ -711,14 +711,15 @@ bool mcu_get_status()
 	if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
 		ResetTimeSync(timesync);
 	TimePoint_t sendTime;
+	uint64_t timestamp = RebaseSourceTimestamp(timesync, timestampUS, 1<<16, estSendTime);
 	//if (std::abs(roundtripTimeUS - observedRoundtripUS) < 50)
 	if (roundtripTimeUS < 1000)
 	{
-		sendTime = UpdateTimeSync(timesync, timestampUS, 1<<16, estSendTime);
+		sendTime = UpdateTimeSync(timesync, timestamp, estSendTime);
 	}
 	else
 	{
-		sendTime = GetTimeSynced(timesync, timestampUS, 1<<16);
+		sendTime = GetTimeSynced(timesync, timestamp);
 		printf("Timing unreliable with roundtrip time of %.2fms, determined send time to be %.2fms ago, with estimation %.2fms\n",
 			roundtripTimeUS/1000.0f, dtMS(sendTime, sclock::now()), dtMS(estSendTime, sclock::now()));
 	}

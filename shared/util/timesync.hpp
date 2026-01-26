@@ -27,7 +27,7 @@ SOFTWARE.
 #define TIME_SYNC_H
 
 #include "util/util.hpp" // TimePoint_t
-#include "util/stats.hpp" // StatValue
+#include "util/stats.hpp"
 
 /*
  * Time Sync
@@ -38,19 +38,27 @@ SOFTWARE.
 
 struct TimeSync
 {
-	uint32_t measurements = 0;
-	uint64_t lastTimestamp = 0;
-	float drift = 0; // actualUS = (long)(controllerUS * (1+drift))
+	uint32_t measurements;
+	uint64_t lastTimestamp;
+	float drift; // actualUS = (long)(controllerUS * (1+drift))
+	float driftAccum;
+	float driftLerp = 0.0000004f;
+	float driftBias = 0.0000000f;
+	int driftInitRange = 1000;
+	float driftInitAdapt = 10.0f;
+	float driftDownwardCorrect = 200.0f;
+	float driftDownwardJump = 0.20f;
+	int timeOffsetUS = -20;
 	TimePoint_t lastTime;
-	std::chrono::microseconds increase;
 	StatDistf diff;
 	StatDistf syncSwitch;
 };
 
-uint64_t RebaseSourceTimestamp(TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t reference);
-TimePoint_t GetTimeSynced(TimeSync &time, uint64_t timestamp, uint64_t overflow);
-TimePoint_t GetTimeSynced(TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t reference);
-TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t measurement);
+uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t reference);
+TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp);
+TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t overflow);
+TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t overflow, TimePoint_t reference);
+TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measurement);
 void ResetTimeSync(TimeSync &time);
 
 #endif // TIME_SYNC_H

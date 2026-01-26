@@ -203,8 +203,7 @@ lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 # Define all source files to be compiled
 SERVER_CPP = \
 	app.cpp server.cpp config.cpp simulation.cpp recording.cpp version.cpp \
-	comm/usb.cpp comm/protocol_packet.cpp \
-	comm/streaming.cpp comm/timesync.cpp \
+	comm/usb.cpp comm/protocol_packet.cpp comm/streaming.cpp \
 	comm/wireless_server.cpp \
 	device/tracking_controller.cpp device/tracking_camera.cpp \
 	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp \
@@ -220,6 +219,7 @@ SERVER_CPP = \
 	tracking/cluster.cpp tracking/tracking.cpp
 
 SERVER_SHARED_CPP = \
+	util/timesync.cpp \
 	util/image.cpp \
 	hash/crc32.cpp \
 	hash/sha256.cpp \

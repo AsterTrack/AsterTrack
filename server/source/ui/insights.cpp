@@ -1442,7 +1442,9 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 
 				if (emulate)
 				{
-					TimePoint_t emulated = UpdateTimeSync(emulatedTimeSync, sample.timestamp&(((uint64_t)1<<63) -1), (uint64_t)1<<63, sample.measurement).second;
+					uint64_t overflow = (uint64_t)1<<63;
+					uint64_t timestamp = RebaseSourceTimestamp(emulatedTimeSync, sample.timestamp&(overflow-1), overflow, sample.measurement);
+					TimePoint_t emulated = UpdateTimeSync(emulatedTimeSync, timestamp, sample.measurement);
 					emulatedTimesOffset.push_back((double)(dtUS(referenceTime, emulated) - baseUS));
 					if (emulatedTimeSync.measurements == 1)
 					{

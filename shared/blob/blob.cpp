@@ -19,8 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "blob.hpp"
 #include "resegmentation.hpp"
 
-#include "../util/util.hpp"
+//#define LOG_MAX_LEVEL LDebug
 #include "util/log.hpp"
+#include "util/util.hpp"
 
 #include <cmath>
 
@@ -227,7 +228,7 @@ bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const R
 	Vector2<float> center;
 	if (!getRefinementEstimate(edgeRefined, hough, radiusStep, center))
 	{ // No better estimation of blob
-		LOG(LCameraEmulation, LDebug, "Failed to refine blob of %d edge points!", (int)blob.edge.size());
+		LOG(LCameraBlob, LDebug, "Failed to refine blob of %d edge points!", (int)blob.edge.size());
 		return false;
 	}
 
@@ -246,7 +247,7 @@ bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const R
 	}
 	if (perimeterCnt == 0)
 	{ // No better estimation of blob
-		LOG(LCameraEmulation, LDebug, "Failed to refine blob of %d edge points after best estimate had no inlier edge!", (int)blob.edge.size());
+		LOG(LCameraBlob, LDebug, "Failed to refine blob of %d edge points after best estimate had no inlier edge!", (int)blob.edge.size());
 		return false;
 	}
 
@@ -257,7 +258,7 @@ bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const R
 	perimeterCnt = iterativeRefinement(center, radius, edgeRefined, edgeOutliers, refineIt);
 	if (perimeterCnt == 0)
 	{ // No better estimation of blob
-		LOG(LCameraEmulation, LDebug, "Failed to refine blob of %d edge points after iterative refinement left no inlier edge!", (int)blob.edge.size());
+		LOG(LCameraBlob, LDebug, "Failed to refine blob of %d edge points after iterative refinement left no inlier edge!", (int)blob.edge.size());
 		return false;
 	}
 
@@ -278,11 +279,11 @@ bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const R
 	}
 	// NOTE: More or less mirrored with resegmentation.hpp;;ResegmentCluster
 
-	LOG(LCameraEmulation, LDebug, "Refined point from (%fpx, %fpx) to (%fpx, %fpx) (%fpx), reliability %.2f\n",
+	LOG(LCameraBlob, LDebug, "Refined point from (%fpx, %fpx) to (%fpx, %fpx) (%fpx), reliability %.2f",
 		houghCenter.x(), houghCenter.y(), blob.centroid.x(), blob.centroid.y(), 
 		(blob.centroid - houghCenter).norm(), blob.reliability);
 
-	LOG(LCameraEmulation, LDebug, "Took a total of %fms! Refining: %fms - Hough: %fms - Optimising: %fm\n",
+	LOG(LCameraBlob, LDebug, "Took a total of %fms! Refining: %fms - Hough: %fms - Optimising: %fm",
 		dtMS(t1, sclock::now()), dtMS(t1, t2), dtMS(t2, t3), dtMS(t4, t5));
 
 	return true;
@@ -304,7 +305,7 @@ HoughParameters estimateHoughParameters1(Cluster &blob)
 	hough.radiusRange = (int)std::ceil((radiusMax-hough.radiusMin)/(hough.circleWidth*1.5f));
 	hough.radiusStep = (radiusMax-hough.radiusMin)/(hough.radiusRange-1);
 
-	LOG(LCameraEmulation, LDebug, "Parameters: %f width, %f pos step (%f its), %f-%f radius, %f step (%d its)",
+	LOG(LCameraBlob, LDebug, "Parameters: %f width, %f pos step (%f its), %f-%f radius, %f step (%d its)",
 		hough.circleWidth, hough.positionStep, boundsMax/hough.positionStep,
 		hough.radiusMin, radiusMax, hough.radiusStep, hough.radiusRange);
 
@@ -330,7 +331,7 @@ HoughParameters estimateHoughParameters2(Cluster &blob)
 	//hough.circleWidth = 0.6f * std::sqrt(hough.positionStep*hough.positionStep + hough.positionStep*hough.positionStep);
 	hough.circleWidth = hough.radiusStep*2.0f;
 
-	LOG(LCameraEmulation, LDebug, "Parameters: %f width, %f pos step (%f its), %f-%f radius, %f step (%d its)",
+	LOG(LCameraBlob, LDebug, "Parameters: %f width, %f pos step (%f its), %f-%f radius, %f step (%d its)",
 		hough.circleWidth, hough.positionStep, boundsMax/hough.positionStep,
 		hough.radiusMin, radiusMax, hough.radiusStep, hough.radiusRange);
 

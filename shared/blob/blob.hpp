@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "parameters.hpp"
 #include "refinement.hpp"
 
-#include "../util/eigendef.hpp"
+#include "util/eigendef.hpp"
 
 // Cluster of pixel dots with bounds that define a point (centroid)
 struct Cluster

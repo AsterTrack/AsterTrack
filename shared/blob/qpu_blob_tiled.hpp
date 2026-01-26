@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef QPU_BLOB_TILED_H
 #define QPU_BLOB_TILED_H
 
-#include "../util/eigendef.hpp"
+#include "util/eigendef.hpp"
 #include "util/log.hpp"
 
 #include <stdint.h>
@@ -209,8 +209,8 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 
 	if (debug)
 	{
-		LOG(LCameraEmulation, LInfo,
-			"SETUP: %d instances processing 1/%d columns each, covering %dx%d pixels total (%d x %d dropped, offset %d x %d)\n",
+		LOG(LCameraBlob, LInfo,
+			"SETUP: %d instances processing 1/%d columns each, covering %dx%d pixels total (%d x %d dropped, offset %d x %d)",
 			layout.instances, splitCols, validWidth, validLines,
 			droppedColumns, droppedLines, layout.validMaskRect.min.x(), layout.validMaskRect.min.y());
 	}

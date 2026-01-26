@@ -312,7 +312,7 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LProtocol]				= "Prot";
 	LogCategoryIdentifiers[LControllerDevice]		= "Ctrl";
 	LogCategoryIdentifiers[LCameraDevice]			= "Cam ";
-	LogCategoryIdentifiers[LCameraEmulation]		= "Emul";
+	LogCategoryIdentifiers[LCameraBlob]				= "Blob";
 	LogCategoryIdentifiers[LFirmwareUpdate]			= "FwUp";
 	LogCategoryIdentifiers[LIMUDriver]				= "dIMU";
 	LogCategoryIdentifiers[LIO]						= "I/O ";
@@ -346,7 +346,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LProtocol]				= "Block Protocol";
 	LogCategoryDescriptions[LControllerDevice]		= "Controller Logs";
 	LogCategoryDescriptions[LCameraDevice]			= "Camera Logs";
-	LogCategoryDescriptions[LCameraEmulation]		= "Emulated Blob Detection";
+	LogCategoryDescriptions[LCameraBlob]			= "Blob Detection";
 	LogCategoryDescriptions[LFirmwareUpdate]		= "Firmware Update";
 	LogCategoryDescriptions[LIMUDriver]				= "IMU Driver";
 	LogCategoryDescriptions[LIO]					= "Integrations";

@@ -72,7 +72,7 @@ enum LogCategory {
 	// Logs from devices (or strongly related and of no general interest):
 	LControllerDevice,
 	LCameraDevice,
-	LCameraEmulation,
+	LCameraBlob,
 	LFirmwareUpdate,
 	LIMUDriver,
 	LIO,

@@ -50,14 +50,14 @@ bool compress(std::vector<uint8_t> &jpegBuf, uint8_t *data, int width, int heigh
 	// Init TJ
 	if (!tjCompressInstance && (tjCompressInstance = tjInstance(tjInitCompress())) == NULL)
 	{
-		LOGC(LError, "Failed initialise TJ!\n");
+		LOGC(LError, "Failed initialise TJ!");
 		return false;
 	}
 	// Pre-allocate buffer
 	long unsigned int jpegSize = tjBufSize(width, height, TJSAMP_GRAY);
 	if (size_t(-1) == jpegSize)
 	{
-		LOGC(LError, "Failed to calculate maximum jpeg size!\n");
+		LOGC(LError, "Failed to calculate maximum jpeg size!");
 		return false;
 	}
 	// Compress
@@ -70,10 +70,10 @@ bool compress(std::vector<uint8_t> &jpegBuf, uint8_t *data, int width, int heigh
 		quality, TJFLAG_NOREALLOC | TJFLAG_FASTDCT);
 	if (result < 0)
 	{
-		LOGC(LError, "Failed to encode image: %s\n", tjGetErrorStr());
+		LOGC(LError, "Failed to encode image: %s", tjGetErrorStr());
 		return false;
 	}
-	LOGC(LDebug, "Encoded image %dx%d, %dKB, to %ldKB with quality %d%%!\n", width, height, (int)(width*height/1024), jpegSize/1024, quality);
+	LOGC(LDebug, "Encoded image %dx%d, %dKB, to %ldKB with quality %d%%!", width, height, (int)(width*height/1024), jpegSize/1024, quality);
 	jpegBuf.resize(jpegSize);
 	return true;
 }
@@ -84,23 +84,23 @@ bool decompress(std::vector<uint8_t> &imgBuf, uint8_t *data, size_t len, int &wi
 	// Init TJ
 	if (!tjDecompressInstance && (tjDecompressInstance = tjInstance(tjInitDecompress())) == NULL)
 	{
-		LOGC(LError, "Failed initialise TJ!\n");
+		LOGC(LError, "Failed initialise TJ!");
 		return false;
 	}
 	// Read Header
 	int subsample, colorspace;
 	if (tjDecompressHeader3(tjDecompressInstance.get(), data, len, &width, &height, &subsample, &colorspace) < 0)
 	{
-		LOGC(LError, "Failed to read JPEG header!\n");
+		LOGC(LError, "Failed to read JPEG header!");
 		return false;
 	}
-	//LOGC(LTrace, "Header read: %dx%d, ss: %d, cs: %d\n", width, height, subsample, colorspace);
+	//LOGC(LTrace, "Header read: %dx%d, ss: %d, cs: %d", width, height, subsample, colorspace);
 	// Decompress
 	imgBuf.resize(width*height);
 	int result = tjDecompress2(tjDecompressInstance.get(), data, len, imgBuf.data(), width, width, height, TJPF_GRAY, TJFLAG_ACCURATEDCT);
 	if (result < 0)
 	{
-		LOGC(LError, "Failed to decode image: %s\n", tjGetErrorStr());
+		LOGC(LError, "Failed to decode image: %s", tjGetErrorStr());
 		return false;
 	}
 	return true;
@@ -111,12 +111,12 @@ uint8_t* sampleImageBounds(uint8_t *srcImage, int srcX, int srcY, int srcStride,
 {	
 	if (subsample == 0)
 	{
-		printf("Failed to sample with subsample of 0\n");
+		LOGC(LWarn, "Failed to sample with subsample of 0");
 		return nullptr;
 	}
 	if (srcBounds.max.x() > srcX || srcBounds.max.y() > srcY)
 	{
-		printf("Failed to sample with bounds max (%d, %d) over source size (%d, %d)\n",
+		LOGC(LWarn, "Failed to sample with bounds max (%d, %d) over source size (%d, %d)",
 			srcBounds.max.x(), srcBounds.max.y(), srcX, srcY);
 		return nullptr;
 	}
@@ -126,7 +126,7 @@ uint8_t* sampleImageBounds(uint8_t *srcImage, int srcX, int srcY, int srcStride,
 	tgtBounds = srcBounds;
 	if (tgtX < 10 || tgtY < 10)
 	{
-		printf("Failed to sample with target image after subsampling of size (%d, %d)\n", tgtX, tgtY);
+		LOGC(LWarn, "Failed to sample with target image after subsampling of size (%d, %d)", tgtX, tgtY);
 		return nullptr;
 	}
 

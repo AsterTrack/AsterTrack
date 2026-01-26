@@ -20,6 +20,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "packet.hpp"
 #include "uart.h"
 
+#define LOG_MAX_LEVEL LInfo
+#include "util/log.hpp"
+
 #include <cstdio>
 #include <cstring>
 
@@ -85,7 +88,7 @@ static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen
 		{ // Marked
 			if (d+1 >= dataLen)
 			{ // Marked byte inaccessible
-				printf("Received marked byte cut off by data buffer!\n");
+				LOG(LParsing, LDebug, "Received marked byte cut off by data buffer!");
 				dataLen = d;
 				parseLen = p;
 				return true;
@@ -99,19 +102,19 @@ static bool scanMarkedBlock(uint8_t *data, uint32_t &dataLen, uint32_t &parseLen
 			{ // Frame or Parity Error
 				if (d+2 >= dataLen)
 				{ // Marked byte inaccessible
-					printf("Received erroneous marked byte cut off by data buffer!\n");
+					LOG(LParsing, LDebug, "Received erroneous marked byte cut off by data buffer!");
 					dataLen = d;
 					parseLen = p;
 					return true;
 				}
-				printf("Detected parity/frame error!\n");
+				LOG(LParsing, LWarn, "Detected parity/frame error!");
 				error = true;
 				data[p] = data[d+2]; // Copy erroneously read value
 				d += 2; // Skip two preceeding markers
 			}
 			else
 			{ // Should not happen
-				printf("Received invalid marked bytes!\n");
+				LOG(LParsing, LError, "Received invalid marked bytes!");
 				error = true;
 				d += 2; // Skip two markers?
 			}
@@ -195,7 +198,7 @@ bool proto_rcvCmd(ProtocolState &comm)
 begin:
 	// Skip when no new data and no existing unhandled data exists
 	if (comm.head >= comm.tail) return false;
-	//printf("Parsing from %d to %d\n", comm.head, comm.tail);
+	//LOG(LParsing, LWarn, "Parsing from %d to %d", comm.head, comm.tail);
 	if (comm.cmdSkip)
 	{ // Did not signal to fetch full command, skip to end
 		unsigned int endData = comm.head+PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE+comm.cmdSz;
@@ -241,7 +244,7 @@ begin:
 	comm.isHeader = false;
 	if (!verifyHeaderChecksum(comm.rcvBuf.data() + comm.head))
 	{
-		printf("Received header %d with erroneous checksum!\n", comm.header.tag);
+		LOG(LParsing, LInfo, "Received header %d with erroneous checksum!", comm.header.tag);
 		skipToEnd(comm, true);
 		goto begin; // Header erroneous, skip to end
 	}
@@ -277,7 +280,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 	comm.blockLen = std::min(comm.mrk, endData) - comm.blockPos;
 	if (done)
 	{ // Received in full
-		//printf("Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]\n", comm.header.tag, comm.cmdSz, comm.cmdPos, endPacket, comm.rcvBuf[endPacket-1], comm.rcvBuf[endPacket], comm.rcvBuf[endPacket+1]);
+		//LOG(LParsing, LWarn, "Received cmd %d of size %d from cmd pos %d to end %d [%d, %d, %d]", comm.header.tag, comm.cmdSz, comm.cmdPos, endPacket, comm.rcvBuf[endPacket-1], comm.rcvBuf[endPacket], comm.rcvBuf[endPacket+1]);
 
 		comm.validChecksum = true;
 		if (comm.cmdSz > 0)
@@ -292,7 +295,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 			{
 				if (checksum[i] != packetChecksum[i])
 				{
-					printf("Fully received packet %d of size %d but checksum does not match!\n", comm.header.tag, comm.header.length);
+					LOG(LParsing, LInfo, "Fully received packet %d of size %d but checksum does not match!", comm.header.tag, comm.header.length);
 					comm.validChecksum = false;
 					break;
 				}

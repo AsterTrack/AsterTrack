@@ -22,8 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "parameters.hpp"
 #include "blob.hpp"
 
-#include "../util/util.hpp"
-#include "../util/eigendef.hpp"
+#include "util/util.hpp"
+#include "util/eigendef.hpp"
 
 #include <vector>
 #include <deque>

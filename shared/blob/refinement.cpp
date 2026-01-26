@@ -18,6 +18,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "refinement.hpp"
 
+#define LOG_MAX_LEVEL LInfo
+#include "util/log.hpp"
+
 #include <cmath>
 #include <cstring>
 #include <cstdint>
@@ -93,11 +96,6 @@ bool getRefinementEstimate(const std::vector<Vector2<float>> &edge, const HoughP
 		Vector2<int> positionRange = (positionBoundsSize/params.positionStep).cast<int>();
 		Vector2<float> positionMin = params.boundsMid - positionRange.cast<float>()*params.positionStep/2;
 		Vector2<float> positionMax = params.boundsMid + positionRange.cast<float>()*params.positionStep/2;
-		/*{
-			float radius = params.radiusMin + r * params.radiusStep;
-			printf("Checking for circle of radius %f (%d) in bounds (%f, %f) - (%f, %f) with map (%d, %d)\n",
-				radius, r, positionMin.x(), positionMin.y(), positionMax.x(), positionMax.y(), positionRange.x(), positionRange.y());
-		}*/
 
 		votes.resize(positionRange.x()*positionRange.y());
 		memset(votes.data(), 0, positionRange.x()*positionRange.y());
@@ -105,6 +103,8 @@ bool getRefinementEstimate(const std::vector<Vector2<float>> &edge, const HoughP
 		float radius = params.radiusMin + r * params.radiusStep;
 		float radiusSq = radius*radius;
 		float circleWidthSq = (radius+params.circleWidth)*(radius+params.circleWidth) - radiusSq;
+		LOG(LCameraBlob, LDebug, "Checking for circle of radius %f (%d) in bounds (%f, %f) - (%f, %f) with map (%d, %d)",
+			radius, r, positionMin.x(), positionMin.y(), positionMax.x(), positionMax.y(), positionRange.x(), positionRange.y());
 		for (int i = 0; i < edge.size(); i++)
 		{
 			Vector2<float> edgePt = edge[i];
@@ -137,22 +137,15 @@ bool getRefinementEstimate(const std::vector<Vector2<float>> &edge, const HoughP
 				{
 					rMax = votes[index];
 					rBest = Vector2<int>(x, y);
-					
-					/*{ // Debug
-						float radius = params.radiusMin + bestR * params.radiusStep;
-						Eigen::Vector2f posB = positionMin+params.positionStep*Eigen::Vector2f(bestX, bestY);
-						Eigen::Vector2f offsetPX = posB - (centroidOffsetPX + extendsPX.cast<float>()/2);
-						printf("Found new best circle for radius %f (%d), center (%f, %f), offset (%f, %f), %d votes, %d with surroundings\n",
-							radius, r, posB.x(), posB.y(), offsetPX.x(), offsetPX.y(), max, bestSum);
-					}*/
+
+					Eigen::Vector2f centerTmp = positionMin+params.positionStep*rBest.cast<float>();
+					LOG(LCameraBlob, LTrace, "Found new best circle for radius %f (%d), center (%f, %f), %d votes, %d with surroundings",
+						radius, r, centerTmp.x(), centerTmp.y(), max, bestSum);
 				}
 			}
 		}
-		/*{ // Debug
-			float radius = params.radiusMin + r * params.radiusStep;
-			Point2D rPosB = positionMin + params.positionStep*rBest;
-			printf("Best circle for radius %f (%d) is center (%f, %f), %d votes\n", radius, r, rPosB.x(), rPosB.y(), rMax);
-		}*/
+		Eigen::Vector2f centerTmp = positionMin+params.positionStep*rBest.cast<float>();
+		LOG(LCameraBlob, LDebug, "Best circle for radius %f (%d) is center (%f, %f), %d votes", radius, r, centerTmp.x(), centerTmp.y(), rMax);
 
 		if (rMax > 0)
 		{
@@ -166,26 +159,23 @@ bool getRefinementEstimate(const std::vector<Vector2<float>> &edge, const HoughP
 				radiusStep = r;
 				bestSum = rBestSum * sizeFac;
 				center = positionMin+params.positionStep*rBest.cast<float>();
-				/*{ // Debug
-					float radius = params.radiusMin + r * params.radiusStep;
-					printf("Found new temp best circle for radius %f (%d) is center (%f, %f), %d votes, sum of %d\n", radius, r, posB.x(), posB.y(), rMax, rBestSum);
-				}*/
+				LOG(LCameraBlob, LDebug, "Found new temp best circle for radius %f (%d) is center (%f, %f), %d votes, sum of %d", radius, r, center.x(), center.y(), rMax, rBestSum);
 			}
-			//else
-			//	printf("Is not new temp best circle for radius %f (%d) with %d votes, sum of %d\n", radius, r, rMax, rBestSum);
+			else
+				LOG(LCameraBlob, LDebug, "Is not new temp best circle for radius %f (%d) with %d votes, sum of %d", radius, r, rMax, rBestSum);
 			if (bestSum > (edge.size()*5)/((float)1.5f + ((float)r)/params.radiusRange)) // TODO: Check with cnl, division is different, might need remainder
 			{ // Average over 5
-				//printf("Selected circle for radius %f (%d) with %d votes, sum of %d as best with %d > %f\n",
-				//	radius, r, max, bestSum, bestSum, (edge.size()*5)/((float)1.2f + ((float)r)/params.radiusRange));
+				LOG(LCameraBlob, LTrace, "Selected circle for radius %f (%d) with %d votes, sum of %d as best with %d > %f",
+					radius, r, max, bestSum, bestSum, (edge.size()*5)/((float)1.2f + ((float)r)/params.radiusRange));
 				break;
 			}
-			//else
-				//printf("Did NOT select temp best circle for radius %f (%d) with %d votes, sum of %d as best with %f <= %f\n",
-				//	radius, r, max, bestSum, bestSum/5.0f, edge.size()/(1.5f + (((float)r)/params.radiusRange*1.0f)));
+			else
+				LOG(LCameraBlob, LDebug, "Did NOT select temp best circle for radius %f (%d) with %d votes, sum of %d as best with %f <= %f",
+					radius, r, max, bestSum, bestSum/5.0f, edge.size()/(1.5f + (((float)r)/params.radiusRange*1.0f)));
 		}
 	}
 
-	//printf("Checked %d / %d radius levels!", r, radiusRange);
+	LOG(LCameraBlob, LDebug, "Checked %d / %d radius levels!", r, params.radiusRange);
 
 	return max > 0 && bestSum > 0;
 }
@@ -245,8 +235,8 @@ int iterativeRefinement(Vector2<float> &center, float &radius, const std::vector
 		}
 		move /= perimeterCnt;
 
-		//printf("Iteration: Radius is %f +- %f, position is corrected by %fpx (%f, %f), using %d/%d edge points!",
-		//	radius, std::sqrt(varRSq), move.norm(), move.x(), move.y(), perimeterCnt, (int)edgeRefined.size());
+		LOG(LCameraBlob, LDebug, "Iteration: Radius is %f +- %f, position is corrected by %fpx (%f, %f), using %d/%d edge points!",
+			radius, std::sqrt(varRSq), move.norm(), move.x(), move.y(), perimeterCnt, (int)edge.size());
 
 		center += move;
 	}

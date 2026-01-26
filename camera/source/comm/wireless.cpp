@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "wireless.hpp"
-#include "../state.hpp"
+#include "state.hpp"
 #include "comm/comm.hpp"
 #include "comm/server.hpp"
 

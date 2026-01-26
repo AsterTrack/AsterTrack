@@ -25,6 +25,7 @@ SOFTWARE.
 
 #include "timesync.hpp"
 
+//#define LOG_MAX_LEVEL LDebug
 #include "util/log.hpp"
 
 #include <cinttypes>
@@ -58,7 +59,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 {
 	if (time.measurements < 2)
 	{
-		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!\n", 
+		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!", 
 			time.measurements);
 		return sclock::now();
 	}
@@ -68,7 +69,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp)
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)
 	{
-		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future\n", 
+		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future", 
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, -dT/1000.0f);
 	}
 	return synced;
@@ -79,7 +80,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t ove
 {
 	if (time.measurements < 2)
 	{
-		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!\n", 
+		LOG(LTimesync, LWarn, "Cannot get synced time, time sync not yet established with %d samples!", 
 			time.measurements);
 		return sclock::now();
 	}
@@ -89,7 +90,7 @@ TimePoint_t GetTimeSynced(const TimeSync &time, uint64_t timestamp, uint64_t ove
 	int dT = dtUS(synced, sclock::now());
 	if (dT < -1000)
 	{
-		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future\n", 
+		LOG(LTimesync, LWarn, "Synced time is in the future, with last timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us is %.2fms in the future", 
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, -dT/1000.0f);
 	}
 	return synced;
@@ -126,7 +127,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 	{ // Already had a newer packet, this one is delayed and thus measurement is inaccurate
 		if (time.measurements == 0)
 			return measurement;
-		LOG(LTimesync, LDarn, "Got delayed timestamped packet, reference timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us %.2fms in the past, usPassed %ld\n",
+		LOG(LTimesync, LDarn, "Got delayed timestamped packet, reference timestamp %" PRIu64 "us %.2fms in the past, timestamp %" PRIu64 "us %.2fms in the past, usPassed %ld",
 			time.lastTimestamp, dtMS(time.lastTime, sclock::now()), timestamp, dtMS(timePred, sclock::now()), usPassed);
 		return timePred;
 	}
@@ -144,7 +145,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 	};
 	if (diffUS <= 0 && diffUS > -2000)
 	{ // New minimum, upper bound for the actual time sync
-		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %ldus ago (including %.2fus drift) but was received %ldus ago\n",
+		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %ldus ago (including %.2fus drift) but was received %ldus ago",
 			dtUS(timePred, sclock::now()), driftUS-usPassed, dtUS(measurement, sclock::now()));
 		float jumpCorrect = diffUS*std::lerp(time.driftDownwardJump, 1.0f, adapt);
 		timePred += std::chrono::microseconds((long)jumpCorrect);
@@ -163,7 +164,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 		if (time.syncSwitch.num > 500 && time.syncSwitch.variance() < 500*500)
 		{
 			LOG(LTimesync, LError, "! New time sync received, timestamp was predicted to be %.2fms ago (including %.2fus drift), "
-				"but repeated differences of %.2fms +- %.2fms will be accepted as new time sync!\n", 
+				"but repeated differences of %.2fms +- %.2fms will be accepted as new time sync!", 
 				dtMS(timePred, sclock::now()), driftUS, time.syncSwitch.avg/1000.0f, time.syncSwitch.stdDev()/1000.0f);
 			timePred += std::chrono::microseconds((int)time.syncSwitch.avg);
 			time.diff.reset();
@@ -171,7 +172,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 		}
 		else if (time.syncSwitch.num > 1000)
 		{
-			LOG(LTimesync, LError, "! Hopeless time sync loss, %d samples differed significantly by %.2fms +- %.2fms, restarting time sync!\n", 
+			LOG(LTimesync, LError, "! Hopeless time sync loss, %d samples differed significantly by %.2fms +- %.2fms, restarting time sync!", 
 				time.syncSwitch.num, time.syncSwitch.avg/1000.0f, time.syncSwitch.stdDev()/1000.0f);
 			time.measurements = 1; // Reset to start adapting to time sync more quickly again
 			time.diff.reset();
@@ -184,7 +185,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 			if (time.measurements > 2)
 			{
 				LOG(LTimesync, LDarn, "! Received timestamp %" PRIu64 "us at wrong time, was predicted to be %.2fms ago (including %.2fus drift), "
-					"but was received %.2fms ago, diff usually %.2fms +- %.2fms! Maybe Host lagged.\n", 
+					"but was received %.2fms ago, diff usually %.2fms +- %.2fms! Maybe Host lagged.", 
 					timestamp, dtMS(timePred, sclock::now()), driftUS, dtMS(measurement, sclock::now()), time.diff.avg, time.diff.stdDev());
 			}
 		}

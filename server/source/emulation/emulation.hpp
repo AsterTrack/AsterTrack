@@ -263,7 +263,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		result->ssrImages.emplace_back(ssrGaussians[s], asprintf_s("Gaussian %d - Sigma %f, Radius %d - %fms", s, ssrSigmas[s], radius, dtMS(dt0, dt1)));
 	}
 
-	LOG(LCameraEmulation, LInfo, "Calculating base image took %fms (%fms for box blur), full gaussian SSR took %fms",
+	LOG(LCameraBlob, LInfo, "Calculating base image took %fms (%fms for box blur), full gaussian SSR took %fms",
 		baseGaussianTime, baseBoxBlurTime, ssrGaussianTimes);
 
 	/**
@@ -281,7 +281,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 
 	TimePoint_t t_masking_end = sclock::now();
 
-	LOG(LCameraEmulation, LInfo, "Emulated masking and CCL in %fms, found %d clusters",
+	LOG(LCameraBlob, LInfo, "Emulated masking and CCL in %fms, found %d clusters",
 		dtMS(t_masking, t_masking_end), (int)result->clusters.size());
 
 	{ // Update mask visualisation
@@ -453,7 +453,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	}
 
 	result->tempImages.emplace_back(partialBaseImage, asprintf_s("Base Gaussian Blur (Partial) - Sigma %f, Radius %d###BasePart", ssrSigmas[0], params.base.radius));
-	LOG(LCameraEmulation, LInfo, "Base blurring took %dus, finding maximas took %dus (%d+%d+%d), resegmenting %d/%d clusters into %d took %dus", 
+	LOG(LCameraBlob, LInfo, "Base blurring took %dus, finding maximas took %dus (%d+%d+%d), resegmenting %d/%d clusters into %d took %dus", 
 		blurTimeUS, maximaHintTimeUS, localMaxTimeUS, maxIterTimeUS, finalCheckTimeUS, resegmentedClusterCount, (int)result->clusters.size(), (int)result->resegmentedClusters.size(), resegmentationTimeUS);
 
 	// Update debug visualisation
@@ -551,10 +551,10 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 
 	TimePoint_t t_end = sclock::now();
 
-	LOG(LCameraEmulation, LInfo, "Took %fms to refine %d large blobs!",
+	LOG(LCameraBlob, LInfo, "Took %fms to refine %d large blobs!",
 		dtMS(t_refinement, t_end), (int)result->refinedBlobs.size());
 
-	LOG(LCameraEmulation, LInfo, "Took %fms to emulate camera frame in total, with %fms of preparation, and %fms of blurring/SSR!",
+	LOG(LCameraBlob, LInfo, "Took %fms to emulate camera frame in total, with %fms of preparation, and %fms of blurring/SSR!",
 		dtMS(t_prep, t_end), dtMS(t_prep, t_base), dtMS(t_base, t_masking));
 
 	return result;

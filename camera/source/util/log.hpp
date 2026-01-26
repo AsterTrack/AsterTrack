@@ -30,6 +30,14 @@ SOFTWARE.
 
 #include <cstdio>
 
+#ifndef LOG_MAX_LEVEL
+#ifdef NDEBUG
+#define LOG_MAX_LEVEL LInfo
+#else
+#define LOG_MAX_LEVEL LDarn
+#endif
+#endif
+
 enum LogLevel : char {
 	LTrace,
 	LDebug,
@@ -41,13 +49,14 @@ enum LogLevel : char {
 	LMaxLevel
 };
 
-#define LOG_REPLACE(LEVEL, ...) { if (LEVEL >= LInfo) printf(__VA_ARGS__); }
+#define STR_CAT(CAT) #CAT
+#define LOG_REPLACE(CAT, LVL, STR, ...) { if (LVL >= LOG_MAX_LEVEL) printf(STR_CAT(CAT) ": " STR "\n" __VA_OPT__(,) __VA_ARGS__); }
 
-#define LOG(CATEGORY, LEVEL, ...) LOG_REPLACE(LEVEL, __VA_ARGS__)
-#define LOGC(LEVEL, ...) LOG_REPLACE(LEVEL, __VA_ARGS__)
-#define LOGL(CATEGORY, ...) {}
-#define LOGCL(...) {}
-#define LOGCONTC(LEVEL, ...) LOG_REPLACE(LEVEL, __VA_ARGS__)
-#define LOGCONT(CATEGORY, LEVEL, ...) LOG_REPLACE(LEVEL, __VA_ARGS__)
+#define LOG(CATEGORY, LEVEL, ...) LOG_REPLACE(CATEGORY, LEVEL, __VA_ARGS__)
+#define LOGC(LEVEL, ...) LOG_REPLACE(L, LEVEL, __VA_ARGS__)
+#define LOGL(CATEGORY, ...) LOG_REPLACE(CATEGORY, LDebug, __VA_ARGS__)
+#define LOGCL(...) LOG_REPLACE(L, LDebug, __VA_ARGS__)
+#define LOGCONTC(LEVEL, ...) LOG_REPLACE(L, LEVEL, __VA_ARGS__)
+#define LOGCONT(CATEGORY, LEVEL, ...) LOG_REPLACE(CATEGORY, LEVEL, __VA_ARGS__)
 
 #endif // LOG_H

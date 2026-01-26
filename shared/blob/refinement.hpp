@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef BLOB_REFINEMENT_H
 #define BLOB_REFINEMENT_H
 
-#include "../util/eigendef.hpp"
+#include "util/eigendef.hpp"
 
 #include <vector>
 

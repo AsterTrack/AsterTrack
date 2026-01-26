@@ -1200,7 +1200,7 @@ static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *
 		if (d1 >= 0 && d1 < LMaxCategory && d2 >= 0 && d2 < LMaxLevel)
 		{
 			LogFilterTable[d1] = (LogLevel)d2;
-			LogMaxLevelTable[d1] = std::min(LDebug, LogFilterTable[d1]);
+			LogMaxLevelTable[d1] = std::min(LOG_MAX_LEVEL_DEFAULT, LogFilterTable[d1]);
 		}
 	}
 }

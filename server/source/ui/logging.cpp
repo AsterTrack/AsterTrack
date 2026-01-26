@@ -214,7 +214,7 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 			if (ImGui::Combo("", &filterLevel, LogLevelIdentifiers, LMaxLevel))
 			{
 				LogFilterTable[i] = (LogLevel)filterLevel;
-				LogMaxLevelTable[i] = std::min(LDebug, LogFilterTable[i]);
+				LogMaxLevelTable[i] = std::min(LOG_MAX_LEVEL_DEFAULT, LogFilterTable[i]);
 				logsFilterPos = 0;
 			}
 			ImGui::PopID();

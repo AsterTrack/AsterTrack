@@ -319,8 +319,6 @@ void Setup_Peripherals()
 		// However I suspect this will affect internal timeouts
 	}
 
-	I2C1->CTLR1 = I2C_CTLR1_PE;
-
 	pd_init(); // This takes dozens of ms due to synchronous I2C and timing
 	// Enable interrupt only after initialisation
 	NVIC_EnableIRQ(EXTI9_5_IRQn);

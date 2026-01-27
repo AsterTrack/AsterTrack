@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ch32v30x_usart.h"
 #include "ch32v30x_dma.h" */
 #include "ch32v30x_i2c.h"
+#include "ch32v30x_wwdg.h"
 
 #include "fusb302b.h"
 #include "fusb302_defines.h"
@@ -360,35 +361,38 @@ void pdbs_dpm_get_sink_capability(pd_msg *cap, const bool isPD3)
 	cap->hdr = PD_MSGTYPE_SINK_CAPABILITIES | PD_NUMOBJ(numobj);
 }
 
+#define WAIT_FOR_STAR1(FLAG, TIMEOUT_US, MSG) {\
+	TimePoint start = GetTimePoint();\
+	TimePoint limit = start + TIMEOUT_US * TICKS_PER_US;\
+	while (!(I2C1->STAR1&FLAG));\
+	if (GetTimePoint() > limit)\
+	{\
+		ERR_STR(MSG);\
+		ERR_CHARR(':', UINT999999_TO_CHARR(GetTimeSpanUS(start, GetTimePoint())));\
+	}\
+}
+
 bool i2c_read(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf)
 {
-	uint32_t timeout;
+	I2C1->CTLR1 = I2C_CTLR1_PE;
+	while (I2C1->CTLR1 == 0);
+
+	WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+
 	I2C1->CTLR1 |= I2C_CTLR1_START;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_SB) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'S', 'B'); return false; }
-	I2C1->CTLR1 &= ~I2C_CTLR1_START;
+	WAIT_FOR_STAR1(I2C_STAR1_SB, 10, "!I2CSBR");
 	I2C1->DATAR = deviceAddr | I2C_Direction_Transmitter;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_ADDR) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'A', 'D'); return false; }
-	volatile uint16_t star2 = I2C1->STAR2;
+	WAIT_FOR_STAR1(I2C_STAR1_ADDR, 35, "!I2CAD");
+	volatile uint16_t star2 = I2C1->STAR2; // Read after STAR1 to clear ADDR bit
 
 	I2C1->DATAR = registerAdd;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_TXE) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'T', 'X'); return false; }
+	WAIT_FOR_STAR1(I2C_STAR1_TXE, 2, "!I2CTX");
 
 	I2C1->CTLR1 |= I2C_CTLR1_START;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_SB) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'S', 'B'); return false; }
-	I2C1->CTLR1 &= ~I2C_CTLR1_START;
+	WAIT_FOR_STAR1(I2C_STAR1_SB, 35, "!I2CSBT");
 	I2C1->DATAR = deviceAddr | I2C_Direction_Receiver;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_ADDR) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'A', 'D'); return false; }
-	star2 = I2C1->STAR2;
+	WAIT_FOR_STAR1(I2C_STAR1_ADDR, 35, "!I2CAD");
+	star2 = I2C1->STAR2; // Read after STAR1 to clear ADDR bit
 
 	// Ensure that acks are send when reading data
 	I2C1->CTLR1 |= I2C_CTLR1_ACK;
@@ -396,57 +400,50 @@ bool i2c_read(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t
 	for (int i = 0; i < size; i++)
 	{
 		if (i == size-1)
-			I2C1->CTLR1 &= ~I2C_CTLR1_ACK;
-		timeout = 10000;
-		while (!(I2C1->STAR1&I2C_STAR1_RXNE) && timeout-- > 0);
-		if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'R', 'X'); return false; }
+			I2C1->CTLR1 = (I2C1->CTLR1&~I2C_CTLR1_ACK) | I2C_CTLR1_STOP;
+		WAIT_FOR_STAR1(I2C_STAR1_RXNE, 35, "!I2CRX");
 		bool btf = I2C1->STAR1&I2C_STAR1_BTF; // Could happen since PD handling can be interrupted (low priority interrupt)
 		buf[i] = I2C1->DATAR;
 		if (btf)
 		{
-			ERR_CHARR('/', 'I', '2', 'C', 'L', 'D');
+			ERR_STR("!I2CLD");
 			lostData = true;
 		}
 	}
 
-	I2C1->CTLR1 |= I2C_CTLR1_STOP;
-	//while (!(I2C1->STAR1&I2C_STAR1_SB));
+	I2C1->CTLR1 = 0;
 
+	WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
 	return !lostData;
 }
 
 bool i2c_write(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf)
 {
-	uint32_t timeout;
+	I2C1->CTLR1 = I2C_CTLR1_PE;
+	while (I2C1->CTLR1 == 0);
+
+	WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+
 	I2C1->CTLR1 |= I2C_CTLR1_START;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_SB) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'S', 'B'); return false; }
-	I2C1->CTLR1 &= ~I2C_CTLR1_START;
+	WAIT_FOR_STAR1(I2C_STAR1_SB, 10, "!I2CSBT");
 	I2C1->DATAR = deviceAddr | I2C_Direction_Transmitter;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_ADDR) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'A', 'D'); return false; }
-	volatile uint16_t star2 = I2C1->STAR2;
+	WAIT_FOR_STAR1(I2C_STAR1_ADDR, 35, "!I2CAD");
+	volatile uint16_t star2 = I2C1->STAR2; // Read after STAR1 to clear ADDR bit
 
 	I2C1->DATAR = registerAdd;
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_TXE) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'T', 'X'); return false; }
+	WAIT_FOR_STAR1(I2C_STAR1_TXE, 35, "!I2CTX");
 
 	for (int i = 0; i < size; i++)
 	{
 		I2C1->DATAR = buf[i];
-		timeout = 10000;
-		while (!(I2C1->STAR1&I2C_STAR1_TXE) && timeout-- > 0);
-		if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'T', 'X'); return false; }
+		WAIT_FOR_STAR1(I2C_STAR1_TXE, 35, "!I2CTX");
 	}
-	timeout = 10000;
-	while (!(I2C1->STAR1&I2C_STAR1_BTF) && timeout-- > 0);
-	if (!timeout) { ERR_CHARR('/', 'I', '2', 'C', 'B', 'T'); return false; }
+	WAIT_FOR_STAR1(I2C_STAR1_BTF, 35, "!I2CBT");
 
 	I2C1->CTLR1 |= I2C_CTLR1_STOP;
-	//while (!(I2C1->STAR1&I2C_STAR1_SB));
 
+	I2C1->CTLR1 = 0;
+
+	WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
 	return true;
 }

@@ -542,7 +542,6 @@ policy_engine_state pe_sink_source_unresponsive(PolicyEngine *pe)
 {
 	// Sit and chill, as PD is not working
 	pe->_explicit_contract = false;
-	osDelay(PD_T_PD_DEBOUNCE*1000);
 	return PESinkSourceUnresponsive;
 }
 

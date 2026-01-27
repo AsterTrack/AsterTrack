@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 
+#define TICK_IS_64_BIT
 #ifdef TICK_IS_64_BIT
 #define TICK_TYPE uint64_t
 #define TICK_MAX_DELAY 0xFFFFFFFFFFFFFFFF

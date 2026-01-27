@@ -48,9 +48,9 @@ void pd_delayUS(uint32_t us)
 	// Or just
 	//delayUS(us);
 }
-uint32_t timestampMS()
+uint64_t timestampUS()
 {
-	return GetMS(GetTimePoint());
+	return GetTimePointUS();
 }
 
 bool pdbs_dpm_evaluate_capability(const pd_msg *capabilities, pd_msg *request);
@@ -80,7 +80,7 @@ inline static void log_pe_state(char conn)
 
 void pd_init()
 {
-	pd_os_init(timestampMS, pd_delayUS, i2c_read, i2c_write);
+	pd_os_init(timestampUS, pd_delayUS, i2c_read, i2c_write);
 	fusb.DeviceAddress = FUSB302B_ADDR;
 	pe_init(&pe, &fusb, pdbs_dpm_get_sink_capability, pdbs_dpm_evaluate_capability, NULL, 0);
 

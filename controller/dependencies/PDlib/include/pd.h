@@ -319,12 +319,12 @@
  * nearest millisecond) is used.
  */
 #define PD_T_CHUNKING_NOT_SUPPORTED (500)
-#define PD_T_HARD_RESET_COMPLETE    (1 * 1000)
-#define PD_T_PS_TRANSITION          (5 * 1000)
-#define PD_T_SENDER_RESPONSE        (2700)
-#define PD_T_SINK_REQUEST           (1 * 1000)
-#define PD_T_TYPEC_SINK_WAIT_CAP    (10 * 1000)
-#define PD_T_PD_DEBOUNCE            (2 * 1000)
+#define PD_T_HARD_RESET_COMPLETE    (1 * 1000 * 1000)
+#define PD_T_PS_TRANSITION          (5 * 1000 * 1000)
+#define PD_T_SENDER_RESPONSE        (2700 * 1000)
+#define PD_T_SINK_REQUEST           (1 * 1000 * 1000)
+#define PD_T_TYPEC_SINK_WAIT_CAP    (10 * 1000 * 1000)
+#define PD_T_PD_DEBOUNCE            (2 * 1000 * 1000)
 
 /*
  * Counter maximums

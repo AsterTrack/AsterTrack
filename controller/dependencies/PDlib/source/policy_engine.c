@@ -212,7 +212,7 @@ policy_engine_state pe_start_message_tx(PolicyEngine *pe, policy_engine_state po
 #endif
 
 	// Setup waiting for notification
-	return pe_waitForEvent(pe, PEWaitingMessageTx, (uint32_t)NOTIF_RESET | (uint32_t)NOTIF_MSG_RX | (uint32_t)NOTIF_I_TXSENT | (uint32_t)NOTIF_I_RETRYFAIL, 0xFFFFFFFF);
+	return pe_waitForEvent(pe, PEWaitingMessageTx, (uint32_t)NOTIF_RESET | (uint32_t)NOTIF_MSG_RX | (uint32_t)NOTIF_I_TXSENT | (uint32_t)NOTIF_I_RETRYFAIL, TICK_MAX_DELAY);
 }
 
 void pe_clearEvents(PolicyEngine *pe, uint32_t notification)
@@ -220,7 +220,7 @@ void pe_clearEvents(PolicyEngine *pe, uint32_t notification)
 	pe->currentEvents &= ~notification;
 }
 
-policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalState, uint32_t notification, uint32_t timeout)
+policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalState, uint32_t notification, TICK_TYPE timeout)
 {
 	// Record the new state, and the desired notifications mask, then schedule the waiter state
 	pe->waitingEventsMask = notification;
@@ -240,8 +240,8 @@ policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalSt
 		}
 	}
 	pe->postNotificationEvalState = evalState;
-	if (timeout == 0xFFFFFFFF) {
-		pe->waitingEventsTimeout = 0xFFFFFFFF;
+	if (timeout == TICK_MAX_DELAY) {
+		pe->waitingEventsTimeout = TICK_MAX_DELAY;
 	} else {
 		pe->waitingEventsTimeout = getTimeStamp() + timeout;
 	}

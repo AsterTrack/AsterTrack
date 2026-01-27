@@ -25,7 +25,6 @@
 
 #define EVENT_MASK(x) (1 << x)
 
-
 typedef enum {
 	PEWaitingEvent              = 0,  // Meta state: waiting for event or timeout
 	PEWaitingMessageTx          = 1,  // Meta state: waiting for message tx to confirm
@@ -122,7 +121,7 @@ typedef struct
 	policy_engine_state state;
 	// Read a pending message into the temp message
 	bool PPSTimerEnabled;
-	uint32_t PPSTimeLastEvent, EPRTimeLastEvent;
+	TICK_TYPE PPSTimeLastEvent, EPRTimeLastEvent;
 	epr_pd_msg recent_epr_capabilities;
 	uint8_t device_epr_wattage;
 	bool sourceIsEPRCapable;
@@ -134,9 +133,9 @@ typedef struct
 	policy_engine_state postSendState;
 	policy_engine_state postSendFailedState;
 	uint32_t waitingEventsMask;
-	uint32_t waitingEventsTimeout;
+	TICK_TYPE waitingEventsTimeout;
 	uint32_t currentEvents;
-	uint32_t timestampNegotiationsStarted;
+	TICK_TYPE timestampNegotiationsStarted;
 } PolicyEngine;
 
 static inline void pe_init(PolicyEngine *pe,
@@ -226,7 +225,7 @@ static inline void notify(PolicyEngine *pe, Notifications notification)
 	pe->currentEvents |= (uint32_t)notification;
 }
 void pe_clearEvents(PolicyEngine *pe, uint32_t notification);
-policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalState, uint32_t notification, uint32_t timeout);
+policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalState, uint32_t notification, TICK_TYPE timeout);
 
 static inline void renegotiate(PolicyEngine *pe)
 {

@@ -142,7 +142,7 @@ policy_engine_state pe_sink_eval_cap(PolicyEngine *pe)
 		if ((pe->hdr_template & PD_HDR_SPECREV) == PD_SPECREV_3_0)
 		{ // If the request was for a PPS, start time callbacks if not started
 			uint32_t pdoPos = PD_RDO_OBJPOS_GET(&pe->_last_dpm_request);
-			if (pdoPos < 7 && pdoPos >= pe->_pps_index)
+			if (pdoPos <= 7 && pdoPos >= pe->_pps_index)
 				pe->PPSTimerEnabled = true;
 			else
 				pe->PPSTimerEnabled = false;
@@ -199,7 +199,7 @@ policy_engine_state pe_sink_wait_cap_resp(PolicyEngine *pe)
 				// If we don't have an explicit contract, wait for capabilities
 				return PESinkSetupWaitCap;
 			else // If we do have an explicit contract, go to the ready state
-				return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+				return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 		}
 	}
 	return pe_waitForEvent(pe, PESinkWaitCapResp, (uint32_t)NOTIF_MSG_RX | (uint32_t)NOTIF_RESET | (uint32_t)NOTIF_TIMEOUT, PD_T_SENDER_RESPONSE);
@@ -257,12 +257,9 @@ policy_engine_state pe_sink_ready(PolicyEngine *pe)
 	if (evt & (uint32_t)NOTIF_GET_SOURCE_CAP) {
 		return PESinkGetSourceCap;
 	}
-	/* If the DPM wants new power, let it figure out what power it wants
-	 * exactly.  This isn't exactly the transition from the spec (that would be
-	 * SelectCap, not EvalCap), but this works better with the particular
-	 * design of this firmware. */
+	/* Request the source sends us its current capabilities again */
 	if (evt & (uint32_t)NOTIF_NEW_POWER) {
-		return PESinkEvalCap;
+		return PESinkGetSourceCap;
 	}
 
 	if (evt & (uint32_t)NOTIF_REQUEST_EPR) {
@@ -280,10 +277,10 @@ policy_engine_state pe_sink_ready(PolicyEngine *pe)
 			pdb_msg_pop(&pe->incomingMessages, &pe->tempMessage);
 
 			if (PD_MSGTYPE_GET(&pe->tempMessage) == PD_MSGTYPE_VENDOR_DEFINED && PD_NUMOBJ_GET(&pe->tempMessage) > 0) {
-				// return pe_waitForEvent(PESinkReady, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+				// return pe_waitForEvent(PESinkReady, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 				/* Ignore Ping messages */
 			} else if (PD_MSGTYPE_GET(&pe->tempMessage) == PD_MSGTYPE_PING && PD_NUMOBJ_GET(&pe->tempMessage) == 0) {
-				// return pe_waitForEvent(PESinkReady, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+				// return pe_waitForEvent(PESinkReady, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 				/* DR_Swap messages are not supported */
 			} else if (PD_MSGTYPE_GET(&pe->tempMessage) == PD_MSGTYPE_DR_SWAP && PD_NUMOBJ_GET(&pe->tempMessage) == 0) {
 				return PESinkSendNotSupported;
@@ -347,13 +344,13 @@ policy_engine_state pe_sink_ready(PolicyEngine *pe)
 				}
 				else if (PD_MSGTYPE_GET(&pe->tempMessage) == PD_MSGTYPE_NOT_SUPPORTED && PD_NUMOBJ_GET(&pe->tempMessage) == 0)
 					return PESinkNotSupportedReceived;
-				else // If we got an unknown message, send a soft reset
-					return PESinkSendSoftReset;
+				else // If we got an unknown message, Send Not Supported back
+					return PESinkSendNotSupported;
 			}
 		}
 	}
 
-	return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+	return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 }
 
 policy_engine_state pe_sink_get_source_cap(PolicyEngine *pe)
@@ -506,13 +503,13 @@ policy_engine_state pe_sink_wait_epr_chunk(PolicyEngine *pe)
 		}
 	}
 
-	return pe_waitForEvent(pe, PESinkWaitForHandleEPRChunk, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+	return pe_waitForEvent(pe, PESinkWaitForHandleEPRChunk, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 }
 
 policy_engine_state pe_sink_handle_epr_chunk(PolicyEngine *pe)
 {
 	if (pe->tempMessage.exthdr & PD_EXTHDR_REQUEST_CHUNK)
-		return pe_waitForEvent(pe, PESinkWaitForHandleEPRChunk, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+		return pe_waitForEvent(pe, PESinkWaitForHandleEPRChunk, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 	uint8_t chunk_index = PD_CHUNK_NUMBER_GET(&pe->tempMessage);
 
 	if (chunk_index == 0)
@@ -538,7 +535,7 @@ policy_engine_state pe_sink_handle_epr_chunk(PolicyEngine *pe)
 policy_engine_state pe_sink_not_supported_received(PolicyEngine *pe)
 {
 	// Inform the Device Policy Manager that we received a Not_Supported message.
-	return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, 0xFFFFFFFF);
+	return pe_waitForEvent(pe, PESinkReady, (uint32_t)NOTIF_ALL, TICK_MAX_DELAY);
 }
 
 policy_engine_state pe_sink_source_unresponsive(PolicyEngine *pe)
@@ -584,11 +581,6 @@ policy_engine_state pe_sink_wait_good_crc(PolicyEngine *pe)
 			pe->_tx_messageidcounter = (pe->_tx_messageidcounter + 1) % 8;
 			notify(pe, NOTIF_TX_DONE);
 			return pe->postSendState;
-		}
-		else
-		{
-			notify(pe, NOTIF_TX_ERR);
-			return pe->postSendFailedState;
 		}
 	}
 	notify(pe, NOTIF_TX_ERR);
@@ -669,5 +661,6 @@ policy_engine_state pe_sink_wait_epr_keep_alive_ack(PolicyEngine *pe)
 			return PESinkReady;
 		}
 	}
-	return PESinkSendEPRKeepAlive;
+	// Retry for ack
+	return PESinkWaitEPRKeepAliveAck;
 }

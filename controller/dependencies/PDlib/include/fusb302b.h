@@ -23,9 +23,17 @@
 
 #include <stdbool.h>
 
+#ifdef TICK_IS_64_BIT
+#define TICK_TYPE uint64_t
+#define TICK_MAX_DELAY 0xFFFFFFFFFFFFFFFF
+#else
+#define TICK_TYPE uint32_t
+#define TICK_MAX_DELAY 0xFFFFFFFF
+#endif
+
 typedef bool (*I2CFunc)(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf);
-typedef uint32_t (*TimestampFunc)();
-typedef void (*DelayFunc)(uint32_t microseconds);
+typedef TICK_TYPE (*TimestampFunc)();
+typedef void (*DelayFunc)(TICK_TYPE microseconds);
 
 extern I2CFunc I2CRead;
 extern I2CFunc I2CWrite;

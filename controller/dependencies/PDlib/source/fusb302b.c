@@ -187,6 +187,52 @@ bool fusb_setup(FUSB302 *fusb)
 	return true;
 }
 
+int fusb_measureCCLine(FUSB302 *fusb, uint8_t line)
+{
+	// Measure CC1 or CC2
+	if (!fusb_write_byte(fusb, FUSB_SWITCHES0, line == 0 || line == 1? 0x07 : 0x0B))
+		return -1;
+
+	return 0;
+}
+
+uint8_t fusb_readCCLineMeasurement(FUSB302 *fusb)
+{
+	return fusb_read_byte(fusb, FUSB_STATUS0) & FUSB_STATUS0_BC_LVL;
+}
+
+int fusb_selectCCLine(FUSB302 *fusb, uint8_t CC1, uint8_t CC2)
+{
+	// Select the correct CC line for BMC signaling; also enable AUTO_CRC
+	if (CC1 > CC2)
+	{
+		USBPD_CHARR('/', 'C', 'C', hex[CC1], ':', hex[CC2], '>', '1');
+		// TX_CC1|AUTO_CRC|SPECREV0
+		if (!fusb_write_byte(fusb, FUSB_SWITCHES1, 0x25))
+			return -1;
+		// PWDN1|PWDN2|MEAS_CC1
+		if (!fusb_write_byte(fusb, FUSB_SWITCHES0, 0x07))
+			return -1;
+	}
+	else if (CC1 < CC2)
+	{
+		USBPD_CHARR('/', 'C', 'C', hex[CC1], ':', hex[CC2], '>', '2');
+		// TX_CC2|AUTO_CRC|SPECREV0
+		if (!fusb_write_byte(fusb, FUSB_SWITCHES1, 0x26))
+			return -1;
+		// PWDN1|PWDN2|MEAS_CC2
+		if (!fusb_write_byte(fusb, FUSB_SWITCHES0, 0x0B))
+			return -1;
+	}
+	else
+	{
+		USBPD_CHARR('/', 'C', 'C', hex[CC1], ':', hex[CC2], '?');
+		return 1;
+	}
+
+	return 0;
+}
+
 int fusb_runCCLineSelection(FUSB302 *fusb)
 {
 	// Measure CC1
@@ -201,34 +247,7 @@ int fusb_runCCLineSelection(FUSB302 *fusb)
 	osDelay(1000); // 1MS default
 	uint8_t cc2 = fusb_read_byte(fusb, FUSB_STATUS0) & FUSB_STATUS0_BC_LVL;
 
-	// Select the correct CC line for BMC signaling; also enable AUTO_CRC
-	if (cc1 > cc2)
-	{
-		USBPD_CHARR('/', 'C', 'C', hex[cc1], ':', hex[cc2], '>', '1');
-		// TX_CC1|AUTO_CRC|SPECREV0
-		if (!fusb_write_byte(fusb, FUSB_SWITCHES1, 0x25))
-			return -1;
-		// PWDN1|PWDN2|MEAS_CC1
-		if (!fusb_write_byte(fusb, FUSB_SWITCHES0, 0x07))
-			return -1;
-	}
-	else if (cc1 < cc2)
-	{
-		USBPD_CHARR('/', 'C', 'C', hex[cc1], ':', hex[cc2], '>', '2');
-		// TX_CC2|AUTO_CRC|SPECREV0
-		if (!fusb_write_byte(fusb, FUSB_SWITCHES1, 0x26))
-			return -1;
-		// PWDN1|PWDN2|MEAS_CC2
-		if (!fusb_write_byte(fusb, FUSB_SWITCHES0, 0x0B))
-			return -1;
-	}
-	else
-	{
-		USBPD_CHARR('/', 'C', 'C', hex[cc1], ':', hex[cc2], '?');
-		return 1;
-	}
-
-	return 0;
+	return fusb_selectCCLine(fusb, cc1, cc2);
 }
 
 bool fusb_isVBUSConnected(FUSB302 *fusb)

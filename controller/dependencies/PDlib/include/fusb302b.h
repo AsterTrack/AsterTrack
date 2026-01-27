@@ -109,6 +109,12 @@ bool fusb_read_id(FUSB302 *fusb);
 
 int fusb_runCCLineSelection(FUSB302 *fusb);
 
+int fusb_measureCCLine(FUSB302 *fusb, uint8_t line);
+
+uint8_t fusb_readCCLineMeasurement(FUSB302 *fusb);
+
+int fusb_selectCCLine(FUSB302 *fusb, uint8_t CC1, uint8_t CC2);
+
 // Measure VBus with the MADC and check if its connected
 bool fusb_isVBUSConnected(FUSB302 *fusb);
 

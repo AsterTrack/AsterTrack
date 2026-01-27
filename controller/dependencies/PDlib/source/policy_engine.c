@@ -50,12 +50,16 @@ const char* pe_getStateName(uint8_t state)
 							"PESinkSendSoftResetResp",
 							"PESinkSendNotSupported",
 							"PESinkHandleEPRChunk",
+							"PESinkWaitForHandleEPRChunk",
 							"PESinkNotSupportedReceived",
 							"PESinkSourceUnresponsive",
 							"PESinkEPREvalCap",
 							"PESinkRequestEPR",
 							"PESinkSendEPRKeepAlive",
-							"PESinkWaitEPRKeepAliveAck"};
+							"PESinkWaitEPRKeepAliveAck",
+							"PESinkMeasureCC1",
+							"PESinkMeasureCC2",
+	};
 	const char* unknown = "Unknown";
 	if (state >= sizeof(names))
 		return unknown;
@@ -72,6 +76,12 @@ bool pe_thread(PolicyEngine *pe)
 		break;
 	case PESinkDiscovery:
 		pe->state = pe_sink_discovery(pe);
+		break;
+	case PESinkMeasureCC1:
+		pe->state = pe_sink_measure_cc1(pe);
+		break;
+	case PESinkMeasureCC2:
+		pe->state = pe_sink_measure_cc2(pe);
 		break;
 	case PESinkSetupWaitCap:
 		pe->state = pe_sink_setup_wait_cap(pe);

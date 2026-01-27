@@ -41,21 +41,40 @@ policy_engine_state pe_sink_startup(PolicyEngine *pe)
 
 policy_engine_state pe_sink_discovery(PolicyEngine *pe)
 {
-	/* Wait for VBUS.  Since it's our only power source, we already know that
-	 * we have it, so just move on.
-	 * If this was not true, we would want to wait and then re-run CC line selection
-	 * fusb_runCCLineSelection();
-	 */
-	int stat = 0;
-	while((stat = fusb_runCCLineSelection(pe->fusb)) != 0)
-	{
-		if (stat < 0) // Failed to write
-			return PESinkDiscovery;
-		if (stat > 0) // Could wait here, or wait for next event (high VBUS)
-			return PESinkDiscovery;
-	}
+	int stat = fusb_measureCCLine(pe->fusb, 1);
+	if (stat < 0) // Failed to write
+		return PESinkDiscovery;
+	pe->waitingEventsTimeout = getTimeStamp() + 1000;
+	return PESinkMeasureCC1;
+}
+
+policy_engine_state pe_sink_measure_cc1(PolicyEngine *pe)
+{
+	if (getTimeStamp() < pe->waitingEventsTimeout)
+		return PESinkMeasureCC1;
+	pe->ccMeasurement = fusb_readCCLineMeasurement(pe->fusb);
+	int stat = fusb_measureCCLine(pe->fusb, 2);
+	if (stat < 0) // Failed to write
+		return PESinkDiscovery;
+	pe->waitingEventsTimeout = getTimeStamp() + 1000;
+	return PESinkMeasureCC2;
+}
+
+policy_engine_state pe_sink_measure_cc2(PolicyEngine *pe)
+{
+	if (getTimeStamp() < pe->waitingEventsTimeout)
+		return PESinkMeasureCC2;
+
+	uint8_t cc2 = fusb_readCCLineMeasurement(pe->fusb);
+
+	int stat = fusb_selectCCLine(pe->fusb, pe->ccMeasurement, cc2);
+	if (stat < 0) // Failed to write
+		return PESinkDiscovery;
+	if (stat > 0) // Could wait here, or wait for next event (high VBUS)
+		return PESinkDiscovery;
 	return PESinkSetupWaitCap;
 }
+
 policy_engine_state pe_sink_setup_wait_cap(PolicyEngine *pe)
 {
 	pe->_explicit_contract = false;

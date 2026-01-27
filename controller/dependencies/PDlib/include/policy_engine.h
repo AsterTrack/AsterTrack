@@ -30,7 +30,7 @@ typedef enum {
 	PEWaitingMessageTx          = 1,  // Meta state: waiting for message tx to confirm
 	PEWaitingMessageGoodCRC     = 2,  // We have sent a message, waiting for a GoodCRC to come back
 	PESinkStartup               = 3,  // Start of state machine
-	PESinkDiscovery             = 4,  // no-op as source yells its features
+	PESinkDiscovery             = 4,  // initiating selection of CC lines as source sends capability packets
 	PESinkSetupWaitCap          = 5,  // Setup events wanted by waitCap
 	PESinkWaitCap               = 6,  // Waiting for source
 	PESinkEvalCap               = 7,  // Evaluating the source provided capabilities message
@@ -56,6 +56,8 @@ typedef enum {
 	PESinkRequestEPR            = 27, // We're requesting the EPR capabilities
 	PESinkSendEPRKeepAlive      = 28, // Send the EPR Keep Alive packet
 	PESinkWaitEPRKeepAliveAck   = 29, // wait for the Source to acknowledge the keep alive
+	PESinkMeasureCC1            = 30, // measure CC lines 1 before making a selection
+	PESinkMeasureCC2            = 31, // measure CC lines 2 before making a selection
 } policy_engine_state;
 
 typedef enum {
@@ -136,6 +138,7 @@ typedef struct
 	TICK_TYPE waitingEventsTimeout;
 	uint32_t currentEvents;
 	TICK_TYPE timestampNegotiationsStarted;
+	uint8_t ccMeasurement;
 } PolicyEngine;
 
 static inline void pe_init(PolicyEngine *pe,
@@ -173,7 +176,7 @@ static inline bool inReadyState(PolicyEngine *pe)
 }
 static inline bool isWaitingOnTimer(PolicyEngine *pe)
 {
-	return false;
+	return pe->state == PESinkMeasureCC1 || pe->state == PESinkMeasureCC2;
 }
 static inline bool NegotiationTimeoutReached(PolicyEngine *pe, uint8_t timeout)
 {
@@ -245,6 +248,8 @@ static inline bool pe_renegotiate(PolicyEngine *pe)
 
 policy_engine_state pe_sink_startup(PolicyEngine *pe);
 policy_engine_state pe_sink_discovery(PolicyEngine *pe);
+policy_engine_state pe_sink_measure_cc1(PolicyEngine *pe);
+policy_engine_state pe_sink_measure_cc2(PolicyEngine *pe);
 policy_engine_state pe_sink_setup_wait_cap(PolicyEngine *pe);
 policy_engine_state pe_sink_wait_cap(PolicyEngine *pe);
 policy_engine_state pe_sink_eval_cap(PolicyEngine *pe);

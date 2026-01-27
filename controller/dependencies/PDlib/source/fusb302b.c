@@ -134,9 +134,9 @@ void fusb_send_hardrst(FUSB302 *fusb)
 bool fusb_setup(FUSB302 *fusb)
 {
 	// Fully reset the FUSB302B
-	//if (!fusb_write_byte(fusb, FUSB_RESET, FUSB_RESET_SW_RES))
-	//	return false;
-	//osDelay(10000);
+	if (!fusb_write_byte(fusb, FUSB_RESET, FUSB_RESET_SW_RES))
+		return false;
+	osDelay(1000);
 	uint8_t tries = 0;
 	while (!fusb_read_id(fusb))
 	{
@@ -151,17 +151,17 @@ bool fusb_setup(FUSB302 *fusb)
 		return false;
 
 	// Set interrupt masks to 0 so interrupts are allowed
-	if (!fusb_write_byte(fusb, FUSB_MASK1, 0x01)) // TODO: Changed to mask I_BC_LVL
+	if (!fusb_write_byte(fusb, FUSB_MASK1, FUSB_MASK1_M_ACTIVITY | FUSB_MASK1_M_BC_LVL))
 		return false;
 	if (!fusb_write_byte(fusb, FUSB_MASKA, 0x00))
 		return false;
-	if (!fusb_write_byte(fusb, FUSB_MASKB, 0x00))
+	if (!fusb_write_byte(fusb, FUSB_MASKB, FUSB_MASKB_M_GCRCSENT))
 		return false;
 	if (!fusb_write_byte(fusb, FUSB_CONTROL0, 0b11 << 2)) // Set HOST_CUR to High Current Mode (3A) (why?)
 		return false;
 
 	// Enable automatic retransmission
-	if (!fusb_write_byte(fusb, FUSB_CONTROL3, 0x07))
+	if (!fusb_write_byte(fusb, FUSB_CONTROL3, (0b11 << FUSB_CONTROL3_N_RETRIES_SHIFT) | FUSB_CONTROL3_AUTO_RETRY))
 		return false;
 	// set defaults
 	//if (!fusb_write_byte(fusb, FUSB_CONTROL2, 0x00))
@@ -174,7 +174,7 @@ bool fusb_setup(FUSB302 *fusb)
 	//uint8_t measureCC = fusb_read_byte(fusb, FUSB_SWITCHES0) & (FUSB_SWITCHES0_MEAS_CC1 | FUSB_SWITCHES0_MEAS_CC2);
 	uint8_t txCC = fusb_read_byte(fusb, FUSB_SWITCHES1) & (FUSB_SWITCHES1_TXCC1 | FUSB_SWITCHES1_TXCC2);
 	// Setup AUTO_CRC|SPECREV0 and potential existing selected CC line
-	if (!fusb_write_byte(fusb, FUSB_SWITCHES1, 0x24 | txCC))
+	if (!fusb_write_byte(fusb, FUSB_SWITCHES1, (0x01 << FUSB_SWITCHES1_SPECREV_SHIFT) | FUSB_SWITCHES1_AUTO_CRC | txCC))
 		return false;
 	
 	// Measure and select CC line and set Auto CRC

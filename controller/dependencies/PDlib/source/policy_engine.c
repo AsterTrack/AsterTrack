@@ -296,18 +296,9 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 	{
 		USBPD_CHARR('+', UI8_TO_HEX_ARR(pe->status.status0a), UI8_TO_HEX_ARR(pe->status.status1a), UI8_TO_HEX_ARR(pe->status.interrupta), UI8_TO_HEX_ARR(pe->status.interruptb), UI8_TO_HEX_ARR(pe->status.status0), UI8_TO_HEX_ARR(pe->status.status1), UI8_TO_HEX_ARR(pe->status.interrupt));
 
-
-		if ((pe->status.status0 & FUSB_STATUS0_CRC_CHK))
+		if (pe->status.interrupt & FUSB_INTERRUPT_I_VBUSOK)
 		{
-			USBPD_STR(">CRCK");
-		}
-
-		// If the I_GCRCSENT flag is set, tell the Protocol RX thread
-		// This means a message was received with a good CRC
-		if (pe->status.interruptb & FUSB_INTERRUPTB_I_GCRCSENT)
-		{
-			USBPD_STR(">GCRC");
-			readPendingMessage(pe);
+			USBPD_STR(">VBUS");
 			returnValue = true;
 		}
 
@@ -316,8 +307,10 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		if (!(pe->status.status1 & FUSB_STATUS1_RX_EMPTY))
 		{
 			USBPD_STR(">PMSG");
-			//readPendingMessage(pe);
-			//returnValue = true;
+			if (!(pe->status.status0 & FUSB_STATUS0_CRC_CHK))
+				USBPD_STR("#BAD_CRC");
+			readPendingMessage(pe);
+			returnValue = true;
 		}
 
 		// If the I_TXSENT or I_RETRYFAIL flag is set, tell the Protocol TX thread
@@ -350,6 +343,10 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 				return false;
 			return false;
 		}
+	}
+	if (!returnValue)
+	{ // A interrupt that wasn't used and could have been masked
+		USBPD_STR("!INT");
 	}
 	return returnValue;
 }

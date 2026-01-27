@@ -419,6 +419,12 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			continue;
 		lastTimeSendCheck = now;
 
+		{
+			NVIC_DisableIRQ(EXTI9_5_IRQn);
+			pd_handleOne();
+			NVIC_EnableIRQ(EXTI9_5_IRQn);
+		}
+
 		if (enforceTimeSync)
 		{ // Enforce a certain density of time syncs with both host and connected cameras
 
@@ -636,21 +642,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			LeavePacketHubZone();
 			ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
 		}
-
-		/* static TimePoint lastPDTimer = 0;
-		if (now-lastPDTimer > 8000*TICKS_PER_MS)
-		{
-			now = GetTimePoint();
-			pd_timer();
-			lastPDTimer = now;
-
-			TimeSpan lag = GetTimeSinceUS(now);
-			if (lag > 100)
-			{
-				WARN_STR("!PDtimLag:");
-				WARN_CHARR(INT9999_TO_CHARR(lag));
-			}
-		} */
 
 		/* static TimePoint lastStatTimer = 0;
 		if (now-lastStatTimer > 10000*TICKS_PER_MS)

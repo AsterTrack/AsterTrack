@@ -434,24 +434,8 @@ void EXTI9_5_IRQHandler()
 	LOG_EVT_INT(CONTROLLER_INTERRUPT_PD_INT, true);
 	if (EXTI->INTFR & EXTI_LINE_5)
 	{ // Interrupt pending
-		// Reset IRQ flag
 		EXTI->INTFR = EXTI_LINE_5;
-		TimePoint now = GetTimePoint();
-		while (true)
-		{
-			pd_poll();
-
-			if (GPIO_READ(GPIOB, GPIO_PIN_5))
-				break;
-		}
-		TimeSpan lag = GetTimeSinceUS(now);
-		if (lag > 100)
-		{
-			WARN_STR("!PDextLag:");
-			WARN_CHARR(INT9999_TO_CHARR(lag));
-		}
-		// Reset IRQ flag
-		EXTI->INTFR = EXTI_LINE_5;
+		pd_poll();
 	}
 	LOG_EVT_INT(CONTROLLER_INTERRUPT_PD_INT, false);
 }

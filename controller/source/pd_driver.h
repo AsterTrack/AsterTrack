@@ -25,7 +25,8 @@ extern "C" {
 
 void pd_init();
 void pd_poll();
-void pd_timer();
+void pd_handleOne();
+void pd_handleAll();
 
 #ifdef __cplusplus
 }

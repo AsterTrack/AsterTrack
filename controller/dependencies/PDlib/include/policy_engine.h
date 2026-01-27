@@ -167,6 +167,14 @@ static inline bool hasExplicitContract(PolicyEngine *pe)
 {
 	return pe->_explicit_contract;
 }
+static inline bool inReadyState(PolicyEngine *pe)
+{
+	return pe->state == PESinkReady || (pe->state == PEWaitingEvent && pe->postNotificationEvalState == PESinkReady);
+}
+static inline bool isWaitingOnTimer(PolicyEngine *pe)
+{
+	return false;
+}
 static inline bool NegotiationTimeoutReached(PolicyEngine *pe, uint8_t timeout)
 {
 	// Check if have been waiting longer than timeout without finishing
@@ -191,7 +199,7 @@ static inline bool setupCompleteOrTimedOut(PolicyEngine *pe, uint8_t timeout)
 		return true;
 	if (pe->state == PESinkSourceUnresponsive)
 		return true;
-	if (pe->state == PESinkReady)
+	if (inReadyState(pe))
 		return true;
 	if (NegotiationTimeoutReached(pe, timeout))
 		return true;
@@ -227,9 +235,12 @@ static inline void notify(PolicyEngine *pe, Notifications notification)
 void pe_clearEvents(PolicyEngine *pe, uint32_t notification);
 policy_engine_state pe_waitForEvent(PolicyEngine *pe, policy_engine_state evalState, uint32_t notification, TICK_TYPE timeout);
 
-static inline void renegotiate(PolicyEngine *pe)
+static inline bool pe_renegotiate(PolicyEngine *pe)
 {
+	if (!inReadyState(pe))
+		return false;
 	notify(pe, NOTIF_NEW_POWER);
+	return true;
 }
 
 policy_engine_state pe_sink_startup(PolicyEngine *pe);

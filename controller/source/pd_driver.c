@@ -54,6 +54,8 @@ void pdbs_dpm_get_sink_capability(pd_msg *cap, const bool isPD3);
 static FUSB302 fusb;
 static PolicyEngine pe;
 
+volatile bool handleEvents = false;
+
 int max_req_voltage = 15000;
 int min_req_voltage = 10000;
 
@@ -131,29 +133,31 @@ void pd_init()
 void pd_poll()
 {
 	USBPD_STR("\nPDINT");
-
-	pe_IRQ_occured(&pe);
-
-	log_pe_state('!');
-	while (pe_thread(&pe))
-		log_pe_state('+');
-	log_pe_state('+');
+	TimePoint now = GetTimePoint();
+	handleEvents = pe_IRQ_occured(&pe);
+	TimeSpan lag = GetTimeSinceUS(now);
+	WARN_CHARR('-', '-', INT9999_TO_CHARR(lag), '\n');
 }
 
-
-void pd_timer()
+void pd_handleAll()
 {
-	//if (pe.PPSTimerEnabled)
-	{
-		USBPD_STR("\nPDTIM");
-
-		TimersCallback(&pe);
-
-		log_pe_state('!');
-		while (pe_thread(&pe))
-			log_pe_state('+');
+	if (!handleEvents && !isWaitingOnTimer(&pe))
+		return;
+	while (pe_thread(&pe))
 		log_pe_state('+');
-	}
+	if (pe.state == PEWaitingEvent && handleEvents)
+		log_pe_state('+');
+	handleEvents = false;
+}
+
+void pd_handleOne()
+{
+	if (!handleEvents && !isWaitingOnTimer(&pe))
+		return;
+	bool cont = pe_thread(&pe);
+	if (handleEvents || cont)
+		log_pe_state('+');
+	handleEvents = cont;
 }
 
 

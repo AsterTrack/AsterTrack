@@ -31,12 +31,12 @@ set(INCLUDES
 	../shared
 )
 set(SOURCES
-	source/camera/gcs_v4l2.cpp
 	source/qpu/mailbox.c
 	source/qpu/qpu_base.c
 	source/qpu/qpu_program.c
 	source/qpu/qpu_info.c
 	source/util/fbUtil.c
+	source/camera/gcs_v4l2.cpp
 	source/vcsm/vcsm.cpp
 	source/comm/parsing.cpp
 	source/comm/comm.cpp

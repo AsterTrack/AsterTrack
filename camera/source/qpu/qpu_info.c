@@ -234,15 +234,15 @@ void qpu_logPerformance (QPU_PerformanceState *state)
 
 	// Log performance using excerpts of report
 //	printf("QPU Performance:\n");
-	printf("     Cycles: %llu idle | %llu vert | %llu frag | %llu instructions\n", diff.clkIdle, diff.clkVert, diff.clkFrag, diff.clkInst);
+	printf("     Cycles: %" PRIu64 " idle | %" PRIu64 " vert | %" PRIu64 " frag | %" PRIu64 " instructions\n", diff.clkIdle, diff.clkVert, diff.clkFrag, diff.clkInst);
 	printf("     Clock %uMHz - %uMHz | %.01f%% total load | %.01f%% load for used QPUs | %.1f°C SoC temp\n", state->clockRateMin/1000000, state->clockRateMax/1000000, qpuLoadPerc, qpuUsedLoadPerc, state->tempSOC/1000.0f);
-	printf("     %llu instructions | %llu load cycles | %.01f%% stalls\n", diff.clkInst, loadCycles, qpuStallPerc);
-//	printf("     TMU: %llu stalls | %llu processed | %llu cache misses\n", diff.clkTMUStall, diff.numTMUProc, diff.numTMUMiss);
+	printf("     %" PRIu64 " instructions | %" PRIu64 " load cycles | %.01f%% stalls\n", diff.clkInst, loadCycles, qpuStallPerc);
+//	printf("     TMU: %" PRIu64 " stalls | %" PRIu64 " processed | %" PRIu64 " cache misses\n", diff.clkTMUStall, diff.numTMUProc, diff.numTMUMiss);
 	printf("     TMU: %.1f avg access interval | %.1f avg stall cycles | %.1f%% cached\n", TMUUsageInter, avgTMUStalls, TMUCachedPerc);
-//	printf("     VPM: %llu VDW stall cycles | %llu VCD stall cycles\n", diff.clkVDWStall, diff.clkVCDStall);
+//	printf("     VPM: %" PRIu64 " VDW stall cycles | %" PRIu64 " VCD stall cycles\n", diff.clkVDWStall, diff.clkVCDStall);
 	printf("     VPM: %.1f%% VDW stall | %.1f%% VCD stall (avg of program cycles)\n", VDWStallPerc, VCDStallPerc);
-//	printf("     L2C: %llu hits | %llu misses\n", diff.numL2CHits, diff.numL2CMiss);
-	printf("     L2C: %.2f%% miss (%llu hits | %llu misses)\n", L2CMissPerc, diff.numL2CHits, diff.numL2CMiss);
+//	printf("     L2C: %" PRIu64 " hits | %" PRIu64 " misses\n", diff.numL2CHits, diff.numL2CMiss);
+	printf("     L2C: %.2f%% miss (%" PRIu64 " hits | %" PRIu64 " misses)\n", L2CMissPerc, diff.numL2CHits, diff.numL2CMiss);
 
 	state->clockRateMin = state->clockRateMax = 0;
 

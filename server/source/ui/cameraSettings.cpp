@@ -75,17 +75,22 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		{
 			float fac = 7.62f, off = 5.2f; // Experimentally determined by visually comparing brightness between strobe changes
 			float exposureUS = config.exposure*fac + off;
-			updateConfig |= ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
-			config.exposure = (int)std::round((exposureUS-off)/fac);
+			ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
+			int exposure = (int)std::round((exposureUS-off)/fac);
+			updateConfig |= (config.exposure != exposure);
+			config.exposure = exposure;
 		}
 		{
 			float fac = 8.0f/3.0f, offLen = fac; // Experimentally determined with Oscilloscope
 			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + offLen;
-			updateConfig |= ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
-			updateConfig |= ScalarInput<float>("Strobe Offset", "us", &offsetUS, 0, 255*fac, fac, 1, "%.1f");
+			ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
+			ScalarInput<float>("Strobe Offset", "us", &offsetUS, 0, 255*fac, fac, 1, "%.1f");
 			// TODO: Negative strobe offset should also work, but doesn't currently - min: -255*fac
-			config.strobeOffset = int(offsetUS/fac + (std::signbit(offsetUS)? -0.5f : 0.5f));
-			config.strobeLength = std::lround((lengthUS-offLen)/fac);
+			int strobeOffset = int(offsetUS/fac + (std::signbit(offsetUS)? -0.5f : 0.5f));
+			int strobeLength = std::lround((lengthUS-offLen)/fac);
+			updateConfig |= (config.strobeOffset != strobeOffset) || (config.strobeLength != strobeLength);
+			config.strobeOffset = strobeOffset;
+			config.strobeLength = strobeLength;
 		}
 		updateConfig |= ScalarInput<int>("Gain", "x", &config.gain, 1, 16);
 		EndSection();

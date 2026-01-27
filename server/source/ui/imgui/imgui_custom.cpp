@@ -51,6 +51,14 @@ ImU32 tintStyle(ImGuiCol base, ImVec4 tint)
 	return ImGui::ColorConvertFloat4ToU32(ImGui::GetStyleColorVec4(base) * tint);
 }
 
+template<typename Scalar>
+bool scalarUnchanged(Scalar a, Scalar b, int factor = 1)
+{
+	Scalar min_a = a - (a - std::nextafter(a, std::numeric_limits<Scalar>::lowest())) * factor;
+	Scalar max_a = a + (std::nextafter(a, std::numeric_limits<Scalar>::max()) - a) * factor;
+	return min_a <= b && max_a >= b;
+}
+
 bool IconButtonEx(const char* str_id, ImVec2 size, ImGuiButtonFlags flags, ImRect &bb)
 {
 	ImGuiContext& g = *GImGui;
@@ -273,13 +281,19 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())
 	{
 		Scalar val = std::clamp(temp[0], min, max) / editFactor;
-		update |= val != *value;
-		*value = val;
+		if (!scalarUnchanged(val, *value, 2))
+		{
+			update = true;
+			*value = val;
+		}
 		if (value2)
 		{
 			val = std::clamp(temp[1], min, max) / editFactor;
-			update |= val != *value2;
-			*value2 = val;
+			if (!scalarUnchanged(val, *value2, 2))
+			{
+				update = true;
+				*value2 = val;
+			}
 		}
 	}
 	if (modified && ImGui::BeginPopupContextItem("C"))
@@ -316,13 +330,19 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())
 	{
 		Scalar val = temp[0] / editFactor;
-		update |= val != *value;
-		*value = val;
+		if (!scalarUnchanged(val, *value, 2))
+		{
+			update = true;
+			*value = val;
+		}
 		if (value2)
 		{
-			val = temp[1] / editFactor;
-			update |= val != *value2;
-			*value2 = val;
+			val = std::clamp(temp[1], min, max) / editFactor;
+			if (!scalarUnchanged(val, *value2, 2))
+			{
+				update = true;
+				*value2 = val;
+			}
 		}
 	}
 	ImGui::PopID();

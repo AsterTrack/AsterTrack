@@ -59,6 +59,7 @@ const char* pe_getStateName(uint8_t state)
 							"PESinkWaitEPRKeepAliveAck",
 							"PESinkMeasureCC1",
 							"PESinkMeasureCC2",
+							"PESinkWaitReplug",
 	};
 	const char* unknown = "Unknown";
 	if (state >= sizeof(names))
@@ -166,6 +167,9 @@ bool pe_thread(PolicyEngine *pe)
 		break;
 	case PESinkWaitEPRKeepAliveAck:
 		pe->state = pe_sink_wait_epr_keep_alive_ack(pe);
+		break;
+	case PESinkWaitReplug:
+		pe->state = pe_sink_wait_replug(pe);
 		break;
 	default:
 		pe->state = PESinkStartup;
@@ -338,6 +342,12 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		if ((pe->status.status0 & FUSB_STATUS0_BC_LVL) == 0 && (pe->status.status0 & FUSB_STATUS0_VBUSOK) == 0 && pe->state != PESinkDiscovery && pe->state != PESinkStartup)
 		{ // Lost VBUS voltage on selected CC line, likely disconnected source - go into startup->discovery to rediscover CC line
 			USBPD_STR("!CCLOST");
+			if (pe->state == PESinkWaitReplug)
+			{ // Immediately replug
+				fusb_replugSink(pe->fusb);
+				pe->state = PESinkStartup;
+				return true;
+			}
 			pe->state = PESinkStartup;
 			if (!fusb_reset(pe->fusb))
 				return false;
@@ -349,4 +359,12 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		USBPD_STR("!INT");
 	}
 	return returnValue;
+}
+
+void pe_forceReplug(PolicyEngine *pe)
+{
+	fusb_unplugSink(pe->fusb);
+	pe->waitingEventsTimeout = getTimeStamp() + 100 * 1000; // Wait 100ms
+	pe->state = PESinkWaitReplug;
+	// Either waiting for timeout or CCLost event to replug
 }

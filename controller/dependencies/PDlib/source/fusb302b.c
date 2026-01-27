@@ -313,3 +313,19 @@ bool fusb_read_id(FUSB302 *fusb)
 		return false;
 	return true;
 }
+
+bool fusb_unplugSink(FUSB302 *fusb)
+{
+	// Turns off PDWN (Pulldown resistors)
+	if (!fusb_write_byte(fusb, FUSB_SWITCHES0, 0))
+		return false;
+	return true;
+}
+
+bool fusb_replugSink(FUSB302 *fusb)
+{
+	// Turns off PDWN (Pulldown resistors)
+	if (!fusb_write_byte(fusb, FUSB_SWITCHES0, FUSB_SWITCHES0_PDWN_1 | FUSB_SWITCHES0_PDWN_2))
+		return false;
+	return true;
+}

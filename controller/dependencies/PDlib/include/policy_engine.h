@@ -58,6 +58,7 @@ typedef enum {
 	PESinkWaitEPRKeepAliveAck   = 29, // wait for the Source to acknowledge the keep alive
 	PESinkMeasureCC1            = 30, // measure CC lines 1 before making a selection
 	PESinkMeasureCC2            = 31, // measure CC lines 2 before making a selection
+	PESinkWaitReplug            = 32, // wait for a timeout before attempting to replug
 } policy_engine_state;
 
 typedef enum {
@@ -176,7 +177,7 @@ static inline bool inReadyState(PolicyEngine *pe)
 }
 static inline bool isWaitingOnTimer(PolicyEngine *pe)
 {
-	return pe->state == PESinkMeasureCC1 || pe->state == PESinkMeasureCC2;
+	return pe->state == PESinkMeasureCC1 || pe->state == PESinkMeasureCC2 || pe->state == PESinkWaitReplug;
 }
 static inline bool NegotiationTimeoutReached(PolicyEngine *pe, uint8_t timeout)
 {
@@ -246,6 +247,8 @@ static inline bool pe_renegotiate(PolicyEngine *pe)
 	return true;
 }
 
+void pe_forceReplug(PolicyEngine *pe);
+
 policy_engine_state pe_sink_startup(PolicyEngine *pe);
 policy_engine_state pe_sink_discovery(PolicyEngine *pe);
 policy_engine_state pe_sink_measure_cc1(PolicyEngine *pe);
@@ -280,5 +283,6 @@ policy_engine_state pe_sink_send_epr_keep_alive(PolicyEngine *pe);
 policy_engine_state pe_sink_wait_epr_keep_alive_ack(PolicyEngine *pe);
 // Sending messages, starts send and returns next state
 policy_engine_state pe_start_message_tx(PolicyEngine *pe, policy_engine_state postTxState, policy_engine_state txFailState, pd_msg *msg);
+policy_engine_state pe_sink_wait_replug(PolicyEngine *pe);
 
 #endif /* PDB_POLICY_ENGINE_H */

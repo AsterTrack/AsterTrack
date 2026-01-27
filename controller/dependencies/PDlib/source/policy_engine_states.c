@@ -682,3 +682,12 @@ policy_engine_state pe_sink_wait_epr_keep_alive_ack(PolicyEngine *pe)
 	// Retry for ack
 	return PESinkWaitEPRKeepAliveAck;
 }
+
+policy_engine_state pe_sink_wait_replug(PolicyEngine *pe)
+{
+	if (getTimeStamp() < pe->waitingEventsTimeout)
+		return PESinkWaitReplug;
+	// Ideally, by now CCLost Event should have done the following already:
+	fusb_replugSink(pe->fusb);
+	return PESinkStartup;
+}

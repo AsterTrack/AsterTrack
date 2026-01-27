@@ -94,40 +94,78 @@ void pd_init()
 
 	if (fusb_setup(&fusb))
 	{ // Connected and set up FUSB, without resetting possible prior state
-		//pe_IRQ_occured(&pe);
-		if (fusb_isVBUSConnected(&fusb))
+		if (fusb_checkVBUS(&fusb, 500))
 		{ // Can attempt to select CC lines to communicate
-			if (fusb_checkVBUS(&fusb, min_req_voltage) && fusb_hasCCLineSelection(&fusb))
+			USBPD_STR("+VBUS_CONN");
+
+			if (fusb_checkVBUS(&fusb, min_req_voltage))
 			{ // Already set up VBUS, likely had reset - forcibly set to ready state
 				USBPD_STR("+VBUS_RDY>");
-				//pe.state = PESinkReady;
-				pe.state = PESinkSendSoftReset;
-			}
-			else
-			{
-				USBPD_STR("+HAS_VBUS");
-				int ccSel = fusb_runCCLineSelection(&fusb);
-				if (ccSel == 0)
+
+				if (!fusb_hasCCLineSelection(&fusb))
 				{
-					pe.state = PESinkSendSoftReset;
-					USBPD_STR("+CCSEL");
-				}
-				else if (ccSel < 0)
-				{
-					USBPD_STR("+CCFDT");
+					USBPD_STR("+SEL_CC");
+					int ccSel = fusb_runCCLineSelection(&fusb);
+					if (ccSel == 0)
+					{
+						USBPD_STR("+CCSEL");
+						pe.state = PESinkReady;
+					}
+					else if (ccSel < 0)
+					{
+						USBPD_STR("+CCFDT");
+						pe.state = PESinkSendSoftReset;
+					}
+					else
+					{
+						USBPD_STR("+CCNDT");
+						pe.state = PESinkSendSoftReset;
+					}
 				}
 				else
 				{
-					USBPD_STR("+CCNDT");
+					USBPD_STR("+HAS_CC");
+					pe.state = PESinkReady;
 				}
+			}
+			else
+			{
+				USBPD_STR("+VBUS_CONN");
+				pe.state = PESinkDiscovery;
+			}
+
+			if (pe.state == PESinkReady)
+			{ // Ww can immediately renegotiate without dropping power
+				USBPD_STR("+RENEGOTIATE");
+				// Get status and handle any prior states
+				handleEvents = pe_IRQ_occured(&pe);
+				while (handleEvents)
+					pd_handleAll();
+				// Initiate a renegotiation
+				pe_renegotiate(&pe);
+				// Handle
+				handleEvents = true;
+				pd_handleAll();
+			}
+			else
+			{ // There is a PD Source connected, but communications are uncertain
+				// E.g. PD Source sent capabilities and timed out while controller was still powered off
+				// Or controller failed negotiations before a reset
+				// Either way, simulate a real re-plug
+				USBPD_STR("+REPLUG");
+				pe_forceReplug(&pe);
 			}
 		}
 		else
+		{ // Else wait for interrupt
 			USBPD_STR("+NO_VBUS");
-		// Else wait for interrupt
-	}
+			pe.state = PESinkStartup;
+		}
 
-	log_pe_state('=');
+		log_pe_state('=');
+	}
+	else
+		USBPD_STR("!PDSTP_FAILED");
 }
 
 void pd_poll()
@@ -158,6 +196,13 @@ void pd_handleOne()
 	if (handleEvents || cont)
 		log_pe_state('+');
 	handleEvents = cont;
+}
+
+void pd_renegotiate()
+{
+	ERR_STR("\nRenegotiating PD!");
+	pe_renegotiate(&pe);
+	handleEvents = true;
 }
 
 

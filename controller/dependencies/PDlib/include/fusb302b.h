@@ -122,4 +122,8 @@ bool fusb_checkVBUS(FUSB302 *fusb, uint16_t minVBUS_mv);
 
 bool fusb_hasCCLineSelection(FUSB302 *fusb);
 
+bool fusb_unplugSink(FUSB302 *fusb);
+
+bool fusb_replugSink(FUSB302 *fusb);
+
 #endif /* PDB_FUSB302B_H */

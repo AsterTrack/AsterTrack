@@ -27,6 +27,7 @@ void pd_init();
 void pd_poll();
 void pd_handleOne();
 void pd_handleAll();
+void pd_renegotiate();
 
 #ifdef __cplusplus
 }

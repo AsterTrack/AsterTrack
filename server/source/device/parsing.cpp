@@ -137,17 +137,18 @@ bool ReadDebugPacket(TrackingControllerState &controller, uint8_t *data, int len
 			if (data[i] == '&')
 				digitPos = 1;
 		} */
-		if (data[i] == '\n' && i != curPos)
+		if (data[i] == '\n')
 		{
-			LOG(LControllerDevice, curLevel, "%.*s", i-curPos, (char *)(data+curPos));
+			if (i != curPos)
+				LOG(LControllerDevice, curLevel, "%.*s", i-curPos, (char *)(data+curPos));
 			curLevel = LDebug;
 			curPos = i+1;
 		}
 		else if (data[i] < 32)
 			data[i] = '*';
-		else if (data[i] == '!')
+		else if (data[i] == '!' && curLevel < LDarn)
 			curLevel = LDarn;
-		else if (data[i] == '#')
+		else if (data[i] == '#' && curLevel < LError)
 			curLevel = LError;
 
 	}

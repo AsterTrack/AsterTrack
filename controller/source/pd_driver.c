@@ -30,12 +30,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "fusb302_defines.h"
 #include "policy_engine.h"
 
-#if USBPD_LOG || PD_CAPS
-#define PDCAP_CHARR LOG_CHARR
-#else
-#define PDCAP_CHARR(...) {}
-#endif
-
 bool i2c_read(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf);
 bool i2c_write(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf);
 void pd_delayUS(uint32_t us)
@@ -65,7 +59,7 @@ int min_req_voltage = 10000;
 inline static void log_pe_state(char conn)
 {
 #if USBPD_LOG
-	USBPD_CHARR('!');
+	USBPD_CHARR(conn);
 	const char *stateName = pe_getStateName(pe.state);
 	USBPD_BUF(stateName, strlen(stateName));
 	if (pe.state == PEWaitingEvent)
@@ -84,7 +78,7 @@ void pd_init()
 	fusb.DeviceAddress = FUSB302B_ADDR;
 	pe_init(&pe, &fusb, pdbs_dpm_get_sink_capability, pdbs_dpm_evaluate_capability, NULL, 0);
 
-	USBPD_CHARR('\n', '/', 'P', 'D', 'S', 'T', 'P');
+	USBPD_STR("\nPDSTP");
 
 	// TODO: Might have to call TimersCallback every 5-10s to keep voltage coming (for PPS specifically)
 
@@ -102,31 +96,31 @@ void pd_init()
 		{ // Can attempt to select CC lines to communicate
 			if (fusb_checkVBUS(&fusb, min_req_voltage) && fusb_hasCCLineSelection(&fusb))
 			{ // Already set up VBUS, likely had reset - forcibly set to ready state
-				USBPD_CHARR('+', 'V', 'B', 'S', 'R', 'D', 'Y');
+				USBPD_STR("+VBUS_RDY>");
 				//pe.state = PESinkReady;
 				pe.state = PESinkSendSoftReset;
 			}
 			else
 			{
-				USBPD_CHARR('+', 'V', 'B', 'S', 'C', 'N', 'C');
+				USBPD_STR("+HAS_VBUS");
 				int ccSel = fusb_runCCLineSelection(&fusb);
 				if (ccSel == 0)
 				{
 					pe.state = PESinkSendSoftReset;
-					USBPD_CHARR('+', 'C', 'C', 'S', 'E', 'L');
+					USBPD_STR("+CCSEL");
 				}
 				else if (ccSel < 0)
 				{
-					USBPD_CHARR('+', 'C', 'C', 'F', 'D', 'T');
+					USBPD_STR("+CCFDT");
 				}
 				else
 				{
-					USBPD_CHARR('+', 'C', 'C', 'N', 'D', 'T');
+					USBPD_STR("+CCNDT");
 				}
 			}
 		}
 		else
-			USBPD_CHARR('+', 'V', 'B', 'S', 'D', 'C', 'N');
+			USBPD_STR("+NO_VBUS");
 		// Else wait for interrupt
 	}
 
@@ -135,7 +129,7 @@ void pd_init()
 
 void pd_poll()
 {
-	USBPD_CHARR('\n', '/', 'P', 'D', 'I', 'N', 'T');
+	USBPD_STR("\nPDINT");
 
 	pe_IRQ_occured(&pe);
 
@@ -150,7 +144,7 @@ void pd_timer()
 {
 	//if (pe.PPSTimerEnabled)
 	{
-		USBPD_CHARR('\n', '/', 'T', 'M');
+		USBPD_STR("\nPDTIM");
 
 		TimersCallback(&pe);
 
@@ -170,7 +164,8 @@ bool pdbs_dpm_evaluate_capability(const pd_msg *capabilities, pd_msg *request)
 	// Get the number of PDOs
 	uint8_t numobj = PD_NUMOBJ_GET(capabilities);
 
-	PDCAP_CHARR('\n', '/', 'P', 'D', 'E', 'V', INT99_TO_CHARR(numobj));
+	PDCAP_STR("\nPDEV");
+	PDCAP_CHARR(INT99_TO_CHARR(numobj));
 
 	// Get whether or not the power supply is constrained
 
@@ -283,21 +278,21 @@ bool pdbs_dpm_evaluate_capability(const pd_msg *capabilities, pd_msg *request)
 			request->obj[0] = PD_RDO_NO_USB_SUSPEND | PD_RDO_OBJPOS_SET(bestIndex + 1) | 
 				PD_RDO_PROG_CURRENT_SET(PD_MA2PAI(bestIndexCurrent)) | 
 				PD_RDO_PROG_VOLTAGE_SET(PD_MV2PRV(bestIndexVoltage));
-			PDCAP_CHARR('=', 'P', '0'+bestIndex, ':', INT999_TO_CHARR(bestIndexVoltage/100), ':', INT999_TO_CHARR(bestIndexCurrent/100));
+			PDCAP_CHARR('=', 'P', '0'+bestIndex, ':', INT999_TO_CHARR(bestIndexVoltage/100), ':', INT999_TO_CHARR(bestIndexCurrent/100), '\n');
 		}
 		else
 		{ // Fixed and Variable share same RDO format
 			request->obj[0] = PD_RDO_NO_USB_SUSPEND | PD_RDO_OBJPOS_SET(bestIndex + 1) | 
 				PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(bestIndexCurrent)) | 
 				PD_RDO_FV_CURRENT_SET(PD_MA2PDI(bestIndexCurrent));
-			PDCAP_CHARR('=', bestIsVariable? 'V' : 'F', '0'+bestIndex, ':', INT999_TO_CHARR(bestIndexVoltage/100), ':', INT999_TO_CHARR(bestIndexCurrent/100));
+			PDCAP_CHARR('=', bestIsVariable? 'V' : 'F', '0'+bestIndex, ':', INT999_TO_CHARR(bestIndexVoltage/100), ':', INT999_TO_CHARR(bestIndexCurrent/100), '\n');
 		}
 		// USB Data
 		request->obj[0] |= PD_RDO_USB_COMMS;
 	}
 	else
 	{
-		PDCAP_CHARR('=', '!');
+		PDCAP_CHARR('=', '!', '\n');
 		return false;
 	}
 	/* else
@@ -323,7 +318,7 @@ void pdbs_dpm_get_sink_capability(pd_msg *cap, const bool isPD3)
 {
 	// Keep track of how many PDOs we've added
 	int numobj = 0;
-	USBPD_CHARR('\n', '/', 'P', 'D', 'C', 'P');
+	USBPD_STR("\nPDCP");
 
 	// Must always have a PDO object for vSafe5V, indicate the bare minimum power required
 	// Minimum current, 5 V, and higher capability.

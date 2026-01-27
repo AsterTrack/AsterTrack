@@ -96,12 +96,12 @@ policy_engine_state pe_sink_wait_cap(PolicyEngine *pe)
 				if ((pe->tempMessage.hdr & PD_HDR_SPECREV) >= PD_SPECREV_3_0)
 				{ // If the other end is using at least version 3.0, we'll use version 3.0.
 					pe->hdr_template |= PD_SPECREV_3_0;
-					USBPD_CHARR('+', 'V', '3');
+					USBPD_STR("+V3");
 				}
 				else
 				{ // Otherwise, use 2.0.  Don't worry about the 1.0 case because we don't have hardware for PD 1.0 signaling.
 					pe->hdr_template |= PD_SPECREV_2_0;
-					USBPD_CHARR('+', 'V', '2');
+					USBPD_STR("+V2");
 				}
 			}
 			return PESinkEvalCap;

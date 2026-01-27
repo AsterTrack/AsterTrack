@@ -331,10 +331,20 @@ do { \
 #define USBPD_BUF LOG_BUF
 #define USBPD_CHARR LOG_CHARR
 #define USBPD_STR LOG_STR
+#define USBPD_HEX LOG_HEX
 #else
 #define USBPD_BUF(...) do {} while(false)
 #define USBPD_CHARR(...) do {} while(false)
 #define USBPD_STR(...) do {} while(false)
+#define USBPD_HEX(...) do {} while(false)
+#endif
+
+#if USBPD_LOG || PD_CAPS
+#define PDCAP_CHARR LOG_CHARR
+#define PDCAP_STR LOG_STR
+#else
+#define PDCAP_CHARR(...) do {} while(false)
+#define PDCAP_STR(...) do {} while(false)
 #endif
 
 #if POW_LOG

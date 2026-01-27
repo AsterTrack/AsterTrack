@@ -260,7 +260,7 @@ void readPendingMessage(PolicyEngine *pe)
 			// If it's a Soft_Reset, go to the soft reset state
 			if (PD_MSGTYPE_GET(&pe->irqMessage) == PD_MSGTYPE_SOFT_RESET && PD_NUMOBJ_GET(&pe->irqMessage) == 0)
 			{ // PE transitions to its reset state
-				USBPD_CHARR('=', 'R', 'S', 'T');
+				USBPD_STR("=RST");
 				notify(pe, NOTIF_RESET);
 			}
 			else
@@ -271,7 +271,7 @@ void readPendingMessage(PolicyEngine *pe)
 		}
 		else
 		{
-			USBPD_CHARR(':', 'S', 'O', 'P');
+			USBPD_STR(":SOP");
 		} // Invalid message or SOP'
 
 		pending = fusb_rx_pending(pe->fusb);
@@ -289,14 +289,14 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 
 		if ((pe->status.status0 & FUSB_STATUS0_CRC_CHK))
 		{
-			USBPD_CHARR('>', 'C', 'R', 'C', 'K');
+			USBPD_STR(">CRCK");
 		}
 
 		// If the I_GCRCSENT flag is set, tell the Protocol RX thread
 		// This means a message was received with a good CRC
 		if (pe->status.interruptb & FUSB_INTERRUPTB_I_GCRCSENT)
 		{
-			USBPD_CHARR('>', 'G', 'C', 'R', 'C');
+			USBPD_STR(">GCRC");
 			readPendingMessage(pe);
 			returnValue = true;
 		}
@@ -305,7 +305,7 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		// This means a message was received (not necessarily with good CRC?)
 		if (!(pe->status.status1 & FUSB_STATUS1_RX_EMPTY))
 		{
-			USBPD_CHARR('>', 'P', 'M', 'S', 'G');
+			USBPD_STR(">PMSG");
 			//readPendingMessage(pe);
 			//returnValue = true;
 		}
@@ -313,13 +313,13 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		// If the I_TXSENT or I_RETRYFAIL flag is set, tell the Protocol TX thread
 		if (pe->status.interrupta & FUSB_INTERRUPTA_I_TXSENT)
 		{
-			USBPD_CHARR('>', 'T', 'X', 'S', 'T');
+			USBPD_STR(">TXST");
 			notify(pe, NOTIF_I_TXSENT);
 			returnValue = true;
 		}
 		if (pe->status.interrupta & FUSB_INTERRUPTA_I_RETRYFAIL)
 		{
-			USBPD_CHARR('>', 'R', 'T', 'Y', 'F');
+			USBPD_STR(">RTYF");
 			notify(pe, NOTIF_I_RETRYFAIL);
 			returnValue = true;
 		}
@@ -327,14 +327,14 @@ bool pe_IRQ_occured(PolicyEngine *pe)
 		// If the I_OCP_TEMP and OVRTEMP flags are set, tell the Policy Engine thread
 		if ((pe->status.interrupta & FUSB_INTERRUPTA_I_OCP_TEMP) && (pe->status.status1 & FUSB_STATUS1_OVRTEMP))
 		{
-			USBPD_CHARR('>', 'O', 'V', 'T', 'P');
+			USBPD_STR(">OVTP");
 			notify(pe, NOTIF_I_OVRTEMP);
 			returnValue = true;
 		}
 
 		if ((pe->status.status0 & FUSB_STATUS0_BC_LVL) == 0 && (pe->status.status0 & FUSB_STATUS0_VBUSOK) == 0 && pe->state != PESinkDiscovery && pe->state != PESinkStartup)
 		{ // Lost VBUS voltage on selected CC line, likely disconnected source - go into startup->discovery to rediscover CC line
-			USBPD_CHARR('!', 'C', 'C', 'L', 'O', 'S', 'T');
+			USBPD_STR("!CCLOST");
 			pe->state = PESinkStartup;
 			if (!fusb_reset(pe->fusb))
 				return false;

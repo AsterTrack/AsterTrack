@@ -117,10 +117,11 @@ uint8_t fusb_read_message(FUSB302 *fusb, pd_msg *msg)
 		I2CRead(fusb->DeviceAddress, FUSB_FIFOS, numobj * 4, msg->bytes + 2);
 	// Throw the CRC32 in the garbage, since the PHY already checked it.
 	I2CRead(fusb->DeviceAddress, FUSB_FIFOS, 4, garbage);
-	USBPD_CHARR('/', 'P', 'K', 'T');
-	ERR_HEX(msg->bytes, 2+(numobj*4));
-	USBPD_CHARR('+', 'C', 'R', 'C');
-	ERR_HEX(garbage, 4);
+	USBPD_STR("/PKT");
+	USBPD_CHARR('(', UINT9_TO_CHARR(numobj), ')', ':');
+	USBPD_HEX(msg->bytes, 2+(numobj*4));
+	//USBPD_STR("+CRC");
+	//USBPD_HEX(garbage, 4);
 
 	return returnValue;
 }

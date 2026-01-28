@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp"
 
+#include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <cstring>
@@ -40,6 +41,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <sys/ioctl.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
+
+//#define WRITE_TIMESYNC_LOG
 
 const char *i2c_port = "/dev/i2c-1";
 unsigned int i2c_fd = -1;
@@ -67,6 +70,10 @@ TimeSync timesync;
 
 StatFloatDistf supplyVoltage(100);
 std::atomic<uint16_t> floatingSupplyVoltageMV;
+
+#ifdef WRITE_TIMESYNC_LOG
+std::ofstream timesyncOut;
+#endif
 
 volatile bool mcu_exists;
 volatile bool mcu_active;
@@ -124,6 +131,9 @@ bool mcu_initial_connect()
 
 bool mcu_init()
 {
+#ifdef WRITE_TIMESYNC_LOG
+	timesyncOut.open(asprintf_s("/home/tc/timesync_%d.csv", rand()), std::ios_base::out | std::ios_base::app);
+#endif
 	mcu_active = false;
 	mcu_exists = false;
 	bool i2c = i2c_init();
@@ -196,6 +206,10 @@ void mcu_cleanup()
 
 	if (i2c_fd >= 0)
 		i2c_cleanup();
+
+#ifdef WRITE_TIMESYNC_LOG
+	timesyncOut.close();
+#endif
 }
 
 static bool handle_i2c_error()
@@ -710,6 +724,9 @@ bool mcu_get_status()
 	uint16_t timestampUS = (packet[4] << 8) | packet[5];
 	if (dtUS(timesync.lastTime, sclock::now()) > 1000000)
 		ResetTimeSync(timesync);
+#ifdef WRITE_TIMESYNC_LOG
+	static TimePoint_t timeReference = sclock::now();
+#endif
 	TimePoint_t sendTime;
 	uint64_t timestamp = RebaseSourceTimestamp(timesync, timestampUS, 1<<16, estSendTime);
 	//if (std::abs(roundtripTimeUS - observedRoundtripUS) < 50)
@@ -746,6 +763,10 @@ bool mcu_get_status()
 			framesync.frameSOFs.pop();
 		framesync.frameSOFs.emplace(lastReceivedFrameID, SOF);
 	}
+#ifdef WRITE_TIMESYNC_LOG
+	timesyncOut << timestamp << "," << dtUS(timeReference, estSendTime) << ","
+		<< roundtripTimeUS << "," << usSinceFrameID << std::endl;
+#endif
 
 	uint8_t queueSize = packet[9];
 	uint8_t packetSize = (packet[10] << 8) | packet[11];

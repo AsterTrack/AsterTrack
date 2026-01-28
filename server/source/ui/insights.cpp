@@ -31,6 +31,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imguizmo/ImSequencer.hpp"
 #include "implot/implot.h"
 
+#include "ctpl/ctpl.hpp"
+#include <filesystem>
+extern ctpl::thread_pool threadPool;
+
+#include "nativefiledialog-extended/nfd.h"
+#include "nativefiledialog-extended/nfd_glfw3.h"
+
+#include <fstream>
+
 
 struct TargetViewSequence : public ImSequencer::SequenceInterface
 {
@@ -1323,11 +1332,6 @@ static void CleanTrackingControllerPanel()
 	lastControllerTab = nullptr;
 }
 
-enum class TimeType { None = -1, TimeSync, Latency, Max };
-const char* timeTypeSelection[] = { "TimeSync", "Latency" };
-static TimeType timeType = TimeType::None;
-static int sourceType = -1;
-static int sourceIndex = -1;
 static int PlotFormatterTimeUS(double value, char* buff, int size, void* data)
 {
 	ImAxis axis = (ImAxis)(intptr_t)data;
@@ -1407,7 +1411,7 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 		ImPlot::SetupAxis(ImAxis_X1, "Base Timestamp", ImPlotAxisFlags_AutoFit);
 		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_X1);
 		ImPlot::SetupAxis(ImAxis_Y1, "Drift / Latency", ImPlotAxisFlags_AutoFit);
-		ImPlot::SetupAxisFormat(ImAxis_X1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_Y1);
+		ImPlot::SetupAxisFormat(ImAxis_Y1, PlotFormatterTimeUS, (void*)(intptr_t)ImAxis_Y1);
 
 		static std::vector<double> sourceTimestamps;
 		static std::vector<double> measuredTimesOffset;
@@ -1561,10 +1565,50 @@ static bool ShowLatencyPanel(BlockedQueue<LatencyMeasurement, 4096>::View<true> 
 
 	return true;
 }
+static BlockedQueue<TimeSyncMeasurement, 4096> recordedTimesync;
 static bool ShowTimingPanel()
 {
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
+
+	enum class TimeType { None = -1, TimeSync, Latency, Max };
+	const char* timeTypeSelection[] = { "TimeSync", "Latency" };
+	static TimeType timeType = TimeType::None;
+	static int sourceType = -1;
+	static int sourceIndex = -1;
+	static std::string sourceLabel;
+
+	static std::vector<std::string> recordedTimesyncs;
+	auto getRecordingLabel = [](std::string &record)
+	{
+		std::size_t pos = record.find_last_of('/');
+		pos = (pos == std::string::npos)? 0 : pos+1;
+		return asprintf_s("Record '%s'", record.c_str()+pos);
+	};
+	auto loadTimeSyncRecording = [&getRecordingLabel](int index)
+	{
+		std::ifstream ifs(recordedTimesyncs[index]);
+		if (!ifs.is_open()) return;
+		recordedTimesync.cull_clear();
+		sourceType = 3;
+		sourceIndex = index;
+		sourceLabel = getRecordingLabel(recordedTimesyncs[index]);
+		TimePoint_t startReference = sclock::now();
+		std::string line;
+		while (std::getline(ifs, line))
+		{
+			uint64_t timestamp, receiveTimeEst, roundtripUS, timeSinceFrameUS; // Last two are optional
+			int cnt = std::sscanf(line.c_str(), "%lu, %lu, %lu, %lu", &timestamp, &receiveTimeEst, &roundtripUS, &timeSinceFrameUS);
+			if (cnt >= 2)
+			{
+				TimeSyncMeasurement meas;
+				meas.timestamp = timestamp;
+				meas.measurement = startReference + std::chrono::microseconds(receiveTimeEst);
+				meas.estimation = meas.measurement; // No estimation
+				recordedTimesync.push_back(std::move(meas));
+			}
+		}
+	};
 
 	static const char* typeLabel;
 	if (timeType == TimeType::None) typeLabel = "Select Type";
@@ -1585,7 +1629,6 @@ static bool ShowTimingPanel()
 	if (timeType == TimeType::None) return false;
 
 	ImGui::SameLine();
-	static std::string sourceLabel;
 	if (sourceType < 0) sourceLabel = "Select Source";
 	if (ImGui::BeginCombo("Source", sourceLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{
@@ -1640,9 +1683,63 @@ static bool ShowTimingPanel()
 			if (!label.empty())
 				ImGui::Unindent();
 		}
+		if (timeType == TimeType::TimeSync)
+		{
+			for (int i = 0; i < recordedTimesyncs.size(); i++)
+			{
+				if (!ImGui::Selectable(getRecordingLabel(recordedTimesyncs[i]).c_str(), sourceType == 3 && sourceIndex == i)) continue;
+				loadTimeSyncRecording(i);
+				changed = true;
+			}
+		}
 		ImGui::EndCombo();
 		if (changed)
 			ImGui::MarkItemEdited(ImGui::GetItemID());
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("Open Recording"))
+	{
+		threadPool.push([&loadTimeSyncRecording](int id)
+		{
+			if (!NFD_Init())
+			{ // Thread-specific init
+				SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
+				return;
+			}
+
+			const int filterLen = 1;
+			nfdfilteritem_t filterList[filterLen] = {
+
+				{"Camera TimeSync Recording", "csv"},
+			};
+			nfdchar_t *outPath;
+		#ifdef _WIN32
+			std::string defPath = "Downloads";
+		#else
+			std::string defPath = std::filesystem::current_path();
+		#endif
+			nfdopendialogu8args_t args;
+			args.filterList = filterList;
+			args.filterCount = filterLen;
+			args.defaultPath = defPath.c_str();
+			NFD_GetNativeWindowFromGLFWWindow(GetUI().glfwWindow, &args.parentWindow);
+			nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+			if (result == NFD_OKAY)
+			{
+				recordedTimesyncs.push_back(std::string(outPath));
+				loadTimeSyncRecording(recordedTimesyncs.size()-1);
+				NFD_FreePath(outPath);
+			}
+			else if (result == NFD_ERROR)
+			{
+				SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+			}
+
+			NFD_Quit();
+
+			GetUI().RequestUpdates();
+		});
 	}
 
 	// Update all available TimingRecord sources and find selected
@@ -1691,6 +1788,17 @@ static bool ShowTimingPanel()
 		if (!imuProviders->at(i)) continue;
 		if (!handleTimingRecord(imuProviders->at(i)->timingRecord, sourceType == 2 && sourceIndex == i)) continue;
 	}
+	if (timeType == TimeType::TimeSync && sourceType == 3 && sourceIndex >= 0)
+	{
+		timesyncView = recordedTimesync.getView();
+		found = true;
+	}
+	else
+	{
+		recordedTimesync.cull_clear();
+		recordedTimesync.delete_culled();
+	}
+
 	if (!found) return false; // Influences if we get to cleanup after panel gets inactive
 	imuProviders.unlock();
 	ui.RequestUpdates();
@@ -1717,4 +1825,5 @@ static void CleanTimingPanel()
 		if (!imuProviders->at(i)) continue;
 		imuProviders->at(i)->timingRecord.clear();
 	}
+	recordedTimesync.clear();
 }

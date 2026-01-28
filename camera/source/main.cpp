@@ -257,6 +257,9 @@ int main(int argc, char **argv)
 
 	// ---- Init Application ----
 
+	//srand(1111110);
+	srand(time(0)); // Sufficient to get new random values every time
+
 	prctl(PR_SET_NAME, "Thread_CPU");
 
 	// Setup handler to catch segfaults

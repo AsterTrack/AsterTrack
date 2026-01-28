@@ -112,7 +112,7 @@ static inline DIFF shortDiff(TRUNC a, TRUNC b, DIFF bias, TRUNC max = std::numer
 {
 	static_assert(std::numeric_limits<TRUNC>::lowest() == 0);
 	assert(a <= max && b <= max);
-	DIFF passed = ((DIFF)b) - a;
+	DIFF passed = b < a? -(DIFF)(a-b) : (DIFF)(b-a);
 	if (passed < -bias)
 		passed = passed + 1 + max;
 	else if (passed > max-bias)

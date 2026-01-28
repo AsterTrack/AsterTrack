@@ -36,12 +36,8 @@ SOFTWARE.
  * Estimates from lowest-latency transfer
  */
 
-struct TimeSync
+struct TimeSyncParams
 {
-	uint32_t measurements;
-	uint64_t lastTimestamp;
-	float drift; // actualUS = (long)(controllerUS * (1+drift))
-	float driftAccum;
 	float driftLerp = 0.0000004f;
 	float driftBias = 0.0000000f;
 	int driftInitRange = 1000;
@@ -49,6 +45,15 @@ struct TimeSync
 	float driftDownwardCorrect = 200.0f;
 	float driftDownwardJump = 0.20f;
 	int timeOffsetUS = -20;
+};
+
+struct TimeSync
+{
+	TimeSyncParams params = {};
+	uint32_t measurements;
+	uint64_t lastTimestamp;
+	float drift; // actualUS = (long)(controllerUS * (1+drift))
+	float driftAccum;
 	TimePoint_t lastTime;
 	StatDistf diff;
 	StatDistf syncSwitch;

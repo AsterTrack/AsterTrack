@@ -330,7 +330,11 @@ void DevicesStartStreaming(ServerState &state)
 
 	for (auto &controller : state.controllers)
 	{
-		ResetTimeSync(*controller->timeSync.contextualLock());
+		{
+			auto timeSync = controller->timeSync.contextualLock();
+			timeSync->params = TimeSyncParamsForUSB;
+			ResetTimeSync(*timeSync);
+		}
 
 		// Open the comm channels (interrupt transfers) to the controller for streaming
 		if (!comm_startStream(controller->comm))

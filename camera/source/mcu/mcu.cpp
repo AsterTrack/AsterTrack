@@ -66,7 +66,7 @@ std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
 TimePoint_t lastPing;
 
-TimeSync timesync;
+TimeSync timesync { TimeSyncParamsForMCU_HSE };
 
 StatFloatDistf supplyVoltage(100);
 std::atomic<uint16_t> floatingSupplyVoltageMV;
@@ -264,7 +264,7 @@ static void mcu_thread()
 
 		if (events == 0)
 		{ // Wait for interrupt line to be pulled low
-			events = gpiod_line_request_wait_edge_events(line_request_in, 50*1000*1000);
+			events = gpiod_line_request_wait_edge_events(line_request_in, 10*1000*1000);
 			if (events < 0)
 			{
 				printf("Failed to detect interrupts from MCU!\n");
@@ -610,6 +610,13 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 	}
 	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
 	info.mcuHWDetection = (CameraHWDetection)packet[3];
+	if ((info.mcuHWDetection & MCU_HW_HAS_HSE))
+		timesync.params = TimeSyncParamsForMCU_HSE;
+	else
+	{ // If MCU doesn't have a stable HSE clock, timesync needs to be much more aggressive to counter the wildly varying drift
+		printf("Using aggressive timesync parameters to compensate for MCU using HSI!\n");
+		timesync.params = TimeSyncParamsForMCU_HSI;
+	}
 
 	uint8_t *ptr = packet+8;
 	memcpy(&config.cameraID, ptr, sizeof(CameraID));
@@ -755,9 +762,9 @@ bool mcu_get_status()
 		//	lastExtrapolatedFrameID, lastFrameID, usSinceFrameID, responseTimeUS, roundtripTimeUS); 
 		TimePoint_t SOF = sendTime - std::chrono::microseconds(usSinceFrameID);
 		if (usSinceFrameID > 1000)
-			printf("Received exceedingly delayed SOF for frame %d from %ldus ago!\n", lastFrameID, usSinceFrameID);
+			printf("Received exceedingly delayed SOF for frame %d from %dus ago!\n", lastFrameID, usSinceFrameID);
 		else if (dtMS(SOF, sclock::now()) > 1.5f)
-			printf("Frame %d SOF is reported to be from %ldus ago, timesync set it to be %.2fms ago (drift %.5f) with roundtime of %.2fms!\n",
+			printf("Frame %d SOF is reported to be from %dus ago, timesync set it to be %.2fms ago (drift %.5f) with roundtime of %.2fms!\n",
 			lastFrameID, usSinceFrameID, dtMS(SOF, sclock::now()), timesync.drift, roundtripTimeUS/1000.0f);
 		std::unique_lock lock(framesync.access);
 		if (framesync.frameSOFs.size() > 5)

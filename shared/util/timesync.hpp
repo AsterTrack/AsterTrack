@@ -38,18 +38,23 @@ SOFTWARE.
 
 struct TimeSyncParams
 {
-	float driftLerp = 0.0000004f;
-	float driftBias = 0.0000000f;
-	int driftInitRange = 1000;
-	float driftInitAdapt = 10.0f;
-	float driftDownwardCorrect = 200.0f;
-	float driftDownwardJump = 0.20f;
-	int timeOffsetUS = -20;
+	float driftLerp;
+	float driftBias;
+	int driftInitRange;
+	float driftInitAdapt;
+	float driftDownwardCorrect;
+	float driftDownwardJump;
+	int timeOffsetUS;
+	int maxLerpDiffUS;
 };
+
+extern const TimeSyncParams TimeSyncParamsForUSB;
+extern const TimeSyncParams TimeSyncParamsForMCU_HSE;
+extern const TimeSyncParams TimeSyncParamsForMCU_HSI;
 
 struct TimeSync
 {
-	TimeSyncParams params = {};
+	TimeSyncParams params = TimeSyncParamsForUSB;
 	uint32_t measurements;
 	uint64_t lastTimestamp;
 	float drift; // actualUS = (long)(controllerUS * (1+drift))

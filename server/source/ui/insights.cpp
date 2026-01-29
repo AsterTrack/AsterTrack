@@ -1378,18 +1378,19 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 		initConfidence = index;
 	}
 
-	static TimeSyncParams params = {};
+	static TimeSyncParams params = TimeSyncParamsForUSB;
 	static bool emulate = false;
 	updateGraph |= ImGui::Checkbox("Enable Emulation", &emulate);
 	if (emulate)
 	{
 		updateGraph |= ImGui::SliderFloat("Drift Lerp", &params.driftLerp, 0, 0.00005f, "%.10ff", ImGuiSliderFlags_NoRoundToFormat);
-		updateGraph |= ImGui::SliderFloat("Drift Bias", &params.driftBias, -0.001f, 0.001f, "%.10ff", ImGuiSliderFlags_NoRoundToFormat);
+		updateGraph |= ImGui::SliderFloat("Drift Bias", &params.driftBias, -0.00001f, 0.00001f, "%.10ff", ImGuiSliderFlags_NoRoundToFormat);
 		updateGraph |= ImGui::InputInt("Drift Init Range", &params.driftInitRange, 0, 10000);
 		updateGraph |= ImGui::SliderFloat("Drift Init Adapt", &params.driftInitAdapt, 0.0f, 1000.0f);
 		updateGraph |= ImGui::SliderFloat("Drift Downward Correct", &params.driftDownwardCorrect, 0.0f, 1000.0f);
 		updateGraph |= ImGui::SliderFloat("Drift Downward Jump", &params.driftDownwardJump, 0.0f, 1.0f);
 		updateGraph |= ImGui::InputInt("Offset US", &params.timeOffsetUS);
+		updateGraph |= ImGui::InputInt("Max Lerp Diff US", &params.maxLerpDiffUS);
 	}
 
 	if (ImPlot::BeginPlot("##TimeSync", ImVec2(-1, -1)))

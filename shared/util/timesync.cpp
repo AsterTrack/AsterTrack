@@ -31,6 +31,42 @@ SOFTWARE.
 #include <cinttypes>
 #include <cmath>
 
+const TimeSyncParams TimeSyncParamsForUSB =
+{ // Optimised for a stable clock, tolerant to high latencies, with good smoothing
+	0.0000004f,
+	0.0000000f,
+	1000,
+	10.0f,
+	200.0f,
+	0.20f,
+	-20,
+	2000
+};
+
+const TimeSyncParams TimeSyncParamsForMCU_HSE =
+{ // Optimised for a stable clock, assuming low latency with adequate tolerance to outliers, with good smoothing
+	0.000005f,
+	0.0000000f,
+	1000,
+	10.0f,
+	10.0f,
+	0.20f,
+	-10,
+	500
+};
+
+const TimeSyncParams TimeSyncParamsForMCU_HSI =
+{ // Optimised for an unstable clock with quickly varying drift, assuming low latency with very few outliers, with very little smoothing
+	0.0005f,
+	0.0000000f,
+	1000,
+	10.0f,
+	0.2f,
+	0.20f,
+	-10,
+	5000
+};
+
 // Corrects source timestamp for overflow (within past ~overflow us)
 uint64_t RebaseSourceTimestamp(const TimeSync &time, uint64_t timestamp, uint64_t overflow)
 {
@@ -140,12 +176,12 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 	float adapt = std::max(0.0f, 1.0f - (float)time.measurements/params.driftInitRange);
 	auto getDriftCorrection = [&params, &adapt](double diffUS, int32_t usPassed)
 	{
-		double term = params.driftBias + params.driftLerp * diffUS;
-		double increase = std::log(1.0f + term / usPassed);
+		double term = params.driftLerp * diffUS / usPassed;
+		double increase = std::log(1.0f + params.driftBias + term);
 		increase *= 1.0f + adapt * params.driftInitAdapt;
 		return increase;
 	};
-	if (diffUS <= 0 && diffUS > -2000)
+	if (diffUS <= 0 && diffUS > -params.maxLerpDiffUS)
 	{ // New minimum, upper bound for the actual time sync
 		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %ldus ago (%dus passed, including %.2fus drift) but was received %ldus ago",
 			dtUS(timePred, sclock::now()), usPassed, driftUS-usPassed, dtUS(measurement, sclock::now()));
@@ -154,12 +190,18 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 		time.drift += getDriftCorrection(diffUS-jumpCorrect, usPassed) * params.driftDownwardCorrect;
 		time.diff.update(diffUS / 1000.0f);
 	}
-	else if (diffUS > 0 && diffUS < 2000)
+	else if (diffUS > 0 && diffUS < params.maxLerpDiffUS)
 	{ // Higher than predicted, delayed by transfer stack and OS, but might also be genuine drift, so adapt slowly
 		float correction = getDriftCorrection(diffUS, usPassed);
 		time.drift += correction;
 		timePred += std::chrono::microseconds((int64_t)correction*usPassed);
 		time.diff.update(diffUS / 1000.0f);
+		if (diffUS > params.maxLerpDiffUS/10)
+		{
+			LOG(LTimesync, LTrace, "! Received timestamp %" PRIu64 "us, was predicted to be %.2fms ago (%dus passed, including %.2fus drift, lerp %.6f), "
+				"but was received %.2fms ago, diff usually %.2fms +- %.2fms!", 
+				timestamp, dtMS(timePred, sclock::now()), usPassed, driftUS-usPassed, params.driftLerp, dtMS(measurement, sclock::now()), time.diff.avg, time.diff.stdDev());
+		}
 	}
 	else
 	{ // Off by quite a bit - shouldn't really happen
@@ -205,5 +247,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 
 void ResetTimeSync(TimeSync &time)
 {
+	TimeSyncParams params = time.params;
 	time = {};
+	time.params = params;
 }

@@ -33,6 +33,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Global System Timer
 volatile uint64_t usCounter;
 
+bool hasHSEClock = false; // True on anything but first dev boards
+
 #define TIM1_ARR 65000
 
 void SystemInit(void) {}
@@ -58,19 +60,39 @@ void Setup_Peripherals()
 	// Cannot use PLL directly, so need SYSCLK(or PCLK which may be further divided)
 	// So forced do use SYSCLK of 64MHz
 
-	// Configure HSI16
-	if (!LL_RCC_HSI_IsReady())
-		LL_RCC_HSI_Enable();
-	while (!LL_RCC_HSI_IsReady());
-
 	// Set Flash Latency for 64MHz
 	LL_FLASH_SetLatency(LL_FLASH_LATENCY_2);
 
-	// Configure PLL to 64MHz for SYSCLK
-	LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSI, LL_RCC_PLLM_DIV_1, 8, LL_RCC_PLLR_DIV_2);
+	// Attempt to configure HSE
+	LL_RCC_HSE_EnableBypass();
+	if (!LL_RCC_HSE_IsReady())
+		LL_RCC_HSE_Enable();
+	int timeout = 100000;
+	while (!LL_RCC_HSE_IsReady() && --timeout > 0);
+
+	if (LL_RCC_HSE_IsReady())
+	{ // HSE clock detected
+		hasHSEClock = true;
+
+		// Configure PLL to 64MHz for SYSCLK using HSE-24Mhz
+		LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSE, LL_RCC_PLLM_DIV_3, 16, LL_RCC_PLLR_DIV_2);
+	}
+	else
+	{ // HSE not detected, fall back to HSI16
+		LL_RCC_HSE_Disable();
+
+		// Configure HSI16
+		if (!LL_RCC_HSI_IsReady())
+			LL_RCC_HSI_Enable();
+		while (!LL_RCC_HSI_IsReady());
+
+		// Configure PLL to 64MHz for SYSCLK using HSI-16Mhz
+		LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSI, LL_RCC_PLLM_DIV_1, 8, LL_RCC_PLLR_DIV_2);
+	}
+
+	// Enable PLL
 	LL_RCC_PLL_Enable();
 	LL_RCC_PLL_EnableDomain_SYS();
-	//LL_RCC_PLL_EnableDomain_ADC();
 	while (!LL_RCC_PLL_IsReady());
 
 	// Set system clock

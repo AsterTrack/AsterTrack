@@ -137,6 +137,10 @@ extern "C"
 
 #endif
 
+// Detected Hardware Features
+
+extern bool hasHSEClock;
+
 // Functions
 
 void Setup_Peripherals();

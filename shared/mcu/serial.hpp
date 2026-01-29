@@ -120,6 +120,7 @@ struct CameraStoredInfo
 	std::string mcuFWDescriptor;		// MCU Firmware Descriptor, embedded in firmware
 
 	uint8_t mcuOTPVersion;				// Indicates revision in how OTP is formatted, potentially even affecting the format of the following members
+	CameraHWDetection mcuHWDetection;	// Flags of hardware detected via code, not necessarily encoded in serial number
 	HardwareSerial hardwareSerial;		// Camera Serial Number (96Bit) stored in MCU OTP, bound to hardware & production
     std::vector<uint64_t> subpartSerials; // Optional serial numbers of subparts
 	std::string mcuHWDescriptor;		// MCU Hardware Descriptor, written to OTP, may be composed of successively written texts separated by MCU_MULTI_TEXT_SEP

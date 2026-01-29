@@ -410,6 +410,9 @@ std::vector<std::string> CameraDescribeInfo(const CameraStoredInfo &info)
 		for (int i = 1; i < info.mcuHWDescriptorParts.size(); i++)
 			desc.push_back(asprintf_s("    Appended: %s", info.mcuHWDescriptorParts[i].c_str()));
 	}
+#define BYTE_BIT(byte,bit) ((byte & (1 << bit)) ? '1' : '0')
+#define BYTE_BIT_LIST(byte) BYTE_BIT(byte,7), BYTE_BIT(byte,6), BYTE_BIT(byte,5), BYTE_BIT(byte,4), BYTE_BIT(byte,3), BYTE_BIT(byte,2), BYTE_BIT(byte,1), BYTE_BIT(byte,0)
+	desc.push_back(asprintf_s("Detected Hardware Bitmask: %c%c%c%c%c%c%c%c", BYTE_BIT_LIST(info.mcuHWDetection)));
 	desc.push_back(asprintf_s("Hardware Serial Number: %.8x%.8x%.8x",
 		info.hardwareSerial.serial32[0], info.hardwareSerial.serial32[1], info.hardwareSerial.serial32[2]));
 	for (int i = 0; i < info.subpartSerials.size(); i++)

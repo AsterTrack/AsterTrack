@@ -998,6 +998,7 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 		return false;
 	}
 	info.mcuOTPVersion = data[1];
+	info.mcuHWDetection = (CameraHWDetection)data[2];
 	uint8_t resv1 = data[2], resv2 = data[3];
 
 	static_assert(sizeof(VersionDesc) == 4);
@@ -1030,9 +1031,12 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	info.mcuHWDescriptor.resize(mcuHWDesc);
 	memcpy(info.mcuHWDescriptor.data(), ptr, mcuHWDesc);
 	ptr += mcuHWDesc;
-	info.subpartSerials.resize(mcuSubparts / sizeof(uint64_t));
-	memcpy(info.subpartSerials.data(), ptr, mcuSubparts % sizeof(uint64_t));
-	ptr += mcuSubparts;
+	if (mcuSubparts > 0)
+	{
+		info.subpartSerials.resize(mcuSubparts / sizeof(uint64_t));
+		memcpy(info.subpartSerials.data(), ptr, mcuSubparts % sizeof(uint64_t));
+		ptr += mcuSubparts;
+	}
 
 	if ((info.sbcRevisionCode >> 24) == 0xFF)
 	{

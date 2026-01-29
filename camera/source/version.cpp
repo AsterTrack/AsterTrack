@@ -177,7 +177,7 @@ void sendInfoPacket(CommMedium medium)
 
 	infoPacket[0] = 1; // Packet version
 	infoPacket[1] = storedInfo.mcuOTPVersion;
-	infoPacket[2] = 0; // Reserved
+	infoPacket[2] = storedInfo.mcuHWDetection;
 	infoPacket[3] = 0; // Reserved
 
 	static_assert(sizeof(VersionDesc) == 4);

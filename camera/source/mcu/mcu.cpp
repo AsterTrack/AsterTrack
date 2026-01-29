@@ -609,6 +609,7 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 		return false;
 	}
 	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
+	info.mcuHWDetection = (CameraHWDetection)packet[3];
 
 	uint8_t *ptr = packet+8;
 	memcpy(&config.cameraID, ptr, sizeof(CameraID));

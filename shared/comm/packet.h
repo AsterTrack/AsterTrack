@@ -239,6 +239,11 @@ enum CameraMCUFlashConfig {
 	MCU_FLASH_USER_ABORTED = 10,
 };
 
+enum CameraHWDetection
+{
+	MCU_HW_HAS_HSE = 1 << 0,
+};
+
 /**
  * Checksum size used for packet header during UART comms
  */

@@ -773,6 +773,8 @@ public:
 	void cull_clear()
 	{
 		std::unique_lock lock(m_mutex);
+		if (m_state.index == 0 && m_state.count == 0 && m_state.start == 0)
+			return; // Already cleared
 		auto front = m_state.begin;
 		// Clear state, accounting for culled blocks
 		m_state.start = 0;
@@ -797,6 +799,8 @@ public:
 	void cull_all()
 	{
 		std::unique_lock lock(m_mutex);
+		if (m_state.count == 0)
+			return; // Already culled all
 		auto front = m_state.begin;
 		// Clear state, accounting for culled blocks
 		m_state.start += m_state.count;
@@ -835,8 +839,9 @@ public:
 			m_state.const_begin = std::next(std::add_const_t<BASE>::end(), num);
 			m_state.back = std::prev(BASE::end());
 			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
+			detachBlocks(front, m_state.begin);
 		}
-		else
+		else if (num > 0)
 		{
 			m_state.start += num;
 			m_state.count -= num;
@@ -844,8 +849,8 @@ public:
 			m_state.const_begin = std::next(m_state.const_begin, num);
 			m_state.back = std::prev(BASE::end());
 			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
+			detachBlocks(front, m_state.begin);
 		}
-		detachBlocks(front, m_state.begin);
 	}
 
 	/**
@@ -869,11 +874,11 @@ public:
 		while (!m_culledBlocks.empty())
 		{ // Past culled blocks might still being referenced by Views
 			if (m_culledBlocks.front().use_count() > 1)
-				return;
+				break;
 			removedBlocks.splice(removedBlocks.end(), *this, m_culledBlocks.front()->front, std::next(m_culledBlocks.front()->back));
 			m_culledBlocks.pop();
 		}
-		assert(BASE::begin() == m_state.begin);
+		assert(!m_culledBlocks.empty() || BASE::begin() == m_state.begin);
 		// Let destructor of removedBlocks delete the blocks (done this way to be able to do it without holding mutex)
 		// Order of destruction should already put this after mutex is released, but be explicit anyway
 		lock.unlock();

@@ -57,7 +57,7 @@ struct TimeSync
 	TimeSyncParams params = TimeSyncParamsForUSB;
 	uint32_t measurements;
 	uint64_t lastTimestamp;
-	float drift; // actualUS = (long)(controllerUS * (1+drift))
+	float drift; // actualUS = (int64_t)(controllerUS * (1+drift))
 	float driftAccum;
 	TimePoint_t lastTime;
 	StatDistf diff;

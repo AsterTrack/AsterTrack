@@ -135,8 +135,8 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 							std::regex regex("event::([0-9]+)us");
 							if (std::regex_search(entry.log, match, regex))
 							{
-								long timeUS = std::stoi(match[1].str());
-								seqJumpToFrame = timeUS;
+								int64_t timeUS = std::stoll(match[1].str());
+								seqJumpToPos = timeUS;
 							}
 						}
 					}

@@ -154,7 +154,7 @@ struct VisualisationState
 		struct TrackingTargets
 		{
 			std::string label;
-			long lastTrackedFrame;
+			uint32_t lastTrackedFrame;
 			TrackingResult trackState;
 			TrackerInertialState imuState;
 			StatFloatingf imuSampleRate;
@@ -203,10 +203,10 @@ struct VisualisationState
 		struct ObservationCompare
 		{
 			std::vector<BlockedVector<Eigen::Vector2f>> visPoints;
-			int markerCount, obsCount, triCount;
+			std::size_t markerCount, obsCount, triCount;
 		};
 		std::vector<ObservationCompare> savedObs;
-		int visSavedObs = -1;
+		int64_t visSavedObs = -1;
 	} observations;
 
 	struct
@@ -250,11 +250,11 @@ struct VisualisationState
 		// Not synchronised, only updated by UpdateIncrementalObservationVis
 		// And read by UI right after
 		int frameStable = 0; // Last time the stable list was updated
-		int pointsStable = 0, pointsUnstable = 0;
+		std::size_t pointsStable = 0, pointsUnstable = 0;
 		std::map<int, int> frameIndices;
 		std::vector<int> cameraTriObservations;
 		int markerCount = 0; // To check if observations were cleared
-		long resetFirstFrame = -1;
+		int64_t resetFirstFrame = -1;
 	} incObsUpdate;
 
 	// Visualisation of reference points in virtual space
@@ -380,7 +380,7 @@ public:
 			: begin(begin), end(end), forceSave(forceSave) {}
 	};
 	std::vector<RecordedSections> recordSections;
-	long recordSectionStart = -1;
+	int64_t recordSectionStart = -1;
 	bool saveTrackingResults = true;
 	unsigned int frameJumpTarget = 0;
 	bool frameRelevantParametersDirty = false;
@@ -390,7 +390,7 @@ public:
 	opaque_ptr<Marker2DSequence> seqMarker;
 	opaque_ptr<TrackingControllerEventSequence> seqEvents;
 	bool seqEventsActive = false;
-	long seqJumpToFrame = -1;
+	int64_t seqJumpToPos = -1;
 
 	// Pipeline/PointCalib state
 	Synchronised<std::string> calibSamples;

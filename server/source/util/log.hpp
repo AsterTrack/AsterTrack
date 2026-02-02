@@ -39,6 +39,7 @@ SOFTWARE.
 #define LOG_H
 
 #include <cstdint>
+#include <cinttypes> // For cross-platform 64bit labels (ll(u) on windows, l(u) on linux)
 
 enum LogCategory {
 	LDefault,

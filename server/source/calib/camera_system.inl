@@ -24,7 +24,7 @@ inline float FundamentalMatrix::updateTrust(int frame, float decayRate)
 	int updateFrames = frame-std::max(lastFrame, lastTrustUpdate);
 	int framesPassed = frame-lastFrame;
 	if (framesPassed < 10000)
-		floatingTrust -= (long)framesPassed * updateFrames * decayRate;
+		floatingTrust -= (int64_t)framesPassed * updateFrames * decayRate;
 	//floatingTrust *= 1.0f-decayRateAlt;
 	floatingTrust = std::max(0.0f, floatingTrust);
 	lastTrustUpdate = frame;

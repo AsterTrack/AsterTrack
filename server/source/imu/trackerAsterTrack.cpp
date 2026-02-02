@@ -192,14 +192,14 @@ IMUDeviceProviderStatus AsterTrackReceiver::poll(int &updated, IMUDeviceList &re
 				{ // TODO: Move latency measurement up after fusion
 					// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
 					timingRecord.latency.push_back({ sampleTime, { 
-						(uint16_t)std::max<long>(0, dtUS(sampleTime, sentTime)),
-						(uint16_t)std::max<long>(0, dtUS(sampleTime, recvTime)) } } );
+						(uint16_t)std::max<dt_t>(0, dtUS(sampleTime, sentTime)),
+						(uint16_t)std::max<dt_t>(0, dtUS(sampleTime, recvTime)) } } );
 				}
 				if (tracker.timingRecord.recordLatency)
 				{
 					tracker.timingRecord.latency.push_back({ sampleTime, { 
-						(uint16_t)std::max<long>(0, dtUS(sampleTime, sentTime)),
-						(uint16_t)std::max<long>(0, dtUS(sampleTime, recvTime)) } } );
+						(uint16_t)std::max<dt_t>(0, dtUS(sampleTime, sentTime)),
+						(uint16_t)std::max<dt_t>(0, dtUS(sampleTime, recvTime)) } } );
 				}
 				updated++;
 			}

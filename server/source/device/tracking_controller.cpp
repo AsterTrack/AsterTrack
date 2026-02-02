@@ -33,7 +33,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data, int length, void *userState, std::shared_ptr<void> &userDevice, bool success);
 static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, uint8_t endpoint, void *userState, std::shared_ptr<void> &userDevice);
 static void checkControlRequest(TrackingControllerState &controller, TrackingControllerState::USBRequest &request, const char* label, USBCommand command, int intervalMS);
-static void LogUSBStats(TrackingControllerState &controller, long timeUS);
+static void LogUSBStats(TrackingControllerState &controller, dt_t timeUS);
 
 const char *getControllerEventName(ControllerEventID event)
 {
@@ -165,7 +165,7 @@ void HandleController(ServerState &state, TrackingControllerState &controller)
 		controller.comm->lastUSBStatCheck = sclock::now();
 
 	// Requires mutex in usb transfer if called here, not good
-	/* long timeUS = dtUS(controller.comm->lastUSBStatCheck, sclock::now());
+	/* dt_t timeUS = dtUS(controller.comm->lastUSBStatCheck, sclock::now());
 	if (timeUS > 2000000)
 	{
 		controller.comm->lastUSBStatCheck = sclock::now();
@@ -834,7 +834,7 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 		MaintainStreamState(*state.stream.contextualLock());
 	}
 
-	long timeUS = dtUS(controller.comm->lastUSBStatCheck, sclock::now());
+	dt_t timeUS = dtUS(controller.comm->lastUSBStatCheck, sclock::now());
 	if (timeUS > 2000000)
 	{
 		controller.comm->lastUSBStatCheck = sclock::now();
@@ -877,7 +877,7 @@ static void checkControlRequest(TrackingControllerState &controller, TrackingCon
 	}
 };
 
-static void LogUSBStats(TrackingControllerState &controller, long timeUS)
+static void LogUSBStats(TrackingControllerState &controller, dt_t timeUS)
 {
 	// Called from the same thread, so fine without mutex
 	//controller.comm->statMutex.lock();

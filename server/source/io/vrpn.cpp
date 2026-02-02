@@ -51,12 +51,12 @@ static inline struct timeval createTimestamp(TimePoint_t time)
 	struct timeval time_now, timestamp;
 	vrpn_gettimeofday(&time_now, NULL);
 	TimePoint_t time_ref = sclock::now();
-	long diffUS = std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count();
-	long long timeUS = time_now.tv_sec * 1000000 + time_now.tv_usec;
+	int64_t diffUS = std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count();
+	int64_t timeUS = (int64_t)time_now.tv_sec * 1000000 + time_now.tv_usec;
 	timeUS -= diffUS;
 	timestamp.tv_sec = timeUS/1000000;
 	timestamp.tv_usec = timeUS%1000000;
-	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%ldus)",
+	LOG(LIO, LTrace, "Time %.2fms ago resulted in timestamp (%ld, %ld) from cur time (%ld, %ld) and diff (%" PRId64 "us)",
 		std::chrono::duration_cast<std::chrono::microseconds>(time_ref - time).count()/1000.0f,
 		timestamp.tv_sec, timestamp.tv_usec, time_now.tv_sec, time_now.tv_usec, diffUS);
 	return timestamp;
@@ -99,7 +99,7 @@ static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
 		tracker->remoteIMU->hasMag = true;
 	tracker->remoteIMU->samplesRaw.push_back(sample);
 
-	long latency = dtUS(sample.timestamp, sclock::now());
+	dt_t latency = dtUS(sample.timestamp, sclock::now());
 	if (latency < -500)
 		LOG(LIO, LDarn, "Remote IMU %d send timestamp %ldus in the future! Indicates suboptimal timesync!", tracker->remoteIMU->index, -latency);
 
@@ -107,11 +107,11 @@ static void handleIMURaw(void *data, const vrpn_IMURAWCB t)
 	// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
 	if (tracker->remoteIMU->timingRecord.recordLatency)
 		tracker->remoteIMU->timingRecord.latency.push_back({ sample.timestamp, { 
-			(uint16_t)std::max<long>(0, latency) } } );
+			(uint16_t)std::max<dt_t>(0, latency) } } );
 	auto provider = getRemoteIMUProvider();
 	if (provider->timingRecord.recordLatency)
 		provider->timingRecord.latency.push_back({ sample.timestamp, { 
-			(uint16_t)std::max<long>(0, latency) } } );
+			(uint16_t)std::max<dt_t>(0, latency) } } );
 
 	LOG(LIO, LTrace, "Tracker %s (%d) got raw IMU sample with %fms latency!",
 		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));
@@ -138,7 +138,7 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 	tracker->remoteIMU->hasMag = false; // TODO: Technically unknown. Should IMU side advertise capabilities?
 	tracker->remoteIMU->samplesFused.push_back(sample);
 
-	long latency = dtUS(sample.timestamp, sclock::now());
+	dt_t latency = dtUS(sample.timestamp, sclock::now());
 	if (latency < -500)
 		LOG(LIO, LDarn, "Remote IMU %d send timestamp %ldus in the future! Indicates suboptimal timesync!", tracker->remoteIMU->index, -latency);
 
@@ -146,11 +146,11 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 	// E.g. store LatencyMeasurement in IMUReport until after fusion to add fusion latency ontop
 	if (tracker->remoteIMU->timingRecord.recordLatency)
 		tracker->remoteIMU->timingRecord.latency.push_back({ sample.timestamp, { 
-			(uint16_t)std::max<long>(0, latency) } } );
+			(uint16_t)std::max<dt_t>(0, latency) } } );
 	auto provider = getRemoteIMUProvider();
 	if (provider->timingRecord.recordLatency)
 		provider->timingRecord.latency.push_back({ sample.timestamp, { 
-			(uint16_t)std::max<long>(0, latency) } } );
+			(uint16_t)std::max<dt_t>(0, latency) } } );
 
 	LOG(LIO, LTrace, "Tracker %s (%d) got fused IMU sample with %fms latency!",
 		tracker->path.c_str(), tracker->id, dtMS(sample.timestamp, sclock::now()));

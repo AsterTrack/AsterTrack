@@ -54,8 +54,8 @@ bool compress(std::vector<uint8_t> &jpegBuf, uint8_t *data, int width, int heigh
 		return false;
 	}
 	// Pre-allocate buffer
-	long unsigned int jpegSize = tjBufSize(width, height, TJSAMP_GRAY);
-	if (size_t(-1) == jpegSize)
+	unsigned long jpegSize = tjBufSize(width, height, TJSAMP_GRAY);
+	if (jpegSize >= (1 << 24))
 	{
 		LOGC(LError, "Failed to calculate maximum jpeg size!");
 		return false;

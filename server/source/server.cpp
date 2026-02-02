@@ -1083,7 +1083,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 		if (!state.isStreaming || stop_token.stop_requested())
 			continue;
 
-		long desiredFrameIntervalUS = 1000000 / state.controllerConfig.framerate;
+		uint64_t desiredFrameIntervalUS = 1000000 / state.controllerConfig.framerate;
 
 		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/GenerateSimulationData
 		std::shared_ptr<FrameRecord> frameRecord = nullptr;

@@ -119,7 +119,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		ImGui::PushID("Trk");
 
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
-		long frameNum = pipeline.frameNum;
+		int64_t frameNum = pipeline.frameNum;
 		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
 		if (visFrame)
 		{
@@ -152,7 +152,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			int trackerID = trackerIt.first;
 			auto &tracker = trackerIt.second;
 			ImGui::PushID(trackerID);
-			long trackedAgo = frameNum - tracker.lastTrackedFrame;
+			int64_t trackedAgo = frameNum - tracker.lastTrackedFrame;
 			std::string label;
 			if (trackedAgo < 5)
 				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
@@ -509,7 +509,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			// Tracking quality assessment;
 			struct EventChange
 			{
-				int loaded, current, added, removed;
+				uint32_t loaded, current, added, removed;
 			};
 			static EventChange losses, search2D, detect2D, detect3D, tracked;
 			struct TrackingSamples
@@ -521,7 +521,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				StatValue<float,StatDistribution> trackTimeLoaded, trackTimeCurrent;
 			};
 			static std::map<int, TrackingSamples> trackers;
-			static long coveredFrames;
+			static uint32_t coveredFrames; // All following code relies on frame number
 			if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 			{
 				auto countEvents = [](const FrameRecord &record, TrackingResult::State result)
@@ -529,12 +529,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					return std::count_if(record.trackers.begin(), record.trackers.end(),
 						[&](auto &t){ return t.result.isState(result); });
 				};
-				auto updateEventChange = [](EventChange &event, int loaded, int current)
+				auto updateEventChange = [](EventChange &event, uint32_t loaded, uint32_t current)
 				{
 					event.loaded += loaded;
 					event.current += current;
-					event.added += std::max(0, current-loaded);
-					event.removed += std::max(0, loaded-current);
+					event.added += current > loaded? current - loaded : 0;
+					event.removed += loaded > current? loaded - current : 0;
 				};
 				losses = {};
 				search2D = {};
@@ -561,7 +561,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					updateEventChange(tracked, stored.trackers.size(), record.trackers.size());
 					// Accumulate results for each target for this frame from loaded and current results
 					struct FrameTrackers {
-						int samplesLoaded = 0, samplesCurrent = 0;
+						uint32_t samplesLoaded = 0, samplesCurrent = 0;
 						float errorLoaded = 0, errorCurrent = 0;
 						float timeLoaded = 0.0f, timeCurrent = 0.0f;
 					};
@@ -587,7 +587,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					{
 						auto &tracker = trackers[trk.first];
 						auto &trkFrame = trk.second;
-						updateEventChange(tracker.tracked, std::min(1, trkFrame.samplesLoaded), std::min(1, trkFrame.samplesCurrent));
+						updateEventChange(tracker.tracked, std::min(1u, trkFrame.samplesLoaded), std::min(1u, trkFrame.samplesCurrent));
 						if (trkFrame.samplesLoaded)
 						{
 							tracker.samplesLoaded.update(trkFrame.samplesLoaded);
@@ -634,16 +634,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (ImGui::TreeNode(trackedTarget.second.label.c_str()))
 					{
 						auto &tgt = trackedTarget.second;
-						ImGui::Text("Frames: %d  [%d]  +%d -%d", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
+						ImGui::Text("Frames: %u  [%u]  +%u -%u", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
 						ImGui::Text("Times: %.2fms +- %.2f  [%.2fms +- %.2f]", tgt.trackTimeCurrent.avg, tgt.trackTimeCurrent.stdDev()*2, tgt.trackTimeLoaded.avg, tgt.trackTimeLoaded.stdDev()*2);
 						ImGui::Text("Samples:");
-						ImGui::Text("    sum: %ld  [%ld]  +%ld -%ld", (long)tgt.samplesCurrent.sum, (long)tgt.samplesLoaded.sum, (long)tgt.samplesAdded.sum, (long)tgt.samplesRemoved.sum);
+						ImGui::Text("    sum: %u  [%u]  +%u -%u", (uint32_t)tgt.samplesCurrent.sum, (uint32_t)tgt.samplesLoaded.sum, (uint32_t)tgt.samplesAdded.sum, (uint32_t)tgt.samplesRemoved.sum);
 						ImGui::Text("     avg: %.2f +- %.2f  [%.2f +- %.2f]", tgt.samplesCurrent.avg, tgt.samplesCurrent.stdDev()*2, tgt.samplesLoaded.avg, tgt.samplesLoaded.stdDev()*2);
-						ImGui::Text("	 diff: +%.2f (%d) -%.2f (%d), %ld unchanged", tgt.samplesAdded.avg, tgt.samplesAdded.num, tgt.samplesRemoved.avg, tgt.samplesRemoved.num, coveredFrames-(tgt.samplesAdded.num+tgt.samplesRemoved.num));
-						ImGui::Text("      >/<: %d/%d  [%d/%d]", (int)tgt.samplesCurrent.min, (int)tgt.samplesCurrent.max, (int)tgt.samplesLoaded.min, (int)tgt.samplesLoaded.max);
+						ImGui::Text("	 diff: +%.2f (%u) -%.2f (%u), %u unchanged", tgt.samplesAdded.avg, tgt.samplesAdded.num, tgt.samplesRemoved.avg, tgt.samplesRemoved.num, coveredFrames-(tgt.samplesAdded.num+tgt.samplesRemoved.num));
+						ImGui::Text("      >/<: %u/%u  [%u/%u]", (uint32_t)tgt.samplesCurrent.min, (uint32_t)tgt.samplesCurrent.max, (uint32_t)tgt.samplesLoaded.min, (uint32_t)tgt.samplesLoaded.max);
 						ImGui::Text("Errors :");
 						ImGui::Text("     avg: %.2fpx +- %.2fpx  [%.2fpx +- %.2fpx]", tgt.errorCurrent.avg*PixelFactor, tgt.errorCurrent.stdDev()*2*PixelFactor, tgt.errorLoaded.avg*PixelFactor, tgt.errorLoaded.stdDev()*2*PixelFactor);
-						ImGui::Text("	 diff: +%.2fpx (%d) -%.2fpx (%d), %ld unchanged", tgt.errorAdded.avg*PixelFactor, tgt.errorAdded.num, tgt.errorRemoved.avg*PixelFactor, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
+						ImGui::Text("	 diff: +%.2fpx (%u) -%.2fpx (%u), %u unchanged", tgt.errorAdded.avg*PixelFactor, tgt.errorAdded.num, tgt.errorRemoved.avg*PixelFactor, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
 						ImGui::Text("      >/<: %.3fpx/%.2fpx  [%.3fpx/%.2fpx]", tgt.errorCurrent.min*PixelFactor, tgt.errorCurrent.max*PixelFactor, tgt.errorLoaded.min*PixelFactor, tgt.errorLoaded.max*PixelFactor);
 						ImGui::TreePop();
 					}

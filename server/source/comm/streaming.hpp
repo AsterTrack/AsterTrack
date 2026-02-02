@@ -101,7 +101,7 @@ struct SyncGroup
 	StatDistf SOFSwitch;
 
 	// Stats
-	long long frameCount = 0;
+	uint64_t frameCount = 0;
 	int frameProcessedCount; // Frames that had any data to be processed at all
 	int packetMissingCount; // Frames that had missing packets from cameras
 	int packetErroneousCount; // Frames that had erroneous packets from cameras

@@ -52,8 +52,9 @@ SOFTWARE.
 typedef std::chrono::steady_clock sclock;
 typedef sclock::time_point TimePoint_t;
 typedef std::chrono::high_resolution_clock pclock;
+typedef int64_t dt_t;
 template<typename TimePoint>
-static inline long dtUS(TimePoint t0, TimePoint t1)
+static inline dt_t dtUS(TimePoint t0, TimePoint t1)
 {
 	return std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 }
@@ -107,12 +108,18 @@ static std::string asprintf_s( const char *format, ...)
 
 /* shortDiff */
 
+template<typename DIFF = int64_t, typename UNSIGNED = uint64_t>
+static inline DIFF diffUnsigned(UNSIGNED a, UNSIGNED b)
+{
+	return b < a? -(DIFF)(a - b) : (DIFF)(b - a);
+}
+
 template<typename TRUNC, typename DIFF>
 static inline DIFF shortDiff(TRUNC a, TRUNC b, DIFF bias, TRUNC max = std::numeric_limits<TRUNC>::max())
 {
 	static_assert(std::numeric_limits<TRUNC>::lowest() == 0);
 	assert(a <= max && b <= max);
-	DIFF passed = b < a? -(DIFF)(a-b) : (DIFF)(b-a);
+	DIFF passed = diffUnsigned<DIFF, TRUNC>(a, b);
 	if (passed < -bias)
 		passed = passed + 1 + max;
 	else if (passed > max-bias)

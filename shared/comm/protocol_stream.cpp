@@ -207,7 +207,7 @@ begin:
 		if (!done) return false;
 		// Received end of packet, skip to it (with margin incase of dropped bytes), and search for trailing bytes
 		comm.cmdSkip = false;
-		comm.head = std::max<long>(comm.cmdPos, (long)endPacket-20);
+		comm.head = std::max<int64_t>(comm.cmdPos, (int64_t)endPacket-20);
 		skipToEnd(comm, false);
 		assert(comm.head <= comm.tail);
 	}
@@ -309,7 +309,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 		}
 		else
 		{ // Advance towards end with some buffer for dropped bytes, and search rest for trailing bytes
-			comm.head = std::max<long>(comm.cmdPos, (long)endPacket-20);
+			comm.head = std::max<int64_t>(comm.cmdPos, (int64_t)endPacket-20);
 			skipToEnd(comm, true);
 		}
 		assert(comm.head <= comm.tail);

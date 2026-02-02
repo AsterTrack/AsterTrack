@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/debugging.hpp" // Provide controls here, even if it's not technically restricted to simulation mode
 
-static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, long num)
+static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, uint32_t num)
 {
 	{ // Try current record
 		auto framesRecord = state.pipeline.record.frames.getView();
@@ -53,16 +53,16 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 	if (state.mode == MODE_Device)
 	{
-		ImGui::Text("Frame %ld", GetState().pipeline.frameNum.load());
+		ImGui::Text("Frame %" PRId64, GetState().pipeline.frameNum.load());
 	}
 	else if (state.mode == MODE_Simulation || state.mode == MODE_Replay)
 	{
 		{
 			ImGui::AlignTextToFramePadding();
 			if (state.mode == MODE_Replay)
-				ImGui::Text("Replaying Frame %ld / %ld", GetState().pipeline.frameNum.load(), GetState().recording.frames);
+				ImGui::Text("Replaying Frame %" PRId64 " / %" PRIu64, GetState().pipeline.frameNum.load(), GetState().recording.frames);
 			else if (state.mode == MODE_Simulation)
-				ImGui::Text("Simulating Frame %ld", GetState().pipeline.frameNum.load());
+				ImGui::Text("Simulating Frame %" PRId64, GetState().pipeline.frameNum.load());
 			SameLineTrailing(SizeWidthDiv3().x);
 			ImGui::Checkbox("Quickly", &state.simAdvanceQuickly);
 		}
@@ -514,7 +514,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (!hasFailure) return;
 				if (inRange && frame.num - addFrameRange[1] > reach*2)
 				{ // Separate from last range
-					frameRanges.push_back({ (unsigned int)std::max<long>(0, (long)addFrameRange[0]-reach), addFrameRange[1]+reach, true, false });
+					frameRanges.push_back({ addFrameRange[0] >= reach? addFrameRange[0]-reach : 0, addFrameRange[1]+reach, true, false });
 					inRange = false;
 				}
 				if (!inRange) // New range
@@ -529,7 +529,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			for (int f = addFrameRange[1]+1; f < framesStored.endIndex(); f++)
 				if (framesStored[f]) handleFrame(*framesStored[f]);
 			if (inRange)
-				frameRanges.push_back({ (unsigned int)std::max<long>(0, (long)addFrameRange[0]-reach), addFrameRange[1]+reach, true, false });
+				frameRanges.push_back({ addFrameRange[0] >= reach? addFrameRange[0]-reach : 0, addFrameRange[1]+reach, true, false });
 		}
 
 		FrameRange::Results baseline = {}, results = {};

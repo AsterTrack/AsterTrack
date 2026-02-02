@@ -46,14 +46,14 @@ struct TrackerState
 	TimePoint_t time;
 
 	// Information about state
-	long lastIMUSample;
+	int64_t lastIMUSample;
 	TimePoint_t lastIMUTime;
-	long lastObsFrame;
-	long firstObsFrame;
+	int64_t lastObsFrame;
+	int64_t firstObsFrame;
 	TimePoint_t lastObservation;
 	TimePoint_t firstObservation;
 
-	TrackerState(Eigen::Isometry3f pose, long frame, TimePoint_t time, const TargetTrackingParameters &params) :
+	TrackerState(Eigen::Isometry3f pose, int64_t frame, TimePoint_t time, const TargetTrackingParameters &params) :
 		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObsFrame(frame), firstObservation(time)
 	{
 		state.position() = pose.translation().cast<double>();

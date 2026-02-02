@@ -608,11 +608,11 @@ void InterfaceState::UpdatePipelineObservationSection()
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
 				ImGui::AlignTextToFramePadding();
-				ImGui::Text("%d", obsCmp.markerCount);
+				ImGui::Text("%" PRIu64, obsCmp.markerCount);
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", obsCmp.obsCount);
+				ImGui::Text("%" PRIu64, obsCmp.obsCount);
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", obsCmp.triCount);
+				ImGui::Text("%" PRIu64, obsCmp.triCount);
 				ImGui::TableNextColumn();
 				bool select = visState.observations.visSavedObs == i;
 				if (ImGui::Selectable("##Sel", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))

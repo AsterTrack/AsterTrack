@@ -58,7 +58,7 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	FrameID lastSOFID = sync_lock->frames.empty()? 0 : sync_lock->frames.back().ID;
 	if (sync_lock->frames.size() > 1)
 		lastSOFID = std::max(lastSOFID, std::prev(sync_lock->frames.end(), 2)->ID);
-	//sof.frameID = lastSOFID + shortDiff<FrameID, long long>(lastSOFID, sof.frameID, (1<<32)/10, 1<<32);
+	//sof.frameID = lastSOFID + shortDiff<FrameID, int32_t>(lastSOFID, sof.frameID, (1<<32)/10, 1<<32);
 	// 32Bit doesn't overflow in ~1yr at 144Hz, so not needed until we lower SOF ID bit depth
 	if (sof.frameID < lastSOFID)
 	{
@@ -79,7 +79,7 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	//TimePoint_t timeSOF = GetTimeSynced(timeSync, sof.timeUS, 1<<24, receiveTime);
 	uint64_t sofTimestampUS = RebaseSourceTimestamp(timeSync, sof.timeUS, 1<<24, receiveTime);
 	TimePoint_t timeSOF = GetTimeSynced(timeSync, sofTimestampUS);
-	long dT = dtUS(timeSOF, sclock::now());
+	dt_t dT = dtUS(timeSOF, sclock::now());
 	if (dT < -10)
 	{ // Sync supposedly happened in the future, time sync has gone bad
 		LOG(LSOF, LWarn, "Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
@@ -99,8 +99,8 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	LOG(LSOF, LDebug, "Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
 		"so SOF should be %dus after last timestamp, ""with drift %dus, timesync says %ldus (drift is %.2f%%)\n",
 		sof.timeUS, timeSync.lastTimestamp&0xFFFFFF, sofTimestampUS, timeSync.lastTimestamp,
-		(int)((long long)sofTimestampUS-timeSync.lastTimestamp),
-		(int)((int)((long long)sofTimestampUS-timeSync.lastTimestamp)*(1.0+timeSync.drift)), 
+		diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS),
+		(int)(diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS)*(1.0+timeSync.drift)), 
 		dtUS(timeSync.lastTime, timeSOF), timeSync.drift*100);
 
 	// Set estimate as SOF for frameID
@@ -205,7 +205,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 
 		if (lastEvent.timestampUS > 0)
 		{
-			long usPassed = dtUS(lastEvent.syncedTime, event.syncedTime);
+			dt_t usPassed = dtUS(lastEvent.syncedTime, event.syncedTime);
 			if (usPassed < 0)
 			{
 				LOG(LControllerDevice, LWarn, "Events not continuous! New event is %ldus before last. Might be due to updated time sync", usPassed);
@@ -217,7 +217,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 			}
 		}
 
-		long dT = dtUS(event.syncedTime, sclock::now());
+		dt_t dT = dtUS(event.syncedTime, sclock::now());
 		if (dT < -10)
 		{ // Event supposedly happened in the future, time sync has gone bad
 			LOG(LTimesync, LWarn, "Got bad time sync, Event is %.2fms in the future, last timestamp %.2fms in the past"

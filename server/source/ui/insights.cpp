@@ -38,7 +38,6 @@ extern ctpl::thread_pool threadPool;
 #include "nativefiledialog-extended/nfd.h"
 #include "nativefiledialog-extended/nfd_glfw3.h"
 
-#include <cinttypes>
 #include <fstream>
 
 
@@ -219,7 +218,6 @@ struct Marker2DSequence : public ImSequencer::SequenceInterface
 {
 private:
 	VisualisationState *m_vis;
-	int state;
 
 	struct MarkerSequence
 	{
@@ -388,8 +386,8 @@ public:
 struct TrackingControllerEventSequence : public ImSequencer::SequenceInterface
 {
 private:
-	long offsetUS = 0, lengthUS = 1000;
-	long frontIndex = -1, backIndex = -1;
+	int64_t offsetUS = 0, lengthUS = 1000;
+	int64_t frontIndex = -1, backIndex = -1;
 
 	// Cached rendering structure
 	std::array<std::vector<std::pair<float,float>>, CONTROLLER_EVENT_MAX> evtBars;
@@ -413,7 +411,7 @@ public:
 	{
 		auto events = m_controller->eventLog.getView();
 		if (!events.empty())
-			offsetUS = (long)events.front().timestampUS-10;
+			offsetUS = (int64_t)events.front().timestampUS-10;
 	}
 
 	void UpdateEventList(std::vector<ControllerEventID> eventList)
@@ -452,11 +450,11 @@ public:
 
 		if (offsetUS == 0)
 		{ // Don't update when culling, keep original timeline range
-			offsetUS = (long)events.front().timestampUS-10;
+			offsetUS = (int64_t)events.front().timestampUS-10;
 			if (viewStartTimeUS < offsetUS)
 				viewStartTimeUS = offsetUS;
 		}
-		lengthUS = std::max((long)1000, (long)events.back().timestampUS+10-offsetUS);
+		lengthUS = std::max<int64_t>(1000, (int64_t)events.back().timestampUS+10-offsetUS);
 
 		// Before this, viewStartTimeUS (as firstFrame) could've been modified by panning (should disable followLastFrame)
 		// And visibleFrameCount can change, so have to take start pos
@@ -477,11 +475,11 @@ public:
 
 		// This whole update only takes about 0.5ms even with about 40000 events
 
-		long frontUS = viewStartTimeUS, backUS = frontUS+visibleFrameCount;
+		int64_t frontUS = viewStartTimeUS, backUS = frontUS+visibleFrameCount;
 		auto frontIt = std::lower_bound(events.begin(), events.end(), frontUS,
-		[](const ControllerEventLog& event, long us) { return event.timestampUS < us; });
+		[](const ControllerEventLog& event, int64_t us) { return event.timestampUS < us; });
 		auto backIt = std::upper_bound(events.begin(), events.end(), backUS,
-		[](int us, const ControllerEventLog& event) { return us < event.timestampUS; });
+		[](int64_t us, const ControllerEventLog& event) { return us < event.timestampUS; });
 		if (backIt != events.begin())
 			backIt--;
 		if (frontIt.index() == frontIndex && backIt.index() == backIndex)
@@ -489,7 +487,7 @@ public:
 		frontIndex = frontIt.index();
 		backIndex = backIt.index();
 
-		LOG(LGUI, LTrace, "Rendering events from index %ld (%fus) to %ld (%f us), viewing %ldus - %ldus (start %d, width %d, offset %ld), first has timestamp %ld (%fus)",
+		LOG(LGUI, LTrace, "Rendering events from index %" PRId64 " (%fus) to %" PRId64 " (%f us), viewing %" PRId64 "us - %" PRId64 "us (start %d, width %d, offset %" PRId64 "), first has timestamp %" PRIu64 " (%fus)",
 			frontIndex, frontIt->timestampUS, backIndex, backIt->timestampUS, frontUS, backUS, viewStartTimeUS, visibleFrameCount, offsetUS, events.front().timestamp, events.front().timestampUS);
 
 		float dUS = sequenceWidth/visibleFrameCount;
@@ -1265,7 +1263,7 @@ static bool ShowTrackingControllerPanel()
 	{
 		if (!ui.seqEvents)
 		{
-			ui.seqJumpToFrame = -1;
+			ui.seqJumpToPos = -1;
 			ui.seqEvents = make_opaque<TrackingControllerEventSequence>(controller);
 		}
 		ui.seqEvents->UpdateEventList(eventSelection);
@@ -1297,19 +1295,19 @@ static bool ShowTrackingControllerPanel()
 
 	/* Show sequencer */
 
-	static long markedFrame;
-	if (markedFrame != ui.seqJumpToFrame)
+	static int64_t markedFrame = -1;
+	if (markedFrame != ui.seqJumpToPos)
 	{
-		markedFrame = ui.seqJumpToFrame;
-		if (ui.seqJumpToFrame >= 0)
+		markedFrame = ui.seqJumpToPos;
+		if (ui.seqJumpToPos >= 0)
 		{
-			ui.seqEvents->viewStartTimeUS = ui.seqJumpToFrame - ui.seqEvents->visibleFrameCount/2;
+			ui.seqEvents->viewStartTimeUS = ui.seqJumpToPos - ui.seqEvents->visibleFrameCount/2;
 			ui.seqEvents->followLastFrame = false;
 		}
 	}
 
 	// Draw sequencer viewer
-	int curFrame = (int)ui.seqJumpToFrame;
+	int curFrame = (int)ui.seqJumpToPos;
 	ImSequencer::Sequencer(ui.seqEvents.get(), &curFrame, nullptr, nullptr, &ui.seqEvents->viewStartTimeUS,
 		ImSequencer::SEQUENCER_EDIT_NONE);
 	if (ui.seqEvents->GetItemCount() > 0)
@@ -1328,7 +1326,7 @@ static void CleanTrackingControllerPanel()
 		comm_submit_control_data(ui.seqEvents->m_controller->comm, COMMAND_OUT_EVENTS, 0x00, 0, nullptr, 0);
 		ui.seqEvents = nullptr;
 	}
-	ui.seqJumpToFrame = -1;
+	ui.seqJumpToPos = -1;
 	ui.seqEventsActive = false;
 	lastControllerTab = nullptr;
 }
@@ -1341,17 +1339,18 @@ static int PlotFormatterTimeUS(double value, char* buff, int size, void* data)
 		width = ImPlot::GetPlotLimits(axis, IMPLOT_AUTO).Size().x;
 	else
 	 	width = ImPlot::GetPlotLimits(IMPLOT_AUTO, axis).Size().y;
-	long timeUS = (long)std::max((double)LONG_MIN, std::min((double)LONG_MAX, value));
+	int64_t timeUS = (int64_t)std::max((double)std::numeric_limits<int64_t>::min(), 
+		std::min(value, (double)std::numeric_limits<int64_t>::max()));
 	if (width > 10000000)
-		return snprintf(buff, size, "%lds", timeUS/1000000);
+		return snprintf(buff, size, "%" PRId64 "s", timeUS/1000000);
 	else if (width > 500000)
-		return snprintf(buff, size, "%ldms", timeUS%10000000/1000);
+		return snprintf(buff, size, "%" PRId64 "ms", timeUS%10000000/1000);
 	else if (width > 10000)
-		return snprintf(buff, size, "%ldms", timeUS%1000000/1000);
+		return snprintf(buff, size, "%" PRId64 "ms", timeUS%1000000/1000);
 	else if (width > 500)
-		return snprintf(buff, size, "%ldus", timeUS%10000);
+		return snprintf(buff, size, "%" PRId64 "us", timeUS%10000);
 	else
-		return snprintf(buff, size, "%ldus", timeUS%1000);
+		return snprintf(buff, size, "%" PRId64 "us", timeUS%1000);
 }
 static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true> &samples)
 {
@@ -1369,7 +1368,7 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 	// Reference point to hold on to
 	static int initConfidence = 0;
 	static TimePoint_t referenceTime;
-	static long long referenceTimestamp;
+	static uint64_t referenceTimestamp;
 	if (initConfidence < 50 && !samples.empty())
 	{
 		int index = std::max(samples.beginIndex(), std::min(samples.endIndex()-1, (std::size_t)50));
@@ -1441,7 +1440,7 @@ static bool ShowTimeSyncPanel(BlockedQueue<TimeSyncMeasurement, 4096>::View<true
 
 			for (const auto &sample : samples)
 			{
-				long long baseUS = sample.timestamp - referenceTimestamp;
+				int64_t baseUS = diffUnsigned<int64_t>(referenceTimestamp, sample.timestamp);
 				sourceTimestamps.push_back((double)baseUS);
 				measuredTimesOffset.push_back((double)(dtUS(referenceTime, sample.measurement) - baseUS));
 				estimatedTimesOffset.push_back((double)(dtUS(referenceTime, sample.estimation) - baseUS));
@@ -1600,7 +1599,7 @@ static bool ShowTimingPanel()
 		while (std::getline(ifs, line))
 		{
 			uint64_t timestamp, receiveTimeEst, roundtripUS, timeSinceFrameUS; // Last two are optional
-			int cnt = std::sscanf(line.c_str(), "%" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "", &timestamp, &receiveTimeEst, &roundtripUS, &timeSinceFrameUS);
+			int cnt = std::sscanf(line.c_str(), "%" SCNu64 ", %" SCNu64 ", %" SCNu64 ", %" SCNu64 "", &timestamp, &receiveTimeEst, &roundtripUS, &timeSinceFrameUS);
 			if (cnt >= 2)
 			{
 				TimeSyncMeasurement meas;

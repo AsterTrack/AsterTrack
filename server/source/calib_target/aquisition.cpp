@@ -78,7 +78,8 @@ void prepareBlock(const SequenceData &sequences, int blockBegin, int blockEnd, c
 		if (markers2D > params.minMarkerObsCount*1.5)
 		{ // Filter markers first
 			markers[m] = markers2D;
-			for (long f = first-blockBegin; f < last+1-blockBegin; f++)
+			assert(blockBegin <= first);
+			for (int f = first-blockBegin; f < last+1-blockBegin; f++)
 				sharedMarkers[f]++;
 		}
 	}

@@ -31,6 +31,7 @@ SOFTWARE.
 
 #include <string>
 #include <cstdio>
+#include <cstdint>
 #include <cmath>
 #include <algorithm>
 
@@ -214,13 +215,13 @@ static constexpr ImGuiDataType getDataType()
 		return ImGuiDataType_Float;
 	else if constexpr (std::is_same_v<Scalar, double>)
 		return ImGuiDataType_Double;
-	else if constexpr (std::is_same_v<Scalar, int>)
+	else if constexpr (std::is_same_v<Scalar, int32_t>)
 		return ImGuiDataType_S32;
-	else if constexpr (std::is_same_v<Scalar, unsigned int>)
+	else if constexpr (std::is_same_v<Scalar, uint32_t>)
 		return ImGuiDataType_U32;
-	else if constexpr (std::is_same_v<Scalar, long>)
+	else if constexpr (std::is_same_v<Scalar, int64_t>)
 		return ImGuiDataType_S64;
-	else if constexpr (std::is_same_v<Scalar, unsigned long>)
+	else if constexpr (std::is_same_v<Scalar, uint64_t>)
 		return ImGuiDataType_U64;
 	else
 	 	static_assert(std::is_same_v<Scalar, void>);

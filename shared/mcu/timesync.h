@@ -96,7 +96,7 @@ static inline uint64_t rebase_timestamp_reference(const time_sync_t *time, uint3
 	// Rebase with bias (to correct for passed < overflow)
 	uint64_t rebased_step = rebase_timestamp(time, timestep, overflow, bias);
 	// Then correct for passed > overflow
-	rebased_step += (long)correction*overflow;	
+	rebased_step += (int64_t)correction*overflow;	
 	/* if (correction != 0)
 		LOG_INF("Rebased %u to %llu using last %llu, passed %u (%uus with factor %f): correction %d, bias %d",
 			timestep, rebased_step, time->last_timestep, passed, passed_us, time->factor, correction, bias); */

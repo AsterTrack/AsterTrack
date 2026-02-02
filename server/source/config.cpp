@@ -859,7 +859,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			auto frame = std::make_shared<FrameRecord>();
 			frame->ID = jsFrame["id"].get<unsigned int>();
 			frame->num = num-frameOffset;
-			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<unsigned long>());
+			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<uint64_t>());
 			frame->cameras.resize(cameras.size());
 			if (jsCameras.size()+cameraOffset > cameras.size())
 				return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
@@ -963,7 +963,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 					auto quat = jsSample["quat"];
 					auto accel = jsSample["accel"];
 					imu->samplesFused.push_back({ 
-						startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
+						startT + std::chrono::microseconds(jsSample["dt"].get<uint64_t>()),
 						Eigen::Quaternionf(quat[3].get<float>(), quat[0].get<float>(), quat[1].get<float>(), quat[2].get<float>()),
 						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>())
 					});
@@ -977,7 +977,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 					auto accel = jsSample["accel"];
 					auto mag = imu->hasMag? jsSample["mag"] : noMag;
 					imu->samplesRaw.push_back({ 
-						startT + std::chrono::microseconds(jsSample["dt"].get<unsigned long>()),
+						startT + std::chrono::microseconds(jsSample["dt"].get<uint64_t>()),
 						Eigen::Vector3f(gyro[0].get<float>(), gyro[1].get<float>(), gyro[2].get<float>()),
 						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>()),
 						Eigen::Vector3f(mag[0].get<float>(), mag[1].get<float>(), mag[2].get<float>())

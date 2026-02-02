@@ -845,10 +845,10 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 		mergeMappedMarkers(base.target, *tgt_lock, markerMap);
 
 		// ASSERT: no duplicate frames, correct order
-		long lastFrame = -1;
+		int64_t lastFrame = -1;
 		for (auto &frame : base.target.frames)
 		{
-			assert(lastFrame < (long)frame.frame);
+			assert(lastFrame < (int64_t)frame.frame);
 			lastFrame = frame.frame;
 		}
 
@@ -1087,10 +1087,10 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 				}
 
 				// ASSERT: no duplicate frames, correct order
-				long lastFrame = -1;
+				int64_t lastFrame = -1;
 				for (auto &frame : base.target.frames)
 				{
-					assert(lastFrame < (long)frame.frame);
+					assert(lastFrame < (int64_t)frame.frame);
 					lastFrame = frame.frame;
 				}
 

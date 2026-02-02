@@ -28,7 +28,6 @@ SOFTWARE.
 //#define LOG_MAX_LEVEL LDebug
 #include "util/log.hpp"
 
-#include <cinttypes>
 #include <cmath>
 
 const TimeSyncParams TimeSyncParamsForUSB =
@@ -155,7 +154,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 	}
 
 	// Predict real-time of timestamp based on time-local estimation of time synchronisation
-	int32_t usPassed = timestamp < time.lastTimestamp? -(int32_t)(time.lastTimestamp-timestamp) : (int32_t)(timestamp-time.lastTimestamp);
+	int32_t usPassed = diffUnsigned<int32_t>(time.lastTimestamp, timestamp);
 	float driftUS = usPassed * (1.0+time.drift) + time.driftAccum;
 	time.driftAccum = driftUS - ((int32_t)driftUS); // Store what we can't apply now in accumulator for next update
 	TimePoint_t timePred = time.lastTime + std::chrono::microseconds((int32_t)driftUS);

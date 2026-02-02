@@ -155,7 +155,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 
 	int cameraCount = sequences.temporary.size();
 	int markerCount = sequences.markers.size();
-	long prevPoints = inc.pointsStable;
+	std::size_t prevPoints = inc.pointsStable;
 
 	if (markerCount < inc.markerCount && inc.resetFirstFrame < 0)
 	{

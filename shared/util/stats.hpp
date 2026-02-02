@@ -44,7 +44,7 @@ template<typename Scalar = float, int Options = 0>
 struct StatValue
 {
 	Scalar sum, avg, floating, M2, min, max;
-	int num, floatCount;
+	unsigned int num, floatCount;
 
 	StatValue() { reset(); };
 	StatValue(int floatingCount) : floatCount(floatingCount) { reset(); }

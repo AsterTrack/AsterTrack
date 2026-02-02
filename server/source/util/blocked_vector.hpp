@@ -93,7 +93,7 @@ public:
 	public:
 		// iterator traits
 		using value_type = typename std::conditional_t<Const, const T, T>;
-		using difference_type = long;
+		using difference_type = int64_t;
 		using pointer = value_type*;
 		using reference = value_type&;
 		using iterator_category = std::bidirectional_iterator_tag;
@@ -112,11 +112,11 @@ public:
 			return *this;
 		}
 		iterator_t operator++(int) { iterator_t retval = *this; ++(*this); return retval; }
-		iterator_t& operator+=(long A)
+		iterator_t& operator+=(int64_t A)
 		{
 			if (b >= base->BASE::size())
 				b = base->BASE::size();
-			long index = (long)i + A;
+			int64_t index = (int64_t)i + A;
 			if (index >= 0)
 			{
 				while (b < base->BASE::size() && index >= base->BASE::operator[](b).size())
@@ -138,7 +138,7 @@ public:
 			i = index;
 			return *this;
 		}
-		iterator_t operator+(long A) const { iterator_t retval = *this; retval += A; return retval; }
+		iterator_t operator+(int64_t A) const { iterator_t retval = *this; retval += A; return retval; }
 		iterator_t& operator--()
 		{
 			if (i == 0)
@@ -152,9 +152,9 @@ public:
 			return *this;
 		}
 		iterator_t operator--(int) { iterator_t retval = *this; --(*this); return retval; }
-		iterator_t& operator-=(long A) { *this += -A; return *this; }
-		iterator_t operator-(long A) const { iterator_t retval = *this; retval += -A; return retval; }
-		long operator-(const iterator_t &other) const { return index() - other.index(); }
+		iterator_t& operator-=(int64_t A) { *this += -A; return *this; }
+		iterator_t operator-(int64_t A) const { iterator_t retval = *this; retval += -A; return retval; }
+		int64_t operator-(const iterator_t &other) const { return index() - other.index(); }
 		bool operator<(const iterator_t &other) const { return index() < other.index(); }
 		bool operator>(const iterator_t &other) const { return index() > other.index(); }
 		bool operator<=(const iterator_t &other) const { return !(*this > other); }
@@ -428,13 +428,13 @@ private:
 		{ // Start from begin
 			if constexpr (Const) it = state.const_begin;
 			else it = state.begin;
-			std::advance(it, (long)block-state.start);
+			std::advance(it, (int64_t)block-state.start);
 		}
 		else
 		{ // Start from end
 			if constexpr (Const) it = state.const_back;
 			else it = state.back;
-			std::advance(it, (long)block-(long)state.start-(long)state.count+1);
+			std::advance(it, (int64_t)block-(int64_t)state.start-(int64_t)state.count+1);
 		}
 		return it;
 	}
@@ -471,7 +471,7 @@ public:
 	public:
 		// iterator traits
 		using value_type = typename std::conditional_t<Const, const T, T>;
-		using difference_type = long;
+		using difference_type = int64_t;
 		using pointer = value_type*;
 		using reference = value_type&;
 		using iterator_category = std::random_access_iterator_tag;
@@ -508,13 +508,13 @@ public:
 			return *this;
 		}
 		iterator_t operator++(int) { iterator_t retval = *this; ++(*this); return retval; }
-		iterator_t& operator+=(long A)
+		iterator_t& operator+=(int64_t A)
 		{
-			long index = (long)i + A;
+			int64_t index = (int64_t)i + A;
 			std::size_t oldB = b;
 			if (index < 0)
 			{
-				long db = index/(long)N-1;
+				int64_t db = index/(int64_t)N-1;
 				assert(b >= S.start-db);
 			#ifdef RESILIENT_BLOCKED_QUEUE
 				if (b < S.start-db)
@@ -542,10 +542,10 @@ public:
 				}
 			#endif
 			}
-			std::advance(B, (long)b-(long)oldB);
+			std::advance(B, (int64_t)b-(int64_t)oldB);
 			return *this;
 		}
-		iterator_t operator+(long A) const { iterator_t retval = *this; retval += A; return retval; }
+		iterator_t operator+(int64_t A) const { iterator_t retval = *this; retval += A; return retval; }
 		iterator_t& operator--()
 		{
 			if (i == 0)
@@ -569,9 +569,9 @@ public:
 			return *this;
 		}
 		iterator_t operator--(int) { iterator_t retval = *this; --(*this); return retval; }
-		iterator_t& operator-=(long A) { *this += -A; return *this; }
-		iterator_t operator-(long A) const { iterator_t retval = *this; retval += -A; return retval; }
-		long operator-(const iterator_t &other) const { return index() - other.index(); }
+		iterator_t& operator-=(int64_t A) { *this += -A; return *this; }
+		iterator_t operator-(int64_t A) const { iterator_t retval = *this; retval += -A; return retval; }
+		int64_t operator-(const iterator_t &other) const { return index() - other.index(); }
 		bool operator<(const iterator_t &other) const { return index() < other.index(); }
 		bool operator>(const iterator_t &other) const { return index() > other.index(); }
 		bool operator<=(const iterator_t &other) const { return !(*this > other); }
@@ -701,7 +701,7 @@ public:
 	}
 
 	template<typename U = T>
-	long long push_back(U&& x)
+	int64_t push_back(U&& x)
 	{
 		std::size_t index;
 		BlockIt<false> block;

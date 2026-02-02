@@ -72,7 +72,7 @@ const int maxRefreshRateHz = 60; // This is further limited to display refresh r
 const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 50.0f/1000.0f
 
 // Minimum render/update interval, no faster allowed
-const long minIntervalUS = 1000000/maxRefreshRateHz;
+const dt_t minIntervalUS = 1000000/maxRefreshRateHz;
 // Maximum interval between updates
 const double waitIntervalS = minRefreshRateHz? (1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz) : (0.1f);
 
@@ -162,7 +162,7 @@ EXPORT bool _InterfaceThread()
 		}
 
 		// Wait a minimum amount to limit maximum refresh rate
-		long curIntervalUS = dtUS(ui.renderTime, sclock::now());
+		dt_t curIntervalUS = dtUS(ui.renderTime, sclock::now());
 		if (curIntervalUS < minIntervalUS)
 			std::this_thread::sleep_for(std::chrono::microseconds(minIntervalUS-curIntervalUS));
 

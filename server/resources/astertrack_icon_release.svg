@@ -4,15 +4,121 @@
    height="45mm"
    viewBox="0 0 45 45"
    version="1.1"
+   id="svg2"
+   sodipodi:docname="astertrack_icon_14.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   inkscape:export-filename="/mnt/data/Sciebo/VR_Dev/AsterTrack/REPO/server/resources/icons/astertrack_icon.png"
+   inkscape:export-xdpi="288.99557"
+   inkscape:export-ydpi="288.99557"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs2">
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect6"
+       is_visible="true"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,5.0270835,0,1 @ F,0,0,1,0,5.0270835,0,1 @ F,0,0,1,0,5.0270835,0,1"
+       radius="20"
+       unit="px"
+       method="auto"
+       mode="F"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect5"
+       is_visible="false"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,5.8208335,0,1 @ F,0,0,1,0,5.8208335,0,1 @ F,0,0,1,0,5.8208335,0,1"
+       radius="21"
+       unit="px"
+       method="auto"
+       mode="F"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect4"
+       is_visible="true"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1"
+       radius="10"
+       unit="px"
+       method="auto"
+       mode="F"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+  </defs>
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#393939"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#393939"
+     inkscape:document-units="mm"
+     inkscape:zoom="1.4013661"
+     inkscape:cx="47.453695"
+     inkscape:cy="31.754728"
+     inkscape:window-width="1920"
+     inkscape:window-height="1052"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2" />
   <rect
-     style="display:inline;fill:#397898;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
-     width="45" height="45" x="0" y="0"  rx="10" ry="10" />
+     style="display:inline;fill:#356e8c;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+     id="rect4"
+     width="45"
+     height="45"
+     x="-2.6645353e-15"
+     y="-2.6645353e-15"
+     rx="9.8999996"
+     ry="10" />
+  <path
+     style="display:none;fill:#333333;fill-opacity:1;fill-rule:nonzero;stroke:#333333;stroke-width:4.6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+     d="M 41.301786,34.972679 25.409796,10.027252 11.977306,31.112038 Z M 19.590124,10.027252 3.6981342,34.972679 33.022614,31.112038 Z"
+     id="path4"
+     inkscape:label="cams_bg" />
+  <path
+     style="display:none;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:1"
+     d="M 19.724561,5.19148 0.77543944,33.80852 A 2.7005265,2.7005265 61.755509 0 0 3.0270835,38 H 41.972917 a 2.7005265,2.7005265 118.24449 0 0 2.251644,-4.19148 L 25.275439,5.19148 a 3.3287445,3.3287445 0 0 0 -5.550878,0 z"
+     id="path3"
+     inkscape:label="bg"
+     inkscape:original-d="M 22.5,1 -2,38 h 49 z"
+     inkscape:path-effect="#path-effect6" />
   <path
      style="display:inline;fill:none;fill-opacity:1;fill-rule:evenodd;stroke:#ffffff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-     d="M 41.301786,34.972679 25.409796,10.027252 11.977306,31.112038 Z M 19.590124,10.027252 3.6981342,34.972679 33.022614,31.112038 Z"/>
+     d="M 41.301786,34.972679 25.409796,10.027252 11.977306,31.112038 Z M 19.590124,10.027252 3.6981342,34.972679 33.022614,31.112038 Z"
+     id="path1"
+     inkscape:label="cams" />
   <path
      style="fill:none;fill-opacity:1;fill-rule:evenodd;stroke:#ffffff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-     d="m 22.49996,22.205244 v 4 l 3.625231,1.690473 m -3.625231,-1.690473 -3.625231,1.690473"/>
+     d="m 22.49996,22.205244 v 4 l 3.625231,1.690473 m -3.625231,-1.690473 -3.625231,1.690473"
+     id="path2"
+     inkscape:label="star"
+     inkscape:export-filename="astertrack_icon.png"
+     inkscape:export-xdpi="162.56"
+     inkscape:export-ydpi="162.56" />
 </svg>

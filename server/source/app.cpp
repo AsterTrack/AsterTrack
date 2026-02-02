@@ -130,6 +130,7 @@ const char* LogLevelIdentifiers[LMaxLevel];
 uint32_t LogLevelHexColors[LMaxLevel];
 
 static void initialise_logging_strings();
+static bool rotate_log_files(std::string logPath);
 
 /* Main Server Loop */
 
@@ -140,23 +141,49 @@ int main (void)
 
 	// Tell STL we are utf8 aware, and set locale for any other formats (probably unused)
 	std::setlocale(LC_ALL, "en_GB.utf8");
+
+	// Seed random to get sufficiently random, but not secure values every time
+	srand(time(0));
 	
 	{ // Setup logging
 		initialise_logging_strings();
-		// Basic log file rotation
-		if (std::filesystem::exists("log_1.txt"))
-			std::filesystem::rename("log_1.txt", "log_2.txt");
-		if (std::filesystem::exists("log.txt"))
-			std::filesystem::rename("log.txt", "log_1.txt");
-		GetApp().logFile.open("log.txt");
 
 		// Init runtime max log levels
 		// NOTE: Compile-time LOG_MAX_LEVEL takes priority!
 		for (int i = 0; i < LMaxCategory; i++)
 			LogMaxLevelTable[i] = LOG_MAX_LEVEL_DEFAULT;
 
+		// Basic log file rotation
+		AppInstance.logPath = "log.txt";
+		if (std::filesystem::exists("log.txt"))
+		{ // Clean up after an improperly closed program
+			if (!rotate_log_files("log.txt"))
+			{ // Likely still in use by an open program, pick another log path
+				AppInstance.logPath = asprintf_s("log_%d.txt", rand());
+			}
+		}
+
+		AppInstance.logFile.open(AppInstance.logPath);
+		if (AppInstance.logFile.fail())
+		{
+			LOG(LDefault, LError, "Failed to open '%s'!\n", AppInstance.logPath.c_str());
+			printf("Failed to open '%s'!\n", AppInstance.logPath.c_str());
+			AppInstance.logFile.clear();
+			AppInstance.logPath = asprintf_s("log_%d.txt", rand());
+			AppInstance.logFile.open(AppInstance.logPath);
+			if (AppInstance.logFile.fail())
+			{
+				LOG(LDefault, LError, "Failed to open '%s'!\n", AppInstance.logPath.c_str());
+				printf("Failed to open '%s'!\n", AppInstance.logPath.c_str());
+			}
+		}
 		atexit([](){
-			GetApp().FlushLog();
+			if (AppInstance.logFile.is_open())
+			{
+				AppInstance.FlushLog();
+				AppInstance.logFile.close();
+				rotate_log_files(AppInstance.logPath);
+			}
 		});
 	}
 
@@ -260,6 +287,7 @@ void AppState::SignalInterfaceClosed()
 
 void AppState::FlushLog()
 {
+	if (!logFile.is_open() || logFile.fail()) return;
 	std::shared_lock lock(logContentAccess);
 	auto logs = logEntries.getView();
 	auto flushStart = logs.pos(std::max(lastFlushed, logs.beginIndex()));
@@ -369,6 +397,29 @@ static void initialise_logging_strings()
 	LogLevelHexColors[LWarn]   = IM_COL32(0xDD, 0x88, 0x44, 0xFF);
 	LogLevelHexColors[LError]  = IM_COL32(0xEE, 0x44, 0x44, 0xFF);
 	LogLevelHexColors[LOutput] = IM_COL32(0xBB, 0xBB, 0x44, 0xFF);
+}
+
+static bool rotate_log_files(std::string logPath)
+{
+	if (std::filesystem::exists("log_1.txt"))
+	{
+		if (std::filesystem::exists("log_2.txt"))
+			std::filesystem::rename("log_2.txt", "log_3.txt");
+		if (std::filesystem::exists("log_1.txt"))
+			std::filesystem::rename("log_1.txt", "log_2.txt");
+	}
+	if (std::filesystem::exists(logPath))
+	{
+		std::error_code error;
+		std::filesystem::rename(logPath, "log_1.txt", error);
+		if (error)
+		{
+			LOG(LDefault, LError, "Failed to rotate '%s'!\n", AppInstance.logPath.c_str());
+			printf("Failed to rotate '%s'!\n", AppInstance.logPath.c_str());
+			return false;
+		}
+	}
+	return true;
 }
 
 // TODO: switch to stb_sprintf, supposedly faster

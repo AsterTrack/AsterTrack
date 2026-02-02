@@ -111,9 +111,6 @@ bool ServerInit(ServerState &state)
 		DebugSpecificCameraParameters(state.cameraCalibrations, modes);
 	}
 
-	//srand(1111110);
-	srand(time(0)); // Sufficient to get new random values for Eigen::Random every time
-
 	omp_set_num_threads(omp_get_max_threads());
 
 	WirelessServerInit();

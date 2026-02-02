@@ -43,6 +43,7 @@ public:
 		int context = 0; // #Target, #Controller, #Camera, etc.
 	};
 	BlockedQueue<LogEntry, 1024*16> logEntries;
+	std::string logPath;
 	std::ofstream logFile;
 	std::size_t lastFlushed;
 	std::shared_mutex logContentAccess; // Protects readers from modifications to existing log entries

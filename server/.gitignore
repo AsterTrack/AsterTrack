@@ -12,8 +12,7 @@ package/
 
 # Temporary Outputs
 log.txt
-log_1.txt
-log_2.txt
+log_*.txt
 imgui.ini
 imgui_log.txt
 *.tar.gz

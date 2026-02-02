@@ -542,7 +542,7 @@ public:
 				}
 			#endif
 			}
-			std::advance(B, b-oldB);
+			std::advance(B, (long)b-(long)oldB);
 			return *this;
 		}
 		iterator_t operator+(long A) const { iterator_t retval = *this; retval += A; return retval; }

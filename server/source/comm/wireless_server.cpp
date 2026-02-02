@@ -181,6 +181,20 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 	LOG(LServer, LDebug, "Waiting for server connections...\n");
 	while (!stop_token.stop_requested())
 	{
+		struct timeval timeout;
+		timeout.tv_sec = 0;
+		timeout.tv_usec = 100000;
+
+		// Return values for select indicating events in camera file descriptor
+		fd_set readFD;
+		FD_ZERO(&readFD);
+		FD_SET(server.socket, &readFD);
+
+		// Wait for changes from camera file descriptor
+		int status = select(server.socket + 1, &readFD, nullptr, nullptr, &timeout);
+		if (status < 0)
+			continue;
+
 		struct sockaddr_storage client_addr;
 		socklen_t addr_size = sizeof(client_addr);
 		int socket = accept(server.socket, (struct sockaddr *)&client_addr, &addr_size);

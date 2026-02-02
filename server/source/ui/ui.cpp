@@ -110,6 +110,8 @@ EXPORT bool _InterfaceThread()
 	// Open platform window
 	glfwSetErrorCallback(glfw_error_callback);
 	ui.glfwWindow = setupPlatformWindow(ui.useCustomHeader);
+	if (!ui.glfwWindow)
+		return false;
 	glfwMakeContextCurrent(ui.glfwWindow);
 	glfwSetWindowRefreshCallback(ui.glfwWindow, RefreshGLFWWindow);
 
@@ -163,8 +165,14 @@ EXPORT bool _InterfaceThread()
 
 		// Wait a minimum amount to limit maximum refresh rate
 		dt_t curIntervalUS = dtUS(ui.renderTime, sclock::now());
-		if (curIntervalUS < minIntervalUS)
+		if (curIntervalUS < 0)
+			LOG(LGUI, LWarn, "Timing calculation off! Supposedly spent %" PRId64 "us rendering frame!!", curIntervalUS);
+		else if (curIntervalUS < minIntervalUS)
 			std::this_thread::sleep_for(std::chrono::microseconds(minIntervalUS-curIntervalUS));
+		else if (curIntervalUS > 2000000)
+			LOG(LGUI, LInfo, "Woke up from sleep after %us!", (uint32_t)(curIntervalUS/1000/1000));
+		else if (curIntervalUS > minIntervalUS*5)
+			LOG(LGUI, LDarn, "Render thread lagged for %ums!", (uint32_t)(curIntervalUS/1000));
 
 		// Wait for input events or update/render requests while updating general state
 		glfwPollEvents();
@@ -926,8 +934,10 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader)
 		return nullptr;
 
 	// Colors didn't work on 3.0 context
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+
+	glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_NATIVE_CONTEXT_API);
 #else
 
 	#error "Platform currently not supported!"
@@ -961,6 +971,13 @@ static GLFWwindow* setupPlatformWindow(bool &useHeader)
 	GLFWwindow *glfwWindow = glfwCreateWindow(1280, 720, "AsterTrack", nullptr, nullptr);
 	if (!glfwWindow)
 	{
+		glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+		glfwWindow = glfwCreateWindow(1280, 720, "AsterTrack", nullptr, nullptr);
+	}
+	if (!glfwWindow)
+	{
+		LOG(LGUI, LError, "Failed to create GLFW window!");
+		printf("Failed to create GLFW window!\n");
 		glfwTerminate();
 		return nullptr;
 	}

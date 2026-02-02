@@ -12,7 +12,7 @@
                 "args": [
                     "build", "&",
                     "cd", "build", "&&",
-                    "cmake", "-DCMAKE_BUILD_TYPE=${input:buildType}", "..", "&&",
+                    "cmake", "-DCMAKE_BUILD_TYPE=${input:buildType}", "-DCMAKE_VERBOSE_MAKEFILE=ON", "..", "&&",
                     "msbuild", "astertrack.sln", "-p:Configuration=${input:buildType}"
                 ],
                 "problemMatcher": "$msCompile",
@@ -32,6 +32,19 @@
                 "make", "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)",
                 // Sadly, "make --dry-run", does not work, it intercepts commands
             ],
+            "windows": { // This does not actually compile like the linux version does, but whatever. Only way to get compile_commands.json is using Ninja Generator
+                "command": "mkdir",
+                "args": [
+                    "build-compile-commands", "&",
+                    "mkdir", "build", "&",
+                    "cd", "build-compile-commands", "&&",
+                    "cmake", "-G Ninja", "-DCMAKE_BUILD_TYPE=${input:buildType}", "..", "&&",
+                    "copy", "compile_commands.json", "..\\build\\", "&",
+                    "cd", "..", "&",
+                    "rd", "/s", "/q", "build-compile-commands"
+                ],
+                "options": { "shell": { "executable": "cmd.exe", "args": [ "/d", "/c", "vcvars64.bat", "&&", "set", "CL=/MP", "&&"] } }
+            },
             "runOptions": { "reevaluateOnRerun": false }
         },
        /*  { // DO NOT USE: Doesn't build dependencies using debian environment, so any compatibility benefits may be void

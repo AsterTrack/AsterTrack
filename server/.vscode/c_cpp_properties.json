@@ -1,41 +1,57 @@
 {
 	"configurations": [
-		{
+		{ // This is not really maintained, use clangd instead of Microsofts C++ extension on Linux for the best LSP experience
 			"name": "Linux",
+			"compileCommands": [ "build/compile_commands.json" ],
 			"includePath": [
+				"${workspaceFolder}/source/",
+				"${workspaceFolder}/../shared/",
 				"${workspaceFolder}/dependencies/include/",
 				"${workspaceFolder}/dependencies/sources/",
-				"${workspaceFolder}/dependencies/sources/imgui/",
-				"${workspaceFolder}/sources/",
-				"/usr/include/**"
+				"${workspaceFolder}/dependencies/sources/imgui/"
 			],
+			"browse": {
+				"path": [
+					"${workspaceFolder}\\source",
+					"${workspaceFolder}\\..\\shared",
+					"${workspaceFolder}/dependencies/sources/"
+				]
+			},
 			"defines": [
 				"EIGEN_MPL2_ONLY",
 				"_FILE_OFFSET_BITS=64",
-				"_UNICODE",
 				"GLEW_STATIC"
 			],
 			"compilerPath": "/usr/bin/gcc",
 			"cStandard": "gnu17",
-			"cppStandard": "gnu++17",
+			"cppStandard": "gnu++20",
 			"intelliSenseMode": "linux-gcc-x64"
 		},
-		{
+		{ // This is not really maintained, you can use clangd instead of Microsofts C++ extension on Windows, too, for the best LSP experience
 			"name": "Win32",
+			"compileCommands": [ "build/compile_commands.json" ],
 			"includePath": [
+				"${workspaceFolder}\\source",
+				"${workspaceFolder}\\..\\shared",
 				"${workspaceFolder}\\dependencies\\include",
-				"${workspaceFolder}\\dependencies\\lib\\win\\**",
-				"${workspaceFolder}\\sources"
+				"${workspaceFolder}\\dependencies\\sources",
+				"${workspaceFolder}\\dependencies\\sources\\imgui",
+				"${workspaceFolder}\\dependencies\\lib\\win\\**"
 			],
+			"browse": {
+				"path": [
+					"${workspaceFolder}\\source",
+					"${workspaceFolder}\\..\\shared",
+					"${workspaceFolder}/dependencies/sources/"
+				]
+			},
 			"defines": [
 				"EIGEN_MPL2_ONLY",
-				"_UNICODE",
 				"GLEW_STATIC",
-				//"GLEW_EGL",
-				"USE_WX"
+				"_GLFW_WIN32"
 			],
 			"cStandard": "c17",
-			"cppStandard": "c++17",
+			"cppStandard": "c++20",
 			"intelliSenseMode": "windows-msvc-x64"
 		}
 	],

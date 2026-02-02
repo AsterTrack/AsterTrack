@@ -8,6 +8,7 @@
 		}
 	],
 	"settings": {
+		"git.openRepositoryInParentFolders": "always",
 		"clangd.arguments": [
 			"--compile-commands-dir=${workspaceFolder}/../camera_mcu/build",
 	   		"--header-insertion=never"

@@ -11,6 +11,13 @@
 			"program": "${workspaceFolder}/build/astertrack.exe",
 			"cwd": "${workspaceFolder}"
 		},
+		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
+			"name": "Windows CodeLLDB",
+			"type": "lldb",
+			"request": "launch",
+			"program": "${workspaceFolder}/build/astertrack.exe",
+			"cwd": "${workspaceFolder}"
+		},
 		{ // Uses Microsoft C/C++ extension, very slow debugging experience with GDB
 			"name": "Linux GDB MS CPP",
 			"type": "cppdbg",

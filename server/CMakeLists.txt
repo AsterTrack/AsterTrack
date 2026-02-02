@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.15)
 project(AsterTrack)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Assure either debug or release is set
 if (NOT CMAKE_BUILD_TYPE)

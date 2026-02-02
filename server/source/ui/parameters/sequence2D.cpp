@@ -50,7 +50,7 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ScalarProperty<float>("Max Acceleration", "px", &setting.maxAcceleration, &standard.maxAcceleration, 0, 200, 1.0f, PixelFactor, "%.1f");
 			ScalarProperty<float>("Max Value Difference", "", &setting.maxValueDiff, &standard.maxValueDiff, 0, 1000, 10.0f, 1, "%.0f");
 			ScalarProperty<float>("Value Factor", "", &setting.valueDiffFactor, &standard.valueDiffFactor, 0, 10, 0.05f, 1000*PixelFactor, "%.2f");
-			ScalarProperty<int>("Value Flowing Average", "", &setting.valueFlowingAvgerage, &standard.valueFlowingAvgerage, 1, 1000);
+			ScalarProperty<int>("Value Flowing Average", "", &setting.valueFlowingAverage, &standard.valueFlowingAverage, 1, 1000);
 			
 			BeginSection("Matching Algorithm");
 			ScalarProperty<float>("Primary Advantage", "", &setting.match.primAdvantage, &standard.match.primAdvantage, 0, 10, 0.1f);

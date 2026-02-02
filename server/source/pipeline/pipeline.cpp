@@ -491,7 +491,7 @@ void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalib
 
 void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibration &calibration)
 {
-	int64_t frame = pipeline.frameNum;
+	OptFrameNum frame = pipeline.frameNum;
 	for (int i = 1; i < pipeline.cameras.size(); i++)
 	{
 		if (pipeline.cameras[i]->calib.invalid())

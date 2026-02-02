@@ -10,6 +10,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #ifndef SEQUENCE_DATA_H
 #define SEQUENCE_DATA_H
 
+#include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
 
 
@@ -28,7 +29,7 @@ struct SequenceData;
  */
 struct PointSequence 
 {
-	int startFrame;
+	FrameNum startFrame;
 	int marker = -1;
 	float value; // Flowing average of value grading of blob sequence
 	Eigen::Vector2f avgPos = Eigen::Vector2f::Zero(); // Flowing average, used as inactive center
@@ -36,19 +37,19 @@ struct PointSequence
 	std::vector<Eigen::Vector2f> points;
 	std::vector<Eigen::Vector2f> rawPoints;
 	// Inactive Sequence Observations
-	int inactiveLength = 0;
+	std::size_t inactiveLength = 0;
 	// TODO: Add standard deviation? See StatValue for running M2/stdDev calculations
 
 	int lastGTMarker = -1; // For debugging only
 
 	PointSequence() {};
-	PointSequence(int StartFrame, Eigen::Vector2f point2D, Eigen::Vector2f raw2D, float val)
+	PointSequence(FrameNum StartFrame, Eigen::Vector2f point2D, Eigen::Vector2f raw2D, float val)
 		: startFrame(StartFrame), avgPos(point2D), points({ point2D }), rawPoints({ raw2D }), marker(-1), value(val) {};
 
 	inline bool isInactive() const { return inactiveLength > 0; }
-	inline int length() const { return inactiveLength > 0? inactiveLength : (int)points.size(); }
-	inline int lastFrame() const { return startFrame + length() - 1; }
-	inline int endFrame() const { return startFrame + length(); }
+	inline std::size_t length() const { return inactiveLength > 0? inactiveLength : points.size(); }
+	inline FrameNum lastFrame() const { return startFrame + length() - 1; }
+	inline FrameNum endFrame() const { return startFrame + length(); }
 	inline Eigen::Vector2f getPoint(int p) const { return inactiveLength > 0? avgPos : points[p]; }
 	inline Eigen::Vector2f getRaw(int p) const { return inactiveLength > 0? avgPos : rawPoints[p]; }
 };
@@ -61,7 +62,7 @@ struct CameraSequences
 	std::vector<PointSequence> sequences;
 	// TODO: Add current 2D size
 
-	inline unsigned int getSampleCount();
+	inline std::size_t getSampleCount();
 
 	using range_iterator = std::vector<Eigen::Vector2f>::const_iterator;
 	class const_iterator;
@@ -81,15 +82,15 @@ struct CameraSequences
  */
 struct MarkerSequences
 {
-	int lastFrame = 0;
+	FrameNum lastFrame = 0;
 	std::vector<CameraSequences> cameras; // Follows PipelineState::cameras mapping
 	// TODO: Add 3D size?
 
-	inline unsigned int getSampleCount();
+	inline std::size_t getSampleCount();
 
 	inline std::pair<int, float> resolveGTMarker() const;
 
-	inline std::pair<int,int> getFrameRange() const;
+	inline std::pair<FrameNum,FrameNum> getFrameRange() const;
 };
 
 /**
@@ -97,11 +98,11 @@ struct MarkerSequences
  */
 struct SequenceData
 {
-	int lastRecordedFrame;
+	FrameNum lastRecordedFrame;
 	std::vector<MarkerSequences> markers;
 	std::vector<std::vector<PointSequence>> temporary; // Follows PipelineState::cameras mapping
 
-	inline unsigned int getSampleCount();
+	inline std::size_t getSampleCount();
 
 	void verifyCameraCount(int camCnt)
 	{

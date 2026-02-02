@@ -830,7 +830,7 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 		auto &targetView = std::get<0>(view);
 		auto tgt_lock = targetView->target.contextualRLock();
 
-		LOGC(LDebug, "      Target view %d starting %d with %d frames left, %d markers!",
+		LOGC(LDebug, "      Target view %d starting %" PRIu64 " with %d frames left, %d markers!",
 			targetView->id, tgt_lock->frames.front().frame, (int)tgt_lock->frames.size(), (int)tgt_lock->markers.size());
 
 		std::map<int, int> markerMap = findInitialMarkerMap(base.target, *tgt_lock);
@@ -845,10 +845,10 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 		mergeMappedMarkers(base.target, *tgt_lock, markerMap);
 
 		// ASSERT: no duplicate frames, correct order
-		int64_t lastFrame = -1;
+		OptFrameNum lastFrame = -1;
 		for (auto &frame : base.target.frames)
 		{
-			assert(lastFrame < (int64_t)frame.frame);
+			assert(lastFrame < (OptFrameNum)frame.frame);
 			lastFrame = frame.frame;
 		}
 
@@ -1087,10 +1087,10 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 				}
 
 				// ASSERT: no duplicate frames, correct order
-				int64_t lastFrame = -1;
+				OptFrameNum lastFrame = -1;
 				for (auto &frame : base.target.frames)
 				{
-					assert(lastFrame < (int64_t)frame.frame);
+					assert(lastFrame < (OptFrameNum)frame.frame);
 					lastFrame = frame.frame;
 				}
 

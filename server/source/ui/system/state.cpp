@@ -210,8 +210,8 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 	// Init state
 	inc.cameraTriObservations.resize(cameraCount, 0);
 
-	int curStableFrame = sequences.lastRecordedFrame - stableSequenceDelay;
-	int curTemporaryFrame = sequences.lastRecordedFrame - stableSequenceDelay;
+	OptFrameNum curStableFrame = sequences.lastRecordedFrame - stableSequenceDelay;
+	OptFrameNum curTemporaryFrame = sequences.lastRecordedFrame - stableSequenceDelay;
 	if (updateStable)
 	{ // Stable Update
 		std::vector<std::vector<Eigen::Vector2f>> newPointsStable(cameraCount);
@@ -222,7 +222,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 			// The error is very likely here, with selecting and updating from frmaes
 			// resetFirstFrame > 0 and stableSequenceDelay both don't seem to be the (sole) issue
 			// Instead it seems some markers and/or sequences are afflicted and then never get updated incrementally again
-			std::map<int, int> frameMap;
+			std::map<FrameNum, std::size_t> frameMap;
 			inc.pointsStable += getTriangulationFrameMap(marker, frameMap, inc.frameStable, curStableFrame);
 			handleMappedSequences(marker, frameMap, [&]
 				(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
@@ -244,7 +244,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		inc.frameIndices[curStableFrame] = inc.pointsStable;
 		while (inc.frameIndices.size() > 50)
 			inc.frameIndices.erase(inc.frameIndices.begin());
-		LOG(LGUI, LTrace, "Registering checkpoint at frame %d!", curStableFrame);
+		LOG(LGUI, LTrace, "Registering checkpoint at frame %" PRId64 "!", curStableFrame);
 		inc.frameStable = curStableFrame;
 		if (prevPoints != inc.pointsStable)
 			calibError.dirty = true;

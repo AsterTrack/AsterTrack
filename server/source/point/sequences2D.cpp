@@ -577,7 +577,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			std::sort(markerTgt.cameras[c].sequences.begin(), markerTgt.cameras[c].sequences.end(), 
 				[](PointSequence &s1, PointSequence &s2) { return s1.startFrame < s2.startFrame; });
 		}
-		long resetAfterFrame = std::max(markerTgt.getFrameRange().first, markerSrc.getFrameRange().first);
+		FrameNum resetAfterFrame = std::max(markerTgt.getFrameRange().first, markerSrc.getFrameRange().first);
 		sequences.markers.erase(sequences.markers.begin() + src);
 		for (int m = src; m < sequences.markers.size(); m++)
 		{
@@ -764,7 +764,7 @@ static void verifySequenceMatches(const SequenceAquisitionParameters &params,
 						bool oldSeq = curFrame - seq.endFrame() > params.allowedDrops || seq.endFrame() > curFrame;
 						float distAlt = (points2D[matchPri]-seq.points.back()).norm();
 						LOGC(LDarn,
-						"     -> Marker %d has %s sequence that should've matched point instead (d %f), last seen %d frames ago!", 
+						"     -> Marker %d has %s sequence that should've matched point instead (d %f), last seen %" PRIu64 " frames ago!", 
 							mm, oldSeq? "dropped" : "active", distAlt*PixelFactor, curFrame - seq.endFrame());
 						//break; // Only log most recent
 					}
@@ -780,7 +780,7 @@ static void verifySequenceMatches(const SequenceAquisitionParameters &params,
 						ptHasSeqMatch = true;
 						float distAlt = (points2D[matchPri]-tmpSeq.points.back()).norm();
 						LOGC(LDarn,
-						"     -> Temporary sequence %ld should've matched point instead (d %f), last seen %d frames ago!", 
+						"     -> Temporary sequence %ld should've matched point instead (d %f), last seen %" PRIu64 " frames ago!", 
 							reinterpret_cast<intptr_t>(&tmpSeq)%9876543, distAlt*PixelFactor, curFrame - tmpSeq.endFrame() + 1);
 					}
 				}
@@ -825,7 +825,7 @@ static void verifySequenceMatches(const SequenceAquisitionParameters &params,
  * Updates the observations of cameraIndex only to include new points, and verifies sequences with other camera observations if required
  */
 bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
-	CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, int cameraIndex,
+	CameraSystemCalibration &calibration, SequenceData &sequences, FrameNum curFrame, int cameraIndex,
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &rawPoints2D,
 	const std::vector<BlobProperty> &properties, const std::vector<int> &pt2GTMarker)
 {
@@ -987,10 +987,10 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 
 		/* if (match.context.marker < 0)
 		{
-			LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d ACTIVE\n", cameraIndex, -match.context.marker-1, seq.startFrame, (int)seq.length());
+			LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d ACTIVE\n", cameraIndex, -match.context.marker-1, seq.startFrame, (int)seq.length());
 		}
 		else
-			LOGC(LTrace, "SEQN %d:%d:%.4d:%.4d ACTIVE\n", cameraIndex, match.context.marker, seq.startFrame, (int)seq.length()); */
+			LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d ACTIVE\n", cameraIndex, match.context.marker, seq.startFrame, (int)seq.length()); */
 
 		seq.points.push_back(points2D[p]);
 		seq.rawPoints.push_back(rawPoints2D[p]);
@@ -1000,7 +1000,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 			sequences.markers[seq.marker].lastFrame = curFrame;
 		if (!outlier)
 		{
-			int floatingLength = std::min(params.valueFlowingAvgerage, seq.length());
+			int floatingLength = std::min<int>(params.valueFlowingAverage, seq.length());
 			seq.value = ((floatingLength-1) * seq.value + properties[p].value) / floatingLength;
 		}
 	}
@@ -1023,7 +1023,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		if (droppedFrames == params.allowedDrops+1)
 		{
 			// TODO: Keep list of "active" sequences or better, index of oldest still active sequence - either way, need updating here
-			LOGC(LTrace, "SEQN %d:%d:%.4d:%.4d INTERRUPTED\n", cameraIndex, m, seq.startFrame, (int)seq.length());
+			LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d INTERRUPTED\n", cameraIndex, m, seq.startFrame, (int)seq.length());
 		}
 		if (droppedFrames > params.allowedDrops || seq.lastFrame() > curFrame)
 			continue;
@@ -1037,7 +1037,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		if (inactiveSequence.inactiveLength == 0)
 			continue; // No inactivity
 
-		LOGC(LTrace, "SEQN %d:%d:%.4d:%.4d INACTIVE for %d frames\n", 
+		LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d INACTIVE for %d frames\n", 
 			cameraIndex, m, seq.startFrame, (int)seq.points.size(), inactiveSequence.inactiveLength);
 		int lengthLeft = seq.points.size()-inactiveSequence.inactiveLength;
 		if (lengthLeft < params.minSequenceLength)
@@ -1078,7 +1078,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		int droppedFrames = curFrame - tmpSeq.lastFrame();
 		if (droppedFrames > 0)
 		{
-			LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d Dropout lasting %d frames!",
+			LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d Dropout lasting %d frames!",
 				cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length(), droppedFrames);
 		}
 		if (droppedFrames > maxDrops)
@@ -1086,7 +1086,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 			if (tmpSeq.isInactive() || tmpSeq.length() < params.minSequenceLength)
 			{
 				if (tmpSeq.length() > 10)
-					LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d INTERRUPTED (%d limit, inactive? %c)",
+					LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d INTERRUPTED (%d limit, inactive? %c)",
 						cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length(), params.minSequenceLength, tmpSeq.isInactive()? 'y' : 'n');
 				temporaries.erase(temporaries.begin()+t--);
 				continue;
@@ -1094,7 +1094,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 			else
 			{ // Drop sequence, but do correspondence check first
 				forceCheck = true;
-				LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d INTERRUPTED - correspondence matching!",
+				LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d INTERRUPTED - correspondence matching!",
 					cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length());
 			}
 		}
@@ -1104,7 +1104,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		tmpSeq.inactiveLength = checkInactivity(tmpSeq);
 		if (tmpSeq.isInactive() && !prevInactive)
 		{
-			LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d INACTIVITY started!",
+			LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d INACTIVITY started!",
 				cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length());
 		}
 
@@ -1113,13 +1113,13 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		{ // Check at stable boundary to get maximum length of temporary
 			// Need to call resolveCorresponce on sequences consistently by first frame
 			// If no reference found, or uncertain about it, assign new correspondence
-			LOGC(LTrace, "TEMP %d:%d:%.4d:%.4d CORRESPONDENCE ATTEMPT\n", 
+			LOGC(LTrace, "TEMP %d:%d:%.4" PRIu64 ":%.4d CORRESPONDENCE ATTEMPT\n", 
 				cameraIndex, t, tmpSeq.startFrame, (int)tmpSeq.length());
 
 			tmpSeq.marker = resolveCorrespondences(params, calibration, sequences, tmpSeq, cameraIndex, !pt2GTMarker.empty());
 			if (tmpSeq.marker >= 0)
 			{ // Move to list dedicated to corresponding marker
-				LOGC(LTrace, "SEQN %d:%d:%.4d:%.4d ACCEPTED\n", 
+				LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d ACCEPTED\n", 
 					cameraIndex, tmpSeq.marker, tmpSeq.startFrame, (int)tmpSeq.points.size());
 				MarkerSequences &marker = sequences.markers[tmpSeq.marker];
 				marker.cameras[cameraIndex].sequences.push_back(std::move(tmpSeq));
@@ -1131,7 +1131,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 			else
 			{ // Add new marker
 				tmpSeq.marker = sequences.markers.size();
-				LOGC(LTrace, "SEQN %d:%d:%.4d:%.4d ACCEPTED AS SEQN WITH NEW MARKER\n", 
+				LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d ACCEPTED AS SEQN WITH NEW MARKER\n", 
 					cameraIndex, tmpSeq.marker, tmpSeq.startFrame, (int)tmpSeq.points.size());
 				MarkerSequences marker;
 				marker.lastFrame = curFrame;
@@ -1161,7 +1161,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 	{
 		if (encumberedPoint[i]) continue;
 		// Start a new temporary point sequence
-		LOGC(LTrace, "TEMP %d:%.4d:%d BEGIN\n", cameraIndex, curFrame, (int)temporaries.size());
+		LOGC(LTrace, "TEMP %d:%.4" PRIu64 ":%d BEGIN\n", cameraIndex, curFrame, (int)temporaries.size());
 		temporaries.emplace_back(curFrame, points2D[i], rawPoints2D[i], properties[i].value);
 		if (!pt2GTMarker.empty())
 			temporaries.back().lastGTMarker = pt2GTMarker[i];
@@ -1183,7 +1183,7 @@ void updateTrustFromEpipolarStats(const SequenceAquisitionParameters &params, Fu
 		FM.floatingTrust = FM.stats.num / getFitError(params, FM.stats);
 }
 
-void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, bool confidenceCheck)
+void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, FrameNum curFrame, bool confidenceCheck)
 {
 	if ((curFrame % 100) == 0)
 	{
@@ -1276,6 +1276,7 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 
 					for (auto it = std::next(fmEntry.candidates.begin()); it != fmEntry.candidates.end();)
 					{
+						assert(curFrame >= it->lastFrame);
 						if (it->floatingTrust < 1.0f && it->stats.num < params.FM.ConfidentMinSamples
 							&& (curFrame - it->lastFrame) > 500)
 						{

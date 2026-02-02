@@ -10,6 +10,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #ifndef CAMERA_SYSTEM_H
 #define CAMERA_SYSTEM_H
 
+#include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
 
 #include "util/stats.hpp"
@@ -23,7 +24,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 struct FundamentalMatrix
 {
 	// Range of frames used for calculation where the FM is deemed to be valid
-	int firstFrame, lastFrame, lastCalculation; // Before and after, FMs may have changed
+	FrameNum firstFrame, lastFrame, lastCalculation; // Before and after, FMs may have changed
 
 	// Affects whether sequence2D should itself recalculate FM
 	// Even if true, errors will still be accumulated
@@ -36,10 +37,10 @@ struct FundamentalMatrix
 
 	// A trust value that decays over time if not updated
 	// Update means a correspondence uses and thus confirms this FM is still valid
-	int lastTrustUpdate; // Frame of last update of trust value
+	FrameNum lastTrustUpdate; // Frame of last update of trust value
 	float floatingTrust;
 
-	inline float updateTrust(int frame, float decayRate);
+	inline float updateTrust(FrameNum frame, float decayRate);
 
 	Eigen::Matrix3f matrix;
 };

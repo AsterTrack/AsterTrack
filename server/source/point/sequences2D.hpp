@@ -30,12 +30,12 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
  * Updates the sequences of cameraIndex only to include new points, and verifies sequences with other camera sequences if required
  */
 bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
-	CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, int cameraIndex,
+	CameraSystemCalibration &calibration, SequenceData &sequences, FrameNum curFrame, int cameraIndex,
 	const std::vector<Eigen::Vector2f> &points2D, const std::vector<Eigen::Vector2f> &rawPoints2D, 
 	const std::vector<BlobProperty> &properties, const std::vector<int> &pt2GTMarker);
 
 
-void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, int curFrame, bool confidenceCheck);
+void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSystemCalibration &calibration, SequenceData &sequences, FrameNum curFrame, bool confidenceCheck);
 
 void updateTrustFromEpipolarStats(const SequenceAquisitionParameters &params, FundamentalMatrix &FM);
 

@@ -281,7 +281,7 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 	LOGC(LDebug, "Reevaluating marker sequences:");
 
 	// Precalculate marker positions for each frame in linear access vector
-	std::pair<int, int> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
+	std::pair<FrameNum, FrameNum> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
 	std::vector<std::vector<Eigen::Vector3f>> frameMarkers(frameRange.second-frameRange.first);
 	for (auto &frame : target.frames)
 	{
@@ -306,10 +306,10 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 		// Got overlap, check if markers observation sequences match a markers 3D path
 		markerMatch.clear();
 		markerMatch.resize(target.markers.size());
-		int totalObs = 0;
+		std::size_t totalObs = 0;
 
 		// Check all observation samples for frames we have a pose of (all frames)
-		std::map<int, int> frameMap;
+		std::map<FrameNum, std::size_t> frameMap;
 		getObservationFrameMap(mkObs, frameMap, frameRange.first, frameRange.second);
 		handleMappedSequences(mkObs, frameMap, [&]
 			(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
@@ -370,7 +370,7 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 		
 		if (pri.index == map.second)
 		{ // Good
-			LOGC(LDebug, "    Retained association of sequence %d (frames %d to %d) to marker %d with reprojection RMSE of %fpx across %d observations! (next %fpx with %d)",
+			LOGC(LDebug, "    Retained association of sequence %d (frames %" PRIu64 " to %" PRIu64 ") to marker %d with reprojection RMSE of %fpx across %d observations! (next %fpx with %d)",
 				map.first, range.first, range.second, map.second, pri.value*PixelFactor, pri.weight, match->matches[1].value*PixelFactor, match->matches[1].weight);
 			markerSEsum[map.second].first += pri.weight;
 			markerSEsum[map.second].second += (pri.value*pri.value) * pri.weight; // Undo RM of RMSE
@@ -391,7 +391,7 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 		if (foundIdx > 0 && !pri.valid())
 		{ // Found, and still reasonably a valid match, so keep association
 			auto &found = match->matches[foundIdx];
-			LOGC(LDarn, "    Loosened association of sequence %d (frames %d to %d) to marker %d, "
+			LOGC(LDarn, "    Loosened association of sequence %d (frames %" PRIu64 " to %" PRIu64 ") to marker %d, "
 				"with reprojection RMSE of %fpx across %d observations in place %d, best marker %d has RMSE of %fpx across %d observations!",
 				map.first, range.first, range.second, map.second, found.value*PixelFactor, found.weight, foundIdx,
 				pri.index, pri.value*PixelFactor, pri.weight);
@@ -401,7 +401,7 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 			continue;
 		}
 		// Very bad
-		LOGC(LDarn, "    Lost sequence %d (frames %d to %d), initially for marker %d, completely, "
+		LOGC(LDarn, "    Lost sequence %d (frames %" PRIu64 " to %" PRIu64 "), initially for marker %d, completely, "
 			"found better marker %d with reprojection RMSE of %fpx across %d observations!",
 			map.first, range.first, range.second, map.second, pri.index, pri.value*PixelFactor, pri.weight);
 		if constexpr (APPLY)
@@ -526,12 +526,12 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 				{
 					if (markerMap[map2.second] != m2) continue;
 					if (map1.first > map2.first) continue; // Only check one direction
-					int overlapFrame = canProveMarkerDistinct(observations[map1.first], observations[map2.first]);
+					OptFrameNum overlapFrame = canProveMarkerDistinct(observations[map1.first], observations[map2.first]);
 					if (overlapFrame >= 0)
 					{ // Found overlap
-						int tgtFrame = 0;
+						FrameNum tgtFrame = 0;
 						for (; tgtFrame < target.frames.size() && target.frames[tgtFrame].frame < overlapFrame; tgtFrame++) {}
-						LOGC(LDebug, "    Sequences %d and %d overlapped starting frame %d (index %d+)", map1.first, map2.first, overlapFrame, tgtFrame);
+						LOGC(LDebug, "    Sequences %d and %d overlapped starting frame %" PRIu64 " (index %" PRIu64 "+)", map1.first, map2.first, overlapFrame, tgtFrame);
 						merge = false;
 						break;
 					}
@@ -604,7 +604,7 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 	
 	// Now fill frames with randomised most important selection of frames from original target
 
-	std::pair<int, int> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
+	std::pair<FrameNum, FrameNum> frameRange = { target.frames.front().frame, target.frames.back().frame+1 };
 
 	const int MAX_VALUE = 255*4; 
 	const int BUCKET_SIZE = 100;

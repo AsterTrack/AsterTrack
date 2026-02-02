@@ -156,7 +156,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 	frameState.cameras.resize(pipeline.cameras.size());
 
-	LOGC(LTrace, "Generating points for frame %u:\n", frameState.num);
+	LOGC(LTrace, "Generating points for frame %" PRIu64 ":\n", frameState.num);
 
 	int i = -1;
 	for (auto &object : simulation.objects)
@@ -193,7 +193,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		for (auto &cam : pipeline.cameras)
 		{
-			LOGC(LTrace, "  Camera %d Frame %d:\n", cam->id, frameState.num);
+			LOGC(LTrace, "  Camera %d Frame %" PRIu64 ":\n", cam->id, frameState.num);
 			auto &record = frameState.cameras[cam->index];
 
 			// Project marker into camera view (simulated test data)
@@ -289,7 +289,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 					}
 				}
 			}
-			LOGC(LTrace, "Entering %d GT triangulations for frame %d\n",
+			LOGC(LTrace, "Entering %d GT triangulations for frame %" PRIu64 "\n",
 				(int)simulation.triangulatedPoints3D.triangulation.size(), simulation.triangulatedPoints3D.frame);
 		}
 	}

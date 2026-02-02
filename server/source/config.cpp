@@ -848,7 +848,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			if (!jsFrame["cameras"].is_array()) continue;
 			auto &jsCameras = jsFrame["cameras"];
 
-			unsigned int num = jsFrame["num"].get<unsigned int>();
+			FrameNum num = jsFrame["num"].get<FrameNum>();
 			if (!foundFirst)
 			{ // Map it to the next index
 				auto frames = record.frames.getView();
@@ -857,7 +857,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 				foundFirst = true;
 			}
 			auto frame = std::make_shared<FrameRecord>();
-			frame->ID = jsFrame["id"].get<unsigned int>();
+			frame->ID = jsFrame["id"].get<FrameID>();
 			frame->num = num-frameOffset;
 			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<uint64_t>());
 			frame->cameras.resize(cameras.size());
@@ -1183,7 +1183,7 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			if (!jsFrame["targets"].is_array()) continue;
 			auto &jsTrackers = jsFrame["targets"];
 
-			unsigned int num = jsFrame["num"].get<unsigned int>();
+			FrameNum num = jsFrame["num"].get<FrameNum>();
 			if (num-frameOffset < frames.beginIndex()) continue;
 			if (num-frameOffset >= frames.endIndex()) break;
 

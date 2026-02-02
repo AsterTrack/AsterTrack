@@ -119,7 +119,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		ImGui::PushID("Trk");
 
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
-		int64_t frameNum = pipeline.frameNum;
+		OptFrameNum frameNum = pipeline.frameNum;
 		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
 		if (visFrame)
 		{
@@ -152,7 +152,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			int trackerID = trackerIt.first;
 			auto &tracker = trackerIt.second;
 			ImGui::PushID(trackerID);
-			int64_t trackedAgo = frameNum - tracker.lastTrackedFrame;
+			OptFrameNum trackedAgo = frameNum - tracker.lastTrackedFrame;
 			std::string label;
 			if (trackedAgo < 5)
 				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);

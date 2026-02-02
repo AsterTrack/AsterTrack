@@ -232,7 +232,7 @@ private:
 public:
 	int m_start;
 	int lastFrame, markerCount;
-	std::pair<int,int> totalFrameRange;
+	std::pair<FrameNum,FrameNum> totalFrameRange;
 
 	bool needsUpdate(const SequenceData &sequence)
 	{
@@ -274,7 +274,7 @@ public:
 			marker.observations.clear();
 			marker.observations.resize(frameCount);
 
-			std::map<int, int> frameMap;
+			std::map<FrameNum, std::size_t> frameMap;
 			getObservationFrameMap(sequence.markers[i], frameMap, frameRange.first, frameRange.second);
 			handleMappedSequences(sequence.markers[i], frameMap, [&]
 				(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
@@ -740,7 +740,7 @@ static bool ShowTrackingPanel()
 
 	auto framesRecord = pipeline.record.frames.getView();
 	auto framesStored = state.stored.frames.getView();
-	unsigned int frameNum = pipeline.frameNum.load();
+	OptFrameNum frameNum = pipeline.frameNum.load();
 	if (framesRecord.empty() && framesStored.empty())
 		return false;
 
@@ -795,7 +795,7 @@ static bool ShowTrackingPanel()
 		std::vector<float> procTimeMS;
 		std::vector<float> mistrust;
 
-		void setup(int size)
+		void setup(FrameNum size)
 		{
 			sampleCount.clear();
 			errors2D.clear();
@@ -813,7 +813,7 @@ static bool ShowTrackingPanel()
 	static std::vector<float> imuSampleRate;
 
 	float mistrustScale = ImPlot::GetPlotLimits(IMPLOT_AUTO, ImAxis_Y2).Y.Max / pipeline.params.track.mistrust.maxMistrust;
-	auto updateFrameStats = [&](auto &stats, unsigned int index, FrameRecord &frame)
+	auto updateFrameStats = [&](auto &stats, FrameNum index, FrameRecord &frame)
 	{
 		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTrackerID; });
 		if (trackRecord == frame.trackers.end())
@@ -842,14 +842,14 @@ static bool ShowTrackingPanel()
 	double frameShift = 0.0f, frameShiftRec = 0.0f;
 	bool drawCur = false, drawRec = false;
 
-	long long min = 1, max = 0;
+	OptFrameNum min = 1, max = 0;
 	if (showCur && !framesRecord.empty())
 	{ // Gather stats for realtime tracking data
-		min = std::max<long long>(frameRange.Min-1, framesRecord.beginIndex());
-		max = std::min<long long>(frameRange.Max+1, framesRecord.endIndex()-1);
+		min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
+		max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
 		if (max >= min)
 		{
-			std::size_t frameCnt = max-min+1;
+			FrameNum frameCnt = max-min+1;
 			tracking.setup(frameCnt);
 			auto frameIt = framesRecord.pos(max);
 			for (int i = 0; i < frameCnt; i++, frameIt--)
@@ -871,10 +871,10 @@ static bool ShowTrackingPanel()
 		{
 			if (max <= min) return; // Need at least two frames to serve as an anchor
 			float frameRate = (max-min)/dtS(framesRecord[min]->time, framesRecord[max]->time);
-			long long anchorFrame = min;
+			OptFrameNum anchorFrame = min;
 			TimePoint_t anchorTime = framesRecord[min]->time -  std::chrono::microseconds(trackerIt->imuCalib.timestampOffsetUS);
-			TimePoint_t minTime = anchorTime + std::chrono::microseconds((long long)((frameRange.Min - anchorFrame)/frameRate*1000000));
-			TimePoint_t maxTime = anchorTime + std::chrono::microseconds((long long)((frameRange.Max - anchorFrame)/frameRate*1000000));
+			TimePoint_t minTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Min - anchorFrame)/frameRate*1000000));
+			TimePoint_t maxTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Max - anchorFrame)/frameRate*1000000));
 			auto itBegin = std::lower_bound(samples.begin(), samples.end(), minTime);
 			auto itEnd = std::upper_bound(samples.begin(), samples.end(), maxTime);
 			if (itBegin == itEnd) return;
@@ -897,11 +897,11 @@ static bool ShowTrackingPanel()
 
 	if (showRec && state.mode == MODE_Replay && !framesStored.empty())
 	{ // Gather stats for recorded tracking data
-		min = std::max<long long>(frameRange.Min-1, framesStored.beginIndex());
-		max = std::min<long long>(frameRange.Max+1, framesStored.endIndex()-1);
+		min = std::max<OptFrameNum>(frameRange.Min-1, framesStored.beginIndex());
+		max = std::min<OptFrameNum>(frameRange.Max+1, framesStored.endIndex()-1);
 		if (max >= min)
 		{
-			std::size_t frameCnt = max-min+1;
+			FrameNum frameCnt = max-min+1;
 			recording.setup(frameCnt);
 			auto frameIt = framesStored.pos(max);
 			for (int i = 0; i < frameCnt; i++, frameIt--)
@@ -994,7 +994,7 @@ static bool ShowTrackingPanel()
 	ImPlot::SetNextLineStyle(ImVec4(0.33, 0.66, 0.4, 1.0), 3);
 	ImPlot::PlotInfLines("CurFrame", &curFrame, 1);
 	if (ImPlot::DragLineX(2, &jumpFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
-		ui.frameJumpTarget = (unsigned int)jumpFrame;
+		ui.frameJumpTarget = (FrameNum)jumpFrame;
 
 	ImPlot::PopColormap();
 	ImPlot::EndPlot();

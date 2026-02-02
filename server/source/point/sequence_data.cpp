@@ -8,18 +8,19 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 */
 
 #include "point/sequence_data.inl"
+#include "util/util.hpp"
 #include "util/stats.hpp"
 
 
 /**
  * Filter out frames without any observations in between. FrameMap contains mappings from frame index to continuous index
  */
-int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &frameMap, int frameStart, int frameEnd)
+std::size_t getObservationFrameMap(const MarkerSequences &marker, std::map<FrameNum, std::size_t> &frameMap, FrameNum frameStart, FrameNum frameEnd)
 {
 	// Find first frame and prepare
-	int frameCount = 0;
+	std::size_t frameCount = 0;
 	auto range = marker.getFrameRange();
-	int curFrame = std::max(range.first, frameStart);
+	FrameNum curFrame = std::max(range.first, frameStart);
 	if (curFrame >= frameEnd) return 0;
 
 	// Setup first frame
@@ -34,11 +35,11 @@ int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &fr
 	// Now get frames with at least one observation
 	// Take the longest sequence of the active frame and go to its end, if none is there go to the start of the next sequence
 	// Along the way, record the active frame periods in frameMap so that they can be mapped to a continuous frame timeline
-	int lastPeriodFrame = curFrame;
+	FrameNum lastPeriodFrame = curFrame;
 	while (curFrame < frameEnd)
 	{
 		// Find extends of next period
-		int maxIncrement = std::numeric_limits<int>::min(), minIncrement = std::numeric_limits<int>::max();
+		FrameNum maxIncrement = std::numeric_limits<FrameNum>::min(), minIncrement = std::numeric_limits<FrameNum>::max();
 		for (int c = 0; c < marker.cameras.size(); c++)
 		{
 			const CameraSequences &camObs = marker.cameras[c];
@@ -53,7 +54,7 @@ int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &fr
 		{ // No measurements in this period
 			if (minIncrement <= curFrame)
 				break; // No next period
-			if (minIncrement == std::numeric_limits<int>::max())
+			if (minIncrement == std::numeric_limits<FrameNum>::max())
 				break; // No more sequences
 			// Skip until next period with certain measurements, and register start of it
 			curFrame = minIncrement;
@@ -61,7 +62,7 @@ int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &fr
 		}
 		else
 		{ // Measurements until at least maxIncrement, continue currently registered period
-			int advanceTo = std::min(maxIncrement, frameEnd);
+			FrameNum advanceTo = std::min(maxIncrement, frameEnd);
 			frameCount += advanceTo-curFrame;
 			curFrame = advanceTo;
 			lastPeriodFrame = curFrame;
@@ -82,10 +83,10 @@ int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &fr
 /**
  * Filter out frames without at least 2 observations in between. FrameMap contains mappings from frame index to continuous index
  */
-int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &frameMap, int frameStart, int frameEnd)
+std::size_t getTriangulationFrameMap(const MarkerSequences &marker, std::map<FrameNum, std::size_t> &frameMap, FrameNum frameStart, FrameNum frameEnd)
 {
 	// Find first frame and prepare
-	DualExtremum<int> minFrame(std::numeric_limits<int>::max()), maxFrame(std::numeric_limits<int>::lowest());
+	DualExtremum<FrameNum> minFrame(std::numeric_limits<FrameNum>::max()), maxFrame(std::numeric_limits<FrameNum>::lowest());
 	for (int c = 0; c < marker.cameras.size(); c++)
 	{
 		if (!marker.cameras[c].sequences.empty())
@@ -98,8 +99,8 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 		return 0; // No overlap of at least two frames
 
 	// This case assumes if there is observations by at least two cameras, that they overlap (needed for correspondence matching anyway)
-	int frameCount = 0;
-	int curFrame = minFrame.rank[1];
+	std::size_t frameCount = 0;
+	FrameNum curFrame = minFrame.rank[1];
 	if (frameStart > curFrame)
 		curFrame = frameStart;
 	if (curFrame >= maxFrame.rank[1])
@@ -118,11 +119,11 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 	// Take the longest sequence of the active frame and go to its end, if none is there go to the start of the next sequence
 	// Along the way, record the active frame periods in frameMap so that they can be mapped to a continuous frame timeline
 	bool inPeriod = false;
-	int lastPeriodFrame = 0;
+	FrameNum lastPeriodFrame = 0;
 	while (curFrame < frameEnd)
 	{
 		// Find extends of next period
-		DualExtremum<int> minIncrement(std::numeric_limits<int>::max()), maxIncrement(std::numeric_limits<int>::lowest());
+		DualExtremum<FrameNum> minIncrement(std::numeric_limits<FrameNum>::max()), maxIncrement(std::numeric_limits<FrameNum>::lowest());
 		int seqNum = 0;
 		for (int c = 0; c < marker.cameras.size(); c++)
 		{
@@ -158,7 +159,7 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 				frameMap.insert({ curFrame, frameCount });
 				inPeriod = true;
 			}
-			int advanceTo = std::min(maxIncrement.rank[1], frameEnd);
+			FrameNum advanceTo = std::min(maxIncrement.rank[1], frameEnd);
 			frameCount += advanceTo-curFrame;
 			curFrame = advanceTo;
 			lastPeriodFrame = curFrame;
@@ -179,7 +180,7 @@ int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &
 /**
  * Iterate over all sequences observing marker m that are mapped using frameMap
  */
-void handleMappedSequences(const MarkerSequences &marker, const std::map<int, int> &frameMap, 
+void handleMappedSequences(const MarkerSequences &marker, const std::map<FrameNum, std::size_t> &frameMap,
 	const std::function<void(const PointSequence&, int, int, int, int, int)> &handleSequence)
 {
 	if (frameMap.size() < 2)
@@ -194,15 +195,19 @@ void handleMappedSequences(const MarkerSequences &marker, const std::map<int, in
 		// Get mapped part of sequence (the part that has overlap with at least one other sequence)
 		while (mapB != frameMap.end() && seq != camObs.sequences.end())
 		{
-			int seqOffset = std::max(0, mapA->first - seq->startFrame);
+			int seqOffset = std::max(0, diffUnsigned<int>(seq->startFrame, mapA->first));
 			if (seqOffset >= seq->length())
 			{ // No overlap, next sequence
 				seq++;
 				s++;
 				continue;
 			}
-			int mapLength = mapB->second - mapA->second;
-			int mapOffset = std::max(0, seq->startFrame - mapA->first);
+			int mapLength = diffUnsigned<int>(mapA->second, mapB->second);
+
+			assert(seqOffset >= 0);
+			// TODO: Bug here: mapOffset should always have been negative
+
+			int mapOffset = std::max(0, diffUnsigned<int>(mapA->first, seq->startFrame));
 			if (mapOffset >= mapLength)
 			{ // No overlap, next mapped period
 				mapA = mapB;
@@ -229,10 +234,10 @@ void handleMappedSequences(const MarkerSequences &marker, const std::map<int, in
 /**
  * Returns the observations of all points shared between the two cameras camA and camB in the given frame range
  */
-int getSharedObservations(const std::vector<MarkerSequences> &markers, int startFrame, int endFrame, int camA, int camB,
+std::size_t getSharedObservations(const std::vector<MarkerSequences> &markers, FrameNum startFrame, FrameNum endFrame, int camA, int camB,
 	std::vector<Eigen::Vector2f>  &pointsA, std::vector<Eigen::Vector2f> &pointsB)
 {
-	int pointCount = 0;
+	std::size_t pointCount = 0;
 	for (int m = 0; m < markers.size(); m++)
 	{ // Add one unique 3D point after another
 		const CameraSequences &cameraA = markers[m].cameras[camA], &cameraB = markers[m].cameras[camB];
@@ -251,7 +256,7 @@ int getSharedObservations(const std::vector<MarkerSequences> &markers, int start
 			 // Check if there was an overlap in the last few sequences checked
 			if (itA.frame() != itB.frame()) continue;
 			// Calculate length of overlap
-			int overlapLength = std::min(std::min(itA.rangeLength(), itB.rangeLength()), endFrame-itA.frame());
+			std::size_t overlapLength = std::min(std::min(itA.rangeLength(), itB.rangeLength()), endFrame-itA.frame());
 			// Add overlapping observations of the same point to the point correspondence
 			pointsA.insert(pointsA.end(), itA.rangeStart(), itA.rangeStart()+overlapLength);
 			pointsB.insert(pointsB.end(), itB.rangeStart(), itB.rangeStart()+overlapLength);
@@ -333,7 +338,7 @@ void handleSharedObservations(const MarkerSequences &markerA, const MarkerSequen
  * If there is, one camera observe each marker as a distinct sequence at some point, and the markers are distinct.
  * Returns the first frame that overlaps, or -1 if they don't overlap
  */
-int canProveMarkerDistinct(const MarkerSequences &markerA, const MarkerSequences &markerB)
+OptFrameNum canProveMarkerDistinct(const MarkerSequences &markerA, const MarkerSequences &markerB)
 {
 	int cams = std::min(markerA.cameras.size(), markerB.cameras.size());
 	for (int c = 0; c < cams; c++)

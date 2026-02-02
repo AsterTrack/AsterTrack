@@ -407,9 +407,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		}
 
 		LOG(LDetection2D, LInfo, useProbe?
-			"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error in %.1fms!\n" :
-			"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error in %.1fms!\n",
-			frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor, procTimeMS);
+			"    Detected target using probe in frame %" PRIu64 " (now %" PRId64 ") with %d 2D points and %fpx mean error in %.1fms!\n" :
+			"    Detected target using search in frame %" PRIu64 " (now %" PRId64 ") with %d 2D points and %fpx mean error in %.1fms!\n",
+			frame->num, pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor, procTimeMS);
 	}
 
 	Eigen::Isometry3f pose = dormant.target.match2D.pose;
@@ -431,7 +431,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		for (auto &trackRecord : frameRecord->trackers)
 		{
 			if (trackRecord.id != tracker.id) continue;
-			LOG(LDetection2D, LDebug, "    Detection %d - Frame %d: Caught up to a frame already tracked!\n", frame->num, frameRecord->num);
+			LOG(LDetection2D, LDebug, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to a frame already tracked!\n", frame->num, frameRecord->num);
 			return false; // Already tracked, maybe detected by 3D triangulation detection
 		}
 		retroactivelyTrackFrame(pipeline, tracker, frameRecord);
@@ -441,31 +441,31 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		bool stillTrusted = tracker.mistrust < std::lerp(mistrust.maxMistrustStart, mistrust.maxMistrust, trackerStartup);
 		if (!trackRecord.result.isTracked())
 		{ // Don't record as real loss since this is retroactive
-			LOG(LDetection2D, LDarn, "    Detection %d - Frame %d: Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
+			LOG(LDetection2D, LDarn, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Failed to find continuation of target with %d observations and %.3fpx mean error!\n",
 				frame->num, frameRecord->num, tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 			return false;
 		}
 		else if (!stillTrusted)
 		{ // Don't record as real loss since this is retroactive
-			LOG(LDetection2D, LDarn, "    Detection %d - Frame %d: Mistrusting newly detected target with %d observations and %.3fpx mean error!\n",
+			LOG(LDetection2D, LDarn, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Mistrusting newly detected target with %d observations and %.3fpx mean error!\n",
 				frame->num, frameRecord->num, tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 			return false;
 		}
-		LOG(LDetection2D, LTrace, "    Detection %d - Frame %d: Pixel Error after 2D target track: %fpx mean over %d points\n",
+		LOG(LDetection2D, LTrace, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Pixel Error after 2D target track: %fpx mean over %d points\n",
 			frame->num, frameRecord->num, tracker.target.match2D.error.mean*PixelFactor, tracker.target.match2D.error.samples);
 		if (stopToken.stop_requested())
 			return false;
 		return true;
 	};
 
-	std::size_t frameIndex = frame->num;
+	FrameNum frameIndex = frame->num;
 
 	for (int i = 0; i < 2; i++)
 	{ // Do twice to reduce chance of blocking realtime processing for too long
 		auto framesRecord = pipeline.record.frames.getView<false>();
 		if (frameIndex >= framesRecord.endIndex())
 		{ // FrameRecords were cleared while starting detection, abort
-			LOG(LDetection2D, LDarn, "    Detection %d - Frame %d: Frames were cleared while detecting!\n", frame->num, (int)frameIndex);
+			LOG(LDetection2D, LDarn, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Frames were cleared while detecting!\n", frame->num, frameIndex);
 			return false;
 		}
 		auto frameRecordIt = framesRecord.pos(frameIndex+1);
@@ -481,7 +481,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		frameIndex = frameRecordIt.index()-1;
 	}
 
-	LOG(LDetection2D, LDebug, "    Detection %d - Frame %d: Caught up to snapshot, syncing with realtime!\n", frame->num, (int)frameIndex);
+	LOG(LDetection2D, LDebug, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to snapshot, syncing with realtime!\n", frame->num, frameIndex);
 
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	if (stopToken.stop_requested())
@@ -491,7 +491,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		auto framesRecord = pipeline.record.frames.getView<false>();
 		if (frameIndex >= framesRecord.endIndex())
 		{ // FrameRecords were cleared while waiting for the lock, abort
-			LOG(LDetection2D, LDarn, "    Detection %d - Frame %d: Frames were cleared while syncing with realtime!\n", frame->num, (int)frameIndex);
+			LOG(LDetection2D, LDarn, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Frames were cleared while syncing with realtime!\n", frame->num, frameIndex);
 			return false;
 		}
 		auto frameRecordIt = framesRecord.pos(frameIndex+1);
@@ -507,7 +507,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		frameIndex = frameRecordIt.index()-1;
 	}
 
-	LOG(LDetection2D, LInfo, "    Detection %d - Frame %d: Caught up to most recent processed frame after %.1fms!\n", frame->num, (int)frameIndex, dtMS(start, sclock::now()));
+	LOG(LDetection2D, LInfo, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to most recent processed frame after %.1fms!\n", frame->num, frameIndex, dtMS(start, sclock::now()));
 
 	// Finally, no more frames to catch up on, register as new tracked target
 	int erased = std::erase_if(pipeline.tracking.dormantTargets, [&](const auto &d){ return d.id == tracker.id; });
@@ -519,7 +519,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	return true;
 }
 
-void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart, std::size_t frameEnd)
+void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, FrameNum frameEnd)
 {
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
@@ -528,8 +528,8 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, std::size_t frameStart
 	auto &targets = pipeline.tracking.trackedTargets;
 
 	auto framesRecord = pipeline.record.frames.getView<false>();
-	frameStart = std::max<long long>(framesRecord.beginIndex(), (long long)frameStart-3);
-	frameEnd = std::min<unsigned long>(framesRecord.endIndex(), frameEnd);
+	frameStart = std::max(framesRecord.beginIndex(), frameStart>=3? (frameStart-3) : 0);
+	frameEnd = std::min(framesRecord.endIndex(), frameEnd);
 	auto frameRecordIt = framesRecord.pos(frameStart);
 	while ((!*frameRecordIt || !frameRecordIt->get()->finishedProcessing) && frameRecordIt.index() < frameEnd) frameRecordIt++;
 	for (; frameRecordIt.index() < frameEnd; frameRecordIt++)
@@ -574,8 +574,8 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 	std::map<int, float> trackerMistrust;
 
 	auto framesRecord = pipeline.record.frames.getView<false>();
-	frameStart = std::max<long long>(framesRecord.beginIndex(), (long long)frameStart-3);
-	frameEnd = std::min<unsigned long>(framesRecord.endIndex(), frameEnd);
+	frameStart = std::max(framesRecord.beginIndex(), frameStart>=3? (frameStart-3) : 0);
+	frameEnd = std::min(framesRecord.endIndex(), frameEnd);
 	auto frameRecordIt = framesRecord.pos(frameStart);
 	for (; frameRecordIt.index() < frameEnd; frameRecordIt++)
 	{
@@ -1174,9 +1174,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				else
 				{
 					LOG(LDetection2D, LInfo, useProbe?
-					"    Detected target using probe in frame %d (now %d) with %d 2D points and %fpx mean error!\n" :
-					"    Detected target using search in frame %d (now %d) with %d 2D points and %fpx mean error!\n",
-						frame->num, (int)pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
+					"    Detected target using probe in frame %" PRIu64 " (now %" PRId64 ") with %d 2D points and %fpx mean error!\n" :
+					"    Detected target using search in frame %" PRIu64 " (now %" PRId64 ") with %d 2D points and %fpx mean error!\n",
+						frame->num, pipeline.frameNum.load(), dormant.target.match2D.error.samples, dormant.target.match2D.error.mean*PixelFactor);
 					Eigen::Isometry3f pose = dormant.target.match2D.pose;
 					TrackedTarget tracker(std::move(dormant), pose, frame->time, frame->num, pipeline.params.track);
 					tracker.result = useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D;

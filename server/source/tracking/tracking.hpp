@@ -46,14 +46,14 @@ struct TrackerState
 	TimePoint_t time;
 
 	// Information about state
-	int64_t lastIMUSample;
+	OptFrameNum lastIMUSample;
 	TimePoint_t lastIMUTime;
-	int64_t lastObsFrame;
-	int64_t firstObsFrame;
+	OptFrameNum lastObsFrame;
+	OptFrameNum firstObsFrame;
 	TimePoint_t lastObservation;
 	TimePoint_t firstObservation;
 
-	TrackerState(Eigen::Isometry3f pose, int64_t frame, TimePoint_t time, const TargetTrackingParameters &params) :
+	TrackerState(Eigen::Isometry3f pose, OptFrameNum frame, TimePoint_t time, const TargetTrackingParameters &params) :
 		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObsFrame(frame), firstObservation(time)
 	{
 		state.position() = pose.translation().cast<double>();
@@ -244,7 +244,7 @@ struct TrackedTarget : public virtual TrackedBase
 	TrackerObservation pose;
 
 	inline TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
-		TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
+		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 };
 
 struct TrackedMarker : public virtual TrackedBase
@@ -262,7 +262,7 @@ struct TrackedMarker : public virtual TrackedBase
 	TrackerObservation pose;
 
 	inline TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos,
-		TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
+		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 };
 
 struct DormantTarget : public virtual TrackedBase
@@ -317,14 +317,14 @@ struct OrphanedIMU
 
 TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
-	const TrackerRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params);
+	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 
 TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	TimePoint_t time, unsigned int frame, int cameraCount, const TargetTrackingParameters &params);
+	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params);
 
 TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
@@ -338,7 +338,7 @@ void interruptIMU(TrackerInertial &inertial);
 
 
 inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
-	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
+	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
 	state(pose, frame, time, params), pose(pose, time, params)
@@ -357,7 +357,7 @@ inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
 }
 
 inline TrackedMarker::TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos,
-	TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params) :
+	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	marker(std::move(dormant.marker)), inertial(std::move(dormant.inertial)),
 	state(Eigen::Isometry3f(Eigen::Translation3f(pos)), frame, time, params), 

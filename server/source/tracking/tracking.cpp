@@ -45,7 +45,7 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 
 TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
-	const TrackerRecord &record, TimePoint_t time, unsigned int frame, const TargetTrackingParameters &params)
+	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
@@ -140,7 +140,7 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	TimePoint_t time, unsigned int frame, int cameraCount, const TargetTrackingParameters &params)
+	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params)
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 

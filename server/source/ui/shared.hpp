@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef UI_SIGNALS_H
 #define UI_SIGNALS_H
 
+#include "util/trackdef.hpp"
+
 #include <stdint.h>
 
 typedef uint32_t CameraID; // util/eigendef.hpp
@@ -44,7 +46,7 @@ typedef void (*SignalShouldClose_t)();
 typedef void (*SignalLogUpdate_t)();
 typedef void (*SignalCameraRefresh_t)(CameraID);
 typedef void (*SignalPipelineUpdate_t)();
-typedef void (*SignalObservationReset_t)(long firstFrame);
+typedef void (*SignalObservationReset_t)(FrameNum firstFrame);
 typedef void (*SignalServerEvent_t)(ServerEvents);
 
 }

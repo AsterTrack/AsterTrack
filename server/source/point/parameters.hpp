@@ -29,7 +29,7 @@ struct SequenceAquisitionParameters
 	float maxAcceleration; // Max change from predicted position in one frame. Set to 1cm at 1 meter distance for 90°hFoV camera.
 	float maxValueDiff;
 	float valueDiffFactor;
-	int valueFlowingAvgerage;
+	int valueFlowingAverage;
 	MatchingParameters match;
 
 	// Limits for inactive sequences

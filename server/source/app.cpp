@@ -66,7 +66,7 @@ extern "C" {
 	void _SignalLogUpdate();
 	void _SignalCameraRefresh(CameraID id);
 	void _SignalPipelineUpdate();
-	void _SignalObservationReset(long firstFrame);
+	void _SignalObservationReset(FrameNum firstFrame);
 	void _SignalServerEvent(ServerEvents event);
 }
 static inline bool AssumeInterface()
@@ -93,7 +93,7 @@ static inline void UnlinkInterface(void *uidl = nullptr)
 	SignalLogUpdate = [](){};
 	SignalCameraRefresh = [](CameraID){};
 	SignalPipelineUpdate = [](){};
-	SignalObservationReset = [](long){};
+	SignalObservationReset = [](FrameNum){};
 	SignalServerEvent = [](ServerEvents){};
 #ifdef ALLOW_DYNAMIC_LINKING
 	if (uidl) dlclose(uidl);

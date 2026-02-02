@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "target/target.hpp"
 
+#include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
@@ -77,7 +78,7 @@ struct SimulationState
 	BlockedVector<Eigen::Isometry3f> framePoses;
 	struct FrameInfo
 	{
-		unsigned int frame;
+		FrameNum frame;
 		Eigen::Isometry3f pose;
 		std::vector<std::pair<int, Eigen::Vector3f>> triangulation;
 	};

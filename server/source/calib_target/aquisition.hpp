@@ -57,18 +57,18 @@ struct TargetViewAquisition
 	float currentValue;
 
 	// Sliding window average
-	int nextUpdate;
+	FrameNum nextUpdate;
 
 	// Current local maxima
 	bool localMaxSearching;
-	int localMaxFrame;
+	FrameNum localMaxFrame;
 	float localMaxValue;
 	StatDistf localMaximaStats;
 	struct LocalMaxima
 	{
-		int maxima;
+		FrameNum maxima;
 		float value;
-		int begin, end;
+		FrameNum begin, end;
 	};
 	std::vector<LocalMaxima> localMaximas;
 
@@ -95,13 +95,13 @@ struct TargetViewAquisition
 
 struct TargetViewRange
 {
-	int beginFrame, endFrame;
+	FrameNum beginFrame, endFrame;
 	BlockStats stats = {};
 	ObsTarget target = {};
 };
 
 // Extract detailed information about the markes in a range of frames (potential Target View)
-void prepareBlock(const SequenceData &sequences, int blockBegin, int blockEnd, const TargetAquisitionParameters &params, std::vector<int> &frames, std::map<int, int> &markers, std::vector<int> &sharedMarkers);
+void prepareBlock(const SequenceData &sequences, FrameNum blockBegin, FrameNum blockEnd, const TargetAquisitionParameters &params, std::vector<int> &frames, std::map<int, int> &markers, std::vector<int> &sharedMarkers);
 
 // Get simplified block statistics used to determine quality of potential Target View
 BlockStats getBlockStats(std::vector<int> &frames, std::map<int, int> &markers, std::vector<int> &sharedMarkers);
@@ -110,7 +110,7 @@ BlockStats getBlockStats(std::vector<int> &frames, std::map<int, int> &markers, 
 void updateTargetViewAquisitionStats(const SequenceData &sequences, TargetViewAquisition &aquisition, int frameNum, int offset);
 
 // Update the aquisition state, searching for frame ranges to consider adopting as Target Views
-bool updateTargetViewAquisition(TargetViewAquisition &aquisition, int frame, int offset, const TargetAquisitionParameters &params);
+bool updateTargetViewAquisition(TargetViewAquisition &aquisition, FrameNum frame, int offset, const TargetAquisitionParameters &params);
 
 // Finalise the current aquisition range and produce a new Target View if it is good
 bool finaliseTargetViewAquisitionRange(const SequenceData &sequences, TargetViewAquisition &aquisition, const TargetAquisitionParameters &params, TargetViewRange &newRange);

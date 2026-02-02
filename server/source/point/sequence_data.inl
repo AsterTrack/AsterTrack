@@ -33,23 +33,23 @@ struct OverlapRange
 /**
  * Filter out frames without any observations in between. FrameMap contains mappings from frame index to continuous index
  */
-int getObservationFrameMap(const MarkerSequences &marker, std::map<int, int> &frameMap, int frameStart = 0, int frameEnd = std::numeric_limits<int>::max());
+std::size_t getObservationFrameMap(const MarkerSequences &marker, std::map<FrameNum, std::size_t> &frameMap, FrameNum frameStart = 0, FrameNum frameEnd = std::numeric_limits<FrameNum>::max());
 
 /**
  * Filter out frames without at least 2 observations in between. FrameMap contains mappings from frame index to continuous index
  */
-int getTriangulationFrameMap(const MarkerSequences &marker, std::map<int, int> &frameMap, int frameStart = 0, int frameEnd = std::numeric_limits<int>::max());
+std::size_t getTriangulationFrameMap(const MarkerSequences &marker, std::map<FrameNum, std::size_t> &frameMap, FrameNum frameStart = 0, FrameNum frameEnd = std::numeric_limits<FrameNum>::max());
 
 /**
  * Iterate over all sequences observing the marker that are mapped using frameMap
  */
-void handleMappedSequences(const MarkerSequences &marker, const std::map<int, int> &frameMap,
+void handleMappedSequences(const MarkerSequences &marker, const std::map<FrameNum, std::size_t> &frameMap,
 	const std::function<void(const PointSequence&, int, int, int, int, int)> &handleSequence);
 
 /**
  * Returns the observations of all points shared between the two cameras camA and camB in the given frame range
  */
-int getSharedObservations(const std::vector<MarkerSequences> &markers, int startFrame, int endFrame, int camA, int camB,
+std::size_t getSharedObservations(const std::vector<MarkerSequences> &markers, FrameNum startFrame, FrameNum endFrame, int camA, int camB,
 	std::vector<Eigen::Vector2f>  &pointsA, std::vector<Eigen::Vector2f> &pointsB);
 
 /**
@@ -69,7 +69,7 @@ void handleSharedObservations(const MarkerSequences &markerA, const MarkerSequen
  * If there is, one camera observe each marker as a distinct sequence at some point, and the markers are distinct.
  * Returns the first frame that overlaps, or -1 if they don't overlap
  */
-int canProveMarkerDistinct(const MarkerSequences &markerA, const MarkerSequences &markerB);
+OptFrameNum canProveMarkerDistinct(const MarkerSequences &markerA, const MarkerSequences &markerB);
 
 /**
  * Returns two ranges in each sequence that overlap temporarily
@@ -77,8 +77,8 @@ int canProveMarkerDistinct(const MarkerSequences &markerA, const MarkerSequences
 static OverlapRange determineOverlap(const PointSequence &sequenceA, const PointSequence &sequenceB)
 {
 	OverlapRange overlap = {};
-	int overlapStart = std::max(sequenceA.startFrame, sequenceB.startFrame);
-	int overlapEnd = std::min(sequenceA.startFrame + sequenceA.length(), sequenceB.startFrame + sequenceB.length());
+	FrameNum overlapStart = std::max(sequenceA.startFrame, sequenceB.startFrame);
+	FrameNum overlapEnd = std::min(sequenceA.startFrame + sequenceA.length(), sequenceB.startFrame + sequenceB.length());
 	if (overlapStart < overlapEnd)
 	{ // Overlap
 		overlap.startA = overlapStart - sequenceA.startFrame;
@@ -95,9 +95,9 @@ static OverlapRange determineOverlap(const PointSequence &sequenceA, const Point
 /**
  * Get the total number of recorded observations for the marker by this camera
  */
-inline unsigned int CameraSequences::getSampleCount()
+inline std::size_t CameraSequences::getSampleCount()
 {
-	unsigned int count = 0;
+	std::size_t count = 0;
 	for (auto &seq : sequences)
 		count += seq.length(); // NOTE: This includes 
 	return count;
@@ -106,9 +106,9 @@ inline unsigned int CameraSequences::getSampleCount()
 /**
  * Get the total number of recorded observations for this marker
  */
-inline unsigned int MarkerSequences::getSampleCount()
+inline std::size_t MarkerSequences::getSampleCount()
 {
-	unsigned int count = 0;
+	std::size_t count = 0;
 	for (auto &camera : cameras)
 		count += camera.getSampleCount();
 	return count;
@@ -117,9 +117,9 @@ inline unsigned int MarkerSequences::getSampleCount()
 /**
  * Get the total number of recorded markers
  */
-inline unsigned int SequenceData::getSampleCount()
+inline std::size_t SequenceData::getSampleCount()
 {
-	unsigned int count = 0;
+	std::size_t count = 0;
 	for (auto &marker : markers)
 		count += marker.getSampleCount();
 	return count;
@@ -142,9 +142,9 @@ inline std::pair<int, float> MarkerSequences::resolveGTMarker() const
 	return { best.first, (float)best.second/totalWeight };
 }
 
-inline std::pair<int,int> MarkerSequences::getFrameRange() const
+inline std::pair<FrameNum,FrameNum> MarkerSequences::getFrameRange() const
 {
-	std::pair<int,int> range = { std::numeric_limits<int>::max(), std::numeric_limits<int>::lowest() };
+	std::pair<FrameNum,FrameNum> range = { std::numeric_limits<int>::max(), std::numeric_limits<int>::lowest() };
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		if (cameras[c].sequences.empty()) continue;
@@ -162,9 +162,9 @@ class CameraSequences::const_iterator {
 private:
 	CameraSequences *base;
 public:
-	int seq, index;
+	std::size_t seq, index;
 
-	const_iterator(const CameraSequences &obs, int Seq, int Index)
+	const_iterator(const CameraSequences &obs, std::size_t Seq, std::size_t Index)
 	{
 		base = (CameraSequences*)&obs;
 		seq = Seq;
@@ -216,11 +216,15 @@ public:
 	const value_type operator*() const { return base->sequences[seq].getPoint(index); }
 	const value_type raw() const { return base->sequences[seq].getRaw(index); }
 
-	int frame() const { return base->sequences.size() <= seq? (base->sequences.empty()? -1 : base->sequences.back().endFrame()) : (base->sequences[seq].startFrame + index); }
+	FrameNum frame() const { return base->sequences.size() <= seq? (base->sequences.empty()? -1 : base->sequences.back().endFrame()) : (base->sequences[seq].startFrame + index); }
 	// Access continuous ranges
 	CameraSequences::range_iterator rangeStart() const { return base->sequences[seq].points.begin()+index; } 
 	CameraSequences::range_iterator rangeRawStart() const { return base->sequences[seq].rawPoints.begin()+index; } 
-	int rangeLength() const { return base->sequences[seq].length()-index; } 
+	std::size_t rangeLength() const
+	{
+		assert(base->sequences[seq].length() >= index);
+		return base->sequences[seq].length() - index;
+	} 
 	// iterator traits
 	using pointer = const value_type*;
 	using reference = const value_type&;

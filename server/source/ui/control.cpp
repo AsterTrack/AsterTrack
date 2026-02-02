@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/debugging.hpp" // Provide controls here, even if it's not technically restricted to simulation mode
 
-static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, uint32_t num)
+static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, FrameNum num)
 {
 	{ // Try current record
 		auto framesRecord = state.pipeline.record.frames.getView();
@@ -282,9 +282,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				ImGui::AlignTextToFramePadding();
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", section.begin);
+				ImGui::Text("%" PRIu64, section.begin);
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", section.end-section.begin);
+				ImGui::Text("%" PRIu64, section.end-section.begin);
 				ImGui::TableNextColumn();
 				if (section.path.empty())
 				{
@@ -359,8 +359,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			StatDistf frames, samples;
 			int losses, detections;
 		};
-		unsigned int begin;
-		unsigned int end;
+		FrameNum begin;
+		FrameNum end;
 		bool dirty, updated;
 		Results baseline, results;
 	};
@@ -476,7 +476,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		BeginSection("Frame Ranges");
 
 		ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-		static unsigned int addFrameRange[2] = { 10, 20 };
+		static FrameNum addFrameRange[2] = { 10, 20 };
 		//ImGui::InputScalarN("##Frame", ImGuiDataType_U32, &addFrameRange, 2);
 		static std::string frameRangeInput = "10-20";
 		ImGui::InputText("##Frame", &frameRangeInput);
@@ -487,7 +487,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			std::string range;
 			while (std::getline(ss, range, ';'))
 			{
-				if (sscanf(range.c_str(), "%u-%u", addFrameRange+0, addFrameRange+1) != 2) continue;
+				if (sscanf(range.c_str(), "%" SCNu64 "-%" SCNu64, addFrameRange+0, addFrameRange+1) != 2) continue;
 				if (addFrameRange[0] >= 0 && addFrameRange[0] < addFrameRange[1])
 					frameRanges.push_back({ addFrameRange[0], addFrameRange[1], true, false });
 			}
@@ -576,9 +576,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				ImGui::AlignTextToFramePadding();
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", range.begin);
+				ImGui::Text("%" PRIu64, range.begin);
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", range.end);
+				ImGui::Text("%" PRIu64, range.end);
 				ImGui::TableNextColumn();
 				if (range.dirty)
 					ImGui::TextUnformatted("Waiting...");

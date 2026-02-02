@@ -33,8 +33,8 @@ void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerS
 	for (uint32_t m = 0; m < observations.size(); m++)
 	{
 		const MarkerSequences &marker = observations[m];
-		std::map<int, int> frameMap;
-		int frameCount = getTriangulationFrameMap(marker, frameMap, frameStart, frameEnd);
+		std::map<FrameNum, std::size_t> frameMap;
+		std::size_t frameCount = getTriangulationFrameMap(marker, frameMap, frameStart, frameEnd);
 		if (frameCount == 0)
 			continue;
 

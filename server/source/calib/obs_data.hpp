@@ -19,9 +19,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef OBS_DATA_H
 #define OBS_DATA_H
 
+#include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
-
 #include "util/blocked_vector.hpp"
+
 #include <list>
 #include <map>
 
@@ -52,7 +53,7 @@ struct ObsTargetSample
 };
 struct ObsTargetFrame
 {
-	uint32_t frame;
+	FrameNum frame;
 	std::vector<ObsTargetSample> samples;
 	Eigen::Isometry3f pose;
 	float error = NAN;

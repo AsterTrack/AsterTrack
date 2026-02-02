@@ -440,7 +440,7 @@ void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const V
 	{
 		if (seq.cameras[c].sequences.empty()) continue;
 		auto frameIt = std::lower_bound(visTarget.obs->frames.begin(), visTarget.obs->frames.end(), seq.cameras[c].begin().frame(),
-			[](auto &a, int f){ return a.frame < f; });
+			[](auto &a, FrameNum f){ return a.frame < f; });
 		for (auto frame = seq.cameras[c].begin(); frame != seq.cameras[c].end(); frame++)
 		{
 			if (frameIt == visTarget.obs->frames.end()) break;

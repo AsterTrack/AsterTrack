@@ -43,7 +43,7 @@ const int slidingWindowSize = 100;
 
 
 // Extract detailed information about the markes in a range of frames (potential Target View)
-void prepareBlock(const SequenceData &sequences, int blockBegin, int blockEnd, const TargetAquisitionParameters &params, std::vector<int> &frames, std::map<int, int> &markers, std::vector<int> &sharedMarkers)
+void prepareBlock(const SequenceData &sequences, FrameNum blockBegin, FrameNum blockEnd, const TargetAquisitionParameters &params, std::vector<int> &frames, std::map<int, int> &markers, std::vector<int> &sharedMarkers)
 {
 	frames.clear();
 	frames.resize(blockEnd-blockBegin);
@@ -57,7 +57,7 @@ void prepareBlock(const SequenceData &sequences, int blockBegin, int blockEnd, c
 		auto range = marker.getFrameRange();
 		if (range.first > blockEnd-10 || range.second < blockBegin+10) continue;
 
-		int first = std::numeric_limits<int>::max(), last = std::numeric_limits<int>::lowest();
+		FrameNum first = std::numeric_limits<FrameNum>::max(), last = std::numeric_limits<FrameNum>::lowest();
 		int markers2D = 0;
 		for (const CameraSequences &cam : marker.cameras)
 		{
@@ -100,7 +100,7 @@ void prepareBlock(const SequenceData &sequences, int blockBegin, int blockEnd, c
 	{
 		const MarkerSequences &marker = sequences.markers[m->first];
 		m->second = 0;
-		int first = std::numeric_limits<int>::max(), last = std::numeric_limits<int>::lowest();
+		FrameNum first = std::numeric_limits<FrameNum>::max(), last = std::numeric_limits<FrameNum>::lowest();
 		for (const CameraSequences &cam : marker.cameras)
 		{
 			auto begin = cam.upper(blockBegin), end = cam.upper(blockEnd);
@@ -223,7 +223,7 @@ void updateTargetViewAquisitionStats(const SequenceData &sequences, TargetViewAq
 }
 
 // Update the aquisition state, searching for frame ranges to consider adopting as Target Views
-bool updateTargetViewAquisition(TargetViewAquisition &aquisition, int frame, int offset, const TargetAquisitionParameters &params)
+bool updateTargetViewAquisition(TargetViewAquisition &aquisition, FrameNum frame, int offset, const TargetAquisitionParameters &params)
 {
 	// Remove ranges out of window bounds
 	while (!aquisition.localMaximas.empty() && aquisition.localMaximas.front().begin <= frame+offset-TargetViewAquisitionWindowSize)
@@ -297,7 +297,7 @@ bool updateTargetViewAquisition(TargetViewAquisition &aquisition, int frame, int
 			if (*it < aquisition.localMaxValue*0.9f)
 				break;
 		range.end = aquisition.localMaxFrame+slidingWindowSize/2+i;
-		LOG(LTargetCalib, LInfo, "Got new maxima at %d, range %d-%d (%d length)",
+		LOG(LTargetCalib, LInfo, "Got new maxima at %" PRIu64 ", range %" PRIu64 "-%" PRIu64 " (%" PRIu64 " length)",
 			aquisition.localMaxFrame, range.begin, range.end, (range.end-range.begin));
 		aquisition.localMaximas.push_back(range);
 		aquisition.localMaxSearching = false;
@@ -323,9 +323,9 @@ bool updateTargetViewAquisition(TargetViewAquisition &aquisition, int frame, int
 bool finaliseTargetViewAquisitionRange(const SequenceData &sequences, TargetViewAquisition &aquisition, const TargetAquisitionParameters &params, TargetViewRange &newRange)
 {
 	TargetViewAquisition::LocalMaxima max = aquisition.localMaximas.back();
-	int begin = max.begin, end = max.end;
+	FrameNum begin = max.begin, end = max.end;
 
-	LOG(LTargetCalib, LDebug, "Finalising Range %d-%d, max %f!", begin, end, max.value);
+	LOG(LTargetCalib, LDebug, "Finalising Range %" PRIu64 "-%" PRIu64 ", max %f!", begin, end, max.value);
 
 	LOG(LTargetCalib, LDebug, "Stats are %f avg, %f first sigma!", aquisition.localMaximaStats.avg, aquisition.localMaximaStats.avg+aquisition.localMaximaStats.stdDev());
 	if (max.value < aquisition.localMaximaStats.avg*0.9999f-aquisition.localMaximaStats.stdDev())
@@ -349,7 +349,7 @@ bool finaliseTargetViewAquisitionRange(const SequenceData &sequences, TargetView
 	float ratio = (float)stats.sampleCount/stats.paramCount;
 	if (ratio < params.ratioHardLimit)
 	{
-		LOG(LTargetCalib, LDebug, "Not recording frame range from %d (%d frames), ratio %.2f, with %d samples for %d params over %d frames (min %d values) and %d markers (min %d values)\n",
+		LOG(LTargetCalib, LDebug, "Not recording frame range from %" PRIu64 " (%" PRIu64 " frames), ratio %.2f, with %d samples for %d params over %d frames (min %d values) and %d markers (min %d values)\n",
 			begin, end-begin, ratio,
 			stats.sampleCount, stats.paramCount, stats.frameCount, stats.minFrameObs, stats.markerCount, stats.minMarkerObs);
 		return false;
@@ -363,12 +363,12 @@ bool finaliseTargetViewAquisitionRange(const SequenceData &sequences, TargetView
 			frames.push_back(begin+f);
 	if (frames.size() < params.minLength)
 	{
-		LOG(LTargetCalib, LDebug, "Not recording frame range from %d (%d frames), have only %d frames left!",
+		LOG(LTargetCalib, LDebug, "Not recording frame range from %" PRIu64 " (%" PRIu64 " frames), have only %d frames left!",
 			begin, end-begin, (int)frames.size());
 		return false;
 	}
 
-	LOG(LTargetCalib, LDebug, "Recording frame range from %d (%d frames), ratio %.2f, with %d samples for %d params over %d frames (min %d values) and %d markers (min %d values)\n",
+	LOG(LTargetCalib, LDebug, "Recording frame range from %" PRIu64 " (%" PRIu64 " frames), ratio %.2f, with %d samples for %d params over %d frames (min %d values) and %d markers (min %d values)\n",
 		begin, end-begin, ratio,
 		stats.sampleCount, stats.paramCount, stats.frameCount, stats.minFrameObs, stats.markerCount, stats.minMarkerObs);
 

@@ -154,7 +154,7 @@ struct VisualisationState
 		struct TrackingTargets
 		{
 			std::string label;
-			uint32_t lastTrackedFrame;
+			FrameNum lastTrackedFrame;
 			TrackingResult trackState;
 			TrackerInertialState imuState;
 			StatFloatingf imuSampleRate;
@@ -254,7 +254,7 @@ struct VisualisationState
 		std::map<int, int> frameIndices;
 		std::vector<int> cameraTriObservations;
 		int markerCount = 0; // To check if observations were cleared
-		int64_t resetFirstFrame = -1;
+		OptFrameNum resetFirstFrame = -1;
 	} incObsUpdate;
 
 	// Visualisation of reference points in virtual space
@@ -371,18 +371,18 @@ public:
 	// Control/Recording state
 	struct RecordedSections
 	{
-		int begin, end;
+		FrameNum begin, end;
 		bool forceSave, saved;
 		std::string path;
 
 		// For MSVC...
-		RecordedSections(int begin, int end, bool forceSave = false)
+		RecordedSections(FrameNum begin, FrameNum end, bool forceSave = false)
 			: begin(begin), end(end), forceSave(forceSave) {}
 	};
 	std::vector<RecordedSections> recordSections;
-	int64_t recordSectionStart = -1;
+	OptFrameNum recordSectionStart = -1;
 	bool saveTrackingResults = true;
-	unsigned int frameJumpTarget = 0;
+	FrameNum frameJumpTarget = 0;
 	bool frameRelevantParametersDirty = false;
 
 	// Sequences state

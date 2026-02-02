@@ -801,7 +801,7 @@ EXPORT void _SignalPipelineUpdate()
 	GetUI().RequestUpdates();
 }
 
-EXPORT void _SignalObservationReset(long firstFrame = 0)
+EXPORT void _SignalObservationReset(FrameNum firstFrame = 0)
 {
 	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised

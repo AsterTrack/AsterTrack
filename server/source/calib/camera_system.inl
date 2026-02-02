@@ -12,17 +12,19 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "calib/camera_system.hpp"
 
+#include "util/util.hpp"
+
 #include <cassert>
 
 
 /* Function Declarations */
 
-inline float FundamentalMatrix::updateTrust(int frame, float decayRate)
+inline float FundamentalMatrix::updateTrust(FrameNum frame, float decayRate)
 {
 	// TODO: Account for number of rejected correspondences in FM trust
 	// Also tune decayRate better once simulation gives more control over changing FMs, missing observations, etc.
-	int updateFrames = frame-std::max(lastFrame, lastTrustUpdate);
-	int framesPassed = frame-lastFrame;
+	int32_t updateFrames = diffUnsigned<int32_t>(std::max(lastFrame, lastTrustUpdate), frame);
+	int32_t framesPassed = diffUnsigned<int32_t>(lastFrame, frame);
 	if (framesPassed < 10000)
 		floatingTrust -= (int64_t)framesPassed * updateFrames * decayRate;
 	//floatingTrust *= 1.0f-decayRateAlt;

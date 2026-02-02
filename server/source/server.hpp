@@ -117,7 +117,7 @@ struct ServerState
 		std::vector<std::string> captures;
 		std::vector<std::string> tracking;
 		std::vector<RecordingSegment> segments;
-		std::size_t frames = 0;
+		FrameNum frames = 0;
 		TimePoint_t replayTime;
 	} recording = {};
 	TrackingRecord stored;

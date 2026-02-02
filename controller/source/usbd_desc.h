@@ -193,7 +193,7 @@ static const struct usb_config_hs USBD_Config_Desc_HS = {
 		.bmAttributes = USB_CFG_ATTR_RESERVED,
 		.bMaxPower = USB_CFG_POWER_MA(100),
 	},
-	.interface_0_0_int = INT_ALT_DESC(0,1),
+	.interface_0_0_int = INT_ALT_DESC(0,0),
 	.interface_0_1_int = INT_ALT_DESC(1,1),
 	.ep_int_in_1_0 = INT_HS_EP_DESC(0),
 /* 	.interface_1_2_int = INT_ALT_DESC(1,2),

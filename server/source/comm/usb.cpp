@@ -215,7 +215,7 @@ static int comm_hotplug_callback(libusb_context *context, libusb_device *device,
 	}
 	return 0;
 }
-static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTransfers)
+static bool comm_interruptControlTransfers(libusb_state_int *libusb, bool freeTransfers)
 {
 	// Cancel transfers and wait for them to be freed
 	libusb->blockTransfers = true;
@@ -290,7 +290,6 @@ static bool comm_cancelControlTransfers(libusb_state_int *libusb, bool freeTrans
 		}
 	}
 	libusb->controlCancelFree = false;
-	libusb->blockTransfers = false;
 	return libusb->controlCancelCounter == expectedCancelled;
 }
 static bool comm_cancelStreamTransfers(libusb_state_int *libusb, bool freeTransfers)
@@ -522,20 +521,11 @@ void comm_disconnect(std::shared_ptr<USBCommState> state)
 	// Disconnect comms
 	bool fullyCancelledStream = !state->commStreaming || comm_stopStream(state);
 	// Cancel and free control transfers
-	bool fullyCancelledControl = comm_cancelControlTransfers(libusb, true);
+	bool fullyCancelledControl = comm_interruptControlTransfers(libusb, true);
 	// Release interface
 	libusb_release_interface(libusb->devHandle, USBD_INTERFACE);
 
 	libusb_context->deviceAccess.lock();
-	// Store device handle incase it is still connected
-	if (connected)
-	{ // TODO: Mark to not auto-reconnect for future manual disconnections
-		libusb_context->potentialDevices.push_back(libusb->devHandle);
-	}
-	else
-	{
-		libusb_close(libusb->devHandle);
-	}
 	// Remove record of device
 	for (auto dev = libusb_context->connectedDevices.begin(); dev != libusb_context->connectedDevices.end(); dev++)
 	{
@@ -544,6 +534,15 @@ void comm_disconnect(std::shared_ptr<USBCommState> state)
 			libusb_context->connectedDevices.erase(dev);
 			break;
 		}
+	}
+	// Store device handle incase it is still connected
+	/* if (connected)
+	{ // TODO: Mark to not auto-reconnect for future manual disconnections
+		libusb_context->potentialDevices.push_back(libusb->devHandle);
+	}
+	else */
+	{
+		libusb_close(libusb->devHandle);
 	}
 	if (!fullyCancelledStream || !fullyCancelledControl)
 		LOG(LUSB, LWarn, "Could not fully cancel transfers, cannot properly clean up USB device!");
@@ -569,7 +568,7 @@ bool comm_startStream(std::shared_ptr<USBCommState> &state)
 
 #ifdef _WIN32
 	// WinUsb_SetCurrentAlternateSetting requires no ongoing transfers...
-	comm_cancelControlTransfers(libusb, false);
+	comm_interruptControlTransfers(libusb, false);
 #endif
 
 	std::vector<unsigned char> endpoints;
@@ -588,6 +587,9 @@ bool comm_startStream(std::shared_ptr<USBCommState> &state)
 		LOG(LUSB, LDebug, "Set alternate setting %d with %d interrupt endpoints!\n", it.first, (int)it.second.size());
 		break;
 	}
+#ifdef _WIN32
+	libusb->blockTransfers = false;
+#endif
 	if (libusb->usbAltSetting == -1)
 	{
 		LOG(LUSB, LError, "Failed to set any interrupt alternate setting!\n");
@@ -627,10 +629,18 @@ bool comm_stopStream(std::shared_ptr<USBCommState> &state)
 	// Cancel and free stream transfers
 	bool fullyCancelled = comm_cancelStreamTransfers(libusb, true);
 
+#ifdef _WIN32
+	// WinUsb_SetCurrentAlternateSetting requires no ongoing transfers...
+	comm_interruptControlTransfers(libusb, false);
+#endif
+
 	int code = libusb_set_interface_alt_setting(libusb->devHandle, USBD_INTERFACE, 0);
+#ifdef _WIN32
+	libusb->blockTransfers = false;
+#endif
 	if (code != 0)
 	{
-		LOG(LUSB, LWarn, "Failed to reset device interface!\n");
+		LOG(LUSB, LError, "Failed to reset device interface: %s\n", libusb_error_name(code));
 		return false;
 	}
 
@@ -701,6 +711,7 @@ int comm_submit_control_request(std::shared_ptr<USBCommState> &state, uint8_t re
 	pendingFull = 0;
 	// Setup and send of control transfer
 	libusb_fill_control_setup(libusb->ctrlINBuf[t], LIBUSB_RECIPIENT_OTHER | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_IN, request, value, index, CTRL_TRANSFER_SIZE);
+	// Maximum size of CTRL_TRANSFER_SIZE has already been set in libusb_fill_control_transfer
 	int ret = libusb_submit_transfer(libusb->controlIN[t]);
 	if (ret != 0)
 	{
@@ -710,7 +721,16 @@ int comm_submit_control_request(std::shared_ptr<USBCommState> &state, uint8_t re
 			state->deviceConnected = false;
 		}
 		else
+		{
 			LOG(LUSB, LError, "Failed to submit control request: %d (%s)!\n", ret, libusb_error_name(ret));
+			libusb->transferErrors++;
+			if (libusb->transferErrors > 10)
+			{
+				LOG(LUSB, LError, "Errors indicate comm loss!\n");
+				state->deviceConnected = false;
+				libusb->transferErrors = 0;
+			}
+		}
 		return -1;
 	}
 	libusb->ctrlINPending[t] = true;
@@ -747,7 +767,10 @@ int comm_submit_control_data(std::shared_ptr<USBCommState> &state, uint8_t reque
 	pendingFull = 0;
 	if (data != NULL && size != 0)
 		memcpy(libusb->ctrlOUTBuf[t]+8, data, size);
-	libusb_fill_control_setup(libusb->ctrlOUTBuf[t], LIBUSB_RECIPIENT_OTHER | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT, request, value, index, size);
+	libusb_fill_control_setup(libusb->ctrlOUTBuf[t], LIBUSB_RECIPIENT_OTHER | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
+		request, value, index, size);
+	// Could either call libusb_fill_control_transfer again or just update length
+	libusb->controlOUT[t]->length = LIBUSB_CONTROL_SETUP_SIZE + size;
 	int ret = libusb_submit_transfer(libusb->controlOUT[t]);
 	if (ret != 0)
 	{
@@ -757,7 +780,16 @@ int comm_submit_control_data(std::shared_ptr<USBCommState> &state, uint8_t reque
 			state->deviceConnected = false;
 		}
 		else
+		{
 			LOG(LUSB, LError, "Failed to submit control data: %d (%s)!\n", ret, libusb_error_name(ret));
+			libusb->transferErrors++;
+			if (libusb->transferErrors > 10)
+			{
+				LOG(LUSB, LError, "Errors indicate comm loss!\n");
+				state->deviceConnected = false;
+				libusb->transferErrors = 0;
+			}
+		}
 		return -1;
 	}
 	libusb->ctrlOUTPending[t] = true;

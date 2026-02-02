@@ -73,7 +73,7 @@ static const char *getErrorString(int error)
 #endif
 
 
-void *get_in_addr(struct sockaddr_storage *addr)
+static void *get_in_addr(struct sockaddr_storage *addr)
 {
 	if (addr->ss_family == AF_INET)
 		return &(((struct sockaddr_in *)addr)->sin_addr);
@@ -82,7 +82,7 @@ void *get_in_addr(struct sockaddr_storage *addr)
 	return NULL;
 }
 
-const char *getHostnameString()
+static const char *getHostnameString()
 {
 	static char host_str[HOST_NAME_MAX+1];
 	if (gethostname(host_str, sizeof(host_str)) != 0)
@@ -90,14 +90,14 @@ const char *getHostnameString()
 	return host_str;
 }
 
-const char *getIPString(struct sockaddr_storage *addr)
+static const char *getIPString(struct sockaddr_storage *addr)
 {
 	static char addr_str[INET6_ADDRSTRLEN+1];
 	inet_ntop(addr->ss_family, get_in_addr(addr), addr_str, sizeof(addr_str));
 	return addr_str;
 }
 
-uint16_t getPort(struct sockaddr_storage *addr)
+static uint16_t getPort(struct sockaddr_storage *addr)
 {
 	if (addr->ss_family == AF_INET)
 		return htons(((struct sockaddr_in *)addr)->sin_port);
@@ -106,8 +106,7 @@ uint16_t getPort(struct sockaddr_storage *addr)
 	return 0;
 }
 
-
-std::string getAddrString(struct sockaddr_storage *addr)
+static std::string getAddrString(struct sockaddr_storage *addr)
 {
 	static char host_num[NI_MAXHOST+1];
 	static char host_name[NI_MAXHOST+1];
@@ -142,7 +141,7 @@ std::string getAddrString(struct sockaddr_storage *addr)
 	}
 }
 
-int socket_initialise()
+static int socket_initialise()
 {
 #ifdef _WIN32
 	WSADATA wsaData;
@@ -153,7 +152,7 @@ int socket_initialise()
 	return 0;
 }
 
-bool socket_initialised()
+static bool socket_initialised()
 {
 #ifdef _WIN32
 	SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -164,14 +163,14 @@ bool socket_initialised()
 	return true;
 }
 
-void socket_cleanup()
+static void socket_cleanup()
 {
 #ifdef _WIN32
 	WSACleanup();
 #endif
 }
 
-void socket_close(int fd)
+static void socket_close(int fd)
 {
 #ifdef _WIN32
 	closesocket(fd);

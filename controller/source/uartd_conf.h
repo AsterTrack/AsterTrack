@@ -43,7 +43,7 @@ extern "C"
 #define UART_TEMP_PACKET_BUF 32
 
 // UART Timing
-#define UART_RESET_TIMEOUT_MS	10		// Timeout after comm loss (NAK) during which all comms are ignored
+#define UART_RESET_TIMEOUT_MS	50		// Timeout after comm loss (NAK) during which all comms are ignored
 
 #ifdef __cplusplus
 }

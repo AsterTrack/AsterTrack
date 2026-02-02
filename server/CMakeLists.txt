@@ -181,7 +181,8 @@ if(MSVC)
 	target_link_libraries(astertrack opengl32 gdi32 shell32 advapi32 ole32)
 
 	# Add windows-specific resource file
-	target_sources(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/resources/conf.rs")
+	target_sources(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/resources/astertrack.rc")
+	target_sources(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/resources/astertrack.manifest")
 
 	# Prevent MSVC from putting it in /Debug or /Release subdirectories
 	set_target_properties(astertrack PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_BINARY_DIR})

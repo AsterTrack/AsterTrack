@@ -1,0 +1,5 @@
+#define D_ICON		astertrack_icon_release.ico
+// See https://learn.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
+#define D_VER_NUM	0,1,0,0 // Might be MAJOR, MINOR, BUILD, PATCH just like version in .manifest?
+#define D_VER_STR	"v0.1.0\0"
+#define D_VER_FLAG	VS_FF_DEBUG | VS_FF_PRERELEASE

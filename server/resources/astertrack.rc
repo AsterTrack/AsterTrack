@@ -1,0 +1,37 @@
+#include "astertrack_version.rc"
+
+aaaa ICON D_ICON
+
+ISOLATIONAWARE_MANIFEST_RESOURCE_ID RT_MANIFEST astertrack.manifest
+
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION			D_VER_NUM
+PRODUCTVERSION		D_VER_NUM
+FILEFLAGSMASK		VS_FFI_FILEFLAGSMASK
+FILEFLAGS			(D_VER_FLAG)
+FILEOS				VOS_NT
+FILETYPE			VFT_APP
+FILESUBTYPE			VFT2_UNKNOWN
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "080904E4"
+		BEGIN
+			VALUE "OriginalFilename",	"astertrack.exe"
+			VALUE "Comments",			"Server for the AsterTrack Tracking System."
+			VALUE "FileDescription",	"AsterTrack Server" // This will be the Program Name
+			VALUE "FileVersion",		D_VER_STR
+			VALUE "ProductName",		"AsterTrack"
+			VALUE "ProductVersion",		D_VER_STR
+			VALUE "InternalName",		"AsterTrack Server"
+			VALUE "CompanyName",		""
+			VALUE "LegalCopyright",		""
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x0809, 0x04E4
+	END
+END

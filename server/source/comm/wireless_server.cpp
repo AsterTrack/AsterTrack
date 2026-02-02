@@ -136,26 +136,28 @@ std::string WirelessServerGetHostname()
 	return getHostnameString();
 }
 
-int WirelessServerInit(std::string port)
+void WirelessServerInit()
 {
 	if (socket_initialise())
 	{
 		LOG(LServer, LDebug, "Failed to initialise socket!\n");
-		return 0;
 	}
-
-	int socket = socket_server_init(port.c_str());
-	if (socket < 0)
-	{
-		socket_cleanup();
-		return 0;
-	}
-
 	// Init predefined messages
 	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
 	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
 	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
+}
 
+void WirelessServerCleanup()
+{
+	socket_cleanup();
+}
+
+int WirelessServerOpen(std::string port)
+{
+	int socket = socket_server_init(port.c_str());
+	if (socket < 0)
+		return 0;
 	return socket;
 }
 
@@ -223,7 +225,6 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		socket_close(client->socket);
 	server.clients.clear();
 	socket_close(server.socket);
-	socket_cleanup();
 
 	LOG(LServer, LDebug, "All server threads closed!\n");
 }

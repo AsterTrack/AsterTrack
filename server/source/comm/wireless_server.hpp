@@ -62,9 +62,13 @@ struct ServerCommState
 
 /* Functions */
 
+void WirelessServerInit();
+
+void WirelessServerCleanup();
+
 std::string WirelessServerGetHostname();
 
-int WirelessServerInit(std::string port);
+int WirelessServerOpen(std::string port);
 
 void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverState);
 

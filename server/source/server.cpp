@@ -116,6 +116,7 @@ bool ServerInit(ServerState &state)
 
 	omp_set_num_threads(omp_get_max_threads());
 
+	WirelessServerInit();
 	state.server.host = WirelessServerGetHostname();
 
 	return true;
@@ -136,6 +137,8 @@ void ServerExit(ServerState &state)
 	state.libusb_context = nullptr;
 
 	ResetIO(state);
+
+	WirelessServerCleanup();
 }
 
 void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
@@ -370,7 +373,7 @@ void StartWirelessServer(ServerState &state)
 	if (state.server.portSet.empty())
 		state.server.portSet = "45732";
 	state.server.portUsed = state.server.portSet;
-	state.server.socket = WirelessServerInit(state.server.portUsed);
+	state.server.socket = WirelessServerOpen(state.server.portUsed);
 	if (state.server.socket == 0)
 	{
 		LOG(LServer, LError, "Could not start network server!\n");

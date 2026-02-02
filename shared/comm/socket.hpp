@@ -32,6 +32,7 @@ SOFTWARE.
 
 #include <codecvt>
 #include <locale>
+#include <cstdio>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -40,12 +41,19 @@ SOFTWARE.
 #define HOST_NAME_MAX 255
 #endif
 
+static const char *getErrorString(int error)
+{
+	static char errorBuffer[32];
+	snprintf(errorBuffer, sizeof(errorBuffer), "Error %d", error);
+	return errorBuffer;
+}
 #define SOCKET_ERR_NUM (WSAGetLastError())
-#define SOCKET_ERR_STR (strerror(WSAGetLastError()))
+#define SOCKET_ERR_STR getErrorString(WSAGetLastError())
 #define VALID_SOCKET(sock) (sock != INVALID_SOCKET)
 
 #elif defined(__unix__)
 
+#include <string>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -53,6 +61,7 @@ SOFTWARE.
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <limits.h>
+#include <errno.h>
 
 #define SOCKET_ERR_NUM errno
 #define SOCKET_ERR_STR (strerror(errno))
@@ -73,14 +82,15 @@ void *get_in_addr(struct sockaddr_storage *addr)
 	return NULL;
 }
 
-char *getHostnameString()
+const char *getHostnameString()
 {
 	static char host_str[HOST_NAME_MAX+1];
-	gethostname(host_str, sizeof(host_str));
+	if (gethostname(host_str, sizeof(host_str)) != 0)
+		return SOCKET_ERR_STR; 
 	return host_str;
 }
 
-char *getIPString(struct sockaddr_storage *addr)
+const char *getIPString(struct sockaddr_storage *addr)
 {
 	static char addr_str[INET6_ADDRSTRLEN+1];
 	inet_ntop(addr->ss_family, get_in_addr(addr), addr_str, sizeof(addr_str));

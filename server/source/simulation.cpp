@@ -421,10 +421,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 			// Register projected marker point
 			markerMap[i] = points2D.size();
 			points2D.push_back(ptPos);
-			BlobProperty prop;
-			prop.size = ptSize;
-			prop.value = 1000;
-			properties.push_back(prop);
+			properties.emplace_back(ptSize, 1000);
 			LOGC(LTrace, "    Camera %d: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
 		}
 	}

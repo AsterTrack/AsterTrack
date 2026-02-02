@@ -79,8 +79,10 @@ int socket_server_init(const char *port)
 	if (status != 0)
 	{
 		LOG(LServer, LError, "Failed to get addr info: %s\n", gai_strerror(status));
+#if defined(__unix__)
 		if (status == EAI_SYSTEM)
 			LOG(LServer, LError, "System error: %s (%d)\n", strerror(errno), errno);
+#endif
 		return -1;
 	}
 	if (server_addr->ai_next != NULL)
@@ -185,7 +187,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		if (socket < 0)
 		{
 #if defined(_WIN32)
-			#warn "Verify socket error handling!"
+	#pragma warn "Verify socket error handling!"
 			if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 #elif defined(__unix__)
 			// All these are acceptable: ENETDOWN, EPROTO, ENOPROTOOPT, EHOSTDOWN, ENONET, EHOSTUNREACH, EOPNOTSUPP, or ENETUNREACH
@@ -249,7 +251,7 @@ inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint
 	if (ret < 0)
 	{
 #if defined(_WIN32)
-		#warn "Verify socket error handling!"
+	#pragma warn "Verify socket error handling!"
 		if (SOCKET_ERR_NUM == WSAECONNRESET || SOCKET_ERR_NUM == WSAECONNRESET)
 #elif defined(__unix__)
 		if (SOCKET_ERR_NUM == EPIPE)
@@ -279,7 +281,7 @@ inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 	if (status < 0)
 	{ // Error
 #if defined(_WIN32)
-		#warn "Verify socket error handling!"
+	#pragma warn "Verify socket error handling!"
 		if (SOCKET_ERR_NUM != EAGAIN)
 #elif defined(__unix__)
 		if (SOCKET_ERR_NUM != EAGAIN)
@@ -302,7 +304,7 @@ inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 	if (num < 0)
 	{
 #if defined(_WIN32)
-		#warn "Verify socket error handling!"
+	#pragma warn "Verify socket error handling!"
 		LOG(LServer, LError, "Socket error on read: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 		if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 		{

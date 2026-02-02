@@ -225,6 +225,8 @@ struct TrackedBase
 	TrackingResult result;
 	float procTimeMS;
 	float mistrust = 0.0f;
+
+	inline TrackedBase(int id, std::string label) : id(id), label(label), mistrust(0.0f) {} // For MSVC...
 };
 
 struct TrackedTarget : public virtual TrackedBase

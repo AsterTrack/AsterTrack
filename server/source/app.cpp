@@ -25,7 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp" // dtUS
 
-#if !defined(INTERFACE_LINKED) && !defined(_MSC_VER)
+#if !defined(INTERFACE_LINKED) && !defined(_MSVC_LANG) && !defined(_MSC_VER)
 #include <dlfcn.h>
 #define ALLOW_DYNAMIC_LINKING
 #else
@@ -38,6 +38,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifdef __unix__
 #include <unistd.h>
 #elif defined(_WIN32)
+#include <windows.h>
 #include <securitybaseapi.h>
 #endif
 
@@ -87,7 +88,6 @@ static inline bool AssumeInterface()
 #endif
 static inline void UnlinkInterface(void *uidl = nullptr)
 {
-	void (*empty)(void) = [](){};
 	InterfaceThread = []() -> bool { return false; };
 	SignalInterfaceShouldClose = [](){};
 	SignalLogUpdate = [](){};
@@ -137,6 +137,9 @@ int main (void)
 {
 	// Set interface pointers to NOP functions
 	UnlinkInterface();
+
+	// Tell STL we are utf8 aware, and set locale for any other formats (probably unused)
+	std::setlocale(LC_ALL, "en_GB.utf8");
 	
 	{ // Setup logging
 		initialise_logging_strings();
@@ -167,15 +170,15 @@ int main (void)
 	}
 #elif defined(_WIN32)
 	BOOL fIsRunAsAdmin = FALSE;
-	PSID pAdminSid = NULL;
-	if (CreateWellKnownSid(WinBuiltinAdministratorsSid, NULL, &pAdminSid))
+	char pAdminSid[SECURITY_MAX_SID_SIZE] = {0};
+	DWORD numOfBytes = SECURITY_MAX_SID_SIZE;
+	if (CreateWellKnownSid(WinBuiltinAdministratorsSid, NULL, &pAdminSid, &numOfBytes))
 	{
-		if (CheckTokenMembership(NULL, pAdminSid, &fIsRunAsAdmin) && fIsRunAsAdmin)
+		if (CheckTokenMembership(NULL, &pAdminSid, &fIsRunAsAdmin) && fIsRunAsAdmin)
 		{
 			printf("WARNING! Running with administrator privileges is NOT recommended and may expose you to security vulnerabilities!\n");
 			LOG(LDefault, LWarn, "Running with administrator privileges is NOT recommended and may expose you to security vulnerabilities!");
 		}
-		FreeSid(pAdminSid);
 	}
 #endif
 

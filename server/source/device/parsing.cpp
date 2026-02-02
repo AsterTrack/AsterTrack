@@ -476,10 +476,10 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketH
 			(float)*(uint16_t*)&blobData[base+2] / std::numeric_limits<uint16_t>::max());
 		pt = npix2cam(camera.pipeline->mode, pt); // Convert from normalised pixel space (0-1) to our coordinate system
 		frame.rawPoints2D.push_back(pt);
-		BlobProperty prop;
-		prop.size = (float)*(uint8_t*)&blobData[base+4] / camera.pipeline->mode.widthPx;
-		prop.value = *(uint8_t*)&blobData[base+5] * 4;
-		frame.properties.push_back(prop);
+		frame.properties.emplace_back(
+			(float)*(uint8_t*)&blobData[base+4] / camera.pipeline->mode.widthPx,
+			*(uint8_t*)&blobData[base+5] * 4
+		);
 		static_assert(STREAM_PACKET_BLOB_SIZE == 6);
 	}
 	frame.received = true;

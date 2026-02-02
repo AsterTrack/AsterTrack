@@ -112,9 +112,9 @@ std::string getAddrString(struct sockaddr_storage *addr)
 							NI_NUMERICHOST | NI_NUMERICSERV);
 #if defined(_WIN32) // Because windows silently breaks API and uses wide characters when unicode is enabled
 	if (status != 0)
-		return std::string("unknown:") + std::wstring_convert<std::codecvt_utf8<wchar_t>>().to_bytes(gai_strerror(status));
+		return std::string("unknown:") + std::string(gai_strerror(status));
 	else if (status2 != 0)
-		return std::string("unknown2:") + std::wstring_convert<std::codecvt_utf8<wchar_t>>().to_bytes(gai_strerror(status2));
+		return std::string("unknown2:") + std::string(gai_strerror(status2));
 #elif defined(__unix__)
 	if (status != 0)
 		return std::string("unknown:") + gai_strerror(status);

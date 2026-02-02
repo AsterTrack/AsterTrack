@@ -374,6 +374,10 @@ public:
 		int begin, end;
 		bool forceSave, saved;
 		std::string path;
+
+		// For MSVC...
+		RecordedSections(int begin, int end, bool forceSave = false)
+			: begin(begin), end(end), forceSave(forceSave) {}
 	};
 	std::vector<RecordedSections> recordSections;
 	long recordSectionStart = -1;

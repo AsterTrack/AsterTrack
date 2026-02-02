@@ -63,6 +63,8 @@ struct BlobProperty
 {
 	float size;
 	int value;
+
+	BlobProperty(float size, int value) : size(size), value(value) {} // For MSVC...
 };
 
 struct CameraFrameRecord

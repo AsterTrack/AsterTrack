@@ -1550,8 +1550,8 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 			Eigen::Vector2f posUsed = cornersUsed[s] + dirUsed*side;
 			posFull = undistortPoint(calib, posFull)*calib.fInv*calibHost.f;
 			posUsed = undistortPoint(calib, posUsed)*calib.fInv*calibHost.f;
-			fullBorder.push_back({ Eigen::Vector3f(posFull.x(), posFull.y(), 0.1f), colFull });
-			usedBorder.push_back({ Eigen::Vector3f(posUsed.x(), posUsed.y(), 0.1f), colUsed });
+			fullBorder.emplace_back(Eigen::Vector3f(posFull.x(), posFull.y(), 0.1f), colFull);
+			usedBorder.emplace_back(Eigen::Vector3f(posUsed.x(), posUsed.y(), 0.1f), colUsed);
 			// Also expand zoom area if it reaches outside
 			maxZoom = std::max(maxZoom, posFull.x());
 			maxZoom = std::max(maxZoom, posFull.y()/(float)mode.aspect);
@@ -1560,10 +1560,20 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 	return 1.0f / maxZoom;
 }
 
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(__GNUC__) || defined(__clang_version__)
+
 #pragma GCC push_options
 #pragma GCC optimize ("-O3")
+#define OPT_ATTR __attribute__ ((optimize("3")))
 
-static void __attribute__ ((optimize("3"))) calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera)
+#elif defined(_MSVC_LANG) || defined(_MSC_VER)
+
+#pragma optimize("2", on)
+#define OPT_ATTR
+
+#endif
+
+static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera)
 {
 	CameraMode &mode = camera.pipeline->mode;
 	CameraCalib &calib = camera.pipeline->calib;

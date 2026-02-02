@@ -1,8 +1,9 @@
 @echo off & SETLOCAL ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
-:: Frozen v1.0.29
-set FETCH_URL=https://github.com/libusb/libusb/archive/refs/tags/v1.0.29.zip
-set FETCH_VERSION=v1.0.29
+:: Frozen v1.0.30-prerelease
+::set FETCH_URL=https://github.com/libusb/libusb/archive/refs/tags/v1.0.29.zip
+set FETCH_URL=https://github.com/libusb/libusb/archive/102ab657bbc20b97579c477149739a6821a45e7a.zip
+set FETCH_VERSION=v1.0.30-prerelease
 set FETCH_NAME=libusb
 set FETCH_ARCHIVE=source.zip
 

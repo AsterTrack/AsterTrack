@@ -74,11 +74,18 @@ struct VisPoint
 	Eigen::Vector3f pos;
 	Color8 color;
 	float size;
+
+	// For MSVC...
+	VisPoint() {}
+	VisPoint(Eigen::Vector3f pos, Color8 color, float size = 0.0f) : pos(pos), color(color), size(size) {}
 };
 struct VisModel
 {
 	Eigen::Affine3f pose;
 	Color8 color;
+
+	// For MSVC...
+	VisModel(Eigen::Affine3f pose, Color8 color) : pose(pose), color(color) {}
 };
 #pragma pack(pop)
 

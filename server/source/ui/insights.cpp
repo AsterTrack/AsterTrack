@@ -38,6 +38,7 @@ extern ctpl::thread_pool threadPool;
 #include "nativefiledialog-extended/nfd.h"
 #include "nativefiledialog-extended/nfd_glfw3.h"
 
+#include <cinttypes>
 #include <fstream>
 
 
@@ -949,13 +950,13 @@ static bool ShowTrackingPanel()
 	ImPlot::SetAxis(ImAxis_Y4); // Use same axis, but not same scala
 	if (drawRec)
 	{ // Draw recorded
-		ImPlot::HideNextItem(ImGuiCond_Appearing);
+		ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
 		ImPlot::PlotLine("Time", recording.procTimeMS.data(), recording.procTimeMS.size(), 1, frameShiftRec);
 	}
 	if (drawCur)
 	{ // Draw current
-		ImPlot::HideNextItem(ImGuiCond_Appearing);
+		ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
 		ImPlot::PlotLine("Time", tracking.procTimeMS.data(), tracking.procTimeMS.size(), 1, frameShift);
 	}
@@ -1599,7 +1600,7 @@ static bool ShowTimingPanel()
 		while (std::getline(ifs, line))
 		{
 			uint64_t timestamp, receiveTimeEst, roundtripUS, timeSinceFrameUS; // Last two are optional
-			int cnt = std::sscanf(line.c_str(), "%lu, %lu, %lu, %lu", &timestamp, &receiveTimeEst, &roundtripUS, &timeSinceFrameUS);
+			int cnt = std::sscanf(line.c_str(), "%" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "", &timestamp, &receiveTimeEst, &roundtripUS, &timeSinceFrameUS);
 			if (cnt >= 2)
 			{
 				TimeSyncMeasurement meas;

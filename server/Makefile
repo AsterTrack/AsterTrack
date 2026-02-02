@@ -48,7 +48,7 @@ else ifeq ($(COMPILER), clang-std)
 CXX=clang++
 CC=clang
 LD=clang++
-# gnu libraries (libstdc++ + libgomp)
+# gnu library (libstdc++) but using clangs libomp (libgomp config stopped working)
 cstd = -stdlib=libstdc++ -fopenmp=libomp -Wno-gcc-compat
 lstd = -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic
 lto = -flto=thin
@@ -194,7 +194,7 @@ cflags = $(cenv) -Idependencies/include -Idependencies/sources \
 cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
 	-DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion -Wno-unknown-attributes \
-	-D_UNICODE -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
+	-DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
 	-std=c++23 -ffp-contract=fast
 lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)

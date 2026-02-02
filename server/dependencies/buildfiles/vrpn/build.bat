@@ -18,8 +18,6 @@ set MODE=%1
 if "%MODE%"=="" (
 	set MODE=release
 ) else (
-	set MODE
-	call :tolower MODE
 	if NOT "%MODE%"=="release" (
 		if NOT "%MODE%" == "debug" (
 			echo Invalid mode %MODE%, expecting 'release' or 'debug'
@@ -40,15 +38,13 @@ if "%MODE%"=="debug" (
 ) else (
 	set CRT=MultiThreaded
 )
-:: -DCMAKE_MSVC_RUNTIME_LIBRARY=%CRT% Doesn't work, completely ignored, thank you CMake
-:: So had to read previous flags from CMD and modfify MDx to MTx...
+:: -DCMAKE_MSVC_RUNTIME_LIBRARY is completely ignored unless you set this stupid policy, thank you CMake for nothing
 
 pushd win\build\%MODE%
-cmake ^
-	-DCMAKE_C_FLAGS_DEBUG="/MTd /Zi /Ob0 /Od /RTC1" -DCMAKE_C_FLAGS_RELEASE="/MT /O2 /Ob2 /DNDEBUG" ^
-	-DCMAKE_CXX_FLAGS_DEBUG="/MTd /Zi /Ob0 /Od /RTC1" -DCMAKE_CXX_FLAGS_RELEASE="/MT /O2 /Ob2 /DNDEBUG" ^
+cmake -DCMAKE_MSVC_RUNTIME_LIBRARY=%CRT% -DCMAKE_POLICY_DEFAULT_CMP0091=NEW ^
 	-DCMAKE_BUILD_TYPE=%MODE% -G "NMake Makefiles" ..\..\..\%SRC_PATH%
-nmake vrpn quat VERBOSE=1
+:: -DCMAKE_VERBOSE_MAKEFILE=ON
+nmake vrpn quat
 popd
 pushd win\install\%MODE%
 cmake -DCMAKE_INSTALL_COMPONENT=clientsdk -DCMAKE_INSTALL_PREFIX=. -P ..\..\build\%MODE%\cmake_install.cmake
@@ -77,13 +73,3 @@ if not exist ..\..\lib\win\%MODE%\vrpn md ..\..\lib\win\%MODE%\vrpn
 robocopy win\install\%MODE%\lib ..\..\lib\win\%MODE%\vrpn /E /NFL /NDL /NJH /NJS
 
 echo Now you can call clean.bat if everything succeeded.
-
-goto :EOF
-
-:tolower
-for %%L IN (a b c d e f g h i j k l m n o p q r s t u v w x y z) DO SET %1=!%1:%%L=%%L!
-goto :EOF
-
-:getabsolute
-set %1=%~f2
-goto :eof

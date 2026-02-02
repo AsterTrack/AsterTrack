@@ -41,7 +41,7 @@ Otherwise, to download the minimal setup (only the build tools):
   - Download the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/">Visual Studio Build Tools</a>
   - On installation, select "Desktop development with C++"
   - Then select the following components on the right (can unselect the others):
-    - `MSVC`, `Windows 11 SDK`, `C++ CMake`
+    - `MSVC Build Tools`, `Windows 11 SDK`, `C++ CMake`
 
 Also make sure that <a href="https://docs.microsoft.com/en-us/cpp/build/building-on-the-command-line#developer_command_file_locations">vcvars64.bat</a> is executable:
   - Add it to the path, depending on your version, e.g: <br>
@@ -49,13 +49,13 @@ Also make sure that <a href="https://docs.microsoft.com/en-us/cpp/build/building
   - Alternatively, modify .vscode/tasks.json to point to the vcvars64.bat file
 
 **2. turbojpeg** <br>
-Get the latest 3.x release from the <a href="https://github.com/libjpeg-turbo/libjpeg-turbo/releases">libjpeg-turbo github</a> (`libjpeg-turbo-3.x.x-vc64.exe`) <br>
+Get the latest 3.x release from the <a href="https://github.com/libjpeg-turbo/libjpeg-turbo/releases">libjpeg-turbo github</a> (`libjpeg-turbo-3.x.x-vc-x64.exe`) <br>
 You can run the file to install turbojpeg system-wide, just make sure to update the paths in CMakeLists.txt (it defaults to `C:/libjpeg-turbo64`). <br>
 Alternatively, you can extract it with 7-Zip and put the library files (`turbojpeg.lib` and `turbojpeg-static.lib`) into `dependencies/lib/win` as well as the include file `turbojpeg.h` into `dependencies/include`.
 
 #### VS Code
 Additional extensions for development in VS Code: <br>
-<i>Recommended</i>: clangd (llvm-vs-code-extensions) and CodeLLDB (vadimcn) extensions. Build Clangd Database using tasks. <br>
+<i>Recommended</i>: clangd (llvm-vs-code-extensions) and CodeLLDB (vadimcn) extensions. Build Clangd Database using task "Build (clangd)". <br>
 Alternatively: C/C++ (microsoft)
 
 ### Dependencies

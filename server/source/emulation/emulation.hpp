@@ -430,13 +430,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		resegmentedClusterCount++;
 
 		for (auto &cluster : resegmentedClusters)
-		{
-			VisPoint vert;
-			vert.pos.head<2>() = emulPix2Cam(cluster.centroid);
-			vert.size = cluster.size * PixelStride;
-			vert.color = Color{ 1, 0, 0, 1 };
-			result->resegmentedBlobs.push_back(vert);
-		}
+			result->resegmentedBlobs.emplace_back(emulPix2Cam(cluster.centroid).homogeneous(), Color{ 1, 0, 0, 1 }, cluster.size * PixelStride);
 
 		for (auto &cluster : resegmentedClusters)
 		{

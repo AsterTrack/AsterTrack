@@ -18,8 +18,6 @@ set MODE=%1
 if "%MODE%"=="" (
 	set MODE=release
 ) else (
-	set MODE
-	call :tolower MODE
 	if NOT "%MODE%"=="release" (
 		if NOT "%MODE%" == "debug" (
 			echo Invalid mode %MODE%, expecting 'release' or 'debug'
@@ -35,18 +33,17 @@ echo -----------------------------------------
 echo Building libusb
 echo -----------------------------------------
 
-:: Sadly MSBuild doesn't support overriding the CRT used in a project file.
+:: libusb provides configurations to select MT instead of MD
 if "%MODE%"=="debug" (
-	set CRT=MultiThreadedDebug
+	:: Could use Debug-Hotplug-MT
+	set CONFIG=Debug-MT
 ) else (
-	set CRT=MultiThreaded
+	:: Could use Release-Hotplug-MT
+	set CONFIG=Release-MT
 )
-:: So this does the actual work of enforcing MT instead of MD
-:: Note this will have two CRTs, one in the libusb DLL, one in the main program
-:: However the libusb interface is OK with two separate CRTs
-SET _CL_=/MT
 
-MSBuild.exe %SRC_PATH%\msvc\libusb_dll.vcxproj -property:Configuration=%MODE% -property:IntDir=..\..\win\build\%MODE%\ -property:OutDir=..\..\win\install\%MODE%\ -property:RuntimeLibrary=%CRT%
+MSBuild.exe %SRC_PATH%\msvc\libusb_dll.vcxproj -property:RuntimeLibrary=%CRT% -property:EnableASAN=false ^
+	-property:Configuration=%CONFIG% -property:IntDir=..\..\win\build\%MODE%\ -property:OutDir=..\..\win\install\%MODE%\
 
 echo -----------------------------------------
 echo Build completed
@@ -72,13 +69,3 @@ if not exist ..\..\lib\win\%MODE%\libusb md ..\..\lib\win\%MODE%\libusb
 robocopy win\install\%MODE% ..\..\lib\win\%MODE%\libusb /lev:0 /NFL /NDL /NJH /NJS
 
 echo Now you can call clean.bat if everything succeeded.
-
-goto :EOF
-
-:tolower
-for %%L IN (a b c d e f g h i j k l m n o p q r s t u v w x y z) DO SET %1=!%1:%%L=%%L!
-goto :EOF
-
-:getabsolute
-set %1=%~f2
-goto :eof

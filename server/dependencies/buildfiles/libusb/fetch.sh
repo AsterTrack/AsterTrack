@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Frozen v1.0.29
-FETCH_URL=https://github.com/libusb/libusb/archive/refs/tags/v1.0.29.zip
-FETCH_VERSION=v1.0.29
+# Frozen v1.0.30-prerelease
+#FETCH_URL=https://github.com/libusb/libusb/archive/refs/tags/v1.0.29.zip
+FETCH_URL=https://github.com/libusb/libusb/archive/102ab657bbc20b97579c477149739a6821a45e7a.zip
+FETCH_VERSION=v1.0.30-prerelease
 FETCH_NAME=libusb
 FETCH_ARCHIVE=source.zip
 

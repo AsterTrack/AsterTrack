@@ -193,7 +193,10 @@ enum ErrorTag
 	ERROR_MAX
 };
 
-__attribute__((used)) static const char *ErrorTag_String[ERROR_MAX] = 
+#ifndef _MSC_VER
+__attribute__((used))
+#endif
+static const char *ErrorTag_String[ERROR_MAX] = 
 {
 	"No Error",
 	"Unknown Error",

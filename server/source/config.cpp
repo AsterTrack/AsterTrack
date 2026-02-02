@@ -881,7 +881,8 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 						camera.rawPoints2D.emplace_back(jsBlob["x"].get<float>(), jsBlob["y"].get<float>());
 						camera.properties.emplace_back(
 							jsBlob["s"].get<float>(),
-							jsBlob.contains("v")? jsBlob["v"].get<float>() : 1000);
+							jsBlob.contains("v")? jsBlob["v"].get<int>() : 1000
+						);
 					}
 				}
 
@@ -1723,7 +1724,7 @@ std::optional<ErrorMessage> writeTargetObjFile(const std::string &path, const Ta
 		fprintf(out, "f %d//%d %d//%d %d//%d\n", i+1, i+1, i+2, i+2, i+3, i+3);
 	};
 
-	fprintf(out, "g %s\ns off\n", fsPath.stem().c_str());
+	fprintf(out, "g %s\ns off\n", fsPath.stem().string().c_str());
 
 	float s = 2.0f/1000;
 	for (int i = 0; i < target.markers.size(); i++)

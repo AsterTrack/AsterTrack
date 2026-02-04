@@ -70,10 +70,12 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		glClearDepth(0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// Enable Depth for 3D scene
+		// Enable Depth for 3D scene gets reset by OpenGL UI backend
 		glDepthMask(GL_TRUE);
 		glDepthFunc(GL_GEQUAL);
 		glEnable(GL_DEPTH_TEST);
+
+		std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
 
 		// Update and render visualisations
 		visualiseState3D(GetState(), GetUI().visState,

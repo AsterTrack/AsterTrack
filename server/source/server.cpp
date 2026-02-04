@@ -652,35 +652,20 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 
 		TimePoint_t now = sclock::now();
 
-		std::shared_lock dev_lock(state.deviceAccessMutex);
-
-#if !defined(_WIN32)
-		// Does work, but takes over a second on windows because no hotplugging support
-		if (dtMS(lastContCheck, now) > 100)
-		{ // Detect check for new controllers
-			//DetectNewControllers(*state);
-			lastContCheck = now;
-		}
-#endif
-
-		// Check for any disconnected controllers
+		// Check for disconnected hardware without upgrading a shared_lock deviceAccessMutex to unique_lock
+		// The UI thread can do this, and does so a lot, so it should be the only thread allowed to do that
 		for (int c = 0; c < state.controllers.size(); c++)
 		{
 			TrackingControllerState &controller = *state.controllers[c];
-			if (!controller.comm->deviceConnected)
-			{
-				LOG(LControllerDevice, LWarn, "Communication link of controller died!\n");
-				// TODO: Disconnect controller asynchronously somehow
-				// Why? Does this take long? Not sure anymore, need to check
-				DisconnectController(state, controller);
-				c--;
+			if (controller.comm->deviceConnected)
 				continue;
-			}
 
-			HandleController(state, controller);
+			LOG(LControllerDevice, LWarn, "Communication link of controller died!\n");
+			// TODO: Disconnect controller asynchronously somehow
+			// Why? Does this take long? Not sure anymore, need to check
+			DisconnectController(state, controller);
+			c--;
 		}
-
-		// Check for any disconnected cameras (due to both UART / Wifi link being inactive for a period of time)
 		for (int c = 0; c < state.cameras.size(); c++)
 		{
 			TrackingCameraState &camera = *state.cameras[c];
@@ -691,6 +676,37 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 				c--;
 				continue;
 			}
+		}
+
+		// Try to lock, and if failing to do so, yield to (potentially) another thread stopping device mode
+		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+		if (!dev_lock.owns_lock())
+			LOG(LControllerDevice, LError, "Failed to lock deviceAccessMutex in device thread, likely avoided deadlock!");
+		if (stop_token.stop_requested()) break;
+		if (!dev_lock.owns_lock()) continue;
+
+#if !defined(_WIN32)
+		// Does work, but takes over a second on windows because no hotplugging support
+		if (dtMS(lastContCheck, now) > 100)
+		{ // Detect check for new controllers
+			//DetectNewControllers(*state);
+			lastContCheck = now;
+		}
+#endif
+
+		// Handle comms of controllers
+		for (int c = 0; c < state.controllers.size(); c++)
+		{
+			TrackingControllerState &controller = *state.controllers[c];
+			if (controller.comm->deviceConnected)
+				HandleController(state, controller);
+		}
+
+		// Handle comms of cameras
+		for (int c = 0; c < state.cameras.size(); c++)
+		{
+			TrackingCameraState &camera = *state.cameras[c];
+			CameraID id = camera.id;
 			if (!camera.storage.receivedInfo && camera.hasComms() && dtMS(camera.storage.lastFetchTime, sclock::now()) > 500)
 			{
 				LOG(LCameraDevice, LInfo, "Requesting info from camera #%u", camera.id);
@@ -817,6 +833,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			UpdatePipelineStatus(state.pipeline);
 		}
 
+		// Unlock shared deviceAccessMutex
 		dev_lock.unlock();
 
 		// Interval only affects IMU polling rate, not USB packets by controllers

@@ -78,14 +78,17 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		{
 			OnDemandItem &render = *static_cast<OnDemandItem*>(dc->UserCallbackData);
 			CameraID id = (CameraID)(intptr_t)render.userData;
+			Color color;
 
-			// Get camera from id (to make sure it's still valid)
-			auto viewIt = GetUI().cameraViews.find(id);
-			if (viewIt == GetUI().cameraViews.end())
-				return; // Just removed, but UI hasn't been updated yet
+			{ // Get camera from id (to make sure it's still valid)
+				std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
+				auto viewIt = GetUI().cameraViews.find(id);
+				if (viewIt == GetUI().cameraViews.end())
+					return; // Just removed, but UI hasn't been updated yet
+				color = getStatusColor(*viewIt->second.camera);
+			}
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
-			Color color = getStatusColor(*viewIt->second.camera);
 			visSetupProjection(Eigen::Isometry3f::Identity());
 			visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 		}, (void*)(intptr_t)camera.id);
@@ -293,16 +296,17 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			{
 				OnDemandItem &render = *static_cast<OnDemandItem*>(dc->UserCallbackData);
 				int id = (int)(intptr_t)render.userData;
+				Color color;
 
-				// Get camera from id (to make sure it's still valid)
-				std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
-				auto contIt = std::find_if(GetState().controllers.begin(), GetState().controllers.end(), [&](const auto &c) { return c->id == id; });
-				if (contIt == GetState().controllers.end())
-					return; // Just removed, but UI hasn't been updated yet
-				const TrackingControllerState &controller = *contIt->get();
+				{ // Get camera from id (to make sure it's still valid)
+					std::shared_lock dev_lock(GetState().deviceAccessMutex); // controllers
+					auto contIt = std::find_if(GetState().controllers.begin(), GetState().controllers.end(), [&](const auto &c) { return c->id == id; });
+					if (contIt == GetState().controllers.end())
+						return; // Just removed, but UI hasn't been updated yet
+					color = getStatusColor(*contIt->get());
+				}
 
 				ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
-				Color color = getStatusColor(controller);
 				visSetupProjection(Eigen::Isometry3f::Identity());
 				visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 			}, (void*)(intptr_t)controller.id);

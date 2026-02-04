@@ -275,7 +275,12 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		LOG(LControllerDevice, LError, "Received malformed status packet of length %d < %d!\n", length, CONTROLLER_STATUS_SIZE);
 		return false;
 	}
-	std::shared_lock dev_lock(state.deviceAccessMutex);
+	std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
+	if (!dev_lock.owns_lock())
+	{
+		LOG(LUSB, LDarn, "Failed to lock device access mutex - likely attempting to disconnect!");
+		return false;
+	}
 
 	controller.status.flags = (ControllerStatusFlags)data[0];
 	controller.status.syncCfg = (ControllerSyncConfig)data[1];

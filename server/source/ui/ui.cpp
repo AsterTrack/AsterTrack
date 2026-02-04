@@ -235,17 +235,12 @@ static void RefreshGLFWWindow(GLFWwindow *window)
 
 void InterfaceState::UpdateUI()
 {
-
-	std::shared_lock dev_lock(GetState().deviceAccessMutex);
-
 	// Start new UI frame
 	ImGui_ImplGlfw_NewFrame();
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui::NewFrame();
 
 	OnDemandNewFrame();
-
-	GeneralInput();
 
 	ImGui::PushFont(mainFont);
 
@@ -259,6 +254,10 @@ void InterfaceState::UpdateUI()
 			ResetWindowLayout();
 		}
 	}
+
+	std::shared_lock dev_lock(GetState().deviceAccessMutex);
+
+	GeneralInput();
 
 	ImVec4 baseCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
 	isDarkMode = baseCol.x + baseCol.y + baseCol.z > 1.5f;
@@ -308,6 +307,8 @@ void InterfaceState::UpdateUI()
 		GetState().errors.pop();
 		handlingErrors = false;
 	}
+
+	dev_lock.unlock();
 
 	ImGui::PopFont();
 

@@ -16,7 +16,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 
 enum IMUDriver : uint32_t
-{ // NOTE: These values should not changed as they are written to store/imu_config.json
+{ // NOTE: These values should not changed as they are written to tracker config
 	IMU_DRIVER_NONE = 0,
 	IMU_DRIVER_ASTERTRACK = 1,
 	IMU_DRIVER_SLIMEVR = 2,

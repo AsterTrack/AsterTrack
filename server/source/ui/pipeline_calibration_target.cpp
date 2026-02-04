@@ -36,7 +36,7 @@ static bool ensureSequencesSaved(const PipelineState &pipeline, const SequenceDa
 	for (auto &cam : pipeline.cameras)
 		cameraIDs.push_back(cam->id);
 	// Write accompanying sequences
-	auto error = dumpSequenceDatabase("dump/target_calib_sequences.json", sequences, cameraIDs);
+	auto error = dumpSequenceDatabase(temporaryStoreFolder + "/target_calib_sequences.json", sequences, cameraIDs);
 	if (error) SignalErrorToUser(error.value());
 	else savedSequencesLastFrame = sequences.lastRecordedFrame;
 	return !error;
@@ -48,7 +48,7 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 	{
 		std::vector<CameraID> cameraIDs;
 		SequenceData loadedSequences;
-		auto error = parseSequenceDatabase("dump/target_calib_sequences.json", cameraIDs, loadedSequences);
+		auto error = parseSequenceDatabase(temporaryStoreFolder + "/target_calib_sequences.json", cameraIDs, loadedSequences);
 		if (error)
 		{
 			SignalErrorToUser(error.value());
@@ -157,7 +157,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				// Make sure the relevant sequence data is saved alongside
 				if (!ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
 					return saveLoadObs = false;
-				auto error = dumpTargetViewRecords("dump/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
+				auto error = dumpTargetViewRecords(temporaryStoreFolder + "/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
 				if (error) SignalErrorToUser(error.value());
 				return saveLoadObs = false;
 			});
@@ -173,7 +173,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				if (!checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
 					return saveLoadObs = false;
 				auto views_lock = pipeline.targetCalib.views.contextualLock();
-				auto error = parseTargetViewRecords("dump/target_calib_views.json", pipeline.record.frames, *views_lock);
+				auto error = parseTargetViewRecords(temporaryStoreFolder + "/target_calib_views.json", pipeline.record.frames, *views_lock);
 				if (error) SignalErrorToUser(error.value());
 				if (error) return saveLoadObs = false;
 				for (auto &view : *views_lock)
@@ -379,8 +379,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		SameLineTrailing(SizeWidthDiv2().x);
 		if (ImGui::Button("Save OBJ", SizeWidthDiv2()))
 		{
-			const char* tgtPathFmt = "dump/target_%d.obj";
-			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
+			std::string tgtPathFmt = temporaryStoreFolder + "/target_%d.obj";
+			std::string tgtPath = asprintf_s(tgtPathFmt.c_str(), findLastFileEnumeration(tgtPathFmt)+1);
 			auto error = writeTargetObjFile(tgtPath, *view.calib.contextualRLock());
 			if (error) SignalErrorToUser(error.value());
 		}
@@ -1014,8 +1014,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					if (!checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
 						return saveLoadStage = false;
 					// Load assembly stage checkpoint
-					const char* obsPathFmt = "dump/assembly_stage_%d.json";
-					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt));
+					std::string obsPathFmt = temporaryStoreFolder + "/assembly_stage_%d.json";
+					std::string obsPath = asprintf_s(obsPathFmt.c_str(), findLastFileEnumeration(obsPathFmt));
 					TargetAssemblyBase base;
 					auto error = parseTargetAssemblyStage(obsPath, base);
 					if (error) SignalErrorToUser(error.value());
@@ -1117,8 +1117,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					ServerState &state = GetState();
 					if (!ensureSequencesSaved(state.pipeline, *state.pipeline.seqDatabase.contextualRLock()))
 						return saveLoadStage = false;
-					const char* obsPathFmt = "dump/assembly_stage_%d.json";
-					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
+					std::string obsPathFmt = temporaryStoreFolder + "/assembly_stage_%d.json";
+					std::string obsPath = asprintf_s(obsPathFmt.c_str(), findLastFileEnumeration(obsPathFmt)+1);
 					auto error = dumpTargetAssemblyStage(obsPath, stage->base);
 					if (error) SignalErrorToUser(error.value());
 					return saveLoadStage = false;

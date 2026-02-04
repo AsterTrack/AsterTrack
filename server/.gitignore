@@ -17,8 +17,15 @@ imgui.ini
 imgui_log.txt
 *.tar.gz
 # Permanent Outputs
-store
+store/camera_calib*
+store/trackers*
+store/targets
+config/controller_config*
+config/lens_presets.json
+config/*.obj
+config/*.mtl
 dump
+recordings
 
 # Unnecessary sources
 resources/icons/*.svg

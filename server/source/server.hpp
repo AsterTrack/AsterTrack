@@ -76,10 +76,8 @@ struct ServerState
 	std::vector<CameraCalib> cameraCalibrations;
 	std::vector<TrackerConfig> trackerConfigs; // TODO: Synchronised
 	std::string wpa_supplicant_conf;
-	bool generalConfigDirty, cameraConfigDirty, trackerConfigDirty;
-	bool cameraCalibsDirty, trackerCalibsDirty, trackerIMUsDirty;
-	bool lensPresetsDirty;
-	// TODO: Should not store on disk by default, but provide option to store wifi credentials using secret service on linux 
+	bool generalConfigDirty, cameraConfigDirty;
+	bool cameraCalibsDirty, lensPresetsDirty;
 
 	// Device setup
 	recursive_shared_mutex deviceAccessMutex; // Protects controllers, cameras

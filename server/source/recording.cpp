@@ -28,9 +28,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void parseRecordEntries(std::map<int, Recording> &recordEntries)
 {
-	if (!std::filesystem::exists(std::filesystem::path("dump"))) return;
+	if (!std::filesystem::exists(std::filesystem::path(recordingsFolder))) return;
 
-	for (const auto &file : std::filesystem::directory_iterator("dump"))
+	for (const auto &file : std::filesystem::directory_iterator(recordingsFolder))
 	{
 		if (file.path().extension().compare(".json") != 0) continue;
 		const std::string &str = file.path().stem().string();

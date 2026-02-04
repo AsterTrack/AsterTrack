@@ -138,7 +138,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 				// Then, it will continuously try to align itself to any prior calibration - and pop this message if transfer failed
 				ImGui::OpenPopup("SaveNoRoomCalib");
 			}
-			auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			auto error = storeCameraCalibrations(permanentStoreFolder + "/camera_calib.json", state.cameraCalibrations);
 			if (error) SignalErrorToUser(error.value());
 			else state.cameraCalibsDirty = false;
 		}
@@ -156,7 +156,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Calibration", ButtonSize))
 		{
-			auto error = parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
+			auto error = parseCameraCalibrations(permanentStoreFolder + "/camera_calib.json", state.cameraCalibrations);
 			if (error) SignalErrorToUser(error.value());
 			else
 			{
@@ -459,7 +459,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 		if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
 		{
-			auto error = storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+			auto error = storeLensPresets(persistentConfigFolder + "/lens_presets.json", state.lensPresets, state.defaultLens);
 			if (error) SignalErrorToUser(error.value());
 			else state.lensPresetsDirty = false;
 		}
@@ -467,7 +467,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 		ImGui::SameLine();
 		if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
 		{
-			auto error = parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+			auto error = parseLensPresets(persistentConfigFolder + "/lens_presets.json", state.lensPresets, state.defaultLens);
 			if (error) SignalErrorToUser(error.value());
 			else state.lensPresetsDirty = false;
 		}
@@ -505,8 +505,8 @@ void InterfaceState::UpdatePipelineObservationSection()
 	if (ImGui::Button("Save", ButtonSize))
 	{
 		// Find path
-		const char* obsPathFmt = "dump/marker_observations_%d.json";
-		std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
+		std::string obsPathFmt = temporaryStoreFolder + "/marker_observations_%d.json";
+		std::string obsPath = asprintf_s(obsPathFmt.c_str(), findLastFileEnumeration(obsPathFmt)+1);
 		// Copy camera ids
 		std::vector<CameraID> cameraIDs;
 		for (auto &cam : pipeline.cameras)
@@ -519,11 +519,11 @@ void InterfaceState::UpdatePipelineObservationSection()
 	if (ImGui::Button("Load", ButtonSize))
 	{
 		// Find path
-		const char* obsPathFmt = "dump/marker_observations_%d.json";
+		std::string obsPathFmt = temporaryStoreFolder + "/marker_observations_%d.json";
 		int i = findLastFileEnumeration(obsPathFmt);
 		if (i > 0)
 		{
-			std::string obsPath = asprintf_s(obsPathFmt, i);
+			std::string obsPath = asprintf_s(obsPathFmt.c_str(), i);
 			std::vector<CameraID> cameraIDs;
 			SequenceData observations;
 			auto error = parseSequenceDatabase(obsPath, cameraIDs, observations);

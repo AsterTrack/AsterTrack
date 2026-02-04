@@ -110,6 +110,10 @@ struct TrackerConfig
 	TrackerTrigger trigger = TRIGGER_BY_DEFAULT;
 	TrackerExpose expose = EXPOSE_BY_DEFAULT;
 
+	// Tracker specific dirty flags
+	bool configDirty = false;
+	bool targetDirty = false;
+
 	// Target-specific Config
 	TargetCalibration3D calib;
 	TargetDetectionConfig detectionConfig;
@@ -129,8 +133,9 @@ struct TrackerConfig
 	TrackerConfig(int ID, std::string label, TrackerType type)
 		: id(ID), label(label), type(type) {}
 
-	TrackerConfig(int ID, std::string label, TargetCalibration3D target, TargetDetectionConfig detectionConfig)
-		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)), detectionConfig(detectionConfig) {}
+	TrackerConfig(int ID, std::string label, TargetCalibration3D target, TargetDetectionConfig detectionConfig, bool isSimulated = false)
+		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)), detectionConfig(detectionConfig),
+		  isSimulated(isSimulated), configDirty(!isSimulated), targetDirty(!isSimulated) {}
 
 	TrackerConfig(int ID, std::string label, float markerSize)
 		: id(ID), label(label), type(TRACKER_MARKER), markerSize(markerSize) {}
@@ -182,6 +187,10 @@ struct CameraConfigRecord
 };
 
 
+/* Variables */
+
+extern const std::string persistentConfigFolder, trackerConfigFolder, recordingsFolder, permanentStoreFolder, temporaryStoreFolder;
+
 /* Functions */
 
 /**
@@ -189,7 +198,7 @@ struct CameraConfigRecord
  * The next enumerated file (with index+1) does not exist yet.
  * There may be enumerated files matching the pattern that have an index greater than index+1.
  */
-int findLastFileEnumeration(const char* pathFormat);
+int findLastFileEnumeration(const std::string &pathFormat);
 
 /**
  * Find the highest enumeration for a file matching the partial path format with %d (e.g. "path/to/file_%d")
@@ -212,14 +221,19 @@ HANDLE_ERROR storeLensPresets(const std::string &path, const std::map<int, LensC
 HANDLE_ERROR parseCameraCalibrations(const std::string &path, std::vector<CameraCalib> &cameraCalib);
 HANDLE_ERROR storeCameraCalibrations(const std::string &path, const std::vector<CameraCalib> &cameraCalib);
 
-HANDLE_ERROR parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
-HANDLE_ERROR storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig);
+HANDLE_ERROR parseTrackerConfiguration(const std::string &folder, int id, std::optional<TrackerConfig> &trackerConfig);
+HANDLE_ERROR storeTrackerConfiguration(const std::string &folder, TrackerConfig &tracker);
+
+HANDLE_ERROR parseTrackerConfigurations(const std::string &folder, std::vector<TrackerConfig> &trackerConfig);
+HANDLE_ERROR storeTrackerConfigurations(const std::string &folder, std::vector<TrackerConfig> &trackerConfig);
+
+HANDLE_ERROR parseTrackerConfigurationsLegacy(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
 
 HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate);
-HANDLE_ERROR dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
+HANDLE_ERROR saveRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
 HANDLE_ERROR parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);
-HANDLE_ERROR dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
+HANDLE_ERROR saveTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset);
 
 HANDLE_ERROR parseSequenceDatabase(const std::string &path, std::vector<CameraID> &cameraIDs, SequenceData &sequences);
 HANDLE_ERROR dumpSequenceDatabase(const std::string &path, const SequenceData &sequences, const std::vector<CameraID> &cameraIDs);

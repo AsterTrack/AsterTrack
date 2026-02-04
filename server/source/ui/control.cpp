@@ -251,7 +251,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 		ImGui::Checkbox("Frame Images", &pipeline.keepFrameImages);
 		SameLineTrailing(SizeWidthDiv2().x);
-		ImGui::Checkbox("Tracking Results", &saveTrackingResults);
+		ImGui::Checkbox("Tracking Results", &recordTrackingResults);
 
 		if (ImGui::Button(recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
 		{
@@ -300,8 +300,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					if (section.forceSave || ImGui::Button("Save", ImVec2(ImGui::GetColumnWidth(2), 0)))
 					{
 						// Find path
-						section.index = findHighestFileEnumeration("dump", "%d_capture", ".json")+1;
-						section.path = asprintf_s("dump/%d_capture.json", section.index);
+						section.index = findHighestFileEnumeration(recordingsFolder.c_str(), "%d_capture", ".json")+1;
+						section.path = recordingsFolder + asprintf_s("/%d_capture.json", section.index);
 						// Occupy path now to prevent next save from using same path
 						touchFile(section.path);
 						// Perform write in a separate thread to prevent blocking UI
@@ -334,7 +334,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 								}
 							}
 							// Write to path
-							auto error = dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
+							auto error = saveRecording(section.path, cameras, pipeline.record, section.begin, section.end);
 							if (error)
 							{
 								SignalErrorToUser(error.value());
@@ -342,9 +342,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							}
 							else
 							{
-								error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
+								error = saveTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
 								if (error) SignalErrorToUser(error.value());
-								error = storeCameraCalibrations(asprintf_s("dump/%d_calib.json", section.index), calibs);
+								error = storeCameraCalibrations(recordingsFolder + asprintf_s("/%d_calib.json", section.index), calibs);
 								if (error) SignalErrorToUser(error.value());
 							}
 

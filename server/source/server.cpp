@@ -81,21 +81,27 @@ bool ServerInit(ServerState &state)
 	};
 
 	// Read configurations
-	handleConfigError(parseGeneralConfigFile("store/general_config.json", state.config), false);
+	handleConfigError(parseGeneralConfigFile(persistentConfigFolder + "/general_config.json", state.config), false);
 	state.generalConfigDirty = false;
 	// TODO: Add UI and storage of general config
-	handleConfigError(parseCameraConfigFile("store/camera_config.json", state.cameraConfig), true);
+	handleConfigError(parseCameraConfigFile(persistentConfigFolder + "/camera_config.json", state.cameraConfig), true);
 	state.cameraConfigDirty = false;
 	// Also load lens presets in case they are needed for camera calib UI
-	handleConfigError(parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens), true);
+	handleConfigError(parseLensPresets(persistentConfigFolder + "/lens_presets.json", state.lensPresets, state.defaultLens), true);
 	if (state.lensPresets.empty())
-		handleConfigError(parseLensPresets("store/lens_presets_builtin.json", state.lensPresets, state.defaultLens), false);
+		handleConfigError(parseLensPresets(persistentConfigFolder + "/lens_presets_builtin.json", state.lensPresets, state.defaultLens), false);
 
 	// Load calibrations
-	handleConfigError(parseCameraCalibrations("store/camera_calib.json", state.cameraCalibrations), true);
+	handleConfigError(parseCameraCalibrations(permanentStoreFolder + "/camera_calib.json", state.cameraCalibrations), true);
 	state.cameraCalibsDirty = false;
-	handleConfigError(parseTrackerConfigurations("store/trackers.json", state.trackerConfigs), true);
-	state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+	handleConfigError(parseTrackerConfigurations(trackerConfigFolder, state.trackerConfigs), true);
+	if (state.trackerConfigs.empty())
+	{
+		auto error = parseTrackerConfigurationsLegacy(permanentStoreFolder + "/trackers.json", state.trackerConfigs);
+		if (!error && !state.trackerConfigs.empty())
+			handleConfigError(storeTrackerConfigurations(trackerConfigFolder, state.trackerConfigs), false);
+		handleConfigError(std::move(error), true);
+	}
 
 	{
 		// Debug calibration
@@ -253,19 +259,17 @@ void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
 	{
 		if (tracker.id != trackerID) continue;
 		tracker.calib = calib;
+		tracker.targetDirty = true;
 		if (tracker.isSimulated)
 		{ // Ensure calibrated, simulated targets are adopted as normal targets and stored
 			tracker.isSimulated = false;
 		}
-		GetState().trackerCalibsDirty = true;
 		// Update pipeline - this update may have come from pipeline, still
 		ServerUpdateTrackerConfig(GetState(), tracker);
 		return;
 	}
 	std::string label = asprintf_s("New Target %d", trackerID);
 	GetState().trackerConfigs.push_back(TrackerConfig(trackerID, label, std::move(calib), TargetDetectionConfig()));
-	GetState().trackerCalibsDirty = true;
-	GetState().trackerConfigDirty = true;
 }
 
 void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)
@@ -275,8 +279,7 @@ void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)
 		if (tracker.id != trackerID) continue;
 		tracker.imuIdent = ident;
 		tracker.imuCalib = calib;
-		GetState().trackerIMUsDirty = true;
-		GetState().trackerConfigDirty = true;
+		tracker.configDirty = true;
 		// Update pipeline - this update may have come from pipeline, still
 		bool updatedIMU = ServerUpdateTrackerIMU(GetState(), tracker);
 		ServerUpdateTrackerConditions(GetState(), tracker);
@@ -1040,8 +1043,7 @@ void StartSimulation(ServerState &state)
 			LOG(LDefault, LInfo, "Using ground truth target template for simulated target %s (%d) with %d points!\n",
 				label.c_str(), id, (int)calib.markers.size());
 
-			TrackerConfig tracker(id, label, TargetCalibration3D(calib), TargetDetectionConfig());
-			tracker.isSimulated = true;
+			TrackerConfig tracker(id, label, TargetCalibration3D(calib), TargetDetectionConfig(), true);
 			state.trackerConfigs.push_back(std::move(tracker));
 		}
 

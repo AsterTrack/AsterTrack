@@ -37,7 +37,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define JSON_PARSE_CATCH_BLOCK \
 	catch(json::exception e) \
 	{ \
-		LOG(LDefault, LWarn, "Failed to fully parse JSON file %s!", path.c_str()); \
+		LOG(LDefault, LWarn, "Failed to fully parse JSON file '%s': '%s'", path.c_str(), e.what()); \
 		return asprintf_s("Failed to parse '%s'!", path.c_str()); \
 	}
 
@@ -50,6 +50,12 @@ using json = nlohmann::json;
 #include <fstream>
 #include <iomanip>
 #include <filesystem>
+
+const std::string persistentConfigFolder = "config";
+const std::string trackerConfigFolder = "store/trackers";
+const std::string recordingsFolder = "recordings";
+const std::string permanentStoreFolder = "store";
+const std::string temporaryStoreFolder = "dump";
 
 /**
  * Parsing and writing of Config and other files
@@ -110,7 +116,7 @@ int findHighestFileEnumeration(const char* path, const char* nameFormat, const c
 {
 	if (!std::filesystem::exists(std::filesystem::path(path))) return -1;
 	int maxNum = -1;
-	// Test both for exavt match of filename and only beginning
+	// Test both for exact match of filename and only beginning
 	// Need %n at the end to check for full match even past %d
 	// And thus need two checks since %*s apparently doesn't match a zero-length string
 	std::string format_exact = std::string(nameFormat) + "%n";
@@ -133,11 +139,11 @@ int findHighestFileEnumeration(const char* path, const char* nameFormat, const c
 	return maxNum;
 }
 
-int findLastFileEnumeration(const char* pathFormat)
+int findLastFileEnumeration(const std::string &pathFormat)
 {
 	int i = -1;
 	std::string obsPath;
-	do obsPath = asprintf_s(pathFormat, ++i);
+	do obsPath = asprintf_s(pathFormat.c_str(), ++i);
 	while (std::filesystem::exists(std::filesystem::path(obsPath)));
 	return i-1;
 }
@@ -147,6 +153,8 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 	json cfg;
 	auto error = readJSON(path, cfg);
 	if (error) return error;
+
+	std::filesystem::path basePath = std::filesystem::path(path).parent_path();
 
 	JSON_PARSE_TRY_BLOCK
 	{
@@ -168,12 +176,12 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 					for (auto &md : targets)
 					{
 						if (md.is_string())
-							error = parseTargetObjFile(md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+							error = parseTargetObjFile(basePath / md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
 						else if (md.is_object())
 						{
 							float v = md.contains("markerViewAngle") && md["markerViewAngle"].is_number()? md["markerViewAngle"].get<float>() : defaultMarkerFoV;
 							float s = md.contains("markerSizeMM") && md["markerSizeMM"].is_number()? md["markerSizeMM"].get<float>() : defaultMarkerSize;
-							error = parseTargetObjFile(md["path"], config.simulation.trackingTargets, v, s);
+							error = parseTargetObjFile(basePath / md["path"], config.simulation.trackingTargets, v, s);
 						}
 						if (error) return error;
 					}
@@ -189,8 +197,8 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 				auto &cameras = simulation["cameras"];
 				if (cameras.is_string())
 				{
-					config.simulation.cameraDefPath = cameras.get<std::string>();
-					auto error = parseCameraCalibrations(cameras.get<std::string>(), config.simulation.cameraDefinitions);
+					config.simulation.cameraDefPath = basePath / cameras.get<std::string>();
+					auto error = parseCameraCalibrations(config.simulation.cameraDefPath, config.simulation.cameraDefinitions);
 					if (error) return error;
 				}
 			}
@@ -644,7 +652,121 @@ static void writeTargetCalib(const TargetCalibration3D &target, json &jsTarget)
 	}
 }
 
-std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &path, std::vector<TrackerConfig> &trackerConfig)
+static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::path basePath, json jsTracker, std::optional<TrackerConfig> &trackerConfig)
+{
+	TrackerConfig tracker(jsTracker["id"].get<int>(),
+		jsTracker["label"].get<std::string>(),
+		(TrackerConfig::TrackerType)jsTracker["type"].get<int>());
+
+	tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
+	tracker.expose = jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX?
+		(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_BY_DEFAULT;
+
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
+	{
+		auto &jsTarget = jsTracker["target"];
+
+		if (jsTarget.contains("calib") && jsTarget["calib"].is_string())
+		{ // Default going forward
+			auto targetFile = basePath / jsTarget["calib"];
+			json jsCalib;
+			auto error = readJSON(targetFile, jsCalib);
+			if (error) return error;
+			try { readTargetCalib(jsCalib, tracker.calib); }
+			catch (json::exception e)
+			{
+				return asprintf_s("Failed to fully parse target calib '%s': '%s'!", targetFile.c_str(), e.what());
+			}
+		}
+		else if (!readTargetCalib(jsTarget, tracker.calib))
+			return asprintf_s("Failed to parse target calib for target '%s' (%d)!", tracker.label.c_str(), tracker.id);
+		if (jsTarget.contains("detection") && jsTarget["detection"].is_object())
+		{
+			auto &jsDetect = jsTarget["detection"];
+			if (jsDetect.contains("match3D") && jsDetect["match3D"].is_boolean())
+				tracker.detectionConfig.match3D = jsDetect["match3D"].get<bool>();
+			if (jsDetect.contains("search2D") && jsDetect["search2D"].is_boolean())
+				tracker.detectionConfig.search2D = jsDetect["search2D"].get<bool>();
+			if (jsDetect.contains("probe2D") && jsDetect["probe2D"].is_boolean())
+				tracker.detectionConfig.probe2D = jsDetect["probe2D"].get<bool>();
+			if (jsDetect.contains("probeCount") && jsDetect["probeCount"].is_number_unsigned())
+				tracker.detectionConfig.probeCount = jsDetect["probeCount"].get<int>();
+		}
+	}
+	else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+	{
+		if (jsTracker.contains("markerSize") && jsTracker["markerSize"].is_number_float())
+			tracker.markerSize = jsTracker["markerSize"].get<float>();
+	}
+	else return asprintf_s("Unknown tracker type %d!", tracker.type);
+
+	if (jsTracker.contains("imu") && jsTracker["imu"].is_object())
+	{
+		auto &jsIMU = jsTracker["imu"];
+		if (jsIMU.contains("driver") && jsIMU["driver"].is_number_unsigned()
+			&& jsIMU.contains("id") && jsIMU["id"].is_string())
+		{
+			tracker.imuIdent.driver = (IMUDriver)jsIMU["driver"].get<int>();
+			if (tracker.imuIdent.driver <= IMU_DRIVER_NONE || tracker.imuIdent.driver >= IMU_DRIVER_MAX)
+			{
+				tracker.imuIdent.driver = IMU_DRIVER_NONE;
+			}
+			else
+			{
+				tracker.imuIdent.string = jsIMU["id"].get<std::string>();
+				tracker.imuCalib = readIMUCalib(jsIMU);
+			}
+		}
+	}
+
+	trackerConfig = std::move(tracker);
+	return std::nullopt;
+}
+
+std::optional<ErrorMessage> parseTrackerConfiguration(const std::string &folder, int id, std::optional<TrackerConfig> &trackerConfig)
+{
+	std::filesystem::path basePath = std::filesystem::path(folder);
+	std::filesystem::path path = basePath / asprintf_s("tracker_%d.json", id);
+
+	json jsTracker;
+	auto error = readJSON(path, jsTracker);
+	if (error) return error;
+
+	JSON_PARSE_TRY_BLOCK
+	{
+		error = parseTrackerConfiguration(basePath, jsTracker, trackerConfig);
+	}
+	JSON_PARSE_CATCH_BLOCK
+
+	return error;
+}
+
+std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &folder, std::vector<TrackerConfig> &trackerConfig)
+{
+	std::filesystem::path basePath = std::filesystem::path(folder);
+	if (!std::filesystem::is_directory(basePath) && !std::filesystem::create_directory(basePath))
+		return asprintf_s("Failed to create target calib directory '%s'!", basePath.c_str());
+
+	std::optional<ErrorMessage> error;
+
+	for (const auto &file : std::filesystem::directory_iterator(basePath))
+	{
+		if (file.path().extension().compare(".json") != 0) continue;
+		const std::string &str = file.path().stem().string();
+		if (!str.starts_with("tracker_")) continue;
+		int id = -1;
+		if (std::sscanf(str.data(), "tracker_%d.json", &id) != 1) continue;
+
+		std::optional<TrackerConfig> tracker;
+		error = parseTrackerConfiguration(folder, id, tracker);
+		if (!error && tracker)
+			trackerConfig.push_back(std::move(tracker.value()));
+	}
+
+	return error;
+}
+
+std::optional<ErrorMessage> parseTrackerConfigurationsLegacy(const std::string &path, std::vector<TrackerConfig> &trackerConfig)
 {
 	json file;
 	auto error = readJSON(path, file);
@@ -658,117 +780,101 @@ std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &path, 
 		trackerConfig.reserve(trackerConfig.size() + jsTrackers.size());
 		for (auto &jsTracker : jsTrackers)
 		{
-			if (!jsTracker.contains("id") || !jsTracker["id"].is_number_integer()) continue;
-			if (!jsTracker.contains("label") || !jsTracker["label"].is_string()) continue;
-			if (!jsTracker.contains("type") || !jsTracker["type"].is_number_unsigned()) continue;
-
-			TrackerConfig tracker(jsTracker["id"].get<int>(),
-				jsTracker["label"].get<std::string>(),
-				(TrackerConfig::TrackerType)jsTracker["type"].get<int>());
-
-			if (jsTracker.contains("trigger") && jsTracker["trigger"].is_number_unsigned())
-				tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
-			if (jsTracker.contains("expose") && jsTracker["expose"].is_number_unsigned())
-				tracker.expose = jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX?
-					(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_BY_DEFAULT;
-
-			if (tracker.type == TrackerConfig::TRACKER_TARGET)
-			{
-				if (!jsTracker.contains("target") || !jsTracker["target"].is_object()) continue;
-				if (!readTargetCalib(jsTracker["target"], tracker.calib))
-					continue;
-				if (jsTracker["target"].contains("detection") && jsTracker["target"]["detection"].is_object())
-				{
-					auto &jsDetect = jsTracker["target"]["detection"];
-					if (jsDetect.contains("match3D") && jsDetect["match3D"].is_boolean())
-						tracker.detectionConfig.match3D = jsDetect["match3D"].get<bool>();
-					if (jsDetect.contains("search2D") && jsDetect["search2D"].is_boolean())
-						tracker.detectionConfig.search2D = jsDetect["search2D"].get<bool>();
-					if (jsDetect.contains("probe2D") && jsDetect["probe2D"].is_boolean())
-						tracker.detectionConfig.probe2D = jsDetect["probe2D"].get<bool>();
-					if (jsDetect.contains("probeCount") && jsDetect["probeCount"].is_number_unsigned())
-						tracker.detectionConfig.probeCount = jsDetect["probeCount"].get<int>();
-				}
-			}
-			else if (tracker.type == TrackerConfig::TRACKER_MARKER)
-			{
-				if (!jsTracker.contains("markerSize") ||  !jsTracker["markerSize"].is_number_float()) continue;
-				tracker.markerSize = jsTracker["markerSize"].get<float>();
-			}
-			else continue;
-
-			if (jsTracker.contains("imu") && jsTracker["imu"].is_object())
-			{
-				auto &jsIMU = jsTracker["imu"];
-				if (jsIMU.contains("driver") && jsIMU["driver"].is_number_unsigned()
-					&& jsIMU.contains("id") && jsIMU["id"].is_string())
-				{
-					tracker.imuIdent.driver = (IMUDriver)jsIMU["driver"].get<int>();
-					if (tracker.imuIdent.driver <= IMU_DRIVER_NONE || tracker.imuIdent.driver >= IMU_DRIVER_MAX)
-					{
-						tracker.imuIdent.driver = IMU_DRIVER_NONE;
-					}
-					else
-					{
-						tracker.imuIdent.string = jsIMU["id"].get<std::string>();
-						tracker.imuCalib = readIMUCalib(jsIMU);
-					}
-				}
-			}
-
-			trackerConfig.push_back(std::move(tracker));
+			std::optional<TrackerConfig> tracker;
+			error = parseTrackerConfiguration("", jsTracker, tracker);
+			if (error) return error;
+			if (tracker)
+				trackerConfig.push_back(std::move(tracker.value()));
 		}
 	}
 	JSON_PARSE_CATCH_BLOCK
 
-	return std::nullopt;
+	return error;
 }
 
-std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &path, const std::vector<TrackerConfig> &trackerConfig)
+static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, const TrackerConfig &tracker)
 {
-	json file;
+	std::optional<ErrorMessage> error;
 
-	// Write target calibration
-	file["trackers"] = json::array();
-	for (auto &tracker : trackerConfig)
+	jsTracker["id"] = tracker.id;
+	jsTracker["label"] = tracker.label;
+	jsTracker["type"] = tracker.type;
+	jsTracker["trigger"] = tracker.trigger;
+	jsTracker["expose"] = tracker.expose;
+
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 	{
-		if (tracker.isSimulated) continue;
+		jsTracker["target"]["calib"] = asprintf_s("target_%d.json", tracker.id);
 
-		json jsTracker;
-		jsTracker["id"] = tracker.id;
-		jsTracker["label"] = tracker.label;
-		jsTracker["type"] = tracker.type;
-		jsTracker["trigger"] = tracker.trigger;
-		jsTracker["expose"] = tracker.expose;
+		auto &jsDetect = jsTracker["target"]["detection"];
+		jsDetect["match3D"] = tracker.detectionConfig.match3D;
+		jsDetect["search2D"] = tracker.detectionConfig.search2D;
+		jsDetect["probe2D"] = tracker.detectionConfig.probe2D;
+		jsDetect["probeCount"] = tracker.detectionConfig.probeCount;
+	}
+	else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+	{
+		jsTracker["markerSize"] = tracker.markerSize;
+	}
+	else error = asprintf_s("Unknown tracker type %d!", tracker.type);
 
-		if (tracker.type == TrackerConfig::TRACKER_TARGET)
-		{
-			writeTargetCalib(tracker.calib, jsTracker["target"]);
-
-			auto &jsDetect = jsTracker["target"]["detection"];
-			jsDetect["match3D"] = tracker.detectionConfig.match3D;
-			jsDetect["search2D"] = tracker.detectionConfig.search2D;
-			jsDetect["probe2D"] = tracker.detectionConfig.probe2D;
-			jsDetect["probeCount"] = tracker.detectionConfig.probeCount;
-		}
-		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
-		{
-			jsTracker["markerSize"] = tracker.markerSize;
-		}
-		else continue;
-
-		if (tracker.imuIdent)
-		{
-			auto &jsIMU = jsTracker["imu"];
-			jsIMU["driver"] = tracker.imuIdent.driver;
-			jsIMU["id"] = tracker.imuIdent.string;
-			writeIMUCalib(tracker.imuCalib, jsIMU);
-		}
-
-		file["trackers"].push_back(std::move(jsTracker));
+	if (tracker.imuIdent)
+	{
+		auto &jsIMU = jsTracker["imu"];
+		jsIMU["driver"] = tracker.imuIdent.driver;
+		jsIMU["id"] = tracker.imuIdent.string;
+		writeIMUCalib(tracker.imuCalib, jsIMU);
 	}
 
-	return writeJSON(path, file);
+	return error;
+}
+
+std::optional<ErrorMessage> storeTrackerConfiguration(const std::string &folder, TrackerConfig &tracker)
+{
+	if (tracker.isSimulated) return std::nullopt;
+	std::filesystem::path basePath = std::filesystem::path(folder);
+	if (!std::filesystem::is_directory(basePath) && !std::filesystem::create_directory(basePath))
+		return asprintf_s("Failed to create target calib directory '%s'!", basePath.c_str());
+
+	std::optional<ErrorMessage> error;
+
+	std::filesystem::path trackerFile = basePath / asprintf_s("tracker_%d.json", tracker.id);
+	if (tracker.configDirty || !std::filesystem::is_regular_file(trackerFile))
+	{
+		json jsTracker;
+		error = writeTrackerConfiguration(jsTracker, tracker);
+		if (!error)
+		{
+			error = writeJSON(trackerFile, jsTracker);
+			if (!error) tracker.configDirty = false;
+		}
+	}
+
+	if (error) return error;
+
+	if (tracker.type == TrackerConfig::TRACKER_TARGET)
+	{
+		std::filesystem::path targetFile = basePath / asprintf_s("target_%d.json", tracker.id);
+		if (tracker.targetDirty || !std::filesystem::is_regular_file(targetFile))
+		{
+			json jsTarget;
+			writeTargetCalib(tracker.calib, jsTarget);
+			error = writeJSON(targetFile, jsTarget);
+			if (!error) tracker.targetDirty = false;
+		}
+	}
+	
+	return error;
+}
+
+std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &folder, std::vector<TrackerConfig> &trackerConfig)
+{
+	for (TrackerConfig &tracker : trackerConfig)
+	{
+		auto error = storeTrackerConfiguration(folder, tracker);
+		if (error) return error;
+	}
+	return std::nullopt;
 }
 
 std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate)
@@ -991,7 +1097,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 	return std::nullopt;
 }
 
-std::optional<ErrorMessage> dumpRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
+std::optional<ErrorMessage> saveRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 
@@ -1225,7 +1331,7 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 	return std::nullopt;
 }
 
-std::optional<ErrorMessage> dumpTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
+std::optional<ErrorMessage> saveTrackingResults(std::string &path, const TrackingRecord &record, std::size_t begin, std::size_t end, std::size_t frameOffset)
 {
 	// Check frame range
 	auto frames = record.frames.getView(); 

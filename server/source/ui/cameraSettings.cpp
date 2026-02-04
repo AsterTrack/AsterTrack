@@ -245,7 +245,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 	if (SaveButton("Save Configurations", SizeWidthFull(), state.cameraConfigDirty))
 	{
-		auto error = storeCameraConfigFile("store/camera_config.json", state.cameraConfig);
+		auto error = storeCameraConfigFile(persistentConfigFolder + "/camera_config.json", state.cameraConfig);
 		if (error) SignalErrorToUser(error.value());
 		else state.cameraConfigDirty = false;
 	}

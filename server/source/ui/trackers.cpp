@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imgui/imgui_onDemand.hpp"
 
+#include <filesystem>
+
 void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
 	auto discardSelection = []
@@ -44,21 +46,13 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
+	bool isDirty = false;
+	for (auto &tracker : state.trackerConfigs)
+		isDirty |= tracker.configDirty | tracker.targetDirty;
+	if (SaveButton("Save Tracker Configuration", SizeWidthFull(), isDirty))
 	{
-		auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+		auto error = storeTrackerConfigurations(trackerConfigFolder, state.trackerConfigs);
 		if (error) SignalErrorToUser(error.value());
-		else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
-	}
-	if ((state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty) && ImGui::BeginItemTooltip())
-	{
-		if (state.trackerConfigDirty)
-			ImGui::TextUnformatted("Tracker Config has been changed.");
-		if (state.trackerCalibsDirty)
-			ImGui::TextUnformatted("Tracker Calibration has been changed.");
-		if (state.trackerIMUsDirty)
-			ImGui::TextUnformatted("Tracker IMU Configuration has been changed.");
-		ImGui::EndTooltip();
 	}
 
 	if (!ImGui::BeginChild("EditChild", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding))
@@ -69,27 +63,43 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		return;
 	}
 
+	const ImGuiID delPopupID = ImGui::GetID("ConfirmDeleteTracker");
+	static int delTrackerID = 0;
+	static std::string delTrackerLabel;
+
 	/* static float childSize = 100; // Auto-Scale to fit view and keep bottom control visible
 	childSize = std::max(CalcTableHeight(3), childSize + GetWindowContentRegionHeight() - GetWindowActualContentHeight());
 	childSize = std::min(CalcTableHeight(state.trackerConfigs.size()), childSize); */
 	float childSize = CalcTableHeight(5); // Adaptive sizing adapts TOO well to differences in UI
-	if (ImGui::BeginTable("Tracker", 4,
+	if (ImGui::BeginTable("Tracker", 5,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_ScrollY,
 		ImVec2(0, childSize)))
 	{
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthStretch, 1);
 		ImGui::TableSetupColumn("Detail", ImGuiTableColumnFlags_WidthStretch, 1);
+		ImGui::TableSetupColumn("Change", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		ImGui::TableSetupColumn("Del", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 		//ImGui::TableHeadersRow();
 
-		for (auto trackerIt = state.trackerConfigs.begin(); trackerIt != state.trackerConfigs.end();)
+		for (auto &tracker : state.trackerConfigs)
 		{
-			auto &tracker = *trackerIt;
 			ImGui::PushID(tracker.id);
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::AlignTextToFramePadding();
+
+			bool select = visState.target.selectedTrackerID == tracker.id;
+			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+			{
+				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == visState.target.selectedTrackerID)
+					visState.resetVisTarget();
+				if (visState.target.selectedTrackerID == tracker.id)
+					visState.target.selectedTrackerID = 0;
+				else
+					visState.target.selectedTrackerID = tracker.id;
+			}
+			ImGui::SameLine(0, 0);
 
 			ImGui::Text("%d", tracker.id);
 			ImGui::TableNextColumn();
@@ -103,30 +113,83 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				ImGui::Text("Marker of size %.1fmm", tracker.markerSize*1000.0f);
 			else
 			 	ImGui::TextUnformatted("Tracker of unknown type.");
+
 			ImGui::TableNextColumn();
 
-			bool select = visState.target.selectedTrackerID == tracker.id;
-			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+			if (tracker.configDirty || tracker.targetDirty)
 			{
-				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == visState.target.selectedTrackerID)
-					visState.resetVisTarget();
-				if (visState.target.selectedTrackerID == tracker.id)
-					visState.target.selectedTrackerID = 0;
-				else
-					visState.target.selectedTrackerID = tracker.id;
+				if (BeginIconDropdown("Reload", icons().visual, iconSize(), ImGuiComboFlags_PopupAlignLeft))
+				{
+					if (ImGui::MenuItem("Reload Tracker"))
+					{
+						std::optional<TrackerConfig> trackerConfig;
+						auto error = parseTrackerConfiguration(trackerConfigFolder, tracker.id, trackerConfig);
+						if (error) SignalErrorToUser(error.value());
+						else if (trackerConfig)
+						{
+							tracker = trackerConfig.value();
+							bool updatedIMU = ServerUpdateTrackerIMU(state, tracker);
+							ServerUpdateTrackerConditions(state, tracker, true);
+							ServerUpdateTrackerConfig(state, tracker, updatedIMU);
+						}
+					}
+					ImGui::EndCombo();
+				}
+				if (ImGui::BeginItemTooltip())
+				{
+					if (tracker.configDirty)
+						ImGui::TextUnformatted("Tracker Config has been changed.");
+					if (tracker.targetDirty)
+						ImGui::TextUnformatted("Tracker Calibration has been changed.");
+					ImGui::EndTooltip();
+				}
 			}
-			ImGui::SameLine(0, 0);
+			ImGui::TableNextColumn();
+
 			if (CrossButton("Del"))
 			{
-				trackerIt = state.trackerConfigs.erase(trackerIt);
-				state.trackerConfigDirty = true;
+				delTrackerID = tracker.id;
+				delTrackerLabel = tracker.label;
+				ImGui::OpenPopup(delPopupID);
 			}
-			else
-				trackerIt++;
 			ImGui::PopID();
 		}
 
 		ImGui::EndTable();
+	}
+
+	if (BeginPopup(delPopupID))
+	{
+		ImGui::Text("Delete tracker '%s' (%d) from disk immediately (No Undo)?", delTrackerLabel.c_str(), delTrackerID);
+		if (SaveButton("Delete", SizeWidthDiv2(), true))
+		{
+			std::filesystem::path trackerFolder = std::filesystem::path(trackerConfigFolder),
+				trackerFile = trackerFolder / asprintf_s("tracker_%d.json", delTrackerID),
+				targetFile = trackerFolder / asprintf_s("target_%d.json", delTrackerID);
+			if (std::filesystem::is_regular_file(trackerFile))
+				std::filesystem::remove(trackerFile);
+			if (std::filesystem::is_regular_file(targetFile))
+				std::filesystem::remove(targetFile); // Only for target type trackers
+			// Remove from database
+			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+				[&](auto &t){ return t.id == delTrackerID; });
+			if (trackerIt == state.trackerConfigs.end())
+				SignalErrorToUser(asprintf_s("Failed to find target '%s' (%d) in database!", delTrackerLabel.c_str(), delTrackerID));
+			else
+				state.trackerConfigs.erase(trackerIt);
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", SizeWidthDiv2()))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+	else
+	{
+		delTrackerID = 0;
+		delTrackerLabel.clear();
 	}
 
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
@@ -144,6 +207,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		BeginSection("Selected Tracker");
 
 		bool changed = false;
+
+		changed |= ImGui::InputText("##TrkLabel", &tracker.label);
 
 		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Trigger Conditions");
@@ -228,7 +293,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (changed)
 		{
-			state.trackerConfigDirty = true;
+			tracker.configDirty = true;
 			ServerUpdateTrackerConfig(state, tracker);
 		}
 
@@ -294,7 +359,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (ImGui::Button("Export Target as OBJ", SizeWidthFull()))
 		{
-			const char* tgtPathFmt = "dump/target_%d.obj";
+			const char* tgtPathFmt = "/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
 			auto error = writeTargetObjFile(tgtPath, TargetCalibration3D(tracker.calib));
 			if (error) SignalErrorToUser(error.value());
@@ -396,7 +461,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (changed)
 		{
-			state.trackerConfigDirty = true;
+			tracker.configDirty = true;
 			ServerUpdateTrackerConfig(state, tracker);
 		}
 

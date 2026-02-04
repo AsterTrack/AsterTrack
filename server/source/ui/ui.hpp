@@ -389,7 +389,7 @@ public:
 	};
 	std::vector<RecordedSections> recordSections;
 	OptFrameNum recordSectionStart = -1;
-	bool saveTrackingResults = true;
+	bool recordTrackingResults = true;
 	FrameNum frameJumpTarget = 0;
 	bool frameRelevantParametersDirty = false;
 

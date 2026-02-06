@@ -63,7 +63,7 @@ ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<Tracking
 	std::size_t fwSize = fs.tellg();
 
 	std::vector<uint8_t> codeFile;
-	codeFile.resize(fwSize + 8 - (fwSize%8));
+	codeFile.resize(fwSize + 8 - (fwSize%8), 0xFF);
 	fs.seekg(0);
 	fs.read((char*)codeFile.data(), fwSize);
 	fs.close();
@@ -152,9 +152,11 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 
 	/* Detect MCU */
 	uint8_t detectCmd[] = {
-		0xA1, 0x12, 0x00, 0x00, 0x11, 0x4D, 0x43, 0x55,
-		0x20, 0x49, 0x53, 0x50, 0x20, 0x26, 0x20, 0x57,
-		0x43, 0x48, 0x2e, 0x43, 0x4e
+		0xA1, 0x12, 0x00,
+		0x70, 0x17,
+		// "MCU ISP & WCH.CN"
+		0x4D, 0x43, 0x55, 0x20, 0x49, 0x53, 0x50, 0x20,
+		0x26, 0x20, 0x57, 0x43, 0x48, 0x2e, 0x43, 0x4e
 	};
 	if (!Command(dev, detectCmd, resp, 6))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Detect Command Failed!");
@@ -166,7 +168,8 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 
 	/* Read Config */
 	uint8_t readConfigCmd[] = {
-		0xA7, 0x02, 0x00, 0x1F, 0x00
+		0xA7, 0x02, 0x00,
+		0x1F, 0x00
 	};
 	if (!Command(dev, readConfigCmd, resp, 30))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Failed to read config!");
@@ -174,11 +177,22 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 	memcpy(config, resp+6, 12);
 	if (updateStatus->contextualRLock()->abort.stop_requested())
 		return ReportFirmwareUpdateError(updateStatus, "Aborted!");
+	uint8_t &RDPR = config[0];
+	uint8_t &USER = config[2];
 
 	/* Print Info */
-	printf("Bootloader: %d.%d.%d", resp[19], resp[20], resp[21]);
-	printf("Chip ID: %02X %02X %02X %02X %02X %02X %02X %02X",
+	LOG(LFirmwareUpdate, LDebug, "Bootloader: %d.%d.%d", resp[19], resp[20], resp[21]);
+	LOG(LFirmwareUpdate, LDebug, "Chip ID: %02X %02X %02X %02X %02X %02X %02X %02X",
 		resp[22], resp[23], resp[24], resp[25], resp[26], resp[27], resp[28], resp[29]);
+	/* Print Config */
+	std::stringstream ss;
+	printBuffer(ss, config, sizeof(config));
+	LOG(LFirmwareUpdate, LDebug, "Config: %s", ss.str().c_str());
+	LOG(LFirmwareUpdate, LDebug, "    RDPR: %.2x", config[0]);
+	LOG(LFirmwareUpdate, LDebug, "    IWDG_SW: %d", (USER >> 0)&0b1);
+	LOG(LFirmwareUpdate, LDebug, "    STOP_RST: %d", (USER >> 1)&0b1);
+	LOG(LFirmwareUpdate, LDebug, "    STANDBY_RST: %d", (USER >> 2)&0b1);
+	LOG(LFirmwareUpdate, LDebug, "    SRAM_CODE_MODE: %d", (USER >> 5)&0b111);
 
 	/* Check bootloader version */
 	uint32_t bootloader = resp[19] << 16 | resp[20] << 8 | resp[21];
@@ -198,24 +212,24 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 	for (int i = 0; i < 8; ++i)
 		keyChecksum += u8Mask[i];
 
-	/* Write Config without Write Protect Back */
-	uint8_t writeConfigCmd[3+2+12] = {
-		0xA8, 0x0E, 0x00, 0x07, 0x00, 0xFF,
-		0xFF, 0xFF, 0xFF, 0x03, 0x00, 0x00, 0x00, 0xFF, 0x52, 0x00, 0x00
+	// Configure
+	RDPR = 0xA5; // Remove read protection
+	USER = (USER & ~(0b111 << 5)) | (0b001 << 5); // Set SRAM_CODE_MODE to 00x: CODE-192KB + RAM-128KB
+
+	/* Write config back */
+	uint8_t writeConfigCmd[3+2+sizeof(config)] = {
+		0xA8, 0x0E, 0x00,
+		0x07, 0x00
 	};
-	memcpy(writeConfigCmd+3+2, config, 12);
+	memcpy(writeConfigCmd+3+2, config, sizeof(config));
 	if (!Command(dev, writeConfigCmd, resp, 6))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Failed to write config!");
 	if (updateStatus->contextualRLock()->abort.stop_requested())
 		return ReportFirmwareUpdateError(updateStatus, "Aborted!");
 
 	/* Set Flash Address to 0 */
-	uint8_t setAddressCmd[] = {
-		0xA3, 0x1E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00
+	uint8_t setAddressCmd[3+0x1E] = {
+		0xA3, 0x1E, 0x00
 	};
 	if (!Command(dev, setAddressCmd, resp, 6))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Failed to set base address!");
@@ -224,15 +238,21 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 	if (updateStatus->contextualRLock()->abort.stop_requested())
 		return ReportFirmwareUpdateError(updateStatus, "Aborted!");
 
-	/* Erase or unknow */
-	uint8_t eraseKiB = (firmwareFile.size() + 1023) / 1024;
+	/* Erase Flash Pages */
+	uint8_t eraseKiB = std::max<uint8_t>(8, (firmwareFile.size() + 1023) / 1024);
 	uint8_t u8EraseCmd[] = {
 		0xA4, 0x01, 0x00, eraseKiB
 	};
 	if (!Command(dev, u8EraseCmd, resp, 6))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Failed to erase flash!");
+	if (resp[4] != 0 || resp[5] != 0)
+		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Could not erase flash!");
 	if (updateStatus->contextualRLock()->abort.stop_requested())
 		return ReportFirmwareUpdateError(updateStatus, "Aborted!");
+
+	// Encode data
+	for (int i = 0; i < firmwareFile.size(); ++i)
+		firmwareFile[i] ^= u8Mask[i % 8];
 
 	/* Write Block Command */
 	uint8_t writeBlockCmd[64] = {
@@ -247,25 +267,22 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 	for (int b = 0; b < blockCount; ++b)
 	{
 		// Block
-		uint16_t offset = b * BLOCK_LEN;
-		uint16_t blockLen = firmwareFile.size() - offset;
-		blockLen = BLOCK_LEN < blockLen? BLOCK_LEN : blockLen;
-		// Write offset
-		writeBlockCmd[1] = 5 + blockLen;
-		writeBlockCmd[3] = (uint8_t)(offset & 0xFF);
-		writeBlockCmd[4] = (uint8_t)(offset >> 8);
+		uint32_t offset = b * BLOCK_LEN;
+		uint8_t blockLen = std::min<uint32_t>(BLOCK_LEN, firmwareFile.size() - offset);
+		// Write length and offset
+		writeBlockCmd[1] = 3+2 + blockLen;
+		*(uint32_t*)(writeBlockCmd+3) = offset;
 		// Write data
 		memmove(&writeBlockCmd[8], &firmwareFile[offset], blockLen);
-		for (int i = 0; i < blockLen; ++i)
-			writeBlockCmd[8 + i] ^= u8Mask[i % 8];
 		if (!Command(dev, writeBlockCmd, resp, 6))
-			return ReportFirmwareUpdateError(updateStatus, asprintf_s("Failed to write block %d/%d of size %d to flash!", b, blockCount, blockLen));
-		else
-		{
-			auto status = updateStatus->contextualLock();
-			status->progress = b*BLOCK_LEN;
-			status->text = asprintf_s("Flashing block %d/%d!", b, blockCount);
-		}
+			return ReportFirmwareUpdateError(updateStatus, asprintf_s("Bootloader: Failed to write block %d/%d of size %d to flash!", b, blockCount, blockLen));
+		if (resp[4] != 0 || resp[5] != 0)
+			return ReportFirmwareUpdateError(updateStatus, asprintf_s("Bootloader: Could not write to flash block %d at offset %d!", b, offset));
+
+		auto status = updateStatus->contextualLock();
+		status->progress = b*BLOCK_LEN;
+		status->text = asprintf_s("Flashing block %d/%d!", b, blockCount);
+
 		// Probably shouldn't allow aborting when flashing already started...
 		//if (updateStatus->contextualRLock()->abort.stop_requested())
 		//	return ReportFirmwareUpdateError(updateStatus, "Aborted!");
@@ -273,10 +290,11 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 
 	/* Write last Zero-Length-Block */
 	writeBlockCmd[1] = 5;
-	writeBlockCmd[3] = (uint8_t)(firmwareFile.size() & 0xFF);
-	writeBlockCmd[4] = (uint8_t)(firmwareFile.size() >> 8);
+	*(uint32_t*)(writeBlockCmd+3) = firmwareFile.size();
 	if (!Command(dev, writeBlockCmd, resp, 6))
 		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Failed to write last Zero-Length-Block!");
+	if (resp[4] != 0 || resp[5] != 0)
+		return ReportFirmwareUpdateError(updateStatus, "Bootloader: Could not write last Zero-Length-Block!");
 	if (updateStatus->contextualRLock()->abort.stop_requested())
 		return ReportFirmwareUpdateError(updateStatus, "Aborted!");
 
@@ -285,6 +303,8 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 		0xA2, 0x01, 0x00, 0x01 /* if 0x00 not run, 0x01 run*/
 	};
 	Command(dev, resetCmd, resp, 6);
+
+	LOG(LFirmwareUpdate, LInfo, "Successfully flashed firmware file!");
 
 	auto status = updateStatus->contextualLock();
 	status->success = true;

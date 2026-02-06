@@ -246,7 +246,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		if (visTarget.hasObs())
 		{
 			auto &frame = visTarget.obs->frames[visState.targetCalib.frameIdx % visTarget.obs->frames.size()];
-			viewLabel = asprintf_s("Frame %d", frame.frame);
+			viewLabel = asprintf_s("Frame %" PRIu64, frame.frame);
 			if (visTarget.hasPose)
 			{
 				Eigen::Projective3f proj = view3D.getProj(viewWin->InnerRect.GetHeight() / viewWin->InnerRect.GetWidth()) * view3D.viewTransform.inverse();

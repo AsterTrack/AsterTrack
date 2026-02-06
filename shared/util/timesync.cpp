@@ -182,7 +182,7 @@ TimePoint_t UpdateTimeSync(TimeSync &time, uint64_t timestamp, TimePoint_t measu
 	};
 	if (diffUS <= 0 && diffUS > -params.maxLerpDiffUS)
 	{ // New minimum, upper bound for the actual time sync
-		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %ldus ago (%dus passed, including %.2fus drift) but was received %ldus ago",
+		LOG(LTimesync, diffUS > 100? LDebug : LTrace, "New time sync minimum received, timestamp was predicted to be %" PRIu64 "us ago (%dus passed, including %.2fus drift) but was received %" PRIu64 "us ago",
 			dtUS(timePred, sclock::now()), usPassed, driftUS-usPassed, dtUS(measurement, sclock::now()));
 		float jumpCorrect = diffUS*std::lerp(params.driftDownwardJump, 1.0f, adapt);
 		timePred += std::chrono::microseconds((int64_t)jumpCorrect);

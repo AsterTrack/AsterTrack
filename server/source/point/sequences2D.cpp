@@ -1037,7 +1037,7 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 		if (inactiveSequence.inactiveLength == 0)
 			continue; // No inactivity
 
-		LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d INACTIVE for %d frames\n", 
+		LOGC(LTrace, "SEQN %d:%d:%.4" PRIu64 ":%.4d INACTIVE for %" PRIu64 " frames\n", 
 			cameraIndex, m, seq.startFrame, (int)seq.points.size(), inactiveSequence.inactiveLength);
 		int lengthLeft = seq.points.size()-inactiveSequence.inactiveLength;
 		if (lengthLeft < params.minSequenceLength)

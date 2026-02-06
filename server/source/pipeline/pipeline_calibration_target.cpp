@@ -646,7 +646,7 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 			continue;
 
 		auto tgt_lock = targetView->target.contextualLock();
-		LOGC(LDebug, "    Target view %d starting %d with %d frames left, %d markers!",
+		LOGC(LDebug, "    Target view %d starting %" PRIu64 " with %d frames left, %d markers!",
 			targetView->id, tgt_lock->frames.front().frame, (int)tgt_lock->frames.size(), (int)tgt_lock->markers.size());
 
 		// Try to find alignment

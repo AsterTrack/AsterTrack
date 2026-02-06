@@ -29,6 +29,7 @@ SOFTWARE.
 #define LOG_H
 
 #include <cstdio>
+#include <cinttypes> // For cross-platform 64bit labels (ll(u) on windows, l(u) on linux)
 
 #ifndef LOG_MAX_LEVEL
 #ifdef NDEBUG

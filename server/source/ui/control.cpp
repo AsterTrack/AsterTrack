@@ -430,7 +430,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				auto framesRecord = pipeline.record.frames.getView();
 				auto begin = framesRecord.pos(range.begin), end = framesRecord.pos(range.end);
 				FrameRange::Results results = {};
-				LOG(LGUI, LDebug, "Updating range from frame %d - %d", range.begin, range.end);
+				LOG(LGUI, LDebug, "Updating range from frame %" PRIu64" - %" PRIu64, range.begin, range.end);
 				for (auto frame = begin; frame != end; frame++)
 				{
 					for (auto &trackRecord : frame->get()->trackers)
@@ -438,7 +438,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 						results.frames.update(trackRecord.error.mean);
 						for (int i = 0; i < trackRecord.error.samples; i++)
 							results.samples.update(trackRecord.error.mean);
-						LOG(LGUI, LDebug, "    Frame %d, error %.2fpx", frame->get()->num-range.begin, trackRecord.error.mean*PixelFactor);
+						LOG(LGUI, LDebug, "    Frame %" PRIu64 ", error %.2fpx", frame->get()->num-range.begin, trackRecord.error.mean*PixelFactor);
 						if (trackRecord.result.isFailure())
 							results.losses++;
 						else if (trackRecord.result.isDetected())

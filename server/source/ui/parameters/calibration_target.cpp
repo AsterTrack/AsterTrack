@@ -58,9 +58,8 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 	TargetCalibParameters &calibParams = state.pipeline.targetCalib.params;
 	const static TargetCalibParameters defaultParams = {};
 
-	if (ImGui::CollapsingHeader("Aquiring TargetViews"))
+	if (BeginCollapsingRegion("Aquiring TargetViews"))
 	{
-		ImGui::PushID("Aq");
 		auto &aquisition = calibParams.aquisition;
 		const auto &standard = defaultParams.aquisition;
 		ScalarProperty<int>("Min Length", "", &aquisition.minLength, &standard.minLength, 1, 500);
@@ -68,12 +67,11 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<int>("Min Marker Obs Count", "", &aquisition.minMarkerObsCount, &standard.minMarkerObsCount, 1, 100);
 		ScalarProperty<int>("Min Shared Marker Count", "", &aquisition.minSharedMarkerCount, &standard.minSharedMarkerCount, 1, 100);
 		ScalarProperty<float>("Ratio Hard limit", "x", &aquisition.ratioHardLimit, &standard.ratioHardLimit, 0, 10, 0.1f);
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Optimising TargetViews"))
+	if (BeginCollapsingRegion("Optimising TargetViews"))
 	{
-		ImGui::PushID("OptView");
 		auto &view = calibParams.view;
 		const auto &standard = defaultParams.view;
 		ScalarProperty<float>("Initial Tolerance", "x", &view.initialOptTolerance, &standard.initialOptTolerance, 0, 100, 0.1f);
@@ -84,12 +82,11 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Sample Outlier Sigma", "o", &view.outlierSigmas.sample, &standard.outlierSigmas.sample, 1, 10, 0.1f);
 		ScalarProperty<float>("Frame Outlier Sigma", "o", &view.outlierSigmas.frame, &standard.outlierSigmas.frame, 1, 10, 0.1f);
 		ScalarProperty<float>("Marker Outlier Sigma", "o", &view.outlierSigmas.marker, &standard.outlierSigmas.marker, 1, 10, 0.1f);
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Aligning TargetViews"))
+	if (BeginCollapsingRegion("Aligning TargetViews"))
 	{
-		ImGui::PushID("Align");
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<float>("Point Error", "mm", &assembly.alignPointError, &standard.alignPointError, 0, 10, 0.1f);
@@ -97,12 +94,11 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Pose Sigma", "o", &assembly.alignPoseSigma, &standard.alignPoseSigma, 0, 10, 0.1f);
 		ScalarProperty<float>("Max RMSE", "mm", &assembly.alignMaxRMSE, &standard.alignMaxRMSE, 0, 20, 0.5f);
 		ScalarProperty<int>("Min Points", "", &assembly.alignMinPoints, &standard.alignMinPoints, 1, 20);
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Merging TargetView"))
+	if (BeginCollapsingRegion("Merging TargetView"))
 	{
-		ImGui::PushID("Merge");
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<float>("Marker Merge Dist", "mm", &assembly.mergePointLimit, &standard.mergePointLimit, 0, 20, 0.5f);
@@ -121,12 +117,11 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Sample Outlier Sigma", "o", &assembly.outlierSigmasConservative.sample, &standard.outlierSigmasConservative.sample, 1, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Frame Outlier Sigma", "o", &assembly.outlierSigmasConservative.frame, &standard.outlierSigmasConservative.frame, 1, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Marker Outlier Sigma", "o", &assembly.outlierSigmasConservative.marker, &standard.outlierSigmasConservative.marker, 1, 10, 0.1f, 1, "%.2f");
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Optimising Target"))
+	if (BeginCollapsingRegion("Optimising Target"))
 	{
-		ImGui::PushID("OptTgt");
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<float>("Trigger Error Increase", "x", &assembly.optThresh, &standard.optThresh, 1, 10, 0.1f, 1, "%.2f");
@@ -137,21 +132,19 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Sample Outlier Sigma", "o", &assembly.outlierSigmas.sample, &standard.outlierSigmas.sample, 1, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Frame Outlier Sigma", "o", &assembly.outlierSigmas.frame, &standard.outlierSigmas.frame, 1, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Marker Outlier Sigma", "o", &assembly.outlierSigmas.marker, &standard.outlierSigmas.marker, 1, 10, 0.1f, 1, "%.2f");
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Subsampling Target Data"))
+	if (BeginCollapsingRegion("Subsampling Target Data"))
 	{
-		ImGui::PushID("Sub");
 		auto &params = calibParams.assembly.subsampling;
 		const auto &standard = defaultParams.assembly.subsampling;
 		UpdateSubsamplingParameters(params, standard);
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Reevaluating Markers Sequences"))
+	if (BeginCollapsingRegion("Reevaluating Markers Sequences"))
 	{
-		ImGui::PushID("RevMk");
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<int>("Min Check Length", "", &assembly.reevaluation.minOverlap, &standard.reevaluation.minOverlap, 0, 100);
@@ -165,26 +158,24 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Uncertainty##ReSeqMatch", "px", &assembly.reevaluation.match.uncertainty, &standard.reevaluation.match.uncertainty, 0, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<int>("Conservative Level", "", &assembly.reevaluation.match.conservativeLevel, &standard.reevaluation.match.conservativeLevel, 0, 3);
 		ScalarProperty<int>("Compete Range", "", &assembly.reevaluation.match.competeRange, &standard.reevaluation.match.competeRange, 0, 10);
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Tracking Additional Frames"))
+	if (BeginCollapsingRegion("Tracking Additional Frames"))
 	{
-		ImGui::PushID("RevFr");
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<int>("Min Tracked Points", "", &assembly.trackFrame.minTrackPts, &standard.trackFrame.minTrackPts, 0, 20);
 		ScalarProperty<float>("Uncertainty", "px", &assembly.trackFrame.uncertainty, &standard.trackFrame.uncertainty, 0, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Fill Frame Sigma", "o", &assembly.trackFrame.sigmaFill, &standard.trackFrame.sigmaFill, 0, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Add Frame Sigma", "o", &assembly.trackFrame.sigmaAdd, &standard.trackFrame.sigmaAdd, 0, 10, 0.1f, 1, "%.2f");
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Determining Marker View"))
+	if (BeginCollapsingRegion("Determining Marker View"))
 	{
 		auto &post = calibParams.post;
 		const auto &standard = defaultParams.post;
-		ImGui::PushID("MkAng");
 
 		bool assumeSize = !std::isnan(post.assumedSize);
 		if (ImGui::Checkbox("##Sz", &assumeSize))
@@ -209,7 +200,7 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		ImGui::InputFloat3("Own/Top/Compensated", post.viewCone.markerLimitMix.data(), "%.2f");
 		ImGui::EndDisabled();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
 	ImGui::End();

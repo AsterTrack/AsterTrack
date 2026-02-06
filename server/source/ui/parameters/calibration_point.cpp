@@ -34,9 +34,8 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 	ServerState &state = GetState();
 	const static PointCalibParameters defaultParams = {};
 
-	if (ImGui::CollapsingHeader("Reconstruction"))
+	if (BeginCollapsingRegion("Reconstruction"))
 	{
-		ImGui::PushID("Recon");
 		const auto &standard = defaultParams.reconstruction;
 		auto &params = state.pipeline.pointCalib.params.reconstruction;
 
@@ -54,12 +53,11 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Min Rank", "", &params.basis.minRankFactor, &standard.basis.minRankFactor, 0, 100, 0.5f);
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Optimisation"))
+	if (BeginCollapsingRegion("Optimisation"))
 	{
-		ImGui::PushID("Opt");
 		const auto &standard = defaultParams.outliers;
 		auto &params = state.pipeline.pointCalib.params.outliers;
 
@@ -71,7 +69,7 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Bucket Outlier Sigma", "", &params.sigma.bucket, &standard.sigma.bucket, 0, 10, 0.1f);
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
 	ImGui::End();

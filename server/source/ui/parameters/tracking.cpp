@@ -38,9 +38,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 	const static TrackingParameters defaultParams = {};
 
-	if (ImGui::CollapsingHeader("Clustering"))
+	if (BeginCollapsingRegion("Clustering"))
 	{
-		ImGui::PushID("Cluster");
 		auto &params = state.pipeline.params.cluster;
 		const auto &standard = defaultParams.cluster;
 
@@ -61,7 +60,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Max Distance", "mm", &params.tri3DCluster.maxDistance, &standard.tri3DCluster.maxDistance, 0, 1000, 10.0f, 1000, "%.1f");
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
 	auto plotSquaredFalloffGraph = [](const char *label, float radius, int power, float cutoff = 0.05f)
@@ -131,9 +130,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		return modified;
 	};
 
-	if (ImGui::CollapsingHeader("Target Detection"))
+	if (BeginCollapsingRegion("Target Detection"))
 	{
-		ImGui::PushID("Detect");
 		auto &params = state.pipeline.params.detect;
 		const auto &standard = defaultParams.detect;
 		bool modified = false;
@@ -215,12 +213,11 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		//if (modified && visState.tracking.debug.frameNum == state.pipeline.frameNum)
 		//	visState.tracking.debug.needsUpdate = true;
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Target Tracking"))
+	if (BeginCollapsingRegion("Target Tracking"))
 	{
-		ImGui::PushID("Track");
 		auto &params = state.pipeline.params.track;
 		const auto &standard = defaultParams.track;
 		bool modified = false, trustMod = false, filterMod = false;
@@ -381,12 +378,11 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			}
 		}
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Triangulation Algorithms"))
+	if (BeginCollapsingRegion("Triangulation Algorithms"))
 	{
-		ImGui::PushID("Tri");
 		TrackingParameters &params = state.pipeline.params;
 		const auto &standard = defaultParams;
 
@@ -408,12 +404,11 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ScalarInput<float>("Min Relations Range", "mm", &triTargetMinDistance, 0, 100, 5.0f, 1000, "%.1f");
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::CollapsingHeader("Continuous Calibration"))
+	if (BeginCollapsingRegion("Continuous Calibration"))
 	{
-		ImGui::PushID("Cont");
 		auto &params = state.pipeline.params.cont;
 		const auto &standard = defaultParams.cont;
 
@@ -440,7 +435,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		}
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
 	ImGui::End();

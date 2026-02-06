@@ -43,10 +43,8 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 		auto &setting = params.sequence[settingIndex];
 		const SequenceAquisitionParameters standard = settingIndex < params.standard.size()? params.standard[settingIndex] : SequenceAquisitionParameters{};
 
-		if (ImGui::CollapsingHeader("Matching of points each frame"))
+		if (BeginCollapsingRegion("Matching of points each frame"))
 		{
-			ImGui::PushID("Match");
-
 			ScalarProperty<float>("Max Acceleration", "px", &setting.maxAcceleration, &standard.maxAcceleration, 0, 200, 1.0f, PixelFactor, "%.1f");
 			ScalarProperty<float>("Max Value Difference", "", &setting.maxValueDiff, &standard.maxValueDiff, 0, 1000, 10.0f, 1, "%.0f");
 			ScalarProperty<float>("Value Factor", "", &setting.valueDiffFactor, &standard.valueDiffFactor, 0, 10, 0.05f, 1000*PixelFactor, "%.2f");
@@ -72,13 +70,11 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ScalarProperty<int>("Inactive Points", "", &setting.allowedDropsTempInactive, &standard.allowedDropsTempInactive, 0, 10);
 			EndSection();
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 
-		if (ImGui::CollapsingHeader("Sequence Length Limits"))
+		if (BeginCollapsingRegion("Sequence Length Limits"))
 		{
-			ImGui::PushID("Len");
-
 			ImGui::BeginDisabled(true);
 			int stableLength = stableSequenceDelay;
 			ScalarProperty<int>("Sequence Stable Limit", "", &stableLength, nullptr, stableSequenceDelay, stableSequenceDelay);
@@ -88,13 +84,11 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ImGui::SetItemTooltip("Length at which correspondence matching is performed - to set it below the hardcoded stable limit.");
 			ScalarProperty<int>("Minimum Length", "", &setting.minSequenceLength, &standard.minSequenceLength, 0, setting.sequenceCorrespondenceLength);
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 
-		if (ImGui::CollapsingHeader("Fundamental Matrices"))
+		if (BeginCollapsingRegion("Fundamental Matrices"))
 		{
-			ImGui::PushID("FM");
-
 			ScalarProperty<float>("Upper Error", "", &setting.FM.UpperError, &standard.FM.UpperError, 0, 1, 0.05f);
 			ScalarProperty<int>("Confidence Min Samples", "", &setting.FM.ConfidentMinSamples, &standard.FM.ConfidentMinSamples, 0, 10000, 10);
 			ScalarProperty<float>("Confidence Min Trust", "", &setting.FM.ConfidentMinTrust, &standard.FM.ConfidentMinTrust, 0, 100000, 100);
@@ -102,13 +96,11 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ScalarProperty<float>("Maximum Deviation", "o", &setting.FM.FitPointSigma, &standard.FM.FitPointSigma, 0, 10, 0.1f);
 			ImGui::SetItemTooltip("Maximum sigma deviation allowed for points during continuous cross-correspondence checks.");
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 
-		if (ImGui::CollapsingHeader("Correspondence Matching"))
+		if (BeginCollapsingRegion("Correspondence Matching"))
 		{
-			ImGui::PushID("Cor");
-
 			ScalarProperty<float>("Trust Base for Supporting", "", &setting.correspondences.TrustBaseSupporting, &standard.correspondences.TrustBaseSupporting, 0, 10000, 10);
 			ScalarProperty<float>("Trust Base for Discrediting", "", &setting.correspondences.TrustBaseDiscrediting, &standard.correspondences.TrustBaseDiscrediting, 0, 10000, 10);
 			ScalarProperty<float>("Minimum Supporting Weight", "", &setting.correspondences.minWeight, &standard.correspondences.minWeight, 0, 1000, 10);
@@ -133,7 +125,7 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			ImGui::SetItemTooltip("Merge markers if correspondence matches two different markers closely. Less conservative than normal correspondence matching.");
 			EndSection();
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 	};
 

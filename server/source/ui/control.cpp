@@ -368,10 +368,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	static std::unique_ptr<std::jthread> controlThread;
 
 	if (state.mode == MODE_Replay && windows[WIN_TRACKING_PARAMS].open
-		&& ImGui::CollapsingHeader("Optimising Tracking Parameters"))
+		&& BeginCollapsingRegion("Optimising Tracking Parameters"))
 	{
-		ImGui::PushID("OptParam");
-
 		static std::mutex mutex;
 
 		static auto controlFunction = [](std::stop_token stop_token)
@@ -638,7 +636,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 		EndSection();
 
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 	else
 	{

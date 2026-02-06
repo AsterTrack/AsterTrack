@@ -85,7 +85,7 @@ static inline bool InteractionSurface(const char *idLabel, ImRect rect, bool &ho
 	ImGui::SetNextItemAllowOverlap();
 	ImGuiID id = ImGui::GetID(idLabel);
 	ImGui::ItemAdd(rect, id);
-    return ImGui::ButtonBehavior(rect, id, &hovered, &held, flags);
+	return ImGui::ButtonBehavior(rect, id, &hovered, &held, flags);
 }
 
 static bool SaveButton(const char* label, const ImVec2 &size, bool marked)
@@ -121,14 +121,30 @@ static inline void EndSection()
 	ImGui::PopID();
 }
 
+static inline bool BeginCollapsingRegion(const char* label, ImGuiTreeNodeFlags flags = 0)
+{
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window->SkipItems)
+		return false;
+	ImGuiID id = window->GetID(label);
+	if (!ImGui::TreeNodeBehavior(id, flags | ImGuiTreeNodeFlags_CollapsingHeader, label))
+		return false;
+	ImGui::PushID(id);
+	return true;
+}
+static inline void EndCollapsingRegion()
+{
+	ImGui::PopID();
+}
+
 static void BeginLabelledGroup(const char* fmt, ...)
 {
 	ImGui::BeginGroup();
 
-    va_list args;
-    va_start(args, fmt);
-    ImGui::TextV(fmt, args);
-    va_end(args);
+	va_list args;
+	va_start(args, fmt);
+	ImGui::TextV(fmt, args);
+	va_end(args);
 
 	SameLineTrailing(SizeWidthDiv3_2().x);
 	ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);

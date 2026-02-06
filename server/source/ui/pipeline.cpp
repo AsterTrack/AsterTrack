@@ -201,10 +201,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
 			if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
 				&& trackConfig->type == TrackerConfig::TRACKER_TARGET
-				&& ImGui::CollapsingHeader("Target Tracking Debug"))
+				&& BeginCollapsingRegion("Target Tracking Debug"))
 			{
-				ImGui::PushID("TrkDbg");
-					
 				auto &debugVis = visState.tracking.debug;
 
 				std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
@@ -284,17 +282,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					ImGui::EndDisabled();
 				}
 
-				ImGui::PopID();
+				EndCollapsingRegion();
 			}
 		}
 	}
 
 	if (pipeline.phase == PHASE_Tracking)
 	{
-		if (ImGui::CollapsingHeader("Optimisation Database"))
+		if (BeginCollapsingRegion("Optimisation Database"))
 		{
-			ImGui::PushID("OptDb");
-
 			auto db_lock = pipeline.obsDatabase.lock();
 			ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
 			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end();)
@@ -446,7 +442,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				}
 			}
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 		else
 			discardTargetSelection();
@@ -454,10 +450,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	if (pipeline.phase == PHASE_Tracking && state.mode == MODE_Replay)
 	{
-		if (ImGui::CollapsingHeader("Tracking Results"))
+		if (BeginCollapsingRegion("Tracking Results"))
 		{
-			ImGui::PushID("TrkRes");
-
 			if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 			{
 				assert(state.recording.segments.size() == state.recording.tracking.size());
@@ -652,7 +646,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::TreePop();
 			}
 
-			ImGui::PopID();
+			EndCollapsingRegion();
 		}
 	}
 	else if (pipeline.phase == PHASE_Calibration_Point)

@@ -40,7 +40,6 @@ extern ctpl::thread_pool threadPool;
 void InterfaceState::UpdateDevices(InterfaceWindow &window)
 {
 	static FirmwareUpdateRef cameraFWUpdateState;
-	bool cameraFWUpdateSetup = false;
 	static ControllerFirmwareUpdateRef controllerFWUpdateState;
 	bool controllerFWUpdateSetup = false;
 
@@ -271,7 +270,6 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::BeginDisabled(state.isStreaming || cameraFWUpdateState);
 		if (InlineIconButton(camera.selectedForFirmware? ICON_LA_BAN"###Update" : ICON_LA_DOWNLOAD"###Update"))
 			camera.selectedForFirmware = !camera.selectedForFirmware;
-		if (camera.selectedForFirmware) cameraFWUpdateSetup = true;
 		ImGui::EndDisabled();
 
 		ImGui::Unindent(bb.GetWidth() + style.ItemInnerSpacing.x);
@@ -413,12 +411,17 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	int freeCols = numFreeCameras == 0? 0 : (int)std::ceil((float)numFreeCameras/numRows);
 	int numCols = state.controllers.size() + freeCols;
 
-	if (numCols == 0)
+	if (state.mode != MODE_Device)
+	{
+		ImGui::TextWrapped("Hit 'Connect' to enter Device Mode.");
+	}
+	else if (numCols == 0)
 	{
 		ImGui::TextWrapped("There are no controllers or cameras connected.\n"
 			"Plug in a controller, then Disconnect and Connect again for it to appear.");
 	}
-	else if (ImGui::BeginTable("Devices", numCols,
+
+	if (numCols > 0 && ImGui::BeginTable("Devices", numCols,
 		ImGuiTableFlags_PadOuterX | ImGuiTableFlags_BordersInner))
 	{
 		// Register columns, but without headers
@@ -481,10 +484,19 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 	float minButtonWidth = MinSharedLabelWidth("Close", "Abort", "Select", "Flash");
 	ImVec2 button = SizeWidthDiv4(minButtonWidth);
-	if (cameraFWUpdateState)
-	{
-		ImGui::SeparatorText("Camera Firmware Update");
 
+	bool anySelected = false;
+	for (auto &camera : state.cameras)
+	{
+		if (camera->selectedForFirmware)
+			anySelected = true;
+	}
+	if (anySelected)
+		ImGui::SetNextItemOpen(true);
+
+	bool showCameraFWUP = BeginCollapsingRegion(cameraFWUpdateState? "Camera Firmware Update" ICON_LA_DOWNLOAD "###CamFw" : "Camera Firmware Update###CamFw");
+	if (showCameraFWUP && cameraFWUpdateState)
+	{
 		auto status = cameraFWUpdateState->contextualLock();
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", status->text.c_str());
@@ -497,12 +509,16 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				camera->selectedForFirmware = false;
 				camera->firmware = nullptr;
 			}
+			status.unlock();
 			cameraFWUpdateState = nullptr;
 		}
 		if (!ended && ImGui::Button("Abort", button))
 		{ // Close or abort firmware update
 			status->abort.request_stop();
 		}
+	}
+	if (showCameraFWUP && cameraFWUpdateState)
+	{
 		for (auto &camera : state.cameras)
 		{
 			bool currentlyDisconnected = !camera->client && !camera->controller;
@@ -522,14 +538,14 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::Text("Camera #%u is not part of the firmware update.", camera->id);
 		}
 	}
-	else if (cameraFWUpdateSetup)
+	if (showCameraFWUP && !cameraFWUpdateState)
 	{
-		BeginSection("Camera Firmware Update");
-
-		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
 		ImGui::AlignTextToFramePadding();
-		ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
+		if (std::filesystem::path(firmwareFile).has_filename())
+			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().generic_string().c_str());
+		else
+			ImGui::Text("%s", firmwareFile.c_str());
 		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
@@ -542,8 +558,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 					return;
 				}
 
-				const int filterLen = 2;
+				const int filterLen = 3;
 				nfdfilteritem_t filterList[filterLen] = {
+					{"Any Camera Firmware", "tgz,tar.gz,bin"},
 					{"CameraPi Data Tarball", "tgz,tar.gz"},
 					{"CameraMCU Program Binary", "bin"},
 				};
@@ -578,9 +595,14 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		for (auto &camera : state.cameras)
 		{
 			if (camera->selectedForFirmware)
-				ImGui::Text("Camera #%u set to update", camera->id);
+				ImGui::Text("Camera #%u selected to update", camera->id);
+		}
+		if (!anySelected)
+		{
+			ImGui::Text("Select cameras to update (" ICON_LA_DOWNLOAD ")!");
 		}
 
+		ImGui::BeginDisabled(!anySelected);
 		if (ImGui::Button("Flash", SizeWidthFull()))
 		{
 			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
@@ -591,20 +613,23 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			cameraFWUpdateState = CamerasFlashFirmwareFile(firmwareUpdateCameras, firmwareFile);
 		}
-
-		EndSection();
+		ImGui::EndDisabled();
 	}
+	if (showCameraFWUP)
+		EndCollapsingRegion();
 
 	// TODO: Ask controller via USB to automatically switch to Bootloader 2/3
 	// So for now, just always show FW update for controllers
 	//if (controllerFWUpdate)
+	if (BeginCollapsingRegion("Controller Firmware Update"))
 	{
-		BeginSection("Controller Firmware Update");
-
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile = "Firmware File";
 		ImGui::AlignTextToFramePadding();
-		ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().c_str());
+		if (std::filesystem::path(firmwareFile).has_filename())
+			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().generic_string().c_str());
+		else
+			ImGui::Text("%s", firmwareFile.c_str());
 		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
@@ -664,6 +689,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				}
 				if (status->complete && ImGui::Button("Close", button))
 				{
+					status.unlock();
 					controller->firmware = nullptr;
 				}
 			}
@@ -682,6 +708,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		if (controllerFWUpdateState)
 		{
 			auto status = controllerFWUpdateState->contextualLock();
+			ImGui::AlignTextToFramePadding();
 			ImGui::Text("%s", status->text.c_str());
 			SameLineTrailing(button.x);
 			if (!status->complete && ImGui::Button("Abort", button))
@@ -690,6 +717,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			if (status->complete && ImGui::Button("Close", button))
 			{
+				status.unlock();
 				controllerFWUpdateState = nullptr;
 			}
 		}
@@ -701,60 +729,82 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			ImGui::SetItemTooltip("The controller already has to be running the bootloader, appearing as a WinChipHead USB device.\n"
 				"To get a controller to reboot into the bootloader, hold the 'Flash' button (middle) for one second.");
+			
+#if defined(_WIN32)
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.5f, 0.25f, 1.0f));
+			bool show = ImGui::TreeNode("Installing Drivers On Windows");
+			ImGui::PopStyleColor();
+			if (show)
+			{
+				ImGui::TextWrapped("The bootloader does not support Windows by itself and needs a driver to be assigned. "
+					"To do so, download Zadig and follow these steps:\n"
+					"Reboot the controller into bootloader by holding the 'Flash' button (middle) for one second.\n"
+					"Select the device in Zadig, select WinUSB as the driver, and hit 'Install WCID driver'!\n"
+					"After that, it should appear as WinChipHead in Windows, and you should be able to flash it from here. "
+					"A custom flashing method not using the built-in bootloader is on the roadmap to make updating easier.");
+				ImGui::TextLinkOpenURL("Download Zadig", "https://zadig.akeo.ie");
+				ImGui::TreePop();
+			}
+#endif
+
 		}
 
-		EndSection();
+		EndCollapsingRegion();
 	}
 
-	ImGui::SeparatorText("IMU Devices");
-	// TODO: IMU Display: Include indication of connection stability, rssi, battery, etc.
-
-	if (state.mode != MODE_Device)
-		ImGui::Text("Not in Device Mode! Connect to Hardware to see IMU Devices");
-	
-	auto imuProviders = state.imuProviders.contextualRLock();
-	bool hasIMUDevices = false;
-	for (auto &provider : *imuProviders)
+	if (BeginCollapsingRegion("IMU Devices", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		std::string desc = provider->getDescriptor();
-		if (desc.empty() && provider->devices.empty()) continue;
-		hasIMUDevices = true;
-		ImGui::Text("%s", desc.c_str());
-		ImGui::Indent();
-		for (auto &imu : provider->devices)
+		// TODO: IMU Display: Include indication of connection stability, rssi, battery, etc.
+
+		if (state.mode != MODE_Device)
+			ImGui::Text("Not in Device Mode! Connect to Hardware to see IMU Devices");
+		
+		auto imuProviders = state.imuProviders.contextualRLock();
+		bool hasIMUDevices = false;
+		for (auto &provider : *imuProviders)
 		{
-			if (!imu)
-				ImGui::Text("Unassigned IMU!");
-			else if (imu->lastConnected == TimePoint_t::min())
-				ImGui::Text("%s (Disconnected)", imu->getDescriptor().c_str());
-			else
+			std::string desc = provider->getDescriptor();
+			if (desc.empty() && provider->devices.empty()) continue;
+			hasIMUDevices = true;
+			ImGui::Text("%s", desc.c_str());
+			ImGui::Indent();
+			for (auto &imu : provider->devices)
 			{
-				if (imu->isFused)
-					ImGui::Text("%s - %d fused samples", imu->getDescriptor().c_str(), (int)imu->samplesFused.getView().size());
+				if (!imu)
+					ImGui::Text("Unassigned IMU!");
+				else if (imu->lastConnected == TimePoint_t::min())
+					ImGui::Text("%s (Disconnected)", imu->getDescriptor().c_str());
 				else
-					ImGui::Text("%s - %d raw samples", imu->getDescriptor().c_str(), (int)imu->samplesRaw.getView().size());
-				if (ImGui::BeginItemTooltip())
 				{
-					if (imu->hasBattery)
-					{
-						if (imu->isPlugged)
-							ImGui::Text("Charging %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
-						else
-							ImGui::Text("Battery %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
-					}
-					else if (imu->isPlugged)
-						ImGui::TextUnformatted("Wired");
+					if (imu->isFused)
+						ImGui::Text("%s - %d fused samples", imu->getDescriptor().c_str(), (int)imu->samplesFused.getView().size());
 					else
-						ImGui::TextUnformatted("Power Source Unknown");
-					ImGui::Text("Signal Strength %d%%", (int)(imu->signalStrength*100));
-					ImGui::EndTooltip();
+						ImGui::Text("%s - %d raw samples", imu->getDescriptor().c_str(), (int)imu->samplesRaw.getView().size());
+					if (ImGui::BeginItemTooltip())
+					{
+						if (imu->hasBattery)
+						{
+							if (imu->isPlugged)
+								ImGui::Text("Charging %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
+							else
+								ImGui::Text("Battery %d%%, %.2fV", (int)(imu->batteryLevel*100), imu->batteryVolts);
+						}
+						else if (imu->isPlugged)
+							ImGui::TextUnformatted("Wired");
+						else
+							ImGui::TextUnformatted("Power Source Unknown");
+						ImGui::Text("Signal Strength %d%%", (int)(imu->signalStrength*100));
+						ImGui::EndTooltip();
+					}
 				}
 			}
+			ImGui::Unindent();
 		}
-		ImGui::Unindent();
+		if (state.mode == MODE_Device && !hasIMUDevices)
+			ImGui::Text("No IMU Devices or Receivers connected!");
+
+		EndCollapsingRegion();
 	}
-	if (state.mode == MODE_Device && !hasIMUDevices)
-		ImGui::Text("No IMU Devices or Receivers connected!");
 
 	ImGui::End();
 }

@@ -49,29 +49,26 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 
 	ImGui::SeparatorText("Resegmentation");
 
-	if (ImGui::CollapsingHeader("Base Images"))
+	if (ImGui::TreeNodeEx("Base Images", ImGuiTreeNodeFlags_Framed))
 	{
-		ImGui::Indent(ImGui::GetFontSize());
 		for (auto &tmp : emul.vis->baseImages)
 		{
 			ImGui::Checkbox(asprintf_s("Show %s", tmp.label.c_str()).c_str(), &tmp.show);
 		}
-		ImGui::Unindent(ImGui::GetFontSize());
+		ImGui::TreePop();
 	}
 
-	if (ImGui::CollapsingHeader("SSR Images"))
+	if (ImGui::TreeNodeEx("SSR Images", ImGuiTreeNodeFlags_Framed))
 	{
-		ImGui::Indent(ImGui::GetFontSize());
 		for (auto &tmp : emul.vis->ssrImages)
 		{
 			ImGui::Checkbox(asprintf_s("Show %s", tmp.label.c_str()).c_str(), &tmp.show);
 		}
-		ImGui::Unindent(ImGui::GetFontSize());
+		ImGui::TreePop();
 	}
 
-	if (ImGui::CollapsingHeader("Maxima Hint Stages"))
+	if (ImGui::TreeNodeEx("Maxima Hint Stages", ImGuiTreeNodeFlags_Framed))
 	{
-		ImGui::Indent(ImGui::GetFontSize());
 		bool show = opt.showBlobsMaximaStages[0];
 		if (ImGui::Checkbox("Base", &show))
 			opt.showBlobsMaximaStages[0] = show;
@@ -81,19 +78,18 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 			if (ImGui::Checkbox(asprintf_s("Scale %d", i-1).c_str(), &show))
 				opt.showBlobsMaximaStages[i] = show;
 		}
-		ImGui::Unindent(ImGui::GetFontSize());
+		ImGui::TreePop();
 	}
 
 	ImGui::Checkbox("Show maxima hints", &opt.maximaHints);
 
-	if (ImGui::CollapsingHeader("Floodfilling Stages"))
+	if (ImGui::TreeNodeEx("Floodfilling Stages", ImGuiTreeNodeFlags_Framed))
 	{
-		ImGui::Indent(ImGui::GetFontSize());
 		for (auto &tmp : emul.vis->floodfillStages)
 		{
 			ImGui::Checkbox(asprintf_s("%s", tmp.label.c_str()).c_str(), &tmp.show);
 		}
-		ImGui::Unindent(ImGui::GetFontSize());
+		ImGui::TreePop();
 	}
 
 	ImGui::Checkbox("Show peripheral centers", &opt.peripheralCenters);
@@ -105,7 +101,7 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 	ImGui::Checkbox("Show refined edge", &opt.edgeRefined);
 	ImGui::Checkbox("Show refined blobs", &opt.blobRefined);
 
-	if (ImGui::CollapsingHeader("Hough Parameters"))
+	if (ImGui::TreeNodeEx("Hough Parameters", ImGuiTreeNodeFlags_Framed))
 	{
 		update |= ImGui::Checkbox("Force", &forceHoughParams);
 		ImGui::BeginDisabled(!forceHoughParams);

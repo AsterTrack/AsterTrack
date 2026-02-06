@@ -119,11 +119,10 @@ void InterfaceState::UpdatePipelineTargetCalib()
 	color.z *= 1.2f;
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, color);
 
-	bool sectionTargetViews = ImGui::CollapsingHeader("Target Views (?)", ImGuiTreeNodeFlags_DefaultOpen);
+	bool sectionTargetViews = BeginCollapsingRegion("Target Views (?)", ImGuiTreeNodeFlags_DefaultOpen);
 	ImGui::SetItemTooltip("Move around a target with sufficient flat markers on it, not too fast, and in good view of several cameras.\n"
 		"The system will look for good views (short segments of around one second where the view of the markers is good.\n"
 		"These TargetViews will then be reconstructed to get an estimate of the 3D structure of the markers.");
-	ImGui::PushID("TV");
 
 	if (sectionTargetViews)
 	{ // Target Observations to acquire Target Views
@@ -504,15 +503,14 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		} */
 	}
 
-	ImGui::PopID();
+	EndCollapsingRegion();
 
-	bool sectionTargetAssembly = ImGui::CollapsingHeader("Target Assembly (?)", ImGuiTreeNodeFlags_DefaultOpen);
+	bool sectionTargetAssembly = BeginCollapsingRegion("Target Assembly (?)", ImGuiTreeNodeFlags_DefaultOpen);
 	ImGui::SetItemTooltip("Individual TargetViews are an incomplete, error-prone view of a target.\n"
 		"The next phase aims to combine these short segments by correlating marker observations.\n"
 		"TargetViews are aligned, some markers merged outright, and the rest adopted and merged as more data becomes available.\n"
 		"You can at any point stop automatic assembly, issue own directives, and then resume automatic assembly.\n"
 		"You can also manually edit the target (merging/splitting markers, swapping/removing observation sequences).");
-	ImGui::PushID("TA");
 
 	if (sectionTargetAssembly)
 	{ // Target assembly controls
@@ -1054,9 +1052,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 	}
 
 	if (sectionTargetAssembly && visState.targetCalib.stage && !visState.targetCalib.stage->alignResults.empty()
-		&& ImGui::CollapsingHeader("Align Tests"))
+		&& BeginCollapsingRegion("Align Tests"))
 	{ // Details of selected stage alignments
-		ImGui::PushID("AT");
 		if (ImGui::BeginTable("TargetBase Align Tests Table", 4,
 			ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{
@@ -1133,13 +1130,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::EndTable();
 			}
 		}
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
 	if (sectionTargetAssembly && visState.targetCalib.stage && !visState.targetCalib.stage->mergeTests.empty()
-		&& ImGui::CollapsingHeader("Merge Tests"))
+		&& BeginCollapsingRegion("Merge Tests"))
 	{ // Details of selected stage merge attempts
-		ImGui::PushID("MT");
 		if (ImGui::BeginTable("TargetBase Merge Targets Table", 5,
 			ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{
@@ -1180,10 +1176,10 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 			ImGui::EndTable();
 		}
-		ImGui::PopID();
+		EndCollapsingRegion();
 	}
 
-	ImGui::PopID();
+	EndCollapsingRegion();
 
 	ImGui::PopStyleColor();
 }

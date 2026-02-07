@@ -243,8 +243,8 @@ struct Bounds
 
 	Bounds() 
 	{
-		min.setConstant(std::numeric_limits<Scalar>::max());
-		max.setConstant(std::numeric_limits<Scalar>::lowest());
+		min.setConstant(std::numeric_limits<Scalar>::max()/2);
+		max.setConstant(std::numeric_limits<Scalar>::lowest()/2);
 	}
 
 	Bounds(Scalar MinX, Scalar MinY, Scalar MaxX, Scalar MaxY)

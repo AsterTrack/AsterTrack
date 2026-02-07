@@ -44,9 +44,6 @@ struct Cluster
 	Cluster(float x, float y, Bounds2<uint16_t> b, uint32_t cnt) : ptCnt(cnt), bounds(b), centroid(x,y) {}
 };
 
-extern std::vector<Vector2<float>> edgeRefined;
-extern std::vector<bool> edgeOutliers;
-
 struct PrecomputedKernels
 {
     std::vector<float> base;
@@ -65,6 +62,8 @@ bool handleClusterSingle(Cluster &blob, const uint8_t *frame, uint32_t stride, c
 HoughParameters estimateHoughParameters1(Cluster &blob);
 HoughParameters estimateHoughParameters2(Cluster &blob);
 
-bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const RefinementParameters params, const HoughParameters &hough, int refineIt);
+bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride,
+	const RefinementParameters params, const HoughParameters &hough, int refineIt,
+	std::vector<Vector2<float>> &edgeRefined, std::vector<bool> &edgeOutliers);
 
 #endif // BLOB_H

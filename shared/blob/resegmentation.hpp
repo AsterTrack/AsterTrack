@@ -1006,7 +1006,7 @@ static std::vector<Cluster> ResegmentCluster(
 	std::vector<Cluster> resegmentedClusters;
 	resegmentedClusters.reserve(hints.size());
 	// For potential edge-fetching
-	Bounds2i fetchArea;
+	Bounds2i fetchArea = {};
 	std::vector<int> indices(clusterState.size(), -1);
 	for (int i = 0; i < clusterState.size(); i++)
 	{

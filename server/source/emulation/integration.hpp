@@ -36,6 +36,8 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 	auto &emul = visCamera.emulation;
 	auto &opt = emul.options;
 	bool update = false;
+	if (!emul.vis)
+		emul.vis = std::make_shared<BlobEmulationVis>();
 
 	ImGui::Checkbox("Show Mask All", &opt.maskAll);
 	ImGui::Checkbox("Show Mask Center", &opt.maskCenter);
@@ -51,31 +53,26 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 
 	if (ImGui::TreeNodeEx("Base Images", ImGuiTreeNodeFlags_Framed))
 	{
+		int id = 0;
 		for (auto &tmp : emul.vis->baseImages)
-		{
-			ImGui::Checkbox(asprintf_s("Show %s", tmp.label.c_str()).c_str(), &tmp.show);
-		}
+			ImGui::Checkbox(asprintf_s("Show %s###%d", tmp.label.c_str(), id++).c_str(), &tmp.show);
 		ImGui::TreePop();
 	}
 
 	if (ImGui::TreeNodeEx("SSR Images", ImGuiTreeNodeFlags_Framed))
 	{
+		int id = 0;
 		for (auto &tmp : emul.vis->ssrImages)
-		{
-			ImGui::Checkbox(asprintf_s("Show %s", tmp.label.c_str()).c_str(), &tmp.show);
-		}
+			ImGui::Checkbox(asprintf_s("Show %s###%d", tmp.label.c_str(), id++).c_str(), &tmp.show);
 		ImGui::TreePop();
 	}
 
 	if (ImGui::TreeNodeEx("Maxima Hint Stages", ImGuiTreeNodeFlags_Framed))
 	{
-		bool show = opt.showBlobsMaximaStages[0];
-		if (ImGui::Checkbox("Base", &show))
-			opt.showBlobsMaximaStages[0] = show;
-		for (int i = 1; i < opt.showBlobsMaximaStages.size(); i++)
+		for (int i = 0; i < opt.showBlobsMaximaStages.size(); i++)
 		{
-			show = opt.showBlobsMaximaStages[i];
-			if (ImGui::Checkbox(asprintf_s("Scale %d", i-1).c_str(), &show))
+			bool show = opt.showBlobsMaximaStages[i];
+			if (ImGui::Checkbox(i == 0? "Base" : asprintf_s("Scale %d", i).c_str(), &show))
 				opt.showBlobsMaximaStages[i] = show;
 		}
 		ImGui::TreePop();
@@ -85,10 +82,9 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 
 	if (ImGui::TreeNodeEx("Floodfilling Stages", ImGuiTreeNodeFlags_Framed))
 	{
+		int id = 0;
 		for (auto &tmp : emul.vis->floodfillStages)
-		{
-			ImGui::Checkbox(asprintf_s("%s", tmp.label.c_str()).c_str(), &tmp.show);
-		}
+			ImGui::Checkbox(asprintf_s("%s###%d", tmp.label.c_str(), id++).c_str(), &tmp.show);
 		ImGui::TreePop();
 	}
 
@@ -111,6 +107,7 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 		update |= ImGui::InputFloat("Circle Width", &forcedHoughParams.circleWidth);
 		update |= ImGui::InputFloat("Position Step", &forcedHoughParams.positionStep);
 		ImGui::EndDisabled();
+		ImGui::TreePop();
 	}
 
 	if (update && emul.enabled)
@@ -232,7 +229,8 @@ static void updateEmulationVisualisation(const TrackingCameraState &camera, Came
 				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, 0);
 		}
 
-		emul.options.showBlobsMaximaStages.resize(emul.result->maximaHintStages.size());
+		if (emul.options.showBlobsMaximaStages.size() < emul.result->maximaHintStages.size())
+			emul.options.showBlobsMaximaStages.resize(emul.result->maximaHintStages.size());
 		for (int i = 0; i < emul.result->maximaHintStages.size(); i++)
 		{ // Show debug maximal hint stages using blob circle
 			if (!emul.options.showBlobsMaximaStages[i]) continue;

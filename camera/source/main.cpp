@@ -1677,7 +1677,11 @@ int main(int argc, char **argv)
 					Cluster &blob = clusters[maxInd];
 
 					// Refine blob
-					//refineBlob(blob, state.refinementMethod, curFrame->memory);
+					std::vector<Vector2<float>> edgeRefined;
+					std::vector<bool> edgeOutliers;
+					refineCluster(blob, curFrame->memory, srcStride,
+						state.blobParams.refinement, estimateHoughParameters1(blob), 10,
+						edgeRefined, edgeOutliers);
 					edgeRefined.clear();
 
 					// Determine sizes needed for buffer

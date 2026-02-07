@@ -26,9 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cmath>
 
 
-std::vector<Vector2<float>> edgeRefined;
-std::vector<bool> edgeOutliers;
-
 PrecomputedKernels precomputeKernels(const BlobProcessingParameters &params)
 {
 	PrecomputedKernels kernels;
@@ -161,6 +158,8 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 
 	TimePoint_t t_refinement = sclock::now();
 
+	thread_local std::vector<Vector2<float>> edgeRefined;
+	thread_local std::vector<bool> edgeOutliers;
 	for (auto &subCluster : subClusters)
 	{
 		if (subCluster.dots.size() < params.classification.blobRefinementThreshold)
@@ -170,7 +169,7 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 
 		dt0 = sclock::now();
 
-		if (!refineCluster(subCluster, frame, stride, params.refinement, estimateHoughParameters1(subCluster), 10))
+		if (!refineCluster(subCluster, frame, stride, params.refinement, estimateHoughParameters1(subCluster), 10, edgeRefined, edgeOutliers))
 		{ // Failed to refine
 			handleClusterSingle(subCluster, frame, stride, params);
 		}
@@ -214,7 +213,10 @@ bool handleClusterSingle(Cluster &blob, const uint8_t *frame, uint32_t stride, c
 	return true;
 }
 
-bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride, const RefinementParameters params, const HoughParameters &hough, int refineIt)
+
+bool refineCluster(Cluster &blob, const uint8_t *frame, uint32_t stride,
+	const RefinementParameters params, const HoughParameters &hough, int refineIt,
+	std::vector<Vector2<float>> &edgeRefined, std::vector<bool> &edgeOutliers)
 {
 	auto t1 = sclock::now();
 

@@ -275,8 +275,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (result)// && vis.image && result->frameID == vis.image->frameID)
 		{
 			view.vis.emulation.result = std::move(result);
-			if (!view.vis.emulation.vis)
-				view.vis.emulation.vis = std::make_shared<BlobEmulationVis>();
 			updateEmulationVis(view.vis.emulation.vis, view.vis.emulation.result);
 		}
 

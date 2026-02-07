@@ -92,6 +92,9 @@ struct BlobEmulationVis
 
 static void updateEmulationVis(std::shared_ptr<BlobEmulationVis> &vis, const std::shared_ptr<BlobEmulationResults> &result)
 {
+	if (!vis)
+		vis = std::make_shared<BlobEmulationVis>();
+
 	// Update mask and point VBOs
 	updatePointsVBO(vis->maskVBO, result->maskVerts);
 	vis->maskSize = result->maskVerts.size();
@@ -477,6 +480,8 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 
 	TimePoint_t t_refinement = sclock::now();
 
+	thread_local std::vector<Vector2<float>> edgeRefined;
+	thread_local std::vector<bool> edgeOutliers;
 	for (auto it = result->resegmentedClusters.begin(); it != result->resegmentedClusters.end();)
 	{
 		auto &cluster = *it;
@@ -494,7 +499,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		}
 
 		edgeRefined.clear();
-		bool refined = refineCluster(cluster, frame->image.data(), stride, params.refinement, estimateHoughParameters1(cluster), 10);
+		bool refined = refineCluster(cluster, frame->image.data(), stride, params.refinement, estimateHoughParameters1(cluster), 10, edgeRefined, edgeOutliers);
 
 		// Update visualisation using temporary edgeRefined
 		for (int e = 0; e < edgeRefined.size(); e++)

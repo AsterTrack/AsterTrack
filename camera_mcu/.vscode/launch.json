@@ -1,36 +1,39 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-       { // For linux only as of now
-            // Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
-            // To build OpenOCD on linux from git, follow instructions and build with "./configure --enable-stlink"
-            // Also test arm-none-eabi-gdb separately if all dependencies are there in case cortex-debug doesn't work
-            "name": "JTAG DEBUGGING STM32G030",
-            "cwd": "${workspaceFolder}",
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+	   { // For linux only as of now
+			// Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
+			// To build OpenOCD on linux from git, follow instructions and build with "./configure --enable-stlink"
+			// Also test arm-none-eabi-gdb separately if all dependencies are there in case cortex-debug doesn't work
+			"name": "STM32G030 SWD (STLink)",
+			"cwd": "${workspaceFolder}",
             "executable": "./build/TrackingCameraMCU.elf",
-            "type": "cortex-debug",
-            "servertype": "openocd",
-            "request": "attach",
-            "interface": "swd",
-            // STM32G030
-            "svdFile": "./targets/ARM/STM32G030xx.svd",
-            "device": "STM32G030K8T6",
-            "configFiles": [
-                "interface/stlink.cfg",
-                "target/stm32g0x.cfg"
-            ],
-            "debuggerArgs": [
-                "-d",
-                "${workspaceFolder}"
-            ],
-            "preRestartCommands": [
-                "load",
-                "enable breakpoint",
-                "monitor reset halt",
-            ]
-       }
-    ]
+			"type": "cortex-debug",
+			"armToolchainPath": "/opt/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi/bin/",
+			"toolchainPrefix": "arm-none-eabi",
+			"servertype": "openocd",
+			// "serverpath": "", // For Windows Binary install 
+			"request": "attach",
+			"interface": "swd",
+			// STM32G030
+			"svdFile": "./targets/ARM/STM32G030xx.svd",
+			"device": "STM32G030K8T6",
+			"configFiles": [
+				"interface/stlink.cfg",
+				"target/stm32g0x.cfg"
+			],
+			"debuggerArgs": [
+				"-d",
+				"${workspaceFolder}"
+			],
+			"preResetCommands": [
+				"load",
+				"enable breakpoint",
+				"monitor reset halt",
+			]
+	   }
+	]
 }

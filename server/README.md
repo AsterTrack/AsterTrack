@@ -103,7 +103,8 @@ To make sure the program has access to the controller usb device (both for track
 - `sudo udevadm control --reload-rules && sudo udevadm trigger`
 
 For this to work, verify that you are already part of the sysplugdev group:
-`groups`
+- `getent group | grep sysplugdev`
+- or just `groups`
 
 If not, make sure such a group exists and join it:
 - `sudo groupadd --system sysplugdev`

@@ -1,6 +1,6 @@
 {
-    "analyze": [
-      "--disable=clang-diagnostic-sign-compare",
-      "--disable=clang-diagnostic-double-promotion"
-    ]
-  }
+	"analyze": [
+		"--disable=clang-diagnostic-sign-compare",
+		"--disable=clang-diagnostic-double-promotion"
+	]
+}

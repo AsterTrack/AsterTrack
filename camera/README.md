@@ -4,6 +4,10 @@ Firmware for the Raspberry Pi Zero in the AsterTrack Camera hardware. <br>
 
 ## Building
 
+### Windows
+This build system is designed for Linux, but it is simple to use on Windows using WSL.
+Install a distro like Ubuntu which already has most dependencies (you may need to manually install `parted` still) and follow the instructions in a WSL shell.
+
 ### Compilation
 Cross-compilation is considered for the future - for now, compilation is only possible on the actual hardware itself. The general outline is as follows - see later sections for details on each individual step:
 1. Build a `compile` image and flash it on an SD card with an SD card reader

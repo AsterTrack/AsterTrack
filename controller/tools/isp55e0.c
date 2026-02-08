@@ -278,17 +278,12 @@ static void read_config(struct device *dev)
 		str[2*i+1] = hex[resp.config_data[i] & 0xF];
 	}
 	str[sizeof(resp.config_data)*2] = 0;
-	uint32_t* UBPTR = (uint32_t*)resp.config_data;
 	uint32_t RDPR_USER = *((uint32_t*)resp.config_data);
 	printf("Read config %s\n", str);
 	printf("RDPR = %d\n", RDPR_USER &0xFF);
 	printf("IWDG_SW = %d\n", (RDPR_USER>>16)&0b1);
 	printf("STOP_RST = %d\n", (RDPR_USER>>17)&0b1);
 	printf("STANDBY_RST = %d\n", (RDPR_USER>>18)&0b1);
-	printf("SRAM_CODE_MODE = %d\n", (RDPR_USER>>22)&0b11);
-	*UBPTR &= ~(0b11 << 22);
-	*UBPTR |= (0b00 << 22);
-	RDPR_USER = *((uint32_t*)resp.config_data);
 	printf("SRAM_CODE_MODE = %d\n", (RDPR_USER>>22)&0b11);
 
 	dev->bv = be32toh(resp.bootloader_version);
@@ -306,6 +301,15 @@ static void write_config(struct device *dev)
 	};
 	struct resp_write_config resp;
 	int ret;
+
+	if (dev->profile->family == 0x17 && dev->profile->type == 0x70)
+	{ // Modify SRAM ROM/RAM Split to 192KB / 128KB
+		printf("Configuring CH32V307 for 192KB ROM and 128KB RAM...\n");
+		uint32_t* UBPTR = (uint32_t*)dev->config_data;
+		*UBPTR &= ~(0b11 << 22);
+		*UBPTR |= (0b00 << 22);
+		printf("SRAM_CODE_MODE = %d\n", (*UBPTR>>22)&0b11);
+	}
 
 	memcpy(req.config_data, dev->config_data, sizeof(req.config_data));
 

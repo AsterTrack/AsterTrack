@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 bool i2c_read(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf);
 bool i2c_write(const uint8_t deviceAddr, const uint8_t registerAdd, const uint8_t size, uint8_t *buf);
-void pd_delayUS(uint32_t us)
+void pd_delayUS(uint64_t us)
 {
 	TimePoint tgt = GetTimePoint();
 	tgt += us * TICKS_PER_US;

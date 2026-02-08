@@ -102,10 +102,7 @@ LDSCRIPT = $(LDSCRIPT_$(DEVICE))
 # BUILD TOOLS
 #######################################
 
-TOOL_PATH=/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi
-#TOOL_PATH=/opt/gcc-arm-none-eabi-10.3-2021.10
-TOOL_PREFIX = $(TOOL_PATH)/bin/arm-none-eabi-
-TOOL_INCLUDE = -I$(TOOL_PATH)/arm-none-eabi/include -I$(TOOL_PATH)/lib/gcc/arm-none-eabi/*/include
+include toolpath.make
 
 CC = $(TOOL_PREFIX)gcc
 LD = $(CC)

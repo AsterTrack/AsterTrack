@@ -140,6 +140,8 @@ fi
 
 echo "Configuring OS..."
 
+mkdir -p $STORAGE_PATH
+
 # Disable unnecessary config.txt lines
 sed -i "s|dtparam=audio=on$|#dtparam=audio=on|" "$MOUNT_BOOT/config.txt"
 

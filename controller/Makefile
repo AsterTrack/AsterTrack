@@ -13,9 +13,12 @@ LOG_FLAGS =
 
 # Enables logging at different levels
 LOG_FLAGS += -DENABLE_LOG
-LOG_FLAGS += -DLOG_USE_CTRL
-LOG_FLAGS += -DLOG_USE_INT
-#LOG_FLAGS += -DLOG_USE_SDI
+ifeq ($(DEBUG_SDI), 1)
+	LOG_FLAGS += -DLOG_USE_SDI
+else
+	LOG_FLAGS += -DLOG_USE_CTRL
+	LOG_FLAGS += -DLOG_USE_INT
+endif
 LOG_FLAGS += -DENABLE_EVENTS
 LOG_FLAGS += -DEVENT_USE_CTRL
 LOG_FLAGS += -DEVENT_USE_INT
@@ -120,20 +123,7 @@ LDSCRIPT_Config = ch32v307/link_CH32V307VCTx_config.ld
 # BUILD TOOLS
 #######################################
 
-# Newest version from xPack
-# https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/tag/v12.2.0-1
-#-march=rv32imac_zicsr
-TOOL_PATH=/opt/riscv-none-elf-gcc-xpack-12-2
-TOOL_PREFIX = $(TOOL_PATH)/bin/riscv-none-elf-
-TOOL_INCLUDE = -I$(TOOL_PATH)/riscv-none-elf/include -I$(TOOL_PATH)/lib/gcc/riscv-none-elf/*/include
-
-# Older 8.2.0 version from xPack
-# https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/tag/v8.2.0-3.1
-# This xPack version is used as the basis for MounRiver Studio, with modifications (at least custom interrupts code)
-# But cortex-debug extension requires gdb version >= 9 so can't be used to debug
-#-march=rv32imac
-#TOOL_PATH=/opt/riscv-none-elf-gcc-xpack-8-2/bin/
-#TOOL_PREFIX = $(TOOL_PATH)riscv-none-embed-
+include toolpath.make
 
 CC = $(TOOL_PREFIX)gcc
 LD = $(CC)

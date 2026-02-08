@@ -3,35 +3,58 @@
 	// for the documentation about the tasks.json format
 	"version": "2.0.0",
 	"tasks": [
-        {
-            "label": "Build (clangd)",
-            "type": "shell",
-            "group": "build",
-            "command": "mkdir",
-            "args": [
-                "-p", "build", "&",
-                "bear", "--output", "build/compile_commands.json", "--append", "--",
-                "make", "DEVICE='${input:target}'", "-j", "$(nproc", "--ignore=2)",
-                // Sadly, "make --dry-run", does not work, it intercepts commands
-            ],
-            "runOptions": { "reevaluateOnRerun": false }
-        },
 		{
-			"label": "Flash using OpenOCD",
+			"label": "Build",
 			"type": "shell",
-			"group": "test",
-			"command": "openocd -f targets/ARM/flash_${input:armTarget}.cfg",
-            "dependsOn": [ "Build (clangd)" ]
+			"group": "build",
+			"command": "mkdir",
+			"args": [
+				"-p", "build", "&",
+				"make", "DEVICE='STM32G030'", "-j", "$(nproc", "--ignore=2)",
+			],
+			"windows": {
+				"command": "mkdir -p build & make DEVICE='STM32G030' -j $(nproc --ignore=2)",
+				"args": [],
+				"options": {
+					"env": { "CHERE_INVOKING": "1" },
+					"shell": { // Can use either MSYS2 or Cygwin
+						//"executable": "C:/msys64/usr/bin/bash.exe",
+						"executable": "C:/cygwin64/bin/bash.exe",
+						"args": [ "-l", "-c" ]
+					}
+				}
+			},
+			"runOptions": { "reevaluateOnRerun": false }
 		},
 		{
-			"label": "Flash using stlink",
+			"label": "Build (clangd)",
+			"type": "shell",
+			"group": "build",
+			"command": "mkdir",
+			"args": [
+				"-p", "build", "&",
+				"bear", "--output", "build/compile_commands.json", "--append", "--",
+				"make", "DEVICE='STM32G030'", "-j", "$(nproc", "--ignore=2)",
+				// Sadly, "make --dry-run", does not work, it intercepts commands
+			],
+			"runOptions": { "reevaluateOnRerun": false }
+		},
+		{
+			"label": "Flash (OpenOCD)",
+			"type": "shell",
+			"group": "test",
+			"command": "openocd -f interface/stlink.cfg -f target/stm32g0x.cfg -c 'program build/TrackingCameraMCU.elf verify reset exit'",
+			"dependsOn": [ "Build" ]
+		},
+		{ // REQUIRES stlink/st-flash: https://github.com/stlink-org/stlink
+			"label": "Flash (st-flash)",
 			"type": "shell",
 			"group": "test",
 			"command": "st-flash --reset write build/TrackingCameraMCU.bin 0x08000000",
-            "dependsOn": [ "Build (clangd)" ]
+			"dependsOn": [ "Build" ]
 		},
-		{
-			"label": "Flash using STM32_Programmer_CLI",
+		{ // REQUIRES STM32_Programmer_CLI: https://www.st.com/en/development-tools/stm32cubeprog.html
+			"label": "Flash (STM32_Programmer_CLI)",
 			"type": "shell",
 			"group": "test",
 			"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf",
@@ -40,23 +63,7 @@
 				"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf", // For ST-Link using programmer
 				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/TrackingCameraMCU.elf" // For serial programmer, pick correct COM port
 			},
-            "dependsOn": [ "Build (clangd)" ]
+			"dependsOn": [ "Build" ]
 		},
-	],
-    "inputs": [
-        {
-            "id": "target",
-            "description": "Target:",
-            "type": "pickString",
-			"default": "STM32G030",
-            "options": [ "STM32G030" ]
-        },
-        {
-            "id": "armTarget",
-            "description": "Arm Upload Target:",
-            "type": "pickString",
-			"default": "STM32G0",
-            "options": [ "STM32G0" ]
-        },
-    ]
+	]
 }

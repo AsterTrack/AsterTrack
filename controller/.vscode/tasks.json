@@ -4,36 +4,24 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Flash CH32V307",
-			"type": "shell",
-			"group": "test",
-			"command": "./build/isp55e0 --code-flash build/TrackingController.bin",
-			"dependsOn": [
-				"Build CH32V307 Controller",
-				"Build CH32V307 Flashing Tool"
-			]
-		},
-		{ // Requires https://github.com/ch32-rs/wlink to be installed
-			"label": "Flash & Log CH32V307 with wlink",
-			"type": "shell",
-			"group": "test",
-			"command": "wlink flash --enable-sdi-print --watch-serial build/TrackingController.bin",
-			"dependsOn": [
-				"Build CH32V307 Controller"
-			]
-		},
-		{
-			"label": "Configure CH32V307",
-			"type": "shell",
-			"group": "test",
-			"command": "./build/isp55e0 --code-flash build/configurator.bin",
-			"dependsOn": [
-				"Build CH32V307 Configuration Program",
-				"Build CH32V307 Flashing Tool"
-			]
-		},
-		{
 			"label": "Build CH32V307 Controller",
+			"type": "shell",
+			"group": "build",
+			"command": "mkdir -p build & make -j $(nproc --ignore=2)",
+			"windows": {
+				"options": {
+					"env": { "CHERE_INVOKING": "1" },
+					"shell": { // Can use either MSYS2 or Cygwin
+						//"executable": "C:/msys64/usr/bin/bash.exe",
+						"executable": "C:/cygwin64/bin/bash.exe",
+						"args": [ "-l", "-c" ]
+					}
+				}
+			},
+			"runOptions": { "reevaluateOnRerun": false }
+		},
+		{
+			"label": "Build CH32V307 Controller (clangd)",
 			"type": "shell",
 			"group": "build",
 			"command": "mkdir",
@@ -58,36 +46,95 @@
 			"command": "make configure"
 		},
 		{
-			"label": "Build CH32V307 Flashing Tool",
+			"label": "Build CH32V307 Flashing Tool (isp55e0)",
 			"type": "shell",
 			"group": "build",
 			"command": "make flash"
 		},
-
-		// DEPRECATED: OpenOCD flashing using SWD interface
-		// Should not be required. Just flash using bootloader (worst case, hold Flash/BOOT0 during power-on to enter bootloader mode)
-
 		{
-			// REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
-			"label": "Flash CH32V307 OpenOCD",
+			"label": "Flash CH32V307 (isp55e0)",
 			"type": "shell",
 			"group": "test",
-			"command": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/openocd -f ch32v307/flash_CH32V307.cfg",
+			"command": "./build/isp55e0 --code-flash build/TrackingController.bin",
+			"dependsOn": [
+				"Build CH32V307 Controller",
+				"Build CH32V307 Flashing Tool (isp55e0)"
+			]
+		},
+		{ // Requires https://github.com/ch32-rs/wlink to be installed
+			"label": "Flash CH32V307 (wlink)",
+			"type": "shell",
+			"group": "test",
+			"command": "wlink flash build/TrackingController.bin",
+			"dependsOn": [
+				"Build CH32V307 Controller",
+			]
+		},
+		{ // Requires https://github.com/ch32-rs/wlink to be installed
+			"label": "Configure CH32V307 (wlink)",
+			"type": "shell",
+			"group": "test",
+			"command": "wlink flash build/TrackingController.bin",
+			"dependsOn": [
+				"Build CH32V307 Configuration Program",
+			]
+		},
+		{ // Requires https://github.com/ch32-rs/wlink to be installed
+			"label": "Flash SDI-Log CH32V307 (wlink, WCH-LinkE)",
+			"type": "shell",
+			"group": "test",
+			"command": "make -j $(nproc --ignore=2) DEBUG_SDI=1 && wlink flash --enable-sdi-print --watch-serial build/TrackingController.bin",
+			"windows": {
+				"options": {
+					"env": { "CHERE_INVOKING": "1" },
+					"shell": { // Can use either MSYS2 or Cygwin
+						//"executable": "C:/msys64/usr/bin/bash.exe",
+						"executable": "C:/cygwin64/bin/bash.exe",
+						"args": [ "-l", "-c" ]
+					}
+				}
+			}
+		},
+		{ // REQUIRES custom-build openocd for SDI WCH-LinkE: https://github.com/Seneral/riscv-openocd-wch/tree/wch-linke-sdi
+			// verify does not work in this version or due to WCH-LinkE
+			"label": "Flash CH32V307 (OpenOCD, WCH-LinkE)",
+			"type": "shell",
+			"group": "test",
+			"command": "/opt/riscv-openocd-wch-sdi/bin/openocd -f ch32v307/wch-linke.cfg -c 'program build/TrackingController.elf reset exit'",
 			"dependsOn": [
 				"Build CH32V307 Controller"
 			]
 		},
-		{
-			// REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
-			"label": "Configure CH32V307 OpenOCD",
+		{ // REQUIRES custom-build openocd for SDI WCH-LinkE: https://github.com/Seneral/riscv-openocd-wch/tree/wch-linke-sdi
+			// verify does not work in this version or due to WCH-LinkE
+			"label": "Configure CH32V307 (OpenOCD, WCH-LinkE)",
 			"type": "shell",
 			"group": "test",
-			"command": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/openocd -f ch32v307/flash_CH32V307.cfg",
+			"command": "/opt/riscv-openocd-wch-sdi/bin/openocd -f ch32v307/wch-linke.cfg -c 'program build/configurator.elf reset exit'",
 			"problemMatcher": [],
 			"dependsOn": [
 				"Build CH32V307 Configuration Program"
 			]
 		},
+		{ // REQUIRES custom-build openocd for SWD WCH-Link: https://github.com/Seneral/riscv-openocd-wch/tree/wch-link-swd
+			"label": "Flash CH32V307 (OpenOCD, WCH-Link)",
+			"type": "shell",
+			"group": "test",
+			"command": "/opt/riscv-openocd-wch-swd/bin/openocd -f ch32v307/wch-link.cfg -c 'program build/TrackingController.elf verify reset exit'",
+			"dependsOn": [
+				"Build CH32V307 Controller"
+			]
+		},
+		{ // REQUIRES custom-build openocd for SWD WCH-Link: https://github.com/Seneral/riscv-openocd-wch/tree/wch-link-swd
+			"label": "Configure CH32V307 (OpenOCD, WCH-Link)",
+			"type": "shell",
+			"group": "test",
+			"command": "/opt/riscv-openocd-wch-swd/bin/openocd -f ch32v307/wch-link.cfg -c 'program build/configurator.elf verify reset exit'",
+			"problemMatcher": [],
+			"dependsOn": [
+				"Build CH32V307 Configuration Program"
+			]
+		}
 	],
 	"inputs": [
 		{

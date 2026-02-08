@@ -1,77 +1,80 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-       { // For linux only as of now
-            // Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
-            // REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
-            "name": "JTAG DEBUGGING CH32V307",
-            "cwd": "${workspaceFolder}",
-            "executable": "./build/TrackingController.elf",
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+	   { // For linux only as of now
+			// Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
+			// REQUIRES custom-build openocd for SDI WCH-LinkE: https://github.com/Seneral/riscv-openocd-wch/tree/wch-linke-sdi
+			"name": "CH32V307 SDI (WCH-LinkE)",
+			"cwd": "${workspaceFolder}",
+			"executable": "./build/TrackingController.elf",
 
-            // Bit of a hackery to get a ARM debugging extension to accept RISC-V
-            "type": "cortex-debug",
-            "armToolchainPath": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/",
-            "toolchainPrefix": "riscv-none-elf",
-            "servertype": "openocd",
-            "serverpath": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/openocd",
+			// Bit of a hackery to get a ARM debugging extension to accept RISC-V
+			"type": "cortex-debug",
+			"armToolchainPath": "/opt/xpack-riscv-none-elf-gcc-15.2.0-1/bin/",
+			"toolchainPrefix": "riscv-none-elf",
+			"servertype": "openocd",
+			"serverpath": "/opt/riscv-openocd-wch-sdi/bin/openocd",
 
-            "request": "attach",
-            "interface": "swd",
-            // CH32V307
-            "device": "CH32V307VCT6",
-            "configFiles": [
-                "ch32v307/wch-riscv.cfg"
-            ],
-            "debuggerArgs": [
-                "-d",
-                "${workspaceFolder}"
-            ],
-            "overrideAttachCommands": [
-                "set mem inaccessible-by-default off",
-                "set architecture riscv:rv32",
-                "monitor halt",
-                //"continue",
-            ],
-            "preResetCommands": [
-                "enable breakpoint",
-                "monitor reset halt",
-            ]
-       },
-       { // For linux only as of now
-            // Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
-            // REQUIRES custom-build openocd: https://github.com/Seneral/riscv-openocd-wch
-            "name": "JTAG DEBUGGING CH32V307 Config",
-            "cwd": "${workspaceFolder}",
-            "executable": "./build/configurator.elf",
+			"request": "attach",
+			"interface": "swd",
+			// CH32V307
+			"device": "CH32V307VCT6",
+			"configFiles": [
+				"ch32v307/wch-linke.cfg"
+			],
+			"debuggerArgs": [
+				"-d",
+				"${workspaceFolder}"
+			],
+			"overrideAttachCommands": [
+				"set mem inaccessible-by-default off",
+				"set architecture riscv:rv32",
+				"monitor halt",
+				//"continue",
+			],
+			"preResetCommands": [
+				"enable breakpoint",
+				"monitor reset halt",
+			]
+	   },
+	   { // For linux only as of now
+			// Extension: cortex-debug, needs OpenOCD 0.11.0+ (not on linux APT repo yet) 
+			// REQUIRES custom-build openocd for SWD WCH-Link: https://github.com/Seneral/riscv-openocd-wch/tree/wch-link-swd
+			"name": "CH32V307 SWD (WCH-Link)",
+			"cwd": "${workspaceFolder}",
+			"executable": "./build/TrackingController.elf",
 
-            // Bit of a hackery to get a ARM debugging extension to accept RISC-V
-            "type": "cortex-debug",
-            "armToolchainPath": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/",
-            "toolchainPrefix": "riscv-none-elf",
-            "servertype": "openocd",
-            "serverpath": "/opt/riscv-none-elf-gcc-xpack-12-2/bin/openocd",
+			// Bit of a hackery to get a ARM debugging extension to accept RISC-V
+			"type": "cortex-debug",
+			"armToolchainPath": "/opt/xpack-riscv-none-elf-gcc-15.2.0-1/bin/",
+			"toolchainPrefix": "riscv-none-elf",
+			"servertype": "openocd",
+			"serverpath": "/opt/riscv-openocd-wch-swd/bin/openocd",
 
-            "request": "attach",
-            "interface": "swd",
-            // CH32V307
-            "device": "CH32V307VCT6",
-            "configFiles": [
-                "ch32v307/wch-riscv.cfg"
-            ],
-            "debuggerArgs": [
-                "-d",
-                "${workspaceFolder}"
-            ],
-            "preResetCommands": [
-                "set mem inaccessible-by-default off",
-                "set architecture riscv:rv32",
-                "load",
-                "enable breakpoint",
-                "monitor reset halt",
-            ]
-       }
-    ]
+			"request": "attach",
+			"interface": "swd",
+			// CH32V307
+			"device": "CH32V307VCT6",
+			"configFiles": [
+				"ch32v307/wch-link.cfg"
+			],
+			"debuggerArgs": [
+				"-d",
+				"${workspaceFolder}"
+			],
+			"overrideAttachCommands": [
+				"set mem inaccessible-by-default off",
+				"set architecture riscv:rv32",
+				"monitor halt",
+				//"continue",
+			],
+			"preResetCommands": [
+				"enable breakpoint",
+				"monitor reset halt",
+			]
+	   }
+	]
 }

@@ -169,7 +169,7 @@ int main(void)
 	if (mcuFlashConfig == MCU_FLASH_DEBUG_SWD)
 	{ // Flash LED to signal non-standard flash config
 		rgbled_transition(LED_FLASH_DEBUG_SWD, 10);
-		delayMS(200);
+		delayMS(500);
 	}
 	rgbled_transition(LED_INITIALISING, 10);
 

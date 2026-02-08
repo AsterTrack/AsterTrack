@@ -3,5 +3,9 @@
 .codechecker
 compile_commands.json
 
-# Build systems
+# Build System Configuration
+# Can't put all path config in small files, several places in .vscode also need to be updated
+toolpath.make
+
+# Builds
 build/

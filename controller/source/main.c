@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "uart_driver.h"
 #include "usbd.h"
 #include "usbd_conf.h"
+#include "pd_driver.h"
 #include "power_control.h"
 #include "config.h"
 #include "comm/controller.h"
@@ -343,7 +344,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 					debugSending = debugTail;
 			}
 		}
-//#endif
 #endif
 
 		now = GetTimePoint();

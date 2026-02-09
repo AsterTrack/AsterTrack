@@ -110,20 +110,20 @@ void InterfaceState::UpdateMainMenuBar()
 		addWindowMenuItem(windows[WIN_INSIGHTS]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_TRACKERS]);
+		addWindowMenuItem(windows[WIN_CAMERA_CONFIGS]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_DEVICES]);
-		addWindowMenuItem(windows[WIN_CAMERA_SETTINGS]);
 		addWindowMenuItem(windows[WIN_WIRELESS]);
 		ImGui::Separator();
-		if (ImGui::BeginMenu("Parameters"))
+		if (ImGui::BeginMenu(ICON_LA_SLIDERS_H " Parameters"))
 		{
-			addWindowMenuItem(windows[WIN_SEQUENCE_PARAMS], "Sequence2D");
-			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS], "Point Calibration");
-			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS], "Target Calibration");
-			addWindowMenuItem(windows[WIN_TRACKING_PARAMS], "Tracking");
+			addWindowMenuItem(windows[WIN_SEQUENCE_PARAMS]);
+			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS]);
+			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS]);
+			addWindowMenuItem(windows[WIN_TRACKING_PARAMS]);
 			ImGui::EndMenu();
 		}
-		if (ImGui::BeginMenu("Tools"))
+		if (ImGui::BeginMenu(ICON_LA_TOOLS " Tools"))
 		{
 			addWindowMenuItem(windows[WIN_LENS_SELECTION_TOOL]);
 			ImGui::EndMenu();

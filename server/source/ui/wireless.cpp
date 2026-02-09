@@ -42,6 +42,8 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::Text("wpa_supplicant.conf not configured");
 			else
 				ImGui::Text("wpa_supplicant.conf configured");
+			ImGui::SetItemTooltip("You need to set the wireless credentials only when\n"
+				"setting up a new camera or updating the credentials of an existing camera.");
 
 			SameLineTrailing(SizeWidthDiv3().x); 
 			if (ImGui::Button("Edit", SizeWidthDiv3()))
@@ -60,8 +62,9 @@ UpdateWirelessSetup(InterfaceWindow &window)
 
 			if (wpa_supplicant_edit.size() > 2000)
 			{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE (1/2)
-				ImGui::Text("Length of %ld is over limit of 2000!", wpa_supplicant_edit.size());
+				ImGui::TextWrapped("Length of %ld is over limit of 2000!", wpa_supplicant_edit.size());
 			}
+			ImGui::TextWrapped("Remember to 'Apply Config' to make cameras store new credentials, and 'Clear Credentials' to make them delete it!");
 
 			if (ImGui::Button("Cancel", SizeWidthDiv3()))
 			{
@@ -72,12 +75,19 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			{
 				state.wpa_supplicant_conf.clear();
 				wpa_supplicant_edit.clear();
+				// Just deletes local copy, don't clear wireless credentials from cameras
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Accept", SizeWidthDiv3()))
 			{
 				state.wpa_supplicant_conf = wpa_supplicant_edit;
 				wpa_supplicant_edit.clear();
+				// Update cameras with new wireless credentials, but don't make them store it automatically
+				for (auto &camera : state.cameras)
+				{
+					if (camera->config.wireless.setConfig & WIRELESS_CONFIG_WIFI)
+						CameraUpdateWireless(state, *camera);
+				}
 			}
 		}
 	}
@@ -85,31 +95,46 @@ UpdateWirelessSetup(InterfaceWindow &window)
 	if (ImGui::CollapsingHeader("Server Config"))
 	{
 		ImGui::InputText("Server Host", &state.server.host);
+		bool update = ImGui::IsItemDeactivatedAfterEdit();
+		if (!state.server.portUsed.empty())
+		{ // Require explicit action when server is running
+			SameLineTrailing(ImGui::GetFrameHeight());
+			update = ImGui::ArrowButton("UpdateHost", ImGuiDir_Right);
+			ImGui::SetItemTooltip("Send the host name to all cameras set up to connect to the server.");
+		}
+		if (update)
+		{
+			for (auto &camera : state.cameras)
+			{
+				if (camera->config.wireless.lastConfig & WIRELESS_CONFIG_SERVER)
+					CameraUpdateWireless(state, *camera);
+			}
+		}
+
 		ImGui::InputText("Server Port", &state.server.portSet);
 		if (!state.server.portUsed.empty())
-		{
-			ImGui::AlignTextToFramePadding();
-			ImGui::Text("Server is running on port %s", state.server.portUsed.c_str());
-			if (state.server.portSet != state.server.portUsed)
+		{ // Give option to restart server with new port
+			SameLineTrailing(ImGui::GetFrameHeight());
+			ImGui::BeginDisabled(state.server.portSet == state.server.portUsed);
+			if (RetryButton("RestartServer"))
 			{
-				SameLineTrailing(ImGui::GetFrameHeight());
-				if (RetryButton("RestartServer"))
+				// Cheating a bit. Updating portUsed before restarting the server so we can notify cameras of the new port using the old server
+				state.server.portUsed = state.server.portSet;
+				for (auto &camera : state.cameras)
 				{
-					// Cheating a bit. Updating portUsed before restarting the server so we can notify cameras of the new port using the old server
-					state.server.portUsed = state.server.portSet;
-					for (auto &camera : state.cameras)
+					if (camera->config.wireless.lastConfig & WIRELESS_CONFIG_SERVER)
 					{
-						if (camera->config.wireless.lastConfig & WIRELESS_CONFIG_SERVER)
-						{
-							camera->config.wireless.setConfig = camera->config.wireless.lastConfig;
-							CameraUpdateWireless(state, *camera);
-						}
+						camera->config.wireless.setConfig = camera->config.wireless.lastConfig;
+						CameraUpdateWireless(state, *camera);
 					}
-					StopWirelessServer(state);
-					StartWirelessServer(state);
 				}
-				ImGui::SetItemTooltip("Restart the server on the new port.\nTries to communicate new port to currently connected cameras.");
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				StopWirelessServer(state);
+				StartWirelessServer(state);
 			}
+			ImGui::SetItemTooltip("Restart the server on the new port (currently on %s).\nTries to communicate new port to currently connected cameras.",
+				state.server.portUsed.c_str());
+			ImGui::EndDisabled();
 		}
 	}
 
@@ -118,13 +143,13 @@ UpdateWirelessSetup(InterfaceWindow &window)
 	if (ImGui::BeginTable("WirelessCameras", 7,
 		ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 	{
-		ImGui::TableSetupColumn("##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
-		ImGui::TableSetupColumn("##SSH", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
-		ImGui::TableSetupColumn("##Server", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
-		ImGui::TableSetupColumn("##RTData", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
+		ImGui::TableSetupColumn(ICON_LA_WIFI "##Wifi", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
+		ImGui::TableSetupColumn(ICON_LA_ALIGN_LEFT "##SSH", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
+		ImGui::TableSetupColumn(ICON_LA_SERVER "##Server", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
+		ImGui::TableSetupColumn(ICON_LA_EXCHANGE_ALT "##RTData", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
 		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthStretch, 1);
 		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 1);
-		ImGui::TableSetupColumn("##Actions", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
+		ImGui::TableSetupColumn(ICON_LA_ELLIPSIS_V "##Actions", ImGuiTableColumnFlags_WidthFixed, iconSize().x);
 
 		auto toggleAllConfigFlags = [&](WirelessConfig flag)
 		{
@@ -241,23 +266,18 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::EndTooltip();
 			}
 		};
-		auto actionDropdown = [&state](int cameraID)
+
+		static WirelessAction confirmAction = WIRELESS_ACTION_NONE;
+		static int confirmCamera = 0;
+		ImGuiID confirmPopup = ImGui::GetID("ConfirmAction");
+		auto actionConfirm = [&](int cameraID, WirelessAction action)
 		{
-			WirelessAction action = WIRELESS_ACTION_NONE;
-			if (ImGui::MenuItem("Apply Config"))
-				action = WIRELESS_STORE_CONFIG;
-			ImGui::SetItemTooltip("Applies the current config to storage. \nWARNING: This will not delete any wifi credentials stored on the camera, even if you disable wifi.\n");
-			if (ImGui::MenuItem("Clear Credentials"))
-				action = WIRELESS_CLEAR_CREDS;
-			ImGui::SetItemTooltip("Removes any wifi credentials stored on the camera.");
-			if (ImGui::MenuItem("Disallow Wifi Permanently"))
-				action = WIRELESS_DISALLOW_WIFI_PERMANENTLY;
-			ImGui::SetItemTooltip("Disallows Wifi from being enabled on this camera.\nTo undo, you need physical access to the cameras storage (or upload firmware that bypasses this).");
-			if (ImGui::MenuItem("Disallow SSH Permanently"))
-				action = WIRELESS_DISALLOW_SSH_PERMANENTLY;
-			ImGui::SetItemTooltip("Disallows SSH from being enabled on this camera.\nTo undo, you need physical access to the cameras storage (or upload firmware that bypasses this).");
-			if (action == WIRELESS_ACTION_NONE)
-				return;
+			confirmAction = action;
+			confirmCamera = cameraID;
+			ImGui::OpenPopup(confirmPopup);
+		};
+		auto actionPerform = [&](int cameraID, WirelessAction action)
+		{
 			for (auto &camera : state.cameras)
 			{
 				if (cameraID != 0 && camera->id != cameraID) continue;
@@ -266,7 +286,25 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				CameraUpdateWireless(state, *camera, action);
 			}
 		};
-	
+		auto actionDropdown = [&](int cameraID)
+		{
+			if (ImGui::MenuItem("Apply Config"))
+				actionPerform(cameraID, WIRELESS_STORE_CONFIG);
+			ImGui::SetItemTooltip("Applies the current config to storage (including credentials if necessary).\n"
+				"WARNING: This will not delete any wifi credentials stored on the camera.\n");
+			if (ImGui::MenuItem("Clear Credentials"))
+				actionPerform(cameraID, WIRELESS_CLEAR_CREDS);
+			ImGui::SetItemTooltip("Removes any wifi credentials stored on the camera.");
+			if (ImGui::MenuItem("Disable Wifi Permanently"))
+				actionConfirm(cameraID, WIRELESS_DISALLOW_WIFI_PERMANENTLY);
+			ImGui::SetItemTooltip("Permanently prevent Wifi from being enabled on this camera.\n"
+				"To undo, you need physical access to the cameras storage\n(or upload firmware that bypasses this).");
+			if (ImGui::MenuItem("Disable SSH Permanently"))
+				actionConfirm(cameraID, WIRELESS_DISALLOW_SSH_PERMANENTLY);
+			ImGui::SetItemTooltip("Permanently prevent SSH from being enabled on this camera.\n"
+				"To undo, you need physical access to the cameras storage\n(or upload firmware that bypasses this).");
+		};
+
 		// Draw headers automatically
 		//ImGui::TableHeadersRow();
 		{ // Draw headers manually with icons and interaction to toggle columns as a whole
@@ -385,6 +423,27 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			}
 		}
 		ImGui::EndTable();
+
+		if (BeginPopup(confirmPopup))
+		{
+			if (confirmAction == WIRELESS_DISALLOW_WIFI_PERMANENTLY)
+				ImGui::Text("Are you sure you want to permanently prevent Wifi from being enabled on this camera?\n"
+					"To undo, you need physical access to the cameras storage\n(or upload firmware that bypasses this).");
+			else if (confirmAction == WIRELESS_DISALLOW_SSH_PERMANENTLY)
+				ImGui::Text("Are you sure you want to permanently prevent SSH from being enabled on this camera?\n"
+					"To undo, you need physical access to the cameras storage\n(or upload firmware that bypasses this).");
+			else
+			 	ImGui::CloseCurrentPopup();
+			if (ImGui::Button("Disable Permanently", SizeWidthDiv2()))
+			{
+				actionPerform(confirmCamera, confirmAction);
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", SizeWidthDiv2()))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
 	}
 
 	ImGui::End();

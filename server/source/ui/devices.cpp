@@ -111,7 +111,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::SameLine();
 
 		// Information Popup
-		const ImGuiID infoPopupID = ImGui::GetCurrentWindowRead()->GetID("##InfoPopup");
+		const ImGuiID infoPopupID = ImGui::GetID("##InfoPopup");
 		if (InlineIconButton(ICON_LA_INFO_CIRCLE))
 			ImGui::OpenPopup(infoPopupID);
 		if (ImGui::BeginComboPopup(infoPopupID, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()),
@@ -206,8 +206,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				return asprintf_s("%s", state.cameraConfig.configurations[index].label.c_str());
 			};
 			int index = state.cameraConfig.getCameraConfigIndex(camera.id);
-			const ImGuiID popupID = ImGui::GetCurrentWindowRead()->GetID("##ConfigPopup");
-			/* if (ImGui::Selectable(asprintf_s("%s##config", getConfigLabel(index).c_str()).c_str()))
+			/* const ImGuiID popupID = ImGui::GetID("##ConfigPopup");
+			if (ImGui::Selectable(asprintf_s("%s##config", getConfigLabel(index).c_str()).c_str()))
 			{
 				ImGui::OpenPopup(popupID);
 			}
@@ -595,15 +595,15 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		for (auto &camera : state.cameras)
 		{
 			if (camera->selectedForFirmware)
-				ImGui::Text("Camera #%u selected to update", camera->id);
+				ImGui::TextWrapped("Camera #%u selected to update", camera->id);
 		}
 		if (!anySelected)
 		{
-			ImGui::Text("Select cameras to update (" ICON_LA_DOWNLOAD ")!");
+			ImGui::TextWrapped(ICON_LA_DOWNLOAD " to select cameras to update");
 		}
 
 		ImGui::BeginDisabled(!anySelected);
-		if (ImGui::Button("Flash", SizeWidthFull()))
+		if (ImGui::Button("Flash Cameras", SizeWidthFull()))
 		{
 			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
 			for (auto &camera : state.cameras)
@@ -723,22 +723,24 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		}
 		else
 		{
-			if (ImGui::Button("Flash Controller in Bootloader", SizeWidthFull()))
+			ImGui::TextWrapped("Hold 'Flash' button on controller to enter bootloader");
+
+			if (ImGui::Button("Flash Controller", SizeWidthFull()))
 			{
 				controllerFWUpdateState = ControllerFlashFirmwareFile(nullptr, firmwareFile);
 			}
 			ImGui::SetItemTooltip("The controller already has to be running the bootloader, appearing as a WinChipHead USB device.\n"
-				"To get a controller to reboot into the bootloader, hold the 'Flash' button (middle) for one second.");
+				"To get a controller to reboot into the bootloader, hold the middle 'Flash' button for half a second.");
 			
 #if defined(_WIN32)
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.5f, 0.25f, 1.0f));
-			bool show = ImGui::TreeNode("Installing Drivers On Windows");
+			bool show = ImGui::TreeNode("Installing Bootloader Drivers " ICON_LA_EXCLAMATION_CIRCLE);
 			ImGui::PopStyleColor();
 			if (show)
 			{
 				ImGui::TextWrapped("The bootloader does not support Windows by itself and needs a driver to be assigned. "
 					"To do so, download Zadig and follow these steps:\n"
-					"Reboot the controller into bootloader by holding the 'Flash' button (middle) for one second.\n"
+					"Reboot the controller into bootloader by holding the middle 'Flash' button for half a second.\n"
 					"Select the device in Zadig, select WinUSB as the driver, and hit 'Install WCID driver'!\n"
 					"After that, it should appear as WinChipHead in Windows, and you should be able to flash it from here. "
 					"A custom flashing method not using the built-in bootloader is on the roadmap to make updating easier.");
@@ -801,7 +803,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::Unindent();
 		}
 		if (state.mode == MODE_Device && !hasIMUDevices)
-			ImGui::Text("No IMU Devices or Receivers connected!");
+			ImGui::TextWrapped("No IMU Devices or Receivers connected!");
 
 		EndCollapsingRegion();
 	}

@@ -70,10 +70,12 @@ inline bool SliderInput(const char *label, Scalar *value, Scalar min, Scalar max
 	return SliderInputN<Scalar>(label, value, (Scalar*)nullptr, min, max, editFactor, fmt);
 }
 
-bool BeginIconDropdown(const char *id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags);
+bool BeginIconDropdown(const char *str_id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags);
 
-bool BeginInteractiveItemTooltip(const char* text_id = "");
+bool BeginInteractiveItemTooltip(const char* str_id = "");
 void EndInteractiveItemTooltip();
+
+bool BeginPopup(const ImGuiID id, ImGuiWindowFlags flags = 0);
 
 /**
  * Adds an interactable background item that other items can overlap with

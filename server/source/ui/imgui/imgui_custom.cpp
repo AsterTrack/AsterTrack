@@ -358,10 +358,10 @@ template bool ScalarInputN(const char *label, const char *unit, float *value, fl
 template bool SliderInputN(const char *label, int *value, int *value2, int min, int max, int editFactor, const char *fmt);
 template bool SliderInputN(const char *label, float *value, float *value2, float min, float max, float editFactor, const char *fmt);
 
-bool BeginIconDropdown(const char *id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags)
+bool BeginIconDropdown(const char *str_id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags)
 {
-	ImGui::PushID(id);
-	const ImGuiID popupID = ImGui::GetCurrentWindowRead()->GetID("ctx");
+	ImGui::PushID(str_id);
+	const ImGuiID popupID = ImGui::GetID("ctx");
 	if (ImGui::ImageButton("btn", iconTex, iconSize))
 		ImGui::OpenPopup(popupID);
 	ImGui::PopID();
@@ -370,7 +370,7 @@ bool BeginIconDropdown(const char *id, ImTextureID iconTex, ImVec2 iconSize, ImG
 	return open;
 }
 
-bool BeginInteractiveItemTooltip(const char* text_id)
+bool BeginInteractiveItemTooltip(const char* str_id)
 {
 	using namespace ImGui;
 	ImGuiContext& g = *GImGui;
@@ -383,7 +383,7 @@ bool BeginInteractiveItemTooltip(const char* text_id)
 
 	ImGuiID id = g.LastItemData.ID;
 	if (id == 0)
-		id = g.CurrentWindow->GetID(text_id);
+		id = g.CurrentWindow->GetID(str_id);
 	bool input_mode_is_nav = g.NavHighlightItemUnderNav && g.NavCursorVisible;
 
 	if (InteractiveTooltipCloseID != 0 && (g.NavJustMovedToId == InteractiveTooltipCloseID || !input_mode_is_nav))
@@ -447,4 +447,16 @@ void EndInteractiveItemTooltip()
 {
 	using namespace ImGui;
 	End();
+}
+
+bool BeginPopup(const ImGuiID id, ImGuiWindowFlags flags)
+{ // Default BeginPopup only takes str_id, but that makes nested calling harder, so this is just a copy using ImGuiID
+	ImGuiContext& g = *GImGui;
+	if (g.OpenPopupStack.Size <= g.BeginPopupStack.Size) // Early out for performance
+	{
+		g.NextWindowData.ClearFlags(); // We behave like Begin() and need to consume those values
+		return false;
+	}
+	flags |= ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
+	return ImGui::BeginPopupEx(id, flags);
 }

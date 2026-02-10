@@ -1009,7 +1009,7 @@ int main(int argc, char **argv)
 
 				// Update frameID with advanced frames
 				float expFrameIntervals = newInterval / expInterval;
-				float expAdvance = (int)(expFrameIntervals+0.2f);
+				int expAdvance = (int)(expFrameIntervals+0.2f);
 				bool likelyDropped = std::abs(expFrameIntervals - obsAdvance) > 1;
 				if (likelyDropped)
 				{
@@ -1136,6 +1136,12 @@ int main(int argc, char **argv)
 					float advInterval = (expInterval*expWeight + newInterval*newWeight + avg) / (expWeight + avgWeight + newWeight);
 					avgInterval = (avg + newInterval)/(avgWeight+1);
 					time_frameRecv += std::chrono::microseconds((int)(advInterval * 1000));
+				}
+				else if (std::abs(advanceFrames-expAdvance) > 1)
+				{
+					time_frameRecv = time_cur;
+					printf("Received frame interval is WAY off from expectation at %.2fms, average %.2fms, expected %.2fms! Adopting new rythm.\n",
+						newInterval, avgInterval, expInterval);
 				}
 				else
 				{ // Advance SOF prediction, too different to use for update

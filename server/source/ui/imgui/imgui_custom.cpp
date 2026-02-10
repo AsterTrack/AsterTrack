@@ -55,6 +55,9 @@ ImU32 tintStyle(ImGuiCol base, ImVec4 tint)
 template<typename Scalar>
 bool scalarUnchanged(Scalar a, Scalar b, int factor = 1)
 {
+	static_assert(std::is_scalar_v<Scalar>);
+	if constexpr (std::is_integral_v<Scalar>)
+		return a == b;
 	Scalar min_a = a - (a - std::nextafter(a, std::numeric_limits<Scalar>::lowest())) * factor;
 	Scalar max_a = a + (std::nextafter(a, std::numeric_limits<Scalar>::max()) - a) * factor;
 	return min_a <= b && max_a >= b;

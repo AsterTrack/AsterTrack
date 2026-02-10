@@ -123,8 +123,6 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	if (!recordEntries.calib.empty())
 	{ // Parse calibrations
 		auto error = parseCameraCalibrations(recordEntries.calib, cameraCalibs);
-		for (int c = 0; c < cameraCalibs.size(); c++)
-			cameraCalibs[c].index += prevCams;
 		if (error && error->code != ENOENT) return error;
 	}
 
@@ -140,13 +138,13 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 			state.pipeline.record.imus.push_back(std::move(imu));
 		}
 		if (separate)
-		{
-			// Ensure newly added cameras have a unique ID
+		{ // Ensure newly added cameras have a unique ID
 			for (int c = prevCams; c < cameras.size(); c++)
 			{
 				for (int cc = 0; cc < cameras.size(); cc++)
 				{
 					if (cameras[c].ID != cameras[cc].ID) continue;
+					// Found this camera in the existing replay
 					int newID = rand();
 					bool found = false;
 					for (auto &calib : cameraCalibs)

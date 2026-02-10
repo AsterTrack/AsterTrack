@@ -24,6 +24,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/debugging.hpp" // Provide controls here, even if it's not technically restricted to simulation mode
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
+#include <filesystem>
+
 static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, FrameNum num)
 {
 	{ // Try current record
@@ -291,35 +296,54 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					if (section.forceSave || ImGui::Button("Save", ImVec2(ImGui::GetColumnWidth(2), 0)))
 					{
 						// Find path
-						int saveIndex = findHighestFileEnumeration("dump", "%d_capture", ".json")+1;
-						section.path = asprintf_s("dump/%d_capture.json", saveIndex);
+						section.index = findHighestFileEnumeration("dump", "%d_capture", ".json")+1;
+						section.path = asprintf_s("dump/%d_capture.json", section.index);
 						// Occupy path now to prevent next save from using same path
 						touchFile(section.path);
 						// Perform write in a separate thread to prevent blocking UI
-						// TODO: Memory Leak. Thread never joined
-						new std::thread([](InterfaceState::RecordedSections section)
+						threadPool.push([](int, InterfaceState::RecordedSections section)
 						{
 							PipelineState &pipeline = GetState().pipeline;
-							// Copy camera ids
+							// Copy ids and calibs of involved cameras
 							std::vector<CameraConfigRecord> cameras;
+							std::vector<CameraCalib> calibs;
 							for (auto &cam : pipeline.cameras)
+							{
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
+								calibs.push_back(cam->calib);
+							}
 							{ // Verify frames are available
 								auto framesRecord = pipeline.record.frames.getView();
 								if (framesRecord.endIndex() < section.end)
-								{ // Already deleted
+								{ // Already deleted in full (index was reset - section should not have survived that)
 									SignalErrorToUser("The section to be saved has already been deleted internally!");
+									return;
+								}
+								if (framesRecord.beginIndex() > section.end)
+								{ // Already deleted in full (likely culled, ideally should not happen but not protection yet)
+									SignalErrorToUser("The section to be saved has already been culled from memory!");
 									return;
 								}
 								if (framesRecord.beginIndex() > section.begin)
 								{ // Already culled (partially)
-									SignalErrorToUser("The section to be saved has already been partially cleared!");
+									SignalErrorToUser("The section to be saved has already been partially culled! Saving the rest.");
 								}
 							}
 							// Write to path
 							auto error = dumpRecording(section.path, cameras, pipeline.record, section.begin, section.end);
-							if (error) SignalErrorToUser(error.value());
-							else error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
+							if (error)
+							{
+								SignalErrorToUser(error.value());
+								std::filesystem::remove(section.path); // Clear occupied path
+							}
+							else
+							{
+								error = dumpTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
+								if (error) SignalErrorToUser(error.value());
+								error = storeCameraCalibrations(asprintf_s("dump/%d_calib.json", section.index), calibs);
+								if (error) SignalErrorToUser(error.value());
+							}
+
 							for (auto &s : GetUI().recordSections)
 							{
 								if (s.begin != section.begin || s.end != section.end) continue;

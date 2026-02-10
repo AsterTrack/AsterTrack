@@ -1284,6 +1284,9 @@ std::optional<ErrorMessage> dumpTrackingResults(std::string &path, const Trackin
 	for (int tgtID : targetIDs)
 		jsRecords["trackers"].push_back(tgtID);
 
+	if (targetIDs.empty() || jsFrames.empty())
+		return std::nullopt; // Nothing to save, no error
+
 	return writeJSON(path, file);
 }
 

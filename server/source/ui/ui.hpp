@@ -373,6 +373,7 @@ public:
 	{
 		FrameNum begin, end;
 		bool forceSave, saved;
+		int index;
 		std::string path;
 
 		// For MSVC...

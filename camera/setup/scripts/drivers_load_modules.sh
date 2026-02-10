@@ -13,20 +13,20 @@ for DRIVER in $CUSTOM_DRIVERS; do
 	fi
 
 	# Move drivers into appropriate directory
-	mkdir -p $DRIVER_TGT
-	cp "$DRIVER_SRC/$DRIVER" $DRIVER_TGT
+	sudo mkdir -p $DRIVER_TGT
+	sudo cp "$DRIVER_SRC/$DRIVER" $DRIVER_TGT
 
 done
 
 echo "Registering drivers..."
 
 # Update modules.dep to replace/add drivers
-depmod $(uname -r)
+sudo depmod $(uname -r)
 
 echo "Loading drivers..."
 
 for DRIVER in $LOAD_DRIVERS; do
-	modprobe $DRIVER
+	sudo modprobe $DRIVER
 done
 
 

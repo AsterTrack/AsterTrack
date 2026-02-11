@@ -328,6 +328,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (ImGui::ImageButton("DetachView", darkModeIcons.detach, iconSize()))
 		{
 			view.isDetached = true;
+			view.isIntendedFocus = true;
 			cameraGridDirty = true;
 		}
 		ImGui::SameLine();
@@ -336,6 +337,12 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			ImGui::Text("#%u (%d)", view.camera->id, view.camera->pipeline->index);
 		else
 			ImGui::Text("#%u", view.camera->id);
+		ImGui::SameLine();
+	}
+	else
+	{
+		if (ImGui::ImageButton("MaxView", darkModeIcons.detach, iconSize()))
+			view.isIntendedFocus = true;
 		ImGui::SameLine();
 	}
 

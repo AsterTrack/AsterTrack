@@ -70,7 +70,7 @@ void InterfaceState::UpdateCameras()
 			{
 				ImGuiWindow* imguiWindow = ImGui::FindWindowByName(view->second.ImGuiTitle.c_str());
 				if (imguiWindow)
-					ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, 0);
+					ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, false);
 				ImGui::SetTabItemClosed(view->second.ImGuiTitle.c_str());
 			}
 			view = cameraViews.erase(view);
@@ -190,7 +190,7 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 static void ConstrainWindowAspect(ImGuiSizeCallbackData* data)
 {
 	float aspect = *(float*)data->UserData;
-	float base = std::max(400.0f, (data->DesiredSize.x+data->DesiredSize.y/aspect)/2);
+	float base = std::max(100.0f, (data->DesiredSize.x+data->DesiredSize.y/aspect)/2);
 	// TODO: Fix slow drifting while resizing detached camera view, not sure why it happens
 	//if (std::abs(data->CurrentSize.x-base) > 0.5f || std::abs(data->CurrentSize.y-base*aspect) > 0.5f)
 	data->DesiredSize = ImVec2(base, base * aspect);
@@ -222,9 +222,21 @@ void InterfaceState::UpdateDetachedCameraView(CameraView &view)
 		}
 	}
 
+	// Enforce window aspect
 	float aspect = (float)view.camera->pipeline->mode.aspect;
 	ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX),
 		ConstrainWindowAspect, (void*)&aspect);
+
+	// Set initial windows size depending on whether we're just detaching or being instructed to focus on the camera externally (e.g. a button press)
+	ImGuiCond cond = view.isIntendedFocus? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+	ImVec2 workSize = ImGui::GetWindowViewport()->WorkSize;
+	ImVec2 size = workSize - SizeFrame(); // Leave some space to recognise it's a floating window
+	float base = std::max(100.0f, std::min(size.x, size.y/aspect));
+	size = ImVec2(base, base * aspect); // Constrain to aspect ratio
+	// Center floating window within viewport
+	ImVec2 pos = ImGui::GetWindowViewport()->WorkPos + (workSize-size) / 2; 
+	ImGui::SetNextWindowPos(pos, cond);
+	ImGui::SetNextWindowSize(size, cond);
 
 	std::string label = asprintf_s("%s###Detached Camera %d", view.ImGuiTitle.c_str(), view.detachedIndex);
 	if (ImGui::Begin(label.c_str(), &view.isDetached, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
@@ -237,6 +249,8 @@ void InterfaceState::UpdateDetachedCameraView(CameraView &view)
 	}
 	if (!view.isDetached)
 		cameraGridDirty = true;
+	if (view.isIntendedFocus && ImGui::GetCurrentWindowRead()->ResizeBorderHeld != -1)
+		view.isIntendedFocus = false;
 	ImGui::End();
 }
 

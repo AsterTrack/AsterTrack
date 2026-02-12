@@ -32,6 +32,7 @@ set(SERVER
 	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp
 	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp
 	tracking/cluster.cpp tracking/tracking.cpp
+	util/impl.cpp
 )
 set(SERVER_SHARED
 	util/timesync.cpp

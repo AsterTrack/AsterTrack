@@ -113,6 +113,8 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 			view->planned = false;
 			view->control.init();
 			view->control.thread = new std::thread(ThreadTargetViewReconstruction, &pipeline, view);
+			// Lower priority since we might be adding a LOT of these
+			SetThreadPriority(*view->control.thread, -2);
 			SignalPipelineUpdate();
 		}
 	}

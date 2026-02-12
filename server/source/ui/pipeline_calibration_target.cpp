@@ -184,7 +184,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 	{
 		ImGui::TableSetupScrollFreeze(0, 1); // Fix top row even with scrolling
 		ImGui::TableSetupColumn("##Selection", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
-		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight()*1.5f);
 		ImGui::TableSetupColumn("Markers");
 		ImGui::TableSetupColumn("Samples");
 		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultSort | ImGuiTableColumnFlags_PreferSortAscending, 2.0f);
@@ -295,7 +295,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			bool select = visState.targetCalib.view == viewPtr;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				if (visState.resetVisTarget())
+				if (visState.targetCalib.view == viewPtr)
+					visState.resetVisTarget();
+				else if (visState.resetVisTarget())
 				{
 					visState.targetCalib.view = viewPtr;
 					visState.updateVisTarget();
@@ -1020,7 +1022,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			bool select = visState.targetCalib.stage == stages_lock->at(i);
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{ // Switch target calib vis to stage
-				if (visState.resetVisTarget() && !stage.base.target.frames.empty())
+				if (visState.targetCalib.stage == stages_lock->at(i))
+					visState.resetVisTarget();
+				else if (visState.resetVisTarget() && !stage.base.target.frames.empty())
 				{
 					visState.targetCalib.stage = stages_lock->at(i);
 					visState.updateVisTarget();

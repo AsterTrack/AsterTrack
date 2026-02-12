@@ -503,7 +503,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		} */
 	}
 
-	EndCollapsingRegion();
+	if (sectionTargetViews)
+		EndCollapsingRegion();
 
 	bool sectionTargetAssembly = BeginCollapsingRegion("Target Assembly (?)", ImGuiTreeNodeFlags_DefaultOpen);
 	ImGui::SetItemTooltip("Individual TargetViews are an incomplete, error-prone view of a target.\n"
@@ -1179,7 +1180,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		EndCollapsingRegion();
 	}
 
-	EndCollapsingRegion();
+	if (sectionTargetAssembly)
+		EndCollapsingRegion();
 
 	ImGui::PopStyleColor();
 }

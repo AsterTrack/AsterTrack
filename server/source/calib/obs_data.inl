@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * Adds triangulated points of the current frame to the point database.
  */
-void addTriangulations(ObsPointData &data, const std::vector<TriangulatedPoint> &triPoints, int frame);
+void addTriangulations(ObsPointData &data, const std::vector<TriangulatedPoint> &triPoints, FrameNum frame);
 
 #endif
 
@@ -35,7 +35,7 @@ void addTriangulations(ObsPointData &data, const std::vector<TriangulatedPoint> 
 /**
  * Adds triangulatable points in the frame range to the point database.
  */
-void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerSequences> &observations, int frameStart = 0, int frameEnd = std::numeric_limits<int>::max());
+void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerSequences> &observations, FrameNum frameStart = 0, FrameNum frameEnd = std::numeric_limits<FrameNum>::max());
 
 /**
  * Fill target observation database with observations from existing frames and markers (specified by target.frames and target.markerMap)
@@ -45,7 +45,7 @@ void updateTargetObservations(ObsTarget &target, const std::vector<MarkerSequenc
 /**
  * Fill target observation database with observations from given frames and markers (specified by target.markerMap)
  */
-void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences> &observations, const std::vector<int> frames);
+void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences> &observations, const std::vector<FrameNum> frames);
 
 #endif
 
@@ -55,7 +55,7 @@ void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences>
  * Adds observations of a target for the current frame
  * Used for iterative addition of tracked targets
  */
-void addTrackedTarget(ObsData &data, const TargetMatch2D &observations, const std::vector<std::vector<Eigen::Vector2f>*> &points2D, std::size_t frame);
+void addTrackedTarget(ObsData &data, const TargetMatch2D &observations, const std::vector<std::vector<Eigen::Vector2f>*> &points2D, FrameNum frame);
 
 #endif
 

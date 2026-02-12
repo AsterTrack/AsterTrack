@@ -66,6 +66,8 @@ void prepareBlock(const SequenceData &sequences, FrameNum blockBegin, FrameNum b
 			{
 				first = std::min(first, begin.frame());
 				last = std::max(last, std::prev(end).frame());
+				assert(begin.frame() < std::prev(end).frame());
+				assert(first >= blockBegin);
 				assert(last < blockEnd);
 			}
 			for (auto cur = begin; cur < end; cur++)
@@ -78,7 +80,6 @@ void prepareBlock(const SequenceData &sequences, FrameNum blockBegin, FrameNum b
 		if (markers2D > params.minMarkerObsCount*1.5)
 		{ // Filter markers first
 			markers[m] = markers2D;
-			assert(blockBegin <= first);
 			for (int f = first-blockBegin; f < last+1-blockBegin; f++)
 				sharedMarkers[f]++;
 		}
@@ -356,7 +357,7 @@ bool finaliseTargetViewAquisitionRange(const SequenceData &sequences, TargetView
 	}
 
 	// Setup frames
-	std::vector<int> frames;
+	std::vector<FrameNum> frames;
 	frames.reserve(framesObsCnt.size());
 	for (int f = 0; f < framesObsCnt.size(); f++)
 		if (framesObsCnt[f] > params.minFrameObsCount && sharedMarkerCnt[f] > params.minSharedMarkerCount)

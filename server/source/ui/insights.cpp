@@ -261,7 +261,7 @@ public:
 		for (int i = 0; i < sequence.markers.size(); i++)
 		{
 			auto frameRange = sequence.markers[i].getFrameRange();
-			int frameCount = frameRange.second - frameRange.first;
+			std::size_t frameCount = frameRange.second - frameRange.first;
 			//std::vector<MarkerSequences> markerSeq(camCount);
 			auto &marker = m_markers[i];
 			marker.index = i;

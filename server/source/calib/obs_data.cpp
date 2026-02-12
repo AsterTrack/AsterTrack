@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /**
  * Adds triangulatable points in the frame range to the point database.
  */
-void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerSequences> &observations, int frameStart, int frameEnd)
+void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerSequences> &observations, FrameNum frameStart, FrameNum frameEnd)
 {
 	// TODO: Ability to pass only relevant markers
 	int obsAdded = 0;
@@ -109,7 +109,7 @@ void updateTargetObservations(ObsTarget &target, const std::vector<MarkerSequenc
 /**
  * Fill target observation database with observations from given frames and markers (specified by target.markerMap)
  */
-void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences> &observations, const std::vector<int> frames)
+void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences> &observations, const std::vector<FrameNum> frames)
 {
 	if (target.markerMap.empty())
 		return;
@@ -117,7 +117,7 @@ void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences>
 	target.frames.clear();
 	target.frames.resize(frames.size());
 	for (int f = 0; f < frames.size(); f++)
-		target.frames[f].frame = (uint32_t)frames[f];
+		target.frames[f].frame = (FrameNum)frames[f];
 	updateTargetObservations(target, observations);
 }
 
@@ -125,9 +125,9 @@ void addTargetObservations(ObsTarget &target, const std::vector<MarkerSequences>
  * Adds observations of a target for the current frame
  * Used for iterative addition of tracked targets
  */
-void addTrackedTarget(ObsData &data, const TargetMatch2D &observations, const std::vector<std::vector<Eigen::Vector2f>*> &points2D, std::size_t frame);
+void addTrackedTarget(ObsData &data, const TargetMatch2D &observations, const std::vector<std::vector<Eigen::Vector2f>*> &points2D, FrameNum frame);
 
 /**
  * Adds triangulatable points of the current frame to the point database.
  */
-void addTriangulations(ObsData &data, const std::vector<TriangulatedPoint> &triPoints, int frame);
+void addTriangulations(ObsData &data, const std::vector<TriangulatedPoint> &triPoints, FrameNum frame);

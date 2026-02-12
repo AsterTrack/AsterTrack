@@ -144,13 +144,14 @@ inline std::pair<int, float> MarkerSequences::resolveGTMarker() const
 
 inline std::pair<FrameNum,FrameNum> MarkerSequences::getFrameRange() const
 {
-	std::pair<FrameNum,FrameNum> range = { std::numeric_limits<int>::max(), std::numeric_limits<int>::lowest() };
+	std::pair<FrameNum,FrameNum> range = { std::numeric_limits<FrameNum>::max(), std::numeric_limits<FrameNum>::lowest() };
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		if (cameras[c].sequences.empty()) continue;
 		range.first = std::min(range.first, cameras[c].sequences.front().startFrame);
 		range.second = std::max(range.second, cameras[c].sequences.back().endFrame());
 	}
+	assert(range.first < range.second); // MarkerSequences should always have data
 	return range;
 }
 
@@ -162,47 +163,46 @@ class CameraSequences::const_iterator {
 private:
 	CameraSequences *base;
 public:
-	std::size_t seq, index;
+	int seq, index;
 
-	const_iterator(const CameraSequences &obs, std::size_t Seq, std::size_t Index)
+	const_iterator(const CameraSequences &obs, int Seq, int Index)
 	{
 		base = (CameraSequences*)&obs;
 		seq = Seq;
 		index = Index;
 	}
+	const_iterator& operator--() { return operator+=(-1); }
 	const_iterator& operator++() { return operator+=(1); }
-	const_iterator operator++(int) { const_iterator retval = *this; operator++(); return retval; }
-	const_iterator& operator--() { return operator-=(1); }
-	const_iterator operator--(int) { const_iterator retval = *this; operator--(); return retval; }
+	const_iterator operator--(int) { const_iterator retval = *this; operator+=(-1); return retval; }
+	const_iterator operator++(int) { const_iterator retval = *this; operator+=(1); return retval; }
+	const_iterator operator-(int n) { const_iterator retval = *this; retval -= n; return retval; }
+	const_iterator operator+(int n) { const_iterator retval = *this; retval += n; return retval; }
+	const_iterator& operator-=(int n) { return operator+=(n); }
 	const_iterator& operator+=(int n)
 	{
 		index += n;
-		while (seq < base->sequences.size() && base->sequences[seq].length() <= index)
-		{ // Handle sequence break
-			index -= base->sequences[seq].length();
-			seq++;
-		}
-		if (seq >= base->sequences.size())
-			index = 0; // Handle end
-		return *this;
-	}
-	const_iterator operator+(int n) { const_iterator retval = *this; retval += n; return retval; }
-	const_iterator& operator-=(int n)
-	{
-		index -= n;
-		while (seq > 0 && index < 0)
-		{ // Handle sequence break
-			seq--;
-			index += base->sequences[seq].length();
-		}
 		if (index < 0)
-		{ // Handle rend
-			seq = -1;
-			index = 0;
+		{
+			while (seq > 0 && index < 0)
+			{ // Handle sequence break
+				seq--;
+				index += base->sequences[seq].length();
+			}
+			if (index < 0)
+				index = -1; // Handle rend
+		}
+		else
+		{
+			while (seq < base->sequences.size() && base->sequences[seq].length() <= index)
+			{ // Handle sequence break
+				index -= base->sequences[seq].length();
+				seq++;
+			}
+			if (seq >= base->sequences.size())
+				index = 0; // Handle end
 		}
 		return *this;
 	}
-	const_iterator operator-(int n) { const_iterator retval = *this; retval -= n; return retval; }
 	bool operator<(const_iterator other) const { return seq < other.seq || (seq == other.seq && index < other.index); }
 	bool operator<=(const_iterator other) const { return seq < other.seq || (seq == other.seq && index <= other.index); }
 	bool operator>(const_iterator other) const { return seq > other.seq || (seq == other.seq && index > other.index); }

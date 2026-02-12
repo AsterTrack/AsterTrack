@@ -106,13 +106,13 @@ struct TrackerConfig
 	int id;
 	std::string label;
 	TrackerType type;
-	bool isSimulated;
+	bool isSimulated = false;
 	TrackerTrigger trigger = TRIGGER_ALWAYS;
 	TrackerExpose expose = EXPOSE_ALWAYS;
 
 	// Target-specific Config
 	TargetCalibration3D calib;
-	TargetDetectionConfig detectionConfig = {};
+	TargetDetectionConfig detectionConfig;
 
 	// Marker-specific Config
 	float markerSize;
@@ -123,18 +123,17 @@ struct TrackerConfig
 
 	// Current state
 	std::shared_ptr<IMU> imu;
-	bool triggered, tracked;
-	bool exposed, connected;
-	// TODO: Support tracked trigger and connected expose condition
+	bool triggered = false, tracked = false;
+	bool exposed = false, connected = false;
 
 	TrackerConfig(int ID, std::string label, TrackerType type)
-		: id(ID), label(label), type(type), isSimulated(false) {}
+		: id(ID), label(label), type(type) {}
 
 	TrackerConfig(int ID, std::string label, TargetCalibration3D &&target, TargetDetectionConfig detectionConfig)
-		: id(ID), label(label), type(TRACKER_TARGET), isSimulated(false), calib(std::move(target)), detectionConfig(detectionConfig) {}
+		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)), detectionConfig(detectionConfig) {}
 
 	TrackerConfig(int ID, std::string label, float markerSize)
-		: id(ID), label(label), type(TRACKER_MARKER), isSimulated(false), markerSize(markerSize) {}
+		: id(ID), label(label), type(TRACKER_MARKER), markerSize(markerSize) {}
 };
 
 struct GeneralConfig

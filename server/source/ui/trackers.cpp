@@ -118,7 +118,10 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			}
 			ImGui::SameLine(0, 0);
 			if (CrossButton("Del"))
+			{
 				trackerIt = state.trackerConfigs.erase(trackerIt);
+				state.trackerConfigDirty = true;
+			}
 			else
 				trackerIt++;
 			ImGui::PopID();
@@ -291,7 +294,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			SignalTargetCalibUpdate(tracker.id, calib);
 		}
 
-		if (ImGui::Button("Save Target as OBJ", SizeWidthFull()))
+		if (ImGui::Button("Export Target as OBJ", SizeWidthFull()))
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);

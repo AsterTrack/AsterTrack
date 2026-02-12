@@ -299,6 +299,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 						calib = CameraCalib(state.lensPresets[state.defaultLens]);
 					else calib = CameraCalib();
 				}
+				ImGui::SetItemTooltip("Reset and invalidate the existing camera calibration. If there is a default lens, it will be applied.");
 				
 				ImGui::PopID();
 			}
@@ -308,158 +309,172 @@ void InterfaceState::UpdatePipelineCalibSection()
 
 		if (openLensPresets)
 			ImGui::SetNextItemOpen(true);
-		if (ImGui::TreeNode(state.lensPresetsDirty? "Lens Presets (unsaved)###LensPreset" : "Lens Presets###LensPreset"))
-		{
-			if (ImGui::BeginTable("LensPresets", 2))
-			{
-				ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch, 1);
-				ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 3));
-
-				for (auto lensIt = state.lensPresets.begin(); lensIt != state.lensPresets.end();)
-				{
-					LensCalib &lens = lensIt->second;
-					CameraCalib calib(lens);
-					CameraMode mode(1280, 800);
-					ImGui::PushID(lens.id);
-					ImGui::TableNextRow();
-					ImGui::TableNextColumn();
-					bool editing = editingLensPreset == lens.id;
-					bool deleteLens = lensIt->first != lens.id;
-					if (editing)
-					{
-						ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-						if (ImGui::InputText("##LensName", &lens.label))
-							state.lensPresetsDirty = true;
-					}
-					else
-					{
-						ImGui::AlignTextToFramePadding();
-						ImGui::Text("Lens %s (%d) - %.2f° H",
-							lens.label.c_str(), lens.id, getEffectiveFoVH(calib, mode));
-						if (ImGui::BeginItemTooltip())
-						{
-							float fovH = getFoVH(calib, mode), fovV = getFoVV(calib, mode), fovD = getFoVD(calib, mode);
-							float effH = getEffectiveFoVH(calib, mode), effV = getEffectiveFoVV(calib, mode), effD = getEffectiveFoVD(calib, mode);
-							ImGui::Text("Field of View: %.2f° H, %.2f° V, %.2f° D", effH, effV, effD);
-							float distH = (effH/fovH - 1) * 100, distV = (effV/fovV - 1) * 100, distD = (effD/fovD - 1) * 100;
-							ImGui::Text("Relative Distortion: %.2f%% H, %.2f%% V, %.2f%% D", distH, distV, distD);
-							ImGui::Text("Raw: ID = %d, f = %f, radial = (%f, %f, %f)",
-								lens.id, lens.f, lens.k1, lens.k2, lens.k3);
-							ImGui::EndTooltip();
-						}
-					}
-
-					ImGui::TableNextColumn();
-
-					if (ImGui::Button(editing? "D###Edit" : "E###Edit", SizeFrame()))
-						editingLensPreset = editing? -1 : lens.id;
-					ImGui::SetItemTooltip("Toggle Edit Mode to change the label and delete the lens preset.");
-					ImGui::SameLine();
-
-					if (editing)
-					{
-						std::string deletePopup = asprintf_s("deleteLens%d", lens.id);
-						if (CrossButton("Delete"))
-							ImGui::OpenPopup(deletePopup.c_str());
-						if (ImGui::BeginPopup(deletePopup.c_str()))
-						{
-							int referenced = 0;
-							for (auto &camera : state.cameraCalibrations)
-							{
-								if (camera.lensID == lens.id)
-									referenced++;
-							}
-							if (referenced > 0)
-								ImGui::Text("Delete Lens Preset %d referenced by %d cameras?", lens.id, referenced);
-							else
-								ImGui::Text("Delete Lens Preset %d not referenced by any camera?", lens.id);
-							if (ImGui::Button("Delete", SizeWidthFull()))
-								deleteLens = true;
-							ImGui::EndPopup();
-						}
-					}
-					else
-					{
-						if (RetryButton("Refetch"))
-						{
-							int num = 0;
-							for (auto &camera : pipeline.cameras)
-								if (camera->calib.lensID == lens.id)
-									num++;
-							if (num > 0)
-							{
-								lens.f = 0;
-								lens.k1 = 0;
-								lens.k2 = 0;
-								lens.k3 = 0;
-								for (auto &camera : pipeline.cameras)
-								{
-									if (camera->calib.lensID != lens.id) continue;
-									lens.f += camera->calib.f;
-									lens.k1 += camera->calib.distortion.k1;
-									lens.k2 += camera->calib.distortion.k2;
-									lens.k3 += camera->calib.distortion.k3;
-								}
-								lens.f /= num;
-								lens.k1 /= num;
-								lens.k2 /= num;
-								lens.k3 /= num;
-								state.lensPresetsDirty = true;
-							}
-						}
-						ImGui::SetItemTooltip("Update Lens Preset from calibration of connected cameras.");
-					}
-
-					ImGui::SameLine();
-					bool defaultLens = state.defaultLens == lens.id;
-					ImGui::BeginDisabled(defaultLens);
-					if (ImGui::Checkbox("##Default", &defaultLens))
-					{
-						state.defaultLens = lens.id;
-						state.lensPresetsDirty = true;
-					}
-					ImGui::EndDisabled();
-
-					ImGui::PopID();
-
-					if (deleteLens)
-					{
-						bool referenced = false;
-						for (auto &camera : state.cameraCalibrations)
-						{
-							if (camera.lensID == lens.id)
-							{
-								referenced = true;
-								camera.lensID = -1;
-							}
-						}
-						lensIt = state.lensPresets.erase(lensIt);
-						if (referenced)
-							state.cameraCalibsDirty = true;
-					}
-					else lensIt++;
-				}
-				ImGui::EndTable();
-			}
-
-			if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
-			{
-				auto error = storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				if (error) SignalErrorToUser(error.value());
-				else state.lensPresetsDirty = false;
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
-			{
-				auto error = parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
-				if (error) SignalErrorToUser(error.value());
-				else state.lensPresetsDirty = false;
-			}
-			ImGui::TreePop();
-		}
 
 		ImGui::TreePop();
 	}
+
+	if (ImGui::TreeNode(state.lensPresetsDirty? "Lens Presets (unsaved)###LensPreset" : "Lens Presets###LensPreset"))
+	{
+		if (ImGui::BeginTable("LensPresets", 2))
+		{
+			ImGui::TableSetupColumn("Text", ImGuiTableColumnFlags_WidthStretch, 1);
+			ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 3));
+
+			for (auto lensIt = state.lensPresets.begin(); lensIt != state.lensPresets.end();)
+			{
+				LensCalib &lens = lensIt->second;
+				CameraCalib calib(lens);
+				CameraMode mode(1280, 800);
+				ImGui::PushID(lens.id);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				bool editing = editingLensPreset == lens.id;
+				bool deleteLens = lensIt->first != lens.id;
+				if (editing)
+				{
+					ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+					if (ImGui::InputText("##LensName", &lens.label))
+						state.lensPresetsDirty = true;
+				}
+				else
+				{
+					ImGui::AlignTextToFramePadding();
+					ImGui::Text("Lens %s (%d) - %.2f° H",
+						lens.label.c_str(), lens.id, getEffectiveFoVH(calib, mode));
+					if (ImGui::BeginItemTooltip())
+					{
+						float fovH = getFoVH(calib, mode), fovV = getFoVV(calib, mode), fovD = getFoVD(calib, mode);
+						float effH = getEffectiveFoVH(calib, mode), effV = getEffectiveFoVV(calib, mode), effD = getEffectiveFoVD(calib, mode);
+						ImGui::Text("Field of View: %.2f° H, %.2f° V, %.2f° D", effH, effV, effD);
+						float distH = (effH/fovH - 1) * 100, distV = (effV/fovV - 1) * 100, distD = (effD/fovD - 1) * 100;
+						ImGui::Text("Relative Distortion: %.2f%% H, %.2f%% V, %.2f%% D", distH, distV, distD);
+						ImGui::Text("Raw: ID = %d, f = %f, radial = (%f, %f, %f)",
+							lens.id, lens.f, lens.k1, lens.k2, lens.k3);
+						ImGui::EndTooltip();
+					}
+				}
+
+				ImGui::TableNextColumn();
+
+				if (ImGui::Button(editing? "D###Edit" : "E###Edit", SizeFrame()))
+					editingLensPreset = editing? -1 : lens.id;
+				ImGui::SetItemTooltip("Toggle Edit Mode to change the label or delete the lens preset.");
+				ImGui::SameLine();
+
+				if (editing)
+				{
+					std::string deletePopup = asprintf_s("deleteLens%d", lens.id);
+					if (CrossButton("Delete"))
+						ImGui::OpenPopup(deletePopup.c_str());
+					ImGui::SetItemTooltip("Delete the lens preset.");
+					if (ImGui::BeginPopup(deletePopup.c_str()))
+					{
+						int referenced = 0;
+						for (auto &camera : state.cameraCalibrations)
+						{
+							if (camera.lensID == lens.id)
+								referenced++;
+						}
+						if (referenced > 0)
+							ImGui::Text("Delete Lens Preset %d referenced by %d cameras?", lens.id, referenced);
+						else
+							ImGui::Text("Delete Lens Preset %d not referenced by any camera?", lens.id);
+						if (ImGui::Button("Delete", SizeWidthDiv2()))
+						{
+							deleteLens = true;
+							ImGui::CloseCurrentPopup();
+						}
+						ImGui::SameLine();
+						if (ImGui::Button("Cancel", SizeWidthDiv2()))
+							ImGui::CloseCurrentPopup();
+						ImGui::EndPopup();
+					}
+				}
+				else
+				{
+					if (RetryButton("Refetch"))
+					{
+						int num = 0;
+						for (auto &camera : pipeline.cameras)
+							if (camera->calib.lensID == lens.id)
+								num++;
+						if (num > 0)
+						{
+							lens.f = 0;
+							lens.k1 = 0;
+							lens.k2 = 0;
+							lens.k3 = 0;
+							for (auto &camera : pipeline.cameras)
+							{
+								if (camera->calib.lensID != lens.id) continue;
+								lens.f += camera->calib.f;
+								lens.k1 += camera->calib.distortion.k1;
+								lens.k2 += camera->calib.distortion.k2;
+								lens.k3 += camera->calib.distortion.k3;
+							}
+							lens.f /= num;
+							lens.k1 /= num;
+							lens.k2 /= num;
+							lens.k3 /= num;
+							state.lensPresetsDirty = true;
+						}
+					}
+					ImGui::SetItemTooltip("Update Lens Preset from calibration of connected cameras.");
+				}
+
+				ImGui::SameLine();
+				bool defaultLens = state.defaultLens == lens.id;
+				ImGui::BeginDisabled(defaultLens);
+				if (ImGui::Checkbox("##Default", &defaultLens))
+				{
+					state.defaultLens = lens.id;
+					state.lensPresetsDirty = true;
+				}
+				ImGui::SetItemTooltip("Select the default lens preset to apply to new cameras.");
+				ImGui::EndDisabled();
+
+				ImGui::PopID();
+
+				if (deleteLens)
+				{
+					bool referenced = false;
+					for (auto &camera : state.cameraCalibrations)
+					{
+						if (camera.lensID == lens.id)
+						{
+							referenced = true;
+							camera.lensID = -1;
+						}
+					}
+					if (editingLensPreset == lens.id)
+						editingLensPreset = -1;
+					if (referenced)
+						state.cameraCalibsDirty = true;
+					lensIt = state.lensPresets.erase(lensIt);
+				}
+				else lensIt++;
+			}
+			ImGui::EndTable();
+		}
+
+		if (SaveButton("Save Lenses", SizeWidthDiv2(), state.lensPresetsDirty))
+		{
+			auto error = storeLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+			if (error) SignalErrorToUser(error.value());
+			else state.lensPresetsDirty = false;
+		}
+		ImGui::SetItemTooltip("Save the current lens presets to disk.");
+		ImGui::SameLine();
+		if (ImGui::Button("Reload Lenses", SizeWidthDiv2()))
+		{
+			auto error = parseLensPresets("store/lens_presets.json", state.lensPresets, state.defaultLens);
+			if (error) SignalErrorToUser(error.value());
+			else state.lensPresetsDirty = false;
+		}
+		ImGui::SetItemTooltip("Discard the changed lens presets and reload them from disk.");
+		ImGui::TreePop();
+	}
+
 	EndSection();
 }
 
@@ -471,8 +486,8 @@ void InterfaceState::UpdatePipelineObservationSection()
 	ImVec2 ButtonSize = SizeWidthDiv3();
 
 	BeginSection("Marker Observations");
-	ImGui::Checkbox("Record", &pipeline.recordSequences);
-	ImGui::SetItemTooltip("Record visible markers into observations as continous sequences.");
+	ImGui::Checkbox("Collect", &pipeline.recordSequences);
+	ImGui::SetItemTooltip("Collect visible marker as sequences to be used for calibration.");
 	ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x*2);
 	ImGui::Text("%s", calibSamples.contextualRLock()->c_str());
 	SameLineTrailing(ImGui::GetFrameHeight());
@@ -905,8 +920,11 @@ void InterfaceState::UpdatePipelinePointCalib()
 	{
 		ImGui::TextUnformatted("Distance between the first two points, used to calibrate scale.");
 		if (roomCalib->floorPoints.size() >= 2)
-			ImGui::Text("With the current scale, they are %.2fmm apart.",
-				(roomCalib->floorPoints[0].pos-roomCalib->floorPoints[1].pos).norm()*1000);
+		{
+			float scaleNew = (roomCalib->floorPoints[0].pos-roomCalib->floorPoints[1].pos).norm();
+			ImGui::Text("With the current scale, they are %.2fmm apart.\nThe corrective scale factor is thus %f.",
+				scaleNew*1000, roomCalib->distance12/scaleNew);
+		}
 		ImGui::EndTooltip();
 	}
 

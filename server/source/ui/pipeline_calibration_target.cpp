@@ -126,8 +126,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 	if (sectionTargetViews)
 	{ // Target Observations to acquire Target Views
-		ImGui::Checkbox("Record Target Observations", &pipeline.recordSequences);
-		ImGui::SetItemTooltip("Record visible markers into observations as continous sequences.");
+		ImGui::Checkbox("Collect Target Observations", &pipeline.recordSequences);
+		ImGui::SetItemTooltip("Collect visible markers as sequences and search for good target views.");
 
 		if (ImGui::Button("Clear##Observations", SizeWidthDiv3()))
 		{

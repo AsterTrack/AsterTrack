@@ -21,6 +21,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
 // This is just a cached value to reduce the amount sequences needs to be saved/loaded
 static int savedSequencesLastFrame = 0;
 
@@ -143,25 +146,36 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			UpdateSequences(true);
 		}
 		ImGui::SameLine();
+		static bool saveLoadObs = false;
+		ImGui::BeginDisabled(saveLoadObs);
 		if (ImGui::Button("Save##Observations", SizeWidthDiv3()))
 		{
-			// Make sure the relevant sequence data is saved alongside
-			if (ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
+			saveLoadObs = true;
+			threadPool.push([](int)
 			{
+				PipelineState &pipeline = GetState().pipeline;
+				// Make sure the relevant sequence data is saved alongside
+				if (!ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
+					return saveLoadObs = false;
 				auto error = dumpTargetViewRecords("dump/target_calib_views.json", *pipeline.targetCalib.views.contextualRLock());
 				if (error) SignalErrorToUser(error.value());
-			}
+				return saveLoadObs = false;
+			});
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Load##Observations", SizeWidthDiv3()))
 		{
-			// Check if we need to load sequence database from checkpoint, too
-			if (checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
+			saveLoadObs = true;
+			threadPool.push([](int)
 			{
+				PipelineState &pipeline = GetState().pipeline;
+				// Check if we need to load sequence database from checkpoint, too
+				if (!checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
+					return saveLoadObs = false;
 				auto views_lock = pipeline.targetCalib.views.contextualLock();
 				auto error = parseTargetViewRecords("dump/target_calib_views.json", pipeline.record.frames, *views_lock);
 				if (error) SignalErrorToUser(error.value());
-				else
+				if (error) return saveLoadObs = false;
 				for (auto &view : *views_lock)
 				{
 					{ // Fill target observations and calculate errors
@@ -174,8 +188,10 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					view->plan = { TargetView::OPTIMISE_COARSE };
 					view->planned = true;
 				}
-			}
+				return saveLoadObs = false;
+			});
 		}
+		ImGui::EndDisabled();
 	}
 
 	if (sectionTargetViews && ImGui::BeginTable("Target Views Table", 6,
@@ -858,6 +874,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::EndDisabled();
 		}
 
+		static bool saveLoadStage = false;
+
 		if (!visState.targetCalib.edit && !assembly.control)
 		{ // Assembly stages input
 			ImGui::AlignTextToFramePadding();
@@ -872,41 +890,42 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			ImGui::SameLine();
 
+			ImGui::BeginDisabled(saveLoadStage);
 			if (ImGui::Button("Load Last", SizeWidthDiv3()))
 			{
-				// Check if we need to load sequence database from checkpoint, too
-				if (checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
+				saveLoadStage = true;
+				threadPool.push([](int)
 				{
+					PipelineState &pipeline = GetState().pipeline;
+					// Check if we need to load sequence database from checkpoint, too
+					if (!checkSequencesLoad(pipeline, *pipeline.seqDatabase.contextualLock()))
+						return saveLoadStage = false;
 					// Load assembly stage checkpoint
 					const char* obsPathFmt = "dump/assembly_stage_%d.json";
 					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt));
 					TargetAssemblyBase base;
 					auto error = parseTargetAssemblyStage(obsPath, base);
 					if (error) SignalErrorToUser(error.value());
-					else
-					{
-						auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
-						stages_lock->clear();
-						visState.targetCalib.stage = nullptr;
-						LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
-							(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
-						auto obs_lock = pipeline.seqDatabase.contextualRLock();
-						updateTargetObservations(base.target, obs_lock->markers);
-						base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-						base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
-						stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
-					}
-				}
+					if (error) return saveLoadStage = false;
+					auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
+					stages_lock->clear();
+					GetUI().visState.targetCalib.stage = nullptr;
+					LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
+						(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
+					auto obs_lock = pipeline.seqDatabase.contextualRLock();
+					updateTargetObservations(base.target, obs_lock->markers);
+					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
+					base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
+					return saveLoadStage = false;
+				});
 			}
+			ImGui::EndDisabled();
 		}
 
 		if (!visState.targetCalib.edit)
 		{ // Assembly stages output
-			auto getSelectedStage = [&]()
-			{
-				return visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back();
-			};
-			ImGui::BeginDisabled(assemblyProgress > 0);
+			ImGui::BeginDisabled(assemblyProgress > 0 || saveLoadStage);
 
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("Save as");
@@ -914,35 +933,43 @@ void InterfaceState::UpdatePipelineTargetCalib()
 
 			if (ImGui::Button("Target", SizeWidthDiv3()))
 			{
-				// Find max occupied target id (excluding testing markers because they are negative)
-				int id = 0;
-				for (auto &tracker : state.trackerConfigs)
-					id = std::max(id, tracker.id);
-				id++;
-				std::string label = std::string("Target ID ") + (char)((int)'0' + id);
-				// Take latest assembly stage
-				auto stage = getSelectedStage();
-				LOG(LTargetCalib, LInfo, "Registered target with %d markers as id %d!\n", (int)stage->base.target.markers.size(), id);
-				// Register as calibrated target
-				TargetCalibration3D targetCalib(finaliseTargetMarkers(
-					pipeline.getCalibs(), stage->base.target, pipeline.targetCalib.params.post));
-				state.trackerConfigs.emplace_back(id, label, std::move(targetCalib), TargetDetectionConfig());
-				auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-				if (error) SignalErrorToUser(error.value());
-				else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+				saveLoadStage = true;
+				threadPool.push([](int, std::shared_ptr<TargetAssemblyStage> stage)
+				{
+					ServerState &state = GetState();
+					// Find max occupied target id (excluding testing markers because they are negative)
+					int id = 0;
+					for (auto &tracker : state.trackerConfigs)
+						id = std::max(id, tracker.id);
+					id++;
+					std::string label = asprintf_s("Target ID %d", id);
+					// Take latest assembly stage
+					LOG(LTargetCalib, LInfo, "Registered target with %d markers as %s!\n", (int)stage->base.target.markers.size(), label.c_str());
+					// Register as calibrated target
+					state.trackerConfigs.emplace_back(id, label, stage->base.targetCalib, TargetDetectionConfig());
+					auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
+					if (error) SignalErrorToUser(error.value());
+					else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
+					return saveLoadStage = false;
+				}, visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back());
 			}
 
 			ImGui::SameLine();
 
 			if (ImGui::Button("Stage", SizeWidthDiv3()))
 			{
-				if (ensureSequencesSaved(pipeline, *pipeline.seqDatabase.contextualRLock()))
+				saveLoadStage = true;
+				threadPool.push([](int, std::shared_ptr<TargetAssemblyStage> stage)
 				{
+					ServerState &state = GetState();
+					if (!ensureSequencesSaved(state.pipeline, *state.pipeline.seqDatabase.contextualRLock()))
+						return saveLoadStage = false;
 					const char* obsPathFmt = "dump/assembly_stage_%d.json";
 					std::string obsPath = asprintf_s(obsPathFmt, findLastFileEnumeration(obsPathFmt)+1);
-					auto error = dumpTargetAssemblyStage(obsPath, getSelectedStage()->base);
+					auto error = dumpTargetAssemblyStage(obsPath, stage->base);
 					if (error) SignalErrorToUser(error.value());
-				}
+					return saveLoadStage = false;
+				}, visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back());
 			}
 
 			ImGui::EndDisabled();

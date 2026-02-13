@@ -129,7 +129,7 @@ struct TrackerConfig
 	TrackerConfig(int ID, std::string label, TrackerType type)
 		: id(ID), label(label), type(type) {}
 
-	TrackerConfig(int ID, std::string label, TargetCalibration3D &&target, TargetDetectionConfig detectionConfig)
+	TrackerConfig(int ID, std::string label, TargetCalibration3D target, TargetDetectionConfig detectionConfig)
 		: id(ID), label(label), type(TRACKER_TARGET), calib(std::move(target)), detectionConfig(detectionConfig) {}
 
 	TrackerConfig(int ID, std::string label, float markerSize)

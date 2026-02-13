@@ -262,6 +262,7 @@ void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
 void SignalErrorToUser(ErrorMessage error)
 {
 	LOG(LGUI, LWarn, "Error: %s", error.c_str());
+	// TODO: Consider making thread-safe. But is called very rarely
 	GetState().errors.push(std::move(error));	
 }
 

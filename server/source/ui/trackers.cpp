@@ -251,7 +251,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			{
 				visState.target.inspectingTrackerID = tracker.id;
 				visState.target.inspectingSource = 'T';
-				view3D.orbit = true;
 				visState.updateVisTarget();
 			}
 		}

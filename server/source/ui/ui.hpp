@@ -292,7 +292,7 @@ struct View3D
 	Eigen::Isometry3f viewTransform;
 
 	// Orbit view
-	bool orbit;
+	bool explicitOrbit, orbit;
 	float distance;
 	Eigen::Vector3f target;
 

@@ -117,7 +117,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_U))
 			{
-				view3D.orbit = false;
+				view3D.orbit = view3D.explicitOrbit = false;
 			}
 		}
 		else
@@ -155,7 +155,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_Z))
 			{
-				view3D.orbit = true;
+				view3D.orbit = view3D.explicitOrbit = true;
 			}
 		}
 	}
@@ -322,7 +322,8 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 
 	if (ImGui::ImageButton("Orbit", icons().orbit, iconSize()))
 	{
-		view3D.orbit = !view3D.orbit;
+		view3D.explicitOrbit = !view3D.explicitOrbit;
+		view3D.orbit = view3D.explicitOrbit;
 	}
 	ImGui::SetItemTooltip("Toggle Orbit View");
 	ImGui::SameLine();
@@ -391,6 +392,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	float visAspect = (float)viewSize.y()/viewSize.x();
 
 	VisFrameLock visFrame = visState.lockVisFrame(pipeline);
+	view3D.orbit = visFrame.target? true : view3D.explicitOrbit;
 	if (view3D.orbit)
 	{
 		view3D.target = visState.getPreferredTarget(visFrame);

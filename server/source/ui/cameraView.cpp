@@ -947,6 +947,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	assert(visFrame.hasFrame);
 	assert(visFrame.frameIt.accessible() && *visFrame.frameIt);
 	std::shared_ptr<const FrameRecord> frame = *visFrame.frameIt; // new shared_ptr
+	// Note: Even though finishedProcessing is set, async detection may add to the frame->trackers vector, but only in a thread-safe manner
 	assert(frame->finishedProcessing);
 	auto &camFrame = frame->cameras[camera.pipeline->index];
 	PipelinePhase phase = pipeline.phase.load();

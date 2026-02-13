@@ -386,7 +386,6 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			relevantPoints2D[c] = &detectionPoints2D[c];
 		}
 
-		frame->finishedProcessing = false; // TODO: Not entirely thread-safe. But don't want a mutex here if we can avoid it
 		if (useProbe)
 		{ // Probe target against clusters points
 			dormant.target.match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, relevantPoints2D,
@@ -402,7 +401,6 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			|| dormant.target.match2D.error.mean > (useProbe? pipeline.params.detect.probe.errorMax : pipeline.params.detect.search.errorMax))
 		{
 			recordTrackingResult(pipeline, frame, dormant, useProbe? TrackingResult::PROBED_2D : TrackingResult::SEARCHED_2D, procTimeMS);
-			frame->finishedProcessing = true;
 			return false;
 		}
 
@@ -417,7 +415,6 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	tracker.result = useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D;
 	tracker.procTimeMS = procTimeMS;
 	recordTrackingResult(pipeline, frame, tracker);
-	frame->finishedProcessing = true;
 
 	if (stopToken.stop_requested())
 		return false;

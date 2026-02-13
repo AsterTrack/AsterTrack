@@ -49,8 +49,7 @@ struct TargetView
 	BlockStats stats = {};
 	// Data
 	SynchronisedS<ObsTarget> target = {};
-	TargetCalibration3D targetCalib = {};
-	// TODO: Synchronise together with target for use in VisTargetLock. Currently unused
+	SynchronisedS<TargetCalibration3D> calib = {};
 	// Calibration
 	bool planned;
 	ThreadControl control;
@@ -78,7 +77,7 @@ struct TargetView
 	{
 		OptErrorRes error;
 		ObsTarget target;
-		Iteration(OptErrorRes e, ObsTarget &t) : error(e), target(t) {}
+		Iteration(OptErrorRes e, ObsTarget &&t) : error(e), target(std::move(t)) {}
 	};
 	std::vector<Iteration> iterationStates;
 

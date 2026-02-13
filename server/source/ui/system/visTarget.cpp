@@ -39,10 +39,8 @@ VisTargetLock VisualisationState::lockVisTarget() const
 	{
 		state.target_lock = targetCalib.view->target.contextualRLock();
 		state.obs = &*state.target_lock;
-		thread_local TargetCalibration3D tempTargetCalib = {};
-		tempTargetCalib.initialise(state.obs->markers);
-		state.calib = &tempTargetCalib;
-		//state.calib = &targetCalib.view->calib;
+		state.calib_lock = targetCalib.view->calib.contextualRLock();
+		state.calib = &*state.calib_lock;
 		state.hasPose = targetCalib.view->state.calibrated;
 		state.targetGT = targetCalib.view->simulation.targetGT;
 	}

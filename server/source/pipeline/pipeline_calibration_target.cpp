@@ -179,7 +179,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					view->beginFrame = newRange.beginFrame;
 					view->endFrame = newRange.endFrame;
 					view->stats = newRange.stats;
-					view->targetCalib.initialise(newRange.target.markers);
+					view->calib.contextualLock()->initialise(newRange.target.markers);
 					*view->target.contextualLock() = std::move(newRange.target);
 					if (pipeline.isSimulationMode)
 						view->simulation.targetGT = &pipeline.simulation.contextualRLock()->getPrimary().target;
@@ -310,14 +310,14 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 			LOGC(LDebug, "=======================\n");
 			return false;
 		}
-		viewPtr->targetCalib = TargetCalibration3D(finaliseTargetMarkers(calibs, target, params.post));
+		*viewPtr->calib.contextualLock() = TargetCalibration3D(finaliseTargetMarkers(calibs, target, params.post));
 		*viewPtr->target.contextualLock() = target;
 		viewPtr->stats.frameCount = target.frames.size();
 		viewPtr->stats.markerCount = target.markers.size();
 		viewPtr->stats.sampleCount = target.totalSamples;
 		debugIterations = debugIterations && viewPtr->debugIterations;
 		if (debugIterations)
-			viewPtr->iterationStates.emplace_back(viewPtr->state.errors, target);
+			viewPtr->iterationStates.emplace_back(viewPtr->state.errors, std::move(target));
 		SignalPipelineUpdate();
 		return true;
 	};
@@ -638,7 +638,8 @@ static int findTargetAlignmentCandidates(const TargetCalibration3D &baseCalib, c
 }
 
 static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::shared_ptr<TargetView>> &targetViews,
-	const std::vector<CameraCalib> &calibs, const TargetAssemblyParameters &params, std::vector<TargetAlignResults> &candidates)
+	const std::vector<CameraCalib> &calibs, const TargetAssemblyParameters &params, const TargetPostProcessingParameters &post,
+	std::vector<TargetAlignResults> &candidates)
 {
 	TargetCalibration3D trkTarget(base.target.markers);
 	for (auto &targetView : targetViews)
@@ -683,6 +684,9 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 			frame.pose = frame.pose * align.pose;
 		for (auto &marker : tgt_lock->markers)
 			marker = alignPoseInv * marker;
+
+		// Recreate target calib (target -> calib lock order)
+		*targetView->calib.contextualLock() = TargetCalibration3D(finaliseTargetMarkers(calibs, *tgt_lock, post));
 
 		// Record as successful alignment
 		LOGC(LDebug, "      Was able to align target view %d to base with %d candidates, best matched %d markers with RMSE of %fmm!",
@@ -1027,7 +1031,7 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 			{
 				state->currentStage = "Aligning views";
 				std::vector<TargetAlignResults> alignCandidates;
-				realignTargetViewsToBase(base, *pipeline->targetCalib.views.contextualLock(), calibs, params, alignCandidates);
+				realignTargetViewsToBase(base, *pipeline->targetCalib.views.contextualLock(), calibs, params, pipeline->targetCalib.params.post, alignCandidates);
 				bool empty = alignCandidates.empty();
 				recordAssemblyStage(base, stage, step, asprintf_s("Aligned views to base")).alignResults = std::move(alignCandidates);
 				if (empty) return false;
@@ -1073,19 +1077,20 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 			{
 				state->currentStage = "Integrating all frames";
 
-				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
 				OptimisationOptions options(false, false, false, true, false);
 
-				// Add all remaining frames
-				auto insIt = std::lower_bound(base.target.frames.begin(), base.target.frames.end(), tgt->frames.front(), 
+				{ // Add all remaining frames
+					auto tgt_lock = base.merging->target.contextualRLock();
+					auto insIt = std::lower_bound(base.target.frames.begin(), base.target.frames.end(), tgt_lock->frames.front(), 
 					[&](auto &a, auto &b){ return a.frame < b.frame; });
-				for (auto &frame : tgt->frames)
+					for (auto &frame : tgt_lock->frames)
 				{
 					if (insIt != base.target.frames.end() && insIt->frame <= frame.frame)
 						insIt++; // Already exists
 					else
 						insIt = std::next(base.target.frames.insert(insIt, frame));
+					}
 				}
 
 				// ASSERT: no duplicate frames, correct order
@@ -1142,13 +1147,13 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 			{
 				state->currentStage = "Adopting new markers";
 
-				auto tgt = base.merging->target.contextualRLock();
 				ScopedLogLevel scopedLogLevel(LInfo);
 				OptimisationOptions options(false, false, false, true, false);
 
-				// Add remaining and new markers
 				std::map<int, int> newMarkerMap;
-				for (auto &m : tgt->markerMap)
+				{ // Add remaining and new markers
+					auto tgt_lock = base.merging->target.contextualRLock();
+					for (auto &m : tgt_lock->markerMap)
 				{
 					auto ex = base.target.markerMap.find(m.first);
 					if (ex != base.target.markerMap.end()) continue;
@@ -1156,9 +1161,10 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 					if (map == newMarkerMap.end())
 					{ // New marker (or one not associated with a existing one in last reevaluateMarkerSequences)
 						newMarkerMap[m.second] = base.target.markers.size();
-						base.target.markers.push_back(tgt->markers[m.second]);
+							base.target.markers.push_back(tgt_lock->markers[m.second]);
 					}
 					base.target.markerMap[m.first] = newMarkerMap[m.second];
+					}
 				}
 				updateTargetObservations(base.target, observations);
 

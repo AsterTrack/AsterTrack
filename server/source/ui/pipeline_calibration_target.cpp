@@ -365,7 +365,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		{
 			const char* tgtPathFmt = "dump/target_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			auto error = writeTargetObjFile(tgtPath, TargetCalibration3D(view.target.contextualRLock()->markers));
+			auto error = writeTargetObjFile(tgtPath, *view.calib.contextualRLock());
 			if (error) SignalErrorToUser(error.value());
 		}
 

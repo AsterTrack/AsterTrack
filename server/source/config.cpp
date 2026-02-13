@@ -1552,7 +1552,7 @@ std::optional<ErrorMessage> parseTargetViewRecords(const std::string &path,
 			tgtView->beginFrame = target.frames.front().frame;
 			tgtView->endFrame = target.frames.back().frame;
 			if (tgtView->endFrame >= recordCount) continue;
-			tgtView->targetCalib.initialise(target.markers);
+			tgtView->calib.contextualLock()->initialise(target.markers);
 			*tgtView->target.contextualLock() = std::move(target);
 			views.push_back(std::move(tgtView));
 		}

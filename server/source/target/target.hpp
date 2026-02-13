@@ -90,7 +90,7 @@ struct TargetCalibration3D
 		}
 	}
 
-	void initialise(const std::vector<Eigen::Vector3f> &points)
+	void initialise(const std::vector<Eigen::Vector3f> &points, bool updateAll = true)
 	{
 		markers.clear();
 		markers.reserve(points.size());
@@ -98,7 +98,8 @@ struct TargetCalibration3D
 			markers.push_back({ pt });
 		estimateNormals();
 		resetMarkerEstimations();
-		updateMarkers();
+		if (updateAll)
+			updateMarkers();
 	}
 };
 

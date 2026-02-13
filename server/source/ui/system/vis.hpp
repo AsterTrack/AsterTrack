@@ -27,6 +27,7 @@ struct VisTargetLock
 {
 	std::shared_ptr<TargetAssemblyBase> editRef;
 	SynchronisedS<ObsTarget>::ConstLockedPtr target_lock;
+	SynchronisedS<TargetCalibration3D>::ConstLockedPtr calib_lock;
 	Synchronised<ObsData>::ConstLockedPtr db_lock;
 	const ObsTarget *obs = nullptr;
 	const TargetCalibration3D *calib = nullptr;

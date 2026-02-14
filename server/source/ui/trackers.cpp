@@ -211,7 +211,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::SetItemTooltip("Conditions to expose the tracker on IO. After that, external clients can see/connect to the tracker.");
 
 		if (state.isStreaming)
-		{
+		{ // Could remove these, this can be done in the integrations window and pipeline tracking UI, too
 			ImGui::BeginDisabled(tracker.triggered);
 			if (ImGui::Button("Trigger Manually", SizeWidthDiv2()))
 			{ // Manually trigger tracker and notify pipeline

@@ -634,7 +634,11 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	if (pipeline.phase == PHASE_Tracking && ImGui::BeginTabItem("Tracking"))
+	ImGuiTabItemFlags trackingTabFlags = 0;
+	if (pipeline.phase == PHASE_Tracking && visState.tracking.focusTrackingInsights && visState.tracking.focusedTrackerID != 0)
+		trackingTabFlags = ImGuiTabItemFlags_SetSelected;
+	visState.tracking.focusTrackingInsights = false;
+	if (pipeline.phase == PHASE_Tracking && ImGui::BeginTabItem("Tracking", NULL, trackingTabFlags))
 	{
 		if (ShowTrackingPanel())
 			curPanel = 1;

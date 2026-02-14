@@ -146,47 +146,122 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			}
 		}
 
-		// Display list of trackable targets
-		for (auto &trackerIt : visState.tracking.targets)
+		bool foundFocused = false;
+		auto SelectableTracker = [&](int id, std::string label)
 		{
-			int trackerID = trackerIt.first;
-			auto &tracker = trackerIt.second;
-			ImGui::PushID(trackerID);
-			OptFrameNum trackedAgo = frameNum - tracker.lastTrackedFrame;
-			std::string label;
-			if (trackedAgo < 5)
-				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
-			else if (trackedAgo < 1000)
-				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracker.label.c_str(), trackerID, trackedAgo);
-			else
-				label = asprintf_s("Dormant '%s' (%d)###TgtTrk", tracker.label.c_str(), trackerID);
-			ImGui::AlignTextToFramePadding();
-			if (ImGui::Selectable(label.c_str(), visState.tracking.focusedTrackerID == trackerID, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
-				visState.tracking.focusedTrackerID = trackerID;
-
-			if (tracker.imuState != TrackerInertialState::NO_IMU)
+			bool selected = visState.tracking.focusedTrackerID == id;
+			if (ImGui::Selectable(label.c_str(), &selected,
+				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				SameLineTrailing(iconSize().x);
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
-				if (tracker.imuState == TrackerInertialState::IMU_CALIBRATING)
-				{
-					ImGui::Image(icons().imu_calib, iconSize());
-					ImGui::SetItemTooltip("Calibrating with %dHz sample rate", (int)tracker.imuSampleRate.floating);
-				}
-				else if (tracker.imuState == TrackerInertialState::IMU_TRACKING)
-				{
-					ImGui::Image(icons().imu_track, iconSize());
-					ImGui::SetItemTooltip("Tracking with %dHz sample rate", (int)tracker.imuSampleRate.floating);
-				}
-				else if (tracker.imuState == TrackerInertialState::IMU_LOST)
-				{
-					ImGui::Image(icons().imu_lost, iconSize());
-					ImGui::SetItemTooltip("No IMU samples received for %.1fs", tracker.imuSampleAgo);
-				}
+				visState.tracking.focusedTrackerID = selected? id : 0;
+				visState.tracking.focusTrackingInsights = selected;
 			}
+			if (selected) foundFocused = true;
+		};
+
+		auto ShowIMUStatus = [&](const auto &tracker)
+		{
+			if (tracker.imuState == TrackerInertialState::NO_IMU)
+				return;
+			SameLineTrailing(iconSize().x + ImGui::GetStyle().ItemSpacing.x + ImGui::GetFrameHeight());
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
+			if (tracker.imuState == TrackerInertialState::IMU_CALIBRATING)
+			{
+				ImGui::Image(icons().imu_calib, iconSize());
+				ImGui::SetItemTooltip("Calibrating with %dHz sample rate", (int)tracker.imuSampleRate.floating);
+			}
+			else if (tracker.imuState == TrackerInertialState::IMU_TRACKING)
+			{
+				ImGui::Image(icons().imu_track, iconSize());
+				ImGui::SetItemTooltip("Tracking with %dHz sample rate", (int)tracker.imuSampleRate.floating);
+			}
+			else if (tracker.imuState == TrackerInertialState::IMU_LOST)
+			{
+				ImGui::Image(icons().imu_lost, iconSize());
+				ImGui::SetItemTooltip("No IMU samples received for %.1fs", tracker.imuSampleAgo);
+			}
+		};
+
+		bool hasDormant = false, hasTracked = false;
+		for (auto &tracker : state.trackerConfigs)
+		{
+			if (!tracker.triggered) continue;
+			auto trackerRec = visState.tracking.targets.find(tracker.id);
+			if (trackerRec == visState.tracking.targets.end()) { hasDormant = true; continue; }
+			OptFrameNum trackedAgo = frameNum - trackerRec->second.lastTrackedFrame;
+			if (trackedAgo >= 500) { hasDormant = true; continue; }
+			hasTracked = true;
+
+			ImGui::PushID(tracker.id);
+			ImGui::AlignTextToFramePadding();
+
+			std::string label;
+			if (trackedAgo < 10)
+				label = asprintf_s("Tracking '%s' (%d)###TgtTrk", tracker.label.c_str(), tracker.id);
+			else
+				label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracker.label.c_str(), tracker.id, trackedAgo);
+			SelectableTracker(tracker.id, label);
+
+			ShowIMUStatus(trackerRec->second);
+			SameLineTrailing(ImGui::GetFrameHeight());
+			if (ImGui::ArrowButton("Unset", ImGuiDir_Down))
+				ServerUpdateTrackerConditions(state, tracker, false, -1, 0);
+			ImGui::SetItemTooltip("Manually reset trigger to remove tracker from tracking.");
 			ImGui::PopID();
 		}
 
+		if (hasDormant && hasTracked)
+			ImGui::Separator();
+
+		for (auto &tracker : state.trackerConfigs)
+		{
+			if (!tracker.triggered) continue;
+			auto trackerRec = visState.tracking.targets.find(tracker.id);
+			if (trackerRec != visState.tracking.targets.end())
+			{ // Skip recently tracked trackers
+				OptFrameNum trackedAgo = frameNum - trackerRec->second.lastTrackedFrame;
+				if (trackedAgo < 500)
+					continue;
+			}
+			ImGui::PushID(tracker.id);
+			ImGui::AlignTextToFramePadding();
+			SelectableTracker(tracker.id, asprintf_s("Dormant '%s' (%d)", tracker.label.c_str(), tracker.id));
+			if (trackerRec != visState.tracking.targets.end())
+				ShowIMUStatus(trackerRec->second);
+			SameLineTrailing(ImGui::GetFrameHeight());
+			if (ImGui::ArrowButton("Unset", ImGuiDir_Down))
+				ServerUpdateTrackerConditions(state, tracker, false, -1, 0);
+			ImGui::SetItemTooltip("Manually reset trigger to remove tracker from tracking.");
+			ImGui::PopID();
+		}
+
+		if (!foundFocused)
+			visState.tracking.focusedTrackerID = 0;
+
+		if (ImGui::CollapsingHeader("Unused Trackers"))
+		{
+			bool hasUnused = false;
+			for (auto &tracker : state.trackerConfigs)
+			{
+				if (tracker.triggered) continue;
+				hasUnused = true;
+				ImGui::PushID(tracker.id);
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("'%s' (%d)", tracker.label.c_str(), tracker.id);
+				SameLineTrailing(ImGui::GetFrameHeight());
+				if (ImGui::ArrowButton("Trigger", ImGuiDir_Up))
+					ServerUpdateTrackerConditions(state, tracker, false, 1, 0);
+				ImGui::SetItemTooltip("Manually trigger tracker to consider it for tracking.");
+				ImGui::PopID();
+			}
+			if (!hasUnused)
+			{
+				ImGui::TextWrapped("No unused trackers, all are expected to be in the tracking volume.\n"
+					"You may set trigger conditions based on cues that they are in use.");
+				if (ImGui::Button("Open Tracker Configuration", SizeWidthFull()))
+					windows[WIN_TRACKERS].open = true;
+			}
+		}
 		ImGui::PopID();
 		ImGui::Dummy(ImVec2(0, 4));
 

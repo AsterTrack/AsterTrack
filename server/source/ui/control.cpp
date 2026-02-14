@@ -151,6 +151,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
 		}
 
+		bool showDebug = ImGui::CollapsingHeader("Test Tooling");
+
+		if (showDebug)
 		{ // Show controls for simulating dropouts
 			ImGui::BeginDisabled(state.simDropoutIndex >= 0);
 			if (ImGui::Button("Frame Drop", SizeWidthDiv3()))
@@ -181,6 +184,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::EndDisabled();
 		}
 
+		if (showDebug)
 		{ // Show controls for interactive debugging
 			bool debug = dbg_debugging.load(), breaking = dbg_isBreaking.load();
 			if (ImGui::Button(debug? "Disable Debug##Debug" : "Enable Debug##Debug", SizeWidthDiv3()))
@@ -241,9 +245,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 	}
 
-	if (state.mode != MODE_Replay)
+	if (state.mode != MODE_Replay && 
+		ImGui::CollapsingHeader("Recording", ImGuiTreeNodeFlags_DefaultOpen))
 	{ // Allow recording and storing of frame sections
-		BeginSection("Recording");
 
 		ImGui::Checkbox("Frame Images", &pipeline.keepFrameImages);
 		SameLineTrailing(SizeWidthDiv2().x);
@@ -372,8 +376,6 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			}
 			ImGui::EndTable();
 		}
-
-		EndSection();
 	}
 
 	struct FrameRange

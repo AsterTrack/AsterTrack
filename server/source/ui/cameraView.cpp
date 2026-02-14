@@ -103,13 +103,10 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
-	
 		// Get camera from id (to make sure it's still valid)
 		CameraID id = (CameraID)(intptr_t)render.userData;
 		auto viewIt = GetUI().cameraViews.find(id);
-		if (viewIt == GetUI().cameraViews.end())
-			return; // Just removed, but UI hasn't been updated yet
+		assert(viewIt != GetUI().cameraViews.end());
 
 		// Update and render visualisations
 		CameraView &view = viewIt->second;
@@ -358,13 +355,10 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			CameraID id = (CameraID)(intptr_t)render.userData;
 			Color color;
 
-			{ // Get camera from id (to make sure it's still valid)
-				std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
-				auto viewIt = GetUI().cameraViews.find(id);
-				if (viewIt == GetUI().cameraViews.end())
-					return; // Just removed, but UI hasn't been updated yet
-				color = getStatusColor(*viewIt->second.camera);
-			}
+			// Get camera from id (to make sure it's still valid)
+			auto viewIt = GetUI().cameraViews.find(id);
+			assert(viewIt != GetUI().cameraViews.end());
+			color = getStatusColor(*viewIt->second.camera);
 
 			ImVec2 size = SetOnDemandRenderArea(render, dc->ClipRect);
 			visSetupProjection(Eigen::Isometry3f::Identity());

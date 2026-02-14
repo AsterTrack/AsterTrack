@@ -75,8 +75,6 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		glDepthFunc(GL_GEQUAL);
 		glEnable(GL_DEPTH_TEST);
 
-		std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
-
 		// Update and render visualisations
 		visualiseState3D(GetState(), GetUI().visState,
 			GetUI().view3D, Eigen::Vector2i(size.x, size.y), GetUI().deltaTime);

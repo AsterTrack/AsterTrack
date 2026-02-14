@@ -255,6 +255,7 @@ void InterfaceState::UpdateUI()
 		}
 	}
 
+	// This is purely to protect the lists state.camera and state.controller
 	std::shared_lock dev_lock(GetState().deviceAccessMutex);
 
 	GeneralInput();

@@ -71,7 +71,6 @@ void InterfaceState::UpdateCameras()
 				ImGuiWindow* imguiWindow = ImGui::FindWindowByName(view->second.ImGuiTitle.c_str());
 				if (imguiWindow)
 					ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, false);
-				ImGui::SetTabItemClosed(view->second.ImGuiTitle.c_str());
 			}
 			view = cameraViews.erase(view);
 			cameraGridDirty = true;

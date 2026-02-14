@@ -1,3 +1,9 @@
+The initial release of VRPN (The Virtual Reality Peripheral Network) was placed into the public domain on 5/4/1998 by the copyright holder Russell M. Taylor II at the University of North Carolina at Chapel Hill.
+
+To protect all VRPN contributors from liability without restricting the use of VRPN, as of July 22, 2010, future versions of VRPN (versions 7.27 and higher) are being released under the Boost Software License 1.0.
+
+Copyright the VRPN contributors.
+
 Boost Software License 1.0 (BSL1.0)
 
 Permission is hereby granted, free of charge, to any person or organization obtaining a copy
@@ -19,3 +25,24 @@ COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE FOR ANY DAMAGES 
 LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+Additional requests follow:
+
+1. Please acknowledge this library in any publication, written, videotaped,
+	or otherwise produced, that results from making programs using it.
+	The acknowledgement will credit
+
+	CISMM Project
+	University of North Carolina at Chapel Hill,
+	Supported by the NIH/NCRR and the NIH/NIBIB.
+
+2. Please furnish us a copy of any publication, including videotape,
+	that you produce and disseminate outside your group using our
+	program.  These should be addressed to Professor R.M. Taylor
+	at taylorr@cs.unc.edu.
+
+3. Please send us derived classes and drivers for new devices that you
+	create for the library.  We will attempt to include them in
+	future releases of the library for you and others to use.  This
+	is the fastest way to get a working system for everyone.
+

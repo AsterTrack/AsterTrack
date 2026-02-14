@@ -1093,7 +1093,8 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 			while (state.simAdvance == 0)
 			{ // Instead of wait, to allow thread updates
 				UpdatePipelineStatus(state.pipeline);
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				FetchTrackingIO(state); // Keep I/O connections alive
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			}
 			state.simWaiting = false;
 		}
@@ -1212,6 +1213,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 		{
 			UpdatePipelineStatus(state.pipeline);
 			pipeline_lock.unlock();
+			FetchTrackingIO(state); // Keep I/O connections alive
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
@@ -1251,7 +1253,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 
 		{
 			CheckTrackingIO(state);
-			//FetchTrackingIO(*state);
+			FetchTrackingIO(state);
 
 			ProcessFrame(pipeline, frameRecord); // new shared_ptr
 

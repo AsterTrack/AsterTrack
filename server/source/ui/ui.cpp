@@ -462,6 +462,7 @@ void InterfaceState::ResetWindowLayout()
 
 	ImGui::DockBuilderDockWindow(windows[WIN_TRACKERS].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_CAMERA_CONFIGS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_INTEGRATIONS].title.c_str(), sidePanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_DEVICES].title.c_str(), edgePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_WIRELESS].title.c_str(), sidePanelID);
@@ -700,6 +701,7 @@ bool InterfaceState::Init()
 	// Database
 	windows[WIN_TRACKERS] = InterfaceWindow(ICON_LA_STAR_OF_LIFE " Trackers", &InterfaceState::UpdateTrackers, false);
 	windows[WIN_CAMERA_CONFIGS] = InterfaceWindow(ICON_LA_CAMERA " Configs", &InterfaceState::UpdateCameraSettings, false);
+	windows[WIN_INTEGRATIONS] = InterfaceWindow(ICON_LA_SHARE_ALT " Integrations", &InterfaceState::UpdateIntegrations, false);
 	// Device mode
 	windows[WIN_DEVICES] = InterfaceWindow(ICON_LA_DATABASE " Devices", &InterfaceState::UpdateDevices, false);
 	windows[WIN_WIRELESS] = InterfaceWindow(ICON_LA_WIFI " Wireless", &InterfaceState::UpdateWirelessSetup, false);

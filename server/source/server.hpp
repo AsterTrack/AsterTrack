@@ -133,6 +133,7 @@ struct ServerState
 
 		// VRPN IO
 		bool useVRPN = false;
+		std::string connectionHost;
 		opaque_ptr<vrpn_Connection> vrpn_server;
 		std::map<int, std::shared_ptr<vrpn_Tracker_AsterTrack>> vrpn_trackers;
 	} io;

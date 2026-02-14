@@ -106,6 +106,7 @@ enum InterfaceWindows
 
 	WIN_TRACKERS,
 	WIN_CAMERA_CONFIGS,
+	WIN_INTEGRATIONS,
 
 	WIN_DEVICES,
 	WIN_WIRELESS,
@@ -459,6 +460,7 @@ public:
 	void UpdateInsights(InterfaceWindow &window);
 
 	void UpdateTrackers(InterfaceWindow &window);
+	void UpdateIntegrations(InterfaceWindow &window);
 
 	void UpdateDevices(InterfaceWindow &window);
 	void UpdateCameraSettings(InterfaceWindow &window);

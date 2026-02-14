@@ -111,6 +111,7 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_TRACKERS]);
 		addWindowMenuItem(windows[WIN_CAMERA_CONFIGS]);
+		addWindowMenuItem(windows[WIN_INTEGRATIONS]);
 		ImGui::Separator();
 		addWindowMenuItem(windows[WIN_DEVICES]);
 		addWindowMenuItem(windows[WIN_WIRELESS]);

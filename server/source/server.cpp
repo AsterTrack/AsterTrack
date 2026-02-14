@@ -1649,8 +1649,8 @@ void SetupIO(ServerState &state)
 	auto io_lock = std::unique_lock(state.io.mutex);
 	state.io.useVRPN = true;
 	// Setup VRPN Connection
-	std::string connectionName = ":" + std::to_string(vrpn_DEFAULT_LISTEN_PORT_NO);
-	state.io.vrpn_server = opaque_ptr<vrpn_Connection>(vrpn_create_server_connection(connectionName.c_str()));
+	state.io.connectionHost = ":" + std::to_string(vrpn_DEFAULT_LISTEN_PORT_NO);
+	state.io.vrpn_server = opaque_ptr<vrpn_Connection>(vrpn_create_server_connection(state.io.connectionHost.c_str()));
 	state.io.vrpn_server->setAutoDeleteStatus(true);
 }
 

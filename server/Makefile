@@ -217,7 +217,7 @@ SERVER_CPP = \
 	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp \
 	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp \
 	tracking/cluster.cpp tracking/tracking.cpp \
-	util/impl.cpp \
+	util/impl.cpp
 
 SERVER_SHARED_CPP = \
 	util/timesync.cpp \
@@ -242,7 +242,7 @@ INTERFACE_CPP = \
 	ui/insights.cpp ui/logging.cpp \
 	ui/devices.cpp ui/wireless.cpp ui/cameraSettings.cpp \
 	ui/parameters/sequence2D.cpp ui/parameters/calibration_point.cpp ui/parameters/calibration_target.cpp ui/parameters/tracking.cpp \
-	ui/trackers.cpp \
+	ui/trackers.cpp ui/integrations.cpp \
 	ui/tools/lens_selection.cpp \
 	ui/cameraPanels.cpp ui/cameraView.cpp ui/view3D.cpp ui/visSettings.cpp \
 	ui/system/state.cpp ui/system/visGeneral.cpp ui/system/visTarget.cpp \

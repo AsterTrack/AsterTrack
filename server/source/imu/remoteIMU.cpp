@@ -118,6 +118,11 @@ void removeRemoteIMU(std::shared_ptr<IMUDevice> remoteIMU)
 		[&](const auto &imu) { return imu == remoteIMU; });
 	if (remoteIMUIt != remote->devices.end())
 		*remoteIMUIt = nullptr;
+	// TODO: RemoteIMU identity problem on reconnection (2/2)
+	// This removes IMUDevices when remote disconnects, and creates a new one on reconnect
+	// Device driver IMUs just reuse the same IMUDevice since they can be certain it's the same IMU
+	// For these, the identity is up to the connected remote - might be a different source entirely!
+	// Is that a problem? Shouldn't it just stay the same IMUDevice here anyway?
 	remote->removedIMUs.push_back(std::move(remoteIMU));
 }
 

@@ -148,6 +148,8 @@ void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 	bool updatedIMU = false;
 	if (tracker.imuIdent)
 	{ // Ensure IMU is properly associated
+		// TODO: RemoteIMU identity problem on reconnection (1/2)
+		// This can not determine a IMU was disconnected and reconnected as a different IMUDevice
 		if (tracker.imu && tracker.imu->id != tracker.imuIdent)
 		{ // Switched / Removed IMU
 			tracker.imu = nullptr;

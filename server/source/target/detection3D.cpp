@@ -27,6 +27,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * Detecting a target (set of markers) in a triangulated 3D point cloud
  */
 
+// LTrace is so heavy-handed, it slows down and overwhelms UI log filtering
+#if LOG_MAX_LEVEL_DEFAULT < LDebug
+#define LOG_MAX_LEVEL LDebug
+#endif
+
 
 /* Functions */
 

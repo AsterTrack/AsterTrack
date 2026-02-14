@@ -47,6 +47,12 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		bool logDirty = false;
 		int findItem = -1;
 
+		// TODO: Update log filtering to be more performant (1/2)
+		// Especially when logsFilterPos has been reset, it may take seconds to update in long sessions with Trace/Debug logs
+		// Would need a logging that prioritises the currently seen logs (selectedLog or bottom)
+		// Biggest issue with that is that logsFiltered can't grow front to append older logs later
+		// Additionally, ImGuiListClipper relies on knowing the log count, though that is not super problematic
+
 		{ // Update filtered logs
 			auto pos = logs.begin();
 			bool newFilter = logsFilterPos <= pos.index();
@@ -212,9 +218,14 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 			ImGui::SetItemTooltip("%s", LogCategoryDescriptions[i]);
 			int filterLevel = LogFilterTable[i];
 			if (ImGui::Combo("", &filterLevel, LogLevelIdentifiers, LMaxLevel))
-			{
+			{ // This cannot be used to set it lower than LOG_MAX_LEVEL_DEFAULT or the LOG_MAX_LEVEL of a file
+				// But we can't use that fact that because we don't know LOG_MAX_LEVEL
+				// This also does not reset LogMaxLevelTable to its default as set in app.cpp
+				// So once set lower, it stays at max(LOG_MAX_LEVEL_DEFAULT, lowestSet)
+				// Which can cause performance problems due to excessive logs burdening filtering
+				// TODO: Update log filtering to be more performant (2/2)
 				LogFilterTable[i] = (LogLevel)filterLevel;
-				LogMaxLevelTable[i] = std::min(LOG_MAX_LEVEL_DEFAULT, LogFilterTable[i]);
+				LogMaxLevelTable[i] = std::min(LogMaxLevelTable[i], LogFilterTable[i]);
 				logsFilterPos = 0;
 			}
 			ImGui::PopID();

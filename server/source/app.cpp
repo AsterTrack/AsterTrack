@@ -152,6 +152,11 @@ int main (void)
 		// NOTE: Compile-time LOG_MAX_LEVEL takes priority!
 		for (int i = 0; i < LMaxCategory; i++)
 			LogMaxLevelTable[i] = LOG_MAX_LEVEL_DEFAULT;
+		// These are taking too much time to log and filter in modes that default to LTrace
+		// So increase at runtime to filter widely-used logs out unless UI asks for those
+		LogMaxLevelTable[LDetection3D] = LDarn; // This also does not compile LTrace at all in detection3D.cpp
+		LogMaxLevelTable[LTrackingMatch] = LDarn;
+		LogMaxLevelTable[LTrackingOpt] = LDarn;
 
 		// Basic log file rotation
 		AppInstance.logPath = "log.txt";

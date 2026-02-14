@@ -1216,9 +1216,10 @@ static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *
 	if (sscanf(line, "L%d=%d", &d1, &d2) == 2)
 	{
 		if (d1 >= 0 && d1 < LMaxCategory && d2 >= 0 && d2 < LMaxLevel)
-		{
+		{ // This cannot be used to set it lower than LOG_MAX_LEVEL_DEFAULT or the LOG_MAX_LEVEL of a file
+			// But we can't use that fact that because we don't know LOG_MAX_LEVEL
 			LogFilterTable[d1] = (LogLevel)d2;
-			LogMaxLevelTable[d1] = std::min(LOG_MAX_LEVEL_DEFAULT, LogFilterTable[d1]);
+			LogMaxLevelTable[d1] = std::min(LogMaxLevelTable[d1], LogFilterTable[d1]);
 		}
 	}
 }

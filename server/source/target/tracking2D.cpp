@@ -36,6 +36,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * Fitting a target (set of markers) to observed points in 2D space
  */
 
+// LTrace is very heavy-handed
+#if LOG_MAX_LEVEL_DEFAULT < LDebug
+#define LOG_MAX_LEVEL LDebug
+#endif
 
 /* Functions */
 

@@ -150,7 +150,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		BeginLabelledGroup("Trigger Conditions");
 		std::array<const char*,7> triggerLabels;
 		triggerLabels.fill("Invalid State");
-		triggerLabels[TrackerConfig::TRIGGER_ALWAYS] = "Always";
+		triggerLabels[TrackerConfig::TRIGGER_BY_DEFAULT] = "By Default";
 		triggerLabels[TrackerConfig::TRIGGER_ONLY_MANUALLY] = "Only Manually";
 		triggerLabels[TrackerConfig::TRIGGER_ON_IMU_CONNECT] = "On IMU Connect";
 		triggerLabels[TrackerConfig::TRIGGER_ON_IO_CONNECT] = "On IO Connect";
@@ -158,10 +158,10 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		if (ImGui::BeginCombo("##TrgCond", triggerLabels[tracker.trigger]))
 		{
 			bool updated = false;
-			if (ImGui::Selectable("Always", tracker.trigger == TrackerConfig::TRIGGER_ALWAYS))
+			if (ImGui::Selectable("By Default", tracker.trigger == TrackerConfig::TRIGGER_BY_DEFAULT))
 			{
-				updated = tracker.trigger != TrackerConfig::TRIGGER_ALWAYS;
-				tracker.trigger = TrackerConfig::TRIGGER_ALWAYS;
+				updated = tracker.trigger != TrackerConfig::TRIGGER_BY_DEFAULT;
+				tracker.trigger = TrackerConfig::TRIGGER_BY_DEFAULT;
 			}
 			if (ImGui::Selectable("Only Manually", tracker.trigger == TrackerConfig::TRIGGER_ONLY_MANUALLY))
 			{
@@ -196,9 +196,9 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Expose Conditions");
-		const TrackerConfig::TrackerExpose exposeMap[] = { TrackerConfig::EXPOSE_ALWAYS, TrackerConfig::EXPOSE_ONCE_TRIGGERED, TrackerConfig::EXPOSE_ONCE_TRACKED };
+		const TrackerConfig::TrackerExpose exposeMap[] = { TrackerConfig::EXPOSE_BY_DEFAULT, TrackerConfig::EXPOSE_ONCE_TRIGGERED, TrackerConfig::EXPOSE_ONCE_TRACKED };
 		std::array<const char*,3> exposeLabel;
-		exposeLabel[TrackerConfig::EXPOSE_ALWAYS] = "Always";
+		exposeLabel[TrackerConfig::EXPOSE_BY_DEFAULT] = "By Default";
 		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRIGGERED] = "Once Triggered";
 		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRACKED] = "Once Tracked";
 		int exposeCond = tracker.expose;
@@ -214,23 +214,23 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		{
 			ImGui::BeginDisabled(tracker.triggered);
 			if (ImGui::Button("Trigger Manually", SizeWidthDiv2()))
-			{ // ServerUpdatedTrackerConfig will update with triggered set
-				tracker.triggered = true;
-				ServerUpdatedTrackerConfig(state, tracker);
+			{ // Manually trigger tracker and notify pipeline
+				ServerUpdateTrackerConditions(state, tracker, false, 1, 0);
 			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::BeginDisabled(tracker.exposed);
 			if (ImGui::Button("Expose Manually", SizeWidthDiv2()))
-			{ // CheckTrackingIO in supervisor thread will act with exposed set
-				tracker.exposed = true;
+			{ // Manually expose tracker, CheckTrackingIO will update integrations accordingly
+				ServerUpdateTrackerConditions(state, tracker, false, 0, 1);
 			}
 			ImGui::EndDisabled();
 		}
 
 		if (changed)
 		{
-			ServerUpdatedTrackerConfig(state, tracker);
+			state.trackerConfigDirty = true;
+			ServerUpdateTrackerConfig(state, tracker);
 		}
 
 		EndSection();
@@ -397,7 +397,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (changed)
 		{
-			ServerUpdatedTrackerConfig(state, tracker);
+			state.trackerConfigDirty = true;
+			ServerUpdateTrackerConfig(state, tracker);
 		}
 
 		EndSection();

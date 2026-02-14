@@ -143,7 +143,9 @@ struct ServerState
 
 bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
-void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker);
+bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker);
+void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool updatedIMU = false);
+void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, bool initial = false, int manualTrigger = 0, int manualExpose = 0);
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);

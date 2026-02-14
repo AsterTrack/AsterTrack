@@ -308,8 +308,14 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
  * Setup and update tracked markers/targets and their associations to IMUs
  */
 
+/* Remove a tracked target from consideration for tracking */
+void RemoveTrackedTarget(PipelineState &pipeline, int ID);
+
 /* Add or update a tracked target with given config */
 void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib, TargetDetectionConfig detectionConfig);
+
+/* Remove a tracked marker from consideration for tracking */
+void RemoveTrackedMarker(PipelineState &pipeline, int ID);
 
 /* Add or update a tracked marker with given config */
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size);

@@ -1230,6 +1230,17 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 }
 
+void RemoveTrackedTarget(PipelineState &pipeline, int ID)
+{
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
+	auto tracked = std::find_if(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(), [&ID](const auto &tracker){ return tracker.id == ID; });
+	if (tracked != pipeline.tracking.trackedTargets.end())
+		pipeline.tracking.trackedTargets.erase(tracked);
+	auto dormant = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(), [&ID](const auto &tracker){ return tracker.id == ID; });
+	if (dormant != pipeline.tracking.dormantTargets.end())
+		pipeline.tracking.dormantTargets.erase(dormant);
+}
+
 void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, TargetCalibration3D calib, TargetDetectionConfig detectionConfig)
 {
 	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
@@ -1250,6 +1261,17 @@ void SetTrackedTarget(PipelineState &pipeline, int ID, std::string label, Target
 		return;
 	}
 	pipeline.tracking.dormantTargets.emplace_back(ID, label, TrackerTarget(std::move(calib), detectionConfig));
+}
+
+void RemoveTrackedMarker(PipelineState &pipeline, int ID)
+{
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
+	auto tracked = std::find_if(pipeline.tracking.trackedMarkers.begin(), pipeline.tracking.trackedMarkers.end(), [&ID](const auto &tracker){ return tracker.id == ID; });
+	if (tracked != pipeline.tracking.trackedMarkers.end())
+		pipeline.tracking.trackedMarkers.erase(tracked);
+	auto dormant = std::find_if(pipeline.tracking.dormantMarkers.begin(), pipeline.tracking.dormantMarkers.end(), [&ID](const auto &tracker){ return tracker.id == ID; });
+	if (dormant != pipeline.tracking.dormantMarkers.end())
+		pipeline.tracking.dormantMarkers.erase(dormant);
 }
 
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size)

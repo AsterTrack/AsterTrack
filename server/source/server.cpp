@@ -138,13 +138,8 @@ void ServerExit(ServerState &state)
 	WirelessServerCleanup();
 }
 
-void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
+bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker)
 {
-	state.trackerConfigDirty = true;
-
-	if (!state.isStreaming) return;
-	// Trigger tracker to be considered for tracking
-
 	bool updatedIMU = false;
 	if (tracker.imuIdent)
 	{ // Ensure IMU is properly associated
@@ -165,18 +160,13 @@ void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 			}
 		}
 	}
+	return updatedIMU;
+}
 
-	if (!tracker.triggered)
-	{ // Ensure trigger conditions have been met
-		if (tracker.trigger == TrackerConfig::TRIGGER_ALWAYS)
-			tracker.triggered = true;
-		else if (tracker.trigger == TrackerConfig::TRIGGER_ON_IMU_CONNECT && tracker.imu)
-			tracker.triggered = true;
-		else if (tracker.trigger == TrackerConfig::TRIGGER_ON_IO_CONNECT && tracker.connected)
-			tracker.triggered = true;
-		else
-			return;
-	}
+void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool updatedIMU)
+{
+	if (!state.isStreaming) return;
+	if (!tracker.triggered) return;
 
 	// Set (or update) tracked object with tracker config
 	if (tracker.type == TrackerConfig::TRACKER_TARGET)
@@ -192,6 +182,58 @@ void ServerUpdatedTrackerConfig(ServerState &state, TrackerConfig &tracker)
 	}
 }
 
+void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, bool initial, int manualTrigger, int manualExpose)
+{
+	if (!state.isStreaming)
+	{
+		tracker.tracked = tracker.triggered = false;
+		// A tracker might be exposed and connected already
+		return;
+	}
+
+	if (!tracker.triggered)
+	{ // Check trigger conditions
+		if (manualTrigger > 0)
+			tracker.triggered = true;
+		else if (tracker.trigger == TrackerConfig::TRIGGER_BY_DEFAULT && initial)
+			tracker.triggered = true;
+		else if ((tracker.trigger & TrackerConfig::TRIGGER_ON_IMU_CONNECT) && tracker.imu)
+			tracker.triggered = true;
+		else if ((tracker.trigger & TrackerConfig::TRIGGER_ON_IO_CONNECT) && tracker.connected)
+			tracker.triggered = true;
+
+		if (tracker.triggered)
+		{ // Update pipeline with triggered tracker
+			ServerUpdateTrackerConfig(state, tracker);
+		}
+	}
+	else if (manualTrigger < 0)
+	{ // Remove tracker
+		tracker.triggered = false;
+		if (tracker.type == TrackerConfig::TRACKER_TARGET)
+			RemoveTrackedTarget(state.pipeline, tracker.id);
+		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
+			RemoveTrackedMarker(state.pipeline, tracker.id);
+	}
+
+	if (!tracker.exposed)
+	{ // Check expose conditions
+		if (manualExpose > 0)
+			tracker.exposed = true;
+		else if (tracker.expose == TrackerConfig::EXPOSE_BY_DEFAULT && initial)
+			tracker.exposed = true;
+		else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRIGGERED && tracker.triggered)
+			tracker.exposed = true;
+		else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRACKED && tracker.tracked)
+			tracker.exposed = true;
+		// CheckTrackingIO will update integrations with new exposed state accordingly
+	}
+	else if (manualExpose < 0)
+	{ // CheckTrackingIO will update integrations with new exposed state accordingly
+		tracker.exposed = false;
+	}
+}
+
 // Signals
 
 void SignalTrackerDetected(int trackerID)
@@ -200,6 +242,7 @@ void SignalTrackerDetected(int trackerID)
 	{
 		if (tracker.id != trackerID) continue;
 		tracker.tracked = true;
+		ServerUpdateTrackerConditions(GetState(), tracker);
 		return;
 	}
 }
@@ -215,8 +258,9 @@ void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
 			tracker.isSimulated = false;
 		}
 		GetState().trackerCalibsDirty = true;
+		GetState().trackerConfigDirty = true;
 		// Update pipeline - this update may have come from pipeline, still
-		ServerUpdatedTrackerConfig(GetState(), tracker);
+		ServerUpdateTrackerConfig(GetState(), tracker);
 		return;
 	}
 }
@@ -229,8 +273,11 @@ void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)
 		tracker.imuIdent = ident;
 		tracker.imuCalib = calib;
 		GetState().trackerIMUsDirty = true;
+		GetState().trackerConfigDirty = true;
 		// Update pipeline - this update may have come from pipeline, still
-		ServerUpdatedTrackerConfig(GetState(), tracker);
+		bool updatedIMU = ServerUpdateTrackerIMU(GetState(), tracker);
+		ServerUpdateTrackerConditions(GetState(), tracker);
+		ServerUpdateTrackerConfig(GetState(), tracker, updatedIMU);
 		return;
 	}
 }
@@ -783,20 +830,18 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 					imuDevice->index = state.pipeline.record.imus.size();
 					auto imu = std::static_pointer_cast<IMU>(imuDevice);
 					state.pipeline.record.imus.push_back(imu); // new shared_ptr
-					if (state.isStreaming)
+					auto trackerConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+						[&](auto &cfg){ return cfg.imuIdent == imu->id; });
+					if (trackerConfig != state.trackerConfigs.end())
 					{
-						auto trackerConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-							[&](auto &cfg){ return cfg.imuIdent == imu->id; });
-						if (trackerConfig != state.trackerConfigs.end())
-						{
+						if (state.isStreaming)
 							AssociateIMU(state.pipeline, imu, trackerConfig->id, trackerConfig->imuCalib);
-							trackerConfig->imu = imu;
-						}
-						else
-						{
-							OrphanIMU(state.pipeline, imu); // new shared_ptr
-							LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
-						}
+						trackerConfig->imu = imu;
+					}
+					else if (state.isStreaming)
+					{
+						OrphanIMU(state.pipeline, imu); // new shared_ptr
+						LOG(LTracking, LInfo, "Added IMU as orphaned tracked IMU!");
 					}
 				}
 				for (auto &imu : removedIMUs)
@@ -1422,8 +1467,8 @@ bool StartStreaming(ServerState &state)
 
 	// Setup trackers
 	for (auto &tracker : state.trackerConfigs)
-	{
-		ServerUpdatedTrackerConfig(state, tracker);
+	{ // Check initial trigger conditions of trackers
+		ServerUpdateTrackerConditions(state, tracker, true);
 	}
 
 	if (state.mode == MODE_Device)
@@ -1465,9 +1510,8 @@ void StopStreaming(ServerState &state)
 	LOG(LDefault, LInfo, "Stopped stream!\n");
 
 	for (auto &tracker : state.trackerConfigs)
-	{
-		tracker.triggered = false;
-		tracker.tracked = false;
+	{ // Reset after streaming and check expose conditions
+		ServerUpdateTrackerConditions(state, tracker);
 	}
 }
 
@@ -1631,18 +1675,18 @@ void CheckTrackingIO(ServerState &state)
 
 	for (auto &tracker : state.trackerConfigs)
 	{
-		if (!tracker.exposed)
-		{ // Check expose conditions
-			if (tracker.expose == TrackerConfig::EXPOSE_ALWAYS)
-				tracker.exposed = true;
-			else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRIGGERED && tracker.triggered)
-				tracker.exposed = true;
-			else if (tracker.expose == TrackerConfig::EXPOSE_ONCE_TRACKED && tracker.tracked)
-				tracker.exposed = true;
-			else
-			 	continue;
-		}
 		auto io_tracker = state.io.vrpn_trackers.find(tracker.id);
+		if (!tracker.exposed)
+		{
+			if (io_tracker != state.io.vrpn_trackers.end())
+			{ // Disconnect after expose was disabled
+				state.io.vrpn_trackers.erase(io_tracker);
+				LOG(LIO, LInfo, "VRPN Tracker '%s' is no longer exposed!", tracker.label.c_str());
+				tracker.connected = false;
+				ServerUpdateTrackerConditions(state, tracker);
+			}
+			continue;
+		}
 		if (io_tracker == state.io.vrpn_trackers.end())
 		{
 			std::string path = tracker.label;
@@ -1655,13 +1699,13 @@ void CheckTrackingIO(ServerState &state)
 		{
 			LOG(LIO, LInfo, "VRPN Tracker '%s' has been connected!", tracker.label.c_str());
 			tracker.connected = true;
-			ServerUpdatedTrackerConfig(state, tracker);
+			ServerUpdateTrackerConditions(state, tracker);
 		}
 		else if (tracker.connected && !io_tracker->second->isConnected())
 		{
 			LOG(LIO, LInfo, "VRPN Tracker '%s' has been disconnected!", tracker.label.c_str());
 			tracker.connected = false;
-			ServerUpdatedTrackerConfig(state, tracker);
+			ServerUpdateTrackerConditions(state, tracker);
 		}
 	}
 

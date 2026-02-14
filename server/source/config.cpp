@@ -670,7 +670,7 @@ std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &path, 
 				tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
 			if (jsTracker.contains("expose") && jsTracker["expose"].is_number_unsigned())
 				tracker.expose = jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX?
-					(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_ALWAYS;
+					(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_BY_DEFAULT;
 
 			if (tracker.type == TrackerConfig::TRACKER_TARGET)
 			{

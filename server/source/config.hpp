@@ -85,7 +85,7 @@ struct TrackerConfig
 
 	enum TrackerTrigger
 	{
-		TRIGGER_ALWAYS = 0,
+		TRIGGER_BY_DEFAULT = 0,
 		TRIGGER_ONLY_MANUALLY = (1 << 0),
 		TRIGGER_ON_IMU_CONNECT = (1 << 1),
 		TRIGGER_ON_IO_CONNECT = (1 << 2),
@@ -96,7 +96,7 @@ struct TrackerConfig
 
 	enum TrackerExpose
 	{
-		EXPOSE_ALWAYS = 0,
+		EXPOSE_BY_DEFAULT = 0,
 		EXPOSE_ONCE_TRIGGERED = 1,
 		EXPOSE_ONCE_TRACKED = 2,
 		EXPOSE_MAX
@@ -107,8 +107,8 @@ struct TrackerConfig
 	std::string label;
 	TrackerType type;
 	bool isSimulated = false;
-	TrackerTrigger trigger = TRIGGER_ALWAYS;
-	TrackerExpose expose = EXPOSE_ALWAYS;
+	TrackerTrigger trigger = TRIGGER_BY_DEFAULT;
+	TrackerExpose expose = EXPOSE_BY_DEFAULT;
 
 	// Target-specific Config
 	TargetCalibration3D calib;

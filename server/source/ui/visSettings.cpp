@@ -79,7 +79,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
 
 			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
-			VisFrameLock visFrame = visState.lockVisFrame(pipeline);
+			VisFrameLock visFrame = visState.lockVisFrame(pipeline, true, -1, true);
 			if (displayInternalDebug && visFrame)
 			{
 				auto trackRecord = std::find_if(visFrame.frameIt->get()->trackers.begin(), visFrame.frameIt->get()->trackers.end(),

@@ -26,10 +26,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime, int focusCamera) const
+VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime, int focusCamera, bool ignoreTarget) const
 {
 	VisFrameLock snapshot = {};
-	snapshot.target = lockVisTarget();
+	if (!ignoreTarget)
+		snapshot.target = lockVisTarget();
 	snapshot.frames = pipeline.record.frames.getView();
 	if (snapshot.frames.empty())
 		return snapshot;

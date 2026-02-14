@@ -125,7 +125,7 @@ enum InterfaceWindows
 
 struct VisualisationState
 {
-	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool forceRealtime = false, int focusCamera = -1) const;
+	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool forceRealtime = false, int focusCamera = -1, bool ignoreTarget = false) const;
 	Eigen::Vector3f getPreferredTarget(const VisFrameLock &visFrame) const;
 
 	bool showMarkerTrails = false;

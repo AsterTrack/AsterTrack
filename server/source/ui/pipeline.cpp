@@ -120,7 +120,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		// Gather tracked targets from latest frame and update UI-local record of tracked targets
 		OptFrameNum frameNum = pipeline.frameNum;
-		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true);
+		VisFrameLock visFrame = visState.lockVisFrame(pipeline, true, -1, true);
 		if (visFrame)
 		{
 			frameNum = visFrame.frameIt.index();

@@ -849,9 +849,9 @@ void usbd_EP_TX_CB(usbd_device *usbd, uint8_t ep, bool success)
 		lastSOFPacket = NULL;
 	}
 
-		USBP_STR("+T");
 	if (sink->sending->shared)
 	{
+		USBP_STR("+T");
 		USBP_CHARR(INT9_TO_CHARR(sink->sending->shared->index));
 	}
 

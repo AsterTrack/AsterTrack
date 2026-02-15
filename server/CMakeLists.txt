@@ -136,11 +136,6 @@ if(MSVC)
 	target_compile_options(astertrack PUBLIC "-wd4348")
 	target_compile_options(astertrack PUBLIC "-wd4068")
 
-	# And because libusb defaults to -MD and msbuild does not allow you to override it, libusb is built with wrong runtime libs
-	# Need to force linker to use this now
-	# Update: Forcefully overrode setting with environment variable for libusb build, so this workaround is not needed anymore
-	#target_link_options(astertrack PUBLIC -NODEFAULTLIB:msvcrt.lib -NODEFAULTLIB:msvcprt.lib)
-
 	# Configuration-specific setup
 	# Gave up on windows dual Release/Debug builds, support for that is lackluster in CMake at best
 	if(CMAKE_BUILD_TYPE STREQUAL Debug)

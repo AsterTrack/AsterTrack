@@ -328,7 +328,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (ImGui::ImageButton("DetachView", darkModeIcons.detach, iconSize()))
 		{
 			view.isDetached = true;
-			view.isIntendedFocus = true;
 			cameraGridDirty = true;
 		}
 		ImGui::SameLine();

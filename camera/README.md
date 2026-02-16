@@ -10,14 +10,14 @@ Install a distro like Ubuntu which already has most dependencies (you may need t
 
 ### Compilation
 Cross-compilation is considered for the future - for now, compilation is only possible on the actual hardware itself. The general outline is as follows - see later sections for details on each individual step:
-1. Build a `compile` image and flash it on an SD card with an SD card reader
-2. Boot a Raspberry Pi (camera hardware or standalone) with that SD card and it will compile automatically
-3. Wait until it finishes compilation and shuts down. This may take over 10min, and is signaled by the LED flashing slowly, then turning off and staying off.
-4. Put the SD card back into an SD card reader
-5. Use `data_read` followed by `storage_update` to extract the build artifacts from the SD card using and store them for later use
-6. Build a regular image for tracking use - a `dev` image is recommended for now, but `wifi` and `normal` work, too. In addition to normal operation, a `dev`image is capable of re-compiling and iterative development should the need arise, without any downsides besides image size.
-7. Flash that new image on the SD card and boot it with the Camera hardware. The first boot may take longer than followup boots.
-8. The camera should eventually connect with the controller. If it does not, try pressing the flash button to soft-reset the controller, as there is currently an issue with establishing the connection.
+1. Build a `compile` image and flash it on an SD card with an SD card reader. You may also directly build a `dev` image, in case you intend to continue using that image.
+2. Boot a Raspberry Pi (camera hardware or standalone) with that SD card and it will compile automatically.
+3. Wait until it finishes compilation, which may take over 10min. Only the `compile` image will shut down after it is done, which is signaled by the LED flashing slowly, then turning off and staying off.
+4. Put the SD card back into an SD card reader.
+5. Use `data_read` followed by `storage_update` with the correct block device of the SD card to extract the build artifacts and store them for later use.
+6. Build a regular image for tracking use - a `dev` image is recommended for now, but `wifi` and `minimal` work, too. In addition to normal operation, a `dev`image is capable of re-compiling and iterative development should the need arise, without any downsides besides image size.
+7. Flash that new image on the SD card and boot it with the Camera hardware. The first boot may take longer than followup boots, as partitions are created and resized, and SSH keys are generated.
+8. The camera should eventually connect with the controller.
 
 ### Building an Image
 
@@ -35,11 +35,11 @@ Note: Manual setup is no longer supported due to the benefits of automatic, repe
 
 The Raspberry Pi runs a piCore operating system, which is configured using a set of scripts from a linux host PC. These scripts download an initial image from piCore, partition it properly, download and install all dependencies from piCore repositories, and configure the system and environment for the desired use. <br>
 There are several image types that can be generated:
-- `compile`: For a quick compile and offload operation without running TrackingCamera
-- `dev-single`: Dev image without running TrackingCamera - just sets up wifi and SSH and waits
-- `dev`: Dev image that can be used as a normal camera, but allows compilation and dev work via SSH when desired, and logs to SD card for later analysis
-- `wifi`: Normal camera image that has wifi and SSH support enabled when setup via host software - e.g. to read logs, for a future server, etc.
-- `normal`: Normal camera image, as small and quick as can be, no wifi support
+- `compile`: For a quick compile and offload operation without running TrackingCamera - instead, it shuts off when compilation is done.
+- `dev`: Dev image that can be used as a normal camera, but allows compilation and dev work via SSH when desired, and logs to SD card for later analysis.
+- `dev-single`: Dev image that automatically sets up wifi and SSH, intended as the single main development unit - but `dev` images can also later be configured to act this way.
+- `wifi`: Normal camera image that has wifi and SSH support enabled when setup via host software - e.g. to read logs, for wireless operation, etc.
+- `normal`: Normal camera image, as small and quick to boot as can be, no wifi support.
 
 Feel free to check `setup_image.sh` to check what each image type does exactly.
 

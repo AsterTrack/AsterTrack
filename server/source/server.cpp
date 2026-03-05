@@ -759,7 +759,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			CameraID id = camera.id;
 			if (!camera.storage.receivedInfo && camera.hasComms() && dtMS(camera.storage.lastFetchTime, sclock::now()) > 500)
 			{
-				LOG(LCameraDevice, LInfo, "Requesting info from camera #%u", camera.id);
+				LOG(LCameraDevice, LDebug, "Requesting info from camera #%u", camera.id);
 				camera.storage.lastFetchTime = sclock::now();
 				camera.sendPacket(PACKET_CAMERA_INFO, nullptr, 0);
 			}

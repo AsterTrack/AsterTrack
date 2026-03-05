@@ -35,7 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Identification and connection
 // TODO: Parametrise values and pick optimal for both UART and Wifi
-#define COMM_PING_TIMEOUT_MS		500		// Controller/Server sends a ping every 100ms when not already streaming
+#define COMM_PING_TIMEOUT_MS		1000		// Controller/Server sends a ping every 100ms when not already streaming
 											// 250ms is good for Controller, Server needs higher timeout
 #define COMM_RESET_TIMEOUT_MS		100		// Timeout beween comm loss and next try
 #define COMM_IDENT_TIMEOUT_MS		50		// Timeout between sending identification and requiring a response
@@ -275,6 +275,7 @@ inline void comm_stop(CommState &comm)
 		comm.stop(comm.port);
 	comm.started = comm.ready = comm.error = false;
 	proto_clear(comm.protocol);
+	std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 }
 
 inline bool comm_write_internal(CommState &comm, const uint8_t *data, uint16_t length)
@@ -555,6 +556,17 @@ phase_comm:
 				goto phase_start;
 			}
 			else if (num > 0) time_read = sclock::now();
+			else
+			{ // Check timeout
+				// TODO: Add toggle for timeout, not needed for TCP, only for UART
+				if (dtMS(time_read, sclock::now()) > COMM_PING_TIMEOUT_MS)
+				{ // Setup timeout, send NAK
+					printf("%s: Ping dropped out, resetting comm!\n", commName);
+					comm_write_internal(comm, msg_nak, sizeof(msg_nak));
+					comm_reset(comm);
+					break;
+				}
+			}
 			bool prevInCmd = proto.isCmd;
 			bool newToParse = num > 0;
 			while (newToParse && proto_rcvCmd(proto))
@@ -663,16 +675,6 @@ phase_comm:
 				int rem = proto.tail-proto.head;
 				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
 				num = 0;
-			}
-
-			// Check timeout
-			// TODO: Add toggle for timeout, not needed for TCP, only for UART
-			if (dtMS(time_read, sclock::now()) > COMM_PING_TIMEOUT_MS)
-			{ // Setup timeout, send NAK
-				printf("%s: Ping dropped out, resetting comm!\n", commName);
-				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
-				comm_reset(comm);
-				break;
 			}
 
 			fflush(stdout);

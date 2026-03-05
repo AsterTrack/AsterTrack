@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "camera_firmware.hpp"
 #include "tracking_camera.hpp"
 #include "tracking_controller.hpp"
+#include "comm/wireless_server_client.hpp"
 #include "comm/packet.hpp"
 #include "comm/usb.hpp"
 #include "ui/shared.hpp" // Signals
@@ -116,24 +117,29 @@ const uint16_t MAX_WAITING_COUNT = 10;
  * Camera firmware update packets
  */
 
-static bool CameraValidState(std::shared_ptr<TrackingCameraState> &camera)
+static int CameraValidState(std::shared_ptr<TrackingCameraState> &camera)
 {
-	if (camera->state.contextualRLock()->error.encountered)
+	auto state = camera->state.contextualRLock();
+	if (state->error.encountered)
 	{
 		LOG(LCameraDevice, LError, "Camera %d updating firmware failed because it is still recovering from an error!", camera->id);
 		return false; // Cannot handle packet at this time, waiting for recovery
-	}
-	if (camera->state.contextualRLock()->commState != COMM_SBC_READY)
-	{
-		LOG(LFirmwareUpdate, LError, "Camera %d updating firmware failed because it has not started up yet!", camera->id);
-		return false;
 	}
 	if (camera->isStreaming() || camera->hasSetStreaming())
 	{
 		LOG(LFirmwareUpdate, LError, "Camera %d updating firmware failed because it is currently streaming!", camera->id);
 		return false;
 	}
-	return true;
+	if (camera->controller && state->commState == COMM_SBC_READY)
+	{ // Connected via controller
+		return 1;
+	}
+	if (camera->client && camera->client->ready)
+	{ // Connected wirelessly
+		return 2;
+	}
+	LOG(LFirmwareUpdate, LError, "Camera %d updating firmware failed because it has not started up yet!", camera->id);
+	return false;
 }
 
 static std::vector<int> CameraSelectFirmwareTransfers(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState)
@@ -267,7 +273,8 @@ static void CamerasSendFirmwareBlock(FirmwareUpdatePlan &update, FirmwareTransfe
 	*(uint16_t*)(FWPacket.data()+6) = size;
 	// 2 free bytes for future use
 	memcpy(FWPacket.data()+FIRMWARE_PACKET_HEADER, transfer.data.data()+offset, size);
-	calculateForwardPacketChecksum(FWPacket.data(), FIRMWARE_PACKET_HEADER+size, FWPacket.data()+FIRMWARE_PACKET_HEADER+size);
+	// Ignore checksum for now
+	FWPacket.resize(FIRMWARE_PACKET_HEADER+size);
 
 	// USB bandwidth is currently the limiting factor since we use control transfers
 	// So sending blocks to multiple cameras at once
@@ -275,9 +282,20 @@ static void CamerasSendFirmwareBlock(FirmwareUpdatePlan &update, FirmwareTransfe
 	for (int c : cameras)
 	{ // Accumulate cameras by controller
 		auto &camera = transfer.cameras[c].camera;
-		if (camera->controller && CameraValidState(camera))
+		int comms = CameraValidState(camera);
+		if (comms == 1)
 			mapping[camera->controller] |= 1<<camera->port;
+		else if (comms == 2)
+		{
+			if (!camera->sendPacket(PACKET_FW_BLOCK, FWPacket.data(), FWPacket.size()))
+				LOG(LFirmwareUpdate, LWarn, "Failed to send firmware block with offset %d to camera #%u!", offset, camera->id);
+		}
 	}
+
+	// Add checksum for direct-to-controller packets
+	FWPacket.resize(FIRMWARE_PACKET_HEADER+size+PACKET_CHECKSUM_SIZE);
+	calculateForwardPacketChecksum(FWPacket.data(), FIRMWARE_PACKET_HEADER+size, FWPacket.data()+FIRMWARE_PACKET_HEADER+size);
+
 	for (auto &cont : mapping)
 	{ // Send packet to all cameras connected to a controller at once
 		bool success = comm_submit_control_data(cont.first->comm, COMMAND_OUT_SEND_PACKET,
@@ -884,7 +902,7 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		SHA256 sha;
 		sha.add(transfer.data.data(), transfer.data.size());
 		sha.getHash(transfer.sha256);
-		LOG(LFirmwareUpdate, LDebug, "Calculated hash for firmware file as %s", sha.getHash().c_str());
+		LOG(LFirmwareUpdate, LDebug, "Calculated SHA256 for firmware file as %s", sha.getHash().c_str());
 	}
 
 	// Check and init update plan

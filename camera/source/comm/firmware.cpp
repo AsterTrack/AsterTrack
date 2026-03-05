@@ -205,7 +205,7 @@ bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uin
 
 	if (FIRMWARE_PACKET_HEADER+size != length)
 	{
-		printf("Received firmware block with invalid size!\n");
+		printf("Received firmware block with invalid size %d, expected %d+%d!\n", length, FIRMWARE_PACKET_HEADER, size);
 		SendBlockStatus(state, comm, FW_TX_ERROR, index, block);
 		return false;
 	}

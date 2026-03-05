@@ -300,7 +300,15 @@ void InterfaceState::UpdatePipelineCalibSection()
 					else calib = CameraCalib();
 				}
 				ImGui::SetItemTooltip("Reset and invalidate the existing camera calibration. If there is a default lens, it will be applied.");
-				
+
+				bool selected = visState.camera.focusCameraID == camera->id;
+				ImGui::SameLine();
+				if (ImGui::Selectable("", &selected,
+					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+				{
+					if (selected) visState.camera.focusCameraID = camera->id;
+					else visState.camera.focusCameraID = 0;
+				}
 				ImGui::PopID();
 			}
 

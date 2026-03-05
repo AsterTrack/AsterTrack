@@ -410,10 +410,10 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 	for (auto &camera : pipeline.cameras)
 		if (camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, 0.3f, 1.0f });
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusCameraID == camera->id? 0.6f : 0.3f, 1.0f });
 	for (auto &camera : pipeline.cameras)
 		if (!camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, 0.3f, 1.0f });
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusCameraID == camera->id? 0.6f : 0.3f, 1.0f });
 
 	if (pipeline.isSimulationMode)
 	{

@@ -150,6 +150,11 @@ struct VisualisationState
 
 	struct
 	{
+		CameraID focusCameraID = CAMERA_ID_NONE;
+	} camera;
+
+	struct
+	{
 		// Tracking target to focus on
 		int focusedTrackerID = 0;
 		bool focusTrackingInsights;

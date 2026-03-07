@@ -585,7 +585,7 @@ static bool readTargetCalib(json &jsTarget, TargetCalibration3D &target)
 {
 	float defaultAngle = jsTarget.contains("DefaultAngle")? jsTarget["DefaultAngle"].get<float>() : 180;
 	float defaultSize = (jsTarget.contains("DefaultSize")? jsTarget["DefaultSize"].get<float>() : 8) / 1000.0f;
-	float defaultLimit = std::cos(defaultAngle/360*PI);
+	float defaultViewAngle = std::cos(defaultAngle/360*PI);
 
 	if (!jsTarget.contains("markers")) return false;
 	auto &jsMarkers = jsTarget["markers"];
@@ -607,9 +607,9 @@ static bool readTargetCalib(json &jsTarget, TargetCalibration3D &target)
 		marker.nrm = Eigen::Vector3f(nrm[0].get<float>(), nrm[1].get<float>(), nrm[2].get<float>());
 		// Read other values
 		if (jsMarker.contains("Angle")) // In degrees
-			marker.angleLimit = std::cos(jsMarker["Angle"].get<float>()/360*PI);
+			marker.viewAngle = std::cos(jsMarker["Angle"].get<float>()/360*PI);
 		else
-			marker.angleLimit = defaultLimit;
+			marker.viewAngle = defaultViewAngle;
 		if (jsMarker.contains("Size")) // In mm
 			marker.size = jsMarker["Size"].get<float>() / 1000.0f;
 		else
@@ -638,7 +638,7 @@ static void writeTargetCalib(const TargetCalibration3D &target, json &jsTarget)
 			marker.nrm.y(),
 			marker.nrm.z()
 		});
-		jsMarker["Angle"] = std::acos(marker.angleLimit)*360/PI;
+		jsMarker["Angle"] = std::acos(marker.viewAngle)*360/PI;
 		jsMarker["Size"] = marker.size * 1000.0f;
 		jsMarkers.push_back(std::move(jsMarker));
 	}
@@ -1682,7 +1682,7 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 				// Calculate face center as average
 				pt.pos = pt.pos/count;
 				pt.nrm.normalize();
-				pt.angleLimit = limit;
+				pt.viewAngle = limit;
 				pt.size = size/1000.0f; // mm to m
 				curGroup->markers.push_back(pt);
 			}

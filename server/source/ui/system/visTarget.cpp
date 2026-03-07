@@ -106,7 +106,7 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	target.inspectingTrackerID = 0;
 	target.inspectingTargetCalib = {};
 	target.markerSelect.clear();
-	target.editMarkerFoV = 0.0f;
+	target.adjViewAngle = 0.0f;
 	return true;
 }
 
@@ -338,7 +338,7 @@ void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, cons
 	visualiseLines(rayLines, 3.0f);
 }
 
-void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)
+void visualiseVisTargetViewCones(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)
 {
 	assert(visTarget);
 	Eigen::Isometry3f tgtPose = visTarget.getPose();
@@ -357,10 +357,9 @@ void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const V
 	}
 	visualiseLines(rayLines, 3.0f);
 
-	thread_local std::vector<VisPoint> coneMesh;
 	const int coneRes = 20;
-	coneMesh.clear();
-	coneMesh.resize(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), Color{ 0.6f, 0.6f, 0.6f, 0.6f } });
+	Color8 defaultConeCol = Color{ 0.6f, 0.6f, 0.6f, 0.6f };
+	static std::vector<VisPoint> coneMesh(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), defaultConeCol });
 	auto visCone = [&](Eigen::Vector3f pos, Eigen::Vector3f nrm, float angleLimit)
 	{
 		coneMesh[0].pos = pos;
@@ -378,17 +377,30 @@ void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const V
 	};
 	for (auto &marker : visTarget.calib->markers)
 	{
-		visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, marker.angleLimit);
+		visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, marker.viewAngle);
 	}
-	if (visState.target.editMarkerFoV != 0.0f)
+	if (visState.target.inspectingTrackerID != 0 && visState.target.adjViewAngle != 0.0f)
 	{
-		coneMesh.clear();
-		coneMesh.resize(1+coneRes+1, VisPoint{ Eigen::Vector3f::Zero(), Color{ 0.5f, 0.8f, 0.5f, 0.6f } });
+		for (auto &vert : coneMesh) vert.color = Color{ 0.5f, 0.8f, 0.5f, 0.6f };
 		for (auto &marker : visTarget.calib->markers)
 		{
-			float angleLimit = std::min(1.0f, std::max(-1.0f, marker.angleLimit + visState.target.editMarkerFoV));
+			float angleLimit = std::min(1.0f, std::max(-1.0f, marker.viewAngle + visState.target.adjViewAngle));
 			visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, angleLimit);
 		}
+		for (auto &vert : coneMesh) vert.color = defaultConeCol;
+	}
+	if (visState.targetCalib.edit && visState.targetCalib.editingViewCones)
+	{
+		for (auto &vert : coneMesh) vert.color = Color{ 0.5f, 0.8f, 0.5f, 0.6f };
+		for (int m = 0; m < visTarget.calib->markers.size(); m++)
+		{
+			if (!visState.target.markerSelect[m]) continue;
+			auto &marker = visTarget.calib->markers[m];
+			float angleLimit = (visState.targetCalib.adjViewAngle == 0.0f)? visState.targetCalib.setViewAngle :
+				std::min(1.0f, std::max(-1.0f, marker.viewAngle + visState.targetCalib.adjViewAngle));
+			visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, angleLimit);
+		}
+		for (auto &vert : coneMesh) vert.color = defaultConeCol;
 	}
 }
 
@@ -466,7 +478,7 @@ void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const V
 }
 
 void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraCalib &calib, const CameraFrameRecord &frame,
-	const TargetCalibration3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandMarkerFoV)
+	const TargetCalibration3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandViewAngle)
 {
 	thread_local std::vector<Eigen::Vector2f> projected2D;
 	thread_local std::vector<int> relevantProjected2D;
@@ -567,12 +579,12 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 
 		// Visualise target markers that should be visible
 		projectTarget(projected2D,
-			target, calib, tgtMatch.pose, expandMarkerFoV);
+			target, calib, tgtMatch.pose, expandViewAngle);
 		visualisePoints2D(projected2D, Color{ 0.0, 0.9, 0.6, 0.4f }, 2.0f);
 
 		// Then get the same marker projections but with proper indexes
 		projectTarget(projected2D, relevantProjected2D,
-			target, calib, tgtMatch.pose, expandMarkerFoV);
+			target, calib, tgtMatch.pose, expandViewAngle);
 
 		// Now visualise all "closeby" points of each such target marker, with a button if it's not already matched
 		matchLines.clear();
@@ -615,7 +627,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		const auto &matches = tgtMatch.points2D[calib.index];
 
 		// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-		projectTarget(projected2D, target, calib, tgtMatch.pose, expandMarkerFoV);
+		projectTarget(projected2D, target, calib, tgtMatch.pose, expandViewAngle);
 		visualisePoints2D(projected2D, Color{ 0.0, 0.9, 0.6, 0.4f }, 2.0f);
 
 		// Gather relevant points that were tracked

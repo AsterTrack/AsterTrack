@@ -172,33 +172,37 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
-	if (BeginCollapsingRegion("Determining Marker View"))
+	if (BeginCollapsingRegion("Determining Marker View Cones"))
 	{
 		auto &post = calibParams.post;
 		const auto &standard = defaultParams.post;
+		bool recalc = false;
 
 		bool assumeSize = !std::isnan(post.assumedSize);
-		if (ImGui::Checkbox("##Sz", &assumeSize))
+		if ((recalc = ImGui::Checkbox("##Sz", &assumeSize)))
 			post.assumedSize = assumeSize? 0.005f : NAN;
 		ImGui::SameLine();
 		ImGui::BeginDisabled(!assumeSize);
-		ScalarProperty<float>("Assume Size", "mm", &post.assumedSize, &standard.assumedSize, 0, 20, 0.1f, 1000);
+		recalc |= ScalarProperty<float>("Assume Size", "mm", &post.assumedSize, &standard.assumedSize, 0, 20, 0.1f, 1000);
 		ImGui::EndDisabled();
 
 		bool assumeAngle = !std::isnan(post.assumedAngle);
-		if (ImGui::Checkbox("##Ang", &assumeAngle))
+		if ((recalc = ImGui::Checkbox("##Ang", &assumeAngle)))
 			post.assumedAngle = assumeAngle? 180.0f : NAN;
 		ImGui::SameLine();
 		ImGui::BeginDisabled(!assumeAngle);
-		ScalarProperty<float>("Assume Angle", "°", &post.assumedAngle, &standard.assumedAngle, 0, 360, 5);
+		recalc |= ScalarProperty<float>("Assume Angle", "°", &post.assumedAngle, &standard.assumedAngle, 0, 360, 5);
 		ImGui::EndDisabled();
 
 		ImGui::BeginDisabled(assumeAngle);
-		ScalarProperty<float>("Extremity Centering Power", "", &post.viewCone.extremityCenteringPower, &standard.viewCone.extremityCenteringPower, 0, 10);
-		ImGui::InputFloat3("Own Sample Extremes", post.viewCone.ownSampleExtremes.data(), "%.2f");
-		ImGui::InputFloat3("Top Marker Extremes", post.viewCone.topMarkerExtremes.data(), "%.2f");
-		ImGui::InputFloat3("Own/Top/Compensated", post.viewCone.markerLimitMix.data(), "%.2f");
+		recalc |= ScalarProperty<float>("Extremity Centering Power", "", &post.viewCone.extremityCenteringPower, &standard.viewCone.extremityCenteringPower, 0, 10);
+		recalc |= ImGui::InputFloat3("Own Sample Extremes", post.viewCone.ownSampleExtremes.data(), "%.2f");
+		recalc |= ImGui::InputFloat3("Top Marker Extremes", post.viewCone.topMarkerExtremes.data(), "%.2f");
+		recalc |= ImGui::InputFloat3("Own/Top/Compensated", post.viewCone.markerLimitMix.data(), "%.2f");
 		ImGui::EndDisabled();
+
+		if (recalc && visState.targetCalib.edit && visState.targetCalib.editingViewCones)
+			updateAssemblyTargetCalib(*visState.targetCalib.edit, GetState().pipeline.getCalibs(), GetState().pipeline.targetCalib.params.post);
 
 		EndCollapsingRegion();
 	}

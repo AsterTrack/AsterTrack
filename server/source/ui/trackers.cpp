@@ -278,16 +278,16 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		}
 
 		ImGui::SetNextItemWidth(SizeWidthDiv2().x);
-		ImGui::SliderFloat("##FoV", &visState.target.editMarkerFoV, -2.0f, 2.0f);
+		ImGui::SliderFloat("##ViewAngle", &visState.target.adjViewAngle, -2.0f, 2.0f);
 		ImGui::SameLine();
-		if (ImGui::Button("Adjust FoV", SizeWidthDiv2()))
+		if (ImGui::Button("Adjust View Angle", SizeWidthDiv2()))
 		{
-			LOG(LTargetCalib, LInfo, "Adjusting FoV of target '%s' by %f!", tracker.label.c_str(), visState.target.editMarkerFoV);
+			LOG(LTargetCalib, LInfo, "Adjusting marker view angle of target '%s' by %f!", tracker.label.c_str(), visState.target.adjViewAngle);
 			TargetCalibration3D calib = tracker.calib;
 			for (auto &mk : calib.markers)
-				mk.angleLimit = std::min(1.0f, std::max(-1.0f, mk.angleLimit + visState.target.editMarkerFoV));
+				mk.viewAngle = std::min(1.0f, std::max(-1.0f, mk.viewAngle + visState.target.adjViewAngle));
 			calib.updateMarkers();
-			visState.target.editMarkerFoV = 0;
+			visState.target.adjViewAngle = 0;
 			// Signal server to update calib
 			SignalTargetCalibUpdate(tracker.id, calib);
 		}

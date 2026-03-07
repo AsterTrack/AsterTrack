@@ -115,7 +115,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 		{
 			if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
 			projectTarget(projected2D[c], relevantProjected2D[c],
-				target3D, calibs[c], targetMatch2D.pose, params.expandMarkerFoV);
+				target3D, calibs[c], targetMatch2D.pose, params.expandMarkerViewAngle);
 			if (relevantProjected2D[c].empty()) continue;
 
 			// Reused allocation of target matching data
@@ -279,7 +279,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 
 			// Reproject target points and estimate 2D error
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			projectTarget(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], params.expandMarkerFoV);
+			projectTarget(projected2D, target3D, calib, calib.transform.cast<float>()*poses[j], params.expandMarkerViewAngle);
 			auto res = getMatchErrorApprox(points2D, projected2D, params.search.errorMax);
 			if (res.first >= itResults[i].first && res.second < itResults[i].second)
 			{
@@ -361,7 +361,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 		targetMatch2D.points2D.resize(cameraCount);
 
 		// Project using initial pose estimate using only focus camera
-		projectTarget(projected2D, relevantProjected2D, target3D, calibs[focusCamera], pose, params.expandMarkerFoV);
+		projectTarget(projected2D, relevantProjected2D, target3D, calibs[focusCamera], pose, params.expandMarkerViewAngle);
 		if (relevantProjected2D.size() < params.minObservations.focus)
 			continue;
 

@@ -351,7 +351,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		// Calculate and clip marker points not facing the camera in regards to their field of view
 		Eigen::Vector3f ptNrm = mv.linear() * markerPt.nrm;
 		float facing = -ptNrm.dot(camPoint.normalized());
-		if (facing < markerPt.angleLimit)
+		if (facing < markerPt.viewAngle)
 			continue;
 		// Project point
 		Eigen::Vector2f proj = applyProjection2D(calib, camPoint);

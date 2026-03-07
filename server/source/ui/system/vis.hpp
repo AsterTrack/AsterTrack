@@ -117,7 +117,7 @@ void visualiseRotationalCovariance(Eigen::Isometry3f pose, Eigen::Matrix3f covar
 std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT, const VisualisationState &visState, const VisTargetLock &visTarget);
 std::pair<int,int> interactWithVisTargetMarker(Eigen::Isometry3f view, Eigen::Projective3f proj, Eigen::Vector2f mouse);
 void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget);
-void visualiseVisTargetMarkerFoV(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget);
+void visualiseVisTargetViewCones(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget);
 void visualiseVisTargetObsCameraRays(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget);
 void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const VisTargetLock &visTarget, const MarkerSequences &seq, int sequenceMarker);
 
@@ -125,7 +125,7 @@ void visualiseMarkerSequenceRays(const std::vector<CameraCalib> &calibs, const V
  * Unternal TargetTracking2DData visualisation
  */
 void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraCalib &calib, const CameraFrameRecord &frame,
-	const TargetCalibration3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandMarkerFoV);
+	const TargetCalibration3D &target, const TargetTracking2DData::CameraMatchingStages &matchingData, float expandViewAngle);
 void visualiseTarget2DUncertaintyAxis(UncertaintyAxisAlignment uncertaintyAxis);
 
 #endif // SYSTEM_VIS_H

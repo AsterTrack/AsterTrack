@@ -181,7 +181,7 @@ struct TargetDetectionParameters
 		float maxErrorRMSE = 5;
 	} tri;
 	// Initial marker matching (before trackTarget2D)
-	float expandMarkerFoV = 0.0f;
+	float expandMarkerViewAngle = 0.0f;
 	float normaliseDistance = 5.0f;
 	TargetMatchingParametersSlow match = {};
 	TargetOptimisationParameters opt = {};
@@ -215,7 +215,7 @@ struct TargetTrackingParameters
 	float minUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;
 	// Marker Matching
-	float expandMarkerFoV = -0.3f;
+	float expandMarkerViewAngle = 0.2f;
 	float normaliseDistance = 5.0f;
 	TargetMatchingParametersFast matchFast = {};
 	struct { // Selecting whether to go down recover path

@@ -310,7 +310,7 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 			LOGC(LDebug, "=======================\n");
 			return false;
 		}
-		*viewPtr->calib.contextualLock() = TargetCalibration3D(finaliseTargetMarkers(calibs, target, params.post));
+		*viewPtr->calib.contextualLock() = initialiseTargetCalib(calibs, target, params.post);
 		*viewPtr->target.contextualLock() = target;
 		viewPtr->stats.frameCount = target.frames.size();
 		viewPtr->stats.markerCount = target.markers.size();
@@ -444,7 +444,7 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 	auto expandFrames = [&]()
 	{
 		auto obs_lock = pipeline->seqDatabase.contextualRLock();
-		TargetCalibration3D trkTarget(finaliseTargetMarkers(calibs, obsData.targets.front(), params.post));
+		TargetCalibration3D trkTarget = initialiseTargetCalib(calibs, obsData.targets.front(), params.post);
 		expandFrameObservations(calibs, pipeline->record.frames, obsData.targets.front(), trkTarget, params.assembly.trackFrame);
 		reevaluateMarkerSequences<true>(calibs, obs_lock->markers, obsData.targets.front(), { 0.5f, 10, 3, 10 });
 		updateTargetObservations(obsData.targets.front(), obs_lock->markers);
@@ -686,7 +686,7 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 			marker = alignPoseInv * marker;
 
 		// Recreate target calib (target -> calib lock order)
-		*targetView->calib.contextualLock() = TargetCalibration3D(finaliseTargetMarkers(calibs, *tgt_lock, post));
+		*targetView->calib.contextualLock() = initialiseTargetCalib(calibs, *tgt_lock, post);
 
 		// Record as successful alignment
 		LOGC(LDebug, "      Was able to align target view %d to base with %d candidates, best matched %d markers with RMSE of %fmm!",
@@ -961,32 +961,13 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 	// Copy camera calibration
 	std::vector<CameraCalib> calibs = pipeline->getCalibs();
 
-	// TODO: Formulate proper plan for future of target calibration
-	// Currently it is still a very manual process, so UI should be able to intervene in the algorithm
-	// But it should also be redesigned to be interactive in design as initially planned
-
-	// Idea 1: Redo target calibration as interactive algorithm
-	// Base target is picked from early views
-	// Additional views are merged experimentally
-	// But data should be prioritised (both for merging and optimisation)
-	// that overlaps with data from markers that have few data points
-	// So new view, try to merge, see if new points are likely, add frames that overlap points, rest as "reserve"
-	// And ofc need to speed up optimisation routine before that can become a reality
-
-	// Idea 2: Formulate everything in a stage list
-	// Start by initialising the base
-	// Then follow a list of stages
-	// This will first be UI only (e.g. button "Reevaluate" will add "reevaluate stage" and "optimise stage")
-	// Later this will be pre-filled by automatics
-	// Add view is similarly split up to allow UI to resume at last stage
-
 	auto recordAssemblyStage = [&](TargetAssemblyBase &base, TargetAssemblyStageID stage, int step, std::string &&label) -> TargetAssemblyStage&
 	{
-		// TODO: use base.simulation.targetGT?
+		// TODO: Keep alignment if already manually aligned?
 		normaliseTarget(*pipeline, base.target, nullptr);
-		
+
 		base.errors = getTargetErrorDist(calibs, base.target);
-		base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline->getCalibs(), base.target, pipeline->targetCalib.params.post));
+		updateAssemblyTargetCalib(base, pipeline->getCalibs(), pipeline->targetCalib.params.post);
 		auto stages_lock = pipeline->targetCalib.assemblyStages.contextualLock();
 
 		// Log progress
@@ -1435,12 +1416,12 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 		// Update Targets
 		for (int t = 0; t < subsampled.targets.size(); t++)
 		{
-			// Copy and update target calibration
-			TargetCalibration3D calib = tgtCalibs[t];
-			calib.markers = finaliseTargetMarkers(calibs, subsampled.targets[t], params);
-			calib.updateMarkers();
+			// Update target markers
+			for (int m = 0; m < tgtCalibs[t].markers.size(); m++)
+				tgtCalibs[t].markers[m].pos = subsampled.targets[t].markers[m];
+			tgtCalibs[t].updateMarkers();
 			// Signal server to update calib
-			SignalTargetCalibUpdate(subsampled.targets[t].trackerID, calib);
+			SignalTargetCalibUpdate(subsampled.targets[t].trackerID, tgtCalibs[t]);
 			// Update original markers to test against
 			data.targets[t].markers = subsampled.targets[t].markers;
 		}

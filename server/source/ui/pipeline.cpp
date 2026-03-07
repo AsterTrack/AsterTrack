@@ -372,8 +372,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					[&](auto &t){ return t.id == target.trackerID; });
 				if (track == state.trackerConfigs.end())
 				{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-					calib = TargetCalibration3D(finaliseTargetMarkers(
-						pipeline.getCalibs(), target, pipeline.targetCalib.params.post));
+					calib = initialiseTargetCalib(pipeline.getCalibs(), target, pipeline.targetCalib.params.post);
 					return calib;
 				}
 				return track->calib;
@@ -475,39 +474,27 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				}
 			}
 
-			ImGui::EndDisabled();
-
 			ImGui::SameLine();
 
-			if (ImGui::Button("Set Marker FoV", SizeWidthDiv2()))
+			if (ImGui::Button("Update View Cones", SizeWidthDiv2()))
 			{
-				threadPool.push([&](int, ObsData data)
+				auto trackerIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
+					[&](auto &t){ return t.trackerID == visState.target.inspectingTrackerID; });
+				auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+					[&](auto &t){ return t.id == visState.target.inspectingTrackerID; });
+				if (trackerIt == db_lock->targets.end())
+					SignalErrorToUser("Selected tracker not found in target database!");
+				else if (track == state.trackerConfigs.end())
+					SignalErrorToUser("Selected tracker not found in trackers!");
+				else threadPool.push([&](int, int id, TargetCalibration3D calib, ObsTarget obsTarget)
 				{
-					auto calibs = GetState().pipeline.getCalibs();
-
-					ScopedLogCategory scopedLogCategory(LOptimisation);
-					ScopedLogLevel scopedLogLevel(LInfo);
-					LOGCL("Errors:");
-					updateReprojectionErrors(data, calibs);
-
-					// Update Targets
-					for (auto &tgtNew : data.targets)
-					{
-						for (auto &tracker : state.trackerConfigs)
-						{ // For now, fetch from trackerConfig - may also fetch from trackedTargets/dormantTargets
-							if (tracker.id != tgtNew.trackerID) continue;
-							// Copy and update target calibration
-							TargetCalibration3D calib = tracker.calib;
-							updateMarkerOrientations(calib.markers, calibs, tgtNew, pipeline.targetCalib.params.post);
-							calib.updateMarkers();
-							// Signal server to update calib
-							SignalTargetCalibUpdate(tgtNew.trackerID, calib);
-							break;
-						}
-					}
-
-				}, *db_lock);
+					updateMarkerViewAngles(calib.markers, pipeline.getCalibs(), obsTarget, pipeline.targetCalib.params.post);
+					SignalTargetCalibUpdate(id, calib);
+				}, track->id, track->calib, *trackerIt);
 			}
+			ImGui::SetItemTooltip("Automatically recalculate view cones using new tracking samples (use as many as possible).");
+
+			ImGui::EndDisabled();
 
 			if (SaveButton("Save Cameras", SizeWidthDiv2(), state.cameraCalibsDirty))
 			{

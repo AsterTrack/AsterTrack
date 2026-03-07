@@ -941,7 +941,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 }
 
 template<bool APPLY>
-OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params)
+OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
+	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params)
 {
 	// target.frames contains all frames with a best-estimate of the pose
 	// target.markers contains all current 3D markers
@@ -1062,7 +1063,7 @@ void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const Bloc
 		(int)target.frames.size(), sampleCnt, (prevError/target.frames.size())*PixelFactor, (newError/target.frames.size())*PixelFactor);
 }
 
-Eigen::Vector3f analyzeMarkerOrientation(std::vector<Eigen::Vector3f> &markerRays, const TargetPostProcessingParameters &params)
+static Eigen::Vector3f analyzeMarkerOrientation(std::vector<Eigen::Vector3f> &markerRays, const TargetPostProcessingParameters &params)
 {
 	struct ErrorTerm
 	{
@@ -1130,10 +1131,9 @@ static inline float mixLimits(const CONTAINER limits, const std::array<float,NUM
 	return limit/sum;
 };
 
-void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params)
+void updateMarkerViewAngles(std::vector<TargetMarker> &markers, const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params)
 {
 	assert(markers.size() == target.markers.size());
-	if (markers.size() < 3) return;
 
 	// Gather all samples determining a marker as rays
 	std::vector<std::vector<Eigen::Vector3f>> markerRays(target.markers.size());
@@ -1149,18 +1149,29 @@ void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vec
 		}
 	}
 
-	std::vector<Eigen::Vector3f> normals(markers.size());
-	std::vector<float> limits(markers.size());
 	for (int m = 0; m < markers.size(); m++)
 	{
 		// Find most likely marker orientation
-		normals[m] = analyzeMarkerOrientation(markerRays[m], params);
+		markers[m].nrm = analyzeMarkerOrientation(markerRays[m], params);
 		// Find field of view with some resistance to outliers
 		MultipleExtremum<float, 3> worstAligns(1.0f);
 		for (auto &dir : markerRays[m])
-			worstAligns.min(normals[m].dot(dir));
-		limits[m] = mixLimits(worstAligns.rank, params.viewCone.ownSampleExtremes);
+			worstAligns.min(markers[m].nrm.dot(dir));
+		markers[m].viewAngle = mixLimits(worstAligns.rank, params.viewCone.ownSampleExtremes);
+		LOG(LTargetCalib, LTrace, "    Marker %d with %d observations had own FoV of %.4f°",
+			m, (int)markerRays[m].size(), std::acos(markers[m].viewAngle)*360/PI);
 	}
+}
+
+static void unifyMarkerOrientations(std::vector<TargetMarker> &markers, const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params)
+{
+	assert(markers.size() == target.markers.size());
+	if (markers.size() < 3) return;
+
+	std::vector<float> limits(markers.size());
+	for (int m = 0; m < markers.size(); m++)
+		limits[m] = markers[m].viewAngle;
+
 	// Find widest markers and estimate field of view to use for all markers
 	std::partial_sort(limits.begin(), limits.begin()+3, limits.end());
 	float limit = mixLimits(limits, params.viewCone.topMarkerExtremes);
@@ -1170,17 +1181,16 @@ void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vec
 
 	for (int m = 0; m < markers.size(); m++)
 	{
-		markers[m].nrm = normals[m];
 		// This is accounting for a small range of observations by overestimating FoV greatly
-		float conservativeLimit = std::cos(std::acos(limit)*2 - std::acos(limits[m]));
+		float conservativeLimit = std::cos(std::acos(limit)*2 - std::acos(markers[m].viewAngle));
 		// In the end, mix individual observed limit, shared limit from widest markers, and conservative overestimated limit
-		markers[m].angleLimit = mixLimits(std::array{ limits[m], limit, conservativeLimit }, params.viewCone.markerLimitMix);
-		LOG(LTargetCalib, LTrace, "    Marker %d with %d observations had own FoV of %.4f°, so conservatively %.4f°, updated to %.4f°",
-			m, (int)markerRays[m].size(), std::acos(limits[m])*360/PI, std::acos(conservativeLimit)*360/PI, std::acos(markers[m].angleLimit)*360/PI);
+		markers[m].viewAngle = mixLimits(std::array{ markers[m].viewAngle, limit, conservativeLimit }, params.viewCone.markerLimitMix);
+		LOG(LTargetCalib, LTrace, "    Marker %d had own FoV of %.4f°, conservatively %.4f°, updated to %.4f°",
+			m, std::acos(markers[m].viewAngle)*360/PI, std::acos(conservativeLimit)*360/PI, std::acos(markers[m].viewAngle)*360/PI);
 	}
 }
 
-std::vector<TargetMarker> finaliseTargetMarkers(const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params)
+TargetCalibration3D initialiseTargetCalib(const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params)
 {
 	// Init markers
 	float assumedLimit = std::cos(params.assumedAngle/360*PI); // NAN for no assumption
@@ -1189,6 +1199,15 @@ std::vector<TargetMarker> finaliseTargetMarkers(const std::vector<CameraCalib> &
 	for (int m = 0; m < target.markers.size(); m++)
 		markers.emplace_back(target.markers[m], Eigen::Vector3f::Zero(), assumedLimit, params.assumedSize);
 
-	updateMarkerOrientations(markers, calibs, target, params);
-	return markers;
+	updateMarkerViewAngles(markers, calibs, target, params);
+	//unifyMarkerOrientations(markers, calibs, target, params);
+
+	return TargetCalibration3D(std::move(markers));
+}
+
+void updateAssemblyTargetCalib(TargetAssemblyBase &base, const std::vector<CameraCalib> &calibs, const TargetPostProcessingParameters &params)
+{
+	// TODO: Respect base-specific and even marker-specific view cone settings stored in base
+	// E.g. do not destroy potentially manually edited view cones
+	base.targetCalib = initialiseTargetCalib(calibs, base.target, params);
 }

@@ -182,7 +182,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("2D Point Matching");
-		modified |= ScalarProperty<float>("Expand Marker FoV", "", &params.expandMarkerFoV, &standard.expandMarkerFoV, -2.0f, 2.0f, 0.02f);
+		modified |= ScalarProperty<float>("Expand Marker View Angle", "", &params.expandMarkerViewAngle, &standard.expandMarkerViewAngle, -2.0f, 2.0f, 0.02f);
 		modified |= ScalarProperty<float>("Normalise for Distance", "m", &params.normaliseDistance, &standard.normaliseDistance, 0, 10, 0.5f);
 		if (ImGui::TreeNode("Algorithm"))
 		{
@@ -230,7 +230,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndSection();
 
 		BeginSection("2D Point Matching");
-		modified |= ScalarProperty<float>("Expand Marker FoV", "", &params.expandMarkerFoV, &standard.expandMarkerFoV, -2.0f, 2.0f, 0.02f);
+		modified |= ScalarProperty<float>("Expand Marker View Angle", "", &params.expandMarkerViewAngle, &standard.expandMarkerViewAngle, -2.0f, 2.0f, 0.02f);
 		modified |= ScalarProperty<float>("Normalise for Distance", "m", &params.normaliseDistance, &standard.normaliseDistance, 0, 10, 0.5f);
 		if (ImGui::TreeNode("Fast Matching"))
 		{

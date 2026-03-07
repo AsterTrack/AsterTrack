@@ -1125,7 +1125,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			{ // Visualise internal tracking debug instead of normal vis
 
 				visualiseTarget2DMatchingStages(visState, calib, camFrame, *debugVis.calib,
-					debugVis.internalData.matching.at(camera.pipeline->index), pipeline.params.track.expandMarkerFoV);
+					debugVis.internalData.matching.at(camera.pipeline->index), pipeline.params.track.expandMarkerViewAngle);
 
 				if (visState.tracking.showUncertaintyAxis)
 				{ // Visualise uncertainty axis of dominant camera from internal tracking debug data
@@ -1157,7 +1157,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				}
 				if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 
-				float expandMarkerFoV = pipeline.params.track.expandMarkerFoV / pipeline.params.track.normaliseDistance
+				float expandViewAngle = pipeline.params.track.expandMarkerViewAngle / pipeline.params.track.normaliseDistance
 					* (record.posePredicted.translation() - calib.transform.translation().cast<float>()).norm();
 
 				if (visState.tracking.showSearchBounds)
@@ -1180,7 +1180,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				if (visState.tracking.showTargetObserved && record.result.isTracked())
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-					projectTarget(projected2D, tracker.calib, calib, record.poseObserved, expandMarkerFoV);
+					projectTarget(projected2D, tracker.calib, calib, record.poseObserved, expandViewAngle);
 					visualisePoints2D(projected2D, record.id == visState.tracking.focusedTrackerID? colVisibleF : colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
@@ -1194,13 +1194,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 
 				if (visState.tracking.showTargetPredicted)
 				{
-					projectTarget(projected2D, tracker.calib, calib, record.posePredicted, expandMarkerFoV);
+					projectTarget(projected2D, tracker.calib, calib, record.posePredicted, expandViewAngle);
 					visualisePoints2D(projected2D, colPredicted, 2.0f);
 				}
 
 				if (visState.tracking.showTargetFilteredCamera && record.result.isTracked())
 				{
-					projectTarget(projected2D, tracker.calib, calib, record.poseFiltered, expandMarkerFoV);
+					projectTarget(projected2D, tracker.calib, calib, record.poseFiltered, expandViewAngle);
 					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}
 			}

@@ -82,7 +82,7 @@ static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker 
 }
 
 bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
-	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandFoV)
+	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandViewAngle)
 {
 	Eigen::Vector3f camPoint = mv * marker.pos;
 	// Cull back
@@ -93,7 +93,7 @@ bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
 	// Calculate and clip marker points not facing the camera in regards to their field of view
 	Eigen::Vector3f ptNrm = mv.linear() * marker.nrm;
 	float facing = -ptNrm.dot(camPoint.normalized());
-	return facing+expandFoV >= marker.angleLimit;
+	return facing+expandViewAngle >= marker.viewAngle;
 }
 
 /**
@@ -103,7 +103,7 @@ bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected, 
 	const TargetCalibration3D &target, const CameraCalib &calib,
-	const Eigen::Isometry3f &pose, float expandFoV)
+	const Eigen::Isometry3f &pose, float expandViewAngle)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
 
@@ -111,7 +111,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 	points2D.resize(target.markers.size());
 	projected.reserve(target.markers.size());
 	for (int i = 0; i < target.markers.size(); i++)
-		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandFoV))
+		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandViewAngle))
 			projected.push_back(i);
 }
 
@@ -123,7 +123,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
 	const TargetCalibration3D &target, const CameraCalib &calib,
 	const std::vector<int> &relevant,
-	const Eigen::Isometry3f &pose, float expandFoV)
+	const Eigen::Isometry3f &pose, float expandViewAngle)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
 
@@ -131,7 +131,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 	points2D.resize(target.markers.size());
 	projected.reserve(target.markers.size());
 	for (int i : relevant)
-		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandFoV))
+		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandViewAngle))
 			projected.push_back(i);
 }
 
@@ -141,7 +141,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, 
 	const TargetCalibration3D &target, const CameraCalib &calib,
-	const Eigen::Isometry3f &pose, float expandFoV)
+	const Eigen::Isometry3f &pose, float expandViewAngle)
 {
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
 
@@ -149,7 +149,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D,
 	points2D.reserve(target.markers.size());
 	Eigen::Vector2f projPt;
 	for (int i = 0; i < target.markers.size(); i++)
-		if (projectMarker(projPt, target.markers[i], calib, mv, expandFoV))
+		if (projectMarker(projPt, target.markers[i], calib, mv, expandViewAngle))
 			points2D.push_back(projPt);
 }
 

@@ -504,7 +504,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		// Draw transparent cones sticking out of spheres
 		if (visState.target.markerViewCones)
 		{ // Show calculated directionality and field of view of each marker
-			visualiseVisTargetMarkerFoV(pipeline.getCalibs(), visState, visFrame.target);
+			visualiseVisTargetViewCones(pipeline.getCalibs(), visState, visFrame.target);
 		}
 
 		return;

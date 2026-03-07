@@ -586,13 +586,13 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::EndDisabled();
 		}
 
-		if (visState.targetCalib.edit && !assembly.control)
+		if (visState.targetCalib.edit && visState.targetCalib.editingMarkers && !assembly.control)
 		{ // Direct editing tools
 			auto &editTarget = visState.targetCalib.edit;
 			auto &selection = visState.target.markerSelect;
 			auto &markers = editTarget->target.markers;
 			int selectCnt = 0;
-			for (auto h : selection)
+			for (bool h : selection)
 				if (h) selectCnt++;
 			unsigned int markerA = -1, markerB = -1;
 			if (selectCnt > 0 && selectCnt <= 2)
@@ -649,7 +649,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				mkA = (mkA * weightA + mkB * weightB) / (weightA+weightB);
 				// Erase old marker
 				eraseMarker(markerB, markerA);
-				editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+				updateAssemblyTargetCalib(*editTarget, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
@@ -659,7 +659,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				assert(markerA < markers.size());
 				markerB = markers.size();
 				markers.push_back(markers[markerA] + Eigen::Vector3f(0.01f, 0, 0));
-				editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+				updateAssemblyTargetCalib(*editTarget, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 				// Update selection
 				selection.push_back(true);
 				selectCnt++;
@@ -704,7 +704,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 							{ // Erase marker completely if it has no other observation
 								eraseMarker(oldMarker);
 							}
-							editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+							updateAssemblyTargetCalib(*editTarget, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 						}
 					}
 
@@ -747,7 +747,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 						// Clear references to observation
 						if (visState.targetCalib.highlightedObservation == map->first) visState.targetCalib.highlightedObservation = -1;
 						if (selObs == map->first) visState.targetCalib.selectedObservation = selObs = -1;
-						editTarget->targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post));
+						updateAssemblyTargetCalib(*editTarget, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 					}
 					else
 						map++;
@@ -755,7 +755,101 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				}
 				ImGui::EndTable();
 			}
+		}
 
+		if (visState.targetCalib.edit && visState.targetCalib.editingViewCones && !assembly.control)
+		{ // FoV editing tools
+			auto &editTarget = visState.targetCalib.edit;
+			auto &selection = visState.target.markerSelect;
+			auto &markers = editTarget->target.markers;
+			int selectCnt = 0;
+			for (bool h : selection)
+				if (h) selectCnt++;
+			bool recalc = false;
+
+			if (ImGui::Button("Automatic View Cones", SizeWidthFull()))
+			{
+				updateAssemblyTargetCalib(*editTarget, pipeline.getCalibs(), pipeline.targetCalib.params.post);
+			}
+			ImGui::SetItemTooltip("Automatically calculate view cones of all markers (default behaviour).");
+
+			if (ImGui::BeginTable("Observations Table", 1))
+			{
+				for (int m = 0; m < editTarget->target.markers.size(); m++)
+				{
+					if (!selection[m])
+						continue;
+					ImGui::PushID(m);
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					float angleLimit = editTarget->targetCalib.markers[m].viewAngle;
+					ImGui::Text("Marker %d (View Angle %.2f°)", m, std::acos(angleLimit)*360/PI);
+					ImGui::PopID();
+				}
+				ImGui::EndTable();
+			}
+			if (editTarget->target.markers.empty())
+				ImGui::Text("No Markers Selected");
+			if (ImGui::Button(selectCnt > 0? "Unselect All" : "Select All", SizeWidthDiv2()))
+				for (int i = 0; i < selection.size(); i++)
+					selection[i] = selectCnt > 0? false : true;
+			ImGui::SameLine();
+			if (ImGui::Button("Invert Selection", SizeWidthDiv2()))
+				for (int i = 0; i < selection.size(); i++)
+					selection[i] = !selection[i];
+
+			ImGui::SeparatorText("Manually Edit View Cones");
+			ImGui::SetItemTooltip("These manual edits will not be preserved in future assembly steps.\nAutomatic View Angles will override them.");
+
+			ImGui::BeginDisabled(selectCnt == 0);
+
+			ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+			ImGui::SliderFloat("##ViewAngleAdj", &visState.targetCalib.adjViewAngle, -2.0f, 2.0f);
+			ImGui::SameLine();
+			if (ImGui::Button("Adjust View Angle", SizeWidthDiv2()))
+			{
+				LOG(LTargetCalib, LInfo, "Adjusting view angle of selected markers by %f!", visState.targetCalib.adjViewAngle);
+				for (int m = 0; m < editTarget->target.markers.size(); m++)
+				{
+					if (!selection[m]) continue;
+					float &angleLimit = editTarget->targetCalib.markers[m].viewAngle;
+					angleLimit = std::min(1.0f, std::max(-1.0f, angleLimit + visState.targetCalib.adjViewAngle));
+				}
+				editTarget->targetCalib.updateMarkers();
+				visState.targetCalib.adjViewAngle = 0;
+			}
+
+			ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+			if (ImGui::SliderFloat("##ViewAngleSet", &visState.targetCalib.setViewAngle, -1.0f, 1.0f))
+				visState.targetCalib.adjViewAngle = 0.0f;
+			ImGui::SameLine();
+			if (ImGui::Button("Set View Angle", SizeWidthDiv2()))
+			{
+				LOG(LTargetCalib, LInfo, "Adjusting view angle of selected markers by %f!", visState.targetCalib.setViewAngle);
+				for (int m = 0; m < editTarget->target.markers.size(); m++)
+					if (selection[m])
+						editTarget->targetCalib.markers[m].viewAngle = visState.targetCalib.setViewAngle;
+				editTarget->targetCalib.updateMarkers();
+				visState.targetCalib.setViewAngle = 0;
+			}
+
+			if (ImGui::Button("Update View Cone", SizeWidthFull()))
+			{
+				LOG(LTargetCalib, LInfo, "Updating view cones of selected markers!");
+				auto markers = editTarget->targetCalib.markers;
+				updateMarkerViewAngles(markers, pipeline.getCalibs(), editTarget->target, pipeline.targetCalib.params.post);
+				for (int m = 0; m < editTarget->target.markers.size(); m++)
+					if (selection[m])
+						editTarget->targetCalib.markers[m] = markers[m];
+				editTarget->targetCalib.updateMarkers();
+			}
+			ImGui::SetItemTooltip("Automatically calculate view cones only of selected markers.");
+
+			ImGui::EndDisabled();
+		}
+
+		if (visState.targetCalib.edit && !assembly.control)
+		{
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("Editing");
 			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
@@ -768,15 +862,15 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::SameLine();
 			if (ImGui::Button("Apply##Edit", SizeWidthDiv3()))
 			{
-				editTarget->errors = getTargetErrorDist(pipeline.getCalibs(), editTarget->target);
+				visState.targetCalib.edit->errors = getTargetErrorDist(pipeline.getCalibs(), visState.targetCalib.edit->target);
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
-				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(*editTarget), STAGE_EDITED, 1, "Edited"));
+				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(*visState.targetCalib.edit), STAGE_EDITED, 1, "Edited"));
 				visState.targetCalib.edit = nullptr;
 				visState.targetCalib.selectedObservation = -1;
 				visState.targetCalib.highlightedObservation = -1;
 			}
 		}
-		
+
 		if (!visState.targetCalib.edit && !assembly.control)
 		{ // Main assembly directives and tools
 
@@ -809,19 +903,17 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 			ImGui::SetItemTooltip("Start an optimisation on the current target data.");
 
-			if (ImGui::Button("Reevaluate Markers", SizeWidthDiv2()))
+			if (ImGui::Button("Subsample Data", SizeWidthDiv2()))
 			{
 				assert(!assembly.planned && !assembly.control);
-				assembly.settings = {};
-				assembly.settings.followAlgorithm = false;
-				assembly.settings.instructions = { STAGE_REEVALUATE_MARKERS };
-				assembly.settings.maxSteps = pipeline.targetCalib.params.assembly.optMaxIt;
-				assembly.settings.tolerances = pipeline.targetCalib.params.assembly.optTolerance;
-				assembly.planned = true;
+				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
+				TargetAssemblyBase base = stages_lock->back()->base;
+				base.target = subsampleTargetObservations(pipeline.record.frames, base.target, pipeline.targetCalib.params.assembly.subsampling);
+				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
+				updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
+				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));
 			}
-			ImGui::SetItemTooltip("Reevaluate observation sequences for each marker.\n"
-				"This might add new observation sequences and merge markers with agreeing observations.\n"
-				"This operation resets detected outliers.");
+			ImGui::SetItemTooltip("Subsample current target data for all followup stages to reduce computation times.");
 
 			ImGui::SameLine();
 
@@ -838,17 +930,19 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::SetItemTooltip("Expand frames to immediate neighbours by trying to track the target.");
 
 
-			if (ImGui::Button("Subsample Data", SizeWidthDiv2()))
+			if (ImGui::Button("Reevaluate Markers", SizeWidthDiv2()))
 			{
 				assert(!assembly.planned && !assembly.control);
-				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
-				TargetAssemblyBase base = stages_lock->back()->base;
-				base.target = subsampleTargetObservations(pipeline.record.frames, base.target, pipeline.targetCalib.params.assembly.subsampling);
-				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-				base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
-				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));
+				assembly.settings = {};
+				assembly.settings.followAlgorithm = false;
+				assembly.settings.instructions = { STAGE_REEVALUATE_MARKERS };
+				assembly.settings.maxSteps = pipeline.targetCalib.params.assembly.optMaxIt;
+				assembly.settings.tolerances = pipeline.targetCalib.params.assembly.optTolerance;
+				assembly.planned = true;
 			}
-			ImGui::SetItemTooltip("Subsample current target data for all followup stages to reduce computation times.");
+			ImGui::SetItemTooltip("Reevaluate observation sequences for each marker.\n"
+				"This might add new observation sequences and merge markers with agreeing observations.\n"
+				"This operation resets detected outliers.");
 
 			ImGui::SameLine();
 
@@ -861,15 +955,30 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				base.errors = getTargetErrorDist(calibs, base.target);
 				determineTargetOutliers(calibs, base.target, SigmaToErrors(pipeline.targetCalib.params.assembly.outlierSigmas, base.errors), pipeline.targetCalib.params.aquisition);
 				base.errors = getTargetErrorDist(calibs, base.target);
-				base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+				updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Added outliers"));
 			}
 			ImGui::SetItemTooltip("Determine new outlier samples and remove them from the current target data.");
 
-			if (ImGui::Button("Manually Edit Target", SizeWidthFull()))
+			if (ImGui::Button("Edit View Cones", SizeWidthDiv2()))
 			{
 				assert(!assembly.planned && !assembly.control);
 				visState.resetVisTarget();
+				visState.targetCalib.editingViewCones = true;
+				visState.targetCalib.editingMarkers = false;
+				visState.targetCalib.edit = std::make_shared<TargetAssemblyBase>(pipeline.targetCalib.assemblyStages.contextualRLock()->back()->base);
+				visState.updateVisTarget();
+			}
+			ImGui::SetItemTooltip("Edit the latest stage directly to control marker view angles.");
+
+			ImGui::SameLine();
+
+			if (ImGui::Button("Edit Marker Data", SizeWidthDiv2()))
+			{
+				assert(!assembly.planned && !assembly.control);
+				visState.resetVisTarget();
+				visState.targetCalib.editingViewCones = false;
+				visState.targetCalib.editingMarkers = true;
 				visState.targetCalib.edit = std::make_shared<TargetAssemblyBase>(pipeline.targetCalib.assemblyStages.contextualRLock()->back()->base);
 				visState.updateVisTarget();
 			}
@@ -920,7 +1029,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					auto obs_lock = pipeline.seqDatabase.contextualRLock();
 					updateTargetObservations(base.target, obs_lock->markers);
 					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-					base.targetCalib = TargetCalibration3D(finaliseTargetMarkers(pipeline.getCalibs(), base.target, pipeline.targetCalib.params.post));
+					updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
 					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
 					return saveLoadStage = false;
 				});

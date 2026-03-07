@@ -229,7 +229,7 @@ struct VisualisationState
 		int markerHovered = -1; // Hovered in 3D View
 		bool markerObservations = false;
 		bool markerViewCones = true;
-		float editMarkerFoV = 0.0f;
+		float adjViewAngle = 0.0f;
 	} target;
 
 	// Target Calibration
@@ -237,7 +237,9 @@ struct VisualisationState
 	{
 		// Currently edited assembly stage
 		std::shared_ptr<TargetAssemblyBase> edit = nullptr;
+		bool editingMarkers, editingViewCones;
 		int highlightedObservation = -1, selectedObservation = -1;
+		float adjViewAngle = 0.0f, setViewAngle = 0.0f;
 		// Selection of existing target views or assembly stages
 		std::shared_ptr<TargetView> view = nullptr;
 		std::shared_ptr<TargetAssemblyStage> stage = nullptr;

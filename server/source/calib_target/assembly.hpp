@@ -181,14 +181,15 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
 
 template<bool APPLY = true>
-OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
+OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
+	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params);
 
 void verifyTargetObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords, const ObsTarget &target, const TargetCalibration3D &trkTarget);
 
-Eigen::Vector3f analyzeMarkerOrientation(std::vector<Eigen::Vector3f> &markerRays, const TargetPostProcessingParameters &params);
+void updateMarkerViewAngles(std::vector<TargetMarker> &markers, const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params);
 
-void updateMarkerOrientations(std::vector<TargetMarker> &markers, const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params);
+TargetCalibration3D initialiseTargetCalib(const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params);
 
-std::vector<TargetMarker> finaliseTargetMarkers(const std::vector<CameraCalib> &calibs, const ObsTarget &target, const TargetPostProcessingParameters &params);
+void updateAssemblyTargetCalib(TargetAssemblyBase &base, const std::vector<CameraCalib> &calibs, const TargetPostProcessingParameters &params);
 
 #endif // CALIBRATION_TARGET_ASSEMBLY_H

@@ -25,7 +25,7 @@ struct TargetMarker
 {
 	Eigen::Vector3f pos;
 	Eigen::Vector3f nrm;
-	float angleLimit;
+	float viewAngle;
 	float size;
 };
 
@@ -85,7 +85,7 @@ struct TargetCalibration3D
 	{
 		for (TargetMarker &marker : markers)
 		{
-			marker.angleLimit = std::cos(360/360*PI);
+			marker.viewAngle = std::cos(360.0f/360*PI);
 			marker.size = 0.005f;
 		}
 	}
@@ -107,7 +107,7 @@ struct TargetCalibration3D
  * Projects target markers into camera view, and returns if it is within view
  */
 bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
-	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandFoV);
+	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandViewAngle);
 
 /**
  * Projects target markers into camera view, clipping out-of-view points
@@ -116,7 +116,7 @@ bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
 	const TargetCalibration3D &target, const CameraCalib &calib,
-	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
+	const Eigen::Isometry3f &pose, float expandViewAngle = 2.0f);
 
 /**
  * Projects relevant target markers into camera view, clipping out-of-view points
@@ -126,7 +126,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &projected,
 	const TargetCalibration3D &target, const CameraCalib &calib,
 	const std::vector<int> &relevant,
-	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
+	const Eigen::Isometry3f &pose, float expandViewAngle = 2.0f);
 
 /**
  * Projects target markers into camera view, clipping out-of-view points
@@ -134,7 +134,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
  */
 void projectTarget(std::vector<Eigen::Vector2f> &points2D,
 	const TargetCalibration3D &target, const CameraCalib &calib,
-	const Eigen::Isometry3f &pose, float expandFoV = 2.0f);
+	const Eigen::Isometry3f &pose, float expandViewAngle = 2.0f);
 
 /**
  * Projects relevant target markers into camera view, clipping out-of-view points

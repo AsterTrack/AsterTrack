@@ -884,7 +884,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		}
 	};
 
-	auto reprojectTargetMarkers = [&]()
+	auto reprojectTargetMarkers = [&](float expandViewAngle)
 	{
 		matchedSamples = 0;
 		for (int c = 0; c < calibs.size(); c++)
@@ -896,7 +896,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			// Instead of limiting which markers to reproject at a distance
 			// May want to project more (especially if pose is uncertain)
 			// And instead weight them somehow based on their suspected brightness
-			float angleLimit = params.expandMarkerFoV / paramScale[c];
+			float expandView = expandViewAngle / paramScale[c];
 
 			// Project markers and mark those not seen with NAN
 			Eigen::Isometry3f mv = calibs[c].view.cast<float>() * targetMatch2D.pose;
@@ -904,7 +904,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			relevantProjected2D[c].reserve(target.markers.size());
 			for (int i = 0; i < target.markers.size(); i++)
 			{
-				if (projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv, angleLimit))
+				if (projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv, expandView))
 					relevantProjected2D[c].push_back(i);
 				else
 				 	projected2D[c][i].setConstant(NAN);
@@ -924,7 +924,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		}
 	};
 
-	auto improveTargetMatch =  [&]() -> TargetMatchError
+	auto improveTargetMatch =  [&](bool expand = true) -> TargetMatchError
 	{ // Optimise pose to observations
 		if (targetMatch2D.count() == 0)
 		{
@@ -934,7 +934,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.point.stdDev, false);
 		if (errors.samples > 0)
 		{
-			reprojectTargetMarkers();
+			reprojectTargetMarkers(expand? params.expandMarkerViewAngle : std::min(params.expandMarkerViewAngle, 0.0f));
 			newMatches = false;
 		}
 
@@ -1010,7 +1010,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	LOGC(LDebug, "    trackTarget2D:");
 
 	reevaluateClosebyPoints();
-	reprojectTargetMarkers();
+	reprojectTargetMarkers(params.expandMarkerViewAngle);
 
 	// Try first with simple matching algorithm
 	for (int c = 0; c < calibs.size(); c++)
@@ -1177,7 +1177,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			LOGC(LDebug, "        Failed to find any more samples from other cameras to break dominance! Aborting!");
 	}
 
-	improveTargetMatch();
+	improveTargetMatch(false);
 
 	LOGC(LDebug, "        Searching for final additions:");
 

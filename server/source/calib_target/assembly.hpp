@@ -90,6 +90,7 @@ struct TargetView
 struct TargetAssemblyBase
 {
 	int initialViewID;
+	int assignedTrackerID = 0;
 
 	// Views merged into base
 	std::shared_ptr<TargetView> merging;

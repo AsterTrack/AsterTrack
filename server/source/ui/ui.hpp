@@ -214,6 +214,8 @@ struct VisualisationState
 
 	struct
 	{
+		int selectedTrackerID = 0;
+
 		// Selection of target for inspection outside of target calib
 		int inspectingTrackerID = 0;
 		char inspectingSource = 'N';

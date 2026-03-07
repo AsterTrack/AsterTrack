@@ -245,6 +245,7 @@ struct PipelineState
 			std::shared_ptr<TargetAssemblyState> state;
 		} assembly = {};
 		Synchronised<std::vector<std::shared_ptr<TargetAssemblyStage>>> assemblyStages;
+		int assignedTrackerID = 0;
 		// Continuous target optimisation routines
 		Synchronised<std::vector<std::shared_ptr<TargetOptimisationState>>> targetOptimisations;
 		int optPlannedForTargetID = 0;

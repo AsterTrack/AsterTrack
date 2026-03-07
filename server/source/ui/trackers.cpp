@@ -25,10 +25,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
-	static int selectedTrackerID = 0;
 	auto discardSelection = []
 	{
-		selectedTrackerID = 0;
+		GetUI().visState.target.selectedTrackerID = 0;
 		if (GetUI().visState.target.inspectingSource == 'T')
 			GetUI().visState.resetVisTarget();
 	};
@@ -106,15 +105,15 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			 	ImGui::TextUnformatted("Tracker of unknown type.");
 			ImGui::TableNextColumn();
 
-			bool select = selectedTrackerID == tracker.id;
+			bool select = visState.target.selectedTrackerID == tracker.id;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == selectedTrackerID)
+				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == visState.target.selectedTrackerID)
 					visState.resetVisTarget();
-				if (selectedTrackerID == tracker.id)
-					selectedTrackerID = 0;
+				if (visState.target.selectedTrackerID == tracker.id)
+					visState.target.selectedTrackerID = 0;
 				else
-					selectedTrackerID = tracker.id;
+					visState.target.selectedTrackerID = tracker.id;
 			}
 			ImGui::SameLine(0, 0);
 			if (CrossButton("Del"))
@@ -131,7 +130,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-		[&](auto &t){ return t.id == selectedTrackerID; });
+		[&](auto &t){ return t.id == visState.target.selectedTrackerID; });
 	if (trackerIt == state.trackerConfigs.end())
 	{
 		discardSelection();

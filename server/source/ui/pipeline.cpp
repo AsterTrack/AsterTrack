@@ -366,8 +366,28 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	{
 		if (BeginCollapsingRegion("Optimisation Database"))
 		{
+			auto getTargetCalib = [&](ObsTarget &target, TargetCalibration3D &calib) -> TargetCalibration3D&
+			{
+				auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+					[&](auto &t){ return t.id == target.trackerID; });
+				if (track == state.trackerConfigs.end())
+				{ // Not used right now since all targets in obsDatabase should already be fully calibrated
+					calib = TargetCalibration3D(finaliseTargetMarkers(
+						pipeline.getCalibs(), target, pipeline.targetCalib.params.post));
+					return calib;
+				}
+				return track->calib;
+			};
+
 			auto db_lock = pipeline.obsDatabase.lock();
-			ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("%d points, %d samples (%d outliers)", (int)db_lock->points.points.size(), db_lock->points.totalSamples, db_lock->points.outlierSamples);
+				// Button to delete
+				SameLineTrailing(ImGui::GetFrameHeight());
+				if (CrossButton("Del"))
+					db_lock->points = {};
+			}
 			for (auto tgtIt = db_lock->targets.begin(); tgtIt != db_lock->targets.end();)
 			{
 				auto tgt = *tgtIt;
@@ -376,21 +396,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					tgt.trackerID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
 				bool selected = visState.target.inspectingTrackerID == tgt.trackerID;
 				ImGui::AlignTextToFramePadding();
-				if (ImGui::Selectable(label.c_str(), visState.target.inspectingTrackerID == tgt.trackerID, ImGuiSelectableFlags_AllowOverlap))
+				if (ImGui::Selectable(label.c_str(), &selected, ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (visState.resetVisTarget(false) && visState.target.inspectingTrackerID != tgt.trackerID)
+					if (visState.resetVisTarget(false) && selected)
 					{ // Set new selected target ID
 						visState.target.inspectingTargetCalib = {};
-						auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-							[&](auto &t){ return t.id == tgt.trackerID; });
-						if (track == state.trackerConfigs.end())
-						{ // Not used right now since all targets in obsDatabase should already be fully calibrated
-							visState.target.inspectingTargetCalib = TargetCalibration3D(finaliseTargetMarkers(
-								pipeline.getCalibs(), tgt, pipeline.targetCalib.params.post));
-						}
-						auto unlock = db_lock.scopedUnlock();
+						getTargetCalib(tgt, visState.target.inspectingTargetCalib);
 						visState.target.inspectingTrackerID = tgt.trackerID;
 						visState.target.inspectingSource = 'O';
+						auto unlock = db_lock.scopedUnlock(); // for lockVisTarget
 						visState.updateVisTarget();
 					}
 				}
@@ -410,7 +424,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			auto &ptCalib = pipeline.pointCalib;
 			auto &tgtCalib = pipeline.targetCalib;
 			ImGui::BeginDisabled(ptCalib.control && ptCalib.control->running());
-			if (ImGui::Button("Optimise Cameras", SizeWidthDiv3()))
+			if (ImGui::Button("Optimise Cameras", SizeWidthDiv2()))
 			{
 				ptCalib.settings.typeFlags = 0b1000;
 				ptCalib.settings.maxSteps = ptCalib.state->numSteps + 10;
@@ -419,7 +433,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::BeginDisabled(visState.target.inspectingTrackerID == 0 || tgtCalib.optPlannedForTargetID != 0);
-			if (ImGui::Button("Optimise Target", SizeWidthDiv3()))
+			if (ImGui::Button("Optimise Target", SizeWidthDiv2()))
 			{
 				auto tgtOptLock = tgtCalib.targetOptimisations.contextualRLock();
 				auto trackerIt = std::find_if(tgtOptLock->begin(), tgtOptLock->end(),
@@ -430,8 +444,42 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					SignalErrorToUser("Already optimising the selected target!");
 			}
 			ImGui::EndDisabled();
+ 
+			ImGui::BeginDisabled(visState.target.inspectingTrackerID == 0);
+
+			if (ImGui::Button("Edit Target", SizeWidthDiv2()))
+			{
+				auto trackerIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
+					[&](auto &t){ return t.trackerID == visState.target.inspectingTrackerID; });
+				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
+				if (trackerIt == db_lock->targets.end())
+					SignalErrorToUser("Selected tracker not found in target database!");
+				else if (!stages_lock->empty())
+					SignalErrorToUser("Target Calibration already has stages from prior calibration.");
+					// TODO: Could ask user whether to Cancel, Clear, or Append
+				else
+				{
+					auto &data = *trackerIt;
+					LOG(LGUI, LInfo, "Setting tracking data as stage with %d frames, %d markers, %d sequences",
+						(int)data.frames.size(), (int)data.markers.size(), (int)data.markerMap.size());
+					TargetAssemblyBase base = {};
+					base.initialViewID = -1;
+					base.assignedTrackerID = data.trackerID;
+					base.target = data; // Copy
+					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
+					base.targetCalib = getTargetCalib(base.target, base.targetCalib);
+					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Edit Tracked"));
+					visState.targetCalib.stage = stages_lock->back();
+					pipeline.targetCalib.assignedTrackerID = data.trackerID;
+					pipeline.phase = PHASE_Calibration_Target;
+				}
+			}
+
+			ImGui::EndDisabled();
+
 			ImGui::SameLine();
-			if (ImGui::Button("Set Marker FoV", SizeWidthDiv3()))
+
+			if (ImGui::Button("Set Marker FoV", SizeWidthDiv2()))
 			{
 				threadPool.push([&](int, ObsData data)
 				{
@@ -461,24 +509,18 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				}, *db_lock);
 			}
 
-			if (SaveButton("Save Cameras", SizeWidthDiv3(), state.cameraCalibsDirty))
+			if (SaveButton("Save Cameras", SizeWidthDiv2(), state.cameraCalibsDirty))
 			{
 				auto error = storeCameraCalibrations("store/camera_calib.json", state.cameraCalibrations);
 				if (error) SignalErrorToUser(error.value());
 				else state.cameraCalibsDirty = false;
 			}
 			ImGui::SameLine();
-			if (SaveButton("Save Targets", SizeWidthDiv3(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
+			if (SaveButton("Save Targets", SizeWidthDiv2(), state.trackerConfigDirty || state.trackerCalibsDirty || state.trackerIMUsDirty))
 			{
 				auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
 				if (error) SignalErrorToUser(error.value());
 				else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Clear Database", SizeWidthDiv3()))
-			{
-				db_lock.unlock();
-				*pipeline.obsDatabase.contextualLock() = {};
 			}
 
 			if (ptCalib.control && ptCalib.control->running())

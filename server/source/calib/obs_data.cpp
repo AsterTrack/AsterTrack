@@ -48,7 +48,6 @@ void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerS
 			// Write frame mapped observations to point database
 			for (int p = 0; p < length; p++)
 			{
-				triFrames[start+p].marker = m;
 				triFrames[start+p].frame = (uint32_t)(seq.startFrame + seqOffset + p);
 				triFrames[start+p].samples.push_back({ (uint16_t)c, seq.rawPoints[seqOffset+p] });
 			}
@@ -69,17 +68,28 @@ void addTriangulatableObservations(ObsPointData &data, const std::vector<MarkerS
  */
 void updateTargetObservations(ObsTarget &target, const std::vector<MarkerSequences> &observations)
 {
-	if (target.markerMap.empty() || (target.frames.empty()))
+	if (target.markerMap.empty() || target.frames.empty())
+	{
+		target.totalSamples = 0;
+		target.frames.clear();
 		return;
+	}
 
-	target.totalSamples = 0;
+	FrameNum blockBegin = target.frames.back().frame+1, blockEnd = target.frames.front().frame;
 	for (auto &frame : target.frames)
+	{
+		if (frame.tracked) continue;
 		frame.samples.clear();
-	int blockBegin = target.frames.front().frame, blockEnd = target.frames.back().frame+1;
+		blockBegin = std::min(blockBegin, frame.frame);
+		blockEnd = std::max(blockEnd, frame.frame);
+	}
+	if (blockBegin >= blockEnd)
+		return;
 
 	for (auto &map : target.markerMap)
 	{
 		int m = map.first;
+		if (m < 0) continue;
 		if (observations.size() <= m) break;
 		const MarkerSequences &marker = observations[m];
 
@@ -92,18 +102,20 @@ void updateTargetObservations(ObsTarget &target, const std::vector<MarkerSequenc
 			for (auto cur = camera.upper(blockBegin); cur != camera.upper(blockEnd); cur++)
 			{
 				while (target.frames[i].frame < cur.frame()) i++;
-				if (target.frames[i].frame == cur.frame())
-				{
-					ObsTargetSample sample;
-					sample.marker = (uint32_t)m;
-					sample.camera = (uint16_t)c;
-					sample.point = cur.raw();
-					target.frames[i].samples.push_back(sample);
-					target.totalSamples++;
-				}
+				if (target.frames[i].frame != cur.frame()) continue;
+				if (target.frames[i].tracked) continue;
+				ObsTargetSample sample;
+				sample.marker = m;
+				sample.camera = (uint16_t)c;
+				sample.point = cur.raw();
+				target.frames[i].samples.push_back(sample);
 			}
 		}
 	}
+
+	target.totalSamples = 0;
+	for (auto &frame : target.frames)
+		target.totalSamples += frame.samples.size();
 }
 
 /**

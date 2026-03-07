@@ -278,6 +278,10 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 		// Merge frames, reevaluateMarkerSequences, observe mapping from marker to marker
 		// updateTargetObservations, optimise on subset of frames, realign
 
+	// NOTE: This method may add obs-marker mappins to markerMap, or remove them
+	// But it will not update the frame list, leaving it in an inconsistent state
+	// updateTargetObservations will need to be called after this to update frames
+
 	LOGC(LDebug, "Reevaluating marker sequences:");
 
 	// Precalculate marker positions for each frame in linear access vector
@@ -354,6 +358,11 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 	for (auto mapIt = target.markerMap.begin(); mapIt != target.markerMap.end();)
 	{
 		auto &map = *mapIt;
+		if (map.first < 0)
+		{ // This is a tracked marker
+			mapIt++;
+			continue;
+		}
 		auto match = std::find_if(seqMarkerMatches.begin(), seqMarkerMatches.end(), [&](auto &m){ return m.context == map.first; });
 		if (match == seqMarkerMatches.end())
 		{ // Bad
@@ -990,7 +999,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		for (int c = 0; c < frameRecord->cameras.size(); c++)
 		{
 			for (auto &match : targetMatch2D.points2D[c])
-				frame.samples.push_back({ (uint32_t)match.first, (uint16_t)c, frameRecord->cameras[c].rawPoints2D.at(match.second) });
+				frame.samples.push_back({ -match.first-2, (uint16_t)c, frameRecord->cameras[c].rawPoints2D.at(match.second) });
 		}
 		frame.pose = targetMatch2D.pose;
 		frame.error = targetMatch2D.error.mean;

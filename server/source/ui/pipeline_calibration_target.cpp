@@ -683,7 +683,11 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					ImGui::PushID(map->first);
 					ImGui::TableNextRow();
 					ImGui::TableNextColumn();
-					ImGui::Text("Observation %d -> Marker %d", map->first, map->second);
+					ImGui::AlignTextToFramePadding();
+					if (map->first < 0)
+						ImGui::Text("Marker %d (Tracked as %d)", map->second, -(map->first+2));
+					else
+						ImGui::Text("Observation %d -> Marker %d", map->first, map->second);
 
 					if (selectCnt == 2)
 					{ // Button to swap marker assignment
@@ -912,6 +916,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					GetUI().visState.targetCalib.stage = nullptr;
 					LOG(LGUI, LInfo, "Loaded %d frames, %d markers, %d sequences",
 						(int)base.target.frames.size(), (int)base.target.markers.size(), (int)base.target.markerMap.size());
+					pipeline.targetCalib.assignedTrackerID = base.assignedTrackerID;
 					auto obs_lock = pipeline.seqDatabase.contextualRLock();
 					updateTargetObservations(base.target, obs_lock->markers);
 					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
@@ -931,28 +936,67 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::Text("Save as");
 			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
 
+			auto focusTargetID = [](int id)
+			{
+				GetUI().visState.target.selectedTrackerID = id;
+				GetUI().windows[WIN_TRACKERS].open = true;
+				ImGui::SetWindowFocus(GetUI().windows[WIN_TRACKERS].title.c_str());
+			};
+			auto selectNewID = [&]()
+			{ // Find max occupied target id
+				int id = 0;
+				for (auto &tracker : GetState().trackerConfigs)
+					id = std::max(id, tracker.id);
+				return id + 1;
+			};
+			static std::shared_ptr<TargetAssemblyStage> writingStage = nullptr;
 			if (ImGui::Button("Target", SizeWidthDiv3()))
 			{
-				saveLoadStage = true;
-				threadPool.push([](int, std::shared_ptr<TargetAssemblyStage> stage)
+				auto stage = visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back();
+				if (pipeline.targetCalib.assignedTrackerID != 0)
 				{
-					ServerState &state = GetState();
-					// Find max occupied target id (excluding testing markers because they are negative)
-					int id = 0;
-					for (auto &tracker : state.trackerConfigs)
-						id = std::max(id, tracker.id);
-					id++;
-					std::string label = asprintf_s("Target ID %d", id);
-					// Take latest assembly stage
-					LOG(LTargetCalib, LInfo, "Registered target with %d markers as %s!\n", (int)stage->base.target.markers.size(), label.c_str());
-					// Register as calibrated target
-					state.trackerConfigs.emplace_back(id, label, stage->base.targetCalib, TargetDetectionConfig());
-					auto error = storeTrackerConfigurations("store/trackers.json", state.trackerConfigs);
-					if (error) SignalErrorToUser(error.value());
-					else state.trackerConfigDirty = state.trackerCalibsDirty = state.trackerIMUsDirty = false;
-					return saveLoadStage = false;
-				}, visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back());
+					writingStage = stage;
+					ImGui::OpenPopup("OverwriteQ");
+				}
+				else
+				{
+					pipeline.targetCalib.assignedTrackerID = selectNewID();
+					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, stage->base.targetCalib);
+					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					LOG(LTargetCalib, LInfo, "Registered new target with %d markers under ID %d!\n",
+						(int)stage->base.target.markers.size(), pipeline.targetCalib.assignedTrackerID);
+				}
 			}
+			if (ImGui::BeginPopup("OverwriteQ"))
+			{
+				assert(writingStage != nullptr);
+				auto trk = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+					[&](auto &t){ return t.id == pipeline.targetCalib.assignedTrackerID; });
+				if (trk == state.trackerConfigs.end())
+					ImGui::Text("The calibrated target has an existing tracker ID %d which does not exist.", pipeline.targetCalib.assignedTrackerID);
+				else
+					ImGui::Text("The calibrated target refers to an existing tracker '%s' (%d).", trk->label.c_str(), pipeline.targetCalib.assignedTrackerID);
+				if (ImGui::Button("Overwrite", SizeWidthDiv2()))
+				{
+					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, writingStage->base.targetCalib);
+					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					LOG(LTargetCalib, LInfo, "Updated existing target calibration '%s' (%d) with %d markers!\n",
+						trk->label.c_str(), trk->id, (int)writingStage->base.target.markers.size());
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Create New", SizeWidthDiv2()))
+				{
+					pipeline.targetCalib.assignedTrackerID = selectNewID();
+					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, writingStage->base.targetCalib);
+					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					LOG(LTargetCalib, LInfo, "Registered new target with %d markers under ID %d!\n",
+						(int)writingStage->base.target.markers.size(), pipeline.targetCalib.assignedTrackerID);
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndPopup();
+			}
+			else writingStage = nullptr;
 
 			ImGui::SameLine();
 
@@ -973,7 +1017,6 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			}
 
 			ImGui::EndDisabled();
-
 		}
 	}
 
@@ -1006,6 +1049,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		{
 			TargetAssemblyStage &stage = *stages_lock->at(i);
 			ImGui::PushID(i);
+			ImGui::AlignTextToFramePadding();
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::Text("%d", i);

@@ -23,7 +23,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
-#include <list>
 #include <map>
 
 struct ObsPointSample
@@ -33,7 +32,7 @@ struct ObsPointSample
 };
 struct ObsPoint
 {
-	uint32_t marker, frame;
+	uint32_t frame;
 	std::vector<ObsPointSample> samples;
 	float error = NAN;
 	bool outlier = false;
@@ -47,7 +46,7 @@ struct ObsPointData
 
 struct ObsTargetSample
 {
-	uint32_t marker;
+	int32_t marker; // Negative (from -2) indicates tracked marker, positive a sequence2D marker
 	uint16_t camera;
 	Eigen::Vector2f point;
 };
@@ -57,12 +56,13 @@ struct ObsTargetFrame
 	std::vector<ObsTargetSample> samples;
 	Eigen::Isometry3f pose;
 	float error = NAN;
+	bool tracked; // Whether data comes from tracking or sequence2D
 };
 struct ObsTarget
 {
 	int trackerID;
 	std::vector<ObsTargetFrame> frames;
-	std::map<int,int> markerMap;
+	std::map<int32_t,uint32_t> markerMap;
 	std::vector<Eigen::Vector3f> markers;
 	int totalSamples = 0; // Temp value summing all frames::samples::size()
 	int outlierSamples = 0; // Temp value of all outliers that have been removed (not included in totalSamples)

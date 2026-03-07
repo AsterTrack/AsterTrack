@@ -161,7 +161,7 @@ static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, con
 			targetIt->markers.reserve(tracker.calib.markers.size());
 			for (auto &marker : tracker.calib.markers)
 			{
-				targetIt->markerMap.emplace((int)targetIt->markers.size(), (int)targetIt->markers.size());
+				targetIt->markerMap.emplace(-(int)targetIt->markers.size()-2, (int)targetIt->markers.size());
 				targetIt->markers.push_back(marker.pos);
 			}
 		}
@@ -169,6 +169,7 @@ static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, con
 			return;
 		targetIt->frames.push_back({});
 		auto &tgtFrame = targetIt->frames.back();
+		tgtFrame.tracked = true;
 		tgtFrame.error = tracker.match2D.error.mean;
 		tgtFrame.pose = tracker.match2D.pose;
 		tgtFrame.frame = frame->num;
@@ -181,7 +182,7 @@ static void recordTrackingTargetData(PipelineState &pipeline, int trackerID, con
 			}
 			// Easily add all
 			for (auto &pt : tracker.match2D.points2D[c])
-				tgtFrame.samples.emplace_back(pt.first, c, frame->cameras[c].rawPoints2D[pt.second]);
+				tgtFrame.samples.emplace_back(-pt.first-2, c, frame->cameras[c].rawPoints2D[pt.second]);
 			targetIt->totalSamples += tracker.match2D.points2D[c].size();
 		}
 

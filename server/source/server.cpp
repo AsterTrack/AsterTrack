@@ -258,11 +258,14 @@ void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
 			tracker.isSimulated = false;
 		}
 		GetState().trackerCalibsDirty = true;
-		GetState().trackerConfigDirty = true;
 		// Update pipeline - this update may have come from pipeline, still
 		ServerUpdateTrackerConfig(GetState(), tracker);
 		return;
 	}
+	std::string label = asprintf_s("New Target %d", trackerID);
+	GetState().trackerConfigs.push_back(TrackerConfig(trackerID, label, std::move(calib), TargetDetectionConfig()));
+	GetState().trackerCalibsDirty = true;
+	GetState().trackerConfigDirty = true;
 }
 
 void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)

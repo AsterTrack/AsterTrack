@@ -1591,6 +1591,7 @@ std::optional<ErrorMessage> parseTargetAssemblyStage(const std::string &path, Ta
 		if (!file.contains("initialViewID") || !file["initialViewID"].is_number_integer())
 			return asprintf_s("Invalid target assembly stage '%s' - initialViewID!", path.c_str());
 		base.initialViewID = file["initialViewID"].get<int>();
+		base.assignedTrackerID = file.contains("assignedTrackerID")? file["assignedTrackerID"].get<int>() : 0;
 
 		if (!file.contains("merged") || !file["merged"].is_array())
 			return asprintf_s("Invalid target assembly stage '%s' - merged!", path.c_str());
@@ -1612,6 +1613,7 @@ std::optional<ErrorMessage> dumpTargetAssemblyStage(const std::string &path, con
 {
 	json file;
 	file["initialViewID"] = base.initialViewID;
+	file["assignedTrackerID"] = base.assignedTrackerID;
 
 	// Write merged target list
 	file["merged"] = json::array();

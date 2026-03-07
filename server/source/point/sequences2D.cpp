@@ -567,6 +567,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 		LOGC(LDarn, "    Merging marker %d into %d!", src, tgt);
 		MarkerSequences &markerTgt = sequences.markers[tgt];
 		MarkerSequences &markerSrc = sequences.markers[src];
+		FrameNum resetAfterFrame = std::max(markerTgt.getFrameRange().first, markerSrc.getFrameRange().first);
 		for (int c = 0; c < markerTgt.cameras.size(); c++)
 		{
 			for (auto &seq : markerSrc.cameras[c].sequences)
@@ -577,7 +578,6 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			std::sort(markerTgt.cameras[c].sequences.begin(), markerTgt.cameras[c].sequences.end(), 
 				[](PointSequence &s1, PointSequence &s2) { return s1.startFrame < s2.startFrame; });
 		}
-		FrameNum resetAfterFrame = std::max(markerTgt.getFrameRange().first, markerSrc.getFrameRange().first);
 		sequences.markers.erase(sequences.markers.begin() + src);
 		for (int m = src; m < sequences.markers.size(); m++)
 		{

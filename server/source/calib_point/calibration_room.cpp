@@ -461,7 +461,7 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 			}
 		}
 
-		// No find the biggest group(s) of unchanged cameras by checking their relation is unchanged in both directions
+		// Now find the biggest group(s) of unchanged cameras by checking their relation is unchanged in both directions
 		// If only checked one direction, they could be roughly in the same spot, but in different orientation (e.g. re-mounted)
 		// TODO: For multi-room setups, this might result in multiple genuine unchanged groups
 		// That is because optimisation may drift groups with few data points connecting them
@@ -499,7 +499,7 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 		}
 		if (bestGroup.size() < 2)
 		{
-			LOGC(LTrace, "  No grouping of unchanged camerasd for scale guess!");
+			LOGC(LTrace, "  No grouping of unchanged cameras for scale guess!");
 			continue;
 		}
 		LOGCL("  Best grouping of camera for scale guess was %d cameras!", (int)bestGroup.size());

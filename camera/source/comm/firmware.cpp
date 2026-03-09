@@ -356,10 +356,8 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	{
 		std::filesystem::rename(files[f].target, files[f].backup, err);
 		if (err)
-		{ // Try our best to recover...
+		{ // Should always have an existing MCU FW, but also not critical
 			printf("Encountered error backing up file %s: %s (%d)\n", files[f].target.c_str(), strerror(err.value()), err.value());
-			aborted = true;
-			break;
 		}
 		std::filesystem::rename(files[f].updated, files[f].target, err);
 		if (err)

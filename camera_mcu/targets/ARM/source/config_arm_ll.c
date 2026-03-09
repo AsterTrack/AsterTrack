@@ -247,20 +247,26 @@ void Setup_Peripherals()
 
 void EnableADC()
 {
-	if (ADC1->CR & ADC_CR_ADEN)
-		return; // Currently converting, so on
-	while (ADC1->CR);
+	if (!(ADC1->CR & ADC_CR_ADEN))
+	{
+		// Enable Internal Voltage Regulator
+		ADC1->CR = ADC_CR_ADVREGEN;
+		delayUS(20);
 
-	// Start ADC Calibration
-	ADC1->CR |= ADC_CR_ADCAL;
-	while (ADC1->CR & ADC_CR_ADCAL);
+		// Start ADC Calibration
+		ADC1->CR |= ADC_CR_ADCAL;
+		while (ADC1->CR & ADC_CR_ADCAL);
 
-	// Enable ADC
-	ADC1->CR |= ADC_CR_ADEN;
-	while (!(ADC1->ISR & ADC_ISR_ADRDY));
+		// Enable ADC
+		ADC1->ISR |= ADC_ISR_ADRDY; // Clear ready
+		ADC1->CR |= ADC_CR_ADEN;
+		while (!(ADC1->ISR & ADC_ISR_ADRDY));
+	}
 
-	// Start continuous conversion
-	ADC1->CR |= ADC_CR_ADSTART;
+	if (!(ADC1->CR & ADC_CR_ADSTART))
+	{ // Start continuous conversion
+		ADC1->CR |= ADC_CR_ADSTART;
+	}
 
 	// Setup Analog Watchdog
 	ADC1->CFGR1 |= ADC_CFGR1_AWD1EN | ADC_CFGR1_AWD1SGL | (0 << ADC_CFGR1_AWD1CH_Pos);
@@ -281,6 +287,7 @@ void DisableADC()
 
 	// Place ADC in power-down mode
 	ADC1->CR |= ADC_CR_ADDIS;
+	while (ADC1->CR & ADC_CR_ADEN);
 }
 
 uint32_t GetMillivolts()

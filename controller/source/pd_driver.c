@@ -56,7 +56,7 @@ static PolicyEngine pe;
 
 volatile bool handleEvents = false;
 
-int max_req_voltage = 15000;
+int max_req_voltage = 20000; // Older versions do not support 20V
 int min_req_voltage = 10000;
 
 inline static void log_pe_state(char conn)

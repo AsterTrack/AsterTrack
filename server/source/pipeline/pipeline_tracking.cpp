@@ -62,9 +62,6 @@ void InitTrackingPipeline(PipelineState &pipeline)
 static TrackerRecord& enterTrackerRecord(std::shared_ptr<FrameRecord> &frame, TrackerRecord &&record)
 {
 	// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (5/5)
-	auto trackRecord = std::find_if(frame->trackers.begin(), frame->trackers.end(),
-		[&](auto &t){ return t.id == record.id; });
-	assert(trackRecord == frame->trackers.end());
 	assert(frame->trackers.empty() || frame->trackers.size() < frame->trackers.capacity());
 	frame->trackers.push_back(std::move(record));
 	return frame->trackers.back();
@@ -429,6 +426,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		for (auto &trackRecord : frameRecord->trackers)
 		{
 			if (trackRecord.id != tracker.id) continue;
+			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 			LOG(LDetection2D, LDebug, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to a frame already tracked!\n", frame->num, frameRecord->num);
 			return false; // Already tracked, maybe detected by 3D triangulation detection
 		}
@@ -538,6 +536,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 			points2D[c] = &frameRecord.cameras[calibs[c].index].points2D;
 		for (auto &trackRecord : frameRecord.trackers)
 		{
+			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 			auto targetIt = std::find_if(targets.begin(), targets.end(),
 				[&](auto &e){ return e.id == trackRecord.id; });
 			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
@@ -594,7 +593,10 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 		// Gather new mistrust for next frame
 		trackerMistrust.clear();
 		for (auto &tracker : frameRecord.trackers)
+		{
+			if (tracker.result.hasFlag(TrackingResult::REMOVED)) continue;
 			trackerMistrust[tracker.id] = tracker.mistrust;
+		}
 	}
 }
 
@@ -963,6 +965,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					LOG(LTracking, LDebug, "    No good candidate, best has %d points and %fmm RMSE!\n",
 						(int)candidate.points.size(), std::sqrt(candidate.MSE));
 				}
+
+				// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
+				// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
+				frame->trackers.reserve(frame->trackers.size() + 1);
 				
 				if (IsDebugging())
 				{
@@ -990,10 +996,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			else
 				dormantIt++;
 		}
-
-		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
-		// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
-		frame->trackers.reserve(frame->trackers.size() + 1);
 	}
 
 	/* { // Add single markers to track
@@ -1185,6 +1187,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 					pipeline.tracking.dormantTargets.pop_back();
 				}
+
+				// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
+				// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
+				frame->trackers.reserve(frame->trackers.size() + 1);
 			}
 		}
 	}

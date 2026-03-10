@@ -631,10 +631,11 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();
 
-	for (auto &record : frame.trackers)
+	for (auto &trackRecord : frame.trackers)
 	{
+		if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 		auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-			[&](auto &t){ return t.id == record.id; });
+			[&](auto &t){ return t.id == trackRecord.id; });
 		if (trackerIt == state.trackerConfigs.end()) continue;
 		auto tracker = *trackerIt;
 		if (tracker.type == TrackerConfig::TRACKER_MARKER)
@@ -656,42 +657,42 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 		if (visState.tracking.showTargetPredicted)
 		{ // Show target markers in predicted pose
-			if (record.result.isTracked())
-				updateTargetMarkerVis(pipeline, target, record.visibleMarkers,
-					record.posePredicted, colPredicted, 0.5f, &markers[target.markers.size()*1]);
-			visualisePose(record.posePredicted, colPredicted, 0.2f, 2.0f);
+			if (trackRecord.result.isTracked())
+				updateTargetMarkerVis(pipeline, target, trackRecord.visibleMarkers,
+					trackRecord.posePredicted, colPredicted, 0.5f, &markers[target.markers.size()*1]);
+			visualisePose(trackRecord.posePredicted, colPredicted, 0.2f, 2.0f);
 		}
 		if (visState.tracking.showInertialIntegrated)
-			visualisePose(record.poseInertialIntegrated, Color{ 0.5f, 0.1f, 1.0f, 1.0f }, 0.2f, 2.0f);
+			visualisePose(trackRecord.poseInertialIntegrated, Color{ 0.5f, 0.1f, 1.0f, 1.0f }, 0.2f, 2.0f);
 		if (visState.tracking.showInertialFused)
-			visualisePose(record.poseInertialFused, Color{ 0.1f, 0.6f, 1.0f, 1.0f }, 0.2f, 2.0f);
+			visualisePose(trackRecord.poseInertialFused, Color{ 0.1f, 0.6f, 1.0f, 1.0f }, 0.2f, 2.0f);
 		if (visState.tracking.showInertialFiltered)
-			visualisePose(record.poseInertialFiltered, Color{ 0.1f, 1.0f, 0.6f, 1.0f }, 0.2f, 2.0f);
+			visualisePose(trackRecord.poseInertialFiltered, Color{ 0.1f, 1.0f, 0.6f, 1.0f }, 0.2f, 2.0f);
 		if (visState.tracking.showPoseExtrapolated)
-			visualisePose(record.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
+			visualisePose(trackRecord.poseExtrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 
-		if (visState.tracking.showTargetObserved && record.result.isTracked())
+		if (visState.tracking.showTargetObserved && trackRecord.result.isTracked())
 		{ // Show target markers in observed pose
-			updateTargetMarkerVis(pipeline, target, record.visibleMarkers,
-				record.poseObserved, colObserved, 0.7f, &markers[target.markers.size()*0]);
-			visualisePose(record.poseObserved, colObserved, 0.2f, 2.0f);
+			updateTargetMarkerVis(pipeline, target, trackRecord.visibleMarkers,
+				trackRecord.poseObserved, colObserved, 0.7f, &markers[target.markers.size()*0]);
+			visualisePose(trackRecord.poseObserved, colObserved, 0.2f, 2.0f);
 		}
 
-		if (visState.tracking.showTargetFiltered && record.result.isTracked())
+		if (visState.tracking.showTargetFiltered && trackRecord.result.isTracked())
 		{ // Show target markers in filtered pose
-			updateTargetMarkerVis(pipeline, target, record.visibleMarkers,
-				record.poseFiltered, colFiltered, 1.0f, &markers[target.markers.size()*2]);
-			visualisePose(record.poseFiltered, colFiltered, 0.2f, 4.0f);
+			updateTargetMarkerVis(pipeline, target, trackRecord.visibleMarkers,
+				trackRecord.poseFiltered, colFiltered, 1.0f, &markers[target.markers.size()*2]);
+			visualisePose(trackRecord.poseFiltered, colFiltered, 0.2f, 4.0f);
 		}
 
 		if (visState.tracking.showSearchBounds)
 		{ // Show search bounds
 			// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
-			Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(record.covPredicted.topLeftCorner<3,3>(),
-				pipeline.params.track.uncertaintySigma, record.posePredicted.rotation());
+			Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackRecord.covPredicted.topLeftCorner<3,3>(),
+				pipeline.params.track.uncertaintySigma, trackRecord.posePredicted.rotation());
 			uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
 			auto bounds = target.bounds.extendedBy(uncertainty);
-			auto corners = transformBounds(record.posePredicted, bounds);
+			auto corners = transformBounds(trackRecord.posePredicted, bounds);
 
 			Color8 col = Color{ 1.0, 0.1, 0.1, 1.0 };
 			std::vector<std::pair<VisPoint,VisPoint>> edges = {
@@ -745,7 +746,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			if (!trailIt->get() || !trailIt->get()->finishedProcessing) continue;
 			auto trailPt = &markers[target.markers.size()*3+i*3];
 			auto pastTrack = std::find_if(trailIt->get()->trackers.begin(), trailIt->get()->trackers.end(),
-				[&](auto &t){ return t.id == record.id; });
+				[&](auto &t){ return t.id == trackRecord.id; });
 			if (pastTrack == trailIt->get()->trackers.end()) continue;
 			if (visState.tracking.showCovariancePos)
 			{ // Show covariances, not just points
@@ -763,13 +764,13 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		if (visState.tracking.showCovarianceSamples)
 		{ // Visualise samples on covariance ellipsoid shell
 			thread_local std::vector<VisPoint> samples;
-			samples.resize(record.match2D.deviations.size());
+			samples.resize(trackRecord.match2D.deviations.size());
 			Color devCol = { 1.0f, 1.0f, 1.0f, 1.0f };
 			Color hypCol = { 0.5f, 1.0f, 1.0f, 0.4f };
-			for (int i = 0; i < record.match2D.deviations.size(); i++)
+			for (int i = 0; i < trackRecord.match2D.deviations.size(); i++)
 			{
-				bool hyperdimensional = record.match2D.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
-				samples[i].pos = record.poseObserved * (record.match2D.deviations[i].head<3>() * visState.tracking.scaleCovariance);
+				bool hyperdimensional = trackRecord.match2D.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
+				samples[i].pos = trackRecord.poseObserved * (trackRecord.match2D.deviations[i].head<3>() * visState.tracking.scaleCovariance);
 				samples[i].size = 0.00001f*visState.tracking.scaleCovariance;
 				samples[i].color = hyperdimensional? hypCol : devCol;
 			}
@@ -777,16 +778,16 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 			if (visState.tracking.showCovariancePos)
 			{ // This should be the same, but it is not
-				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(record.match2D.deviations);
+				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(trackRecord.match2D.deviations);
 				covariances.emplace_back(composeCovarianceTransform(
-					record.poseObserved, covariance,
+					trackRecord.poseObserved, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.8f, 0.2f, 0.4f });
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
 				Eigen::Matrix3f covariance = pipeline.params.track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
-					record.poseObserved, covariance,
+					trackRecord.poseObserved, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });
 			}
 		}
@@ -795,7 +796,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			glDisable(GL_DEPTH_TEST);
 			glEnable(GL_CULL_FACE);
 			glCullFace(GL_BACK);
-			enterCovariances(record);
+			enterCovariances(trackRecord);
 			visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
 			glDisable(GL_CULL_FACE);
 			glEnable(GL_DEPTH_TEST);
@@ -803,7 +804,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		if (visState.tracking.showCovarianceRot)
 		{ // Visualise rotational covariance rings around pose cross
 			// TODO: Show different rotational covariances somehow (predicted, observed, filtered)
-			visualiseRotationalCovariance(record.poseFiltered, record.covFiltered.bottomRightCorner<3,3>(),
+			visualiseRotationalCovariance(trackRecord.poseFiltered, trackRecord.covFiltered.bottomRightCorner<3,3>(),
 				visState.tracking.scaleCovariance, 0.2f);
 		}
 

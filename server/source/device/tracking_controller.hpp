@@ -44,7 +44,7 @@ const char *getControllerEventName(ControllerEventID event);
 struct ControllerEventLog
 {
 	uint64_t timestamp;
-	double timestampUS;
+	uint64_t timestampUS;
 	TimePoint_t syncedTime;
 	ControllerEventID id;
 	bool isNewEvent;

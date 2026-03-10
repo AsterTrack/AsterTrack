@@ -459,6 +459,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				{
 					for (auto &trackRecord : frame->get()->trackers)
 					{
+						if (trackRecord.result.isProbe()) continue;
 						results.frames.update(trackRecord.error.mean);
 						for (int i = 0; i < trackRecord.error.samples; i++)
 							results.samples.update(trackRecord.error.mean);

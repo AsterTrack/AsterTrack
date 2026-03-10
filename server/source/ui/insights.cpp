@@ -487,7 +487,7 @@ public:
 		frontIndex = frontIt.index();
 		backIndex = backIt.index();
 
-		LOG(LGUI, LTrace, "Rendering events from index %" PRId64 " (%fus) to %" PRId64 " (%f us), viewing %" PRId64 "us - %" PRId64 "us (start %d, width %d, offset %" PRId64 "), first has timestamp %" PRIu64 " (%fus)",
+		LOG(LGUI, LTrace, "Rendering events from index %" PRId64 " (%" PRIu64 "us) to %" PRId64 " (%" PRIu64 "us), viewing %" PRId64 "us - %" PRId64 "us (start %d, width %d, offset %" PRId64 "), first has timestamp %" PRIu64 " (%" PRIu64 "us)",
 			frontIndex, frontIt->timestampUS, backIndex, backIt->timestampUS, frontUS, backUS, viewStartTimeUS, visibleFrameCount, offsetUS, events.front().timestamp, events.front().timestampUS);
 
 		float dUS = sequenceWidth/visibleFrameCount;

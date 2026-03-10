@@ -127,6 +127,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			auto &frameRecord = *visFrame.frameIt->get();
 			for (auto &trackRecord : frameRecord.trackers)
 			{
+				if (trackRecord.result.isProbe()) continue;
 				auto findIt = visState.tracking.targets.find(trackRecord.id);
 				auto &t = visState.tracking.targets[trackRecord.id];
 				if (findIt == visState.tracking.targets.end())
@@ -275,7 +276,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
 			if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
-				&& trackConfig->type == TrackerConfig::TRACKER_TARGET
+				&& !trackRecord->result.isProbe() && trackConfig->type == TrackerConfig::TRACKER_TARGET
 				&& BeginCollapsingRegion("Target Tracking Debug"))
 			{
 				auto &debugVis = visState.tracking.debug;

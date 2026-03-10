@@ -449,6 +449,7 @@ phase_identification:
 							goto phase_identification;
 						}
 						LOG(LServer, LDebug, "Identification accepted!");
+						comm.rsp_ack = true;
 						comm.ready = true;
 						if (comm.callbacks.onIdentify)
 							if (!comm.callbacks.onIdentify(comm))

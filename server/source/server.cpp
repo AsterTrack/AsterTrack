@@ -911,18 +911,24 @@ static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *st
 	while (!stop_token.stop_requested())
 	{
 		auto frames = pipeline.record.frames.getView();
-		if (frames.empty())
-		{}
-		else if (pipeline.frameNum+1 < frames.endIndex())
+		if (pipeline.frameNum+1 < frames.endIndex())
 		{ // Process most recent fully-received frame (may skip frames!)
-			std::shared_ptr<FrameRecord> frame;
-			if (pipeline.frameNum+3 < frames.endIndex())
+			int next = 1;
+			for (; pipeline.frameNum+next < frames.endIndex(); next++)
+				if (frames[pipeline.frameNum+next])
+					break;
+			if (pipeline.frameNum+next == frames.endIndex())
+				continue; // Just caught while adding
+			std::shared_ptr<FrameRecord> frame = frames[pipeline.frameNum+next];
+			if (next > 1)
+				LOG(LPipeline, LWarn, "Pipeline skipped %d missing/delayed frames!", next-1);
+			// Process realtime unless 2 more frames are already waiting, then skip 2
+			if (pipeline.frameNum+next+2 < frames.endIndex())
 				frame = frames.back(); // new shared_ptr
-			else // Process realtime unless 2 more frames are already waiting, then skip 2
-				frame = frames[pipeline.frameNum+1];
+			assert(frame);
 
 			auto start = sclock::now();
-			ProcessFrame(pipeline, frames.back()); // new shared_ptr
+			ProcessFrame(pipeline, frame); // new shared_ptr
 			auto end = sclock::now();
 
 			if (state.lowLatencyIMU)
@@ -935,18 +941,20 @@ static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *st
 
 			SignalCameraRefresh(0);
 		}
-		else if (state.lowLatencyIMU)
-		{
-			// TODO: Integrate IMU samples ontop of latest frame for lower latency (3/3)
-			// Then PushTrackingIO without full frame
+		else
+		{ // Can wait long, getting notified on any new frame and IMU sample
+			TimePoint_t wakeup = sclock::now() + std::chrono::milliseconds(100);
+			std::unique_lock processing_lock(state.processing_m);
+			state.processing_cv.wait_until(processing_lock, wakeup);
 
-			SignalCameraRefresh(0);
+			if (state.lowLatencyIMU && pipeline.frameNum+1 == frames.endIndex())
+			{
+				// TODO: Integrate IMU samples ontop of latest frame for lower latency (3/3)
+				// Then PushTrackingIO without full frame
+
+				SignalCameraRefresh(0);
+			}
 		}
-
-		// Can wait long, getting notified on any new frame and IMU sample
-		TimePoint_t wakeup = sclock::now() + std::chrono::milliseconds(100);
-		std::unique_lock processing_lock(state.processing_m);
-		state.processing_cv.wait_until(processing_lock, wakeup);
 	}
 }
 
@@ -1765,6 +1773,7 @@ void PushTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame)
 	{
 		for (auto &trackRecord : frame->trackers)
 		{
+			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 			auto io_tracker = state.io.vrpn_trackers.find(trackRecord.id);
 			if (io_tracker == state.io.vrpn_trackers.end()) continue;
 			// TODO: Send both poseObserved and poseFiltered?

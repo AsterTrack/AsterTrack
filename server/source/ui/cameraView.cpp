@@ -1096,6 +1096,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			visSetupCamera(postProjMat, calib);
 			for (auto &trackRecord : frame->trackers)
 			{
+				if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 				if (trackRecord.id > 0)
 					visualisePose(trackRecord.poseFiltered, Color{ 0.8, 0.8, 0, 1.0f }, 0.1f, 1.0f);
 				// TODO: Track individual large markers (3/4) - visualisation
@@ -1137,17 +1138,21 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 
 			// Display poses in 3D
 			visSetupCamera(postProjMat, calib);
-			for (auto &record : frame->trackers)
-				visualisePose(record.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
+			for (auto &trackRecord : frame->trackers)
+			{
+				if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
+				visualisePose(trackRecord.poseObserved, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
+			}
 			if (visState.room.showOrigin)
 				visualiseOrigin(visState.room.origin, 1, 5);
 			visSetupProjection(postProjMat);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
-			for (auto &record : frame->trackers)
+			for (auto &trackRecord : frame->trackers)
 			{
+				if (trackRecord.result.isProbe()) continue;
 				auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-					[&](auto &t){ return t.id == record.id; });
+					[&](auto &t){ return t.id == trackRecord.id; });
 				if (trackerIt == state.trackerConfigs.end()) continue;
 				auto tracker = *trackerIt;
 				if (tracker.type == TrackerConfig::TRACKER_MARKER)
@@ -1158,16 +1163,16 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 
 				float expandViewAngle = pipeline.params.track.expandMarkerViewAngle / pipeline.params.track.normaliseDistance
-					* (record.posePredicted.translation() - calib.transform.translation().cast<float>()).norm();
+					* (trackRecord.posePredicted.translation() - calib.transform.translation().cast<float>()).norm();
 
 				if (visState.tracking.showSearchBounds)
 				{ // Show search bounds
 					// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
-					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(record.covPredicted.topLeftCorner<3,3>(),
-						pipeline.params.track.uncertaintySigma, record.posePredicted.rotation());
+					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackRecord.covPredicted.topLeftCorner<3,3>(),
+						pipeline.params.track.uncertaintySigma, trackRecord.posePredicted.rotation());
 					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
 					auto bounds = tracker.calib.bounds.extendedBy(uncertainty);
-					Eigen::Projective3f mvp = calib.camera.cast<float>() * record.posePredicted;
+					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackRecord.posePredicted;
 					visualiseBounds2D(projectBounds(mvp, bounds));
 				}
 
@@ -1177,30 +1182,30 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				Color colFiltered = Color{ 0.4f, 0.1f, 0.5f, 0.8f };
 				Color colPredicted = Color{ 0.2, 0.5, 0.7, 0.4f };
 
-				if (visState.tracking.showTargetObserved && record.result.isTracked())
+				if (visState.tracking.showTargetObserved && trackRecord.result.isTracked())
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
-					projectTarget(projected2D, tracker.calib, calib, record.poseObserved, expandViewAngle);
-					visualisePoints2D(projected2D, record.id == visState.tracking.focusedTrackerID? colVisibleF : colVisible, 2.0f);
+					projectTarget(projected2D, tracker.calib, calib, trackRecord.poseObserved, expandViewAngle);
+					visualisePoints2D(projected2D, trackRecord.id == visState.tracking.focusedTrackerID? colVisibleF : colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					if (record.visibleMarkers.size() > camera.pipeline->index && record.id == visState.tracking.focusedTrackerID)
+					if (trackRecord.visibleMarkers.size() > camera.pipeline->index && trackRecord.id == visState.tracking.focusedTrackerID)
 					{
 						projectTarget(projected2D, tracker.calib, calib,
-							record.visibleMarkers[camera.pipeline->index], record.poseObserved);
+							trackRecord.visibleMarkers[camera.pipeline->index], trackRecord.poseObserved);
 						visualisePoints2D(projected2D, colMatched, 2.0f);
 					}
 				}
 
 				if (visState.tracking.showTargetPredicted)
 				{
-					projectTarget(projected2D, tracker.calib, calib, record.posePredicted, expandViewAngle);
+					projectTarget(projected2D, tracker.calib, calib, trackRecord.posePredicted, expandViewAngle);
 					visualisePoints2D(projected2D, colPredicted, 2.0f);
 				}
 
-				if (visState.tracking.showTargetFilteredCamera && record.result.isTracked())
+				if (visState.tracking.showTargetFilteredCamera && trackRecord.result.isTracked())
 				{
-					projectTarget(projected2D, tracker.calib, calib, record.poseFiltered, expandViewAngle);
+					projectTarget(projected2D, tracker.calib, calib, trackRecord.poseFiltered, expandViewAngle);
 					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}
 			}

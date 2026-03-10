@@ -29,6 +29,7 @@ SOFTWARE.
 
 #include "imgui_custom.hpp"
 
+#include <type_traits>
 #include <string>
 #include <cstdio>
 #include <cstdint>

@@ -29,6 +29,8 @@ SOFTWARE.
 #include <windows.h>
 #else               // Linux
 #include <pthread.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #endif
 
 bool SetThreadPriority(std::thread &thread, int priority)
@@ -48,8 +50,8 @@ bool SetCurrentThreadPriority(int priority)
 {
 #ifdef _WIN32
 	return SetThreadPriority(GetCurrentThread(), priority);
-#else
-	pid_t pid = gettid();
+#elif defined(SYS_gettid)
+	pid_t pid = (pid_t)syscall(SYS_gettid);
 	sched_param sch;
 	int policy; 
 	pthread_getschedparam(pid, &policy, &sch);

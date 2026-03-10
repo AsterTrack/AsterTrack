@@ -30,21 +30,30 @@
 			"type": "gdb",
 			"request": "launch",
 			"target": "${workspaceFolder}/build/astertrack-server",
-			"cwd": "${workspaceFolder}"
+			"cwd": "${workspaceFolder}",
+            "env": { 
+				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
+			}
 		},
 		{ // Uses Native Debug extension with LLDB
 			"name": "Linux LLDB NativeDebug",
 			"type": "lldb-mi",
 			"request": "launch",
 			"target": "${workspaceFolder}/build/astertrack-server",
-			"cwd": "${workspaceFolder}"
+			"cwd": "${workspaceFolder}",
+            "env": { 
+				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
+			}
 		},
 		{ // Uses Native Debug extension with LLDB
 			"name": "Linux LLDB NativeDebug - STATIC",
 			"type": "lldb-mi",
 			"request": "launch",
 			"target": "${workspaceFolder}/build/astertrack-static",
-			"cwd": "${workspaceFolder}"
+			"cwd": "${workspaceFolder}",
+            "env": { 
+				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
+			}
 		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
 			"name": "Linux CodeLLDB",
@@ -52,7 +61,10 @@
 			"request": "launch",
 			"sourceLanguages": [ "C++" ],
 			"program": "${workspaceFolder}/build/astertrack-server",
-			"cwd": "${workspaceFolder}"
+			"cwd": "${workspaceFolder}",
+            "env": { 
+				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
+			}
 		},
 		{ // Uses CodeLLDB extension, MUCH faster debugging experience using LLDB
 			"name": "Linux CodeLLDB - VERIFY",
@@ -62,6 +74,7 @@
 			"program": "${workspaceFolder}/build/astertrack-server",
 			"cwd": "${workspaceFolder}",
             "env": { 
+				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
 				"TSAN_OPTIONS": "suppressions=.vscode/tsan_suppression.txt",
 				"UBSAN_OPTIONS": "print_stacktrace=1",
 				"ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=0"

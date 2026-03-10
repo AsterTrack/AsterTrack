@@ -193,7 +193,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		for (auto &cam : pipeline.cameras)
 		{
-			LOGC(LTrace, "  Camera %d Frame %" PRIu64 ":\n", cam->id, frameState.num);
+			LOGC(LTrace, "  Camera %u Frame %" PRIu64 ":\n", cam->id, frameState.num);
 			auto &record = frameState.cameras[cam->index];
 
 			// Project marker into camera view (simulated test data)
@@ -218,7 +218,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 						record.simulation.points2GTMarker[pt] = p;
 					else // Merged, multiple markers
 						record.simulation.points2GTMarker[pt] = -2;
-					LOGC(LTrace, "    Camera %d Point %d maps back to target point %d, recorded %d (-2 == multiple)\n",
+					LOGC(LTrace, "    Camera %u Point %d maps back to target point %d, recorded %d (-2 == multiple)\n",
 						cam->id, pt, p, record.simulation.points2GTMarker[pt]);
 				}
 				assert(record.simulation.points2GTMarker.size() == record.rawPoints2D.size());
@@ -413,7 +413,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		if (merged >= 0)
 		{
 			markerMap[i] = merged;
-			LOGC(LTrace, "    Camera %d: Point merged into %d!", calib.id, merged);
+			LOGC(LTrace, "    Camera %u: Point merged into %d!", calib.id, merged);
 			continue;
 		}
 		else
@@ -422,7 +422,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 			markerMap[i] = points2D.size();
 			points2D.push_back(ptPos);
 			properties.emplace_back(ptSize, 1000);
-			LOGC(LTrace, "    Camera %d: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
+			LOGC(LTrace, "    Camera %u: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
 		}
 	}
 }

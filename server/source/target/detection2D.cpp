@@ -329,8 +329,8 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 	ScopedLogCategory scopedLogCategory(LDetection2D);
 
 	int focus = calibs[focusCamera].index;
-	LOGC(LDebug, "Brute forcing camera %d's %d points!",
-		focus, (int)relevantPoints2D[focusCamera]->size());
+	LOGC(LDebug, "Brute forcing camera %u's %d points!",
+		calibs[focusCamera].id, (int)relevantPoints2D[focusCamera]->size());
 
 	// Brute-force a few candidate poses based on 3 points only
 	auto candidates = bruteForcePoseCandidates(stopToken, target3D, calibs[focusCamera],
@@ -338,8 +338,8 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 	if (stopToken.stop_requested())
 		return {};
 
-	LOGC(LDebug, "Found %d candidates by brute forcing camera %d's %d points!",
-		(int)candidates.size(), focus, (int)relevantPoints2D[focusCamera]->size());
+	LOGC(LDebug, "Found %d candidates by brute forcing camera %u's %d points!",
+		(int)candidates.size(), calibs[focusCamera].id, (int)relevantPoints2D[focusCamera]->size());
 
 	thread_local std::vector<Eigen::Vector2f> projected2D;
 	thread_local std::vector<int> relevantProjected2D;
@@ -376,8 +376,8 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 	
 		{ // For debug only
 			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D, target3D);
-			LOGC(LTrace, "    Candidate %d matched %d points in focus camera %d with error %fpx!",
-				i++, errors.samples, focus, errors.mean*PixelFactor);
+			LOGC(LTrace, "    Candidate %d matched %d points in focus camera %u with error %fpx!",
+				i++, errors.samples, calibs[focusCamera].id, errors.mean*PixelFactor);
 		}
 		if (cameraMatches.size() < params.minObservations.focus)
 			continue;

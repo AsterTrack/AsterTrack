@@ -697,7 +697,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	if (view.vis.emulation.enabled)
 	{ // Insert into new window shared between all cameras
 		ImGui::Begin("Emulation Visualisation");
-		BeginSection(asprintf_s("Camera %d", view.camera->id).c_str());
+		BeginSection(asprintf_s("Camera %u", view.camera->id).c_str());
 		updateEmulationVisUI(view.vis);
 		EndSection();
 		ImGui::End();

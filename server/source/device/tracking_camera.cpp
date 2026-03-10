@@ -41,12 +41,12 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 {
 	if (state.contextualRLock()->error.encountered)
 	{
-		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is still recovering from an error!", id);
+		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
 	if (!hasComms())
 	{
-		LOG(LCameraDevice, LError, "Cannot send packets to Camera %d because it is not started up yet!", id);
+		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is not started up yet!", id);
 		return false;
 	}
 	if (client && client->ready && length > 100)
@@ -83,18 +83,18 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 {
 	if (!hasComms())
 	{
-		LOG(LCameraDevice, LError, "Camera %d requesting mode failed because it has not started up yet!", id);
+		LOG(LCameraDevice, LError, "Camera %u requesting mode failed because it has not started up yet!", id);
 		return false;
 	}
 	/* if (mode != modeSet.mode && dtMS(modeSet.time, sclock::now()) < 500)
 	{
-		LOG(LCameraDevice, LWarn, "Camera %d requesting mode %x while still waiting on mode %x requested %fms ago!",
+		LOG(LCameraDevice, LWarn, "Camera %u requesting mode %x while still waiting on mode %x requested %fms ago!",
 			id, setMode, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 		return false;
 	} */
 	if (modeSet.mode == setMode && dtMS(modeSet.time, sclock::now()) < 500)
 	{
-		LOG(LCameraDevice, LWarn, "Camera %d already requested mode %x %fms ago!",
+		LOG(LCameraDevice, LWarn, "Camera %u already requested mode %x %fms ago!",
 			id, modeSet.mode, dtMS(modeSet.time, sclock::now()));
 		return false;
 	}
@@ -102,7 +102,7 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 	modePacket[0] = setMode;
 	if (!sendPacket(PACKET_CFG_MODE, modePacket, sizeof(modePacket)))
 	{
-		LOG(LCameraDevice, LWarn, "Camera %d failed to send packet to request mode %x!", id, setMode);
+		LOG(LCameraDevice, LWarn, "Camera %u failed to send packet to request mode %x!", id, setMode);
 		return false;
 	}
 	modeSet = { (TrCamMode)setMode, sclock::now(), handleIndividually };
@@ -122,7 +122,7 @@ void TrackingCameraState::recvModeSet(uint8_t recvMode)
 		if (controller)
 			ControllerUpdateSyncMask(*controller);
 	}
-	LOG(LCameraDevice, LInfo, "Camera %d entered mode %x!", id, mode);
+	LOG(LCameraDevice, LInfo, "Camera %u entered mode %x!", id, mode);
 }
 
 bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
@@ -239,12 +239,12 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 {
 	if (camera->controller && !camera->controller->comm->commStreaming)
 	{
-		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because controller is not in streaming mode anymore!", camera->id);
+		LOG(LCameraDevice, LError, "Camera %u cannot be set to stream again because controller is not in streaming mode anymore!", camera->id);
 		return false;
 	}
 	if (!camera->hasComms())
 	{
-		LOG(LCameraDevice, LError, "Camera %d cannot be set to stream again because it has not started up yet!", camera->id);
+		LOG(LCameraDevice, LError, "Camera %u cannot be set to stream again because it has not started up yet!", camera->id);
 		return false;
 	}
 

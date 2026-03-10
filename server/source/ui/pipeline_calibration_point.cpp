@@ -560,7 +560,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 
 					for (int c = 0; c < cameraIDs.size(); c++)
 					{
-						LOGC(LWarn, "Camera %d in saved observations is moved from saved slot %d to current index %d!", cameraIDs[c], c, camMap[c]);
+						LOGC(LWarn, "Camera %u in saved observations is moved from saved slot %d to current index %d!", cameraIDs[c], c, camMap[c]);
 					}
 
 					if (valid)

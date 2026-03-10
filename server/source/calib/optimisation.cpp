@@ -166,8 +166,8 @@ OptErrorRes updateReprojectionErrors(ObsData &data, const std::vector<CameraCali
 	if (logCameraErrors)
 	{
 		for (int c = 0; c < cameraCalibs.size(); c++)
-			LOGCL("        Camera %d has %fpx RMSE reprojection error from %d inlier blobs!\n",
-				c, std::sqrt(cameraErrors(c)/cameraBlobCounts[c])*PixelFactor, cameraBlobCounts[c]);
+			LOGCL("        Camera %u has %fpx RMSE reprojection error from %d inlier blobs!\n",
+				cameraCalibs[c].id, std::sqrt(cameraErrors(c)/cameraBlobCounts[c])*PixelFactor, cameraBlobCounts[c]);
 	}
 
 	index = data.points.totalSamples;

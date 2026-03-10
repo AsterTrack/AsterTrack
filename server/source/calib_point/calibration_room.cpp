@@ -221,8 +221,8 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
 			optError, filteredErrors.mean*PixelFactor, filteredErrors.stdDev*PixelFactor, filteredErrors.max*PixelFactor, filteredErrors.rmse*PixelFactor,
 			(int)errorVec.size(), over10PxCount, over1PxCount, (int)errorVec.size()-over1PxCount-data.points.outlierSamples, data.points.outlierSamples);
 		for (int c = 0; c < cameraCalibs.size(); c++)
-			LOGCL("        Camera %d has %fpx RMSE reprojection error without outliers\n",
-				c, std::sqrt(cameraErrorsIn(c)/cameraInCounts[c])*PixelFactor);
+			LOGCL("        Camera %u has %fpx RMSE reprojection error without outliers\n",
+				cameraCalibs[c].id, std::sqrt(cameraErrorsIn(c)/cameraInCounts[c])*PixelFactor);
 	}
 	return filteredErrors;
 }
@@ -447,7 +447,7 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 			if (calibsSrc[c].invalid()) continue;
 			if (calibsTgt[c].invalid()) continue;
 
-			LOGC( LTrace, "    Assuming camera %d to be unchanged:", c);
+			LOGC( LTrace, "    Assuming camera %u to be unchanged:", calibsSrc[c].id);
 			Isometry3<Scalar> corr = getCorrectiveTransform(c, scale);
 			for (int cc = 0; cc < camCount; cc++)
 			{
@@ -456,7 +456,7 @@ HANDLE_ERROR transferRoomCalibration(const std::vector<CameraCalib_t<Scalar>> &c
 
 				Vector3<Scalar> corrPos = corr * (calibsTgt[cc].transform.translation() * scale);
 				Scalar error = (corrPos - calibsSrc[cc].transform.translation()).norm()*1000;
-				LOGC( LTrace, "      Error for camera %d is %.2fmm", cc, error);
+				LOGC( LTrace, "      Error for camera %u is %.2fmm", calibsSrc[cc].id, error);
 				corrMap[c*camCount + cc] = error;
 			}
 		}

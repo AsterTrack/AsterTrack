@@ -499,7 +499,7 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 	error.time = sclock::now();
 	if (erroneous || length < 2)
 	{
-		LOG(LCameraDevice, LError, "Received invalid error packet of length %d from camera %d in port %d!\n",
+		LOG(LCameraDevice, LError, "Received invalid error packet of length %d from camera %u in port %d!\n",
 			(int)length, camera.id, camera.port);
 		error.code = ERROR_UNKNOWN;
 		error.serious = true;
@@ -532,12 +532,12 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 
 	if (error.code == ERROR_UNKNOWN)
 	{
-		LOG(LCameraDevice, LError, "Received invalid error from camera %d in port %d!\n",
+		LOG(LCameraDevice, LError, "Received invalid error from camera %u in port %d!\n",
 			camera.id, camera.port);
 	}
 	else
 	{
-		LOG(LCameraDevice, LError, "Received %s error from camera %d in port %d: %s (%d)\n",
+		LOG(LCameraDevice, LError, "Received %s error from camera %u in port %d: %s (%d)\n",
 			error.serious? "serious" : "regular", camera.id, camera.port, ErrorTag_String[error.code], (int)error.code);
 	}
 	for (auto &func : backtrace)
@@ -675,7 +675,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 {
 	if (!camera.config.imageStreaming.enabled)
 	{ // TODO: This is bad if it happens, so should log, but make sure to only log it after repeated violation
-		LOG(LCameraDevice, LInfo, "Camera %d is still sending frames after disabling frame streaming!", camera.id);
+		LOG(LCameraDevice, LInfo, "Camera %u is still sending frames after disabling frame streaming!", camera.id);
 		return false;
 	}
 	const int headerSize = 22;
@@ -706,7 +706,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 	{ // Start new frame
 		if (parseImg.received < parseImg.jpeg.size())
 		{ // Currently only support parsing one frame at a time
-			LOG(LParsing, LWarn, "Camera %d had only received %d/%d bytes for image of frame %d!",
+			LOG(LParsing, LWarn, "Camera %u had only received %d/%d bytes for image of frame %d!",
 				camera.id, parseImg.received, (int)parseImg.jpeg.size(), parseImg.frameID);
 		}
 
@@ -716,13 +716,13 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 		parseImg.jpeg.clear();
 		if (!erroneous) // Allocated data
 			parseImg.jpeg.resize(imageSize, 0);
-		LOG(LParsing, LDebug, "Camera %d starts receiving new image (%d x %d, %d bytes) of frame %d",
+		LOG(LParsing, LDebug, "Camera %u starts receiving new image (%d x %d, %d bytes) of frame %d",
 			camera.id, imageWidth, imageHeight, imageSize, parseImg.frameID);
 	}
 
 	if (erroneous)
 	{ // If a single packet is erronous (e.g. checksum failed), the image cannot be recovered currently
-		LOG(LParsing, LDarn, "Camera %d received erroneous packet with block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
+		LOG(LParsing, LDarn, "Camera %u received erroneous packet with block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
 		parseImg.erroneous = true;
 	}
@@ -735,21 +735,21 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 	// Error-check block
 	if (imageWidth > 1280 || imageHeight > 800 || imageSize != parseImg.jpeg.size())
 	{
-		LOG(LParsing, LWarn, "Camera %d received invalid image header (%d x %d, %d bytes) for %d bytes image of frame %d!",
+		LOG(LParsing, LWarn, "Camera %u received invalid image header (%d x %d, %d bytes) for %d bytes image of frame %d!",
 			camera.id, imageWidth, imageHeight, imageSize, (int)parseImg.jpeg.size(), parseImg.frameID);
 		parseImg.erroneous = true;
 		return false;
 	}
 	if ((headerSize+blockSize) != length || (blockOffset+blockSize) > parseImg.jpeg.size())
 	{
-		LOG(LParsing, LWarn, "Camera %d received block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
+		LOG(LParsing, LWarn, "Camera %u received block (offset %d length %d) for image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
 		parseImg.erroneous = true;
 		return false;
 	}
 	if (parseImg.jpeg[blockOffset] != 0)
 	{
-		LOG(LParsing, LWarn, "Camera %d received block (offset %d length %d) overlapping with existing data of image (%d x %d, %d bytes) of frame %d!",
+		LOG(LParsing, LWarn, "Camera %u received block (offset %d length %d) overlapping with existing data of image (%d x %d, %d bytes) of frame %d!",
 			camera.id, blockOffset, blockSize, imageWidth, imageHeight, imageSize, parseImg.frameID);
 		parseImg.erroneous = true;
 		return false;
@@ -757,7 +757,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 
 	// Copy block of jpeg data
 	memcpy(&parseImg.jpeg[blockOffset], &data[headerSize], blockSize);
-	LOG(LParsing, LDebug, "Camera %d received block (offset %d length %d) in image packet of size %d with %d / %d bytes received in total!",
+	LOG(LParsing, LDebug, "Camera %u received block (offset %d length %d) in image packet of size %d with %d / %d bytes received in total!",
 		camera.id, blockOffset, blockSize, (int)length, parseImg.received, (int)parseImg.jpeg.size());
 
 	if (parseImg.received == parseImg.jpeg.size() && !parseImg.erroneous)
@@ -830,11 +830,11 @@ std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraI
 	if (!decompress(imageBuf, imageRecord->jpeg.data(), imageRecord->jpeg.size(), width, height)
 		|| width != imageRecord->imageX || height != imageRecord->imageY)
 	{
-		LOG(LParsing, LWarn, "Camera %d frame image failed to decompress image of size %dx%d from %dbytes!\n",
+		LOG(LParsing, LWarn, "Camera %u frame image failed to decompress image of size %dx%d from %dbytes!\n",
 			imageRecord->cameraID, imageRecord->imageX, imageRecord->imageY, (int)imageRecord->jpeg.size());
 		return nullptr;
 	}
-	LOG(LParsing, LDebug, "Camera %d received full image of size %d (decompressed %d) for imageRecord ID %d!\n",
+	LOG(LParsing, LDebug, "Camera %u received full image of size %d (decompressed %d) for imageRecord ID %d!\n",
 		imageRecord->cameraID, (int)imageRecord->jpeg.size(), (int)imageBuf.size(), imageRecord->frameID);
 
 	// No need for synchronisation (hopefully), pointer switch
@@ -874,7 +874,7 @@ bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, cons
 	if (length == STAT_PACKET_HEADER)
 		return true;
 	float elapsedS = s.header.deltaUS/1000000.0f;
-	LOG(LCameraDevice, LInfo, "Camera %d, Frame %d, %.2f fps, %.1f\u00B0C, %.2fV\n", camera.id, s.header.frame,
+	LOG(LCameraDevice, LInfo, "Camera %u, Frame %d, %.2f fps, %.1f\u00B0C, %.2fV\n", camera.id, s.header.frame,
 		(s.header.frame-lastStatFrame)/elapsedS, s.header.tempSOC/100.0f, s.header.voltage/1000.0f);
 	LOG(LCameraDevice, LInfo, "   Latency %.2fms (qpu %.2f, fetch %.2f, CCL %.2f, "
 		"post %.2f, TX %.2f), Vis: (%dus, %.0fHz), Stream: (%dms, %.0fHz)\n",
@@ -1156,7 +1156,7 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 	}
 	case PACKET_FW_STATUS:
 	{
-		LOG(LFirmwareUpdate, LTrace, "Camera %d received a firmware status packet!", camera.id);
+		LOG(LFirmwareUpdate, LTrace, "Camera %u received a firmware status packet!", camera.id);
 		if (erroneous) break;
 		if (length < FIRMWARE_PACKET_HEADER) break;
 		if (!camera.firmware) break;

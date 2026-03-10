@@ -576,7 +576,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (!camera->sync && (packet.header.tag == PACKET_FRAME_SIGNAL || packet.header.isStreamPacket()))
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LTrace, "Camera %d (Port %d) sent a streaming packet but was not set up for streaming!\n", camera->id, port);
+				LOG(LStreaming, LTrace, "Camera %u (Port %d) sent a streaming packet but was not set up for streaming!\n", camera->id, port);
 				return;
 			}
 
@@ -590,7 +590,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				}
 				else
 				{
-					LOG(LStreaming, LTrace, "Camera %d (Port %d) announced packet for frame %d (%d)!\n", camera->id, port, frame->ID, packet.header.frameID&0xFF);
+					LOG(LStreaming, LTrace, "Camera %u (Port %d) announced packet for frame %d (%d)!\n", camera->id, port, frame->ID, packet.header.frameID&0xFF);
 				}
 			}
 			else if (packet.header.isStreamPacket())
@@ -629,7 +629,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 
 			if (packet.erroneous)
 			{
-				LOG(LStreaming, LError, "Camera %d had packet %d discarded because of one or more long missing blocks after header %d!\n",
+				LOG(LStreaming, LError, "Camera %u had packet %d discarded because of one or more long missing blocks after header %d!\n",
 					camera->id, packet.header.tag, packet.headerBlockID);
 				if (packet.header.isStreamPacket())
 				{
@@ -647,11 +647,11 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
 				if (frame)
 				{ // Packet existed for frame
-					LOG(LStreaming, LTrace, "Camera %d (Port %d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
+					LOG(LStreaming, LTrace, "Camera %u (Port %d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
 						camera->id, port, packet.header.tag, frame->ID, frame->ID&0xFF, blobCount);
 					if (frame->previouslyProcessed)
 					{
-						LOG(LStreaming, LTrace, "---- Camera %d finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
+						LOG(LStreaming, LTrace, "---- Camera %u finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
 							camera->id, frame->ID, blobCount, dtMS(frame->SOF, sclock::now()), dtMS(frame->lastProcessed, sclock::now()));
 					}
 				}

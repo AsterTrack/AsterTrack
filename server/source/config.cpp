@@ -266,7 +266,7 @@ std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, Camer
 					int cfg = cam["configuration"].get<int>();
 					if (cfg >= configMap.configurations.size()) continue;
 					configMap.cameraConfigs[id] = cfg;
-					LOGC(LInfo, "Loaded config %d for camera %d!", cfg, id);
+					LOGC(LInfo, "Loaded config %d for camera %u!", cfg, id);
 				}
 			}
 		}

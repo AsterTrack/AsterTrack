@@ -52,9 +52,9 @@ void InterfaceState::UpdateCameras()
 			CameraView view = {};
 			view.camera = cam; // new shared_ptr
 			if (cam->pipeline)
-				view.ImGuiTitle = asprintf_s("Camera %d (%d)", cam->id, cam->pipeline->index);
+				view.ImGuiTitle = asprintf_s("Camera %u (%d)", cam->id, cam->pipeline->index);
 			else
-				view.ImGuiTitle = asprintf_s("Camera %d", cam->id);
+				view.ImGuiTitle = asprintf_s("Camera %u", cam->id);
 			cameraViews.insert({ cam->id, view });
 			cameraGridDirty = true;
 		}

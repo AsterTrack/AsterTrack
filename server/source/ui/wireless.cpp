@@ -380,7 +380,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			ImGui::SetItemTooltip("Enable use of wireless server for realtime data stream of camera.");
 			ImGui::TableNextColumn();
 			{
-				ImGui::Text("%d (%d)", camera->id, camera->pipeline->index);
+				ImGui::Text("%u (%d)", camera->id, camera->pipeline->index);
 			}
 			ImGui::TableNextColumn();
 			{

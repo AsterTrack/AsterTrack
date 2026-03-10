@@ -1023,7 +1023,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		for (int i = 0; i < clusters2D[c].size(); i++)
 			cluster2DStats[c][i] = calculateClusterStats2D(clusters2D[c][i], *points2D[c]);
 
-		LOG(LCluster, LDebug, "Camera %d: Clustered %d/%d relevant points into %d groups:", calibs[c].index, (int)relevantPoints2D[c]->size(), (int)points2D[c]->size(), (int)clusters2D[c].size());
+		LOG(LCluster, LDebug, "Camera %u: Clustered %d/%d relevant points into %d groups:", calibs[c].id, (int)relevantPoints2D[c]->size(), (int)points2D[c]->size(), (int)clusters2D[c].size());
 		for (int i = 0; i < clusters2D[c].size(); i++)
 		{
 			LOG(LCluster, LDebug, "    Cluster has %d 2D points, variance of %fx%fpx!", (int)clusters2D[c][i].size(),

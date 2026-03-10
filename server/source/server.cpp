@@ -384,7 +384,7 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 		if (state.defaultLens > 0)
 			camera->calib = CameraCalib(state.lensPresets[state.defaultLens]);
 		else camera->calib = CameraCalib();
-		LOG(LDefault, LInfo, "No calibration found for camera %d!\n", camera->id);
+		LOG(LDefault, LInfo, "No calibration found for camera %u!\n", camera->id);
 	}
 	camera->calibRoom = camera->calib;
 
@@ -512,7 +512,7 @@ void StartWirelessServer(ServerState &state)
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
 		if (!camera.sync)
 		{
-			LOG(LStreaming, LTrace, "Wireless Camera %d send a streaming packet but was not set up for streaming!\n", camera.id);
+			LOG(LStreaming, LTrace, "Wireless Camera %u send a streaming packet but was not set up for streaming!\n", camera.id);
 			return false;
 		}
 		if (header.tag == PACKET_FRAME_SIGNAL)
@@ -528,16 +528,16 @@ void StartWirelessServer(ServerState &state)
 			}
 			auto frame = RegisterCameraFrame(*sync_lock, camera.syncIndex, header.frameID);
 			if (frame)
-				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for frame %d (%d)!\n", camera.id, frame->ID, header.frameID);
+				LOG(LStreaming, LDebug, "Wireless Camera %u announced packet for frame %d (%d)!\n", camera.id, frame->ID, header.frameID);
 			else
-				LOG(LStreaming, LDebug, "Wireless Camera %d announced packet for non-existant frame with ID %d!\n", camera.id, header.frameID);
+				LOG(LStreaming, LDebug, "Wireless Camera %u announced packet for non-existant frame with ID %d!\n", camera.id, header.frameID);
 			return true;
 		}
 		else if (header.isStreamPacket())
 		{
 			if (!RegisterStreamPacket(*camera.sync->contextualLock(), camera.syncIndex, header.frameID, receiveTime))
 			{
-				LOG(LStreaming, LTrace, "Wireless Camera %d sent a streaming packet but was not set up for streaming!\n", camera.id);
+				LOG(LStreaming, LTrace, "Wireless Camera %u sent a streaming packet but was not set up for streaming!\n", camera.id);
 				return false;
 			}
 		}
@@ -574,11 +574,11 @@ void StartWirelessServer(ServerState &state)
 			SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera.syncIndex, header.frameID, std::move(cameraFrame), erroneous);
 			if (frame)
 			{ // Packet existed for frame
-				LOG(LStreaming, LTrace, "Camera %d (TCP) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
+				LOG(LStreaming, LTrace, "Camera %u (TCP) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
 					camera.id, header.tag, frame->ID, frame->ID&0xFF, blobCount);
 				if (frame->previouslyProcessed)
 				{
-					LOG(LStreaming, LTrace, "---- Camera %d finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
+					LOG(LStreaming, LTrace, "---- Camera %u finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
 						camera.id, frame->ID, blobCount, dtMS(frame->SOF, sclock::now()), dtMS(frame->lastProcessed, sclock::now()));
 				}
 			}
@@ -728,7 +728,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			CameraID id = camera.id;
 			if (CameraCheckDisconnected(state, camera))
 			{
-				LOG(LCameraDevice, LWarn, "Camera %d had no remaining communication links!\n", id);
+				LOG(LCameraDevice, LWarn, "Camera %u had no remaining communication links!\n", id);
 				c--;
 				continue;
 			}
@@ -966,7 +966,7 @@ void StartSimulation(ServerState &state)
 		for (int c = 0; c < state.config.simulation.cameraDefinitions.size(); c++)
 		{
 			auto camDef = state.config.simulation.cameraDefinitions[c];
-			EnsureCamera(state, camDef.id)->label = asprintf_s("Camera %d", camDef.id);
+			EnsureCamera(state, camDef.id)->label = asprintf_s("Camera %u", camDef.id);
 		}
 	}
 
@@ -1578,12 +1578,12 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 			if (!camRecv.announced) continue;
 			if (camRecv.erroneous || !camRecv.complete)
 			{ // If packet was fully received
-				LOG(LStreaming, LTrace, "    Camera %d packet is %s, status %s\n",
+				LOG(LStreaming, LTrace, "    Camera %u packet is %s, status %s\n",
 					camera->id, camRecv.complete? "complete" : "incomplete", camRecv.erroneous? "error" : "good");
 			}
 			else
 			{
-				LOG(LStreaming, LTrace, "    Camera %d has not received any packet despite being announced!\n", camera->id);
+				LOG(LStreaming, LTrace, "    Camera %u has not received any packet despite being announced!\n", camera->id);
 			}
 		}
 	}
@@ -1602,17 +1602,17 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		auto &camRecv = frame.cameras[camera->syncIndex];
 		if (!camRecv.announced)
 		{
-			LOG(LStreaming, LDebug, "--- Camera %d has no blob data announced for frame %d!\n", camera->id, frame.ID);
+			LOG(LStreaming, LDebug, "--- Camera %u has no blob data announced for frame %d!\n", camera->id, frame.ID);
 			continue;
 		}
 		if (!camRecv.complete)
 		{
-			LOG(LStreaming, LDarn, "--- Camera %d has incomplete blob data for frame %d!\n", camera->id, frame.ID);
+			LOG(LStreaming, LDarn, "--- Camera %u has incomplete blob data for frame %d!\n", camera->id, frame.ID);
 			continue;
 		}
 		if (camRecv.erroneous)
 		{
-			LOG(LStreaming, LDarn, "--- Camera %d has erroneous blob data for frame %d!\n", camera->id, frame.ID);
+			LOG(LStreaming, LDarn, "--- Camera %u has erroneous blob data for frame %d!\n", camera->id, frame.ID);
 			continue;
 		}
 		// Packet was properly received

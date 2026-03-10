@@ -414,7 +414,8 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 			LOGC(logLevel, "%s avg error is %fpx, max is %fpx, RMSE %fpx, fit %f\n", label, Avg*PixelFactor, maxError*PixelFactor, RMSE*PixelFactor, fitMat);
 		return std::make_tuple(Avg, RMSE, fitMat);
 	};
-	auto calculateElementErrors = [mutableCount, immutableCount, &disableFrame](const char *label, const Decomp &tucker, const SparseTensor<double, 3> &dataTensor, const Eigen::VectorXd &measurements, Eigen::VectorXd &markerError, Eigen::VectorXi &markerNum, Eigen::VectorXd &frameError, Eigen::VectorXi &frameNum, LogLevel logLevel)
+	auto calculateElementErrors = [mutableCount, immutableCount, &disableFrame, &cameraCalibs](const char *label, const Decomp &tucker, const SparseTensor<double, 3> &dataTensor,
+		const Eigen::VectorXd &measurements, Eigen::VectorXd &markerError, Eigen::VectorXi &markerNum, Eigen::VectorXd &frameError, Eigen::VectorXi &frameNum, LogLevel logLevel)
 	{
 		markerError.resize(tucker.factor<2>().rows());
 		markerError.setZero();
@@ -485,7 +486,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 			avgFrameError*PixelFactor, minFrameError*PixelFactor, maxFrameError*PixelFactor, frameCnt);
 		for (int c = 0; c < tucker.factor<0>().rows()/3; c++)
 		{
-			LOGC(logLevel, "        Camera %d has %f RMSE normally, %f RMSE from tris\n", c,
+			LOGC(logLevel, "        Camera %u has %f RMSE normally, %f RMSE from tris\n", cameraCalibs[c].id,
 				std::sqrt(cameraErr(c)/cameraNum(c))*PixelFactor, std::sqrt(cameraErrTri(c)/cameraNumTri(c))*PixelFactor);
 		}
 	};

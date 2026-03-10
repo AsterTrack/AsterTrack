@@ -712,12 +712,12 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 					float outError = errorTerm.calculateSampleError(match.pose, errorIndex);
 					if (outError > maxAllowed)
 					{
-						LOGC(LTrace, "            Camera %d Marker %d - Point %d, outlier with error %.4fpx!", calib.id, pointsMatch[i].first, pointsMatch[i].second, outError*PixelFactor);
+						LOGC(LTrace, "            Camera %u Marker %d - Point %d, outlier with error %.4fpx!", calib.id, pointsMatch[i].first, pointsMatch[i].second, outError*PixelFactor);
 						outliersCam++;
 					}
 					else
 					{
-						LOGC(LDebug, "            Camera %d Marker %d - Point %d, reinstated as inlier with error %.4fpx",
+						LOGC(LDebug, "            Camera %u Marker %d - Point %d, reinstated as inlier with error %.4fpx",
 							calib.id, pointsMatch[i].first, pointsMatch[i].second, outError*PixelFactor);
 						pointsMatch[writeIndex++] = pointsMatch[i];
 						match.error.samples++;
@@ -726,7 +726,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 				}
 				else
 				{
-					LOGC(LTrace, "            Camera %d Marker %d - Point %d, remaining pixel error %.4fpx",
+					LOGC(LTrace, "            Camera %u Marker %d - Point %d, remaining pixel error %.4fpx",
 						calib.id, pointsMatch[i].first, pointsMatch[i].second, lm.fvec(errorIndex)*PixelFactor);
 					pointsMatch[writeIndex++] = pointsMatch[i];
 				}
@@ -878,8 +878,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				if (projectedBounds.includes(points2D[c]->at(p)))
 					closePoints2D[c].push_back(p);
 			}
-			LOGC(LTrace, "        Camera %d: Found %d/%d closeby in %.1fx%.1f bounds!\n",
-				c, (int)closePoints2D[c].size(), (int)points2D[c]->size(),
+			LOGC(LTrace, "        Camera %u: Found %d/%d closeby in %.1fx%.1f bounds!\n",
+				calibs[c].id, (int)closePoints2D[c].size(), (int)points2D[c]->size(),
 				projectedBounds.extends().x()*PixelFactor, projectedBounds.extends().y()*PixelFactor);
 		}
 	};
@@ -909,8 +909,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				else
 				 	projected2D[c][i].setConstant(NAN);
 			}
-			LOGC(LDebug, "        Camera %d: Projected %d target markers, matching them to %d closeby observations!\n",
-				c, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());
+			LOGC(LDebug, "        Camera %u: Projected %d target markers, matching them to %d closeby observations!\n",
+				calibs[c].id, (int)relevantProjected2D[c].size(), (int)closePoints2D[c].size());
 
 			// Remove existing matches that are not visible anymore - happens rarely
 			int camera = calibs[c].index;
@@ -981,18 +981,18 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			if (cameraMatches.empty())
 			{
 				if (matches.size() < params.quality.minCameraObs)
-					LOGC(LDebug, "            Camera %d: Only found %d matches, discarding!", c, (int)matches.size());
+					LOGC(LDebug, "            Camera %u: Only found %d matches, discarding!", calibs[c].id, (int)matches.size());
 				else
-					LOGC(LDebug, "            Camera %d: Found %d matches!", c, (int)matches.size());
+					LOGC(LDebug, "            Camera %u: Found %d matches!", calibs[c].id, (int)matches.size());
 			}
 			else
 			{
 				if (matches.size() < params.quality.minCameraObs)
-					LOGC(LDebug, "            Camera %d: Only found %d matches, %d before, discarding!", c, (int)matches.size(), (int)cameraMatches.size());
+					LOGC(LDebug, "            Camera %u: Only found %d matches, %d before, discarding!", calibs[c].id, (int)matches.size(), (int)cameraMatches.size());
 				else if (matches.size() <= cameraMatches.size())
-					LOGC(LDebug, "            Camera %d: Still only found %d matches, with %d before!", c, (int)matches.size(), (int)cameraMatches.size());
+					LOGC(LDebug, "            Camera %u: Still only found %d matches, with %d before!", calibs[c].id, (int)matches.size(), (int)cameraMatches.size());
 				else
-					LOGC(LDebug, "            Camera %d: Found %d matches, had %d before!", c, (int)matches.size(), (int)cameraMatches.size());
+					LOGC(LDebug, "            Camera %u: Found %d matches, had %d before!", calibs[c].id, (int)matches.size(), (int)cameraMatches.size());
 			}
 		}
 		bool accepted = matches.size() > cameraMatches.size() && matches.size() >= params.quality.minCameraObs;
@@ -1129,8 +1129,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		}
 		assert(dominantCamera >= 0);
 
-		LOGC(LDebug, "        Camera %d is dominant with %d out of %d total samples (next best %d)! Entering uncertainty compensation path!",
-			dominantCamera, camPoints.rank[0], matchedSamples, camPoints.rank[1]);
+		LOGC(LDebug, "        Camera %u is dominant with %d out of %d total samples (next best %d)! Entering uncertainty compensation path!",
+			calibs[dominantCamera].id, camPoints.rank[0], matchedSamples, camPoints.rank[1]);
 		Breakpoint(2);
 
 		improveTargetMatch();
@@ -1155,8 +1155,8 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 				*points2D[c], closePoints2D[c], projected2D[c], relevantProjected2D[c],
 				calibs[c], uncertainAxis, targetMatch2D.pose.translation(), params.matchUncertain.perpDeviation,
 				internalData.uncertaintyAxis[camera]);
-			LOGC(LDebug, "            Considering %d/%d points of camera %d to match with %d projected points along uncertainty axis!",
-				obsConsidered, (int)closePoints2D[c].size(), c, (int)relevantProjected2D[c].size());
+			LOGC(LDebug, "            Considering %d/%d points of camera %u to match with %d projected points along uncertainty axis!",
+				obsConsidered, (int)closePoints2D[c].size(), calibs[c].id, (int)relevantProjected2D[c].size());
 			if (obsConsidered == 0 && checkDiscardCameraMatches(c))
 				continue;
 

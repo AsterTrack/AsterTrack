@@ -36,9 +36,9 @@ __attribute__((used)) static uint32_t GPIOD_SYNC_PIN[CAM_PORT_COUNT] = {
 	GPIO_PIN_8, GPIO_PIN_9, GPIO_PIN_10, GPIO_PIN_11, GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_13, GPIO_PIN_12
 };
 
-// SYNC IO pin(s) on GPIOB
+// SYNC IO pin(s) on GPIOE
 
-const static uint32_t GPIOB_SYNC_IO_PINS = GPIO_PIN_8;
+const static uint32_t GPIOE_SYNC_IO_PINS = GPIO_PIN_3;
 
 // SYNC IO EXTI lines
 

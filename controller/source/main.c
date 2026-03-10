@@ -46,7 +46,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define USB_COMM_TIMEOUT		1000*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
 #define USB_COMM_TIMEOUT_STR	1000*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
 
-#define SYNC_PULSE_WIDTH_US		10
+#define SYNC_MIN_PULSE_WIDTH_US	50
 
 
 /* Function Prototypes */
@@ -128,11 +128,12 @@ static volatile TimePoint curSOF = 0; // NOT USB frame, but camera frame time
 static volatile uint32_t curFrameID = 0; // More than half a year before it lapses at current max FPS of ~210
 static volatile TimePoint cachedSOF = 0;
 static volatile uint32_t cachedFrameID = 0;
+static volatile bool syncPulseHigh = false;
 
 // Times for supervision
 static TimePoint startup = 0;
 static TimePoint lastPing = 0;
-static TimePoint lastUSBSOF;
+static TimePoint lastUSBSOF = 0;
 static volatile TimePoint lastUSBPacket = 0;
 static volatile TimePoint lastIntPacket = 0;
 //static StatValue packetLatency, packetDiff;
@@ -325,6 +326,14 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			}
 
 			sendSOFPackets(cachedFrameID, cachedSOF);
+		}
+
+		if (syncPulseHigh && (GetTimePoint() - cachedSOF) > SYNC_MIN_PULSE_WIDTH_US * TICKS_PER_US)
+		{ // Set camera & output sync pulse low
+			syncPulseHigh = false;
+			GPIO_RESET(GPIOD, enabledSyncPinsGPIOD);
+			if (syncSource != SYNC_CFG_EXT_TRIG)
+				GPIO_RESET(GPIOE, GPIOE_SYNC_IO_PINS);
 		}
 
 #if defined(ENABLE_LOG) && defined(LOG_USE_SDI)
@@ -1650,26 +1659,20 @@ void TIM3_IRQHandler()
 	}
 
 	// Generate External Trigger Signal on output and camera pins
-	GPIO_SET(GPIOB, GPIOB_SYNC_IO_PINS);
+	GPIO_SET(GPIOE, GPIOE_SYNC_IO_PINS);
 	GPIO_SET(GPIOD, enabledSyncPinsGPIOD);
 
 	// Update Sync SOF
 	curSOF = GetTimePoint();
 	curFrameID++;
+	syncPulseHigh = true;
 
 	// Done in main thread, not critical enough to do in interrupt
 	//sendSOFPackets(curFrameID, curSOF);
 	//ERR_CHARR(':', INT999_TO_CHARR(curFrameID%0xFF));
 
-	// Wait until pulse end
-	TimePoint tgt = curSOF + SYNC_PULSE_WIDTH_US * TICKS_PER_US;
-	while (GetTimePoint() < tgt);
-
-	// Set camera & output sync pulse low
-	GPIO_RESET(GPIOB, GPIOB_SYNC_IO_PINS);
-	GPIO_RESET(GPIOD, enabledSyncPinsGPIOD);
-	LOG_EVT_INT(CONTROLLER_INTERRUPT_SYNC_GEN, false);
 	LOG_EVT_STR(CONTROLLER_EVENT_SYNC, true);
+	LOG_EVT_INT(CONTROLLER_INTERRUPT_SYNC_GEN, false);
 }
 
 void EXTI3_IRQHandler(void) __IRQ;
@@ -1685,19 +1688,13 @@ void EXTI3_IRQHandler()
 		// Update Sync SOF
 		curSOF = GetTimePoint();
 		curFrameID++;
+		syncPulseHigh = true;
 
 		// Done in main thread, not critical enough to do in interrupt
 		//sendSOFPackets(curFrameID, curSOF);
 
-		// Wait until pulse end
-		TimePoint tgt = curSOF + SYNC_PULSE_WIDTH_US * TICKS_PER_US;
-		while (GetTimePoint() < tgt);
-
 		// Reset IRQ flag
 		EXTI->INTFR = GPIOE_SYNC_EXTI_LINES;
-
-		// Set camera sync pulse low
-		GPIO_RESET(GPIOD, enabledSyncPinsGPIOD);
 
 		LOG_EVT_STR(CONTROLLER_EVENT_SYNC, true);
 	}

@@ -230,6 +230,7 @@ struct PipelineState
 		Synchronised<std::vector<std::shared_ptr<TargetView>>> views;
 		// State and stages of assembly of views into final target
 		std::shared_ptr<TargetView> baseView = nullptr;
+		std::shared_ptr<TargetView> nextView = nullptr;
 		struct
 		{
 			bool planned;

@@ -66,7 +66,7 @@ void prepareBlock(const SequenceData &sequences, FrameNum blockBegin, FrameNum b
 			{
 				first = std::min(first, begin.frame());
 				last = std::max(last, std::prev(end).frame());
-				assert(begin.frame() < std::prev(end).frame());
+				assert(begin.frame() <= std::prev(end).frame());
 				assert(first >= blockBegin);
 				assert(last < blockEnd);
 			}

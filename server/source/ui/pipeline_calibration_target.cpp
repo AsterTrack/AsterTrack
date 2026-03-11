@@ -358,24 +358,38 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		else
 			ImGui::TextUnformatted("View not calibrated.");
 
-		if (pipeline.targetCalib.assemblyStages.contextualRLock()->empty())
+
+		std::vector<int> assemblyAlreadyMerged;
+		{ // Get merged views of current assembly
+			auto stages = pipeline.targetCalib.assemblyStages.contextualRLock();
+			if (!stages->empty())
+				assemblyAlreadyMerged = stages->back()->base.merged;
+		}
+		ImGui::AlignTextToFramePadding();
+		if (assemblyAlreadyMerged.empty())
 		{
-			if (pipeline.targetCalib.baseView == visState.targetCalib.view)
+			bool base = pipeline.targetCalib.baseView == visState.targetCalib.view;
+			if (ImGui::Button(base? "Auto-Select Base View" : "Pick as Base view", SizeWidthDiv2()))
+				pipeline.targetCalib.baseView = base? nullptr : visState.targetCalib.view; // new shared_ptr
+		}
+		else
+		{
+			auto merged = std::find(assemblyAlreadyMerged.begin(), assemblyAlreadyMerged.end(), visState.targetCalib.view->id);
+			if (merged == assemblyAlreadyMerged.end())
 			{
-				if (ImGui::Button("Auto-Select Base View", SizeWidthDiv2()))
-					pipeline.targetCalib.baseView = nullptr;
+				bool next = pipeline.targetCalib.nextView == visState.targetCalib.view;
+				if (ImGui::Button(next? "Auto-Select Next View" : "Pick as Next view", SizeWidthDiv2()))
+					pipeline.targetCalib.nextView = next? nullptr : visState.targetCalib.view; // new shared_ptr
+			}
+			else if (pipeline.targetCalib.baseView == visState.targetCalib.view)
+			{
+				ImGui::TextUnformatted("View is Base View.");
 			}
 			else
 			{
-				if (ImGui::Button("Pick as Base View", SizeWidthDiv2()))
-					pipeline.targetCalib.baseView = visState.targetCalib.view; // new shared_ptr
+				ImGui::TextUnformatted("View is merged.");
 			}
 		}
-		else if (pipeline.targetCalib.baseView == visState.targetCalib.view)
-		{
-			ImGui::TextUnformatted("View has been selected as Base View.");
-		}
-
 		SameLineTrailing(SizeWidthDiv2().x);
 		if (ImGui::Button("Save OBJ", SizeWidthDiv2()))
 		{

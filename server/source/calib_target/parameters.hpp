@@ -99,7 +99,7 @@ struct TargetAssemblyParameters
 	float alignPointSigma = 3;
 	float alignPoseSigma = 0.2;
 	float alignMaxRMSE = 10;	// In mm
-	int alignMinPoints = 8;
+	int alignMinPoints = 5;
 
 	float mergePointLimit = 10; // In mm
 	int mergeMinPoints = 5;

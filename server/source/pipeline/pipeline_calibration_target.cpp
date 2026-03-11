@@ -16,6 +16,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#define EIGEN_EXCEPTIONS
+
 #include "pipeline.hpp"
 
 #include "ui/shared.hpp" // Signals
@@ -699,7 +701,7 @@ static void realignTargetViewsToBase(TargetAssemblyBase &base, std::vector<std::
 }
 
 static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
-	const std::vector<MarkerSequences> &observations, const std::vector<std::shared_ptr<TargetView>> &targetViews,
+	const std::vector<MarkerSequences> &observations, const std::vector<std::shared_ptr<TargetView>> &targetViews, std::shared_ptr<TargetView> &hint,
 	const std::vector<CameraCalib> &calibs, const TargetAssemblyParameters &params, std::vector<TargetMergeCandidate> &candidates)
 {
 	auto findInitialMarkerMap = [&params](const ObsTarget &base, const ObsTarget &view)
@@ -746,7 +748,9 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 		// Sort by best match
 		std::sort(matchCandidates.begin(), matchCandidates.end(), [](auto &a, auto &b)
 		{
-			return !b.matches[0].valid() || (a.matches[0].valid() && a.matches[0].value < b.matches[0].value);
+			if (a.matches[0].valid() && b.matches[0].valid())
+				return a.matches[0].value < b.matches[0].value;
+			return a.matches[0].valid();
 		});
 
 		// Select a number of markers to merge first
@@ -827,8 +831,9 @@ static std::pair<int,int> beginNewTargetViewMerge(TargetAssemblyBase &base,
 		if (alignment == base.alignmentStats.end()) continue;
 		alignedViews.emplace_back(targetView, alignment->second.first, alignment->second.second);
 	}
-	std::sort(alignedViews.begin(), alignedViews.end(), [](auto &a, auto &b)
+	std::sort(alignedViews.begin(), alignedViews.end(), [&hint](auto &a, auto &b)
 	{
+		if (std::get<0>(a) == hint) return true; // Prioritise any manually selected next views
 		return std::get<1>(a) - std::get<2>(a) > std::get<1>(b) - std::get<2>(b);
 	});
 
@@ -1033,7 +1038,7 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 				std::vector<TargetMergeCandidate> candidates;
 
 				// Pick view to merge with and already merge some close markers that are likely to be one
-				std::pair<int, int> viewsMerged = beginNewTargetViewMerge(base, observations, *pipeline->targetCalib.views.contextualRLock(), calibs, params, candidates);
+				std::pair<int, int> viewsMerged = beginNewTargetViewMerge(base, observations, *pipeline->targetCalib.views.contextualRLock(), pipeline->targetCalib.nextView, calibs, params, candidates);
 
 				if (!viewsMerged.first)
 				{ // No merge attempts, all views are already merged
@@ -1274,7 +1279,16 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 		{
 			if (stopToken.stop_requested()) break;
 
-			performAssemblyStage(base, stage, 1, params, aquisition);
+			try
+			{
+				performAssemblyStage(base, stage, 1, params, aquisition);
+			}
+			catch (std::bad_alloc e)
+			{
+				SignalErrorToUser("Failed to allocate memory! Reduce sample count.");
+				LOG(LTargetCalib, LError, "Failed in assembly stage due to bad alloc!");
+				break;
+			}
 
 			if (stopToken.stop_requested()) break;
 		}

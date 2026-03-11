@@ -929,7 +929,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				{ // Backtrack to frame with image (if possible, not when at beginning)
 					while (visFrame.target.obs->frames[visFrame.target.frameIdx].frame > visFrame.frameIt.index() && visFrame.target.frameIdx > 0)
 						visFrame.target.frameIdx--;
-					if (visFrame.target.obs->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && visFrame.target.frameIdx < visFrame.target.obs->frames.size())
+					if (visFrame.target.obs->frames[visFrame.target.frameIdx].frame < visFrame.frameIt.index() && (visFrame.target.frameIdx+1) < visFrame.target.obs->frames.size())
 						visFrame.target.frameIdx++; // Pick next if there's no exact match
 					visFrame.frameIt = visFrame.frames.pos(visFrame.target.obs->frames[visFrame.target.frameIdx].frame);
 				}

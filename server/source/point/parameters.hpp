@@ -165,7 +165,8 @@ struct SequenceParameters
 		{
 			5000,
 			5000,
-			100,
+			200, // Effectively disabling correspondence matching across cameras
+			// This defers this to target views "Reevaluate Markers" step in target calibration
 			0.1f,
 			2,
 			0.00005f,

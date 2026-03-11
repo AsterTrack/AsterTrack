@@ -555,9 +555,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			discardTargetSelection();
 	}	
 
-	if (pipeline.phase == PHASE_Tracking && state.mode == MODE_Replay)
+	if (pipeline.phase != PHASE_Tracking)
+		discardTargetSelection();
+	if (pipeline.phase == PHASE_Tracking)
 	{
-		if (BeginCollapsingRegion("Tracking Results"))
+		if (state.mode == MODE_Replay && BeginCollapsingRegion("Tracking Results"))
 		{
 			if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 			{
@@ -758,18 +760,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	}
 	else if (pipeline.phase == PHASE_Calibration_Point)
 	{
-		discardTargetSelection();
 		UpdatePipelineCalibSection();
 		UpdatePipelineObservationSection();
 		UpdatePipelinePointCalib();
 	}
 	else if (pipeline.phase == PHASE_Calibration_Target)
 	{
-		discardTargetSelection();
 		UpdatePipelineTargetCalib();
 	}
-	else
-		discardTargetSelection();
 
 	ImGui::End();
 }

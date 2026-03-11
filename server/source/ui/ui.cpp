@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "GLFW/glfw3.h"
 
 #include "app.hpp"
+#include "util/threading.hpp"
 
 #include "stb/stb_image.h"
 #include "gl/visualisation.hpp" // initVisualisation/cleanVisualisation
@@ -106,6 +107,8 @@ EXPORT bool _InterfaceThread()
 	InterfaceState ui;
 	if (!InterfaceInstance)
 		return false;
+
+	SetCurrentThreadName("Interface Thread");
 
 	// Open platform window
 	glfwSetErrorCallback(glfw_error_callback);

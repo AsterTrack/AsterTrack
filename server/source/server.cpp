@@ -39,6 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp" // printBuffer, TimePoint_t
 #include "util/debugging.hpp"
 #include "util/eigenutil.hpp"
+#include "util/threading.hpp"
 
 //#include <execinfo.h>
 //#include <signal.h>
@@ -695,6 +696,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 {
 	ServerState &state = *statePtr;
 
+	SetCurrentThreadName("Device Supervisor Thread");
+
 	int it = 0;
 
 	static bool checkingIMU = false;
@@ -902,6 +905,8 @@ static void RealtimeProcessingThread(std::stop_token stop_token, ServerState *st
 {
 	ServerState &state = *statePtr;
 	PipelineState &pipeline = state.pipeline;
+
+	SetCurrentThreadName("Realtime Processing Thread");
 
 	while (!stop_token.stop_requested())
 	{
@@ -1117,6 +1122,8 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 {
 	ServerState &state = *statePtr;
 	PipelineState &pipeline = state.pipeline;
+
+	SetCurrentThreadName("Simulation/Replay Thread");
 
 	while (!stop_token.stop_requested())
 	{

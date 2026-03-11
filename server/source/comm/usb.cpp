@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/usb.hpp"
 
 #include "util/log.hpp"
+#include "util/threading.hpp"
 
 // For priority of USB thread
 #if defined(__unix__)
@@ -972,6 +973,8 @@ static void onInterruptIN(libusb_transfer *transfer)
 
 static void usbEventHandler(libusb_context_int *libusb)
 {
+	SetCurrentThreadName("USB Event Handler Thread");
+
 	struct timeval tv;
 	tv.tv_sec = 60;
 	tv.tv_usec = 0;

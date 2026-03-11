@@ -94,5 +94,6 @@ struct ThreadControl
 
 bool SetThreadPriority(std::thread &thread, int priority);
 bool SetCurrentThreadPriority(int priority);
+bool SetCurrentThreadName(const char *name);
 
 #endif // THREADING_H

@@ -32,6 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 #include "util/matching.hpp"
 #include "util/eigenutil.hpp"
+#include "util/threading.hpp"
 
 #include "scope_guard/scope_guard.hpp"
 
@@ -265,6 +266,8 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 {
 	std::stop_token stopToken = viewPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { viewPtr->control.finished = true; });
+
+	SetCurrentThreadName("TargetView Thread");
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
 	ScopedLogContext scopedLogContext(viewPtr->beginFrame); // Need something visible in the UI
@@ -945,6 +948,8 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 	std::stop_token stopToken = control->stop_source.get_token();
 
+	SetCurrentThreadName("Target Assembly Thread");
+
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
 	ScopedLogContext scopedLogContext(rand()); // Need something visible in the UI
 
@@ -1370,6 +1375,8 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 {
 	std::stop_token stopToken = targetPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { targetPtr->control.finished = true; });
+
+	SetCurrentThreadName("Target Optimisation Thread");
 
 	ScopedLogCategory scopedLogCategory(LOptimisation, true);
 	ScopedLogContext scopedLogContext(targetPtr->targetID); // Need something visible in the UI

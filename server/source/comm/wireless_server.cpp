@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/util.hpp" // sclock, TimePoint_t
 #include "util/log.hpp"
+#include "util/threading.hpp"
 
 #include "comm/wireless_server.hpp"
 #include "comm/wireless_server_client.hpp"
@@ -162,6 +163,8 @@ int WirelessServerOpen(std::string port)
 void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverState)
 {
 	ServerCommState &server = *serverState;
+
+	SetCurrentThreadName("Wireless Server Thread");
 
 	if (server.socket == 0)
 		return;
@@ -391,6 +394,8 @@ void ClientThread(std::stop_token stop_token, ClientCommState *clientState)
 {
 	ClientCommState &comm = *clientState;
 	ProtocolState &proto = comm.protocol;
+
+	SetCurrentThreadName("Wireless Client Thread");
 
 	ScopedLogContext ServerLogContext(clientState->socket);
 

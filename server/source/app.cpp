@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imgui/imgui.h" // IM_COL32
 
 #include "util/util.hpp" // dtUS
+#include "util/threading.hpp"
 
 #if !defined(INTERFACE_LINKED) && !defined(_MSVC_LANG) && !defined(_MSC_VER)
 #include <dlfcn.h>
@@ -144,7 +145,10 @@ int main (void)
 
 	// Seed random to get sufficiently random, but not secure values every time
 	srand(time(0));
-	
+
+	// Set thread name - may be used by the OS to show in e.g. the task manager
+	SetCurrentThreadName("AsterTrack App");
+
 	{ // Setup logging
 		initialise_logging_strings();
 

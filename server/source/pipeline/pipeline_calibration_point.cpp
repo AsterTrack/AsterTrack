@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"
+#include "util/threading.hpp"
 
 #include "scope_guard/scope_guard.hpp"
 
@@ -186,6 +187,8 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
+	SetCurrentThreadName("CameraCalib Reconstruction Thread");
+
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LDebug);
 
@@ -280,6 +283,8 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
+
+	SetCurrentThreadName("CameraCalib Optimisation Thread");
 
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LInfo);
@@ -429,6 +434,8 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
+	SetCurrentThreadName("CameraCalib Target Optimisation Thread");
+
 	ScopedLogCategory scopedLogCategory(LOptimisation, true);
 	ScopedLogLevel scopedLogLevel(LInfo);
 
@@ -514,6 +521,8 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
+
+	SetCurrentThreadName("Room Calibration Thread");
 
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LInfo);

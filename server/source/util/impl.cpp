@@ -31,6 +31,7 @@ SOFTWARE.
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/prctl.h>
 #endif
 
 bool SetThreadPriority(std::thread &thread, int priority)
@@ -57,5 +58,14 @@ bool SetCurrentThreadPriority(int priority)
 	pthread_getschedparam(pid, &policy, &sch);
 	sch.sched_priority = 20;
 	return !pthread_setschedparam(pid, SCHED_FIFO, &sch);
+#endif
+}
+
+bool SetCurrentThreadName(const char *name)
+{
+#ifdef _WIN32
+	return SetThreadDescription(GetCurrentThread(), name);
+#else
+	return prctl(PR_SET_NAME, name) >= 0;
 #endif
 }

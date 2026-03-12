@@ -926,23 +926,34 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 		else
 			return asprintf_s("Invalid recording file '%s' - cameras!", path.c_str());
 
-		int cameraOffset = 0;
+		std::vector<int> cameraIndices(parsedCameras.size(), -1);
 		if (separate)
 		{
-			cameraOffset = cameras.size();
 			for (int c = 0; c < parsedCameras.size(); c++)
+			{
+				cameraIndices[c] = cameras.size();
 				cameras.push_back(parsedCameras[c]);
+			}
+		}
+		else if (cameras.empty())
+		{
+			std::iota(cameraIndices.begin(), cameraIndices.end(), 0);
+			cameras = parsedCameras;
 		}
 		else
-		{
-			// Check match with any prior cameras (for segmented/appended recordings)
-			// TODO: Allow adding parsedCameras to existing cameras with ID avoidance when flag is set
-			if (!cameras.empty() && parsedCameras.size() != cameras.size())
-				return asprintf_s("Failed to match %d existing cameras against %d cameras in recording file '%s'!", (int)cameras.size(), (int)parsedCameras.size(), path.c_str());
-			for (int c = 0; c < cameras.size(); c++)
-				if (cameras[c].ID != parsedCameras[c].ID)
-					return asprintf_s("Failed to match existing camera #%u against camera #%u in recording file '%s'!", cameras[c].ID, parsedCameras[c].ID, path.c_str());
-			cameras = std::move(parsedCameras);
+		{ // Check match with any prior cameras (for segmented/appended recordings)
+			for (int c = 0; c < parsedCameras.size(); c++)
+			{
+				// Try to match with existing camera
+				for (int cc = 0; cc < cameras.size(); cc++)
+					if (cameras[cc].ID == parsedCameras[c].ID)
+						cameraIndices[c] = cc;
+				if (cameraIndices[c] < 0)
+				{ // Add as new camera
+					cameraIndices[c] = cameras.size();
+					cameras.push_back(parsedCameras[c]);
+				}
+			}
 		}
 
 		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
@@ -967,13 +978,13 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			frame->num = num-frameOffset;
 			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<uint64_t>());
 			frame->cameras.resize(cameras.size());
-			if (jsCameras.size()+cameraOffset > cameras.size())
+			if (jsCameras.size() > parsedCameras.size())
 				return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
 
 			for (int c = 0; c < jsCameras.size(); c++)
 			{
 				auto &jsCamera = jsCameras[c];
-				auto &camera = frame->cameras[cameraOffset+c];
+				auto &camera = frame->cameras[cameraIndices[c]];
 
 				camera.received = jsCamera.contains("blobs") && jsCamera["blobs"].is_array();
 				if (camera.received)

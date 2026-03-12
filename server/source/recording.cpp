@@ -137,7 +137,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 			imu->index = state.pipeline.record.imus.size();
 			state.pipeline.record.imus.push_back(std::move(imu));
 		}
-		if (separate)
+		if (prevCams != cameras.size())
 		{ // Ensure newly added cameras have a unique ID
 			for (int c = prevCams; c < cameras.size(); c++)
 			{

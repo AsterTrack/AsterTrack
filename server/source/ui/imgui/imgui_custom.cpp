@@ -28,6 +28,7 @@ SOFTWARE.
 #endif
 
 #include "imgui_custom.hpp"
+#include "imgui/misc/cpp/imgui_stdlib.h"
 
 #include <type_traits>
 #include <string>
@@ -207,6 +208,34 @@ bool BooleanProperty(const char *label, bool *value, const bool *compare)
 	return updated;
 }
 
+bool TextProperty(const char *label, std::string *value, const std::string *compare)
+{
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window->SkipItems)
+		return false;
+	ImGui::BeginGroup();
+	ImGui::PushID(label);
+	ImGui::AlignTextToFramePadding(); // Align text vertically in line with controls
+	ImGui::TextUnformatted(label);
+	SameLinePos(SizeWidthDiv3().x+ImGui::GetStyle().ItemSpacing.x);
+	bool modified = compare && *value != *compare;
+	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
+	bool updated = ImGui::InputText("##Check", value);
+	if (modified) ImGui::PopStyleColor();
+	if (modified && ImGui::BeginPopupContextItem("C"))
+	{
+		if (ImGui::Selectable("Reset to Default"))
+		{
+			*value = *compare;
+			updated = true;
+		}
+		ImGui::EndPopup();
+	}
+	ImGui::PopID();
+	ImGui::EndGroup();
+	return updated;
+}
+
 bool CheckboxInput(const char *label, bool *value)
 {
 	return BooleanProperty(label, value, nullptr);
@@ -258,8 +287,10 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
 	if (value2)
 		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 2, NULL, NULL, fmt);
-	else
+	else if (step != (Scalar)0)
 		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 1, &step, NULL, fmt);
+	else
+		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 1, NULL, NULL, fmt);
 	if (modified) ImGui::PopStyleColor();
 	if (unit && *unit != 0)
 	{ // Insert unit as an overlay

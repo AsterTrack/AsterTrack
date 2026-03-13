@@ -63,14 +63,14 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		ImGui::SetItemTooltip("Reload the Interface - allows for updates to astertrack_interface.so to be applied");
 		ImGui::Separator();
-		if (ImGui::MenuItem(state.io.useVRPN? "Stop VRPN Server###VRPN" : "Start VRPN Server###VRPN"))
+		bool vrpnEnabled = state.io.vrpn.enabled;
+		if (ImGui::MenuItem("Enable VRPN Server", NULL, &vrpnEnabled))
 		{
-			if (state.io.useVRPN)
-				ResetIO(state);
-			else
-				SetupIO(state);
+			std::unique_lock io_lock(state.io.mutex);
+			state.io.vrpn.enabled = vrpnEnabled;
+			IntegrationsReconfigureVRPN(state.io, state.config);
 		}
-		ImGui::SetItemTooltip("Start/Stop the server for the VRPN interface");
+		ImGui::SetItemTooltip("Start/Stop the server for the VRPN interface.");
 		ImGui::Separator();
 		if (ImGui::MenuItem("About"))
 		{

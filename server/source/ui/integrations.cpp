@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui.hpp"
 
 #include "imgui/imgui_custom.hpp"
-#include "imgui/imgui_custom.hpp"
 
 #include "io/vrpn.hpp"
 
@@ -52,39 +51,40 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 		}
 	}
 
-	if (ImGui::CollapsingHeader(state.io.useVRPN? "VRPN (enabled)###vrpnHdr" : "VRPN (disabled)###vrpnHdr", ImGuiTreeNodeFlags_DefaultOpen))
+	bool vrpnEnabled = state.io.vrpn.enabled;
+	if (ImGui::CollapsingHeader(vrpnEnabled? "VRPN (enabled)###vrpnHdr" : "VRPN (disabled)###vrpnHdr", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		if (ImGui::Button(state.io.useVRPN? "Stop VRPN Server###vrpnUse" : "Start VRPN Server###vrpnUse", SizeWidthFull()))
+		ImGui::BeginDisabled(vrpnEnabled);
+
+		std::string defaultHost = "";
+		TextProperty("VRPN Host", &state.config.integrations.vrpn_host, &defaultHost);
+		int defaultPort = vrpn_DEFAULT_LISTEN_PORT_NO;
+		ScalarProperty<int>("VRPN Port", nullptr, &state.config.integrations.vrpn_port, &defaultPort, 1024, 65535, 0);
+
+		ImGui::EndDisabled();
+
+		BooleanProperty("Auto-Enable VRPN", &state.config.integrations.vrpn_auto_enable, nullptr);
+
+		if (BooleanProperty("Enable VRPN Server", &vrpnEnabled, nullptr))
 		{
-			if (state.io.useVRPN)
-				ResetIO(state);
-			else
-				SetupIO(state);
+			std::unique_lock io_lock(state.io.mutex);
+			state.io.vrpn.enabled = vrpnEnabled;
+			IntegrationsReconfigureVRPN(state.io, state.config);
 		}
-		if (state.io.useVRPN)
+		if (vrpnEnabled)
 		{
 			auto io_lock = std::unique_lock(state.io.mutex);
-			if (state.io.connectionHost.empty() || state.io.connectionHost[0] != ':')
-				ImGui::Text("VRPN Server '%s'", state.io.connectionHost.c_str());
-			else
-			 	ImGui::Text("VRPN Server 'localhost%s'", state.io.connectionHost.c_str());
 
-			if (!state.io.vrpn_server->connected())
-			{
-				ImGui::TextUnformatted("No clients connected.");
-			}
-			else if (!state.io.vrpn_server->doing_okay())
-			{
-				ImGui::TextUnformatted("A client lost connection!");
-			}
+			if (!state.io.vrpn.server->connected())
+				ImGui::Text("'%s': No clients connected.", state.io.vrpn.host.c_str());
+			else if (!state.io.vrpn.server->doing_okay())
+				ImGui::Text("'%s': A client connection broke.", state.io.vrpn.host.c_str());
 			else
-			{
-				ImGui::TextUnformatted("At least one client connected!");
-			}
+				ImGui::Text("'%s': Has connected clients.", state.io.vrpn.host.c_str());
 
-			if (ImGui::TreeNodeEx("Exposed Connections", ImGuiTreeNodeFlags_DefaultOpen))
+			if (ImGui::TreeNodeEx("Exposed Connections"))
 			{ // These may not all be real trackers, but also e.g. cameras
-				for (auto &tracker : state.io.vrpn_trackers)
+				for (auto &tracker : state.io.vrpn.trackers)
 				{
 					const char *connectionStatus = "not connected";
 					if (tracker.second->isConnected())

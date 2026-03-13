@@ -28,7 +28,6 @@ SOFTWARE.
 
 #include "util/eigendef.hpp"
 #include "util/util.hpp" // TimePoint_t
-#include "util/memory.hpp" // unique_ptr, opaque_ptr
 
 #include "imu/device.hpp"
 
@@ -60,6 +59,7 @@ class VRPN_API vrpn_Tracker_AsterTrack : public vrpn_Tracker, vrpn_IMU_Remote
 
 		int id;
 		const std::string path;
+		bool markedConnected;
 
 	protected:
 };

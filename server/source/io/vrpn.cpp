@@ -30,6 +30,7 @@ SOFTWARE.
 #include "imu/device.hpp"
 
 #include "util/log.hpp"
+#include "util/memory.hpp" // unique_ptr, opaque_ptr
 
 
 /*
@@ -159,7 +160,7 @@ static void handleIMUFused(void *data, const vrpn_IMUFUSEDCB t)
 vrpn_Tracker_AsterTrack::vrpn_Tracker_AsterTrack(int ID, const char *path, vrpn_Connection *connection, int index)
 	: vrpn_Tracker(path, connection),
 	vrpn_IMU_Remote(path, connection),
-	id(ID), path(path)
+	id(ID), path(path), markedConnected(false)
 {
 	vrpn_IMU_Remote::register_change_handler(this, handleIMURaw);
 	vrpn_IMU_Remote::register_change_handler(this, handleIMUFused);

@@ -128,7 +128,8 @@ struct TrackerConfig
 	// Current state
 	std::shared_ptr<IMU> imu;
 	bool triggered = false, tracked = false;
-	bool exposed = false, connected = false;
+	bool exposed = false;
+	int connected = 0;
 
 	TrackerConfig(int ID, std::string label, TrackerType type)
 		: id(ID), label(label), type(type) {}
@@ -149,6 +150,12 @@ struct GeneralConfig
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;
 	} simulation;
+
+	struct {
+		bool vrpn_auto_enable;
+		std::string vrpn_host;
+		int vrpn_port;
+	} integrations;
 };
 
 struct CameraConfigMap

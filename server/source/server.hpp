@@ -25,8 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/wireless_server.hpp"
 #include "imu/device.hpp"
 #include "recording.hpp"
-
-#include "util/memory.hpp"
+#include "io/integrations.hpp"
 
 #include <thread>
 #include <atomic>
@@ -41,8 +40,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Forward-declared opaque structs
 struct TrackingControllerState; // device/tracking_controller.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
-class vrpn_Connection; // io/vrpn.hpp
-class vrpn_Tracker_AsterTrack; // io/vrpn.hpp
 struct libusb_context_int; // comm/usb.hpp
 
 // Defined later
@@ -125,16 +122,7 @@ struct ServerState
 	Synchronised<IMUDeviceProviderList> imuProviders;
 
 	// All integrations
-	struct 
-	{
-		std::mutex mutex;
-
-		// VRPN IO
-		bool useVRPN = false;
-		std::string connectionHost;
-		opaque_ptr<vrpn_Connection> vrpn_server;
-		std::map<int, std::shared_ptr<vrpn_Tracker_AsterTrack>> vrpn_trackers;
-	} io;
+	IntegrationsState io;
 };
 
 
@@ -166,11 +154,5 @@ void StopReplay(ServerState &state);
 
 bool StartStreaming(ServerState &state);
 void StopStreaming(ServerState &state);
-
-void SetupIO(ServerState &state);
-void ResetIO(ServerState &state);
-void CheckTrackingIO(ServerState &state);
-void FetchTrackingIO(ServerState &state);
-void PushTrackingIO(ServerState &state, std::shared_ptr<FrameRecord> &frame);
 
 #endif // SERVER_H

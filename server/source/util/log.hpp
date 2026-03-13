@@ -68,6 +68,7 @@ enum LogCategory {
 		LSOF,
 		LParsing,
 	LServer,
+	LWireless,
 	LUSB,
 		LProtocol,
 	// Logs from devices (or strongly related and of no general interest):

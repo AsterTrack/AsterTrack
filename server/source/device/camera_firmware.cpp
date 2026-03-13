@@ -122,7 +122,7 @@ static int CameraValidState(std::shared_ptr<TrackingCameraState> &camera)
 	auto state = camera->state.contextualRLock();
 	if (state->error.encountered)
 	{
-		LOG(LCameraDevice, LError, "Camera %u updating firmware failed because it is still recovering from an error!", camera->id);
+		LOG(LFirmwareUpdate, LError, "Camera %u updating firmware failed because it is still recovering from an error!", camera->id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
 	if (camera->isStreaming() || camera->hasSetStreaming())

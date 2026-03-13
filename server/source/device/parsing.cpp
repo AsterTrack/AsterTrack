@@ -874,7 +874,7 @@ bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, cons
 		s = parseStatPacket(data);
 	else
 	{
-		LOG(LCameraDevice, LWarn, "StatPacket received was of size %d != %d / %d!\n", (int)length, STAT_PACKET_HEADER, STAT_PACKET_SIZE);
+		LOG(LParsing, LWarn, "StatPacket received was of size %d != %d / %d!\n", (int)length, STAT_PACKET_HEADER, STAT_PACKET_SIZE);
 		return false;
 	}
 	uint32_t lastStatFrame;
@@ -981,7 +981,7 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, c
 	Eigen::Vector2i offsetPx = layout.maskOffset;
 	const uint8_t *tiles = &data[2];
 	uint16_t tileCnt = ((uint16_t)length-2)/2;
-	LOG(LCameraDevice, LDebug, "Received a total of %d background tiles! Range %d, %d; Offset %d, %d\n",
+	LOG(LParsing, LDebug, "Received a total of %d background tiles! Range %d, %d; Offset %d, %d\n",
 		tileCnt, extendsX, extendsY, offsetPx.x(), offsetPx.y());
 	// Update background tiles
 	auto bg_lock = camera.receiving.background.contextualLock();

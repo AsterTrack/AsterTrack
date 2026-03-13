@@ -77,22 +77,22 @@ static int socket_server_init(const char *port)
 	int status = getaddrinfo(NULL, port, &hints, &server_addr);
 	if (status != 0)
 	{
-		LOG(LServer, LError, "Failed to get addr info: %s\n", gai_strerror(status));
+		LOG(LWireless, LError, "Failed to get addr info: %s\n", gai_strerror(status));
 #if defined(__unix__)
 		if (status == EAI_SYSTEM)
-			LOG(LServer, LError, "System error: %s (%d)\n", strerror(errno), errno);
+			LOG(LWireless, LError, "System error: %s (%d)\n", strerror(errno), errno);
 #endif
 		return -1;
 	}
 	if (server_addr->ai_next != NULL)
 	{
-		LOG(LServer, LDebug, "Got more options than just one!\n");
+		LOG(LWireless, LDebug, "Got more options than just one!\n");
 	}
 
 	SOCKET sock = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
 	if (!VALID_SOCKET(sock))
 	{
-		LOG(LServer, LError, "Failed to create socket! Error %d\n", SOCKET_ERR_NUM);
+		LOG(LWireless, LError, "Failed to create socket! Error %d\n", SOCKET_ERR_NUM);
 		freeaddrinfo(server_addr);
 		return -1;
 	}
@@ -101,7 +101,7 @@ static int socket_server_init(const char *port)
 	status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
 	if (status != 0)
 	{ // If getaddrinfo returns ANY address (which gets resolved to be a specific network interface once something connects to it)
-		LOG(LServer, LError, "Failed to set SO_REUSEADDR socket options! Error %d\n", SOCKET_ERR_NUM);
+		LOG(LWireless, LError, "Failed to set SO_REUSEADDR socket options! Error %d\n", SOCKET_ERR_NUM);
 		freeaddrinfo(server_addr);
 		return -1;
 	}
@@ -111,7 +111,7 @@ static int socket_server_init(const char *port)
 		status = setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&opt, sizeof(opt));
 		if (status != 0)
 		{
-			LOG(LServer, LError, "Failed to set IPV6_V6ONLY socket option! Error %d\n", SOCKET_ERR_NUM);
+			LOG(LWireless, LError, "Failed to set IPV6_V6ONLY socket option! Error %d\n", SOCKET_ERR_NUM);
 			freeaddrinfo(server_addr);
 			return -1;
 		}
@@ -120,7 +120,7 @@ static int socket_server_init(const char *port)
 	status = bind(sock, server_addr->ai_addr, server_addr->ai_addrlen);
 	if (status != 0)
 	{
-		LOG(LServer, LError, "Failed to bind socket to port! Error %d\n", SOCKET_ERR_NUM);
+		LOG(LWireless, LError, "Failed to bind socket to port! Error %d\n", SOCKET_ERR_NUM);
 		freeaddrinfo(server_addr);
 		return -1;
 	}
@@ -161,11 +161,11 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 
 	int status = listen(server.socket, 10);
 	if (status < 0)
-		LOG(LServer, LDebug, "Failed to listen on socket: %s (%d)\n", strerror(SOCKET_ERR_NUM), SOCKET_ERR_NUM);
+		LOG(LWireless, LDebug, "Failed to listen on socket: %s (%d)\n", strerror(SOCKET_ERR_NUM), SOCKET_ERR_NUM);
 
 	socket_set_nonblock(server.socket);
 
-	LOG(LServer, LDebug, "Waiting for server connections...\n");
+	LOG(LWireless, LDebug, "Waiting for server connections...\n");
 	while (!stop_token.stop_requested())
 	{
 		struct timeval timeout;
@@ -193,10 +193,10 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 			// All these are acceptable: ENETDOWN, EPROTO, ENOPROTOOPT, EHOSTDOWN, ENONET, EHOSTUNREACH, EOPNOTSUPP, or ENETUNREACH
 			if (!(SOCKET_ERR_NUM == EAGAIN || SOCKET_ERR_NUM == EWOULDBLOCK))
 #endif
-				LOG(LServer, LDebug, "Failed to accept connection: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+				LOG(LWireless, LDebug, "Failed to accept connection: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 			continue;
 		}
-		LOG(LServer, LDebug, "Connected to client %s!\n", getAddrString(&client_addr).c_str());
+		LOG(LWireless, LDebug, "Connected to client %s!\n", getAddrString(&client_addr).c_str());
 
 		socket_set_nonblock(socket);
 		
@@ -210,7 +210,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		server.clients.push_back(std::move(comm));
 	}
 
-	LOG(LServer, LDebug, "Server threads closing...\n");
+	LOG(LWireless, LDebug, "Server threads closing...\n");
 
 	// Stop client comm
 	for (auto &client : server.clients)
@@ -220,7 +220,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 	server.clients.clear();
 	socket_close(server.socket);
 
-	LOG(LServer, LDebug, "All server threads closed!\n");
+	LOG(LWireless, LDebug, "All server threads closed!\n");
 }
 
 inline void comm_reset(ClientCommState &comm)
@@ -254,7 +254,7 @@ inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint
 			comm_stop(comm);
 			return false;
 		}
-		LOG(LServer, LWarn, "Socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		LOG(LWireless, LWarn, "Socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 	}
 	return true;
 }
@@ -276,7 +276,7 @@ inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 	{ // Error
 		if (SOCKET_ERR_NUM != EAGAIN)
 		{
-			LOG(LServer, LError, "Socket error on wait: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+			LOG(LWireless, LError, "Socket error on wait: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 			return -1;
 		}
 		return 0;
@@ -289,19 +289,19 @@ inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 	if (num < 0)
 	{
 #if defined(_WIN32)
-		LOG(LServer, LError, "Socket error on read: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		LOG(LWireless, LError, "Socket error on read: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 		if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 		{
- 			LOG(LServer, LError, "Resetting comm!\n");
+ 			LOG(LWireless, LError, "Resetting comm!\n");
 			return -1;
 		}
 #elif defined(__unix__)
 		if (SOCKET_ERR_NUM == ECONNRESET)
-			LOG(LServer, LError, "Connection reset by peer!\n");
+			LOG(LWireless, LError, "Connection reset by peer!\n");
 		if (SOCKET_ERR_NUM == EBADF)
-			LOG(LServer, LError, "Bad file descriptor (EBADF)!\n");
+			LOG(LWireless, LError, "Bad file descriptor (EBADF)!\n");
 		else if (SOCKET_ERR_NUM != EAGAIN && SOCKET_ERR_NUM != EWOULDBLOCK)
- 			LOG(LServer, LError, "Socket error on read: %s (%d) - resetting comm!\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+ 			LOG(LWireless, LError, "Socket error on read: %s (%d) - resetting comm!\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
 		// React to error
 		if (SOCKET_ERR_NUM != EAGAIN && SOCKET_ERR_NUM != EWOULDBLOCK)
 			return -1;
@@ -340,7 +340,7 @@ static void comm_identify(ClientCommState &comm)
 	finaliseDirectUARTPacket(packet, PacketHeader(PACKET_IDENT, IDENT_PACKET_SIZE));
 	if (comm_write_internal(comm, (uint8_t*)packet, sizeof(identBuffer)))
 		comm_flush(comm);
-	LOG(LServer, LDebug, "Sent identification packet!\n");
+	LOG(LWireless, LDebug, "Sent identification packet!\n");
 }
 
 bool comm_write(ClientCommState &comm, PacketTag tag, const uint8_t *data, uint16_t length)
@@ -393,7 +393,7 @@ phase_identification:
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);
 			if (num < 0)
 			{ // Error
-				LOG(LServer, LError, "Read error during identification!\n");
+				LOG(LWireless, LError, "Read error during identification!\n");
 				comm_NAK(comm);
 				comm_stop(comm);
 				break;
@@ -406,7 +406,7 @@ phase_identification:
 				{ // NAK received
 					if (proto_fetchCmd(proto))
 					{
-						LOG(LServer, LWarn, "Identification rejected (NAK)!");
+						LOG(LWireless, LWarn, "Identification rejected (NAK)!");
 						comm_reset(comm);
 						std::this_thread::sleep_for(std::chrono::milliseconds(COMM_RESET_TIMEOUT_MS));
 						goto phase_identification;
@@ -418,12 +418,12 @@ phase_identification:
 					{
 						if (!comm.rsp_id)
 						{ // Was not expecting an ACK
-							LOG(LServer, LDarn, "Received unexpected ACK during identification!");
+							LOG(LWireless, LDarn, "Received unexpected ACK during identification!");
 							comm_NAK(comm);
 							comm_reset(comm);
 							goto phase_identification;
 						}
-						LOG(LServer, LDebug, "Identification accepted!");
+						LOG(LWireless, LDebug, "Identification accepted!");
 						comm.rsp_ack = true;
 						comm.ready = true;
 						if (comm.callbacks.onIdentify)
@@ -443,11 +443,11 @@ phase_identification:
 							correct = (rcvIdent.device&comm.expIdent.device) != 0 && rcvIdent.type == comm.ownIdent.type;
 							// TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
 							if (rcvIdent.version.major != comm.ownIdent.version.major)
-								LOG(LServer, LWarn, "Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
+								LOG(LWireless, LWarn, "Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
 									comm.ownIdent.version.major, comm.ownIdent.version.minor, rcvIdent.version.major, rcvIdent.version.minor);
 							if (correct)
 							{ // Proper identity
-								LOG(LServer, LDebug, "Valid identification response received!");
+								LOG(LWireless, LDebug, "Valid identification response received!");
 								comm.rsp_id = true;
 								comm.otherIdent = rcvIdent;
 								comm_identify(comm);
@@ -455,7 +455,7 @@ phase_identification:
 						}
 						if (!correct)
 						{
-							LOG(LServer, LDebug, "Invalid identification response received!");
+							LOG(LWireless, LDebug, "Invalid identification response received!");
 							comm_NAK(comm);
 							comm_reset(comm);
 							goto phase_identification;
@@ -463,7 +463,7 @@ phase_identification:
 					}
 					else
 					{
-						LOG(LServer, LDebug, "Received unexpected or unknown tag %d!", proto.header.tag);
+						LOG(LWireless, LDebug, "Received unexpected or unknown tag %d!", proto.header.tag);
 						comm_NAK(comm);
 						comm_reset(comm);
 						goto phase_identification;
@@ -495,7 +495,7 @@ phase_comm:
 			TimePoint_t receiveTime = sclock::now();
 			if (num < 0)
 			{ // Error
-				LOG(LServer, LError, "Read error during communications!\n");
+				LOG(LWireless, LError, "Read error during communications!\n");
 				comm_NAK(comm);
 				comm_stop(comm);
 				break;
@@ -507,7 +507,7 @@ phase_comm:
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
 				{ // NAK received
-					LOG(LServer, LWarn, "NAK Received, resetting comm!\n");
+					LOG(LWireless, LWarn, "NAK Received, resetting comm!\n");
 					if (comm.callbacks.onDisconnect)
 						comm.callbacks.onDisconnect(comm);
 					comm_reset(comm);
@@ -515,7 +515,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_ACK && proto_fetchCmd(proto))
 				{ // ACK received
-					LOG(LServer, LDebug, "Redundant ACK Received!\n");
+					LOG(LWireless, LDebug, "Redundant ACK Received!\n");
 				}
 				else if (proto.header.tag == PACKET_PING)
 				{ // Received ping back
@@ -523,7 +523,7 @@ phase_comm:
 				}
 				else if (proto.header.tag == PACKET_IDENT)
 				{ // Received redundant identification packet
-					LOG(LServer, LWarn, "Received redundant identification packet!\n");
+					LOG(LWireless, LWarn, "Received redundant identification packet!\n");
 					comm_NAK(comm);
 					comm_reset(comm);
 					goto phase_identification;
@@ -537,12 +537,12 @@ phase_comm:
 					{
 						proto.cmdSkip = true;
 						prevInCmd = false;
-						LOG(LServer, LDarn, "Skipping command %d!\n", proto.header.tag);
+						LOG(LWireless, LDarn, "Skipping command %d!\n", proto.header.tag);
 					}
 					else
 					{
 						bool done = proto_fetchCmd(proto);
-						LOG(LServer, LTrace, "Received packet %d, block %d bytes, total %d / %d bytes%s\n",
+						LOG(LWireless, LTrace, "Received packet %d, block %d bytes, total %d / %d bytes%s\n",
 							proto.header.tag, proto.blockLen, proto.blockPos + proto.blockLen - proto.cmdPos, proto.cmdSz, done? (proto.validChecksum? ", valid" : ", invalid") : "");
 
 						if (proto.blockLen != 0 && comm.callbacks.onReceivePacketBlock)
@@ -564,7 +564,7 @@ phase_comm:
 			int elapsedMS = std::chrono::duration_cast<std::chrono::milliseconds>(curClock - time_read).count();
 			if (elapsedMS > COMM_PING_TIMEOUT_MS)
 			{ // Setup timeout, send NAK
-				LOG(LServer, LWarn, "Ping dropped out, resetting comm!\n");
+				LOG(LWireless, LWarn, "Ping dropped out, resetting comm!\n");
 				if (comm.callbacks.onDisconnect)
 					comm.callbacks.onDisconnect(comm);
 				comm_NAK(comm);
@@ -586,7 +586,7 @@ phase_comm:
 			break;
 	}
 
-	LOG(LServer, LDebug, "Stopping server comm thread!\n");
+	LOG(LWireless, LDebug, "Stopping server comm thread!\n");
 	if (comm.callbacks.onDisconnect)
 		comm.callbacks.onDisconnect(comm);
 }

@@ -348,6 +348,7 @@ static void initialise_logging_strings()
 	LogCategoryIdentifiers[LSOF]					= "SoF ";
 	LogCategoryIdentifiers[LParsing]				= "Pars";
 	LogCategoryIdentifiers[LServer]					= "Serv";
+	LogCategoryIdentifiers[LWireless]				= "Wifi";
 	LogCategoryIdentifiers[LUSB]					= "USB ";
 	LogCategoryIdentifiers[LProtocol]				= "Prot";
 	LogCategoryIdentifiers[LControllerDevice]		= "Ctrl";
@@ -382,6 +383,7 @@ static void initialise_logging_strings()
 	LogCategoryDescriptions[LSOF]					= "Start of Frame";
 	LogCategoryDescriptions[LParsing]				= "Parsing";
 	LogCategoryDescriptions[LServer]				= "Server";
+	LogCategoryDescriptions[LWireless]				= "Wireless";
 	LogCategoryDescriptions[LUSB]					= "USB Transfers";
 	LogCategoryDescriptions[LProtocol]				= "Block Protocol";
 	LogCategoryDescriptions[LControllerDevice]		= "Controller Logs";

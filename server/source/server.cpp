@@ -27,6 +27,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "device/tracking_camera.hpp"
 #include "device/parsing.hpp"
 
+#include "comm/socket.hpp"
 #include "comm/wireless_server_client.hpp"
 #include "comm/usb.hpp" // USB Device comm
 
@@ -120,8 +121,13 @@ bool ServerInit(ServerState &state)
 
 	omp_set_num_threads(omp_get_max_threads());
 
+	if (socket_initialise())
+	{
+		LOG(LServer, LDebug, "Failed to initialise socket!\n");
+	}
+
 	WirelessServerInit();
-	state.server.host = WirelessServerGetHostname();
+	state.server.host = getHostnameString();
 
 	return true;
 }
@@ -143,6 +149,8 @@ void ServerExit(ServerState &state)
 	ResetIO(state);
 
 	WirelessServerCleanup();
+
+	socket_cleanup();
 }
 
 bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker)

@@ -27,6 +27,7 @@ SOFTWARE.
 #define SOCKET_H
 
 #include <string.h>
+#include <fcntl.h>
 
 #if defined(_WIN32)
 
@@ -72,6 +73,9 @@ static const char *getErrorString(int error)
 #error Unsupported platform for socket!
 #endif
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 static void *get_in_addr(struct sockaddr_storage *addr)
 {
@@ -102,7 +106,7 @@ static uint16_t getPort(struct sockaddr_storage *addr)
 	if (addr->ss_family == AF_INET)
 		return htons(((struct sockaddr_in *)addr)->sin_port);
 	else if (addr->ss_family == AF_INET6)
-		return htons(((struct sockaddr_in *)addr)->sin_port);
+		return htons(((struct sockaddr_in6 *)addr)->sin6_port);
 	return 0;
 }
 
@@ -167,6 +171,17 @@ static void socket_cleanup()
 {
 #ifdef _WIN32
 	WSACleanup();
+#endif
+}
+
+static void socket_set_nonblock(int fd)
+{
+#if defined(_WIN32)
+	unsigned long mode = 1;
+	ioctlsocket(fd, FIONBIO, &mode);
+#elif defined(__unix__)
+	int flags = fcntl(fd, F_GETFL, 0);
+	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 #endif
 }
 

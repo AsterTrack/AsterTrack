@@ -66,8 +66,6 @@ void WirelessServerInit();
 
 void WirelessServerCleanup();
 
-std::string WirelessServerGetHostname();
-
 int WirelessServerOpen(std::string port);
 
 void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverState);

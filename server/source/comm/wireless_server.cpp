@@ -130,17 +130,8 @@ static int socket_server_init(const char *port)
 	return sock;
 }
 
-std::string WirelessServerGetHostname()
-{
-	return getHostnameString();
-}
-
 void WirelessServerInit()
 {
-	if (socket_initialise())
-	{
-		LOG(LServer, LDebug, "Failed to initialise socket!\n");
-	}
 	// Init predefined messages
 	finaliseDirectUARTPacket(msg_ping, PacketHeader(PACKET_PING, 0));
 	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
@@ -149,7 +140,6 @@ void WirelessServerInit()
 
 void WirelessServerCleanup()
 {
-	socket_cleanup();
 }
 
 int WirelessServerOpen(std::string port)
@@ -173,13 +163,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 	if (status < 0)
 		LOG(LServer, LDebug, "Failed to listen on socket: %s (%d)\n", strerror(SOCKET_ERR_NUM), SOCKET_ERR_NUM);
 
-#if defined(_WIN32)
-	unsigned long mode = 1;
-	ioctlsocket(server.socket, FIONBIO, &mode);
-#elif defined(__unix__)
-	int flags = fcntl(server.socket, F_GETFL, 0);
-	fcntl(server.socket, F_SETFL, flags | O_NONBLOCK);
-#endif
+	socket_set_nonblock(server.socket);
 
 	LOG(LServer, LDebug, "Waiting for server connections...\n");
 	while (!stop_token.stop_requested())
@@ -204,7 +188,6 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		if (socket < 0)
 		{
 #if defined(_WIN32)
-	#pragma warn "Verify socket error handling!"
 			if (SOCKET_ERR_NUM != WSAEWOULDBLOCK)
 #elif defined(__unix__)
 			// All these are acceptable: ENETDOWN, EPROTO, ENOPROTOOPT, EHOSTDOWN, ENONET, EHOSTUNREACH, EOPNOTSUPP, or ENETUNREACH
@@ -214,12 +197,8 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 			continue;
 		}
 		LOG(LServer, LDebug, "Connected to client %s!\n", getAddrString(&client_addr).c_str());
-#if defined(_WIN32)
-		ioctlsocket(socket, FIONBIO, &mode);
-#elif defined(__unix__)
-		flags = fcntl(socket, F_GETFL, 0);
-		fcntl(socket, F_SETFL, flags | O_NONBLOCK);
-#endif
+
+		socket_set_nonblock(socket);
 		
 		// Start client thread
 		auto comm = make_opaque<ClientCommState>();
@@ -263,11 +242,7 @@ inline void comm_stop(ClientCommState &comm)
 
 inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint16_t length)
 {
-#if defined(_WIN32)
-	int ret = send(comm.socket, (const char*)data, length, 0);
-#elif defined(__unix__)
-	int ret = send(comm.socket, data, length, MSG_NOSIGNAL);
-#endif
+	int ret = send(comm.socket, (const char*)data, length, MSG_NOSIGNAL);
 	if (ret < 0)
 	{
 #if defined(_WIN32)

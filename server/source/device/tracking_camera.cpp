@@ -324,8 +324,7 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, Wirel
 		return false;
 	}
 	bool serverEnabled = wireless.setConfig & WIRELESS_CONFIG_SERVER;
-	if (state.server.host.empty())
-		state.server.host = WirelessServerGetHostname();
+	assert(!state.server.host.empty());
 	assert(!state.server.portUsed.empty());
 	std::string hostStr = state.server.host + ":" + state.server.portUsed;
 	uint8_t hostSize = serverEnabled? hostStr.size() : 0;

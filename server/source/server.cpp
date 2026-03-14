@@ -1193,6 +1193,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 			frameRecord = std::make_shared<FrameRecord>();
 			frameRecord->num = frameRecord->ID = frame;
 			frameRecord->time = sclock::now();
+			frameRecord->timeUTC = std::chrono::system_clock::now();
 			GenerateSimulationData(pipeline, *frameRecord);
 			if (!pipeline.isSimulationMode)
 			{ // Allow disabling of GT calculations easily
@@ -1230,6 +1231,7 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 				frameRecord->num = loadedRecord->num;
 				frameRecord->ID = loadedRecord->ID;
 				frameRecord->time = state.recording.replayTime + (loadedRecord->time - framesStored.front()->time);
+				frameRecord->timeUTC = convertClock<std::chrono::system_clock::time_point>(frameRecord->time);
 				frameRecord->cameras = loadedRecord->cameras;
 				if (frame+1 < framesStored.endIndex())
 				{ // Replicate original frame pacing
@@ -1668,6 +1670,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 		}
 	}
 	frameRecord->time = frame.SOF;
+	frameRecord->timeUTC = convertClock<std::chrono::system_clock::time_point>(frameRecord->time);
 	frameRecord->ID = frame.ID;
 	// Insert frame into record in the correct order
 	auto frames = pipeline.record.frames.getView();

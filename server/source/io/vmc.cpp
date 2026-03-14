@@ -146,13 +146,50 @@ static bool vmc_send(opaque_ptr<vmc_output> &vmc, osc::OutboundPacketStream &p)
 	return true;
 }
 
+static uint64_t toOSCTimeTag(std::chrono::system_clock::time_point tp)
+{
+	// Convert to NTP seconds since 1900 + fractions of a seconds
+	auto dtNTP = tp.time_since_epoch() + std::chrono::days(70*365 + 17);
+	auto dtSec = std::chrono::duration_cast<std::chrono::seconds>(dtNTP);
+	auto dtSub = std::chrono::duration_cast<std::chrono::microseconds>(dtNTP - dtSec);
+
+	// TODO: This is using 32bit seconds which will lapse in 2036 - but OSC demands it
+	// A future receiver should be able to detect a 1900+ timestamp is likely lapsed
+	uint32_t ntpSec = dtSec.count();
+	uint32_t ntpFrac = (dtSub.count() << 32) / 1000000;
+
+	// Assemble OSC timetag in NTP format
+	uint64_t timetag;
+	uint8_t *ttPtr = (uint8_t*)&timetag + sizeof(timetag);
+	for (int i = 0; i < sizeof(timetag)/2; i++)
+	{
+        *--ttPtr = ntpSec & 0xFF;
+        ntpSec >>= 8;
+    }
+	for (int i = sizeof(timetag)/2; i < sizeof(timetag); i++)
+	{
+        *--ttPtr = ntpFrac & 0xFF;
+        ntpFrac >>= 8;
+    }
+	return timetag;
+}
+
 void vmc_send_tracker_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS)
 {
 	const int IP_MTU_SIZE = 1536;
 	char buffer[IP_MTU_SIZE];
 	osc::OutboundPacketStream p(buffer, IP_MTU_SIZE);
 
-	p << osc::BeginBundle();
+	/* typename TimePoint_t::duration tolerance = std::chrono::nanoseconds(200);
+	int limit = 5;
+	auto ref_now = getAccurateClockReference<std::chrono::system_clock::time_point, TimePoint_t>(tolerance, limit);
+	LOG(LIO, LInfo, "Converted timestamp from %.2fms ago with %ldns delta in %d iterations!",
+		dtMS(timestamp, sclock::now()),
+		std::chrono::duration_cast<std::chrono::nanoseconds>(tolerance).count(), limit);
+	auto timestampSystem = convertClockWithRef(timestamp, ref_now); */
+
+	auto timestampSystem = convertClockAccurate<std::chrono::system_clock::time_point>(timestamp);
+	p << osc::BeginBundle(toOSCTimeTag(timestampSystem));
 	p << osc::BeginMessage("/VMC/Ext/T") << deltaS << osc::EndMessage;
 	for (auto &tracker : trackers)
 	{
@@ -175,7 +212,8 @@ void vmc_send_camera_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_
 	char buffer[IP_MTU_SIZE];
 	osc::OutboundPacketStream p(buffer, IP_MTU_SIZE);
 
-	p << osc::BeginBundle();
+	auto timestampSystem = convertClockAccurate<std::chrono::system_clock::time_point>(timestamp);
+	p << osc::BeginBundle(toOSCTimeTag(timestampSystem));
 	p << osc::BeginMessage("/VMC/Ext/T") << deltaS << osc::EndMessage;
 	for (auto &tracker : cameras)
 	{

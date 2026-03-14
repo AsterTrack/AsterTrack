@@ -242,6 +242,7 @@ struct FrameRecord
 
 
 	TimePoint_t time; // Synced real time
+	std::chrono::system_clock::time_point timeUTC;
 	bool finishedProcessing;
 
 	// Camera input data

@@ -87,12 +87,14 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 			auto storedFrames = state.stored.frames.getView();
 			LOG(LTargetCalib, LInfo, "Automatically 'replaying' %d stored frames for loaded data!", (int)storedFrames.size());
 			state.recording.replayTime = sclock::now();
+			auto ref_now = getAccurateClockReference<std::chrono::system_clock::time_point, TimePoint_t>();
 			for (auto record : storedFrames)
 			{
 				std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
 				frameRecord->num = record->num;
 				frameRecord->ID = record->ID;
 				frameRecord->time = state.recording.replayTime + (record->time - state.recording.replayTime);
+				frameRecord->timeUTC = convertClockWithRef(frameRecord->time, ref_now);
 				frameRecord->cameras = record->cameras;
 				pipeline.record.frames.insert(record->num, std::move(frameRecord));
 			}

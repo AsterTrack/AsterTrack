@@ -69,6 +69,71 @@ static inline Scalar dtS(TimePoint t0, TimePoint t1)
 	return dtUS(t0, t1) / (Scalar)1000000.0;
 }
 
+template<typename DstTimePointT, typename SrcTimePointT,
+	typename SrcDurationT = typename SrcTimePointT::duration,
+	typename DstDurationT = typename DstTimePointT::duration,
+	typename DstClockT = typename DstTimePointT::clock,
+	typename SrcClockT = typename SrcTimePointT::clock>
+static inline std::pair<DstTimePointT,SrcTimePointT> getAccurateClockReference(
+	SrcDurationT &tolerance,
+	int &limit)
+{ // Based on https://stackoverflow.com/a/35293183
+	assert(limit > 0);
+	auto itercnt = 0;
+	SrcTimePointT src_now;
+	DstTimePointT dst_now;
+	SrcDurationT epsilon(std::numeric_limits<typename SrcDurationT::rep>::max());
+	do
+	{
+		const auto src_before = SrcClockT::now();
+		dst_now = DstClockT::now();
+		const auto src_after = SrcClockT::now();
+		const auto src_diff = src_after - src_before;
+		if (src_diff.count() > 0 && src_diff < epsilon)
+		{
+			src_now = src_before + src_diff / 2;
+			epsilon = src_diff;
+		}
+		if (++itercnt >= limit)
+			break;
+	}
+	while (epsilon > tolerance);
+	tolerance = epsilon;
+	limit = itercnt;
+	return { dst_now, src_now };
+}
+
+template<typename DstTimePointT, typename SrcTimePointT>
+static std::pair<DstTimePointT,SrcTimePointT> getAccurateClockReference()
+{
+	typename SrcTimePointT::duration tolerance = std::chrono::nanoseconds(200);
+	int limit = 5;
+	return getAccurateClockReference<DstTimePointT, SrcTimePointT>(tolerance, limit);
+}
+
+template<typename DstTimePointT, typename SrcTimePointT>
+static inline DstTimePointT convertClockWithRef(SrcTimePointT t, const std::pair<DstTimePointT, SrcTimePointT> &ref)
+{
+	return ref.first + std::chrono::duration_cast<typename DstTimePointT::duration>(t - ref.second);
+}
+
+template<typename DstTimePointT, typename SrcTimePointT>
+static DstTimePointT convertClockAccurate(const SrcTimePointT t,
+	typename SrcTimePointT::duration tolerance = std::chrono::nanoseconds(200),
+	int limit = 5)
+{
+	auto ref_now = getAccurateClockReference<DstTimePointT, SrcTimePointT>(tolerance, limit);
+	return convertClockWithRef(t, ref_now);
+}
+
+template<typename DstTimePointT, typename SrcTimePointT>
+static inline DstTimePointT convertClock(SrcTimePointT t)
+{
+	const auto src_now = SrcTimePointT::clock::now();
+	const auto dst_now = DstTimePointT::clock::now();
+	return convertClockWithRef<DstTimePointT, SrcTimePointT>(t, { dst_now, src_now });
+}
+
 
 /* asprintf_s */
 

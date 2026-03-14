@@ -959,6 +959,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 		// TODO: Implement some kind of lock_write in BlockedQueue that locks any write attempts but allows for getView to return old state?
 		TimePoint_t startT;
 		bool foundFirst = false;
+		auto ref_now = getAccurateClockReference<std::chrono::system_clock::time_point, TimePoint_t>();
 		for (auto &jsFrame : jsFrames)
 		{
 			if (!jsFrame.contains("cameras")) continue;
@@ -977,6 +978,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			frame->ID = jsFrame["id"].get<FrameID>();
 			frame->num = num-frameOffset;
 			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<uint64_t>());
+			frame->timeUTC = convertClockWithRef(frame->time, ref_now);
 			frame->cameras.resize(cameras.size());
 			if (jsCameras.size() > parsedCameras.size())
 				return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());

@@ -1,0 +1,194 @@
+/**
+AsterTrack Optical Tracking System
+Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#include "vmc.hpp"
+
+#include "comm/socket.hpp"
+#include "signals.hpp" // Signals
+
+#include "util/log.hpp"
+#include "util/util.hpp"
+#include "util/error.hpp"
+
+#include "oscpack/OscOutboundPacketStream.hpp"
+
+#include <array>
+#include <cstring>
+
+struct vmc_output
+{
+	std::string host, port;
+	int socket = -1;
+};
+
+const std::array<std::string, (std::size_t)VMCRole::MAX> deviceRoleMap = {
+	"/VMC/Ext/Cam",
+	"/VMC/Ext/Hmd/Pos",
+	"/VMC/Ext/Con/Pos",
+	"/VMC/Ext/Tra/Pos"
+};
+
+template<> void OpaqueDeleter<vmc_output>::operator()(vmc_output* ptr) const
+{
+	if (ptr->socket >= 0)
+		socket_close(ptr->socket);
+	delete ptr;
+}
+
+static std::optional<ErrorMessage> socket_udp_init(const std::string &host, const std::string &port, int &sock, struct sockaddr_storage &addr)
+{
+	sock = -1;
+
+	struct addrinfo hints = {};
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_flags = AI_ALL;
+
+	struct addrinfo *server_addr;
+	int status = getaddrinfo(host.c_str(), port.c_str(), &hints, &server_addr);
+	if (status != 0)
+	{
+		auto error = asprintf_s("Failed to resolve '%s:%s': %s (%d)", host.c_str(), port.c_str(), SOCKET_ERR_STR, SOCKET_ERR_NUM);
+#if defined(__unix__)
+		if (status == EAI_SYSTEM)
+			error += asprintf_s(": %s (%d)", strerror(errno), errno);
+#endif
+		return error;
+	}
+	memcpy(&addr, server_addr->ai_addr, server_addr->ai_addrlen);
+
+	sock = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
+	if (sock < 0)
+	{
+		freeaddrinfo(server_addr);
+		return "Failed to create UDP socket!";
+	}
+
+	status = connect(sock, server_addr->ai_addr, server_addr->ai_addrlen);
+	if (status < 0)
+	{
+		close(sock);
+		sock = -1;
+		freeaddrinfo(server_addr);
+		return asprintf_s("Failed to connect to UDP remote '%s:%s'!", host.c_str(), port.c_str());
+	}
+
+	freeaddrinfo(server_addr);
+	return std::nullopt;
+}
+
+opaque_ptr<vmc_output> vmc_init_output(const std::string &host, const std::string &port)
+{
+	return make_opaque<vmc_output>(host, port);
+}
+
+bool vmc_is_connected(opaque_ptr<vmc_output> &vmc)
+{
+	return vmc->socket >= 0;
+}
+
+bool vmc_try_connect(opaque_ptr<vmc_output> &vmc)
+{
+	if (vmc->socket >= 0) return true;
+
+	struct sockaddr_storage addr;
+	auto error = socket_udp_init(vmc->host.c_str(), vmc->port.c_str(), vmc->socket, addr);
+	if (error)
+		LOG(LIO, LError, "%s", error->c_str());
+	else
+		LOG(LIO, LInfo, "Connected to VMC server %s!\n", getAddrString(&addr).c_str());
+	return !error.has_value();
+}
+
+static bool vmc_send(opaque_ptr<vmc_output> &vmc, osc::OutboundPacketStream &p)
+{
+	if (vmc->socket < 0) return false;
+	int ret = send(vmc->socket, p.Data(), p.Size(), MSG_NOSIGNAL);
+	if (ret < 0)
+	{
+#if defined(_WIN32)
+		if (SOCKET_ERR_NUM == WSAECONNRESET)
+#elif defined(__unix__)
+		if (SOCKET_ERR_NUM == EPIPE)
+#endif
+		{
+			LOG(LIO, LWarn, "VMC socket disconnected!");
+			socket_close(vmc->socket);
+			vmc->socket = -1;
+			return false;
+		}
+		LOG(LIO, LWarn, "VMC socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		return false;
+	}
+	return true;
+}
+
+void vmc_send_tracker_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS)
+{
+	const int IP_MTU_SIZE = 1536;
+	char buffer[IP_MTU_SIZE];
+	osc::OutboundPacketStream p(buffer, IP_MTU_SIZE);
+
+	p << osc::BeginBundle();
+	p << osc::BeginMessage("/VMC/Ext/T") << deltaS << osc::EndMessage;
+	for (auto &tracker : trackers)
+	{
+		assert(tracker.role != VMCRole::Camera && tracker.role < VMCRole::MAX);
+
+		p << osc::BeginMessage(deviceRoleMap[(int)tracker.role].c_str());
+		p << tracker.serial.c_str();
+		p << tracker.p.x() << tracker.p.y() << tracker.p.z();
+		p << tracker.q.x() << tracker.q.y() << tracker.q.z() << tracker.q.w();
+		p << osc::EndMessage;
+	}
+	p << osc::EndBundle;
+
+	vmc_send(vmc, p);
+}
+
+void vmc_send_camera_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &cameras, TimePoint_t timestamp, float deltaS)
+{
+	const int IP_MTU_SIZE = 1536;
+	char buffer[IP_MTU_SIZE];
+	osc::OutboundPacketStream p(buffer, IP_MTU_SIZE);
+
+	p << osc::BeginBundle();
+	p << osc::BeginMessage("/VMC/Ext/T") << deltaS << osc::EndMessage;
+	for (auto &tracker : cameras)
+	{
+		assert(tracker.role == VMCRole::Camera);
+
+		p << osc::BeginMessage(deviceRoleMap[(int)tracker.role].c_str());
+		p << tracker.serial.c_str();
+		p << tracker.p.x() << tracker.p.y() << tracker.p.z();
+		p << tracker.q.x() << tracker.q.y() << tracker.q.z() << tracker.q.w();
+		p << tracker.fov;
+		p << osc::EndMessage;
+	}
+	p << osc::EndBundle;
+
+	vmc_send(vmc, p);
+}

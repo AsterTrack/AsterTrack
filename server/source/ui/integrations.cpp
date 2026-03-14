@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imgui/imgui_custom.hpp"
 
 #include "io/vrpn.hpp"
+#include "io/vmc.hpp"
 
 
 void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
@@ -100,6 +101,38 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 				}
 				ImGui::TreePop();
 			}
+		}
+	}
+
+	bool vmcEnabled = state.io.vmc.enabled;
+	if (ImGui::CollapsingHeader(vmcEnabled? "VMC (enabled)###vmcHdr" : "VMC (disabled)###vmcHdr", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::BeginDisabled(vmcEnabled);
+
+		std::string defaultHost = "";
+		TextProperty("VMC Host", &state.config.integrations.vmc_host, &defaultHost);
+		int defaultPort = vmc_DEFAULT_PERFORMER_PORT_NO;
+		ScalarProperty<int>("VMC Port", nullptr, &state.config.integrations.vmc_port, &defaultPort, 1024, 65535, 0);
+
+		ImGui::EndDisabled();
+
+		BooleanProperty("Auto-Enable VMC", &state.config.integrations.vmc_auto_enable, nullptr);
+
+		if (BooleanProperty("Enable VMC Server", &vmcEnabled, nullptr))
+		{
+			std::unique_lock io_lock(state.io.mutex);
+			state.io.vmc.enabled = vmcEnabled;
+			IntegrationsReconfigureVMC(state.io, state.config);
+		}
+
+		if (vmcEnabled)
+		{
+			auto io_lock = std::unique_lock(state.io.mutex);
+
+			if (!vmc_is_connected(state.io.vmc.output))
+				ImGui::Text("Trying to connect to '%s'...", state.io.vmc.host.c_str());
+			else
+				ImGui::Text("Connected to '%s'.", state.io.vmc.host.c_str());
 		}
 	}
 

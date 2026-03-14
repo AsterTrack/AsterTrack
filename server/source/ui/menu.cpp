@@ -71,6 +71,14 @@ void InterfaceState::UpdateMainMenuBar()
 			IntegrationsReconfigureVRPN(state.io, state.config);
 		}
 		ImGui::SetItemTooltip("Start/Stop the server for the VRPN interface.");
+		bool vmcEnabled = state.io.vmc.enabled;
+		if (ImGui::MenuItem("Enable VMC Server", NULL, &vmcEnabled))
+		{
+			std::unique_lock io_lock(state.io.mutex);
+			state.io.vmc.enabled = vmcEnabled;
+			IntegrationsReconfigureVMC(state.io, state.config);
+		}
+		ImGui::SetItemTooltip("Start/Stop connection to the configured VMC server.");
 		ImGui::Separator();
 		if (ImGui::MenuItem("About"))
 		{

@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //#include <netinet/tcp.h>
 //#include <limits.h>
 #include <mutex>
+#include <cstring>
 
 struct ServerConnection
 {
@@ -68,7 +69,7 @@ int socket_client_init(const char *server, const char *port, struct sockaddr_sto
 			printf("System error: %s (%d)\n", strerror(errno), errno);
 		return -1;
 	}
-	*addr = *((sockaddr_storage*)server_addr->ai_addr);
+	memcpy(addr, server_addr->ai_addr, server_addr->ai_addrlen);
 
 	int sock = socket(server_addr->ai_family, server_addr->ai_socktype, server_addr->ai_protocol);
 	if (sock < 0)

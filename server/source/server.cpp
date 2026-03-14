@@ -1503,6 +1503,7 @@ bool StartStreaming(ServerState &state)
 	// Initialise state
 	InitPipelineStreaming(state.pipeline);
 	state.isStreaming = true;
+	state.lastStreamingStart = sclock::now();
 
 	// Setup trackers
 	for (auto &tracker : state.trackerConfigs)

@@ -207,7 +207,7 @@ SERVER_CPP = \
 	comm/wireless_server.cpp \
 	device/tracking_controller.cpp device/tracking_camera.cpp \
 	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp \
-	io/integrations.cpp io/vrpn.cpp io/vrpn_imu.cpp \
+	io/integrations.cpp io/vmc.cpp io/vrpn.cpp io/vrpn_imu.cpp \
 	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp imu/remoteIMU.cpp \
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp \
 	pipeline/pipeline_calibration_point.cpp pipeline/pipeline_calibration_target.cpp \
@@ -229,8 +229,9 @@ SERVER_SHARED_C =
 
 SERVER_DEP_CPP = \
 	recursive_shared_mutex/recursive_shared_mutex.cpp \
-	poselib/p3p_ding.cpp \
-	dbscan/dbscan.cpp
+	poselib/p3p_ding.cpp dbscan/dbscan.cpp \
+	oscpack/OscTypes.cpp oscpack/OscOutboundPacketStream.cpp \
+	oscpack/OscReceivedElements.cpp oscpack/OscPrintReceivedElements.cpp
 
 SERVER_DEP_C = hidapi/linux/hid.c
 

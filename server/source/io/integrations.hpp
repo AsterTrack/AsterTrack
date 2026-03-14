@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Forward-declared opaque structs
 class vrpn_Connection; // io/vrpn.hpp
 class vrpn_Tracker_AsterTrack; // io/vrpn.hpp
+class vmc_output; // io/vmc.hpp
 struct ServerState; // server.hpp
 
 struct IntegrationsState
@@ -42,6 +43,13 @@ struct IntegrationsState
 		opaque_ptr<vrpn_Connection> server;
 		std::map<int, std::shared_ptr<vrpn_Tracker_AsterTrack>> trackers;
 	} vrpn;
+
+	struct
+	{ // Virtual Motion Capture over OSC
+		bool enabled = false;
+		std::string host;
+		opaque_ptr<vmc_output> output;
+	} vmc;
 };
 
 
@@ -50,6 +58,7 @@ struct IntegrationsState
 void IntegrationsInit(IntegrationsState &state, const GeneralConfig &config);
 void IntegrationsCleanup(IntegrationsState &state, const GeneralConfig &config);
 void IntegrationsReconfigureVRPN(IntegrationsState &state, const GeneralConfig &config);
+void IntegrationsReconfigureVMC(IntegrationsState &state, const GeneralConfig &config);
 
 void IntegrationsUpdate(IntegrationsState &state, ServerState &server);
 void IntegrationsReceive(IntegrationsState &state, const ServerState &server);

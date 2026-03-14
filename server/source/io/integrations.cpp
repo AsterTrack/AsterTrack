@@ -18,24 +18,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "io/integrations.hpp"
 #include "io/vrpn.hpp"
+#include "io/vmc.hpp"
 #include "server.hpp"
 
 #include "util/log.hpp"
+#include "util/eigenutil.hpp"
+
 
 void IntegrationsInit(IntegrationsState &state, const GeneralConfig &config)
 {
 	auto io_lock = std::unique_lock(state.mutex);
 	state.vrpn.enabled = config.integrations.vrpn_auto_enable;
+	state.vmc.enabled = config.integrations.vmc_auto_enable;
 
 	IntegrationsReconfigureVRPN(state, config);
+	IntegrationsReconfigureVMC(state, config);
 }
 
 void IntegrationsCleanup(IntegrationsState &state, const GeneralConfig &config)
 {
 	auto io_lock = std::unique_lock(state.mutex);
 	state.vrpn.enabled = false;
+	state.vmc.enabled = false;
 
 	IntegrationsReconfigureVRPN(state, config);
+	IntegrationsReconfigureVMC(state, config);
 }
 
 void IntegrationsReconfigureVRPN(IntegrationsState &state, const GeneralConfig &config)
@@ -51,6 +58,19 @@ void IntegrationsReconfigureVRPN(IntegrationsState &state, const GeneralConfig &
 	std::string cname = cfg.vrpn_host + ":" + std::to_string(port);
 	state.vrpn.server = opaque_ptr<vrpn_Connection>(vrpn_create_server_connection(cname.c_str()));
 	state.vrpn.server->setAutoDeleteStatus(true);
+}
+
+void IntegrationsReconfigureVMC(IntegrationsState &state, const GeneralConfig &config)
+{
+	state.vmc.output = nullptr;
+	if (!state.vmc.enabled) return;
+	// Setup VRPN Connection
+	auto &cfg = config.integrations;
+	std::string host = cfg.vmc_host.empty()? "localhost" : cfg.vmc_host;
+	int port = cfg.vmc_port? cfg.vmc_port : vmc_DEFAULT_PERFORMER_PORT_NO;
+	state.vmc.host = host + ":" + std::to_string(port);
+	state.vmc.output = vmc_init_output(host, std::to_string(port));
+	vmc_try_connect(state.vmc.output);
 }
 
 void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
@@ -128,6 +148,25 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 			trackerIO.second->mainloop();
 		}
 	}
+
+	if (state.vmc.enabled)
+	{
+		// Try connecting if not already connected
+		vmc_try_connect(state.vmc.output);
+
+		std::vector<vmc_device> cameras;
+		cameras.reserve(server.pipeline.cameras.size());
+		for (const auto &camera : server.pipeline.cameras)
+		{
+			cameras.emplace_back(VMCRole::Camera,
+				asprintf_s("Camera #%u", camera->id),
+				camera->calib.transform.translation().cast<float>(),
+				Eigen::Quaternionf(camera->calib.transform.rotation().cast<float>()),
+				(float)getEffectiveFoVD(camera->calib, camera->mode)
+			);
+		}
+		vmc_send_camera_packets(state.vmc.output, cameras, timestamp, dtS(server.lastStreamingStart, timestamp));
+	}
 }
 
 void IntegrationsReceive(IntegrationsState &state, const ServerState &server)
@@ -168,5 +207,24 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 		}
 		else
 			LOG(LIO, LTrace, "     Server connection is doing ok!\n");
+	}
+
+	if (state.vmc.enabled && vmc_is_connected(state.vmc.output))
+	{
+		std::vector<vmc_device> trackers;
+		trackers.reserve(frame->trackers.size());
+		for (const auto &trackRecord : frame->trackers)
+		{
+			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
+			auto cfg_tracker = std::find_if(server.trackerConfigs.begin(), server.trackerConfigs.end(),
+					[&](auto &t){ return t.id == trackRecord.id; });
+			if (cfg_tracker == server.trackerConfigs.end()) continue;
+			trackers.emplace_back(VMCRole::Tracker,
+				cfg_tracker->label,
+				trackRecord.poseFiltered.translation(),
+				Eigen::Quaternionf(trackRecord.poseFiltered.rotation())
+			);
+		}
+		vmc_send_tracker_packets(state.vmc.output, trackers, frame->time, dtS(server.lastStreamingStart, frame->time));
 	}
 }

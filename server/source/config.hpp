@@ -155,6 +155,10 @@ struct GeneralConfig
 		bool vrpn_auto_enable;
 		std::string vrpn_host;
 		int vrpn_port;
+
+		bool vmc_auto_enable;
+		std::string vmc_host;
+		int vmc_port;
 	} integrations;
 };
 

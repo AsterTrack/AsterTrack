@@ -61,6 +61,7 @@ struct ServerState
 	// System State
 	ServerMode mode = MODE_None;
 	bool isLoading, isStreaming;
+	TimePoint_t lastStreamingStart;
 	PipelineState pipeline = {};
 	std::queue<ErrorMessage> errors;
 

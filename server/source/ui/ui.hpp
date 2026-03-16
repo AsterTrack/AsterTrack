@@ -390,7 +390,7 @@ public:
 
 		// For MSVC...
 		RecordedSections(FrameNum begin, FrameNum end, bool forceSave = false)
-			: begin(begin), end(end), forceSave(forceSave) {}
+			: begin(begin), end(end), forceSave(forceSave), saved(false), index(-1) {}
 	};
 	std::vector<RecordedSections> recordSections;
 	OptFrameNum recordSectionStart = -1;

@@ -66,12 +66,13 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 		if (lastApprox)
 		{
 			ScopedLogContext scopedLogContext(lastSOFID);
-			LOG(LSOF, LWarn, "SyncGroup is at frame %d, but some cameras desynced and are at frame %d, likely failed to set up properly!", sof.frameID, lastSOFID);
+			std::string camerasStr = "";
 			for (int c = 0; c < lastFrame->cameras.size(); c++)
 			{
 				if (lastFrame->cameras[c].announced)
-					LOGCONT(LSOF, LWarn, " - %u", sync_lock->cameras[c]->id);
+					camerasStr += asprintf_s(" - %u", sync_lock->cameras[c]->id);
 			}
+			LOG(LSOF, LWarn, "SyncGroup is at frame %d, but some cameras desynced and are at frame %d, likely failed to set up properly!%s", sof.frameID, lastSOFID, camerasStr.c_str());
 		}
 		else
 			LOG(LSOF, LError, "ERROR: Got weird SOF packet with frameID %d < lastSOFID %d\n", sof.frameID, lastSOFID);

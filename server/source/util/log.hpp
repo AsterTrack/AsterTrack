@@ -101,12 +101,10 @@ enum LogLevel : char {
 #include <sal.h>
 
 int PrintLog(LogCategory c, LogLevel l, int ctx, _Printf_format_string_ const char *f, ...);
-int PrintLogCont(LogCategory c, LogLevel l, int ctx, _Printf_format_string_ const char *f, ...);
 
 #else
 
 int PrintLog(LogCategory c, LogLevel l, int ctx, const char *f, ...) __attribute__ ((format (printf,4,5)));
-int PrintLogCont(LogCategory c, LogLevel l, int ctx, const char *f, ...) __attribute__ ((format (printf,4,5)));
 
 #endif
 
@@ -149,16 +147,6 @@ extern uint32_t LogLevelHexColors[LMaxLevel];
 #define LOGCL(...) do { \
 	if (SHOULD_LOG(CurrentLogCategory, CurrentLogLevel)) \
 		PrintLog(CurrentLogCategory, CurrentLogLevel, CurrentLogContext, __VA_ARGS__); \
-} while(false)
-
-#define LOGCONTC(LEVEL, ...) do { \
-	if (SHOULD_LOG(CurrentLogCategory, LEVEL)) \
-		PrintLogCont(CurrentLogCategory, LEVEL, CurrentLogContext, __VA_ARGS__); \
-} while(false)
-
-#define LOGCONT(CATEGORY, LEVEL, ...) do { \
-	if (SHOULD_LOG(CATEGORY, LEVEL)) \
-		PrintLogCont(CATEGORY, LEVEL, CurrentLogContext, __VA_ARGS__); \
 } while(false)
 
 struct ScopedLogCategory

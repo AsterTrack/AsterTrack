@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigenutil.hpp"
 
 #include "util/log.hpp"
+#include "util/util.hpp"
 
 #ifdef OPT_AUTODIFF
 #include "unsupported/Eigen/AutoDiff"
@@ -142,9 +143,13 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		// Check if it has been merged yet
 		if (ix->merge != NULL)
 		{
-			LOGC(LTrace, "------ Skipping merged intersections %d on rays ", i);
-			for (int j = 0; j < camCount; j++)
-				LOGCONTC(LTrace, "%d - ", ix->blobs[j]);
+			if (SHOULD_LOGC(LTrace))
+			{
+				std::string blobsStr = "";
+				for (int j = 0; j < camCount; j++)
+					blobsStr += asprintf_s("%d - ", ix->blobs[j]);
+				LOGC(LTrace, "------ Skipping merged intersections %d on rays %s", i, blobsStr.c_str());
+			}
 			continue;
 		}
 		// Find the indices of the two intersecting rays
@@ -196,12 +201,17 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 		}
 
-		LOGC(LTrace, "------ Intersection %d on rays ", i);
-		for (int j = 0; j < camCount; j++)
-			LOGCONTC(LTrace, "%d - ", ix->blobs[j]);
-		LOGC(LTrace, "Potentially conflicting/merging intersections: ");
-		for (int j = 0; j < potentialMergers.size(); j++)
-			LOGCONTC(LTrace, "%d, ", IXNUM(potentialMergers[j]));
+		if (SHOULD_LOGC(LTrace))
+		{
+			std::string blobsStr = "";
+			for (int j = 0; j < camCount; j++)
+				blobsStr += asprintf_s("%d - ", ix->blobs[j]);
+			LOGC(LTrace, "------ Intersection %d on rays %s", i, blobsStr.c_str());
+			blobsStr.clear();
+			for (int j = 0; j < potentialMergers.size(); j++)
+				blobsStr += asprintf_s("%d, ", IXNUM(potentialMergers[j]));
+			LOGC(LTrace, "Potentially conflicting/merging intersections: %s", blobsStr.c_str());
+		}
 
 		// Check if merge candidates found (only for 3 rays+)
 		if (mergers.size() > 0)
@@ -218,9 +228,13 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 					if (mergers[i]->blobs[j] != InvalidBlob)
 						ixBlobs[j] = mergers[i]->blobs[j];
 
-			LOGC(LTrace, "Involved Rays: ");
-			for (int j = 0; j < camCount; j++)
-				LOGCONTC(LTrace, "%d - ", ixBlobs[j]);
+			if (SHOULD_LOGC(LTrace))
+			{
+				std::string blobsStr = "";
+				for (int j = 0; j < camCount; j++)
+					blobsStr += asprintf_s("%d - ", ixBlobs[j]);
+				LOGC(LTrace, "Involved Rays: %s", blobsStr.c_str());
+			}
 
 			// Go through conflicts (other intersections on the two rays of our main intersection ix respectively)
 			// And find those that intersect with any two rays involved in this merging intersection
@@ -244,9 +258,13 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 // End OOR fix
 
-			LOGC(LTrace, "Merging: ");
-			for (int j = 0; j < mergers.size(); j++)
-				LOGCONTC(LTrace, "%d - ", IXNUM(mergers[j]));
+			if (SHOULD_LOGC(LTrace))
+			{
+				std::string blobsStr = "";
+				for (int j = 0; j < mergers.size(); j++)
+					blobsStr += asprintf_s("%d - ", IXNUM(mergers[j]));
+				LOGC(LTrace, "Merging: %s", blobsStr.c_str());
+			}
 
 			// Merge
 			mergedIntersections.emplace_back(Eigen::Vector3f::Zero(), 0.0f, camCount);

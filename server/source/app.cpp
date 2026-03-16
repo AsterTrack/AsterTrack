@@ -297,7 +297,6 @@ void AppState::SignalInterfaceClosed()
 void AppState::FlushLog()
 {
 	if (!logFile.is_open() || logFile.fail()) return;
-	std::shared_lock lock(logContentAccess);
 	auto logs = logEntries.getView();
 	auto flushStart = logs.pos(std::max(lastFlushed, logs.beginIndex()));
 	for (auto entry = flushStart; entry != logs.end(); entry++)
@@ -454,42 +453,6 @@ int PrintLog(LogCategory category, LogLevel level, int context, const char *form
 	FORMAT_TO_STRING(format, entry.log);
 
 	GetApp().logEntries.push_back(std::move(entry));
-
-	if (LogFilterTable[category] <= level)
-		SignalLogUpdate();
-
-	return size;
-}
-
-int PrintLogCont(LogCategory category, LogLevel level, int context, const char *format, ...)
-{
-	AppState::LogEntry entry = {};
-	entry.category = category;
-	entry.level = level;
-	entry.context = context;
-	FORMAT_TO_STRING(format, entry.log);
-
-	bool foundCont = false;
-	{
-		auto logs = GetApp().logEntries.getView<false>();
-		auto cont = logs.end();
-		int search = 50;
-		while (search-- > 0 && cont-- != logs.begin())
-		{ // Append to last continued log entry
-			if (cont->category == category && cont->context == context)
-			{ // Append to existing log - ensure nothing is reading
-				std::unique_lock lock(GetApp().logContentAccess);
-				cont->log.insert(cont->log.end(), entry.log.begin(), entry.log.end());
-				foundCont = true;
-				break;
-			}
-		}
-	}
-
-	if (!foundCont)
-	{ // Start new continued log entry
-		GetApp().logEntries.push_back(std::move(entry));
-	}
 
 	if (LogFilterTable[category] <= level)
 		SignalLogUpdate();

@@ -395,9 +395,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		SameLineTrailing(SizeWidthDiv2().x);
 		if (ImGui::Button("Save OBJ", SizeWidthDiv2()))
 		{
-			std::string tgtPathFmt = temporaryStoreFolder + "/target_%d.obj";
+			std::string tgtPathFmt = temporaryStoreFolder + "/target_view_%d.obj";
 			std::string tgtPath = asprintf_s(tgtPathFmt.c_str(), findLastFileEnumeration(tgtPathFmt)+1);
-			auto error = writeTargetObjFile(tgtPath, *view.calib.contextualRLock());
+			auto error = writeTargetObjFile(tgtPath, "view", *view.calib.contextualRLock());
 			if (error) SignalErrorToUser(error.value());
 		}
 

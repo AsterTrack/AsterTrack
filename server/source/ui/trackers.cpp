@@ -23,7 +23,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imgui/imgui_onDemand.hpp"
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
+#include "nativefiledialog-extended/nfd.h"
+#include "nativefiledialog-extended/nfd_glfw3.h"
+
 #include <filesystem>
+#include <numeric>
 
 void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
@@ -46,6 +53,154 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
+	const char* objImportExportGuide =
+		"Import/Export this .obj in e.g. Blender with Y as Forward Axis and Z as Up Axis.\n"
+		"Mind the Vertex Groups, they mark which faces to use and store the label.\n"
+		"That way, you can demark individual faces of a tracker model as markers.";
+
+	// Popup to import target from .obj
+	const ImGuiID loadObjPopupID = ImGui::GetID("ImportTargetObj");
+	static struct
+	{
+		int trackerID = 0;
+		std::string path;
+		bool markerMerge = true;
+		const float defaultMarkerFoV = 180, defaultMarkerSize = 6;
+		float markerFoV = defaultMarkerFoV, markerSize = defaultMarkerSize;
+	} loadObj;
+
+	ImGui::SetNextWindowSize(ImVec2(30*ImGui::GetFontSize(), -1), ImGuiCond_Appearing);
+	if (BeginPopup(loadObjPopupID))
+	{
+		ImGui::AlignTextToFramePadding();
+		if (std::filesystem::path(loadObj.path).has_filename())
+			ImGui::Text("%s", std::filesystem::path(loadObj.path).filename().generic_string().c_str());
+		else
+			ImGui::Text("%s", loadObj.path.c_str());
+		ImGui::SetItemTooltip("%s", loadObj.path.c_str());
+		SameLineTrailing(SizeWidthDiv4().x);
+		if (ImGui::Button("Select", SizeWidthDiv4()))
+		{
+			threadPool.push([](int id)
+			{
+				if (!NFD_Init())
+				{ // Thread-specific init
+					SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
+					return;
+				}
+
+				const int filterLen = 1;
+				nfdfilteritem_t filterList[filterLen] = {
+					{"Object Target", "obj"},
+				};
+				nfdchar_t *outPath;
+				std::string defPath = std::filesystem::absolute(temporaryStoreFolder);
+				nfdopendialogu8args_t args;
+				args.filterList = filterList;
+				args.filterCount = filterLen;
+				args.defaultPath = defPath.c_str();
+				NFD_GetNativeWindowFromGLFWWindow(GetUI().glfwWindow, &args.parentWindow);
+				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+				if (result == NFD_OKAY)
+				{
+					loadObj.path = outPath;
+					NFD_FreePath(outPath);
+				}
+				else if (result == NFD_ERROR)
+				{
+					SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+				}
+
+				NFD_Quit();
+
+				GetUI().RequestUpdates();
+			});
+		}
+
+		ScalarProperty("Marker FoV", "°", &loadObj.markerFoV, &loadObj.defaultMarkerFoV, 0.0f, 360.0f);
+		ScalarProperty("Marker Size", "mm", &loadObj.markerSize, &loadObj.defaultMarkerSize, 0.1f, 100.0f);
+
+		if (loadObj.trackerID != 0)
+		{
+			BooleanProperty("Merge Markers", &loadObj.markerMerge, nullptr);
+		}
+
+		ImGui::TextUnformatted(objImportExportGuide);
+
+		if (ImGui::Button("Cancel", SizeWidthDiv2()))
+			ImGui::CloseCurrentPopup();
+		ImGui::SameLine();
+		if (ImGui::Button(loadObj.trackerID == 0? "Load as New" : "Load and Overwrite", SizeWidthDiv2()))
+		{
+			std::map<std::string, TargetCalibration3D> targets;
+			auto error = parseTargetObjFile(loadObj.path, targets, 180, 5);
+			if (error)
+				SignalErrorToUser(error.value());
+			else if (loadObj.trackerID != 0)
+			{
+				if (targets.size() > 1)
+					SignalErrorToUser("Object file contains multiple targets! Will not override.");
+				else if (targets.size() == 0)
+					SignalErrorToUser("Object file contains no targets!");
+				else if (loadObj.markerMerge)
+				{
+					auto &loadCalib = targets.begin()->second;
+					auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+						[&](auto &t){ return t.id == loadObj.trackerID; });
+					if (trackerIt == state.trackerConfigs.end())
+					{
+						SignalErrorToUser(asprintf_s("Could not find tracker by ID %d to import markers into!", loadObj.trackerID));
+					}
+					else
+					{
+						auto &refCalib = trackerIt->calib;
+						auto &params = state.pipeline.targetCalib.params.assembly;
+
+						// Prepare interface for target detection
+						std::vector<TriangulatedPoint> triPoints;
+						triPoints.reserve(refCalib.markers.size());
+						for (const auto &mk : refCalib.markers)
+							triPoints.push_back(TriangulatedPoint(mk.pos, params.alignPointError/1000, 10.0f));
+						std::vector<int> triIndices(triPoints.size());
+						std::iota(triIndices.begin(), triIndices.end(), 0);
+
+						// Match markers between the two targets
+						auto match = detectTarget3D(loadCalib, triPoints, triIndices, params.alignPointSigma, params.alignPoseSigma, false);
+
+						// Copy marker parameters for matched markers
+						for (int m = 0; m < match.pointMap.size(); m++)
+						{
+							if (match.pointMap[m] < 0) continue;
+							auto &mkRef = refCalib.markers[m];
+							auto &mkLoad = loadCalib.markers[match.pointMap[m]];
+							mkLoad.size = mkRef.size;
+							mkLoad.viewAngle = mkRef.viewAngle;
+						}
+					}
+					SignalTargetCalibUpdate(loadObj.trackerID, loadCalib);
+				}
+				else
+				{
+					SignalTargetCalibUpdate(loadObj.trackerID, targets.begin()->second);
+				}
+			}
+			else
+			{ // Import as new target
+				auto selectNewID = [&]()
+				{ // Find max occupied target id
+					int id = 0;
+					for (auto &tracker : state.trackerConfigs)
+						id = std::max(id, tracker.id);
+					return id + 1;
+				};
+				for (auto &target : targets)
+					state.trackerConfigs.push_back(TrackerConfig(selectNewID(), target.first, std::move(target.second), TargetDetectionConfig()));
+			}
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
 	bool isDirty = false;
 	for (auto &tracker : state.trackerConfigs)
 		isDirty |= tracker.configDirty | tracker.targetDirty;
@@ -53,6 +208,12 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	{
 		auto error = storeTrackerConfigurations(trackerConfigFolder, state.trackerConfigs);
 		if (error) SignalErrorToUser(error.value());
+	}
+
+	if (ImGui::Button("Import Target from OBJ", SizeWidthFull()))
+	{
+		loadObj.trackerID = 0;
+		ImGui::OpenPopup(loadObjPopupID);
 	}
 
 	if (!ImGui::BeginChild("EditChild", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding))
@@ -63,7 +224,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		return;
 	}
 
-	const ImGuiID delPopupID = ImGui::GetID("ConfirmDeleteTracker");
+	// Popup to delete tracker from database
+	const ImGuiID delTrackerPopupID = ImGui::GetID("ConfirmDeleteTracker");
 	static int delTrackerID = 0;
 	static std::string delTrackerLabel;
 
@@ -150,7 +312,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			{
 				delTrackerID = tracker.id;
 				delTrackerLabel = tracker.label;
-				ImGui::OpenPopup(delPopupID);
+				ImGui::OpenPopup(delTrackerPopupID);
 			}
 			ImGui::PopID();
 		}
@@ -158,7 +320,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::EndTable();
 	}
 
-	if (BeginPopup(delPopupID))
+	if (BeginPopup(delTrackerPopupID))
 	{
 		ImGui::Text("Delete tracker '%s' (%d) from disk immediately (No Undo)?", delTrackerLabel.c_str(), delTrackerID);
 		if (SaveButton("Delete", SizeWidthDiv2(), true))
@@ -357,12 +519,25 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			SignalTargetCalibUpdate(tracker.id, calib);
 		}
 
-		if (ImGui::Button("Export Target as OBJ", SizeWidthFull()))
+		if (ImGui::Button("Import OBJ", SizeWidthDiv2()))
 		{
-			const char* tgtPathFmt = "/target_%d.obj";
-			std::string tgtPath = asprintf_s(tgtPathFmt, findLastFileEnumeration(tgtPathFmt)+1);
-			auto error = writeTargetObjFile(tgtPath, TargetCalibration3D(tracker.calib));
+			loadObj.trackerID = tracker.id;
+			ImGui::OpenPopup(loadObjPopupID);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Export OBJ", SizeWidthDiv2()))
+		{
+			std::string tgtPathFmt = asprintf_s("/target_%s_%%d.obj", tracker.label.c_str());
+			int tgtPathID = findLastFileEnumeration(temporaryStoreFolder + tgtPathFmt)+1;
+			std::string tgtPath = temporaryStoreFolder + asprintf_s(tgtPathFmt.c_str(), tgtPathID);
+			auto error = writeTargetObjFile(tgtPath, tracker.label, TargetCalibration3D(tracker.calib));
 			if (error) SignalErrorToUser(error.value());
+		}
+		if (ImGui::BeginItemTooltip())
+		{
+			ImGui::Text("Export target calibration to '%s' folder as target_%s_X.obj.", temporaryStoreFolder.c_str(), tracker.label.c_str());
+			ImGui::TextUnformatted(objImportExportGuide);
+			ImGui::EndTooltip();
 		}
 
 		EndSection();

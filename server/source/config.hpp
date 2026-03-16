@@ -257,6 +257,6 @@ HANDLE_ERROR parseTargetAssemblyStage(const std::string &path, TargetAssemblyBas
 HANDLE_ERROR dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
 
 HANDLE_ERROR parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size);
-HANDLE_ERROR writeTargetObjFile(const std::string &path, const TargetCalibration3D &target);
+HANDLE_ERROR writeTargetObjFile(const std::string &path, const std::string &label, const TargetCalibration3D &target);
 
 #endif // CONFIG_H

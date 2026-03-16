@@ -1758,6 +1758,15 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 
 	float limit = std::cos(fov/360*PI);
 
+	// Convert to right-handed coordinate system, in a specific way to ensure repeatable import/export in Blender
+	// For anything but Y Forward Axis and Up Axis Z import settings, blender applies a rotation
+	// So pick conversion here specifically so these settings work nicely
+	Eigen::Matrix3f convertAxis;
+	convertAxis <<
+	   -1, 0, 0,
+		0, 1, 0,
+		0, 0, 1;
+
 	{
 		while (true)
 		{
@@ -1769,16 +1778,16 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 			{ // Read vertex
 				Eigen::Vector3f vert;
 				fs >> vert.x();
-				fs >> vert.z();
 				fs >> vert.y();
+				fs >> vert.z();
 				verts.push_back(vert);
 			}
 			else if (header == "vn")
 			{ // Read normal
 				Eigen::Vector3f nrm;
 				fs >> nrm.x();
-				fs >> nrm.z();
 				fs >> nrm.y();
+				fs >> nrm.z();
 				nrms.push_back(nrm);
 			}
 			else if (header == "f")
@@ -1789,7 +1798,7 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 				pt.nrm.setZero();
 				int pos = 0, sz = 0, count = 0;
 				int vID, nID;
-				while(sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
+				while (sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
 				{ // Sum vert values
 					pos += sz;
 					count++;
@@ -1799,8 +1808,8 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 				if (count == 0) return "";
 				if (count < 3) continue; // Failed to read face, probably because UVs were exported
 				// Calculate face center as average
-				pt.pos = pt.pos/count;
-				pt.nrm.normalize();
+				pt.pos = convertAxis * pt.pos/count;
+				pt.nrm = convertAxis * pt.nrm.normalized();
 				pt.viewAngle = limit;
 				pt.size = size/1000.0f; // mm to m
 				curGroup->markers.push_back(pt);
@@ -1830,7 +1839,7 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 	return std::nullopt;
 }
 
-std::optional<ErrorMessage> writeTargetObjFile(const std::string &path, const TargetCalibration3D &target)
+std::optional<ErrorMessage> writeTargetObjFile(const std::string &path, const std::string &label, const TargetCalibration3D &target)
 {
 	std::filesystem::path fsPath(path);
 	std::filesystem::create_directories(fsPath.remove_filename());
@@ -1842,29 +1851,43 @@ std::optional<ErrorMessage> writeTargetObjFile(const std::string &path, const Ta
 	{
 		fprintf(out, "%s %f %f %f\n", id.c_str(), vec.x(), vec.y(), vec.z());
 	};
-	auto writeQuad = [out](int i)
+	auto writeFace = [out](int idx, int len, int nrm)
 	{
-		fprintf(out, "f %d//%d %d//%d %d//%d\n", i+0, i+0, i+1, i+1, i+2, i+2);
-		fprintf(out, "f %d//%d %d//%d %d//%d\n", i+1, i+1, i+2, i+2, i+3, i+3);
+		fprintf(out, "f");
+		for (int i = idx; i < idx+len; i++)
+			fprintf(out, " %d//%d", i, nrm);
+		fprintf(out, "\n");
 	};
 
-	fprintf(out, "g %s\ns off\n", fsPath.stem().string().c_str());
+	fprintf(out, "g %s\ns off\n", label.c_str());
 
-	float s = 2.0f/1000;
+	// Convert to right-handed coordinate system, in a specific way to ensure repeatable import/export in Blender
+	// For anything but Y Forward Axis and Up Axis Z import settings, blender applies a rotation
+	// So pick conversion here specifically so these settings work nicely
+	Eigen::Matrix3f convertAxis;
+	convertAxis <<
+	   -1, 0, 0,
+		0, 1, 0,
+		0, 0, 1;
+
+	const int segments = 20;
 	for (int i = 0; i < target.markers.size(); i++)
 	{
 		const TargetMarker &marker = target.markers[i];
-		Eigen::Vector3f x = marker.nrm.cross(Eigen::Vector3f::UnitX());
-		Eigen::Vector3f y = marker.nrm.cross(Eigen::Vector3f::UnitY());
-		writeVec("v", marker.pos + s*x + s*y);
-		writeVec("v", marker.pos - s*x + s*y);
-		writeVec("v", marker.pos + s*x - s*y);
-		writeVec("v", marker.pos - s*x - s*y);
-		writeVec("vn", marker.nrm);
-		writeVec("vn", marker.nrm);
-		writeVec("vn", marker.nrm);
-		writeVec("vn", marker.nrm);
-		writeQuad(i*4 + 1);
+		float s = marker.size/2; // Diameter to radius
+		Eigen::Vector3f pos = convertAxis * marker.pos;
+		Eigen::Vector3f nrm = convertAxis * marker.nrm;
+
+		Eigen::Vector3f x = nrm.cross(Eigen::Vector3f::UnitX()).normalized();
+		Eigen::Vector3f y = nrm.cross(x).normalized();
+		assert(std::abs(x.norm()-1) < 0.001 && std::abs(y.norm()-1) < 0.001);
+		writeVec("vn", nrm);
+		for (int j = 0; j < segments; j++)
+		{
+			float r = 2*(float)PI * j/segments;
+			writeVec("v", pos + s*x*std::sin(r) - s*y*std::cos(r));
+		}
+		writeFace(i*segments + 1, segments, i+1);
 	}
 	fclose(out);
 

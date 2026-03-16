@@ -540,6 +540,74 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			ImGui::EndTooltip();
 		}
 
+		ImGui::BeginDisabled(!state.isStreaming);
+		static OptFrameNum orientationCollectionFrame = -1;
+		if (orientationCollectionFrame >= 0)
+		{
+			if (!state.isStreaming)
+				orientationCollectionFrame = -1; // Stopped streaming
+			else if (state.pipeline.frameNum < orientationCollectionFrame)
+				orientationCollectionFrame = -1; // Reset
+			else if (state.pipeline.frameNum - orientationCollectionFrame > 200)
+				orientationCollectionFrame = -1; // Lag / UI not active throughout
+			else if (state.pipeline.frameNum - orientationCollectionFrame > 100)
+			{ // Apply
+				auto frames = state.pipeline.record.frames.getView();
+				if (orientationCollectionFrame < frames.beginIndex() || orientationCollectionFrame+100 > frames.endIndex())
+					SignalErrorToUser("Frames are unexpectedly not available anymore!");
+				else
+				{
+					Matrix3<double> accum = Matrix3<double>::Zero();
+					int samples = 0;
+					for (auto frame = frames.pos(orientationCollectionFrame); frame.index() < frames.endIndex() && samples < 100; frame++)
+					{
+						for (auto &trackRecord : frame->get()->trackers)
+						{
+							if (trackRecord.result.isTracked())
+							{
+								accum += trackRecord.poseFiltered.rotation().cast<double>();
+								samples++;
+							}
+						}
+					}
+					if (samples < 80)
+					{
+						SignalErrorToUser("Only found %d tracked frames of tracker '%s'!\n"
+							"Ensure you are tracking, the tracker is well visible,\n"
+							"and you aren't dropping an excessive number of frames.");
+					}
+					else
+					{
+						// Average rotation (and ensure it really is a rotation matrix)
+						Eigen::Matrix3f restRot = (accum / samples).cast<float>();
+						auto svd = restRot.jacobiSvd<Eigen::ComputeFullU | Eigen::ComputeFullV>();
+						restRot = svd.matrixU() * svd.matrixV().transpose();
+
+						LOG(LTargetCalib, LInfo, "Adjusting target orientation of target '%s' to align with current pose!", tracker.label.c_str());
+						TargetCalibration3D calib = tracker.calib;
+						for (auto &mk : calib.markers)
+						{
+							mk.pos = restRot * mk.pos;
+							mk.nrm = restRot * mk.nrm;
+						}
+						calib.updateMarkers();
+						// Signal server to update calib
+						SignalTargetCalibUpdate(tracker.id, calib);
+						// Due to sudden change in calibration tracking will likely get lost, but hard to interfere
+					}
+				}
+				orientationCollectionFrame = -1;
+			}
+		}
+		if (ImGui::Button("Apply currently tracked orientation", SizeWidthFull()))
+		{
+			orientationCollectionFrame = state.pipeline.frameNum;
+		}
+		ImGui::SetItemTooltip("Place the tracker so that it is level with the floor.\n"
+			"This button will sample that orientation and apply it.\n"
+			"The forward axis is not clearly defined.");
+		ImGui::EndDisabled();
+
 		EndSection();
 	}
 

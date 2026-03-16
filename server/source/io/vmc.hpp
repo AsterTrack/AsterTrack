@@ -39,8 +39,7 @@ struct vmc_device
 {
     VMCRole role;
     std::string serial;
-    Eigen::Vector3f p;
-    Eigen::Quaternionf q;
+    Eigen::Isometry3f pose;
     float fov;
 };
 
@@ -50,6 +49,4 @@ bool vmc_is_connected(opaque_ptr<vmc_output> &vmc);
 
 bool vmc_try_connect(opaque_ptr<vmc_output> &vmc);
 
-void vmc_send_tracker_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS);
-
-void vmc_send_camera_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &cameras, TimePoint_t timestamp, float deltaS);
+void vmc_send_device_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS);

@@ -158,14 +158,14 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 		cameras.reserve(server.pipeline.cameras.size());
 		for (const auto &camera : server.pipeline.cameras)
 		{
+			// TODO: Camera role is intended for tracked cameras for virtual production, not as debug for optical tracking systems...
 			cameras.emplace_back(VMCRole::Camera,
 				asprintf_s("Camera #%u", camera->id),
-				camera->calib.transform.translation().cast<float>(),
-				Eigen::Quaternionf(camera->calib.transform.rotation().cast<float>()),
+				camera->calib.transform.cast<float>(),
 				(float)getEffectiveFoVD(camera->calib, camera->mode)
 			);
 		}
-		vmc_send_camera_packets(state.vmc.output, cameras, timestamp, dtS(server.lastStreamingStart, timestamp));
+		vmc_send_device_packets(state.vmc.output, cameras, timestamp, dtS(server.lastStreamingStart, timestamp));
 	}
 }
 
@@ -221,10 +221,9 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 			if (cfg_tracker == server.trackerConfigs.end()) continue;
 			trackers.emplace_back(VMCRole::Tracker,
 				cfg_tracker->label,
-				trackRecord.poseFiltered.translation(),
-				Eigen::Quaternionf(trackRecord.poseFiltered.rotation())
+				trackRecord.poseFiltered
 			);
 		}
-		vmc_send_tracker_packets(state.vmc.output, trackers, frame->time, dtS(server.lastStreamingStart, frame->time));
+		vmc_send_device_packets(state.vmc.output, trackers, frame->time, dtS(server.lastStreamingStart, frame->time));
 	}
 }

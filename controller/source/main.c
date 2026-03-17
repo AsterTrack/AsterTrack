@@ -44,7 +44,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define USB_TIME_SYNC_INTERVAL	1*TICKS_PER_MS			// Minimum interval used for time sync with host (needs to be as accurate as possible)
 #define USB_STALL_TIMEOUT		10*TICKS_PER_MS			// Timeout at which we attempt to unstall a sink
 #define USB_COMM_TIMEOUT		1000*TICKS_PER_MS		// Comm timeout at which the host is considered disconnected
-#define USB_COMM_TIMEOUT_STR	1000*TICKS_PER_MS			// Comm timeout at which the host is considered disconnected when timesync is enabled
+#define USB_COMM_TIMEOUT_STR	60000*TICKS_PER_MS		// Comm timeout at which streaming if forcefully stopped even with comm channels still open
+														// Essentially, allow for up to a minute of debugging (halted software) before streaming aborts
 
 #define SYNC_MIN_PULSE_WIDTH_US	50
 
@@ -166,8 +167,19 @@ static void uart_set_identification()
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
+static void intentionalDelayUS(uint32_t us)
+{
+	TimePoint tgt = GetTimePoint();
+	tgt += us * TICKS_PER_US;
+	while (GetTimePoint() < tgt)
+		WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+}
+
+usbd_respond class_impl_setconf(usbd_device *usbd, uint8_t cfg); // usbd.c
+
 static void sendSOFPackets(uint32_t frameID, TimePoint SOF);
 static void cleanSendingState();
+static void resetSyncStates();
 
 int main()//(uint16_t after, uint16_t before, uint16_t start)
 {
@@ -563,7 +575,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				uartd_nak_int(i);
 				uartd_reset_port_int(i);
 				LeavePacketHubZone();
-				// Configurator is notified by its camera iteration check
+				// Host software is notified by its camera iteration check
 			}
 		}
 
@@ -582,13 +594,10 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		}
 
 		TimeSpan inactive = now-lastUSBPacket;
-		if (hostConnected && enforceTimeSync && inactive > USB_COMM_TIMEOUT_STR)
-		{ // Not connected anymore, Configurator possibly crashed / stalled
-			// -> In streaming mode, interrupt endpoints are used
-			// -> If it was still connected, at least USB hardware would check and accept packets
+		if (commChannelsOpen && inactive > USB_COMM_TIMEOUT_STR)
+		{ // Not connected anymore, but comm channels not closed yet, so host software is likely still running (halted in debug mode?)
+			// Allow for this to go on for a bit, but just in case the USB interface doesn't get automatically reset, stop streaming at some point
 			EnterPacketHubZone();
-
-			// TODO: Properly reverse all streaming stages. Should be fine, but still unsure.
 
 			// Stage 4&5: Ensure cameras are notified and stop streaming
 			const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
@@ -608,48 +617,45 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			{
 				if (camStates[i].comm == COMM_SBC_READY && (camStates[i].status & PORT_CAM_STREAMING))
 					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
-				camStates[i].status &= ~PORT_SYNC_ENABLED;
 			}
 
-			// Stage 3: Disable frame sync
-			enabledSyncPinsGPIOD = 0;
-			/* curFrameID = 0;
+			// Forcefully reset USB interface, which will clean streaming state via usbd_close_interface
+			//class_impl_setconf(&hUSB, 0);
+			// This does NOT work, will leave host-side USB stack in an invalid state and will not be able to connect to the controller again
+			// If we could, it would replace the following manual cleanup up until "hostConnected = false"
+
+			// Reset streaming state
+			curFrameID = 0;
 			cachedFrameID = 0;
-			SYNC_Reset();
-			if (frameSignalSource == FrameSignal_Generating)
-				StopTimer(TIM3);
-			frameSignalSource = FrameSignal_None; */
+
+			// Stage 3: Disable sync
+			resetSyncStates();
 
 			// Stage 2: Disable time sync
-			//enforceTimeSync = false;
+			enforceTimeSync = false;
 
 			// Stage 1: Close comm channels
-			//commChannelsOpen = false; // Cannot disable, still set by interface
+			// Cannot do that, see above
 
-			hostConnected = false;
 			LeavePacketHubZone();
 
-			delayMS(10);
-			
-			EnterPacketHubZone();
+			intentionalDelayUS(10 * 1000);
+
 			// This won't be reset if interface isn't unset first, so clear now
+			EnterPacketHubZone();
 			cleanSendingState();
-			resetPacketHub(&packetHub);
-
+			resetSinkStates(&packetHub);
 			LeavePacketHubZone();
-			ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
+
+			ERR_STR("/ABORT_STREAM_TIMEOUT"); // Abort Streaming after Connection Timeout
 		}
-		else if (hostConnected && !commChannelsOpen && inactive > USB_COMM_TIMEOUT)
-		{ // Not connected anymore, Configurator possibly crashed / stalled
-			EnterPacketHubZone();
 
-			// This won't be reset if interface isn't unset first, so clear now
-			cleanSendingState();
-			resetPacketHub(&packetHub);
+		if (hostConnected && inactive > USB_COMM_TIMEOUT)
+		{ // Not connected anymore, host software possibly crashed or got halted
+			// If comm channels are still open, that means software is likely halted in debug mode
+			// They will typically be closed by host when software crashes completely (tested on Linux)
 			hostConnected = false;
-
-			LeavePacketHubZone();
-			ERR_CHARR('/', 'U', 'C', 'L'); // USB Connection Lost
+			ERR_STR("/USB_CON_LOST"); // USB Connection Lost
 		}
 
 		/* static TimePoint lastStatTimer = 0;
@@ -757,6 +763,18 @@ static void cleanSendingState()
 		eventSending = eventTail;
 	resetPacketRef(&eventUSBPacket);
 #endif
+}
+
+static void resetSyncStates()
+{
+	SYNC_Reset();
+	if (syncSource == SYNC_CFG_GEN_RATE)
+		StopTimer(TIM3);
+	syncSource = SYNC_CFG_NONE;
+	// Reset Sync Mask implicitly
+	for (int i = 0; i < UART_PORT_COUNT; i++)
+		camStates[i].status &= ~PORT_SYNC_ENABLED;
+	enabledSyncPinsGPIOD = 0;
 }
 
 
@@ -944,13 +962,12 @@ void usbd_close_interface()
 { // Callback from usb class implementation
 	CMDD_STR("+CloseInterface");
 
-	enabledSyncPinsGPIOD = 0;
+	// Reset streaming state
 	curFrameID = 0;
 	cachedFrameID = 0;
-	SYNC_Reset();
-	if (syncSource == SYNC_CFG_GEN_RATE)
-		StopTimer(TIM3);
-	syncSource = SYNC_CFG_NONE;
+
+	// Stage 3: Reset sync
+	resetSyncStates();
 
 	// Stage 2: Disable time sync
 	enforceTimeSync = false;
@@ -1138,14 +1155,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_OUT_SYNC_RESET)
 	{ // Stage 3: Request to disable all sync sources
 		CMDD_STR("+SyncRst");
-		SYNC_Reset();
-		if (syncSource == SYNC_CFG_GEN_RATE)
-			StopTimer(TIM3);
-		syncSource = SYNC_CFG_NONE;
-		// Reset Sync Mask implicitly
-		for (int i = 0; i < UART_PORT_COUNT; i++)
-			camStates[i].status &= ~PORT_SYNC_ENABLED;
-		enabledSyncPinsGPIOD = 0;
+		resetSyncStates();
 		return usbd_ack;
 	}
 	else if (req->bRequest == COMMAND_OUT_SYNC_EXTERNAL)

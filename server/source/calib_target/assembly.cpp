@@ -31,6 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <numeric>
 #include <random>
 
+void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record); // pipeline.hpp
 
 /**
  * Calibration of target structure
@@ -530,9 +531,11 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 			// Assuming flat markers, that would prevent false merging of two markers on different sides of a thin structure
 			for (auto &map1 : target.markerMap)
 			{
+				if (map1.first < 0) continue; // Tracking samples, not backed by sequence2D
 				if (markerMap[map1.second] != m1) continue;
 				for (auto &map2 : target.markerMap)
 				{
+					if (map2.first < 0) continue; // Tracking samples, not backed by sequence2D
 					if (markerMap[map2.second] != m2) continue;
 					if (map1.first > map2.first) continue; // Only check one direction
 					OptFrameNum overlapFrame = canProveMarkerDistinct(observations[map1.first], observations[map2.first]);
@@ -592,7 +595,8 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 			LOGC(LDebug, "New mapping of sequences to markers:");
 			for (auto &map : target.markerMap)
 			{
-				LOGC(LDebug, "    Sequence %d maps to marker %d", map.first, map.second);
+				if (map.first >= 0)
+					LOGC(LDebug, "    Sequence %d maps to marker %d", map.first, map.second);
 			}
 		}
 	}
@@ -823,23 +827,30 @@ ObsTarget subsampleTargetObservations(const BlockedQueue<std::shared_ptr<FrameRe
 }
 
 static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const std::shared_ptr<FrameRecord> &frameRecord,
-	const TargetCalibration3D &trkTarget, const ObsTarget &target, const ObsTargetFrame &reference, const TargetTrackingParameters &params)
+	const TargetCalibration3D &trkTarget, const Eigen::Isometry3f &prediction, const TargetTrackingParameters &params)
 {
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(frameRecord->cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(frameRecord->cameras.size());
 	for (int c = 0; c < frameRecord->cameras.size(); c++)
 	{
+		if (frameRecord->cameras[c].points2D.size() != frameRecord->cameras[c].rawPoints2D.size())
+			PreprocessCameraData(calibs[c], frameRecord->cameras[c]);
 		points2D[c] = &frameRecord->cameras[c].points2D;
 		properties[c] = &frameRecord->cameras[c].properties;
 	}
 
+	std::vector<std::vector<int>> remainingPoints2D(frameRecord->cameras.size());
 	std::vector<std::vector<int> const *> relevantPoints2D(frameRecord->cameras.size());
 	for (int c = 0; c < frameRecord->cameras.size(); c++)
-		relevantPoints2D[c] = &frameRecord->remainingPoints2D[c];
+	{
+		remainingPoints2D[c].resize(points2D[c]->size());
+		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
+		relevantPoints2D[c] = &remainingPoints2D[c];
+	}
 
 	TargetTracking2DData internalData(frameRecord->cameras.size());
 	CovarianceMatrix covariance = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
-	return trackTarget2D(trkTarget, reference.pose, covariance,
+	return trackTarget2D(trkTarget, prediction, covariance,
 		calibs, frameRecord->cameras.size(),
 		points2D, properties, relevantPoints2D, params, internalData);
 }
@@ -848,6 +859,33 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 	ObsTarget &target, const TargetCalibration3D &trkTarget, TrackFrameParameters params)
 {
 	LOG(LTargetCalib, LDebug, "Expand frame observations for target:");
+
+	auto obsFrameFromTracked = [](const FrameRecord &frame, TargetMatch2D &targetMatch2D)
+	{
+		ObsTargetFrame newFrame;
+		newFrame.frame = frame.num;
+		newFrame.pose = targetMatch2D.pose;
+		newFrame.error = targetMatch2D.error.mean;
+		newFrame.samples.reserve(targetMatch2D.error.samples);
+		for (int c = 0; c < targetMatch2D.points2D.size(); c++)
+		{
+			for (auto &match : targetMatch2D.points2D[c])
+			{
+				ObsTargetSample sample;
+				sample.marker = -match.first-2;
+				sample.camera = (uint16_t)c;
+				sample.point = frame.cameras[c].rawPoints2D[match.second];
+				newFrame.samples.push_back(sample);
+			}
+		}
+		newFrame.tracked = true;
+		return newFrame;
+	};
+
+	// Add marker mapping for tracked samples (exempt from e.g. reevaluateMarkerSequences which require sequence2D backing)
+	for (int m = 0; m < target.markers.size(); m++)
+		target.markerMap[-m-2] = m;
+
 	// Try filling in previously discarded frames
 	uint32_t startFrame = target.frames.front().frame, endFrame = target.frames.back().frame;
 	uint32_t prevFrames = target.frames.size();
@@ -863,7 +901,7 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 		for (; frameIt.index() < target.frames[i+1].frame; frameIt++)
 		{ // Try to fill any missing frames
 			if (!*frameIt) continue;
-			TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
+			TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target.frames[refFrame].pose, params.track);
 			LOG(LTargetCalib, LDebug, "    Trying to fill in frame %ld yielded %d matches with %fpx error!",
 				frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
 			if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[i].error+params.uncertainty)*params.sigmaFill)
@@ -871,18 +909,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 				if (frameIt.index()-target.frames[refFrame].frame >= 2) break;
 				else continue;
 			}
-			ObsTargetFrame newFrame;
-			newFrame.frame = frameIt.index();
-			newFrame.pose = targetMatch2D.pose;
-			newFrame.error = targetMatch2D.error.mean;
-			// TODO: SERIOUS BLUNDER! Need to properly add samples from targetMatch2D.points2D
-			// But need to not disturb the sequence2D markers recorded in markerMap
-			// So perhaps add virtual markers (negative?) to markerMap to signal they are not a sequence but random points
-			// But then reevaluateMarkerSequences needs to account for that
-			// If it finds and adds a sequence that matches these points, it needs to change these markers to that sequences marker
-			newFrame.samples = target.frames[i].samples; // Copy to allow new frame to be used as refIt
 			refFrame = target.frames.size();
-			target.frames.push_back(std::move(newFrame)); // But will have to reevaluateMarkerSequences
+			target.frames.push_back(obsFrameFromTracked(*frameIt->get(), targetMatch2D));
 			filledFrameCount++;
 		}
 	}
@@ -892,7 +920,7 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 	frameIt = frames.pos(startFrame);
 	while (frameIt-- > frames.begin())
 	{
-		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
+		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target.frames[refFrame].pose, params.track);
 		LOG(LTargetCalib, LDebug, "    Trying to prepend frame %ld yielded %d matches with %fpx error!",
 			frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
 		if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[0].error+params.uncertainty)*params.sigmaAdd)
@@ -900,21 +928,15 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 			if (target.frames[refFrame].frame-frameIt.index() >= 2) break;
 			else continue;
 		}
-		ObsTargetFrame newFrame;
-		newFrame.frame = frameIt.index();
-		newFrame.pose = targetMatch2D.pose;
-		newFrame.error = targetMatch2D.error.mean;
-		// TODO: SERIOUS BLUNDER! See above
-		newFrame.samples = target.frames[0].samples; // Copy to allow new frame to be used as refIt
 		refFrame = target.frames.size();
-		target.frames.push_back(std::move(newFrame)); // But will have to reevaluateMarkerSequences
+		target.frames.push_back(obsFrameFromTracked(*frameIt->get(), targetMatch2D));
 		prependFrameCount++;
 	}
 	refFrame = prevFrames-1;
 	frameIt = frames.pos(endFrame);
 	while (++frameIt < frames.end())
 	{
-		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target, target.frames[refFrame], params.track);
+		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, *frameIt, trkTarget, target.frames[refFrame].pose, params.track);
 		LOG(LTargetCalib, LDebug, "    Trying to append frame %ld yielded %d matches with %fpx error!",
 			frameIt.index(), targetMatch2D.error.samples, targetMatch2D.error.mean*PixelFactor);
 		if (targetMatch2D.error.samples < params.minTrackPts || targetMatch2D.error.mean > (target.frames[prevFrames-1].error+params.uncertainty)*params.sigmaAdd)
@@ -922,14 +944,8 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 			if (frameIt.index()-target.frames[refFrame].frame >= 2) break;
 			else continue;
 		}
-		ObsTargetFrame newFrame;
-		newFrame.frame = frameIt.index();
-		newFrame.pose = targetMatch2D.pose;
-		newFrame.error = targetMatch2D.error.mean;
-		// TODO: SERIOUS BLUNDER! See above
-		newFrame.samples = target.frames[prevFrames-1].samples; // Copy to allow new frame to be used as refIt
 		refFrame = target.frames.size();
-		target.frames.push_back(std::move(newFrame)); // But will have to reevaluateMarkerSequences
+		target.frames.push_back(obsFrameFromTracked(*frameIt->get(), targetMatch2D));
 		appendFrameCount++;
 	}
 
@@ -954,7 +970,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 	// TODO: Currently deprecated, was meant as a outlier detection method of sorts
 	// But it IS useful to add new observations that didn't make it as a sequence
 	// So rework to only ADD new markers that aren't part of a sequence?
-	// Then do it similarly to the SERIOUS BLUNDER note above in expandFrameObservations with negative markers
+	// See expandFrameObservations for tryTrackFrame use, and using negative markers for tracked (non-sequence2D) markers
 
 	int prevSampleCnt = 0, newSampleCnt = 0;
 	float prevError = 0;
@@ -975,7 +991,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		prevSampleCnt += frame.samples.size();
 
 		auto &frameRecord = frames[frame.frame];
-		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, frameRecord, trkTarget, target, frame, params.track);	
+		TargetMatch2D targetMatch2D = tryTrackFrame(calibs, frameRecord, trkTarget, frame.pose, params.track);	
 		if (targetMatch2D.error.samples == 0)
 		{
 			invalidFrames++;

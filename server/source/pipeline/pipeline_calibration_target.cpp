@@ -451,7 +451,9 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 		auto obs_lock = pipeline->seqDatabase.contextualRLock();
 		TargetCalibration3D trkTarget = initialiseTargetCalib(calibs, obsData.targets.front(), params.post);
 		expandFrameObservations(calibs, pipeline->record.frames, obsData.targets.front(), trkTarget, params.assembly.trackFrame);
-		reevaluateMarkerSequences<true>(calibs, obs_lock->markers, obsData.targets.front(), { 0.5f, 10, 3, 10 });
+		ReevaluateSequenceParameters reevalParams = params.assembly.reevaluation;
+		reevalParams.sigmaMerge = 0; // Disable marker merging
+		reevaluateMarkerSequences<true>(calibs, obs_lock->markers, obsData.targets.front(), reevalParams);
 		updateTargetObservations(obsData.targets.front(), obs_lock->markers);
 	};
 

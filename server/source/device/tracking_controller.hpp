@@ -110,7 +110,7 @@ struct TrackingControllerState
 	// Event Log
 	BlockedQueue<ControllerEventLog, 4096> eventLog;
 	// TimeSync and Latency Log
-	TimingRecord timingRecord = TimingRecord(true, true);
+	TimingRecord timingRecord = TimingRecord(true, false);
 
 	// Firmware update
 	bool selectedForFirmware;

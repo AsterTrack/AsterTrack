@@ -221,11 +221,11 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 			dt_t usPassed = dtUS(lastEvent.syncedTime, event.syncedTime);
 			if (usPassed < 0)
 			{
-				LOG(LControllerDevice, LWarn, "Events not continuous! New event is %ldus before last. Might be due to updated time sync", usPassed);
+				LOG(LControllerDevice, LWarn, "Events not continuous! New event is %" PRId64 "us before last. Might be due to updated time sync", usPassed);
 			}
 			if (lastEvent.timestampUS > event.timestampUS)
 			{
-				LOG(LParsing, LError, "Event log timestamps overflowed! First has %ld, new one %ld", lastEvent.timestamp, event.timestamp);
+				LOG(LParsing, LError, "Event log timestamps overflowed! First has %" PRIu64 ", new one %" PRIu64 "", lastEvent.timestamp, event.timestamp);
 				controller.eventLog.cull_all();
 			}
 		}
@@ -234,7 +234,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 		if (dT < -10)
 		{ // Event supposedly happened in the future, time sync has gone bad
 			LOG(LTimesync, LWarn, "Got bad time sync, Event is %.2fms in the future, last timestamp %.2fms in the past"
-				" - changed timestamp from %u (ref %lu) to %lu (ref %lu)\n",
+				" - changed timestamp from %u (ref %lu) to %" PRIu64 " (ref %" PRIu64 ")\n",
 				-dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()),
 				timestamp, timeSync.lastTimestamp&0xFFFFFF, event.timestamp, timeSync.lastTimestamp);
 		}
@@ -272,7 +272,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 
 	if (lastEvent.timestampUS > 0)
 	{ // Leave event::XXXus as marking/link to jump to that timestamp
-		LOG(LControllerDevice, LTrace, "Received %d events%s, last parsed at event::%ldus\n", cnt, error? " with errors" : "", lastEvent.timestamp);
+		LOG(LControllerDevice, LTrace, "Received %d events%s, last parsed at event::%" PRIu64 "us\n", cnt, error? " with errors" : "", lastEvent.timestamp);
 	}
 
 	SignalServerEvent(EVT_UPDATE_EVENTS);

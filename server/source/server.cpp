@@ -556,6 +556,7 @@ void StartWirelessServer(ServerState &state)
 		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
 		assert(client.callbacks.userData2);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
+		if (!camera.sync) return; // Likely removed camera already (possible when halting during debugging)
 		// Update statistics of streaming packet
 		if (header.isStreamPacket())
 		{

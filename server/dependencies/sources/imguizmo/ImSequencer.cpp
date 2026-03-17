@@ -260,24 +260,25 @@ namespace ImSequencer
       int halfModFrameCount = modFrameCount / 2;
 
       auto drawLine = [&](int i, int regionHeight) {
+         float pos = child_canvas_pos.x + legendWidth + (i-firstFrameUsed) * sequence->framePixelWidth;
+         if (pos > (child_canvas_size.x + child_canvas_pos.x) && pos < (child_canvas_pos.x + legendWidth))
+            return;
+         float px = IM_ROUND(pos);
+
          bool baseIndex = ((i % modFrameCount) == 0) || (i == sequence->GetFrameMax() || i == sequence->GetFrameMin());
          bool halfIndex = (i % halfModFrameCount) == 0;
-         int px = (int)child_canvas_pos.x + int(i * sequence->framePixelWidth) + legendWidth - int(firstFrameUsed * sequence->framePixelWidth);
          int tiretStart = baseIndex ? 4 : (halfIndex ? 10 : 14);
          int tiretEnd = baseIndex ? regionHeight : ItemHeight;
 
-         if (px <= (child_canvas_size.x + child_canvas_pos.x) && px >= (child_canvas_pos.x + legendWidth))
-         {
-            draw_list->AddLine(ImVec2((float)px, canvas_pos.y + (float)tiretStart), ImVec2((float)px, canvas_pos.y + (float)tiretEnd - 1), 0xFF606060, 1);
+         draw_list->AddLine(ImVec2(px, canvas_pos.y + (float)tiretStart), ImVec2(px, canvas_pos.y + (float)tiretEnd - 1), 0xFF606060, 1);
 
-            draw_list->AddLine(ImVec2((float)px, canvas_pos.y + (float)ItemHeight), ImVec2((float)px, canvas_pos.y + (float)regionHeight - 1), 0x30606060, 1);
-         }
+         draw_list->AddLine(ImVec2(px, canvas_pos.y + (float)ItemHeight), ImVec2(px, canvas_pos.y + (float)regionHeight - 1), 0x30606060, 1);
 
-         if (baseIndex && px > (child_canvas_pos.x + legendWidth))
+         if (baseIndex)
          {
             char tmps[512];
             ImFormatString(tmps, IM_ARRAYSIZE(tmps), "%d", i);
-            draw_list->AddText(ImVec2((float)px + 3.f, canvas_pos.y), 0xFFBBBBBB, tmps);
+            draw_list->AddText(ImVec2(px + 3.f, canvas_pos.y), 0xFFBBBBBB, tmps);
          }
 
       };
@@ -347,16 +348,17 @@ namespace ImSequencer
 
       // vertical frame lines in content area
       auto drawLineContent = [&](int i, int /*regionHeight*/) {
-         int px = (int)child_canvas_pos.x + int(i * sequence->framePixelWidth) + legendWidth - int(firstFrameUsed * sequence->framePixelWidth);
+         float pos = child_canvas_pos.x + legendWidth + (i-firstFrameUsed) * sequence->framePixelWidth;
+         if (pos > (child_canvas_size.x + child_canvas_pos.x) && pos < (child_canvas_pos.x + legendWidth))
+            return;
+         float px = IM_ROUND(pos);
+
          int tiretStart = int(contentMin.y);
          int tiretEnd = int(contentMax.y);
 
-         if (px <= (child_canvas_size.x + child_canvas_pos.x) && px >= (child_canvas_pos.x + legendWidth))
-         {
-            //draw_list->AddLine(ImVec2((float)px, child_canvas_pos.y + (float)tiretStart), ImVec2((float)px, child_canvas_pos.y + (float)tiretEnd - 1), 0xFF606060, 1);
+         //draw_list->AddLine(ImVec2(px, child_canvas_pos.y + (float)tiretStart), ImVec2(px, child_canvas_pos.y + (float)tiretEnd - 1), 0xFF606060, 1);
 
-            draw_list->AddLine(ImVec2(float(px), float(tiretStart)), ImVec2(float(px), float(tiretEnd)), 0x30606060, 1);
-         }
+         draw_list->AddLine(ImVec2(px, float(tiretStart)), ImVec2(px, float(tiretEnd)), 0x30606060, 1);
       };
       for (int i = firstFrameUsed; i <= firstFrameUsed+sequence->visibleFrameCount; i += frameStep)
       {

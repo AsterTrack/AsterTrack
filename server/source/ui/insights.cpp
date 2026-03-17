@@ -398,7 +398,7 @@ private:
 
 	// Cached data for determining if end frame was changed by user (invalidating followLastFrame)
 	int intendedPos = 0;
-	float intendedWidth;
+	float intendedWidth = 0;
 
 public:
 	std::shared_ptr<TrackingControllerState> m_controller;
@@ -439,12 +439,15 @@ public:
 
 	void SetViewIntervalUS(float intervalUS)
 	{
+		if (intendedWidth <= 0) return;
 		framePixelWidthTarget = framePixelWidth = intendedWidth/intervalUS;
 		intendedPos = 0;
 	}
 
 	virtual void PrepareRendering(float sequenceWidth)
 	{
+		intendedWidth = sequenceWidth;
+
 		auto events = m_controller->eventLog.getView();
 		if (events.empty()) return;
 
@@ -471,16 +474,17 @@ public:
 			// However, visibleFrameCount will not be updated (smoothed over time), so have to recalculate with width/framePixelWidthTarget
 			intendedPos = viewStartTimeUS+visibleFrameCount; // Set end pos for PostRenderUpdate
 		}
-		intendedWidth = sequenceWidth;
 
 		// This whole update only takes about 0.5ms even with about 40000 events
 
 		int64_t frontUS = viewStartTimeUS, backUS = frontUS+visibleFrameCount;
 		auto frontIt = std::lower_bound(events.begin(), events.end(), frontUS,
-		[](const ControllerEventLog& event, int64_t us) { return event.timestampUS < us; });
+		[](const ControllerEventLog& event, int64_t us) { return (int64_t)event.timestampUS < us; });
 		auto backIt = std::upper_bound(events.begin(), events.end(), backUS,
-		[](int64_t us, const ControllerEventLog& event) { return us < event.timestampUS; });
-		if (backIt != events.begin())
+		[](int64_t us, const ControllerEventLog& event) { return us < (int64_t)event.timestampUS; });
+		if (frontIt == events.end() || backIt == events.begin() || frontIt == backIt)
+			return;
+		if (backIt == events.end())
 			backIt--;
 		if (frontIt.index() == frontIndex && backIt.index() == backIndex)
 			return; // No update needed
@@ -1640,6 +1644,7 @@ static bool ShowTimingPanel()
 		bool changed = false;
 		for (int i = 0; i < state.controllers.size(); i++)
 		{
+			if (timeType == TimeType::Latency) break;
 			std::string label = asprintf_s("Controller %d", i);
 			if (!ImGui::Selectable(label.c_str(), sourceType == 0 && sourceIndex == i)) continue;
 			changed = true;
@@ -1702,8 +1707,9 @@ static bool ShowTimingPanel()
 			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
 
-	ImGui::SameLine();
-	if (ImGui::Button("Open Recording"))
+	if (timeType == TimeType::TimeSync)
+		ImGui::SameLine();
+	if (timeType == TimeType::TimeSync && ImGui::Button("Open Recording"))
 	{
 		threadPool.push([&loadTimeSyncRecording](int id)
 		{

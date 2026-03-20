@@ -151,6 +151,20 @@ void ServerExit(ServerState &state)
 	state.trackerConfigs.clear();
 }
 
+static void StopCoprocessingThread(ServerState &state)
+{
+	if (!state.coprocessingThread) return;
+	state.coprocessingThread->request_stop();
+	state.simAdvance = -1;
+	state.simAdvance.notify_all();
+	dbg_debugging = 0;
+	dbg_debugging.notify_all();
+	dbg_isBreaking = false;
+	dbg_isBreaking.notify_all();
+	delete state.coprocessingThread;
+	state.coprocessingThread = NULL;
+}
+
 bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker)
 {
 	bool updatedIMU = false;
@@ -659,16 +673,13 @@ void StopDeviceMode(ServerState &state)
 	if (state.mode != MODE_Device)
 		return;
 
-	StopStreaming(state);
-
-	IntegrationsCleanup(state.io, state.config);
-
 	LOG(LDefault, LInfo, "Disconnecting!\n");
 
-	// Join coprocessing thread
-	state.parsing_cv.notify_all();
-	delete state.coprocessingThread;
-	state.coprocessingThread = NULL;
+	StopStreaming(state);
+
+	StopCoprocessingThread(state);
+
+	IntegrationsCleanup(state.io, state.config);
 
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 	state.mode = MODE_None;
@@ -1118,14 +1129,9 @@ void StopSimulation(ServerState &state)
 
 	StopStreaming(state);
 
-	IntegrationsCleanup(state.io, state.config);
+	StopCoprocessingThread(state);
 
-	// Join coprocessing thread
-	state.coprocessingThread->request_stop();
-	state.simAdvance = -1;
-	state.simAdvance.notify_all();
-	delete state.coprocessingThread;
-	state.coprocessingThread = NULL;
+	IntegrationsCleanup(state.io, state.config);
 
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 
@@ -1452,14 +1458,9 @@ void StopReplay(ServerState &state)
 
 	StopStreaming(state);
 
-	IntegrationsCleanup(state.io, state.config);
+	StopCoprocessingThread(state);
 
-	// Join coprocessing thread
-	state.coprocessingThread->request_stop();
-	state.simAdvance = -1;
-	state.simAdvance.notify_all();
-	delete state.coprocessingThread;
-	state.coprocessingThread = NULL;
+	IntegrationsCleanup(state.io, state.config);
 
 	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
 

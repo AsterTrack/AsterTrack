@@ -111,6 +111,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			}
 			ImGui::EndDisabled();
 
+			ImGui::BeginDisabled(dbg_isBreaking);
 			if (state.mode == MODE_Simulation)
 			{ // Show Restart here in place of Next Image in Simulation mode, next line is omitted
 				if (ImGui::Button("Restart", SizeWidthDiv3()))
@@ -119,8 +120,10 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					StartStreaming(state);
 				}
 			}
+			ImGui::EndDisabled();
 		}
 
+		ImGui::BeginDisabled(dbg_isBreaking);
 		if (state.mode == MODE_Replay)
 		{ // Show Restart and Replay-specific jump control
 			ImGui::BeginDisabled(!state.isStreaming);
@@ -132,6 +135,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::EndDisabled();
 
 			ImGui::SameLine();
+			ImGui::BeginDisabled(!state.isStreaming);
 			if (ImGui::Button("Jump To", SizeWidthDiv3()))
 			{
 				// Stop advancing replay
@@ -146,10 +150,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simAdvance = prevState;
 				state.simAdvance.notify_all();
 			}
+			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
 			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
 		}
+		ImGui::EndDisabled();
 
 		bool showDebug = ImGui::CollapsingHeader("Test Tooling");
 

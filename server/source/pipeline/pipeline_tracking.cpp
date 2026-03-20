@@ -472,9 +472,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			if (!frameRecordIt->get()->finishedProcessing) break;
 			if (!trackFrame(*frameRecordIt))
 				return false;
+			frameIndex = frameRecordIt.index();
 		}
 		// Release view when leaving scope
-		frameIndex = frameRecordIt.index()-1;
 	}
 
 	LOG(LDetection2D, LDebug, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to snapshot, syncing with realtime!\n", frame->num, frameIndex);
@@ -498,9 +498,9 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 			if (!frameRecordIt->get()->finishedProcessing) break;
 			if (!trackFrame(*frameRecordIt))
 				return false;
+			frameIndex = frameRecordIt.index();
 		}
 		// Release view when leaving scope
-		frameIndex = frameRecordIt.index()-1;
 	}
 
 	LOG(LDetection2D, LInfo, "    Detection %" PRIu64 " - Frame %" PRIu64 ": Caught up to most recent processed frame after %.1fms!\n", frame->num, frameIndex, dtMS(start, sclock::now()));
@@ -701,7 +701,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		};
 
 		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (2/5)
-		// Preallocate memory for these trackers + potential future detection
+		// Preallocate memory for these trackers + 1 async detection (reallocate on synchronous detections as required)
 		frame->trackers.reserve(track.trackedTargets.size() + 1);
 		assert(frame->trackers.empty());
 
@@ -968,8 +968,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 				// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
 				// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
-				frame->trackers.reserve(frame->trackers.size() + 1);
-				
+				frame->trackers.reserve(frame->trackers.capacity() + 1);
+
 				if (IsDebugging())
 				{
 					pipeline.pipelineLock.unlock();
@@ -1190,7 +1190,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 				// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (3/5)
 				// Ensure that after any 3D detections we still have space allocated for a potential async detection entry 
-				frame->trackers.reserve(frame->trackers.size() + 1);
+				frame->trackers.reserve(frame->trackers.capacity() + 1);
 			}
 		}
 	}

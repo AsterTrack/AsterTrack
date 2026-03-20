@@ -204,6 +204,10 @@ struct VisualisationState
 			std::vector<std::vector<SceneLabel>> secLabels;
 			std::vector<std::vector<SceneButton>> editButtons;
 		} debug;
+
+		// Virtual Trackers
+		bool showRelations = true;
+		bool debugRelationsReverse;
 	} tracking;
 
 	struct

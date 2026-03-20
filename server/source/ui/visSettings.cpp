@@ -110,6 +110,13 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::Checkbox("Show Axis of Uncertainty", &visState.tracking.showUncertaintyAxis);
 		}
 
+		if (ImGui::TreeNode("Virtual Tracker"))
+		{
+			ImGui::Checkbox("Show Relation to Subtrackers", &visState.tracking.showRelations);
+			ImGui::Checkbox("Debug relation from Subtrackers", &visState.tracking.debugRelationsReverse);
+			ImGui::TreePop();
+		}
+
 		ImGui::TreePop();
 	}
 

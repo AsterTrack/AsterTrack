@@ -647,6 +647,31 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		{
 			const Color colVirtual = Color{ 0.5f, 0.1f, 0.7f, 0.6f };
 			visualisePose(trackRecord.poseFiltered, colVirtual, 0.15f, 2.0f);
+
+			std::vector<std::pair<VisPoint,VisPoint>> edges(
+				(visState.tracking.showRelations? trackRecord.virtualRelations.size() : 0) + 
+				(visState.tracking.debugRelationsReverse? trackRecord.virtualRelationsReverse.size() : 0));
+			if (visState.tracking.showRelations)
+			{
+				const Color8 colOffset = Color{ 1.0, 0.1, 0.4, 0.8 };
+				for (int i = 0; i < trackRecord.virtualRelations.size(); i++)
+				{
+					edges[i].first = { trackRecord.poseFiltered.translation(), colOffset };
+					edges[i].second = { trackRecord.poseFiltered.translation() + trackRecord.virtualRelations[i], colOffset };
+				}
+			}
+			if (visState.tracking.debugRelationsReverse)
+			{
+				const Color8 colRelation = Color{ 0.7f, 0.6f, 0.2f, 0.6f };
+				for (int i = 0; i < trackRecord.virtualRelationsReverse.size(); i++)
+				{
+					int j = trackRecord.virtualRelations.size() + i;
+					edges[j].first = { trackRecord.virtualRelationsReverse[i].first, colRelation };
+					edges[j].second = { trackRecord.virtualRelationsReverse[i].first + trackRecord.virtualRelationsReverse[i].second, colRelation };
+				}
+			}
+			visualiseLines(edges, 1);
+
 			continue;
 		}
 		if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;

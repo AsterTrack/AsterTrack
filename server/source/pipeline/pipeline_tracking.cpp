@@ -794,6 +794,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				TrackerRecord record = { tracker.id, tracker.result, tracker.procTimeMS };
 				recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
+				record.virtualRelations = std::move(tracker.virt.relations);
+				record.virtualRelationsReverse = std::move(tracker.virt.relationsReverse);
 				enterTrackerRecord(frame, std::move(record));
 
 				if (!prevRes.isTracked())

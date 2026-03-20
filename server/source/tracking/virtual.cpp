@@ -34,6 +34,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 
 	assert(virt.config.type == VirtualTrackerType::STATIC);
 
+	virt.relations.clear();
+	virt.relationsReverse.clear();
+	virt.relations.reserve(subtrackers.size());
+	virt.relationsReverse.reserve(subtrackers.size());
+
 	bool allTracked = !subtrackers.empty();
 	int numTracked = 0;
 	for (int t = 0; t < subtrackers.size(); t++)
@@ -108,6 +113,8 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		Eigen::Vector3f relation = obsRot[t] * virt.config.offsetPos[t];
 		obsPos[t] = subtrackers[t]->state.position().cast<float>() - relation;
 
+		virt.relationsReverse.push_back({ subtrackers[t]->state.position().cast<float>(), -relation });
+
 		// TODO: transfer covariance from subtracker
 		CovarianceMatrix virtCov = params.filter.getSyntheticCovariance<float>();
 
@@ -120,6 +127,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 			LOG(LTrackingFilter, LWarn, "Failed to correct virtual pose with pose from subtracker %d!", t);
 			virt.mistrustFrames += 5;
 		}
+	}
+
+	for (int t = 0; t < subtrackers.size(); t++)
+	{
+		virt.relations.push_back(state.state.getQuaternion().cast<float>() * virt.config.offsetPos[t]);
 	}
 
 	if (numTracked > 1)

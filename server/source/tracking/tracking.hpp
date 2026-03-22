@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/target.hpp"
 #include "target/tracking2D.hpp"
 #include "imu/imu.hpp"
+#include "tracking/virtual.hpp"
 
 #include "util/util.hpp" // TimePoint_t
 #include "util/eigendef.hpp"
@@ -53,6 +54,8 @@ struct TrackerState
 	TimePoint_t lastObservation;
 	TimePoint_t firstObservation;
 
+	TrackerState() : state{}, lastIMUSample(-1), lastObsFrame(-1), firstObsFrame(-1) {}
+
 	TrackerState(Eigen::Isometry3f pose, OptFrameNum frame, TimePoint_t time, const TargetTrackingParameters &params) :
 		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(-1), lastObservation(time), firstObsFrame(frame), firstObservation(time)
 	{
@@ -82,7 +85,6 @@ struct TrackerTarget
 	TrackerTarget(TargetCalibration3D &&calib, TargetDetectionConfig config) :
 		calib(std::move(calib)), detectionConfig(config), detectionCycle(0), data{}, match2D{} {}
 };
-
 
 struct TrackerMarker
 {
@@ -202,12 +204,23 @@ struct TrackerObservation
 	Eigen::Isometry3f filtered; // Pose filtered from all observations
 	Eigen::Matrix<float,6,6> covPredicted, covFiltered, covObserved;
 
+	TrackerObservation() {}
+
 	TrackerObservation(Eigen::Isometry3f pose, TimePoint_t time, const TargetTrackingParameters &params) :
 		predicted(pose), observed(pose), filtered(pose), time(time)
 	{
 		covObserved = params.filter.getSyntheticCovariance<float>() * params.filter.sigmaInitState;
 		covPredicted = covFiltered = covObserved;
 	}
+};
+
+struct TrackerVirtual
+{
+	TrackerVirtualConfig config;
+
+	// Current internal state
+	OptFrameNum lastValidFrame;
+	OptFrameNum mistrustFrames;
 };
 
 /* Tracked Object Representations */
@@ -289,6 +302,21 @@ struct DormantMarker : public virtual TrackedBase
 	DormantMarker(int id, std::string label, TrackerMarker &&marker) : TrackedBase(id, label), marker(std::move(marker)), inertial() {}
 };
 
+struct VirtualTracker : public virtual TrackedBase
+{
+	// Virtual tracking source
+	TrackerVirtual virt;
+
+	// Current filtered state
+	TrackerState state;
+
+	// Latest virtual observation
+	TrackerObservation pose;
+
+	inline VirtualTracker(int id, std::string label, TrackerVirtualConfig config)
+		: TrackedBase(id, label), virt{std::move(config)} {};
+};
+
 const static Eigen::Isometry3f orphanedIMUPose = Eigen::Isometry3f(Eigen::Translation3f(0, 0, 1));
 
 struct OrphanedIMU
@@ -329,6 +357,9 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma);
+
+TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &observation,
+	std::vector<TrackerState*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params);
 
 bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
 	TimePoint_t time, const TargetTrackingParameters &params);

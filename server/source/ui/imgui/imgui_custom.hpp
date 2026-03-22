@@ -39,6 +39,8 @@ ImU32 tintColor(ImU32 base, ImU32 tint);
 
 bool CheckButton(const char* str_id);
 bool CrossButton(const char* str_id);
+bool PlusButton(const char* str_id);
+bool MinusButton(const char* str_id);
 bool RetryButton(const char* str_id);
 bool CircleButton(const char* str_id, bool filled = true);
 

@@ -252,6 +252,13 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	std::move(pipeline.tracking.trackedMarkers.begin(), pipeline.tracking.trackedMarkers.end(), std::back_inserter(pipeline.tracking.dormantMarkers));
 	pipeline.tracking.trackedMarkers.clear();
 
+	for (auto &virtualTracker : pipeline.tracking.virtualTrackers)
+	{ // Manually reset virtual trackers which can not enter dormant state
+		virtualTracker.state = {};
+		virtualTracker.pose = {};
+		virtualTracker.mistrust = 0;
+	}
+
 	// Adopt state for all recorded trackers in that frame to kickstart tracking
 	for (auto &targetRecord : frameRecord.trackers)
 	{

@@ -48,6 +48,7 @@ void ResetTrackingPipeline(PipelineState &pipeline)
 	pipeline.tracking.trackedTargets.clear();
 	pipeline.tracking.dormantTargets.clear();
 	pipeline.tracking.dormantMarkers.clear();
+	pipeline.tracking.virtualTrackers.clear();
 	pipeline.tracking.orphanedIMUs.clear();
 }
 
@@ -702,7 +703,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (2/5)
 		// Preallocate memory for these trackers + 1 async detection (reallocate on synchronous detections as required)
-		frame->trackers.reserve(track.trackedTargets.size() + 1);
+		frame->trackers.reserve(track.trackedTargets.size() + track.virtualTrackers.size() + 1);
 		assert(frame->trackers.empty());
 
 		for (auto &tracker : track.trackedTargets)
@@ -762,6 +763,41 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					LOG(LTracking, LWarn, "Decided to drop tracking of target %d (name %s) after increased mistrust!\n",
 						tracker.id, tracker.label.c_str());
 				}
+			}
+		}
+
+		for (auto &tracker : track.virtualTrackers)
+		{
+			std::vector<TrackerState *> subtrackers(tracker.virt.config.ids.size());
+			for (int i = 0; i < tracker.virt.config.ids.size(); i++)
+			{
+				for (auto &trkTgt : track.trackedTargets)
+				{
+					if (trkTgt.id != tracker.virt.config.ids[i]) continue;
+					if (trkTgt.result.isTracked()) subtrackers[i] = &trkTgt.state;
+					break;
+				}
+				for (auto &trkMk : track.trackedMarkers)
+				{
+					if (trkMk.id != tracker.virt.config.ids[i]) continue;
+					if (trkMk.result.isTracked()) subtrackers[i] = &trkMk.state;
+					break;
+				}
+			}
+
+			TrackingResult prevRes = tracker.result;
+
+			TimePoint_t start = sclock::now();
+			tracker.result = processVirtualTracker(tracker.state, tracker.virt, tracker.pose, subtrackers, frame->time, frame->num, pipeline.params.virt);
+			tracker.procTimeMS = dtMS(start, sclock::now());
+			if (tracker.result.isTracked())
+			{
+				TrackerRecord record = { tracker.id, tracker.result, tracker.procTimeMS };
+				recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
+				enterTrackerRecord(frame, std::move(record));
+
+				if (!prevRes.isTracked())
+					SignalTrackerDetected(tracker.id);
 			}
 		}
 
@@ -1299,6 +1335,27 @@ void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float 
 		return;
 	}
 	pipeline.tracking.dormantMarkers.emplace_back(ID, label, TrackerMarker(size));
+}
+
+void RemoveVirtualTracker(PipelineState &pipeline, int ID)
+{
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
+	auto virtTrk = std::find_if(pipeline.tracking.virtualTrackers.begin(), pipeline.tracking.virtualTrackers.end(), [&ID](const auto &tracker){ return tracker.id == ID; });
+	if (virtTrk != pipeline.tracking.virtualTrackers.end())
+		pipeline.tracking.virtualTrackers.erase(virtTrk);
+}
+
+void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, const TrackerVirtualConfig &config)
+{
+	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
+	for (auto &tracker : pipeline.tracking.virtualTrackers)
+	{
+		if (tracker.id != ID) continue;
+		tracker.label = label;
+		tracker.virt.config = config;
+		return;
+	}
+	pipeline.tracking.virtualTrackers.emplace_back(ID, label, config);
 }
 
 bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib)

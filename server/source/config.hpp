@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "target/parameters.hpp"
 #include "target/target.hpp"
 #include "imu/imu.hpp"
+#include "tracking/virtual.hpp"
 
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
@@ -80,7 +81,8 @@ struct TrackerConfig
 	enum TrackerType
 	{
 		TRACKER_TARGET = 1,
-		TRACKER_MARKER = 2
+		TRACKER_MARKER = 2,
+		TRACKER_VIRTUAL = 3
 	};
 
 	enum TrackerTrigger
@@ -120,6 +122,9 @@ struct TrackerConfig
 
 	// Marker-specific Config
 	float markerSize;
+
+	// Virtual-specific Config
+	TrackerVirtualConfig virtConfig;
 
 	// Optional IMU
 	IMUIdent imuIdent;

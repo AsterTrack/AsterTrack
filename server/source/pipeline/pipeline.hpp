@@ -160,6 +160,8 @@ struct PipelineState
 		std::list<DormantTarget> dormantTargets;
 		std::list<DormantMarker> dormantMarkers;
 		std::list<OrphanedIMU> orphanedIMUs;
+		// Virtual trackers composed of and interfacing with tracked objects
+		std::list<VirtualTracker> virtualTrackers;
 		// Asynchronous Detections
 		bool asyncDetection;
 		int asyncDetectTargetID = 0;
@@ -321,6 +323,12 @@ void RemoveTrackedMarker(PipelineState &pipeline, int ID);
 
 /* Add or update a tracked marker with given config */
 void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float size);
+
+/* Remove a virtual tracker from consideration for tracking */
+void RemoveVirtualTracker(PipelineState &pipeline, int ID);
+
+/* Add or update a virtual tracker with given config */
+void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, const TrackerVirtualConfig &config);
 
 /* Associate the IMU to a tracker with given calibration, clearing it's orphaned status */
 bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib);

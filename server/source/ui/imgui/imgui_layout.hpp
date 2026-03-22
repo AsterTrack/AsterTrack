@@ -90,7 +90,7 @@ static inline void SameLinePos(float pos)
 }
 
 /* Continues current line with a trailing space of specified width */
-static inline void SameLineTrailing(float width)
+static inline void SameLineTrailing(float width = ImGui::GetFrameHeight())
 {
 	ImGui::SameLine(GetRightAlignedCursorPos(width) - GetStartX());
 }

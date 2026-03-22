@@ -438,5 +438,44 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
+
+	if (BeginCollapsingRegion("Virtual Tracker"))
+	{
+		auto &params = state.pipeline.params.virt;
+		const auto &standard = defaultParams.virt;
+		bool modified = false;
+
+		BeginSection("Filtering");
+
+		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Detect", "x", &params.filter.detectSigma, &standard.filter.detectSigma, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+
+		ImGui::Separator();
+
+		modified |= ScalarProperty<float>("Unscented Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Unscented Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Unscented Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+
+		ImGui::Separator();
+
+		modified |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 10, 0.01f, 1000, "%.4f");
+		modified |= ScalarProperty<float>("StdDev Rot", "", &params.filter.stdDevEXP, &standard.filter.stdDevEXP, 0, 10, 0.05f, 1000, "%.4f");
+
+		EndSection();
+
+		BeginSection("Calibration");
+
+		modified |= ScalarProperty<float>("Lerp Factor Pos", "x", &params.calibration.lerpFactorPos, &standard.calibration.lerpFactorPos, 0, 1, 0.001f, 1, "%.5f");
+		modified |= ScalarProperty<float>("Lerp Factor Rot", "x", &params.calibration.lerpFactorRot, &standard.calibration.lerpFactorRot, 0, 1, 0.001f, 1, "%.5f");
+
+		EndSection();
+
+		EndCollapsingRegion();
+	}
+
 	ImGui::End();
 }

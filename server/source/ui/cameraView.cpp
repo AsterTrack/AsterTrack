@@ -1160,6 +1160,11 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 					// TODO: Render marker
 					continue;
 				}
+				if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+				{
+					// TODO: Render virtual pose
+					continue;
+				}
 				if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 
 				float expandViewAngle = pipeline.params.track.expandMarkerViewAngle / pipeline.params.track.normaliseDistance

@@ -216,6 +216,20 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::OpenPopup(loadObjPopupID);
 	}
 
+	if (ImGui::Button("Add Virtual Tracker", SizeWidthFull()))
+	{ // Import as new target
+		auto selectNewID = [&]()
+		{ // Find max occupied target id
+			int id = 0;
+			for (auto &tracker : state.trackerConfigs)
+				id = std::max(id, tracker.id);
+			return id + 1;
+		};
+		int newID = selectNewID();
+		state.trackerConfigs.push_back(TrackerConfig(newID, asprintf_s("Target %d", newID), TrackerConfig::TRACKER_VIRTUAL));
+		visState.target.selectedTrackerID = newID;
+	}
+
 	if (!ImGui::BeginChild("EditChild", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding))
 	{
 		discardSelection();
@@ -273,6 +287,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				ImGui::Text("Target with %d markers", (int)tracker.calib.markers.size());
 			else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 				ImGui::Text("Marker of size %.1fmm", tracker.markerSize*1000.0f);
+			else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+				ImGui::Text("Virtual Tracker (%d)", (int)tracker.virtConfig.ids.size());
 			else
 			 	ImGui::TextUnformatted("Tracker of unknown type.");
 
@@ -370,6 +386,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		bool changed = false;
 
+		ImGui::SetNextItemWidth(LineWidthRemaining());
 		changed |= ImGui::InputText("##TrkLabel", &tracker.label);
 
 		ImGui::AlignTextToFramePadding();
@@ -454,6 +471,81 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		}
 
 		if (changed)
+		{
+			tracker.configDirty = true;
+			ServerUpdateTrackerConfig(state, tracker);
+		}
+
+		EndSection();
+	}
+
+	if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+	{
+		BeginSection("Virtual Target");
+		bool virtConfigChanged = false;
+		auto &config = tracker.virtConfig;
+
+		// TODO: Placement config
+
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text("Subtrackers");
+		SameLineTrailing();
+		if (PlusButton("AddSubTrk"))
+		{
+			config.ids.push_back(-1);
+			virtConfigChanged = true;
+		}
+		ImGui::SetItemTooltip("Add a new subtracker entry.");
+
+		if (ImGui::BeginTable("Subtrackers", 2))
+		{
+			ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_WidthStretch, 1);
+			ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 1));
+
+			for (int i = 0; i < config.ids.size(); i++)
+			{
+				ImGui::PushID(i);
+				ImGui::PushID(config.ids[i]);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+
+				auto subtracker = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+					[&](auto &t){ return t.id == config.ids[i]; });
+				std::string label = subtracker == state.trackerConfigs.end()? "None" : subtracker->label;
+
+				ImGui::SetNextItemWidth(LineWidthRemaining());
+				if (ImGui::BeginCombo("##Tracker", label.c_str()))
+				{
+					bool changed = false;
+					for (const auto &trackerConfig : state.trackerConfigs)
+					{
+						if (trackerConfig.type != TrackerConfig::TRACKER_TARGET) continue;
+						if (!ImGui::Selectable(trackerConfig.label.c_str())) continue;
+						virtConfigChanged = changed = true;
+						config.ids[i] = trackerConfig.id;
+					}
+					ImGui::EndCombo();
+					if (changed)
+						ImGui::MarkItemEdited(ImGui::GetItemID());
+				}
+
+				ImGui::TableNextColumn();
+
+				if (CrossButton("Delete"))
+				{
+					config.ids.erase(config.ids.begin()+i);
+					virtConfigChanged = true;
+					i--;
+				}
+				ImGui::SetItemTooltip("Delete the subtracker entry.");
+
+				ImGui::PopID();
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+		}
+
+		if (virtConfigChanged)
 		{
 			tracker.configDirty = true;
 			ServerUpdateTrackerConfig(state, tracker);

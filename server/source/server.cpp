@@ -200,6 +200,8 @@ void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool 
 		SetTrackedTarget(state.pipeline, tracker.id, tracker.label, tracker.calib, tracker.detectionConfig);
 	else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 		SetTrackedMarker(state.pipeline, tracker.id, tracker.label, tracker.markerSize);
+	else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+		SetVirtualTracker(state.pipeline, tracker.id, tracker.label, tracker.virtConfig);
 
 	if (updatedIMU)
 	{ // Ensure tracked object receives updated IMU association
@@ -240,6 +242,8 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 			RemoveTrackedTarget(state.pipeline, tracker.id);
 		else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 			RemoveTrackedMarker(state.pipeline, tracker.id);
+		else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+			RemoveVirtualTracker(state.pipeline, tracker.id);
 	}
 
 	if (!tracker.exposed)

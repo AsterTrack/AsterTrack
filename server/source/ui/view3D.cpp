@@ -643,6 +643,12 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			// TODO: Render marker
 			continue;
 		}
+		if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+		{
+			const Color colVirtual = Color{ 0.5f, 0.1f, 0.7f, 0.6f };
+			visualisePose(trackRecord.poseFiltered, colVirtual, 0.15f, 2.0f);
+			continue;
+		}
 		if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 		auto &target = tracker.calib;
 

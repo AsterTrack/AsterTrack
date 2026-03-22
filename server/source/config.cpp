@@ -698,6 +698,18 @@ static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::pa
 		if (jsTracker.contains("markerSize") && jsTracker["markerSize"].is_number_float())
 			tracker.markerSize = jsTracker["markerSize"].get<float>();
 	}
+	else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+	{
+		if (jsTracker.contains("subTrackers") && jsTracker["subTrackers"].is_array())
+		{
+			auto &jsSubTrackers = jsTracker["subTrackers"];
+			tracker.virtConfig.ids.reserve(jsSubTrackers.size());
+			for (auto &jsSubTracker : jsSubTrackers)
+			{
+				tracker.virtConfig.ids.push_back(jsSubTracker.get<int>());
+			}
+		}
+	}
 	else return asprintf_s("Unknown tracker type %d!", tracker.type);
 
 	if (jsTracker.contains("imu") && jsTracker["imu"].is_object())
@@ -815,6 +827,15 @@ static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, co
 	else if (tracker.type == TrackerConfig::TRACKER_MARKER)
 	{
 		jsTracker["markerSize"] = tracker.markerSize;
+	}
+	else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+	{
+		json jsSubTrackers = json::array();
+		for (int i = 0; i < tracker.virtConfig.ids.size(); i++)
+		{
+			jsSubTrackers.push_back(tracker.virtConfig.ids[i]);
+		}
+		jsTracker["subTrackers"] = jsSubTrackers;
 	}
 	else error = asprintf_s("Unknown tracker type %d!", tracker.type);
 

@@ -120,6 +120,35 @@ bool CrossButton(const char* str_id)
 	return pressed;
 }
 
+bool PlusButton(const char* str_id)
+{
+	float sz = ImGui::GetFrameHeight();
+	ImRect bb;
+	bool pressed = IconButtonEx(str_id, ImVec2(sz, sz), ImGuiButtonFlags_None, bb);
+
+	const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+	float cExt = ImGui::GetFontSize() * 0.5f * 0.9f - 1.0f;
+	ImVec2 center = bb.GetCenter();
+	ImGui::GetWindowDrawList()->AddLine(center + ImVec2(-cExt, 0), center + ImVec2(+cExt, 0), text_col, 2.0f);
+	ImGui::GetWindowDrawList()->AddLine(center + ImVec2(0, -cExt), center + ImVec2(0, +cExt), text_col, 2.0f);
+
+	return pressed;
+}
+
+bool MinusButton(const char* str_id)
+{
+	float sz = ImGui::GetFrameHeight();
+	ImRect bb;
+	bool pressed = IconButtonEx(str_id, ImVec2(sz, sz), ImGuiButtonFlags_None, bb);
+
+	const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+	float cExt = ImGui::GetFontSize() * 0.5f * 0.9f - 1.0f;
+	ImVec2 center = bb.GetCenter();
+	ImGui::GetWindowDrawList()->AddLine(center + ImVec2(-cExt, 0), center + ImVec2(+cExt, 0), text_col, 2.0f);
+
+	return pressed;
+}
+
 bool RetryButton(const char* str_id)
 {
 	float sz = ImGui::GetFrameHeight();

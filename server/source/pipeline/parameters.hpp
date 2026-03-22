@@ -78,6 +78,36 @@ struct ContinuousOptimisationParameters
 	};
 };
 
+struct VirtualTrackingParameters
+{
+    struct {
+		// General behaviour for all filters
+		float sigmaInitState = 50000, sigmaInitChange = 10000000;
+		float detectSigma = 1000000, trackSigma = 1;
+		float dampeningPos = 0.95f, dampeningRot = 0.9f;
+
+		// UKR settings for all filters
+		float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
+
+		// Full Target Pose Filter Update
+		float stdDevPos = 0.002f, stdDevEXP = 0.005f;
+
+		template<typename Scalar>
+		Eigen::Matrix<Scalar,6,6> getSyntheticCovariance() const
+		{
+			Eigen::Matrix<Scalar,6,6> covariance = Eigen::Matrix<Scalar,6,6>::Identity();
+			covariance.diagonal().template head<3>().setConstant(stdDevPos*stdDevPos);
+			covariance.diagonal().template tail<3>().setConstant(stdDevEXP*stdDevEXP);
+			return covariance;
+		}
+	} filter = {};
+
+	struct {
+		float lerpFactorPos = 0.0f;
+		float lerpFactorRot = 0.0f;
+	} calibration = {};
+};
+
 struct TrackingParameters
 {
 	TriangulationParameters tri = {};
@@ -85,6 +115,7 @@ struct TrackingParameters
 	TargetDetectionParameters detect = {};
 	TargetTrackingParameters track = {};
 	ContinuousOptimisationParameters cont = {};
+	VirtualTrackingParameters virt = {};
 };
 
 #endif // TRACKING_PARAMETERS_H

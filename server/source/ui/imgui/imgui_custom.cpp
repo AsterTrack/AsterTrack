@@ -36,6 +36,7 @@ SOFTWARE.
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 ImU32 tintColor(ImU32 base, ImU32 tint)
 {
@@ -52,17 +53,6 @@ ImU32 tintColor(ImVec4 base, ImVec4 tint)
 ImU32 tintStyle(ImGuiCol base, ImVec4 tint)
 {
 	return ImGui::ColorConvertFloat4ToU32(ImGui::GetStyleColorVec4(base) * tint);
-}
-
-template<typename Scalar>
-bool scalarUnchanged(Scalar a, Scalar b, int factor = 1)
-{
-	static_assert(std::is_scalar_v<Scalar>);
-	if constexpr (std::is_integral_v<Scalar>)
-		return a == b;
-	Scalar min_a = a - (a - std::nextafter(a, std::numeric_limits<Scalar>::lowest())) * factor;
-	Scalar max_a = a + (std::nextafter(a, std::numeric_limits<Scalar>::max()) - a) * factor;
-	return min_a <= b && max_a >= b;
 }
 
 bool IconButtonEx(const char* str_id, ImVec2 size, ImGuiButtonFlags flags, ImRect &bb)
@@ -290,12 +280,12 @@ static constexpr ImGuiDataType getDataType()
 }
 
 template<typename Scalar>
-static bool isSame(const Scalar *a, const Scalar *b)
+static bool isSame(const Scalar &a, const Scalar &b)
 {
 	if constexpr (std::numeric_limits<Scalar>::is_integer)
-		return *a == *b;
+		return a == b;
 	else
-		return std::abs(*a - *b) <= std::numeric_limits<Scalar>::epsilon() || (std::isnan(*a) && std::isnan(*b));
+		return std::abs(a - b) <= std::numeric_limits<Scalar>::epsilon() || (std::isnan(a) && std::isnan(b));
 }
 
 template<typename Scalar>
@@ -309,10 +299,11 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	ImGui::BeginGroup();
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextEx(label, ImGui::FindRenderedTextEnd(label));
-	SameLinePos(SizeWidthDiv3().x+style.ItemSpacing.x);
-	ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);
+	float widthDiv3 = (LineWidth() - style.ItemInnerSpacing.x*2)/3;
+	SameLinePos(widthDiv3+style.ItemInnerSpacing.x);
+	ImGui::SetNextItemWidth(widthDiv3*2+style.ItemInnerSpacing.x);
 	Scalar temp[2] = { *value * editFactor, value2? (*value2 * editFactor) : 0 };
-	bool modified = compare && (!isSame(value, compare) || (value2 && !isSame(value2, compare)));
+	bool modified = compare && (!isSame(*value, *compare) || (value2 && !isSame(*value2, *compare)));
 	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
 	if (value2)
 		ImGui::InputScalarN("##I", getDataType<Scalar>(), temp, 2, NULL, NULL, fmt);
@@ -327,16 +318,16 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 		if (value2 == nullptr && step > 0)
 		{ // Only for single values WITH +/- buttons
 			float posRight = ImGui::GetFrameHeight()*2 + style.ItemInnerSpacing.x*3;
-			SameLineTrailing(posRight + unitSz), 0;
+			SameLineTrailing(posRight + unitSz);
 			ImGui::Text("%s", unit);
 		}
 		else
 		{ // Without +/- buttons (single or double values)
-			SameLineTrailing(style.ItemInnerSpacing.x + unitSz), 0;
+			SameLineTrailing(style.ItemInnerSpacing.x + unitSz);
 			ImGui::Text("%s", unit);
 			if (value2)
 			{
-				SameLineTrailing(style.ItemInnerSpacing.x*2 + SizeWidthDiv3().x + unitSz), 0;
+				SameLineTrailing(style.ItemInnerSpacing.x*2 + widthDiv3 + unitSz);
 				ImGui::Text("%s", unit);
 			}
 		}
@@ -346,7 +337,7 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())
 	{
 		Scalar val = std::clamp(temp[0], min, max) / editFactor;
-		if (!scalarUnchanged(val, *value, 2))
+		if (!isSame(val, *value))
 		{
 			update = true;
 			*value = val;
@@ -354,7 +345,7 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 		if (value2)
 		{
 			val = std::clamp(temp[1], min, max) / editFactor;
-			if (!scalarUnchanged(val, *value2, 2))
+			if (!isSame(val, *value2))
 			{
 				update = true;
 				*value2 = val;
@@ -375,6 +366,73 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 	return update;
 }
 
+template bool ScalarInputN(const char *label, const char *unit, int *value, int *value2, const int *compare, int min, int max, int step, int editFactor, const char *fmt);
+template bool ScalarInputN(const char *label, const char *unit, float *value, float *value2, const float *compare, float min, float max, float step, float editFactor, const char *fmt);
+template bool SliderInputN(const char *label, int *value, int *value2, int min, int max, int editFactor, const char *fmt);
+template bool SliderInputN(const char *label, float *value, float *value2, float min, float max, float editFactor, const char *fmt);
+
+template<typename Scalar>
+bool ScalarFieldsN(const char *label, const char *unit, int N, Scalar *value, const Scalar *compare, Scalar min, Scalar max, Scalar editFactor, const char *fmt)
+{
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window->SkipItems)
+		return false;
+	auto &style = ImGui::GetStyle();
+	ImGui::BeginGroup();
+	std::vector<Scalar> temp(N);
+	for (int i = 0; i < N; i++)
+		temp[i] = value[i] * editFactor;
+	bool modified = false;
+	if (compare)
+	{
+		for (int i = 0; i < N; i++)
+			if (!isSame(value[i], compare[i]))
+				modified = true;
+	}
+	float width = LineWidthRemaining();
+	ImGui::SetNextItemWidth(width);
+	if (modified) ImGui::PushStyleColor(ImGuiCol_FrameBg, tintStyle(ImGuiCol_FrameBg, ImVec4(1,0,0,1)));
+	ImGui::InputScalarN(label, getDataType<Scalar>(), temp.data(), N, NULL, NULL, fmt);
+	if (modified) ImGui::PopStyleColor();
+	if (unit && *unit != 0)
+	{ // Insert unit as an overlay
+		float unitSz = ImGui::CalcTextSize(unit).x;
+		float fieldSz = (width - ImGui::GetStyle().ItemInnerSpacing.x*(N-1))/N;
+		for (int i = 0; i < N; i++)
+		{
+			SameLineTrailing(style.ItemInnerSpacing.x*(N-i) + fieldSz*(N-i-1) + unitSz);
+			ImGui::Text("%s", unit);
+		}
+	}
+	ImGui::EndGroup();
+	bool update = false;
+	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())
+	{
+		for (int i = 0; i < N; i++)
+		{
+			Scalar val = std::clamp(temp[i], min, max) / editFactor;
+			if (!isSame(val, value[i]))
+			{
+				update = true;
+				value[i] = val;
+			}
+		}
+	}
+	if (modified && ImGui::BeginPopupContextItem("C"))
+	{
+		if (ImGui::Selectable("Reset to Default"))
+		{
+			for (int i = 0; i < N; i++)
+				value[i] = compare[i];
+			update = true;
+		}
+		ImGui::EndPopup();
+	}
+	return update;
+}
+
+template bool ScalarFieldsN<float> (const char *label, const char *unit, int N, float *value, const float *compare, float min, float max, float editFactor, const char *fmt);
+
 template<typename Scalar>
 bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, Scalar max, Scalar editFactor, const char *fmt)
 {
@@ -386,8 +444,9 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 	ImGui::BeginGroup();
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextEx(label, ImGui::FindRenderedTextEnd(label));
-	SameLinePos(SizeWidthDiv3().x+style.ItemSpacing.x);
-	ImGui::SetNextItemWidth(SizeWidthDiv3_2().x);
+	float widthDiv3 = (LineWidth() - style.ItemInnerSpacing.x*2)/3;
+	SameLinePos(widthDiv3+style.ItemInnerSpacing.x);
+	ImGui::SetNextItemWidth(widthDiv3*2+style.ItemInnerSpacing.x);
 	Scalar temp[2] = { *value * editFactor, value2? (*value2 * editFactor) : 0 };
 	ImGui::SliderScalarN("##S", getDataType<Scalar>(), temp, value2? 2 : 1, &min, &max, NULL);
 	ImGui::EndGroup();
@@ -395,7 +454,7 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 	if (ImGui::IsItemDeactivatedAfterEdit() || ImGui::IsItemEdited())
 	{
 		Scalar val = temp[0] / editFactor;
-		if (!scalarUnchanged(val, *value, 2))
+		if (!isSame(val, *value))
 		{
 			update = true;
 			*value = val;
@@ -403,7 +462,7 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 		if (value2)
 		{
 			val = std::clamp(temp[1], min, max) / editFactor;
-			if (!scalarUnchanged(val, *value2, 2))
+			if (!isSame(val, *value2))
 			{
 				update = true;
 				*value2 = val;
@@ -413,11 +472,6 @@ bool SliderInputN(const char *label, Scalar *value, Scalar *value2, Scalar min, 
 	ImGui::PopID();
 	return update;
 }
-
-template bool ScalarInputN(const char *label, const char *unit, int *value, int *value2, const int *compare, int min, int max, int step, int editFactor, const char *fmt);
-template bool ScalarInputN(const char *label, const char *unit, float *value, float *value2, const float *compare, float min, float max, float step, float editFactor, const char *fmt);
-template bool SliderInputN(const char *label, int *value, int *value2, int min, int max, int editFactor, const char *fmt);
-template bool SliderInputN(const char *label, float *value, float *value2, float min, float max, float editFactor, const char *fmt);
 
 bool BeginIconDropdown(const char *str_id, ImTextureID iconTex, ImVec2 iconSize, ImGuiComboFlags flags)
 {

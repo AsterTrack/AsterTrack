@@ -1347,14 +1347,17 @@ void RemoveVirtualTracker(PipelineState &pipeline, int ID)
 		pipeline.tracking.virtualTrackers.erase(virtTrk);
 }
 
-void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, const TrackerVirtualConfig &config)
+void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, TrackerVirtualConfig config)
 {
 	std::unique_lock lock (pipeline.pipelineLock); // May already be in pipeline thread - make use of recursive mutex
 	for (auto &tracker : pipeline.tracking.virtualTrackers)
 	{
 		if (tracker.id != ID) continue;
 		tracker.label = label;
-		tracker.virt.config = config;
+		config.offsetPos.swap(tracker.virt.config.offsetPos);
+		config.offsetRot.swap(tracker.virt.config.offsetRot);
+		tracker.virt.config = std::move(config);
+		tracker.virt.alignmentDirty = true;
 		return;
 	}
 	pipeline.tracking.virtualTrackers.emplace_back(ID, label, config);

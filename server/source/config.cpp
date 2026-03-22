@@ -700,14 +700,36 @@ static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::pa
 	}
 	else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 	{
-		if (jsTracker.contains("subTrackers") && jsTracker["subTrackers"].is_array())
+		if (jsTracker.contains("virtual") && jsTracker["virtual"].is_object())
 		{
-			auto &jsSubTrackers = jsTracker["subTrackers"];
-			tracker.virtConfig.ids.reserve(jsSubTrackers.size());
-			for (auto &jsSubTracker : jsSubTrackers)
-			{
+			json &jsVirtual = jsTracker["virtual"];
+
+			for (auto &jsSubTracker : jsVirtual["subTrackers"])
 				tracker.virtConfig.ids.push_back(jsSubTracker.get<int>());
+
+			for (auto &jsCenterWeight : jsVirtual["centerWeights"])
+				tracker.virtConfig.centerWeights.push_back(jsCenterWeight.get<float>());
+
+			if (jsVirtual.contains("centerOffset"))
+				tracker.virtConfig.centerOffset = Eigen::Vector3f(jsVirtual["centerOffset"]["x"], jsVirtual["centerOffset"]["y"], jsVirtual["centerOffset"]["z"]);
+
+			if (jsVirtual.contains("copyRotationFromTracker"))
+				tracker.virtConfig.copyRotationFromTracker = jsVirtual["copyRotationFromTracker"].get<int>();
+
+			for (auto &jsCopyAxisSource : jsVirtual["copyAxisSources"])
+			{
+				tracker.virtConfig.copyAxis.sources.emplace_back((TrackerVirtualConfig::AxisSource){
+					(int)jsCopyAxisSource["idx"].get<int>(),
+					(TrackerAxis)jsCopyAxisSource["axis"].get<int>()
+				});
 			}
+			if (jsVirtual.contains("copyAxis"))
+				tracker.virtConfig.copyAxis.axis = (TrackerAxis)jsVirtual["copyAxis"].get<int>();
+
+			if (jsVirtual.contains("alignAxisTracker"))
+				tracker.virtConfig.alignAxis.tracker = jsVirtual["alignAxisTracker"].get<int>();
+			if (jsVirtual.contains("alignAxis"))
+				tracker.virtConfig.alignAxis.axis = (TrackerAxis)jsVirtual["alignAxis"].get<int>();
 		}
 	}
 	else return asprintf_s("Unknown tracker type %d!", tracker.type);
@@ -830,12 +852,39 @@ static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, co
 	}
 	else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 	{
+		json &jsVirtual = jsTracker["virtual"];
+		
 		json jsSubTrackers = json::array();
 		for (int i = 0; i < tracker.virtConfig.ids.size(); i++)
-		{
 			jsSubTrackers.push_back(tracker.virtConfig.ids[i]);
+		jsVirtual["subTrackers"] = jsSubTrackers;
+
+		json jsCenterWeights = json::array(); // Can be empty if never edited/seen
+		for (int i = 0; i < tracker.virtConfig.ids.size(); i++)
+			jsCenterWeights.push_back(tracker.virtConfig.centerWeights[i]);
+		jsVirtual["centerWeights"] = jsCenterWeights;
+
+		json jsCenterOffset;
+		jsCenterOffset["x"] = tracker.virtConfig.centerOffset.x();
+		jsCenterOffset["y"] = tracker.virtConfig.centerOffset.y();
+		jsCenterOffset["z"] = tracker.virtConfig.centerOffset.z();
+		jsVirtual["centerOffset"] = jsCenterOffset;
+
+		jsVirtual["copyRotationFromTracker"] = tracker.virtConfig.copyRotationFromTracker;
+
+		json jsCopyAxisSources = json::array(); // Can be empty if never edited/seen
+		for (int i = 0; i < tracker.virtConfig.copyAxis.sources.size(); i++)
+		{
+			json axisSources;
+			axisSources["idx"] = tracker.virtConfig.copyAxis.sources[i].tracker;
+			axisSources["axis"] = tracker.virtConfig.copyAxis.sources[i].axis;
+			jsCopyAxisSources.push_back(axisSources);
 		}
-		jsTracker["subTrackers"] = jsSubTrackers;
+		jsVirtual["copyAxisSources"] = jsCopyAxisSources;
+		jsVirtual["copyAxis"] = tracker.virtConfig.copyAxis.axis;
+
+		jsVirtual["alignAxisTracker"] = tracker.virtConfig.alignAxis.tracker;
+		jsVirtual["alignAxis"] = tracker.virtConfig.alignAxis.axis;
 	}
 	else error = asprintf_s("Unknown tracker type %d!", tracker.type);
 

@@ -481,11 +481,95 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 	if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 	{
+		auto trackerLabel = [&state](int trackerID, const char* none = nullptr)
+		{
+			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+					[&](auto &t){ return t.id == trackerID; });
+			return trackerIt == state.trackerConfigs.end()? (none? none : "None") : trackerIt->label;
+		};
+
+		auto targetSelector = [&](const char* label, int &trackerID, const char* noneOption = nullptr)
+		{
+			bool changed = false;
+			if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
+			{
+				if (noneOption && ImGui::Selectable(noneOption, trackerID < 0))
+				{
+					changed = true;
+					trackerID = -1;
+				}
+				for (const auto &trackerConfig : state.trackerConfigs)
+				{
+					if (trackerConfig.type != TrackerConfig::TRACKER_TARGET) continue;
+					if (!ImGui::Selectable(trackerConfig.label.c_str(), trackerID == trackerConfig.id)) continue;
+					changed = true;
+					trackerID = trackerConfig.id;
+				}
+				ImGui::EndCombo();
+				if (changed)
+					ImGui::MarkItemEdited(ImGui::GetItemID());
+			}
+			return changed;
+		};
+
+		auto subtrackerSelector = [&](const char* label, int &subtrackerIdx, const std::vector<int> &subtrackers, const char* noneOption = nullptr)
+		{
+			int trackerID = subtrackerIdx < 0 || subtrackerIdx >= subtrackers.size()? -1 : subtrackers[subtrackerIdx];
+
+			bool changed = false;
+			if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
+			{
+				if (noneOption && ImGui::Selectable(noneOption, subtrackerIdx < 0))
+				{
+					changed = true;
+					subtrackerIdx = -1;
+				}
+				for (int t = 0; t < subtrackers.size(); t++)
+				{
+					if (!ImGui::Selectable(trackerLabel(subtrackers[t]).c_str(), subtrackerIdx == t)) continue;
+					changed = true;
+					subtrackerIdx = t;
+				}
+				ImGui::EndCombo();
+				if (changed)
+					ImGui::MarkItemEdited(ImGui::GetItemID());
+			}
+			return changed;
+		};
+
+		auto axisLabel = [](const TrackerAxis axis)
+		{
+			const char *axisLabel[] = { "X", "Y", "Z", "INVALID" };
+			return asprintf_s("Axis %s%s", axis & TrackerAxis::AXIS_SIGN? "-" : "+", axisLabel[axis & TrackerAxis::AXIS_MASK]);;
+		};
+
+		auto axisSelector = [&](const char* label, TrackerAxis &axis)
+		{
+			bool changed = false;
+			if (ImGui::BeginCombo(label, axisLabel(axis).c_str()))
+			{
+				for (int s = 0; s <= TrackerAxis::AXIS_SIGN; s += TrackerAxis::AXIS_SIGN)
+				{
+					for (int a = 0; a < 3; a++)
+					{
+						TrackerAxis axisOpt = (TrackerAxis)(a | s);
+						if (ImGui::Selectable(axisLabel(axisOpt).c_str(), axis == axisOpt))
+						{
+							changed = true;
+							axis = axisOpt;
+						}
+					}
+				}
+				ImGui::EndCombo();
+				if (changed)
+					ImGui::MarkItemEdited(ImGui::GetItemID());
+			}
+			return changed;
+		};
+
 		BeginSection("Virtual Target");
 		bool virtConfigChanged = false;
 		auto &config = tracker.virtConfig;
-
-		// TODO: Placement config
 
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("Subtrackers");
@@ -504,30 +588,13 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 			for (int i = 0; i < config.ids.size(); i++)
 			{
-				ImGui::PushID(i);
+				ImGui::PushID(i); // May technically be used already if last entry was deleted
 				ImGui::PushID(config.ids[i]);
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
 
-				auto subtracker = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-					[&](auto &t){ return t.id == config.ids[i]; });
-				std::string label = subtracker == state.trackerConfigs.end()? "None" : subtracker->label;
-
 				ImGui::SetNextItemWidth(LineWidthRemaining());
-				if (ImGui::BeginCombo("##Tracker", label.c_str()))
-				{
-					bool changed = false;
-					for (const auto &trackerConfig : state.trackerConfigs)
-					{
-						if (trackerConfig.type != TrackerConfig::TRACKER_TARGET) continue;
-						if (!ImGui::Selectable(trackerConfig.label.c_str())) continue;
-						virtConfigChanged = changed = true;
-						config.ids[i] = trackerConfig.id;
-					}
-					ImGui::EndCombo();
-					if (changed)
-						ImGui::MarkItemEdited(ImGui::GetItemID());
-				}
+				virtConfigChanged |= targetSelector("##Tracker", config.ids[i]);
 
 				ImGui::TableNextColumn();
 
@@ -543,6 +610,96 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				ImGui::PopID();
 			}
 			ImGui::EndTable();
+		}
+
+		if (ImGui::TreeNode("Position (Center)"))
+		{
+			ImGui::Text("Weighted Average Center");
+			float defaultWeight = 1;
+			config.centerWeights.resize(config.ids.size(), defaultWeight);
+			std::vector<float> defaultWeights(config.ids.size(), defaultWeight);
+			for (int i = 0; i < config.ids.size(); i++)
+			{
+				std::string label = asprintf_s("Subtracker %s##%d", trackerLabel(config.ids[i]).c_str(), i);
+				virtConfigChanged |= ScalarProperty<float>(label.c_str(), nullptr, &config.centerWeights[i], &defaultWeight, 0, 100, 0);
+			}
+
+			virtConfigChanged |= ScalarFieldsN<float>("###Offset", "mm", 3, config.centerOffset.data(), nullptr, -1000, 1000, 1000, "%.1f");
+
+			ImGui::TreePop();	
+		}
+
+		if (ImGui::TreeNode("Rotation (Alignment)"))
+		{
+			{
+				virtConfigChanged |= subtrackerSelector("Copy Rotation", config.copyRotationFromTracker, config.ids, "Don't Copy");
+			}
+
+			ImGui::BeginDisabled(config.copyRotationFromTracker >= 0);
+
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("Copy Axis (Average)");
+				SameLineTrailing();
+				if (PlusButton("AddAxis"))
+				{
+					config.copyAxis.sources.push_back({});
+					virtConfigChanged = true;
+				}
+
+				if (ImGui::BeginTable("CopyAxis", 2))
+				{
+					ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_WidthStretch, 1);
+					ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 1));
+
+					for (int i = 0; i < config.copyAxis.sources.size(); i++)
+					{
+						ImGui::PushID(i); // May technically be used already if last entry was deleted
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+
+						ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+						virtConfigChanged |= subtrackerSelector("##Trk", config.copyAxis.sources[i].tracker, config.ids);
+
+						ImGui::SameLine();
+
+						ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+						virtConfigChanged |= axisSelector("##Axis", config.copyAxis.sources[i].axis);
+
+						ImGui::TableNextColumn();
+
+						if (CrossButton("Delete"))
+						{
+							config.copyAxis.sources.erase(config.copyAxis.sources.begin()+i);
+							virtConfigChanged = true;
+							i--;
+						}
+
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+
+				ImGui::BeginDisabled(config.copyAxis.sources.empty());
+				virtConfigChanged |= axisSelector("Target Axis", config.copyAxis.axis);
+				ImGui::EndDisabled();
+			}
+
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("Align Axis");
+
+				ImGui::SetNextItemWidth(SizeWidthFull().x);
+				virtConfigChanged |= subtrackerSelector("Align Target", config.alignAxis.tracker, config.ids, "Don't Align");
+
+				ImGui::BeginDisabled(config.alignAxis.tracker < 0);
+				virtConfigChanged |= axisSelector("Aligned Axis", config.alignAxis.axis);
+				ImGui::EndDisabled();
+			}
+
+			ImGui::EndDisabled();
+
+			ImGui::TreePop();
 		}
 
 		if (virtConfigChanged)

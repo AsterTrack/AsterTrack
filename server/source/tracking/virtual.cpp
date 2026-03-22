@@ -24,6 +24,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
 
+static Eigen::Vector3f AxisToUnit(TrackerAxis axis)
+{
+	Eigen::Vector3f unit = Eigen::Vector3f::Zero();
+	unit[axis & TrackerAxis::AXIS_MASK] = (axis & TrackerAxis::AXIS_SIGN)? -1 : 1;
+	return unit;
+}
+
 TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &observation,
 	std::vector<TrackerState*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params)
 {
@@ -55,6 +62,73 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		LOG(LTracking, LDebug, "Virtual Tracker detected after %" PRId64 " frames!", frame - state.lastObsFrame);
 	}
 
+	TrackingResult trackResult = TrackingResult::TRACKED_VIRTUAL;
+
+	auto realignTracker = [&]()
+	{
+		// Redetermine position based on centerweights
+		virt.config.centerWeights.resize(virt.config.ids.size(), 1);
+		Eigen::Vector3f offset = Eigen::Vector3f::Zero();
+		float weight = 0;
+		for (int t = 0; t < virt.config.ids.size(); t++)
+		{
+			offset += virt.config.offsetPos[t] * virt.config.centerWeights[t];
+			weight += virt.config.centerWeights[t];
+		}
+		offset /= weight;
+		for (int t = 0; t < virt.config.ids.size(); t++)
+			virt.config.offsetPos[t] -= offset;
+		state.state.position() += offset.cast<double>();
+
+		// Redetermine rotation
+		Eigen::Quaternionf alignment = Eigen::Quaternionf::Identity();
+
+		if (!virt.config.copyAxis.sources.empty())
+		{
+			Eigen::Vector3f copiedAxis = Eigen::Vector3f::Zero();
+			int sources = 0;
+			for (auto &source : virt.config.copyAxis.sources)
+			{
+				if (source.tracker < 0 || source.tracker >= virt.config.ids.size()) continue;
+				sources++;
+				copiedAxis += virt.config.offsetRot[source.tracker] * AxisToUnit(source.axis);
+			}
+			if (sources > 0)
+			{
+				copiedAxis /= sources;
+				Eigen::Vector3f curAxis = alignment * AxisToUnit(virt.config.copyAxis.axis);
+				alignment = Eigen::Quaternionf::FromTwoVectors(curAxis, copiedAxis) * alignment;
+			}
+		}
+
+		if (virt.config.alignAxis.tracker >= 0 && virt.config.alignAxis.tracker < virt.config.ids.size())
+		{
+			Eigen::Vector3f alignAxis = virt.config.offsetPos[virt.config.alignAxis.tracker] - virt.config.centerOffset;
+			Eigen::Vector3f curAxis = alignment * AxisToUnit(virt.config.alignAxis.axis);
+			alignment = Eigen::Quaternionf::FromTwoVectors(curAxis, alignAxis) * alignment;
+		}
+
+		if (virt.config.copyRotationFromTracker >= 0 && virt.config.copyRotationFromTracker < virt.config.ids.size())
+		{
+			alignment = virt.config.offsetRot[virt.config.copyRotationFromTracker];
+		}
+
+		// Apply new alignment
+		for (int t = 0; t < virt.config.ids.size(); t++)
+		{
+			virt.config.offsetRot[t] = alignment.conjugate() * virt.config.offsetRot[t];
+			virt.config.offsetPos[t] = alignment.conjugate() * virt.config.offsetPos[t];
+		}
+		state.state.setQuaternion(alignment.cast<double>() * state.state.getCombinedQuaternion());
+		state.state.incrementalOrientation().setZero();
+
+		// Apply center offset
+		for (int t = 0; t < virt.config.ids.size(); t++)
+			virt.config.offsetPos[t] -= virt.config.centerOffset;
+		state.state.position() += virt.config.centerOffset.cast<double>();
+
+	};
+
 	auto initialiseOffsets = [&]()
 	{
 		// Pick any initial center and rotation
@@ -80,6 +154,9 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
 		state.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
 		state.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
+
+		// Realign based on actual config
+		realignTracker();
 	};
 
 	if (state.firstObsFrame < 0 || virt.config.offsetPos.size() != virt.config.ids.size())
@@ -87,11 +164,18 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		if (!allTracked) return TrackingResult::NO_TRACK;
 		LOG(LTracking, LDebug, "Initialising virtual tracker for the first time!");
 		initialiseOffsets();
+		virt.alignmentDirty = false;
 		if (state.firstObsFrame < 0)
 		{
 			state.firstObsFrame = frame;
 			state.firstObservation = time;
 		}
+	}
+
+	if (virt.alignmentDirty)
+	{
+		virt.alignmentDirty = false;
+		realignTracker();
 	}
 
 	// Predict new state
@@ -126,6 +210,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct virtual pose with pose from subtracker %d!", t);
 			virt.mistrustFrames += 5;
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 	}
 
@@ -165,6 +250,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 				virt.mistrustFrames, frame - virt.lastValidFrame);
 			initialiseOffsets();
 			virt.mistrustFrames = 0;
+			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 
 		if (params.calibration.lerpFactorPos > 0.0f || params.calibration.lerpFactorRot > 0.0f)
@@ -182,6 +268,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 				diffRot = diffAA;
 				virt.config.offsetRot[t] = virt.config.offsetRot[t] * diffRot;
 			}
+
+			if (true)
+			{ // Ensure despite lerping the desired centering/alignment is kept
+				realignTracker();
+			}
 		}
 	}
 
@@ -192,5 +283,5 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	observation.time = time;
 
-	return TrackingResult::TRACKED_VIRTUAL;
+	return trackResult;
 }

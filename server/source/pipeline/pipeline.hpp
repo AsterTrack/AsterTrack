@@ -328,7 +328,7 @@ void SetTrackedMarker(PipelineState &pipeline, int ID, std::string label, float 
 void RemoveVirtualTracker(PipelineState &pipeline, int ID);
 
 /* Add or update a virtual tracker with given config */
-void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, const TrackerVirtualConfig &config);
+void SetVirtualTracker(PipelineState &pipeline, int ID, std::string label, TrackerVirtualConfig config);
 
 /* Associate the IMU to a tracker with given calibration, clearing it's orphaned status */
 bool AssociateIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu, int trackerID, IMUCalib calib);

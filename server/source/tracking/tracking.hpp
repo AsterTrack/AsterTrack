@@ -221,6 +221,7 @@ struct TrackerVirtual
 	// Current internal state
 	OptFrameNum lastValidFrame;
 	OptFrameNum mistrustFrames;
+	bool alignmentDirty;
 
 	// Stored in TrackerRecord, for visualisation
 	std::vector<Eigen::Vector3f> relations; // Calibrated offsets of a virtual tracker to subtrackers in world space

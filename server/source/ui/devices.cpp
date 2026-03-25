@@ -353,6 +353,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::BeginGroup();
 		switch (controller.status.powerState)
 		{
+			case POWER_RESETTING:
 			case POWER_WAITING:
 				ImGui::TextUnformatted("No Power");
 				break;

@@ -248,21 +248,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 
 	EnableADCs();
 
-	// Try enabling PD power in if PD was already setup and power is good
-	if (EnablePowerPDIn())
-	{
-		powerInState = POWER_PD_IN;
-		SetAnalogWatchdogPDIn();
-		POW_STR("/Existing_PD_Pwr");
-	}
-	else
-	{ // Wait for PD/Ext Voltage to rise
-		powerInState = POWER_WAITING;
-		SetAnalogWatchdogPDSrc();
-		SetAnalogWatchdogExtSrc();
-		POW_STR("/Awaiting_Pwr_In");
-	}
-
 	// Init Packet hub (distributing incoming UART packages to USB endpoints)
 	InitPacketHub();
 
@@ -547,6 +532,24 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		if (now-lastTimeoutCheck < 20*TICKS_PER_MS)
 			continue;
 		lastTimeoutCheck = now;
+
+		if (powerInState == POWER_RESETTING && now-startup > 50*TICKS_PER_MS)
+		{ // Try enabling PD power in if PD was already setup and power is good
+			if (EnablePowerPDIn())
+			{
+				powerInState = POWER_PD_IN;
+				SetAnalogWatchdogPDIn();
+				POW_STR("/Existing_PD_Pwr");
+			}
+			else
+			{ // Wait for PD/Ext Voltage to rise
+				powerInState = POWER_WAITING;
+				SetAnalogWatchdogPDSrc();
+				SetAnalogWatchdogExtSrc();
+				POW_STR("/Awaiting_Pwr_In");
+			}
+		}
+
 
 	#ifdef ADC_LOG
 		static TimePoint lastVoltagePrint = 0;

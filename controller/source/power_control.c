@@ -50,6 +50,8 @@ void EnableADCs()
 	ADC1->CTLR2 |= ADC_ADON;
 	ADC2->CTLR2 |= ADC_ADON;
 
+	powerInState = POWER_RESETTING;
+
 	delayUS(5); // Wait at least 3.7us for first ADC sample
 }
 

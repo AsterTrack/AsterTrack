@@ -64,6 +64,7 @@ enum ControllerPortStatus
 
 enum ControllerPowerState
 {
+	POWER_RESETTING,
 	POWER_WAITING,
 	POWER_PD_IN,
 	POWER_EXT_IN,

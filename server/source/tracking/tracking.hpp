@@ -223,9 +223,14 @@ struct TrackerVirtual
 	OptFrameNum mistrustFrames;
 	bool alignmentDirty;
 
+	// Calibrated up vector of each subtracker, manually calibrated
+	int collectingUpVectors;
+	std::vector<Eigen::Matrix4f> trackerUpAccum;
+	std::vector<Eigen::Quaternionf> trackerUpVector;
+
 	// Stored in TrackerRecord, for visualisation
 	std::vector<Eigen::Vector3f> relations; // Calibrated offsets of a virtual tracker to subtrackers in world space
-	std::vector<std::pair<Eigen::Vector3f,Eigen::Vector3f>> relationsReverse; // Relation from subtracker to the virtual tracker in world space
+	std::vector<VirtualSubtrackerDebug> subtrackers; // Debug information for each subtracker that is currently tracked
 };
 
 /* Tracked Object Representations */

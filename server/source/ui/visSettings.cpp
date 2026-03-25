@@ -114,6 +114,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		{
 			ImGui::Checkbox("Show Relation to Subtrackers", &visState.tracking.showRelations);
 			ImGui::Checkbox("Debug relation from Subtrackers", &visState.tracking.debugRelationsReverse);
+			ImGui::Checkbox("Debug Up Vectors", &visState.tracking.debugUpVectors);
 			ImGui::TreePop();
 		}
 

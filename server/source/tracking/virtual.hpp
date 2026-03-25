@@ -43,6 +43,13 @@ enum TrackerAxis
 	AXIS_ZN = AXIS_Z | AXIS_SIGN,
 };
 
+struct VirtualSubtrackerDebug
+{
+	Eigen::Vector3f position;
+	Eigen::Vector3f relation;
+	Eigen::Vector3f upAxis;
+};
+
 struct TrackerVirtualConfig
 {
 	VirtualTrackerType type;
@@ -68,12 +75,12 @@ struct TrackerVirtualConfig
 	struct
 	{ // Copy/Average axis from specific axes of selected trackers
 		std::vector<AxisSource> sources;
-		TrackerAxis axis;
+		TrackerAxis axis = TrackerAxis::AXIS_XP;
 	} copyAxis;
 	struct
 	{ // Align axis to point from weighted center to selected tracker
 		int tracker = -1;
-		TrackerAxis axis;
+		TrackerAxis axis = TrackerAxis::AXIS_YP;
 	} alignAxis;
 	// Future Ideas:
 	/* struct
@@ -83,13 +90,12 @@ struct TrackerVirtualConfig
 		std::vector<bool> mask;
 		TrackerAxis axis;
 	} fitPlane; */
-	/* struct
+	struct
 	{ // Manually calibrate up axis via button in trackers UI
-		// TODO: How would it interface with the pipeline?
-		// How to store persistent rotation "offset" when none of the trackers is considered fixed and can be used as reference? 
-		bool enable = false;
-		TrackerAxis axis;
-	} calibrateUp; */
+		TrackerAxis axis = TrackerAxis::AXIS_ZP;
+		bool trigger = false;
+		bool clear = false;
+	} calibrateUp;
 
 	// These are currently only calibrated and stored per session
 	// If they will ever be stored, they need to be kept in sync with ids

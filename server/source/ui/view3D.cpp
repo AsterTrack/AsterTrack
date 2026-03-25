@@ -650,26 +650,43 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 			std::vector<std::pair<VisPoint,VisPoint>> edges(
 				(visState.tracking.showRelations? trackRecord.virtualRelations.size() : 0) + 
-				(visState.tracking.debugRelationsReverse? trackRecord.virtualRelationsReverse.size() : 0));
+				(visState.tracking.debugRelationsReverse? trackRecord.virtualSubtrackers.size() : 0) + 
+				(visState.tracking.debugUpVectors? trackRecord.virtualSubtrackers.size() : 0));
+			int edgeBaseIndex = 0;
 			if (visState.tracking.showRelations)
 			{
 				const Color8 colOffset = Color{ 1.0, 0.1, 0.4, 0.8 };
 				for (int i = 0; i < trackRecord.virtualRelations.size(); i++)
 				{
+					int j = edgeBaseIndex + i;
 					edges[i].first = { trackRecord.poseFiltered.translation(), colOffset };
-					edges[i].second = { trackRecord.poseFiltered.translation() + trackRecord.virtualRelations[i], colOffset };
+					edges[i].second = { trackRecord.poseFiltered.translation() + trackRecord.virtualRelations[j], colOffset };
 				}
+				edgeBaseIndex += trackRecord.virtualRelations.size();
 			}
 			if (visState.tracking.debugRelationsReverse)
 			{
 				const Color8 colRelation = Color{ 0.7f, 0.6f, 0.2f, 0.6f };
-				for (int i = 0; i < trackRecord.virtualRelationsReverse.size(); i++)
+				for (int i = 0; i < trackRecord.virtualSubtrackers.size(); i++)
 				{
-					int j = trackRecord.virtualRelations.size() + i;
-					edges[j].first = { trackRecord.virtualRelationsReverse[i].first, colRelation };
-					edges[j].second = { trackRecord.virtualRelationsReverse[i].first + trackRecord.virtualRelationsReverse[i].second, colRelation };
+					int j = edgeBaseIndex + i;
+					edges[j].first = { trackRecord.virtualSubtrackers[i].position, colRelation };
+					edges[j].second = { trackRecord.virtualSubtrackers[i].position + trackRecord.virtualSubtrackers[i].relation, colRelation };
 				}
+				edgeBaseIndex += trackRecord.virtualSubtrackers.size();
 			}
+			if (visState.tracking.debugUpVectors)
+			{
+				const Color8 colRelation = Color{ 0.4f, 0.2f, 0.7f, 0.8f };
+				for (int i = 0; i < trackRecord.virtualSubtrackers.size(); i++)
+				{
+					int j = edgeBaseIndex + i;
+					edges[j].first = { trackRecord.virtualSubtrackers[i].position, colRelation };
+					edges[j].second = { trackRecord.virtualSubtrackers[i].position + trackRecord.virtualSubtrackers[i].upAxis, colRelation };
+				}
+				edgeBaseIndex += trackRecord.virtualSubtrackers.size();
+			}
+			assert(edgeBaseIndex == edges.size());
 			visualiseLines(edges, 1);
 
 			continue;

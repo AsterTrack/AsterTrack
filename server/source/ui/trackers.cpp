@@ -32,6 +32,41 @@ extern ctpl::thread_pool threadPool;
 #include <filesystem>
 #include <numeric>
 
+void InterfaceState::ManualUpCalibrationControl(ServerState &state, TrackerConfig &tracker)
+{ // Manual up vector alignment
+	static bool startedCalibrationTimeout = false;
+	static TimePoint_t calibrationTimeout;
+	if (startedCalibrationTimeout)
+	{
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text("Calibrating up direction in %.1f seconds...", dtS(sclock::now(), calibrationTimeout));
+		if (sclock::now() > calibrationTimeout)
+		{
+			startedCalibrationTimeout = false;
+			tracker.virtConfig.calibrateUp.trigger = true;
+			ServerUpdateTrackerConfig(state, tracker);
+			tracker.virtConfig.calibrateUp.trigger = false;
+		}
+	}
+	else
+	{
+		float width = LineWidthRemaining() - ImGui::GetStyle().ItemSpacing.x - ImGui::GetFrameHeight();
+		if (ImGui::Button("Manually Align Up Direction", ImVec2(width,0)))
+		{
+			startedCalibrationTimeout = true;
+			calibrationTimeout = sclock::now() + std::chrono::seconds(3);
+		}
+		ImGui::SameLine();
+		if (CrossButton("ClearAlign"))
+		{
+			tracker.virtConfig.calibrateUp.clear = true;
+			ServerUpdateTrackerConfig(state, tracker);
+			tracker.virtConfig.calibrateUp.clear = false;
+		}
+		ImGui::SetItemTooltip("Clear any manually calibrated up direction.");
+	}
+}
+
 void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
 	auto discardSelection = []
@@ -709,6 +744,15 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				ImGui::BeginDisabled(config.alignAxis.tracker < 0);
 				virtConfigChanged |= axisSelector("Aligned Axis", config.alignAxis.axis);
 				ImGui::EndDisabled();
+			}
+
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("Manual Up Direction");
+
+				virtConfigChanged |= axisSelector("Up Axis", config.calibrateUp.axis);
+
+				ManualUpCalibrationControl(state, tracker);
 			}
 
 			ImGui::EndDisabled();

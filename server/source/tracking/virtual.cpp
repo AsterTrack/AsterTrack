@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "tracking/kalman.hpp"
 
 #include "util/log.hpp"
+#include "signals.hpp"
 
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
@@ -42,9 +43,9 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	assert(virt.config.type == VirtualTrackerType::STATIC);
 
 	virt.relations.clear();
-	virt.relationsReverse.clear();
+	virt.subtrackers.clear();
 	virt.relations.reserve(subtrackers.size());
-	virt.relationsReverse.reserve(subtrackers.size());
+	virt.subtrackers.reserve(subtrackers.size());
 
 	bool allTracked = !subtrackers.empty();
 	int numTracked = 0;
@@ -108,6 +109,16 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 			alignment = Eigen::Quaternionf::FromTwoVectors(curAxis, alignAxis) * alignment;
 		}
 
+		if (virt.trackerUpVector.size() == virt.config.ids.size())
+		{
+			Eigen::Vector3f upAxis = Eigen::Vector3f::Zero();
+			for (int t = 0; t < virt.config.ids.size(); t++)
+				upAxis += virt.config.offsetRot[t] * virt.trackerUpVector[t].conjugate() * Eigen::Vector3f::UnitZ();
+			upAxis /= virt.config.ids.size();
+			Eigen::Vector3f curAxis = alignment * AxisToUnit(virt.config.calibrateUp.axis);
+			alignment = Eigen::Quaternionf::FromTwoVectors(curAxis, upAxis) * alignment;
+		}
+
 		if (virt.config.copyRotationFromTracker >= 0 && virt.config.copyRotationFromTracker < virt.config.ids.size())
 		{
 			alignment = virt.config.offsetRot[virt.config.copyRotationFromTracker];
@@ -119,7 +130,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 			virt.config.offsetRot[t] = alignment.conjugate() * virt.config.offsetRot[t];
 			virt.config.offsetPos[t] = alignment.conjugate() * virt.config.offsetPos[t];
 		}
-		state.state.setQuaternion(alignment.cast<double>() * state.state.getCombinedQuaternion());
+		state.state.setQuaternion(state.state.getCombinedQuaternion() * alignment.cast<double>());
 		state.state.incrementalOrientation().setZero();
 
 		// Apply center offset
@@ -129,7 +140,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 
 	};
 
-	auto initialiseOffsets = [&]()
+	auto calibrateTracker = [&]()
 	{
 		// Pick any initial center and rotation
 		Eigen::Vector3f center = Eigen::Vector3f::Zero();
@@ -163,7 +174,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	{
 		if (!allTracked) return TrackingResult::NO_TRACK;
 		LOG(LTracking, LDebug, "Initialising virtual tracker for the first time!");
-		initialiseOffsets();
+		calibrateTracker();
 		virt.alignmentDirty = false;
 		if (state.firstObsFrame < 0)
 		{
@@ -172,10 +183,62 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		}
 	}
 
+	if (virt.config.calibrateUp.clear)
+	{
+		virt.config.calibrateUp.clear = false;
+		virt.collectingUpVectors = 0;
+		virt.trackerUpVector.clear();
+		virt.trackerUpAccum.clear();
+		LOG(LTracking, LInfo, "Clearing calibration of up vector for virtual tracker!");
+	}
+
 	if (virt.alignmentDirty)
 	{
 		virt.alignmentDirty = false;
 		realignTracker();
+	}
+
+	const int CalibrateUpNum = 20;
+	if (virt.config.calibrateUp.trigger)
+	{
+		virt.config.calibrateUp.trigger = false;
+		virt.collectingUpVectors = CalibrateUpNum;
+		virt.trackerUpVector.clear();
+		virt.trackerUpAccum.clear();
+		virt.trackerUpAccum.resize(subtrackers.size(), Eigen::Matrix4f::Zero());
+	}
+
+	if (virt.collectingUpVectors > 0 && allTracked)
+	{
+		for (int t = 0; t < subtrackers.size(); t++)
+		{
+			Eigen::Vector4f quat = subtrackers[t]->state.getCombinedQuaternion().cast<float>().coeffs();
+			if (quat.x() < 0) quat = -quat;
+			virt.trackerUpAccum[t] += quat * quat.adjoint();
+		}
+		virt.collectingUpVectors--;
+		if (virt.collectingUpVectors == 0)
+		{
+			virt.trackerUpVector.resize(subtrackers.size());
+			bool fail = false;
+			for (int t = 0; t < subtrackers.size(); t++)
+			{
+				Eigen::SelfAdjointEigenSolver<Eigen::Matrix4f> eigensolver(virt.trackerUpAccum[t]);
+				virt.trackerUpVector[t] = Eigen::Quaternionf(eigensolver.eigenvectors().col(3)).normalized();
+				if (eigensolver.info() != Eigen::Success)
+				{
+					LOG(LTracking, LWarn, "Failed to average rotation of tracker %d!", t);
+					fail = true;
+				}
+			}
+			virt.trackerUpAccum = {};
+			if (fail)
+			{
+				virt.trackerUpVector.clear();
+				SignalErrorToUser("Failed to calibrate up vector!");
+			}
+			realignTracker();
+		}
 	}
 
 	// Predict new state
@@ -197,7 +260,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		Eigen::Vector3f relation = obsRot[t] * virt.config.offsetPos[t];
 		obsPos[t] = subtrackers[t]->state.position().cast<float>() - relation;
 
-		virt.relationsReverse.push_back({ subtrackers[t]->state.position().cast<float>(), -relation });
+		// Enter debug information for subtrackers
+		Eigen::Vector3f upAxis = Eigen::Vector3f::Zero();
+		if (virt.trackerUpVector.size() == subtrackers.size())
+			upAxis = (subtrackers[t]->state.getQuaternion().cast<float>() * virt.trackerUpVector[t].conjugate()) * Eigen::Vector3f::UnitZ();
+		virt.subtrackers.push_back({ subtrackers[t]->state.position().cast<float>(), -relation, upAxis });
 
 		// TODO: transfer covariance from subtracker
 		CovarianceMatrix virtCov = params.filter.getSyntheticCovariance<float>();
@@ -248,12 +315,15 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		{ // Redetermine offsets when limit has been reached
 			LOG(LTracking, LDarn, "Redetermine virtual tracker offsets after mistrust of %" PRId64 " frames (last match %" PRId64 " ago)!",
 				virt.mistrustFrames, frame - virt.lastValidFrame);
-			initialiseOffsets();
+			calibrateTracker();
 			virt.mistrustFrames = 0;
+			virt.collectingUpVectors = 0;
+			virt.trackerUpAccum.clear();
 			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 
-		if (params.calibration.lerpFactorPos > 0.0f || params.calibration.lerpFactorRot > 0.0f)
+		if ((params.calibration.lerpFactorPos > 0.0f || params.calibration.lerpFactorRot > 0.0f)
+			&& allTracked && virt.collectingUpVectors == 0)
 		{ // Slowly adapt offset to current state
 			for (int t = 0; t < subtrackers.size(); t++)
 			{

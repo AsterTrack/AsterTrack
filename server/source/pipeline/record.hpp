@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imu/imu.hpp"
 #include "tracking/cluster.hpp"
+#include "tracking/virtual.hpp"
 
 #include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
@@ -226,7 +227,7 @@ struct TrackerRecord
 	// TODO: Consider garbage-collecting visualisation data in frameRecords or storing it separately
 	std::vector<std::vector<int>> visibleMarkers;
 	std::vector<Eigen::Vector3f> virtualRelations; // Relations from virtual tracker to subtrackers in world space
-	std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> virtualRelationsReverse; // Relations between virtual tracker and tracked subtrackers
+	std::vector<VirtualSubtrackerDebug> virtualSubtrackers;
 };
 
 struct FrameRecord

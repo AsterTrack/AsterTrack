@@ -208,6 +208,7 @@ struct VisualisationState
 		// Virtual Trackers
 		bool showRelations = true;
 		bool debugRelationsReverse;
+		bool debugUpVectors;
 	} tracking;
 
 	struct
@@ -475,6 +476,7 @@ public:
 	void UpdateInsights(InterfaceWindow &window);
 
 	void UpdateTrackers(InterfaceWindow &window);
+		void ManualUpCalibrationControl(ServerState &state, TrackerConfig &tracker);
 	void UpdateIntegrations(InterfaceWindow &window);
 
 	void UpdateDevices(InterfaceWindow &window);

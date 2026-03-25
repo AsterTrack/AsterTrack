@@ -266,6 +266,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		ImGui::PopID();
 		ImGui::Dummy(ImVec2(0, 4));
 
+		if (visState.tracking.focusedTrackerID != 0)
+		{
+			auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+			if (trackConfig->type == TrackerConfig::TRACKER_VIRTUAL)
+			{
+				ManualUpCalibrationControl(state, *trackConfig);
+			}
+		}
+
 		if (displayInternalDebug && visFrame && visState.tracking.focusedTrackerID != 0)
 		{
 			// Temporary debug tools, data, etc.

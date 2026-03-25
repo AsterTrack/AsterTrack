@@ -203,6 +203,30 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 				}
 			}
 		}
+		if (cfg.contains("integrations"))
+		{
+			auto &integrations = cfg["integrations"];
+			if (integrations.contains("vrpn"))
+			{
+				auto &vrpn = integrations["vrpn"];
+				if (vrpn.contains("host"))
+					config.integrations.vrpn_host = vrpn["host"].get<std::string>();
+				if (vrpn.contains("port"))
+					config.integrations.vrpn_port = vrpn["port"].get<int>();
+				if (vrpn.contains("auto_enable"))
+					config.integrations.vrpn_auto_enable = vrpn["auto_enable"].get<bool>();
+			}
+			if (integrations.contains("vmc"))
+			{
+				auto &vmc = integrations["vmc"];
+				if (vmc.contains("host"))
+					config.integrations.vmc_host = vmc["host"].get<std::string>();
+				if (vmc.contains("port"))
+					config.integrations.vmc_port = vmc["port"].get<int>();
+				if (vmc.contains("auto_enable"))
+					config.integrations.vmc_auto_enable = vmc["auto_enable"].get<bool>();
+			}
+		}
 	}
 	JSON_PARSE_CATCH_BLOCK
 

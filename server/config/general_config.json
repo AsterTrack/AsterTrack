@@ -6,5 +6,17 @@
 			{ "path": "Target_Sparse.obj", "markerViewAngle": 270, "markerSizeMM": 12 }
 		],
 		"cameras": "camera_simulated.json"
+	},
+	"integrations" : {
+		"vrpn": {
+			"auto_enable": false,
+			"host": "",
+			"port": 3883
+		},
+		"vmc": {
+			"auto_enable": false,
+			"host": "",
+			"port": 39540
+		}
 	}
 }

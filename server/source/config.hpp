@@ -79,14 +79,14 @@ struct ControllerConfig
 struct TrackerConfig
 {
 	enum TrackerType
-	{
+	{ // Saved on disk, don't change
 		TRACKER_TARGET = 1,
 		TRACKER_MARKER = 2,
 		TRACKER_VIRTUAL = 3
 	};
 
 	enum TrackerTrigger
-	{
+	{ // Saved on disk, don't change
 		TRIGGER_BY_DEFAULT = 0,
 		TRIGGER_ONLY_MANUALLY = (1 << 0),
 		TRIGGER_ON_IMU_CONNECT = (1 << 1),
@@ -97,11 +97,19 @@ struct TrackerConfig
 	};
 
 	enum TrackerExpose
-	{
+	{ // Saved on disk, don't change
 		EXPOSE_BY_DEFAULT = 0,
 		EXPOSE_ONCE_TRIGGERED = 1,
 		EXPOSE_ONCE_TRACKED = 2,
 		EXPOSE_MAX
+	};
+
+	enum TrackerRole
+	{ // Saved on disk, don't change
+		ROLE_TRACKER = 0,
+		ROLE_HMD = 1,
+		ROLE_CONTROLLER = 2,
+		ROLE_MAX
 	};
 
 	// General Config
@@ -111,6 +119,7 @@ struct TrackerConfig
 	bool isSimulated = false;
 	TrackerTrigger trigger = TRIGGER_BY_DEFAULT;
 	TrackerExpose expose = EXPOSE_BY_DEFAULT;
+	TrackerRole role = ROLE_TRACKER;
 
 	// Tracker specific dirty flags
 	bool configDirty = false;

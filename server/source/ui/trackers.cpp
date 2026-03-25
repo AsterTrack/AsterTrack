@@ -390,6 +390,21 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		changed |= ImGui::InputText("##TrkLabel", &tracker.label);
 
 		ImGui::AlignTextToFramePadding();
+		BeginLabelledGroup("Role");
+		std::array<const char*,3> roleLabel;
+		roleLabel[TrackerConfig::ROLE_TRACKER] = "Tracker";
+		roleLabel[TrackerConfig::ROLE_HMD] = "HMD";
+		roleLabel[TrackerConfig::ROLE_CONTROLLER] = "Controller";
+		int roleEnum = tracker.role;
+		if (ImGui::Combo("##Role", &roleEnum, roleLabel.data(), roleLabel.size()))
+		{
+			tracker.role = (TrackerConfig::TrackerRole)roleEnum;
+			changed = true;
+		}
+		ImGui::EndGroup();
+		ImGui::SetItemTooltip("Role to use when interfacing with integrations.");
+
+		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Trigger Conditions");
 		std::array<const char*,7> triggerLabels;
 		triggerLabels.fill("Invalid State");
@@ -439,13 +454,12 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Expose Conditions");
-		const TrackerConfig::TrackerExpose exposeMap[] = { TrackerConfig::EXPOSE_BY_DEFAULT, TrackerConfig::EXPOSE_ONCE_TRIGGERED, TrackerConfig::EXPOSE_ONCE_TRACKED };
 		std::array<const char*,3> exposeLabel;
 		exposeLabel[TrackerConfig::EXPOSE_BY_DEFAULT] = "By Default";
 		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRIGGERED] = "Once Triggered";
 		exposeLabel[TrackerConfig::EXPOSE_ONCE_TRACKED] = "Once Tracked";
 		int exposeCond = tracker.expose;
-		if (ImGui::Combo("##ExpCond", &exposeCond, exposeLabel.data(), 3))
+		if (ImGui::Combo("##ExpCond", &exposeCond, exposeLabel.data(), exposeLabel.size()))
 		{
 			tracker.expose = (TrackerConfig::TrackerExpose)exposeCond;
 			changed = true;

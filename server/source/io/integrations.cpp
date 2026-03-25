@@ -219,7 +219,10 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 			auto cfg_tracker = std::find_if(server.trackerConfigs.begin(), server.trackerConfigs.end(),
 					[&](auto &t){ return t.id == trackRecord.id; });
 			if (cfg_tracker == server.trackerConfigs.end()) continue;
-			trackers.emplace_back(VMCRole::Tracker,
+			VMCRole role = VMCRole::Tracker;
+			if (cfg_tracker->role == TrackerConfig::ROLE_HMD) role = VMCRole::HMD;
+			if (cfg_tracker->role == TrackerConfig::ROLE_CONTROLLER) role = VMCRole::Controller;
+			trackers.emplace_back(role,
 				cfg_tracker->label,
 				trackRecord.poseFiltered
 			);

@@ -658,9 +658,12 @@ static std::optional<ErrorMessage> parseTrackerConfigurationLegacy(std::filesyst
 		jsTracker["label"].get<std::string>(),
 		(TrackerConfig::TrackerType)jsTracker["type"].get<int>());
 
-	tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
-	tracker.expose = jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX?
-		(TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>() : TrackerConfig::EXPOSE_BY_DEFAULT;
+	if (jsTracker.contains("trigger"))
+		tracker.trigger = (TrackerConfig::TrackerTrigger)(jsTracker["trigger"].get<int>() & TrackerConfig::TRIGGER_MASK);
+	if (jsTracker.contains("expose") && jsTracker["expose"].get<int>() < TrackerConfig::EXPOSE_MAX)
+		tracker.expose = (TrackerConfig::TrackerExpose)jsTracker["expose"].get<int>();
+	if (jsTracker.contains("role") && jsTracker["role"].get<int>() < TrackerConfig::ROLE_MAX)
+		tracker.role = (TrackerConfig::TrackerRole)jsTracker["role"].get<int>();
 
 	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 	{
@@ -835,6 +838,7 @@ static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, co
 	jsTracker["type"] = tracker.type;
 	jsTracker["trigger"] = tracker.trigger;
 	jsTracker["expose"] = tracker.expose;
+	jsTracker["role"] = tracker.role;
 
 	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 	{

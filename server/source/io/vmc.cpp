@@ -41,6 +41,8 @@ struct vmc_output
 {
 	std::string host, port;
 	int socket = -1;
+	bool connected = false;
+	bool erroneous = false;
 };
 
 const std::array<std::string, (std::size_t)VMCRole::MAX> deviceRoleMap = {
@@ -105,12 +107,17 @@ opaque_ptr<vmc_output> vmc_init_output(const std::string &host, const std::strin
 	return make_opaque<vmc_output>(host, port);
 }
 
-bool vmc_is_connected(opaque_ptr<vmc_output> &vmc)
+bool vmc_is_opened(opaque_ptr<vmc_output> &vmc)
 {
 	return vmc->socket >= 0;
 }
 
-bool vmc_try_connect(opaque_ptr<vmc_output> &vmc)
+bool vmc_is_connected(opaque_ptr<vmc_output> &vmc)
+{
+	return vmc->socket >= 0 && vmc->connected;
+}
+
+bool vmc_try_open(opaque_ptr<vmc_output> &vmc)
 {
 	if (vmc->socket >= 0) return true;
 
@@ -119,7 +126,7 @@ bool vmc_try_connect(opaque_ptr<vmc_output> &vmc)
 	if (error)
 		LOG(LIO, LError, "%s", error->c_str());
 	else
-		LOG(LIO, LInfo, "Connected to VMC server %s!\n", getAddrString(&addr).c_str());
+		LOG(LIO, LInfo, "Opened VMC server port %s!\n", getAddrString(&addr).c_str());
 	return !error.has_value();
 }
 
@@ -132,17 +139,29 @@ static bool vmc_send(opaque_ptr<vmc_output> &vmc, osc::OutboundPacketStream &p)
 #if defined(_WIN32)
 		if (SOCKET_ERR_NUM == WSAECONNRESET)
 #elif defined(__unix__)
-		if (SOCKET_ERR_NUM == EPIPE)
+		if (SOCKET_ERR_NUM == (int)std::errc::broken_pipe)
 #endif
 		{
-			LOG(LIO, LWarn, "VMC socket disconnected!");
+			LOG(LIO, LWarn, "VMC socket broke!");
 			socket_close(vmc->socket);
 			vmc->socket = -1;
 			return false;
 		}
+#if defined(_WIN32)
+		if (SOCKET_ERR_NUM == WSAENETUNREACH)
+#elif defined(__unix__)
+		if (SOCKET_ERR_NUM == (int)std::errc::network_unreachable)
+#endif
+		{
+			vmc->connected = false;
+			return false;
+		}
 		LOG(LIO, LWarn, "VMC socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		vmc->erroneous = true;
 		return false;
 	}
+	vmc->erroneous = false;
+	vmc->connected = true;
 	return true;
 }
 

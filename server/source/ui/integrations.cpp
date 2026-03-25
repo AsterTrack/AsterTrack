@@ -129,10 +129,12 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 		{
 			auto io_lock = std::unique_lock(state.io.mutex);
 
-			if (!vmc_is_connected(state.io.vmc.output))
-				ImGui::Text("Trying to connect to '%s'...", state.io.vmc.host.c_str());
+			if (!vmc_is_opened(state.io.vmc.output))
+				ImGui::Text("Trying to open port '%s'...", state.io.vmc.host.c_str());
+			else if (!vmc_is_connected(state.io.vmc.output))
+				ImGui::Text("Trying to reach '%s'...", state.io.vmc.host.c_str());
 			else
-				ImGui::Text("Connected to '%s'.", state.io.vmc.host.c_str());
+				ImGui::Text("Sending to '%s'.", state.io.vmc.host.c_str());
 		}
 	}
 

@@ -90,7 +90,7 @@ static std::optional<ErrorMessage> socket_udp_init(const std::string &host, cons
 	status = connect(sock, server_addr->ai_addr, server_addr->ai_addrlen);
 	if (status < 0)
 	{
-		close(sock);
+		socket_close(sock);
 		sock = -1;
 		freeaddrinfo(server_addr);
 		return asprintf_s("Failed to connect to UDP remote '%s:%s'!", host.c_str(), port.c_str());

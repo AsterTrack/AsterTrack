@@ -29,7 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Forward-declared opaque structs
 class vrpn_Connection; // io/vrpn.hpp
 class vrpn_Tracker_AsterTrack; // io/vrpn.hpp
-class vmc_output; // io/vmc.hpp
+struct vmc_output; // io/vmc.hpp
 struct ServerState; // server.hpp
 
 struct IntegrationsState

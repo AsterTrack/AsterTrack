@@ -176,12 +176,12 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 					for (auto &md : targets)
 					{
 						if (md.is_string())
-							error = parseTargetObjFile(basePath / md, config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
+							error = parseTargetObjFile((basePath / md).string(), config.simulation.trackingTargets, defaultMarkerFoV, defaultMarkerSize);
 						else if (md.is_object())
 						{
 							float v = md.contains("markerViewAngle") && md["markerViewAngle"].is_number()? md["markerViewAngle"].get<float>() : defaultMarkerFoV;
 							float s = md.contains("markerSizeMM") && md["markerSizeMM"].is_number()? md["markerSizeMM"].get<float>() : defaultMarkerSize;
-							error = parseTargetObjFile(basePath / md["path"], config.simulation.trackingTargets, v, s);
+							error = parseTargetObjFile((basePath / md["path"]).string(), config.simulation.trackingTargets, v, s);
 						}
 						if (error) return error;
 					}
@@ -197,7 +197,7 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 				auto &cameras = simulation["cameras"];
 				if (cameras.is_string())
 				{
-					config.simulation.cameraDefPath = basePath / cameras.get<std::string>();
+					config.simulation.cameraDefPath = (basePath / cameras.get<std::string>()).string();
 					auto error = parseCameraCalibrations(config.simulation.cameraDefPath, config.simulation.cameraDefinitions);
 					if (error) return error;
 				}
@@ -652,7 +652,7 @@ static void writeTargetCalib(const TargetCalibration3D &target, json &jsTarget)
 	}
 }
 
-static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::path basePath, json jsTracker, std::optional<TrackerConfig> &trackerConfig)
+static std::optional<ErrorMessage> parseTrackerConfigurationLegacy(std::filesystem::path basePath, json jsTracker, std::optional<TrackerConfig> &trackerConfig)
 {
 	TrackerConfig tracker(jsTracker["id"].get<int>(),
 		jsTracker["label"].get<std::string>(),
@@ -670,7 +670,7 @@ static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::pa
 		{ // Default going forward
 			auto targetFile = basePath / jsTarget["calib"];
 			json jsCalib;
-			auto error = readJSON(targetFile, jsCalib);
+			auto error = readJSON(targetFile.string(), jsCalib);
 			if (error) return error;
 			try { readTargetCalib(jsCalib, tracker.calib); }
 			catch (json::exception e)
@@ -718,10 +718,10 @@ static std::optional<ErrorMessage> parseTrackerConfiguration(std::filesystem::pa
 
 			for (auto &jsCopyAxisSource : jsVirtual["copyAxisSources"])
 			{
-				tracker.virtConfig.copyAxis.sources.emplace_back((TrackerVirtualConfig::AxisSource){
+				tracker.virtConfig.copyAxis.sources.emplace_back(TrackerVirtualConfig::AxisSource{
 					(int)jsCopyAxisSource["idx"].get<int>(),
 					(TrackerAxis)jsCopyAxisSource["axis"].get<int>()
-				});
+				}); 
 			}
 			if (jsVirtual.contains("copyAxis"))
 				tracker.virtConfig.copyAxis.axis = (TrackerAxis)jsVirtual["copyAxis"].get<int>();
@@ -763,12 +763,12 @@ std::optional<ErrorMessage> parseTrackerConfiguration(const std::string &folder,
 	std::filesystem::path path = basePath / asprintf_s("tracker_%d.json", id);
 
 	json jsTracker;
-	auto error = readJSON(path, jsTracker);
+	auto error = readJSON(path.string(), jsTracker);
 	if (error) return error;
 
 	JSON_PARSE_TRY_BLOCK
 	{
-		error = parseTrackerConfiguration(basePath, jsTracker, trackerConfig);
+		error = parseTrackerConfigurationLegacy(basePath.string(), jsTracker, trackerConfig);
 	}
 	JSON_PARSE_CATCH_BLOCK
 
@@ -778,8 +778,8 @@ std::optional<ErrorMessage> parseTrackerConfiguration(const std::string &folder,
 std::optional<ErrorMessage> parseTrackerConfigurations(const std::string &folder, std::vector<TrackerConfig> &trackerConfig)
 {
 	std::filesystem::path basePath = std::filesystem::path(folder);
-	if (!std::filesystem::is_directory(basePath) && !std::filesystem::create_directory(basePath))
-		return asprintf_s("Failed to create target calib directory '%s'!", basePath.c_str());
+	if (!std::filesystem::is_directory(basePath))
+		return asprintf_s("Failed to find target calib directory '%s'!", basePath.c_str());
 
 	std::optional<ErrorMessage> error;
 
@@ -815,7 +815,7 @@ std::optional<ErrorMessage> parseTrackerConfigurationsLegacy(const std::string &
 		for (auto &jsTracker : jsTrackers)
 		{
 			std::optional<TrackerConfig> tracker;
-			error = parseTrackerConfiguration("", jsTracker, tracker);
+			error = parseTrackerConfigurationLegacy("", jsTracker, tracker);
 			if (error) return error;
 			if (tracker)
 				trackerConfig.push_back(std::move(tracker.value()));
@@ -903,8 +903,15 @@ std::optional<ErrorMessage> storeTrackerConfiguration(const std::string &folder,
 {
 	if (tracker.isSimulated) return std::nullopt;
 	std::filesystem::path basePath = std::filesystem::path(folder);
-	if (!std::filesystem::is_directory(basePath) && !std::filesystem::create_directory(basePath))
-		return asprintf_s("Failed to create target calib directory '%s'!", basePath.c_str());
+	try
+	{
+		if (!std::filesystem::is_directory(basePath) && !std::filesystem::create_directory(basePath))
+			return asprintf_s("Failed to create tracker config directory '%s'!", basePath.c_str());
+	}
+	catch (std::filesystem::filesystem_error e)
+	{
+		return asprintf_s("Failed to create tracker config directory '%s'!", basePath.c_str());
+	}
 
 	std::optional<ErrorMessage> error;
 
@@ -915,7 +922,7 @@ std::optional<ErrorMessage> storeTrackerConfiguration(const std::string &folder,
 		error = writeTrackerConfiguration(jsTracker, tracker);
 		if (!error)
 		{
-			error = writeJSON(trackerFile, jsTracker);
+			error = writeJSON(trackerFile.string(), jsTracker);
 			if (!error) tracker.configDirty = false;
 		}
 	}
@@ -929,7 +936,7 @@ std::optional<ErrorMessage> storeTrackerConfiguration(const std::string &folder,
 		{
 			json jsTarget;
 			writeTargetCalib(tracker.calib, jsTarget);
-			error = writeJSON(targetFile, jsTarget);
+			error = writeJSON(targetFile.string(), jsTarget);
 			if (!error) tracker.targetDirty = false;
 		}
 	}

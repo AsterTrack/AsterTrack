@@ -94,7 +94,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 					{"Object Target", "obj"},
 				};
 				nfdchar_t *outPath;
-				std::string defPath = std::filesystem::absolute(temporaryStoreFolder);
+				std::string defPath = std::filesystem::absolute(temporaryStoreFolder).string();
 				nfdopendialogu8args_t args;
 				args.filterList = filterList;
 				args.filterCount = filterLen;

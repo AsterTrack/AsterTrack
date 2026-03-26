@@ -23,6 +23,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#ifndef VMC_H
+#define VMC_H
+
 #include "pipeline/record.hpp"
 
 #include "util/memory.hpp" // opaque_ptr
@@ -50,3 +53,5 @@ bool vmc_is_connected(opaque_ptr<vmc_output> &vmc);
 bool vmc_try_connect(opaque_ptr<vmc_output> &vmc);
 
 void vmc_send_device_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS);
+
+#endif /* VMC_H */

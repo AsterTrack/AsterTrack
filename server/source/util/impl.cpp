@@ -64,7 +64,13 @@ bool SetCurrentThreadPriority(int priority)
 bool SetCurrentThreadName(const char *name)
 {
 #ifdef _WIN32
-	return SetThreadDescription(GetCurrentThread(), name);
+
+    const size_t cSize = strlen(name)+1;
+    wchar_t* wname = new wchar_t[cSize];
+    mbstowcs (wname, name, cSize);
+	bool res = SetThreadDescription(GetCurrentThread(), wname);
+	delete wname;
+	return res;
 #else
 	return prctl(PR_SET_NAME, name) >= 0;
 #endif

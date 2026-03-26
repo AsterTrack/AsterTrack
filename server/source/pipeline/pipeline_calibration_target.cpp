@@ -151,7 +151,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 {
 	auto &tgtCalib = pipeline.targetCalib;
 
-	if (pipeline.recordSequences)
+	if (pipeline.recordSequences && pipeline.phase == PHASE_Calibration_Target)
 	{
 		auto aquisition_lock = tgtCalib.aquisition.contextualLock();
 

@@ -47,11 +47,11 @@ struct PointReconstructionParameters
 	struct
 	{
 		int maxParallelism = 8;
-		float nColMaxFactor = 2.0f;
-		float nColMinFactor = 0.2f;
+		float nColMaxFactor = 1.0f;
+		float nColMinFactor = 0.1f;
 		int nColMin = 100;
-		float tupleMaxFactor = 1;
-		float tupleTestMaxFactor = 100;
+		float tupleMaxFactor = 0.5;
+		float tupleTestMaxFactor = 20;
 		float minRankFactor = 10;
 	} basis;
 };

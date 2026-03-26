@@ -306,7 +306,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 			continue;
 		}
 		v++;
-		LOGC(LInfo, "Results for view %d:", vv);
+		LOGC(LInfo, "Results for view %d for camera #%u, index %d) :", vv, cameraCalibs[vv].id, cameraCalibs[vv].index);
 
 		// Decompose view projection matrix in V_corrected into camera projection and transformation and update cameraCalibs with it
 		error = SeparatePerspectiveProjection(V_corrected.block<3,4>(v*3,0), v, P_corrected, recMeasurementMatrix, cameraCalibs[vv]);
@@ -501,10 +501,10 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 
 	// Limit the number of maximum possible computation
 	// TODO: Better limits, adapted to camera count etc.
-	int minNColumns = std::max<int>(params.basis.nColMin, pointCount*params.basis.nColMinFactor);
-	int maxNColumns = pointCount*params.basis.nColMaxFactor;
-	int max4Tuples = pointCount*params.basis.tupleMaxFactor;
-	int max4TupleTests = pointCount*params.basis.tupleTestMaxFactor;
+	int minNColumns = std::max<int>(params.basis.nColMin, pointCount*viewCount*params.basis.nColMinFactor);
+	int maxNColumns = pointCount*viewCount*params.basis.nColMaxFactor;
+	int max4Tuples = pointCount*viewCount*params.basis.tupleMaxFactor;
+	int max4TupleTests = pointCount*viewCount*params.basis.tupleTestMaxFactor;
 	LOGC(LDebug, "Planning on testing %d random quadruplets of %d points!", max4TupleTests, pointCount);
 
 	std::vector<Eigen::MatrixXd> partN;
@@ -594,9 +594,9 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		// Check that B is full rank, else discard
 		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_B(B);
 		int rankB = svd_B.rank();
-		if (rankB >= 4+newCols) // TODO: Still take even if not full rank, any nullspace should be fine
+		int colCount = viewCount*3 - rankB;
+		if (rankB >= 4+newCols && colCount >= 1)
 		{ // Extract null space / orthogonal complement of B
-			int colCount = viewCount*3-rankB;
 			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
 			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
 #ifdef PARALLEL
@@ -609,7 +609,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 #endif
 			colsN += colCount;
 		}
-		else 
+		else
 		{
 			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
 		}

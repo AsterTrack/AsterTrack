@@ -22,8 +22,86 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <regex>
 
+void InterfaceState::MaintainFilteredLogs()
+{
+	{ // Keep older filtered logs
+		auto logs = GetApp().logEntries.getView();
+		if (lastLogView.beginIndex() < logs.beginIndex() && !logsFiltered.empty())
+		{ // Culled old logs - keep filtered as backlog
+			auto firstUnculled = logsFiltered.end();
+			for (auto it = logsFiltered.begin(); it != logsFiltered.end(); it++)
+			{
+				std::size_t filtered = *it;
+				if (filtered >= logs.beginIndex())
+				{ // Update existing filtered list
+					firstUnculled = it;
+					break;
+				}
+				// Apply additional filter as long as we can't re-filter backlog to delete lower levels
+				//if (lastLogView[filtered].level <= LDebug) continue;
+				// std::move here would be cool but quite risky
+				// in the end, not worth it, since filtered logs are usually a small fraction only
+				int newIdx = logsFilteredBacklog.push_back(lastLogView[filtered]);
+				// Update selected/focused index to new backlog index
+				if (filtered == logSelected) logSelected = -newIdx;
+				if (filtered == logFocused) logFocused = -newIdx;
+			}
+			logsFiltered.eraseBefore(firstUnculled);
+		}
+
+		// Adopt new view, unlocking any culled blocks, so they will be deleted on next delete_culled
+		lastLogView = logs;
+
+		if (!logKeepBacklog)
+		{ // Cull old blocks from backlog, keep 1000 (~16 million entries, should be less than 1200MB raw string + 800MB overhead)
+			logsFilteredBacklog.delete_culled();
+			logsFilteredBacklog.cull_front(-1000);
+		}
+	}
+
+	int findItem = -1;
+	{ // Add new filtered logs
+		auto pos = lastLogView.begin();
+
+		bool newFilter = logsFilterPos <= pos.index();
+		if (newFilter)
+		{ // Have not sorted yet or sorting got reset (e.g. logs culled, or manually reset)
+			logsFiltered.clear();
+		}
+		else
+		{ // Continue sorting new items from filterPos
+			pos = lastLogView.pos(std::max(lastLogView.beginIndex(), logsFilterPos));
+			assert(pos.valid());
+		}
+
+		while (pos < lastLogView.end())
+		{
+			if (pos->level >= LogFilterTable[pos->category])
+			{
+				if (logSelected == pos.index())
+					logJumpTo = logsFilteredBacklog.getView().size() + logsFiltered.size();
+				logsFiltered.push_back(pos.index());
+			}
+			pos++;
+		}
+		logsFilterPos = pos.index();
+
+		// If not visible anymore, clear selection to prevent unintended behaviour
+		if (newFilter && logJumpTo < 0)
+			logSelected = -1;
+
+		// If we have to jump to a selected log, stop sticking to new logs
+		if (logJumpTo >= 0)
+			logsStickToNew = false;
+	}
+}
+
 void InterfaceState::UpdateLogging(InterfaceWindow &window)
 {
+	// Keep filtered logs up-to-date at all times
+	// Otherwise stuttering ensues, and old filtered logs will be missing
+	MaintainFilteredLogs();
+
 	if (!window.open)
 		return;
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
@@ -37,56 +115,11 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 	ImVec2 consoleSize(winSize.x-160, winSize.y);
 	ImVec2 sideWinSize(160, winSize.y);
 
-	static std::size_t selectedLog = -1, focusedLog = -1;
-	GetApp().logEntries.delete_culled();
-	auto logs = GetApp().logEntries.getView();
+	auto logs = lastLogView;
+	auto backlog = logsFilteredBacklog.getView();
 
 	if (ImGui::BeginChild("scrolling", consoleSize, false, ImGuiWindowFlags_HorizontalScrollbar))
 	{
-		bool logDirty = false;
-		int findItem = -1;
-
-		// TODO: Update log filtering to be more performant (1/2)
-		// Especially when logsFilterPos has been reset, it may take seconds to update in long sessions with Trace/Debug logs
-		// Would need a logging that prioritises the currently seen logs (selectedLog or bottom)
-		// Biggest issue with that is that logsFiltered can't grow front to append older logs later
-		// Additionally, ImGuiListClipper relies on knowing the log count, though that is not super problematic
-
-		{ // Update filtered logs
-			auto pos = logs.begin();
-			bool newFilter = logsFilterPos <= pos.index();
-			if (newFilter)
-			{ // Have not sorted yet or sorting got reset (e.g. logs culled, or manually reset)
-				logsFiltered.clear();
-			}
-			else
-			{ // Continue sorting new items from filterPos
-				pos = logs.pos(std::max(logs.beginIndex(), logsFilterPos));
-				assert(pos.valid());
-			}
-
-			while (pos < logs.end())
-			{
-				if (pos->level >= LogFilterTable[pos->category])
-				{
-					if (selectedLog == pos.index())
-						findItem = logsFiltered.size();
-					logsFiltered.push_back(pos.index());
-					logDirty = true;
-				}
-				pos++;
-			}
-			logsFilterPos = pos.index();
-
-			// If not visible anymore, clear selection to prevent unintended behaviour
-			if (newFilter && findItem < 0)
-				selectedLog = -1;
-
-			// If we have to jump to a selected log, stop sticking to bottom
-			if (findItem >= 0)
-				logsStickToNew = false;
-		}
-
 		ImGui::PushFont(fonts.imgui, fonts.imgui->LegacySize);
 
 		float catWidth = ImGui::CalcTextSize("WWWW").x + ImGui::GetStyle().ItemSpacing.x;
@@ -117,23 +150,41 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 			ImGui::GetStyle().TouchExtraPadding = ImVec2(0,0);
 			
 			ImGuiListClipper clipper;
-			clipper.Begin(logsFiltered.size());
-			if (findItem >= 0) // Makes sure it's not clipped, so SetScrollHereY works
-				clipper.IncludeItemByIndex(findItem);
+			clipper.Begin(backlog.size() + logsFiltered.size());
+			if (logJumpTo >= 0)
+			{ // Makes sure it's not clipped, so SetScrollHereY works
+				// This should be set to the selected log index after filtering changed
+				clipper.IncludeItemByIndex(logJumpTo);
+			}
 			while (clipper.Step())
 			{
-				//for (auto entry = log.pos(startIndex+clipper.DisplayStart); entry.index() < clipper.DisplayEnd; entry++)
+				assert(clipper.DisplayStart < logsFiltered.size()+backlog.size());
+				assert(clipper.DisplayEnd <= logsFiltered.size()+backlog.size());
+				auto filteredIt = clipper.DisplayStart > backlog.size()? logsFiltered.pos(clipper.DisplayStart-backlog.size()) : logsFiltered.begin();
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
 				{
-					const auto &entry = logs[logsFiltered[i]];
-					ImGui::PushID(logsFiltered[i]);
+					int64_t logRefIndex;
+					const LogEntry *entryPtr;
+					if (i < backlog.size())
+					{
+						logRefIndex = -i;
+						entryPtr = &backlog[backlog.beginIndex()+i];
+					}
+					else
+					{ // NOTE: logsFiltered is a BlockedVector, and after eraseBefore indices may not be continuous, hence the need to use an iterator
+						assert(filteredIt != logsFiltered.end());
+						logRefIndex = *(filteredIt++);
+						entryPtr = &logs[logRefIndex];
+					}
+					const LogEntry &entry = *entryPtr;
+					ImGui::PushID(logRefIndex);
 
-					bool selected = logsFiltered[i] == selectedLog;
+					bool selected = logRefIndex == logSelected;
 					ImGuiSelectableFlags flags = ImGuiSelectableFlags_SpanAvailWidth | ImGuiSelectableFlags_NoPadWithHalfSpacing;
 					if (ImGui::Selectable("##SelectLog", selected, flags, ImVec2(0, ImGui::GetTextLineHeight())))
 					{
 						selected = !selected;
-						selectedLog = selected? logsFiltered[i] : -1;
+						logSelected = selected? logRefIndex : -1;
 						if (selected && seqEvents)
 						{
 							std::smatch match;
@@ -145,14 +196,15 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 							}
 						}
 					}
-					bool focused = logsFiltered[i] == focusedLog;
+
+					bool focused = logRefIndex == logFocused;
 					if (ImGui::IsItemFocused())
 					{
 						focusVisible = true;
 						if (!focused)
 						{ // New keyboard focus, jump to it once
 							focused = true;
-							focusedLog = logsFiltered[i];
+							logFocused = logRefIndex;
 							logsStickToNew = i == logsFiltered.size()-1;
 							if (logsStickToNew)
 							{ // TODO: Somehow cancel focus on log entry to allow keepAtBottom to function
@@ -160,10 +212,11 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 						}
 					}
 
-					if (findItem == i)
+					if (logJumpTo == i)
 					{ // Jump to previously selected item after re-sorting
 						ImGui::SetScrollHereY();
 						logsStickToNew = false;
+						logJumpTo = -1;
 						//assert(selectedLog == filteredLogs[i]);
 					}
 
@@ -189,20 +242,20 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 			/* if (focusedLog >= 0 && !focusVisible)
 			{ // Lost focus, e.g. by leaving this level
 				// TODO: Minor glitch in keyboard interaction with log, keepAtBottom would always be true here
-				keepAtBottom = true;
+				logsStickToNew = true;
 			} */
 
 			ImGui::GetStyle().TouchExtraPadding = extraPad;
 			ImGui::PopStyleVar();
 		}
 
-		if ((ImGui::GetIO().MouseWheel > 0.0f || findItem >= 0) && ImGui::GetScrollY() < ImGui::GetScrollMaxY())
+		if (ImGui::GetIO().MouseWheel > 0.0f && ImGui::GetScrollY() < ImGui::GetScrollMaxY())
 			logsStickToNew = false;
 		else if (ImGui::GetIO().MouseWheel < 0.0f && ImGui::GetScrollY() == ImGui::GetScrollMaxY())
 			logsStickToNew = true;
-		else if (logsStickToNew && logDirty)
+		else if (logsStickToNew)
 			ImGui::SetScrollHereY(1.0f);
-		
+
 		ImGui::PopFont();
 	}
 	ImGui::EndChild();
@@ -210,6 +263,8 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 	ImGui::SetCursorPos(ImVec2(curPos.x+consoleSize.x, curPos.y));
 	if (ImGui::BeginChild("side", sideWinSize, true))
 	{
+		ImGui::Checkbox("Keep Backlog", &logKeepBacklog);
+		ImGui::SetItemTooltip("Backlog keep just the filtered logs in memory for longer.\nThis options prevents those from being culled entirely.");
 		for (int i = 0; i < LMaxCategory; i++)
 		{
 			ImGui::PushID(i);
@@ -226,6 +281,7 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 				LogFilterTable[i] = (LogLevel)filterLevel;
 				LogMaxLevelTable[i] = std::min(LogMaxLevelTable[i], LogFilterTable[i]);
 				logsFilterPos = 0;
+				// TODO: If this increases log level, may want to filter backlog to delete lower log levels permanently
 			}
 			ImGui::PopID();
 		}
@@ -237,40 +293,42 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		ImGui::OpenPopup("Context");
 	if (ImGui::BeginPopup("Context"))
 	{
+		std::string logCpy;
+		std::size_t index = 0;
+		auto appendLog = [&](const LogEntry &entry)
+		{
+			memcpy(logCpy.data()+index, entry.log.data(), entry.log.length());
+			index += entry.log.length();
+			if (entry.log.back() != '\n')
+				logCpy.data()[index++] = '\n';
+		};
 		if (ImGui::Selectable("Copy Filtered"))
 		{
-			int totalSize = 0;
-			for (int i = 0; i < logsFiltered.size(); i++)
-				totalSize += logs[logsFiltered[i]].log.length() + 1;
-			std::string logCpy;
+			std::size_t totalSize = 0;
+			for (const auto &entry : backlog)
+				totalSize += entry.log.length() + 1;
+			for (std::size_t filtered : logsFiltered)
+				totalSize += logs[filtered].log.length() + 1;
 			logCpy.resize(totalSize);
-			int index = 0;
-			for (int filter : logsFiltered)
-			{
-				const auto &entry = logs[filter];
-				memcpy(logCpy.data()+index, entry.log.data(), entry.log.length());
-				index += entry.log.length();
-				if (entry.log.back() != '\n')
-					logCpy.data()[index++] = '\n';
-			}
+			for (const auto &entry : backlog)
+				appendLog(entry);
+			for (std::size_t filtered : logsFiltered)
+				appendLog(logs[filtered]);
 			logCpy.resize(index);
 			ImGui::SetClipboardText(logCpy.c_str());
 		}
 		if (ImGui::Selectable("Copy All"))
 		{
-			int totalSize = 0;
+			std::size_t totalSize = 0;
+			for (const auto &entry : backlog)
+				totalSize += entry.log.length() + 1;
 			for (const auto &entry : logs)
 				totalSize += entry.log.length() + 1;
-			std::string logCpy;
 			logCpy.resize(totalSize);
-			int index = 0;
+			for (const auto &entry : backlog)
+				appendLog(entry);
 			for (const auto &entry : logs)
-			{
-				memcpy(logCpy.data()+index, entry.log.data(), entry.log.length());
-				index += entry.log.length();
-				if (entry.log.back() != '\n')
-					logCpy.data()[index++] = '\n';
-			}
+				appendLog(entry);
 			logCpy.resize(index);
 			ImGui::SetClipboardText(logCpy.c_str());
 		}
@@ -278,14 +336,16 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 		{
 			GetApp().FlushLog();
 			GetApp().logEntries.cull_all();
-			// Could reset index as well with cull_clear, but not necessary
-			logsFilterPos = 0; // New filtering
+			logsFilteredBacklog.cull_all();
+			logsFiltered.clear();
+			logsFilterPos = 0;
+			lastLogView = GetApp().logEntries.getView();
 		}
 		if (ImGui::MenuItem("Jump To Bottom", nullptr, &logsStickToNew))
 		{
 			if (logsStickToNew)
 			{
-				selectedLog = -1;
+				logSelected = -1;
 				ImGui::SetScrollY(ImGui::GetScrollMaxY());
 				RequestUpdates();
 			}
@@ -295,4 +355,3 @@ void InterfaceState::UpdateLogging(InterfaceWindow &window)
 
 	ImGui::End();
 }
-

@@ -177,12 +177,14 @@ public:
 		return iterator(*this, 0, 0);
 	}
 	iterator end() { return iterator(*this, BASE::size(), 0); }
-	iterator pos(std::size_t n) { return iterator(*this, n/N, n%N); }
+	iterator pos(std::size_t n) { return begin() + n; }
+	iterator index(std::size_t n) { return iterator(*this, n/N, n%N); }
 	T &front() { return *begin(); }
 	T &back() { return *(--end()); }
 	const_iterator begin() const { for (int b = 0; b < BASE::size(); b++) if (!BASE::operator[](b).empty()) return const_iterator(*this, b, 0); return const_iterator(*this, 0, 0); }
 	const_iterator end() const { return const_iterator(*this, BASE::size(), 0); }
-	const_iterator pos(std::size_t n) const { return const_iterator(*this, n/N, n%N); }
+	const_iterator pos(std::size_t n) const { return begin() + n; }
+	const_iterator index(std::size_t n) const { return const_iterator(*this, n/N, n%N); }
 	const T &front() const { return *begin(); }
 	const T &back() const { return *(--end()); }
 	bool empty() const { return s == 0 || BASE::size() == 0; }
@@ -250,7 +252,7 @@ public:
 				do { BASE::erase(std::prev(BASE::end())); }
 				while (!BASE::empty() && BASE::back().empty());
 				if (BASE::empty())
-					e = BASE::size()*N;
+					e = 0;
 				else
 					e = BASE::size()*N + BASE::back().size();
 				return end();
@@ -261,6 +263,32 @@ public:
 		if (itt != begin() && itt.b != BASE::size())
 			itt--; // Neither beginning nor end
 		return itt;
+	}
+
+	void eraseBefore(const iterator &it)
+	{
+		if (it.index() >= size())
+		{
+			BASE::clear();
+			s = e = 0;
+			return;
+		}
+		if (it.b > 0)
+		{
+			for (int b = 0; b < it.b; b++)
+				s -= BASE::operator[](b).size();
+			e -= it.b * N;
+			BASE::erase(BASE::begin(), BASE::begin()+it.b);
+		}
+		assert(BASE::size() > 0);
+		if (it.i > 0)
+		{
+			auto &block = BASE::front();
+			block.erase(block.begin(), block.begin()+it.i);
+			s -= it.i;
+			if (BASE::size() == 1) // Deleting from last block
+				e -= it.i;
+		}
 	}
 
 	void resize(std::size_t n)

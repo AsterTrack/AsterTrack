@@ -38,6 +38,7 @@ SOFTWARE.
 #ifndef LOG_H
 #define LOG_H
 
+#include <string>
 #include <cstdint>
 #include <cinttypes> // For cross-platform 64bit labels (ll(u) on windows, l(u) on linux)
 
@@ -90,6 +91,14 @@ enum LogLevel : char {
 	LOutput,
 	LMaxLevel
 };
+
+struct LogEntry {
+	std::string log;
+	enum LogCategory category = LDefault;
+	enum LogLevel level;
+	int context = 0; // #Target, #Controller, #Camera, etc.
+};
+
 
 #ifdef _MSC_VER
 

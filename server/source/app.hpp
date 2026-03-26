@@ -36,13 +36,7 @@ class AppState
 {
 public:
 	// Logging
-	struct LogEntry {
-		std::string log;
-		enum LogCategory category = LDefault;
-		enum LogLevel level;
-		int context = 0; // #Target, #Controller, #Camera, etc.
-	};
-	BlockedQueue<LogEntry, 1024*16> logEntries;
+	BlockedQueue<LogEntry, 16384> logEntries;
 	std::string logPath;
 	std::ofstream logFile;
 	std::size_t lastFlushed;

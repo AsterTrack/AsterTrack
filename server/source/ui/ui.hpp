@@ -428,9 +428,13 @@ public:
 	bool targetFramesAdvancing = false;
 
 	// Log state
+	BlockedQueue<LogEntry, 16384>::View<true> lastLogView;
+	BlockedQueue<LogEntry, 16384> logsFilteredBacklog;
 	BlockedVector<std::size_t> logsFiltered;
 	std::size_t logsFilterPos = 0;
+	int64_t logJumpTo = -1, logSelected = -1, logFocused = -1;
 	bool logsStickToNew = true;
+	bool logKeepBacklog = false;
 
 	InterfaceState();
 	~InterfaceState();
@@ -473,6 +477,7 @@ public:
 	void UpdateControl(InterfaceWindow &window);
 
 	void UpdateLogging(InterfaceWindow &window);
+		void MaintainFilteredLogs();
 	void UpdateInsights(InterfaceWindow &window);
 
 	void UpdateTrackers(InterfaceWindow &window);

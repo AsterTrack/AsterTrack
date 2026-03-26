@@ -305,8 +305,14 @@ void AppState::SignalInterfaceClosed()
 
 void AppState::FlushLog()
 {
-	if (!logFile.is_open() || logFile.fail()) return;
+	// Delete past culled blocks
+	logEntries.delete_culled();
+	// Keep current view, in case new culled blocks weren't flushed yet
 	auto logs = logEntries.getView();
+	// Cull old blocks, keep 100 (~1.6 million entries, should be less than 120MB raw string + 80MB overhead)
+	logEntries.cull_front(-100);
+
+	if (!logFile.is_open() || logFile.fail()) return;
 	auto flushStart = logs.pos(std::max(lastFlushed, logs.beginIndex()));
 	for (auto entry = flushStart; entry != logs.end(); entry++)
 	{ // Append to log file
@@ -455,7 +461,7 @@ static bool rotate_log_files(std::string logPath)
 
 int PrintLog(LogCategory category, LogLevel level, int context, const char *format, ...)
 {
-	AppState::LogEntry entry = {};
+	LogEntry entry = {};
 	entry.category = category;
 	entry.level = level;
 	entry.context = context;

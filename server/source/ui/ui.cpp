@@ -75,7 +75,7 @@ const int minRefreshRateHz = 10; // Can also set to 0 and set waitIntervalS to 5
 // Minimum render/update interval, no faster allowed
 const dt_t minIntervalUS = 1000000/maxRefreshRateHz;
 // Maximum interval between updates
-const double waitIntervalS = minRefreshRateHz? (1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz) : (0.1f);
+const double waitIntervalS = minRefreshRateHz? (1.0f/minRefreshRateHz - 1.0f/maxRefreshRateHz) : 1.0f;
 
 /* Function prototypes */
 
@@ -436,6 +436,8 @@ void InterfaceState::GeneralUpdate()
 			UpdateSequences();
 		}
 	}
+
+	MaintainFilteredLogs();
 }
 
 void InterfaceState::ResetWindowLayout()

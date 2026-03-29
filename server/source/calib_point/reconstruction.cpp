@@ -21,6 +21,8 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "util/log.hpp"
 #include "util/util.hpp"
 
+#include <numeric>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <omp.h>
@@ -32,21 +34,19 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /* Function Prototypes */
 
-class CenterViewStrategy;
-class SuccessiveViewStrategy;
+typedef uint_fast8_t BOOL;
 
-template<typename RecoveryStrategy>
-static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix, 
+static MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix, 
 	const PointReconstructionParameters &params,
 	Eigen::MatrixXd &projectiveDepthMatrix, Eigen::VectorXi &viewsDiscarded);
 
 static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const MatrixX<bool>> &projectiveDepthMissing,
-	const Eigen::Ref<const MatrixX<bool>> &observationDataMissing,
+	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
 	const PointReconstructionParameters &params);
 
 static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<MatrixX<bool>> projectiveDepthMissing,
+	Eigen::Ref<MatrixX<BOOL>> projectiveDepthMissing,
 	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx);
 
 static Eigen::Matrix4d getStratificationMatrix(const Eigen::Ref<const Eigen::MatrixXd> &V, const Eigen::Ref<const Eigen::MatrixXd> &P);
@@ -130,9 +130,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	LOGC(LDebug, "-- Projective Depths Estimation");
 
 	// Iteratively determine projective depths according to best strategy
-	Eigen::MatrixXd projectiveDepthMatrix; // (viewCount, pointCount)
-	Eigen::VectorXi viewsDiscarded; // (viewCount)
-	estimateProjectiveDepths<CenterViewStrategy>(normMeasurementMatrix, params, projectiveDepthMatrix, viewsDiscarded);
+	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
+	Eigen::VectorXi viewsDiscarded = Eigen::VectorXi::Zero(viewCount);
+	MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(normMeasurementMatrix, params, projectiveDepthMatrix, viewsDiscarded);
 
 	int recViewCount = viewCount - viewsDiscarded.count();
 	if (recViewCount < 2)
@@ -144,8 +144,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	}
 
 	// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
-	MatrixX<bool> projectiveDepthMissing(recViewCount, pointCount);
-	MatrixX<bool> observationDataMissing(recViewCount, pointCount);
+	MatrixX<BOOL> projectiveDepthMissing(recViewCount, pointCount);
+	MatrixX<BOOL> observationDataMissing(recViewCount, pointCount);
 	Eigen::MatrixXd projectiveMatrix(recViewCount*3, pointCount);
 	Eigen::MatrixXd recViewNormInv(3, recViewCount*3);
 	for (int vv = 0, v = -1; vv < viewCount; vv++)
@@ -154,9 +154,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		v++;
 		for (int p = 0; p < pointCount; p++)
 		{
-			projectiveDepthMissing(v,p) = std::isnan(projectiveDepthMatrix(vv,p));
-			double projDepth = projectiveDepthMissing(v,p)? 1 : projectiveDepthMatrix(vv,p);
+			double projDepth = projectiveDepthMatrix(vv,p);
 			auto obsData = normMeasurementMatrix.block<3,1>(vv*3, p);
+			projectiveDepthMissing(v,p) = 1 - depthsEstimated(v, p);
 			observationDataMissing(v,p) = obsData.hasNaN();
 			projectiveMatrix.block<3,1>(v*3, p) = projDepth * obsData;
 		}
@@ -324,139 +324,168 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	return error;
 }
 
-
-class CenterViewStrategy {
-public:
-	Eigen::VectorXi::Index bestView;
-	int viewCount, numRecoverable;
-	CenterViewStrategy(const Eigen::Ref<const Eigen::MatrixXi> &viewCorrespondences, Eigen::VectorXi &viewsDiscarded, int minCorrespondences)
-	{
-		auto viewsRecoverable = (viewCorrespondences.array() >= minCorrespondences).cast<int>();
-		// Select view with the most overlap to other views
-		numRecoverable = viewsRecoverable.colwise().sum().maxCoeff(&bestView);
-		viewsDiscarded = 1-viewsRecoverable.col(bestView).array();
-		LOGC(LDebug, "Selected view %d as center!", (int)bestView);
-		viewCount = viewCorrespondences.rows();
-	}
-	class iterator {
-		int CUR, CNT, BEST;
-	public:
-		iterator(int cur, int cnt, int best) : CNT(cnt), BEST(best)
-		{
-			CUR = cur == best? cur+1 : cur;
-		}
-		iterator& operator++()
-		{
-			if (++CUR == BEST) CUR++;
-			return *this;
-		}
-		iterator operator++(int) {iterator retval = *this; ++(*this); return retval;}
-		bool operator==(iterator other) const {return CUR == other.CUR;}
-		bool operator!=(iterator other) const {return !(*this == other);}
-		std::pair<int,int> operator*() { return { BEST, CUR }; }
-		// iterator traits
-		using value_type = std::pair<int,int>;
-		using pointer = const std::pair<int,int>*;
-		using reference = const std::pair<int,int>&;
-		using iterator_category = std::input_iterator_tag;
-	};
-	iterator begin() { return iterator(0, viewCount, bestView); }
-	iterator end() { return iterator(viewCount, viewCount, bestView); }
-	iterator::value_type front() { return *begin(); }
-	iterator::value_type back() { return *end(); }
-};
-
-class SuccessiveViewStrategy {
-public:
-	int viewCount, numRecoverable;
-	SuccessiveViewStrategy(const Eigen::Ref<const Eigen::MatrixXi> &viewCorrespondences, Eigen::VectorXi &viewsDiscarded, int minCorrespondences)
-	{
-		viewCount = viewCorrespondences.rows();
-		viewsDiscarded = Eigen::VectorXi::Zero(viewCount);
-		numRecoverable = -1; // Just don't know
-	}
-	class iterator {
-		int CUR, CNT;
-	public:
-		iterator(int cur, int cnt) : CUR(cur), CNT(cnt) {}
-		iterator& operator++()
-		{
-			CUR++;
-			return *this;
-		}
-		iterator operator++(int) {iterator retval = *this; ++(*this); return retval;}
-		bool operator==(iterator other) const {return CUR == other.CUR;}
-		bool operator!=(iterator other) const {return !(*this == other);}
-		std::pair<int,int> operator*() { return { CUR, CUR+1 }; }
-		// iterator traits
-		using value_type = std::pair<int,int>;
-		using pointer = const std::pair<int,int>*;
-		using reference = const std::pair<int,int>&;
-		using iterator_category = std::input_iterator_tag;
-	};
-	iterator begin() { return iterator(0, viewCount); }
-	iterator end() { return iterator(viewCount-1, viewCount); }
-	iterator::value_type front() { return *begin(); }
-	iterator::value_type back() { return *end(); }
-};
-
-template<typename RecoveryStrategy>
-static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix,
+static MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix,
 	const PointReconstructionParameters &params,
 	Eigen::MatrixXd &projectiveDepthMatrix, Eigen::VectorXi &viewsDiscarded)
 {
-	int pointCount = normMeasurementMatrix.cols();
 	int viewCount = normMeasurementMatrix.rows()/3;
-	projectiveDepthMatrix = Eigen::MatrixXd::Constant(viewCount, pointCount, NAN);
+	int pointCount = normMeasurementMatrix.cols();
+	assert(projectiveDepthMatrix.rows() == viewCount);
+	assert(projectiveDepthMatrix.cols() == pointCount);
+	assert(viewsDiscarded.size() == viewCount);
 
+	MatrixX<BOOL> pointsObserved = MatrixX<BOOL>::Zero(viewCount, pointCount);
 	Eigen::MatrixXi viewCorrespondences = Eigen::MatrixXi::Zero(viewCount, viewCount);
-	Eigen::VectorXi viewOverlap = Eigen::VectorXi(viewCount);
 	for (int p = 0; p < pointCount; p++)
 	{
+		// NOTE: pointsObserved is purely accessed by column so storage access is local
 		for (int v = 0; v < viewCount; v++)
-			viewOverlap(v) = std::isnan(normMeasurementMatrix(v*3,p))? 0 : 1;
-		if (viewOverlap.sum() >= 2)
+			pointsObserved(v, p) = std::isnan(normMeasurementMatrix(v*3,p))? 0 : 1;
+		if (pointsObserved.col(p).sum() < 2)
+			continue;
+		for (int v = 0; v < viewCount; v++)
 		{
-			for (int v = 0; v < viewCount; v++)
+			if (pointsObserved(v, p))
 			{
-				if (viewOverlap(v))
-				{
-					viewCorrespondences.row(v) += viewOverlap;
-					viewCorrespondences.col(v) += viewOverlap;
-				}
+				viewCorrespondences.row(v) += pointsObserved.col(p).cast<int>();
+				viewCorrespondences.col(v) += pointsObserved.col(p).cast<int>();
 			}
 		}
 	}
-	
-	// currently only one center view is picked and only views with direct overlap to this view will be recovered.
-	// TODO: This can be remedied by iterative overlap
-
-	RecoveryStrategy recoverStrategy(viewCorrespondences, viewsDiscarded, params.FM.minPairwiseCorrespondences*2);
-	{ // Initialise projective depths of selected camera with 1
-		auto transfer = recoverStrategy.front();
-		for (int p = 0; p < pointCount; p++)
-		{
-			if (!normMeasurementMatrix.block<3,1>(transfer.first*3, p).hasNaN())
-				projectiveDepthMatrix(transfer.first,p) = 1;
-		}
+	for (int v = 0; v < viewCount; v++)
+	{ // Remove own points as col/row-sum is used later, and initialise per-view point count
+		viewCorrespondences(v,v) = 0;
 	}
+	viewCorrespondences /= 2; // Each correspondence has been added twice
 
-	for (auto transfer : recoverStrategy)
+	// From now on, we'll access by views, so transpose for better storage access pattern (points as dominant dimension)
+	pointsObserved.transposeInPlace();
+
+	// May only initialise projective depth once per point, then transfer to other cameras
+	VectorX<BOOL> projDepthsUninitialised = VectorX<BOOL>::Ones(pointCount);
+	MatrixX<BOOL> pointsRecoverable = pointsObserved;
+	MatrixX<BOOL> pointsRecovered = MatrixX<BOOL>::Zero(pointCount, viewCount);
+
+	const bool ALLOW_FURTHER_POINT_INITS = false;
+	const bool ALLOW_INDIRECT_SOURCES = false;
+
+	// Recovered views and their point count with projective depths
+	std::map<int, int> recovered;
+	int numRecoveredWell = 0;
+	auto getNextBestTransfer = [&]() -> std::pair<int,int>
+	{
+		// Choose next best transfer from one view to another
+		// REQUIREMENT: Sufficient viewCorrespondences between them to calculate fundamental matrix
+		// BENEFIT: Missing projective depths in target view that source view has (initialised or OR already transferred)
+		// Requirement is static, easy to check
+		// Benefit requires matching of vector of points still recoverable in target view against bit-OR of:
+		// - vector of points already recovered in source view
+		// - bit-AND of vector of points in source view and vector of points still not initialised
+		// These fields are implemented as matrix int matrices
+
+		if (recovered.empty())
+		{ // Select seeded view
+			Eigen::VectorXi viewsRecover = (viewCorrespondences.array() >= params.FM.minPairwiseCorrespondences*2).cast<int>().colwise().sum();
+			Eigen::VectorXi pairsRecover = viewCorrespondences.colwise().sum();
+			Eigen::VectorXi recoverFactor = pairsRecover.cwiseProduct(viewsRecover);
+			int bestView, bestTransfer;
+			int factor = recoverFactor.maxCoeff(&bestView);
+			viewCorrespondences.col(bestView).maxCoeff(&bestTransfer);			
+			recovered.insert({ bestView, 0 });
+			recovered.insert({ bestTransfer, 1 });
+			// Debug
+			recoverFactor(bestView) = 0;
+			int secondFactor = recoverFactor.maxCoeff();
+			LOGC(LInfo, "Selected view %d as center with %d observations, recoverable: %d views, %d pairs, factor %d (next best %d).",
+				bestView, pointsObserved.col(bestView).cast<int>().sum(), viewsRecover(bestView), pairsRecover(bestView), factor, secondFactor);
+			LOGC(LInfo, "Selected view %d as next with %d / %d points overlapping.",
+				bestTransfer, viewCorrespondences(bestView, bestTransfer), pointsObserved.col(bestTransfer).cast<int>().sum());
+			return { bestView, bestTransfer };
+		}
+
+		// Iteratively determine next best recovery path, accounting for number of indirection from seeded view
+		std::pair<int,int> bestNext = { -1, -1 };
+		float bestWeight = 0;
+		int bestTransferrable = 0, bestExTransfer = 0, bestNewTransfer = 0;
+		for (int s = 0; s < viewCount; s++)
+		{
+			if (viewsDiscarded(s)) continue;
+			if (!ALLOW_INDIRECT_SOURCES && (!recovered.contains(s) || recovered[s] != 0))
+				continue;
+			for (int t = 0; t < viewCount; t++)
+			{
+				if (viewsDiscarded(t)) continue;
+				if (s == t) continue;
+				auto projDepthsNewInSource = pointsObserved.col(s).array() * projDepthsUninitialised.array();
+				int newlyTransferrable = (pointsRecoverable.col(t).array() * projDepthsNewInSource.array()).cast<int>().sum();
+				int existingTransferrable = (pointsRecoverable.col(t).array() * pointsRecovered.col(s).array()).cast<int>().sum();
+				int transferrable = existingTransferrable + (ALLOW_FURTHER_POINT_INITS? newlyTransferrable : 0);
+
+				int correspondences = viewCorrespondences(s, t);
+				int indirection = recovered.contains(s)? recovered[s]+1 : 1;
+
+				float weight = std::pow<float>(transferrable, 0.6f) * std::pow<float>(correspondences, 0.8f) / std::pow<float>(indirection, 0.6f);
+				if (weight > bestWeight)
+				{ // Propagating from source view to this one is the current best next propagation possible
+					bestWeight = weight;
+					bestTransferrable = transferrable;
+					bestExTransfer = existingTransferrable;
+					bestNewTransfer = newlyTransferrable;
+					bestNext = { s, t };
+				}
+				LOGC(LDebug, "    Weight between %d-%d with %d in src, %d pot in tgt: %.1f, T:%d, C:%d, I:%d",
+					s, t, pointsRecovered.col(s).array().cast<int>().sum(), pointsRecoverable.col(t).array().cast<int>().sum(), weight, transferrable, correspondences, indirection);
+			}
+		}
+		if (bestWeight > 0)
+		{
+			int indirection = recovered.contains(bestNext.first)? recovered[bestNext.first]+1 : 1;
+			int correspondences = viewCorrespondences(bestNext.first, bestNext.second);
+			LOGC(LInfo, "Found pair (%d, %d) to be best (weight %.1f) with %d transferrable (%d ex, %d new), %d correspondences, and indirection of %d",
+				bestNext.first, bestNext.second, bestWeight, bestTransferrable, bestExTransfer, bestNewTransfer, correspondences, indirection);
+			if (correspondences < params.FM.minPairwiseCorrespondences || bestTransferrable < 100)
+				return { -1, -1 };
+			if (correspondences >= params.FM.minPairwiseCorrespondences*2)
+				numRecoveredWell++;
+			else // While we'll try to recover, it's really bad
+				indirection++;
+			recovered.insert({ bestNext.second, indirection });
+			return bestNext;
+		}
+		return { -1, -1 };
+	};
+
+	while (true)
 	{ // Iteratively determine projective depths of other views
+		auto transfer = getNextBestTransfer();
+		if (transfer.first < 0) break;
+		int s = transfer.first, t = transfer.second;
 
-		int b = transfer.first, v = transfer.second;
-
-		LOGC(LDebug, "View strategy: Transfer from camera %d to camera %d!", b, v);
+		if (ALLOW_FURTHER_POINT_INITS || recovered.size() == 2)
+		{ // Initialise uninitialised projective depths of source camera with 1
+			int newlyInit = 0;
+			for (int p = 0; p < pointCount; p++)
+			{
+				if (projDepthsUninitialised(p) == 0) continue;
+				if (normMeasurementMatrix.block<3,1>(transfer.first*3, p).hasNaN()) continue;
+				projDepthsUninitialised(p) = 0;
+				pointsRecoverable(p, s) = 0;
+				pointsRecovered(p, s) = 1;
+				newlyInit++;
+			}
+			LOGC(LInfo, "View strategy: Transfer from camera %d to camera %d - newly initialised %d / %d projective depths!", s, t, newlyInit, pointCount);
+		}
+		else
+			LOGC(LInfo, "View strategy: Transfer from camera %d to camera %d!", s, t);
 
 		// Determine fundamental matrix from rows of measurement matrix
 		Eigen::Matrix3d F;
-		std::pair<int,double> results = calculateFundamentalMatrix(normMeasurementMatrix.middleRows<3>(b*3), normMeasurementMatrix.middleRows<3>(v*3), F, params.FM.minPairwiseCorrespondences);
-
+		std::pair<int,double> results = calculateFundamentalMatrix(normMeasurementMatrix.middleRows<3>(s*3), normMeasurementMatrix.middleRows<3>(t*3), F, params.FM.minPairwiseCorrespondences);
 		if (results.first < params.FM.minPairwiseCorrespondences || results.second < params.FM.minConfidence)
 		{ // View does not have sufficient correspondence with center view 
 			// TODO: Multiple recovery strategy iterations until view can be recovered
-			viewsDiscarded(v) = 1;
-			LOGC(LWarn, "---- Retroactively abandoning view %d because it only shares %d points of %f confidence with best view %d!", v, results.first, results.second, b);
+			viewsDiscarded(t) = 1;
+			LOGC(LWarn, "---- Retroactively abandoning view %d because it only shares %d points of %f confidence with best view %d!", t, results.first, results.second, s);
 			continue;
 		}
 
@@ -465,24 +494,33 @@ static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &no
 
 		for (int p = 0; p < pointCount; p++)
 		{
-			if (!std::isnan(projectiveDepthMatrix(v,p)))
+			if (!pointsRecovered(p, s))
+				continue; // No source projective depth to transfer
+			if (!pointsRecoverable(p, t))
 				continue; // Is already determined
-			auto x_b = normMeasurementMatrix.block<3,1>(b*3, p);
+			auto x_b = normMeasurementMatrix.block<3,1>(s*3, p) * projectiveDepthMatrix(s,p);
 			if (x_b.hasNaN())
 				continue; // Missing data in source camera
-			auto x_v = normMeasurementMatrix.block<3,1>(v*3, p);
+			auto x_v = normMeasurementMatrix.block<3,1>(t*3, p) * projectiveDepthMatrix(t,p);
 			if (x_v.hasNaN())
 				continue; // Missing data in target camera
 			// Determine projective depth inferred from reference projective depth of source camera
 			Eigen::Vector3d a = e.cross(x_v);
-			projectiveDepthMatrix(v,p) = std::abs(a.dot(F*x_b)/a.squaredNorm() * projectiveDepthMatrix(b,p));
+			float projDepthFac = std::abs(a.dot(F*x_b)/a.squaredNorm());
+			projectiveDepthMatrix(t,p) *= projDepthFac;
+			pointsRecoverable(p, t) = 0;
+			pointsRecovered(p, t) = 1;
 		}
 	}
+
+	// Return again to normal point-dominant access
+	pointsRecovered.transposeInPlace();
+	return pointsRecovered;
 }
 
 static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const MatrixX<bool>> &projectiveDepthMissing,
-	const Eigen::Ref<const MatrixX<bool>> &observationDataMissing,
+	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
 	const PointReconstructionParameters &params)
 {
 	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());
@@ -500,7 +538,6 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	int tested4Tuples = 0;
 
 	// Limit the number of maximum possible computation
-	// TODO: Better limits, adapted to camera count etc.
 	int minNColumns = std::max<int>(params.basis.nColMin, pointCount*viewCount*params.basis.nColMinFactor);
 	int maxNColumns = pointCount*viewCount*params.basis.nColMaxFactor;
 	int max4Tuples = pointCount*viewCount*params.basis.tupleMaxFactor;
@@ -666,7 +703,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 }
 
 static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<MatrixX<bool>> projectiveDepthMissing,
+	Eigen::Ref<MatrixX<BOOL>> projectiveDepthMissing,
 	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx)
 {
 	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());

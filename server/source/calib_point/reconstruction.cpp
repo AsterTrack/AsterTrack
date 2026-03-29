@@ -41,11 +41,12 @@ static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &no
 	Eigen::MatrixXd &projectiveDepthMatrix, Eigen::VectorXi &viewsDiscarded);
 
 static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<bool>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<bool>> &observationDataMissing,
 	const PointReconstructionParameters &params);
 
 static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>> projectiveDepthMissing,
+	Eigen::Ref<MatrixX<bool>> projectiveDepthMissing,
 	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx);
 
 static Eigen::Matrix4d getStratificationMatrix(const Eigen::Ref<const Eigen::MatrixXd> &V, const Eigen::Ref<const Eigen::MatrixXd> &P);
@@ -143,7 +144,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	}
 
 	// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
-	Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic> projectiveDepthMissing(recViewCount, pointCount);
+	MatrixX<bool> projectiveDepthMissing(recViewCount, pointCount);
+	MatrixX<bool> observationDataMissing(recViewCount, pointCount);
 	Eigen::MatrixXd projectiveMatrix(recViewCount*3, pointCount);
 	Eigen::MatrixXd recViewNormInv(3, recViewCount*3);
 	for (int vv = 0, v = -1; vv < viewCount; vv++)
@@ -154,7 +156,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		{
 			projectiveDepthMissing(v,p) = std::isnan(projectiveDepthMatrix(vv,p));
 			double projDepth = projectiveDepthMissing(v,p)? 1 : projectiveDepthMatrix(vv,p);
-			projectiveMatrix.block<3,1>(v*3, p) = projDepth * normMeasurementMatrix.block<3,1>(vv*3, p);
+			auto obsData = normMeasurementMatrix.block<3,1>(vv*3, p);
+			observationDataMissing(v,p) = obsData.hasNaN();
+			projectiveMatrix.block<3,1>(v*3, p) = projDepth * obsData;
 		}
 		recViewNormInv.block<3,3>(0,v*3) = viewNormInv.block<3,3>(0,vv*3);
 	}
@@ -174,7 +178,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	// Both due to missing points (NaNs) and missing projective depth (marked by projectiveDepthMissing)
 	// For that, find basis for the vector space of rank 4 spanned by the projectiveMatrix
 	// Then complete the columns of the projectiveMatrix as linear combinations of that basis
-	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, params);
+	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, observationDataMissing, params);
 	if (basis.hasNaN()) // basis (recViewCount*3, 4)
 	{
 		LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
@@ -477,7 +481,8 @@ static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &no
 }
 
 static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<bool>> &projectiveDepthMissing,
+	const Eigen::Ref<const MatrixX<bool>> &observationDataMissing,
 	const PointReconstructionParameters &params)
 {
 	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());
@@ -546,39 +551,44 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		}
 
 		// Determine number of columns that need to be added
-		int newCols = 0;
+		Eigen::VectorXi obsDataMissing = Eigen::VectorXi::Zero(viewCount);
+		Eigen::VectorXi projDepthMissing = Eigen::VectorXi::Zero(viewCount);
 		for (int i = 0; i < 4; i++)
 		{
-			int missingPointCoeff = projectiveMatrix.col(indices[i]).array().isNaN().count();
-			int missingProjDepths = projectiveDepthMissing.col(indices[i]).count();
-			// Add up, account that each missing vector (3 coeff) means one missing proj depth
-			newCols += missingPointCoeff + missingProjDepths - missingPointCoeff/3;
+			obsDataMissing += observationDataMissing.col(indices[i]).cast<int>();
+			projDepthMissing += projectiveDepthMissing.col(indices[i]).cast<int>();
+		}
+		// For any view that has ANY point missing: Not contributing, add three columns of (1, 1, 1)
+		// For any view that has just projective depths missing, add all their source points as columns (if >= 3, might as well just add (1, 1, 1))
+		int newCols = 0;
+		for (int v = 0; v < viewCount; v++)
+		{
+			if (obsDataMissing(v) > 0 || projDepthMissing(v) >= 3)
+				newCols += 3;
+			else
+				newCols += projDepthMissing(v);
 		}
 
 		// Extend 4 columns to B
 		Eigen::MatrixXd B = Eigen::MatrixXd::Zero(viewCount*3, 4+newCols);
 		int newColIndex = 4;
-		for (int i = 0; i < 4; i++)
+		for (int v = 0; v < viewCount; v++)
 		{
-			for (int v = 0; v < viewCount; v++)
+			if (obsDataMissing(v) > 0 || projDepthMissing(v) >= 3)
+			{
+				B(v*3+0,newColIndex++) = 1;
+				B(v*3+1,newColIndex++) = 1;
+				B(v*3+2,newColIndex++) = 1;
+				continue;
+			}
+			for (int i = 0; i < 4; i++)
 			{
 				Eigen::Vector3d x = projectiveMatrix.block<3,1>(v*3, indices[i]);
-				if (x.hasNaN()) 
-				{ // Missing point
-					B(v*3+0,newColIndex++) = 1;
-					B(v*3+1,newColIndex++) = 1;
-					B(v*3+2,newColIndex++) = 1;
-					continue;
-				}
-				if (projectiveDepthMissing(v, indices[i])) 
-				{ // Still have coordinates, already embedded
+				if (!projectiveDepthMissing(v, indices[i])) 
+					B.block<3,1>(v*3,i) = x;
+				else // Still have coordinates, already embedded
 					B.block<3,1>(v*3,newColIndex++) = x.normalized();
-					continue;
-				}
-				B.block<3,1>(v*3,i) = x;
 			}
-			// Make all columns normalised to 1 for conditioning
-			//B.col(i).normalise(); // Doesn't actually do much
 		}
 
 		// Check that B is full rank, else discard
@@ -656,7 +666,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 }
 
 static int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>> projectiveDepthMissing,
+	Eigen::Ref<MatrixX<bool>> projectiveDepthMissing,
 	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx)
 {
 	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());

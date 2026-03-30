@@ -38,6 +38,7 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 	{
 		const auto &standard = defaultParams.reconstruction;
 		auto &params = state.pipeline.pointCalib.params.reconstruction;
+		ScalarProperty<int>("Max Parallelism", "threads", &params.basis.maxParallelism, &standard.basis.maxParallelism, 0, 128);
 
 		BeginSection("Fundamental Matrix");
 		ScalarProperty<int>("Min Correspondence", "", &params.FM.minPairwiseCorrespondences, &standard.FM.minPairwiseCorrespondences, 1, stableSequenceDelay);

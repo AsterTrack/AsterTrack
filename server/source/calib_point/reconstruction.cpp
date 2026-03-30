@@ -503,8 +503,33 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	LOGC(LDebug, "Planning on testing %d random quadruplets of %d points!", max4TupleTests, pointCount);
 
 	std::vector<Eigen::MatrixXd> partN;
-	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests)
+
+#define PARALLEL
+#ifdef PARALLEL
+	std::atomic<int> totalPartN = 0, totalColsN = 0;
+
+	omp_set_num_threads(std::min<int>(omp_get_max_threads(), params.basis.maxParallelism));
+	#pragma omp parallel
+#endif
 	{
+
+#ifdef PARALLEL
+	std::vector<Eigen::MatrixXd> priv_partN;
+
+	auto p0 = sclock::now();
+
+	#pragma omp for nowait schedule(static, 100) reduction(+:colsN) reduction(+:tested4Tuples)
+	for (int j = 0; j < max4TupleTests; j++)
+#else
+	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests)
+#endif
+	{
+#ifdef PARALLEL
+		int tempColsN = totalColsN.load();
+		int tempPartsN = totalPartN.load();
+		if (tempColsN >= maxNColumns || tempPartsN >= max4Tuples) continue;
+#endif
+
 		int indices[4];
 		for (int i = 0; i < 4; i++)
 		{
@@ -564,7 +589,14 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 			int colCount = viewCount*3-rankB;
 			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
 			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
+#ifdef PARALLEL
+			priv_partN.push_back(orthComplementB);
+			totalColsN.fetch_add(colCount);
+			totalPartN.fetch_add(1);
+			tested4Tuples++;
+#else
 			partN.push_back(orthComplementB);
+#endif
 			colsN += colCount;
 		}
 		else 
@@ -572,6 +604,21 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
 		}
 	}
+
+#ifdef PARALLEL
+	#pragma omp critical
+	{
+		auto p1 = sclock::now();
+		LOGC(LDebug, "Thread %d added %d/%d potential parts in %fms!", omp_get_thread_num(), (int)priv_partN.size(), totalPartN.load(), dtMS(p0, p1));
+		if (partN.capacity() != totalPartN.load())
+			partN.reserve(totalPartN.load());
+		std::copy(priv_partN.begin(), priv_partN.end(), std::back_inserter(partN));
+	}
+#endif
+	}
+#ifdef PARALLEL
+	omp_set_num_threads(omp_get_max_threads());
+#endif
 
 	// Combine all collected orthogonal complements together as N
 	LOGC(LDebug, "N has %d columns in total with %d/%d tuples accepted!", colsN, (int)partN.size(), tested4Tuples);

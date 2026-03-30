@@ -46,6 +46,7 @@ struct PointReconstructionParameters
 	} FM;
 	struct
 	{
+		int maxParallelism = 8;
 		float nColMaxFactor = 2.0f;
 		float nColMinFactor = 0.2f;
 		int nColMin = 100;

@@ -476,29 +476,6 @@ static void estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &no
 	}
 }
 
-static std::vector<std::array<int,4>> generateQuadruplets(int n)
-{
-	std::vector<std::array<int,4>> quadruplets;
-	quadruplets.reserve(n*n*n);
-	for (int i = 0; i < n; ++i)
-	{
-		for (int j = 0; j < n; ++j)
-		{
-			if (i == j) continue;
-			for (int k = 0; k < n; ++k)
-			{
-				if (i == k || j == k) continue;
-				for (int l = 0; l < n; ++l)
-				{
-					if (i == l || j == l || k == l) continue;
-					quadruplets.push_back({ i, j, k, l });
-				}
-			}
-		}
-	}
-	return quadruplets;
-}
-
 static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
 	const Eigen::Ref<const Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>> &projectiveDepthMissing,
 	const PointReconstructionParameters &params)
@@ -517,12 +494,6 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	int colsN = 0;
 	int tested4Tuples = 0;
 
-	/* auto t0 = sclock::now();
-	auto permIndices = generateQuadruplets(pointCount);
-	auto t1 = sclock::now();
-
-	LOGC(LDebug, "Took %fms to generate %d quadruplets for %d points!", dtMS(t0,t1), permIndices.size(), pointCount); */
-
 	// Limit the number of maximum possible computation
 	// TODO: Better limits, adapted to camera count etc.
 	int minNColumns = std::max<int>(params.basis.nColMin, pointCount*params.basis.nColMinFactor);
@@ -532,95 +503,8 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	LOGC(LDebug, "Planning on testing %d random quadruplets of %d points!", max4TupleTests, pointCount);
 
 	std::vector<Eigen::MatrixXd> partN;
-
-	/* #pragma omp parallel
-	{
-	std::vector<Eigen::MatrixXd> priv_partN;
-	auto p0 = sclock::now();
-
-    #pragma omp for nowait schedule(static, 100) reduction(+:colsN)
-    for (int j = 0; j < max4TupleTests; j++)
-	{
-		int indices[4];
-		for (int i = 0; i < 4; i++)
-		{
-			bool searching = true;
-			while (searching)
-			{
-				indices[i] = rand()%pointCount;
-				bool unique = true;
-				for (int j = 0; j < i; j++)
-					unique = unique && indices[j] != indices[i];
-				if (unique) searching = false;
-				// TODO: Discard columns early if they do not have full rank on shared known points
-			}
-		}
-		
-		// Determine number of columns that need to be added
-		int newCols = 0;
-		for (int i = 0; i < 4; i++)
-		{
-			int missingPointCoeff = projectiveMatrix.col(indices[i]).array().isNaN().count();
-			int missingProjDepths = projectiveDepthMissing.col(indices[i]).count();
-			// Add up, account that each missing vector (3 coeff) means one missing proj depth
-			newCols += missingPointCoeff + missingProjDepths - missingPointCoeff/3;
-		}
-
-		// Extend 4 columns to B
-		Eigen::MatrixXd B = Eigen::MatrixXd::Zero(viewCount*3, 4+newCols);
-		int newColIndex = 4;
-		for (int i = 0; i < 4; i++)
-		{
-			for (int v = 0; v < viewCount; v++)
-			{
-				Eigen::Vector3d x = projectiveMatrix.block<3,1>(v*3, indices[i]);
-				if (x.hasNaN()) 
-				{ // Missing point
-					B(v*3+0,newColIndex++) = 1;
-					B(v*3+1,newColIndex++) = 1;
-					B(v*3+2,newColIndex++) = 1;
-					continue;
-				}
-				if (projectiveDepthMissing(v, indices[i])) 
-				{ // Still have coordinates, already embedded
-					B.block<3,1>(v*3,newColIndex++) = x.normalized();
-					continue;
-				}
-				B.block<3,1>(v*3,i) = x;
-			}
-			// Make all columns normalised to 1 for conditioning
-			//B.col(i).normalise(); // Doesn't actually do much
-		}
-
-		// Check that B is full rank, else discard
-		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_B(B);
-		int rankB = svd_B.rank();
-		if (rankB >= 4+newCols) // TODO: Still take even if not full rank, any nullspace should be fine
-		{ // Extract null space / orthogonal complement of B
-			int colCount = viewCount*3-rankB;
-			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
-			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
-			//partN.push_back(orthComplementB);
-			priv_partN.push_back(orthComplementB);
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
-			colsN += colCount;
-		}
-		else 
-		{
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
-		}
-    }
-	auto p1 = sclock::now();
-	LOGC(LDebug, "Thread %d added %d potential parts in %fms!", omp_get_thread_num(), priv_partN.size(), dtMS(p0, p1));
-    #pragma omp critical
-    partN.insert(partN.end(), priv_partN.begin(), priv_partN.end());
-	} */
-
-	//int p = -1;
 	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests)
 	{
-		//p++;
-		//auto indices = permIndices[p];
 		int indices[4];
 		for (int i = 0; i < 4; i++)
 		{

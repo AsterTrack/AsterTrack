@@ -43,6 +43,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <securitybaseapi.h>
 #endif
 
+#include "ctpl/ctpl.hpp"
+extern ctpl::thread_pool threadPool;
+
 AppState AppInstance;
 ServerState StateInstance = {};
 static std::atomic<bool> quitApp = { false };
@@ -276,6 +279,12 @@ int main (void)
 	// This is because some statics initialised after server might be required while some threads are still exiting
 	// Notably: vrpn_ConnectionManager, which would automatically delete all vrpn_Connection that might still be in use
 	ServerExit(StateInstance);
+
+	// Wait for potentially still running computation threads before exiting
+	// Otherwise, AppState/ServerState/PipelineState may be deconstructed before threadPool
+	// This may lead to threads using deallocated memory (notably: logging)
+	threadPool.clear_queue();
+	threadPool.stop(true);
 
 	// If UI signaled to close the WHOLE app, just exit
 	exit(0);

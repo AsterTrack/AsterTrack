@@ -180,30 +180,19 @@ static Eigen::Transform<Scalar,3,Type> kabsch(Eigen::Ref<Eigen::Matrix<Scalar,Ei
 template<typename Scalar>
 Scalar solveFundamentalMatrix(const Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> &dataMatrix, Eigen::Matrix<Scalar,3,3> &fundamentalMatrix)
 {
-	// Solve dataMatrix * f = 0 in least square sense
-	// TODO: Choose either SVD or EVD based on speed and accuracy
-
-	typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> MatrixX;
-	typedef Eigen::Matrix<Scalar,3,3> Matrix3;
-
-	// Option: SVD
-	/*Eigen::BDCSVD<MatrixX, Eigen::ComputeThinV> svd(dataMatrix);
+	// While SelfAdjointEigenSolver would be faster, SVD solves dataMatrix * f = 0 more accurately in the least squares sense
+	Eigen::BDCSVD<MatrixX<Scalar>, Eigen::ComputeThinV> svd(dataMatrix);
 	Eigen::Matrix<Scalar,9,1> fv = svd.matrixV().col(8);
-	Eigen::Matrix<Scalar,9,1> rankValues = svd.singularValues();*/
-
-	// Option: EVD
-	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,9,9>> evd(dataMatrix.transpose()*dataMatrix, Eigen::ComputeEigenvectors);
-	Eigen::Matrix<Scalar,9,1> fv = evd.eigenvectors().col(0);
-	Eigen::Matrix<Scalar,9,1> rankValues = evd.eigenvalues().reverse();
+	Eigen::Matrix<Scalar,9,1> rankValues = svd.singularValues();
 
 	//LOGC(LTrace, "Fundamental Matrix Rank Values: %f, %f, %f, %f, %f, %f, %f, %f, %f\n", rankValues(0), rankValues(1), rankValues(2), rankValues(3), rankValues(4), rankValues(5), rankValues(6), rankValues(7), rankValues(8));
 
 	// Assemble coefficients to fundamental matrix
-	Matrix3 F;
+	Matrix3<Scalar> F;
 	F << fv(0), fv(1), fv(2), fv(3), fv(4), fv(5), fv(6), fv(7), fv(8);
 
 	// Decompose Fd by using SVD to expose singular values
-	Eigen::JacobiSVD<Matrix3, Eigen::ComputeFullU | Eigen::ComputeFullV> svd_rank(F);
+	Eigen::JacobiSVD<Matrix3<Scalar>, Eigen::ComputeFullU | Eigen::ComputeFullV> svd_rank(F);
 	//LOGC(LTrace, "Fundamental matrix singular values before rank-2 truncation: %f, %f, %f\n", svd_rank.singularValues().x(), svd_rank.singularValues().y(), svd_rank.singularValues().z());
 
 	// Reduce rank to 2 by removing the least significant (third) singular value

@@ -706,13 +706,9 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	}
 
 	// Get orthogonal complement of dimension 4, which is the target vector space of M (up to noise ofc)
-	// TODO: Choose either SVD or EVD
-	/*Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_N(N);
-	basis = svd_N.matrixU().block(0, recViewCount*3-4, recViewCount*3, 4);
-	Eigen::Matrix<double,5,1> rankValues = svd_N.singularValues().tail<5>().reverse();*/
-	Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
-	Eigen::MatrixXd basis = evd_N.eigenvectors().block(0, 0, viewCount*3, 4);
-	Eigen::Matrix<double,5,1> rankValues = evd_N.eigenvalues().head<5>();
+	Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_N(N);
+	Eigen::MatrixXd basis = svd_N.matrixU().block(0, viewCount*3-4, viewCount*3, 4);
+	Eigen::Matrix<double,5,1> rankValues = svd_N.singularValues().tail<5>().reverse();
 
 	if (rankValues(3)*params.basis.minRankFactor > rankValues(4))
 	{ // Expected full rank due to noise, less than this means not enough 4-tuples were added

@@ -277,13 +277,9 @@ HANDLE_ERROR estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &ca
 		if (floorPoints[i].confidence > 1)
 			N.col(index++) = floorPoints[i].pos-origin;
 	}
-	// TODO: Choose either SVD or EVD
-	/* Eigen::JacobiSVD<Matrix3<Scalar>, Eigen::ComputeFullU> svd_N(N);
-	Vector3<Scalar> axis = svd_N.matrixU().block<3,1>(0, 2);
-	Vector3<Scalar> rankValues = svd_N.singularValues().tail<3>().reverse(); */
-	Eigen::SelfAdjointEigenSolver<Matrix3<Scalar>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
-	Vector3<Scalar> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
-	Vector3<Scalar> rankValues = evd_N.eigenvalues().template head<3>();
+	Eigen::BDCSVD<Matrix3<Scalar>, Eigen::ComputeFullU> svd_N(N);
+	Vector3<Scalar> axis = svd_N.matrixU().template block<3,1>(0, 2);
+	Vector3<Scalar> rankValues = svd_N.singularValues().template tail<3>().reverse();
 	LOG(LPointCalib, LDebug, "    PCA for rotation has ranks (%f, %f, %f)\n", rankValues(2), rankValues(1), rankValues(0));
 
 	if (rankValues(0)*1000 > rankValues(1))
@@ -340,13 +336,9 @@ void getCalibNormalisation(const std::vector<CameraCalib_t<Scalar>> &calibs, Mat
 		if (!calib.invalid())
 			N.col(c++) = calib.transform.translation()-origin;
 
-	// TODO: Choose either SVD or EVD
-	Eigen::JacobiSVD<Eigen::Matrix3X<Scalar>, Eigen::ComputeFullU> svd_N(N);
+	Eigen::BDCSVD<Eigen::Matrix3X<Scalar>, Eigen::ComputeFullU> svd_N(N);
 	Vector3<Scalar> axis = svd_N.matrixU().template block<3,1>(0, 2);
 	//Vector3<Scalar> rankValues = svd_N.singularValues().template tail<3>().reverse();
-	/* Eigen::SelfAdjointEigenSolver<Eigen::Matrix3X<Scalar>> evd_N(N*N.transpose(), Eigen::ComputeEigenvectors);
-	Vector3<Scalar> axis = evd_N.eigenvectors().template block<3,1>(0, 0);
-	Vector3<Scalar> rankValues = evd_N.eigenvalues().template head<3>(); */
 
 	// Flip room up axis based on camera positions
 	Scalar flipAxis = 0;

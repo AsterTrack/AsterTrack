@@ -554,6 +554,8 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 	#pragma omp parallel
 #endif
 	{
+	std::vector<int> selectablePoints;
+	VectorX<BOOL> selectedViews = VectorX<BOOL>::Ones(viewCount);
 
 #ifdef PARALLEL
 	std::vector<Eigen::MatrixXd> priv_partN;
@@ -572,20 +574,28 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		if (tempColsN >= maxNColumns || tempPartsN >= max4Tuples) continue;
 #endif
 
+		// Prepare selection buffers
+		selectablePoints.resize(pointCount);
+		std::iota(selectablePoints.begin(), selectablePoints.end(), 0);
+		selectedViews.setOnes();
+
 		int indices[4];
+		bool good = false;
 		for (int i = 0; i < 4; i++)
 		{
-			bool searching = true;
-			while (searching)
-			{
-				indices[i] = rand()%pointCount;
-				bool unique = true;
-				for (int j = 0; j < i; j++)
-					unique = unique && indices[j] != indices[i];
-				if (unique) searching = false;
-				// TODO: Discard columns early if they do not have full rank on shared known points
+			good = false;
+			for (int j = 0; j < 10 && !selectablePoints.empty() && !good; j++)
+			{ // Find next column that results in a useable tuple
+				indices[i] = selectablePoints[rand() % selectablePoints.size()];
+				auto selectableEnd = remove_swap(selectablePoints.begin(), selectablePoints.end(), indices[i]);
+				selectablePoints.erase(selectableEnd, selectablePoints.end());
+				// Found next column
+				good = true;
 			}
+			if (!good) break;
 		}
+		if (!good) continue;
+		int selViewCount = selectedViews.cast<int>().sum();
 
 		// Determine number of columns that need to be added
 		Eigen::VectorXi obsDataMissing = Eigen::VectorXi::Zero(viewCount);
@@ -600,6 +610,7 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		int newCols = 0;
 		for (int v = 0; v < viewCount; v++)
 		{
+			if (!selectedViews(v)) continue;
 			if (obsDataMissing(v) > 0 || projDepthMissing(v) >= 3)
 				newCols += 3;
 			else
@@ -607,42 +618,52 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 		}
 
 		// Extend 4 columns to B
-		Eigen::MatrixXd B = Eigen::MatrixXd::Zero(viewCount*3, 4+newCols);
+		Eigen::MatrixXd B = Eigen::MatrixXd::Zero(selViewCount*3, 4+newCols);
 		int newColIndex = 4;
-		for (int v = 0; v < viewCount; v++)
+		for (int v = 0, vv = 0; v < viewCount; v++)
 		{
+			if (!selectedViews(v)) continue;
 			if (obsDataMissing(v) > 0 || projDepthMissing(v) >= 3)
 			{
-				B(v*3+0,newColIndex++) = 1;
-				B(v*3+1,newColIndex++) = 1;
-				B(v*3+2,newColIndex++) = 1;
+				B(vv*3+0,newColIndex++) = 1;
+				B(vv*3+1,newColIndex++) = 1;
+				B(vv*3+2,newColIndex++) = 1;
+				vv++;
 				continue;
 			}
 			for (int i = 0; i < 4; i++)
 			{
 				Eigen::Vector3d x = projectiveMatrix.block<3,1>(v*3, indices[i]);
 				if (!projectiveDepthMissing(v, indices[i])) 
-					B.block<3,1>(v*3,i) = x;
+					B.block<3,1>(vv*3,i) = x;
 				else // Still have coordinates, already embedded
-					B.block<3,1>(v*3,newColIndex++) = x.normalized();
+					B.block<3,1>(vv*3,newColIndex++) = x.normalized();
 			}
+			vv++;
 		}
 
 		// Check that B is full rank, else discard
 		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_B(B);
 		int rankB = svd_B.rank();
-		int colCount = viewCount*3 - rankB;
-		if (rankB >= 4+newCols && colCount >= 1)
+		int colCount = selViewCount*3 - rankB;
+		if (rankB >= 4+newCols && colCount > 0)
 		{ // Extract null space / orthogonal complement of B
-			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, viewCount*3);
-			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, viewCount*3, colCount);
+			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, selViewCount*3);
+			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, selViewCount*3, colCount);
+			Eigen::MatrixXd nullspace = Eigen::MatrixXd::Zero(viewCount*3, colCount);
+			for (int v = 0, vv = 0; v < viewCount; v++)
+			{ // Transfer nullspace to all views, keep 0 for disabled views
+				if (!selectedViews(v)) continue;
+				nullspace.middleRows<3>(v*3) = orthComplementB.middleRows<3>(vv*3);
+				vv++;
+			}
 #ifdef PARALLEL
-			priv_partN.push_back(orthComplementB);
+			priv_partN.push_back(nullspace);
 			totalColsN.fetch_add(colCount);
 			totalPartN.fetch_add(1);
 			tested4Tuples++;
 #else
-			partN.push_back(orthComplementB);
+			partN.push_back(nullspace);
 #endif
 			colsN += colCount;
 		}

@@ -215,4 +215,29 @@ inline void printBuffer(std::stringstream &ss, uint8_t *buffer, int size)
 		ss << std::setfill('0') << std::setw(2) << (int)buffer[i];
 }
 
+
+/* More performant remove when relative order does not matter */
+
+template<class ForwardIt, class T = typename std::iterator_traits<ForwardIt>::value_type>
+ForwardIt remove_swap(ForwardIt first, ForwardIt last, const T& value)
+{
+    first = std::find(first, last, value);
+    if (first == last) return first;
+	std::advance(last, -1);
+	if (first != last)
+		std::swap(*first, *last);
+	return last;
+}
+
+template<class ForwardIt, class UnaryPred>
+ForwardIt remove_swap_if(ForwardIt first, ForwardIt last, UnaryPred p)
+{
+    first = std::find_if(first, last, p);
+    if (first == last) return first;
+	std::advance(last, -1);
+	if (first != last)
+		std::swap(*first, *last);
+	return last;
+}
+
 #endif // UTIL_H

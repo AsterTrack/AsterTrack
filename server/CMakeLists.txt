@@ -27,7 +27,8 @@ set(SERVER
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp
 	pipeline/pipeline_calibration_point.cpp pipeline/pipeline_calibration_target.cpp
 	calib/obs_data.cpp calib/optimisation.cpp
-	calib_point/reconstruction.cpp calib_point/calibration_room.cpp
+	calib_point/calibration_room.cpp calib_point/reconstruction.cpp
+	calib_point/reconstruction_tools.cpp calib_point/reconstruction_recovery.cpp calib_point/reconstruction_stratification.cpp
 	calib_target/reconstruction.cpp calib_target/aquisition.cpp calib_target/assembly.cpp
 	point/sequence_data.cpp point/sequences2D.cpp point/triangulation.cpp
 	target/target.cpp target/detection2D.cpp target/detection3D.cpp target/tracking2D.cpp

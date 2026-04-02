@@ -1603,7 +1603,7 @@ static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &cam
 	int tgtSize = 20, itCount = 10;
 #endif
 	int tgtHeight = std::ceil(tgtSize*mode.aspect);
-	int width = tgtSize/visCamera.view.camZoom, height = tgtHeight/visCamera.view.camZoom;
+	int width = tgtSize/std::max(0.5f, visCamera.view.camZoom), height = tgtHeight/std::max(0.5f, visCamera.view.camZoom);
 	thread_local std::vector<Eigen::Vector2f> undistortionTex;
 	undistortionTex.clear();
 	undistortionTex.resize(width*height);

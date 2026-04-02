@@ -75,117 +75,221 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	Eigen::MatrixXd normMeasurementMatrixOriginal = normMeasurementMatrix;
 
 
-	// ----- Projective Depths Estimation
-	LOGC(LDebug, "-- Projective Depths Estimation");
+	// ----- Measurement Extrapolation Loop using Projective Depth Estimation
 
-	// Iteratively determine projective depths according to best strategy
 	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
-	Eigen::VectorXi viewsDiscarded = Eigen::VectorXi::Zero(viewCount);
-	MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(projectiveDepthMatrix, normMeasurementMatrixOriginal, normMeasurementMatrix, params, viewsDiscarded);
-	assert(depthsEstimated.rows() == viewCount && depthsEstimated.cols() == pointCount);
-
-	int recViewCount = viewCount - viewsDiscarded.count();
-	if (recViewCount < 2)
-	{ // TODO: Reconstructing 2 cameras MAY work, allow for now to give user choice
-		LOGC(LError, "Cannot recover any views/camera calibrations since only %d/%d had significant overlap!", recViewCount, viewCount);
-		for (int i = 0; i < viewsDiscarded.size(); i++)
-			LOGC(LError, " View %d got recoverable state %d!", i, viewsDiscarded[i]);
-		return asprintf_s("Cannot recover any views/camera calibrations since only %d/%d had significant overlap!", recViewCount, viewCount);
-	}
-	if (stopToken.stop_requested())
-		return std::nullopt;
-
-	// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
-	MatrixX<BOOL> projectiveDepthMissing(recViewCount, pointCount);
-	MatrixX<BOOL> observationDataMissing(recViewCount, pointCount);
-	Eigen::MatrixXd projectiveMatrix(recViewCount*3, pointCount);
-	Eigen::MatrixXd recViewNormInv(3, recViewCount*3);
-	for (int vv = 0, v = -1; vv < viewCount; vv++)
+	Eigen::ArrayX<BOOL> maskedViews(viewCount), maskedPoints(pointCount);
+	while (!stopToken.stop_requested())
 	{
-		if (viewsDiscarded(vv)) continue;
-		v++;
-		for (int p = 0; p < pointCount; p++)
-		{
-			double projDepth = projectiveDepthMatrix(vv,p);
-			auto obsData = normMeasurementMatrix.block<3,1>(vv*3, p);
-			projectiveDepthMissing(v,p) = 1 - depthsEstimated(v, p);
-			observationDataMissing(v,p) = obsData.hasNaN();
-			projectiveMatrix.block<3,1>(v*3, p) = projDepth * obsData;
+		auto t0 = pclock::now();
+
+		// ----- Projective Depths Estimation
+		LOGC(LDebug, "-- Projective Depths Estimation");
+
+		// Determine projective depths for a submatrix that needs filling (or whole matrix if not)
+		// These will allow (partial) factorisatin with SVD, without, the matrix has too many free scaling variables
+		projectiveDepthMatrix.setOnes();
+		MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(projectiveDepthMatrix, normMeasurementMatrixOriginal, normMeasurementMatrix, params);
+		assert(depthsEstimated.rows() == viewCount && depthsEstimated.cols() == pointCount);
+		if (depthsEstimated.all())
+		{ // Got all depths, all measurements, can proceed
+			LOGC(LInfo, "Proceeding after recovery with all data points estimated!");
+			maskedViews.setZero();
+			maskedPoints.setZero();
+			break;
 		}
-		recViewNormInv.block<3,3>(0,v*3) = viewNormInv.block<3,3>(0,vv*3);
+		if (stopToken.stop_requested())
+			break;
+
+		// Find relevant submatrix to continue with
+		int recViewCount = (depthsEstimated.cast<int>().rowwise().sum().array() > params.FM.minPairwiseCorrespondences*2).cast<int>().sum();
+		int recPointCount = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<int>().sum();
+		if (!params.strategy.forceOneshotReconstruction &&
+			recViewCount == viewCount && recPointCount > pointCount*params.strategy.stopAtPointRecoveryRate)
+		{ // May leave some cameras with less data than they should have, but useful for testing
+			LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d) across all views have been recovered!",
+				(float)recPointCount/pointCount*100.0f, recPointCount, pointCount);
+			maskedViews.setZero();
+			maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<BOOL>();
+			break;
+		}
+		// Take all samples for oneshot, may recover missing projective depths, and are more desparate for data
+		int pointObsLimit = params.strategy.forceOneshotReconstruction? 1 : 2;
+		// Filter points first to inform rough view sample count
+		maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() < pointObsLimit).cast<BOOL>();
+		for (int p = 0; p < pointCount; p++)
+			if (maskedPoints(p))
+				depthsEstimated.col(p).setZero();
+		// Filter views at last to ensure they are helpful
+		maskedViews = (depthsEstimated.cast<int>().rowwise().sum().array() < params.FM.minPairwiseCorrespondences*2).cast<BOOL>();
+		for (int v = 0; v < viewCount; v++)
+			if (maskedViews(v))
+				depthsEstimated.row(v).setZero();
+		// And finally filter points again incase they are now insufficiently covered
+		maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() < pointObsLimit).cast<BOOL>();
+		recViewCount = viewCount - maskedViews.cast<int>().sum();
+		recPointCount = pointCount - maskedPoints.cast<int>().sum();
+		if (depthsEstimated.cast<int>().sum() == recPointCount * recViewCount)
+		{
+			LOGC(LInfo, "Proceeding after complete recovery of %d/%d cameras and %d/%d points!", recViewCount, viewCount, recPointCount, pointCount);
+			break;
+		}
+		LOGC(LInfo, "Filtered down to %d/%d views and %d/%d points for this iterations submatrix!", recViewCount, viewCount, recPointCount, pointCount);
+
+		// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
+		MatrixX<BOOL> projectiveDepthMissing(recViewCount, recPointCount);
+		MatrixX<BOOL> observationDataMissing(recViewCount, recPointCount);
+		Eigen::MatrixXd projectiveMatrix(recViewCount*3, recPointCount);
+		for (int vv = 0, v = -1; vv < viewCount; vv++)
+		{
+			if (maskedViews(vv)) continue;
+			v++;
+			for (int pp = 0, p = -1; pp < pointCount; pp++)
+			{
+				if (maskedPoints(pp)) continue;
+				p++;
+				double projDepth = projectiveDepthMatrix(vv,pp);
+				auto obsData = normMeasurementMatrix.block<3,1>(vv*3, pp);
+				projectiveDepthMissing(v,p) = 1 - depthsEstimated(vv, pp);
+				observationDataMissing(v,p) = obsData.hasNaN();
+				projectiveMatrix.block<3,1>(v*3, p) = projDepth * obsData;
+			}
+		}
+
+
+		// ----- Matrix Balancing
+
+		balanceMatrix3Triplet(projectiveMatrix);
+
+		auto t1 = pclock::now();
+
+		if (stopToken.stop_requested())
+			break;
+
+
+		// ----- Data Basis Estimation
+		LOGC(LDebug, "-- Data Basis Estimation");
+
+		// Right now projectiveMatrix has data holes that need to be filled by extrapolation
+		// Both due to missing points and missing projective depths (marked by respective missing-array)
+		// For that, find basis for the vector space of rank 4 spanned by the projectiveMatrix
+		Eigen::MatrixXd basis(recViewCount*3, 4);
+		float noiseFactor = determineRank4Basis(basis, projectiveMatrix, projectiveDepthMissing, observationDataMissing, params, stopToken);
+		bool recoverProblems = noiseFactor < params.basis.minRankFactor;
+		if (std::isnan(noiseFactor))
+		{ // Signal that recovery of basis is impossible for this submatrix
+			// Already took measures that is should be recoverable, so can only fully abort iterations here
+			LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
+			return "Failed to determine basis of data samples due to numerical errors!";
+		}
+		if (stopToken.stop_requested())
+			break;
+
+		auto t2 = pclock::now();
+
+
+		// ----- Missing Data Extrapolation
+		LOGC(LDebug, "-- Missing Data Extrapolation");
+
+		// Now use basis to complete the columns of the projectiveMatrix as linear combinations of that basis
+		// Then basis*P_approx will be an estimation of the factorisation of the submatrix
+		// Points that are not (yet) recoverable may still be NAN in P_approx
+		Eigen::MatrixXd P_approx = Eigen::MatrixXd::Constant(4, recPointCount, NAN);
+		auto recoverStats = recoverPointData(projectiveMatrix, projectiveDepthMissing, basis, P_approx);
+		int recoveredPoints = recoverStats.first;
+		int unrecoverablePoints = recoverStats.second;
+
+		LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!", 
+			std::sqrt((projectiveMatrix - (basis*P_approx)).squaredNorm() / (recViewCount*3*pointCount)));
+
+		if (recoveredPoints == 0)
+		{ // Can't improve further
+			assert(unrecoverablePoints != 0); // Should have stopped right after depth estimation already
+			LOGC(LInfo, "Proceeding after failing to recover any of the %d points, with %d/%d views and %d/%d points considered.",
+				unrecoverablePoints, recViewCount, viewCount, recPointCount, pointCount);
+			for (int pp = 0, p = -1; pp < pointCount; pp++)
+			{
+				if (maskedPoints(pp)) continue;
+				p++;
+				if (P_approx.col(p).hasNaN())
+					maskedPoints(pp) = 1;
+			}
+			break;
+		}
+
+		// Copy recovered/extrapolated measurements
+		for (int vv = 0, v = -1; vv < viewCount; vv++)
+		{
+			if (maskedViews(vv)) continue;
+			v++;
+			for (int pp = 0, p = -1; pp < pointCount; pp++)
+			{
+				if (maskedPoints(pp)) continue;
+				p++;
+				if (P_approx.col(p).hasNaN()) continue;
+				auto obsData = normMeasurementMatrix.block<3,1>(vv*3, pp);
+				auto recData = projectiveMatrix.block<3,1>(v*3, p);
+				// Could keep projective depth, algorithms should be able to handle it
+				// But it will be reestimated anyway, it is of no value to keep
+				if (obsData.hasNaN())
+					obsData = recData.hnormalized().homogeneous();
+				// Recover missing projective depths only in oneshot - otherwise, redetermine all anew next iteration
+				if (params.strategy.forceOneshotReconstruction)
+					projectiveDepthMatrix(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
+			}
+		}
+
+		auto t3 = pclock::now();
+
+		LOGC(LInfo, "-- Submatrix recovery of %dx%d took %.2fms: %.2fms proj. depth, %.2fms basis, %.2fms filling", 
+			recViewCount*3, recPointCount, dtMS(t0, t3), dtMS(t0, t1), dtMS(t1, t2), dtMS(t2, t3));
+
+		if (params.strategy.forceOneshotReconstruction)
+		{
+			// Mask off all points not fully recovered
+			for (int pp = 0, p = -1; pp < pointCount; pp++)
+			{
+				if (maskedPoints(pp)) continue;
+				p++;
+				if (P_approx.col(p).hasNaN())
+					maskedPoints(pp) = 1;
+			}
+			break;
+		}
 	}
-
-
-	// ----- Matrix Balancing
-
-	balanceMatrix3Triplet(projectiveMatrix);
-
-	auto mid1 = pclock::now();
-
-	if (stopToken.stop_requested())
-		return std::nullopt;
-
-
-	// ----- Missing Data Extrapolation
-	LOGC(LDebug, "-- Missing Data Extrapolation");
-
-	// Right now projectiveMatrix has data holes that need to be filled by extrapolation
-	// Both due to missing points (NaNs) and missing projective depth (marked by projectiveDepthMissing)
-	// For that, find basis for the vector space of rank 4 spanned by the projectiveMatrix
-	// Then complete the columns of the projectiveMatrix as linear combinations of that basis
-	Eigen::MatrixXd basis(recViewCount*3, 4);
-	float noiseFactor = determineRank4Basis(basis, projectiveMatrix, projectiveDepthMissing, observationDataMissing, params, stopToken);
-	bool recoverProblems = noiseFactor < params.basis.minRankFactor;
-	if (std::isnan(noiseFactor))
-	{ // Signal that recovery of basis is impossible for this submatrix
-		LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
-		return "Failed to determine basis of data samples due to numerical errors!";
-	}
-	if (stopToken.stop_requested())
-		return std::nullopt;
-	auto mid2 = pclock::now();
-	Eigen::MatrixXd P_approx = Eigen::MatrixXd::Constant(4, pointCount, NAN);
-	int pointsUnrecoverable = recoverPointData(projectiveMatrix, projectiveDepthMissing, basis, P_approx);
-
-	LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!", 
-		std::sqrt((projectiveMatrix - (basis*P_approx)).squaredNorm() / (recViewCount*3*pointCount)));
-
-	auto mid3 = pclock::now();
 
 	if (stopToken.stop_requested())
 		return std::nullopt;
 
 
 	// ----- Assemble Factorisation Matrix
-	LOGC(LDebug, "-- Factorisation");
+	LOGC(LDebug, "-- Assemble Factorisation Matrix");
 
-	int recPointCount = pointCount-pointsUnrecoverable;
-	Eigen::MatrixXd factorisationMatrix(recViewCount*3, recPointCount);
-	{ // Assemble factorisationMatrix from real and approximated measurements, combined with fully estimated projective depths from basis 
-		for (int pp = 0, p = -1; pp < pointCount && p < recPointCount; pp++)
-		{
-			if (projectiveDepthMissing.col(pp).any()) continue;
-			p++;
-			// Column is fully determined, move points with projective depth recovered from basis into new matrix
-			for (int v = 0; v < recViewCount; v++)
-			{
-				double projDepth = basis.row(v*3+2) * P_approx.col(pp);
-				factorisationMatrix.block<3,1>(v*3,p) = projDepth * projectiveMatrix.block<3,1>(v*3,pp).hnormalized().homogeneous();
-			}
-		}
+	int recViewCount = viewCount - maskedViews.cast<int>().sum();
+	int recPointCount = pointCount - maskedPoints.cast<int>().sum();
+	if (recViewCount < 2 || recPointCount < 100)
+	{ // TODO: Reconstructing 2 cameras MAY work, allow for now to give user choice
+		std::string error = asprintf_s("Cannot recover any views/camera calibrations since only %d/%d are recoverable with %d/%d points!",
+			recViewCount, viewCount, recPointCount, pointCount);
+		LOGC(LError, "%s", error.c_str());
+		for (int i = 0; i < maskedViews.size(); i++)
+			LOGC(LError, " View %d got recoverable state %d!", i, maskedViews[i]);
+		return error;
 	}
+
+	// Properly subsample matrices using final masked views and points for factorisation
 	Eigen::MatrixXd recMeasurementMatrix(recViewCount*3, recPointCount);
-	{ // Restrict measurement matrix to recoverable views and points (solely for verification purposes)
-		for (int vv = 0, v = -1; vv < viewCount; vv++)
+	Eigen::MatrixXd factorisationMatrix(recViewCount*3, recPointCount);
+	for (int vv = 0, v = -1; vv < viewCount; vv++)
+	{
+		if (maskedViews(vv)) continue;
+		v++;
+		for (int pp = 0, p = -1; pp < pointCount; pp++)
 		{
-			if (viewsDiscarded(vv)) continue;
-			v++;
-			for (int pp = 0, p = -1; pp < pointCount; pp++)
-			{
-				if (projectiveDepthMissing.col(pp).any()) continue;
-				p++;
-				recMeasurementMatrix.block<3,1>(v*3,p) = measurementMatrix.block<3,1>(vv*3,pp);
-			}
+			if (maskedPoints(pp)) continue;
+			p++;
+			recMeasurementMatrix.block<3,1>(v*3, p) = measurementMatrix.block<3,1>(vv*3, pp);
+			factorisationMatrix.block<3,1>(v*3, p) = projectiveDepthMatrix(vv,pp) * normMeasurementMatrix.block<3,1>(vv*3, pp);
 		}
 	}
 
@@ -194,20 +298,22 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 
 	balanceMatrix3Triplet(factorisationMatrix);
 
-	auto mid4 = pclock::now();
+	auto t4 = pclock::now();
 
 	if (stopToken.stop_requested())
 		return std::nullopt;
 
 
 	// ----- Rank-4 Factorisation
+	LOGC(LDebug, "-- Rank-4 Factorisation");
 
 	Eigen::MatrixXd V_all, P_all;
 	{ // Factorise complemented data into View matrices and Points
 
 		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV> svd_M(factorisationMatrix);
-		LOGC(LDebug, "Factorisation matrix with %d unrecoverable columns removed has rank %d (should be 4) with rank values (%.2f, %.2f, %.2f, %.2f) - %.2f!", 
-			pointsUnrecoverable, (int)svd_M.rank(), svd_M.singularValues()(0), svd_M.singularValues()(1), svd_M.singularValues()(2), svd_M.singularValues()(3), svd_M.singularValues()(4));
+		auto &val = svd_M.singularValues();
+		LOGC(LDebug, "Factorisation matrix (%d x %d) with %d unrecoverable columns removed has rank %d (should be 4) with rank values (%.2f, %.2f, %.2f, %.2f) - %.2f!", 
+			recViewCount*3, recPointCount, pointCount-recPointCount, (int)svd_M.rank(), val(0), val(1), val(2), val(3), val(4));
 
 		// Discard noise data in ranks over 4, split singular values arbitrarily (here in half with sqrt)
 		Eigen::Matrix4d sigmaSqrt = svd_M.singularValues().head<4>().cwiseSqrt().asDiagonal();
@@ -215,15 +321,19 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		P_all = sigmaSqrt * svd_M.matrixV().leftCols<4>().transpose();
 
 		// Revert point normalisation
-		for (int v = 0; v < recViewCount; v++)
-			V_all.block<3,4>(v*3,0) = recViewNormInv.block<3,3>(0,v*3) * V_all.block<3,4>(v*3,0);
+		for (int vv = 0, v = -1; vv < viewCount; vv++)
+		{
+			if (maskedViews(vv)) continue;
+			v++;
+			V_all.block<3,4>(v*3,0) = viewNormInv.block<3,3>(0,vv*3) * V_all.block<3,4>(v*3,0);
+		}
 	}
 
 	// Test reprojection error on original (non-estimated) measurements
 	LOGC(LDebug, "Reprojection error of factorisation on measurements: %fpx RMSE", 
 		std::sqrt(calculateReprojectionErrorSq(V_all, P_all, recMeasurementMatrix))*PixelFactor);
 
-	auto mid5 = pclock::now();
+	auto t5 = pclock::now();
 
 
 	// ----- Bundle Adjustment
@@ -249,11 +359,11 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	V_corrected = V_corrected * H_cor;
 	P_corrected = H_cor * P_corrected;
 
-	auto mid6 = pclock::now();
-
 	// Test reprojection error on original (non-estimated) measurements
 	LOGC(LDebug, "Reprojection error of stratified factorisation on measurements: %fpx RMSE", 
 		std::sqrt(calculateReprojectionErrorSq(V_corrected, P_corrected, recMeasurementMatrix))*PixelFactor);
+
+	auto t6 = pclock::now();
 
 
 	// ----- Projective Factorisation
@@ -265,7 +375,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	{
 		LOGC(LDebug, "------------");
 
-		if (viewsDiscarded(vv))
+		if (maskedViews(vv))
 		{
 			LOGC(LWarn, "Can not recover view %d!", vv);
 			continue;
@@ -289,11 +399,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	LOGC(LDebug, "------------");
 
 	auto end = pclock::now();
-	LOGC(LDebug, 
-		"-- Reconstruction took %.2fms: "
-			"%.2fms proj. depth, %.2fms basis, %.2fms filling, %.2fms interim, %.2fms factorisation, %.2fms stratification, %.2fms camera factorisation", 
-		dtMS(start, end), 
-			dtMS(start, mid1), dtMS(mid1, mid2), dtMS(mid2, mid3), dtMS(mid3, mid4), dtMS(mid4, mid5), dtMS(mid5, mid6), dtMS(mid6, end));
+	LOGC(LInfo, "-- Reconstruction took %.2fms: %.2fms extrapolation, %.2fms factorisation, %.2fms stratification, %.2fms separation", 
+		dtMS(start, end), dtMS(start, t4), dtMS(t4, t5), dtMS(t5, t6), dtMS(t6, end));
 
 	return error;
 }

@@ -45,13 +45,30 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Min Confidence", "", &params.FM.minConfidence, &standard.FM.minConfidence, 0, 10, 0.1f);
 		EndSection();
 
+		BeginSection("Recovery Strategy");
+		BooleanProperty("Force Oneshot Reconstruction", &params.strategy.forceOneshotReconstruction, &standard.strategy.forceOneshotReconstruction);
+		BooleanProperty("Allow Indirect Transfers", &params.strategy.allowIndirectTransfers, &standard.strategy.allowIndirectTransfers);
+		BooleanProperty("Allow New Initialisations", &params.strategy.allowNewInititialisations, &standard.strategy.allowNewInititialisations);
+		ScalarProperty<float>("Transfer Weight", "", &params.strategy.transferPow, &standard.strategy.transferPow, 0, 10, 0.1f);
+		ScalarProperty<float>("Correspondence Weight", "", &params.strategy.correspondencePow, &standard.strategy.correspondencePow, 0, 10, 0.1f);
+		ScalarProperty<float>("Indirection Weight", "", &params.strategy.indirectionPow, &standard.strategy.indirectionPow, 0, 10, 0.1f);
+		ImGui::Spacing();
+		ScalarProperty<int>("Accept with View Count below", "", &params.strategy.minIterationViews, &standard.strategy.minIterationViews, 2, 10);
+		ScalarProperty<float>("Accept with Last Fill Rate above", "%", &params.strategy.acceptWithFillRateMin, &standard.strategy.acceptWithFillRateMin, 0, 100, 1.0f, 100);
+		ScalarProperty<float>("Min Fill Rate", "%", &params.strategy.minFillRate, &standard.strategy.minFillRate, 0, 100, 1.0f, 100);
+		ScalarProperty<float>("Min Primary Points", "%", &params.strategy.minPrimaryPointRate, &standard.strategy.minPrimaryPointRate, 0, 100, 1.0f, 100);
+		ScalarProperty<float>("Primary Point Coverage", "%", &params.strategy.primaryPointCoverage, &standard.strategy.primaryPointCoverage, 0, 100, 1.0f, 100);
+		ImGui::Spacing();
+		ScalarProperty<float>("Stop at Point Recovery Rate", "%", &params.strategy.stopAtPointRecoveryRate, &standard.strategy.stopAtPointRecoveryRate, 0, 100, 1.0f, 100);
+		EndSection();
+
 		BeginSection("Data Extrapolation");
-		ScalarProperty<float>("Max Columns Factor", "", &params.basis.nColMaxFactor, &standard.basis.nColMaxFactor, 0, 10, 0.1f);
-		ScalarProperty<float>("Min Columns Factor", "", &params.basis.nColMinFactor, &standard.basis.nColMinFactor, 0, 10, 0.1f);
-		ScalarProperty<int>("Min Columns", "", &params.basis.nColMin, &standard.basis.nColMin, 1, 10000, 10);
-		ScalarProperty<float>("Max Tuples Factor", "", &params.basis.tupleMaxFactor, &standard.basis.tupleMaxFactor, 0, 10, 0.1f);
-		ScalarProperty<float>("Max Tested Factor", "", &params.basis.tupleTestMaxFactor, &standard.basis.tupleTestMaxFactor, params.basis.tupleMaxFactor, 1000, 5.0f);
-		ScalarProperty<float>("Min Rank", "", &params.basis.minRankFactor, &standard.basis.minRankFactor, 0, 100, 0.5f);
+		ScalarProperty<float>("Max Columns Factor", "", &params.basis.nColMaxFactor, &standard.basis.nColMaxFactor, 0, 100, 1.0f);
+		ScalarProperty<float>("Min Columns Factor", "", &params.basis.nColMinFactor, &standard.basis.nColMinFactor, 0, 100, 0.1f);
+		ScalarProperty<int>("Min Columns", "", &params.basis.nColMin, &standard.basis.nColMin, 1, 10000, 100);
+		ScalarProperty<float>("Max Tuples Factor", "", &params.basis.tupleMaxFactor, &standard.basis.tupleMaxFactor, 0, 100, 1.0f);
+		ScalarProperty<float>("Max Tested Factor", "", &params.basis.tupleTestMaxFactor, &standard.basis.tupleTestMaxFactor, params.basis.tupleMaxFactor, 1000, 1.0f);
+		ScalarProperty<float>("Min Rank", "", &params.basis.minRankFactor, &standard.basis.minRankFactor, 0, 1000, 1.0f);
 		EndSection();
 
 		EndCollapsingRegion();

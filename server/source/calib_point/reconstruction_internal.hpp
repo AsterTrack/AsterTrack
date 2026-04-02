@@ -33,8 +33,7 @@ MatrixX<BOOL> estimateProjectiveDepths(
 	Eigen::MatrixXd &projectiveDepthMatrix,
 	const Eigen::MatrixXd &originalMeasurementMatrix,
 	const Eigen::MatrixXd &measurementMatrix,
-	const PointReconstructionParameters &params,
-	Eigen::VectorXi &viewsDiscarded);
+	const PointReconstructionParameters &params);
 
 float determineRank4Basis(
 	Eigen::MatrixXd &basis,
@@ -44,7 +43,7 @@ float determineRank4Basis(
 	const PointReconstructionParameters &params,
 	std::stop_token stopToken);
 
-int recoverPointData(
+std::pair<int, int> recoverPointData(
 	Eigen::MatrixXd &projectiveMatrix,
 	MatrixX<BOOL> &projectiveDepthMissing,
 	const Eigen::MatrixXd &basis, Eigen::MatrixXd &P_approx);

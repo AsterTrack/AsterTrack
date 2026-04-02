@@ -35,14 +35,12 @@ MatrixX<BOOL> estimateProjectiveDepths(
 	Eigen::MatrixXd &projectiveDepthMatrix,
 	const Eigen::MatrixXd &originalMeasurementMatrix,
 	const Eigen::MatrixXd &measurementMatrix,
-	const PointReconstructionParameters &params,
-	Eigen::VectorXi &viewsDiscarded)
+	const PointReconstructionParameters &params)
 {
 	int viewCount = measurementMatrix.rows()/3;
 	int pointCount = measurementMatrix.cols();
 	assert(projectiveDepthMatrix.rows() == viewCount);
 	assert(projectiveDepthMatrix.cols() == pointCount);
-	assert(viewsDiscarded.size() == viewCount);
 
 	MatrixX<BOOL> pointsObserved(viewCount, pointCount);
 	MatrixX<BOOL> pointsFilled(viewCount, pointCount);
@@ -72,22 +70,18 @@ MatrixX<BOOL> estimateProjectiveDepths(
 	MatrixX<BOOL> pointsRecoverable = pointsFilled;
 	MatrixX<BOOL> pointsRecovered = MatrixX<BOOL>::Zero(pointCount, viewCount);
 
-	const bool ALLOW_FURTHER_POINT_INITS = false;
-	const bool ALLOW_INDIRECT_SOURCES = false;
+	// Goal for oneshot reconstruction is to select a submatrix as large as possible, with ideally all cameras
+	// - This is not possible for disjointed views without indirect transfers or new initialisations
+	// Goal with iterative algorithm is to select a submatrix to fill the most data with next
+	// - Current implementation is not ideal for true multi-room setups, it just keeps growing the largest submatrix bit by bit
+	// - Ideal would be strong submatrices of each room recovered first, and then connected
+	// - So need to test each view, determine a strong submatrix based on real measurements, and weigh in how much it can fill
+	// - After strong submatrices are done, it should focus on views that are ideal in connecting those submatrices
 
 	// Recovered views and their point count with projective depths
 	std::map<int, int> recovered;
 	auto getNextBestTransfer = [&]() -> std::pair<int,int>
 	{
-		// Choose next best transfer from one view to another
-		// REQUIREMENT: Sufficient viewCorrespondences between them to calculate fundamental matrix
-		// BENEFIT: Missing projective depths in target view that source view has (initialised or OR already transferred)
-		// Requirement is static, easy to check
-		// Benefit requires matching of vector of points still recoverable in target view against bit-OR of:
-		// - vector of points already recovered in source view
-		// - bit-AND of vector of points in source view and vector of points still not initialised
-		// These fields are implemented as matrix int matrices
-
 		if (recovered.empty())
 		{ // Select seeded view
 			Eigen::VectorXi viewsRecover = (viewCorrespondences.array() >= params.FM.minPairwiseCorrespondences*2).cast<int>().colwise().sum();
@@ -108,29 +102,35 @@ MatrixX<BOOL> estimateProjectiveDepths(
 			return { bestView, bestTransfer };
 		}
 
+		int recViewCount = recovered.size();
+
 		// Iteratively determine next best recovery path, accounting for number of indirection from seeded view
 		std::pair<int,int> bestNext = { -1, -1 };
 		float bestWeight = 0;
 		int bestTransferrable = 0, bestExTransfer = 0, bestNewTransfer = 0;
 		for (int s = 0; s < viewCount; s++)
 		{
-			if (viewsDiscarded(s)) continue;
-			if (!ALLOW_INDIRECT_SOURCES && (!recovered.contains(s) || recovered[s] != 0))
+			if (!params.strategy.allowIndirectTransfers && (!recovered.contains(s) || recovered[s] != 0))
 				continue;
 			int indirection = recovered.contains(s)? recovered[s]+1 : 1;
 			for (int t = 0; t < viewCount; t++)
 			{
-				if (viewsDiscarded(t)) continue;
 				if (s == t) continue;
 				int correspondences = viewCorrespondences(s, t);
 				if (correspondences < params.FM.minPairwiseCorrespondences) continue;
 
-				auto projDepthsNewInSource = pointsFilled.col(s).array() * projDepthsUninitialised.array();
-				int newlyTransferrable = (pointsRecoverable.col(t).array() * projDepthsNewInSource.array()).cast<int>().sum();
 				int existingTransferrable = (pointsRecoverable.col(t).array() * pointsRecovered.col(s).array()).cast<int>().sum();
-				int transferrable = existingTransferrable + (ALLOW_FURTHER_POINT_INITS? newlyTransferrable : 0);
+				int newlyTransferrable = 0;
+				if (params.strategy.allowNewInititialisations)
+				{
+					auto projDepthsNewInSource = pointsFilled.col(s).array() * projDepthsUninitialised.array();
+					newlyTransferrable = (pointsRecoverable.col(t).array() * projDepthsNewInSource.array()).cast<int>().sum();
+				}
+				int transferrable = existingTransferrable + newlyTransferrable;
 
-				float weight = std::pow<float>(transferrable, 0.6f) * std::pow<float>(correspondences, 0.8f) / std::pow<float>(indirection, 0.6f);
+				float weight = std::pow<float>(transferrable, params.strategy.transferPow)
+					* std::pow<float>(correspondences, params.strategy.correspondencePow)
+					/ std::pow<float>(indirection, params.strategy.indirectionPow);
 				if (weight > bestWeight)
 				{ // Propagating from source view to this one is the current best next propagation possible
 					bestWeight = weight;
@@ -139,7 +139,7 @@ MatrixX<BOOL> estimateProjectiveDepths(
 					bestNewTransfer = newlyTransferrable;
 					bestNext = { s, t };
 				}
-				LOGC(LDebug, "    Weight between %d-%d with %d in src, %d pot in tgt: %.1f, T:%d, C:%d, I:%d",
+				LOGC(LTrace, "    Weight between %d-%d with %d in src, %d pot in tgt: %.1f, T:%d, C:%d, I:%d",
 					s, t, pointsRecovered.col(s).array().cast<int>().sum(), pointsRecoverable.col(t).array().cast<int>().sum(), weight, transferrable, correspondences, indirection);
 			}
 		}
@@ -147,10 +147,47 @@ MatrixX<BOOL> estimateProjectiveDepths(
 		{
 			int indirection = recovered.contains(bestNext.first)? recovered[bestNext.first]+1 : 1;
 			int correspondences = viewCorrespondences(bestNext.first, bestNext.second);
-			LOGC(LInfo, "Found pair (%d, %d) to be best (weight %.1f) with %d transferrable (%d ex, %d new), %d correspondences, and indirection of %d",
-				bestNext.first, bestNext.second, bestWeight, bestTransferrable, bestExTransfer, bestNewTransfer, correspondences, indirection);
-			if (correspondences < params.FM.minPairwiseCorrespondences || bestTransferrable < 100)
+			LOGC(LInfo, "Next transfer %d -> %d with %d points (%d ex, %d new), %d correspondences, and indirection of %d",
+				bestNext.first, bestNext.second, bestTransferrable, bestExTransfer, bestNewTransfer, correspondences, indirection);
+
+			VectorX<int> pointSamples = pointsRecovered.cast<int>().rowwise().sum();
+			auto recoverablePoints = (pointSamples.array() >= 2).cast<BOOL>();
+			auto primaryPoints = (pointSamples.array() > (int)(recViewCount * params.strategy.primaryPointCoverage)).cast<BOOL>().eval();
+			auto secondaryPoints = (recoverablePoints * (1-primaryPoints));
+
+			auto transferrable = (pointsRecoverable.col(bestNext.second).array() * pointsRecovered.col(bestNext.first).array()).eval();
+			auto primaryObs = primaryPoints * transferrable; // Observed by most cameras, intended to determine basis
+			auto secondaryObs = (1-primaryPoints) * transferrable; // At least two observations, intended to be recovered
+
+			VectorX<int> newPointSamples = pointSamples.array() + transferrable.cast<int>();
+			auto newRecoverablePoints = (newPointSamples.array() >= 2).cast<BOOL>();
+			auto newPrimaryPoints = (newPointSamples.array() > (int)((recViewCount+1) * params.strategy.primaryPointCoverage)).cast<BOOL>().eval();
+			auto newSecondaryPoints = (newRecoverablePoints * (1-newPrimaryPoints));
+
+			int recPoints = recoverablePoints.cast<int>().sum();
+			int newRecPoints = newRecoverablePoints.cast<int>().sum();
+			float newPrimaryPerc = (float)newPrimaryPoints.cast<int>().sum() / newRecPoints;
+	
+			int recoverySamples = (pointSamples.array() * recoverablePoints.cast<int>()).sum();
+			int newRecoverySamples = (newPointSamples.array() * newRecoverablePoints.cast<int>()).sum();
+			float fillRate = (float)recoverySamples / (recPoints * recViewCount);
+			float newFillRate = (float)newRecoverySamples / (newRecPoints * (recViewCount+1));
+
+			LOGC(LDebug, "    Of %d transferrable, %d are primary (%d -> %d), %d are secondary (%d -> %d)", transferrable.cast<int>().sum(),
+				primaryObs.cast<int>().sum(), primaryPoints.cast<int>().sum(), newPrimaryPoints.cast<int>().sum(),
+				secondaryObs.cast<int>().sum(), secondaryPoints.cast<int>().sum(), newSecondaryPoints.cast<int>().sum());
+			LOGC(LDebug, "    Prev fill rate %.2f%%, new fill rate %.2f%%", fillRate*100, newFillRate*100);
+
+			bool allowDiscard = !params.strategy.forceOneshotReconstruction
+				&& recViewCount >= params.strategy.minIterationViews
+				&& fillRate < params.strategy.acceptWithFillRateMin; // Fill rate limit already implies views > 2
+			bool wantDiscard = newPrimaryPerc < params.strategy.minPrimaryPointRate
+				|| newFillRate < params.strategy.minFillRate;
+			if (allowDiscard && wantDiscard)
+			{
+				LOGC(LInfo, " -> Discarded!");
 				return { -1, -1 };
+			}
 			if (correspondences < params.FM.minPairwiseCorrespondences*2)
 				indirection++; // While we'll try to recover, it's really bad
 			recovered.insert({ bestNext.second, indirection });
@@ -165,7 +202,7 @@ MatrixX<BOOL> estimateProjectiveDepths(
 		if (transfer.first < 0) break;
 		int s = transfer.first, t = transfer.second;
 
-		if (ALLOW_FURTHER_POINT_INITS || recovered.size() == 2)
+		if (params.strategy.allowNewInititialisations || recovered.size() == 2)
 		{ // Initialise uninitialised projective depths of source camera with 1
 			int newlyInit = 0;
 			for (int p = 0; p < pointCount; p++)
@@ -177,20 +214,17 @@ MatrixX<BOOL> estimateProjectiveDepths(
 				pointsRecovered(p, s) = 1;
 				newlyInit++;
 			}
-			LOGC(LInfo, "View strategy: Transfer from camera %d to camera %d - newly initialised %d / %d projective depths!", s, t, newlyInit, pointCount);
+			if (newlyInit)
+				LOGC(LInfo, "    Newly initialised %d / %d projective depths!", newlyInit, pointCount);
 		}
-		else
-			LOGC(LInfo, "View strategy: Transfer from camera %d to camera %d!", s, t);
 
 		// Determine fundamental matrix from rows of measurement matrix
 		Eigen::Matrix3d F;
 		std::pair<int,double> results = calculateFundamentalMatrix(originalMeasurementMatrix.middleRows<3>(s*3), originalMeasurementMatrix.middleRows<3>(t*3), F, params.FM.minPairwiseCorrespondences);
 		if (results.first < params.FM.minPairwiseCorrespondences || results.second < params.FM.minConfidence)
-		{ // View does not have sufficient correspondence with center view 
-			// TODO: Multiple recovery strategy iterations until view can be recovered
-			viewsDiscarded(t) = 1;
+		{ // View does not have sufficient correspondence with center view
 			LOGC(LWarn, "---- Retroactively abandoning view %d because it only shares %d points of %f confidence with best view %d!", t, results.first, results.second, s);
-			continue;
+			break;
 		}
 
 		// Find epipole as kernel of F
@@ -447,7 +481,7 @@ float determineRank4Basis(
 }
 
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int recoverPointData(
+std::pair<int, int> recoverPointData(
 	Eigen::MatrixXd &projectiveMatrix,
 	MatrixX<BOOL> &projectiveDepthMissing,
 	const Eigen::MatrixXd &basis, Eigen::MatrixXd &P_approx)
@@ -471,7 +505,7 @@ int recoverPointData(
 			int missingProjDepths = projectiveDepthMissing.col(p).count();
 			int usefulRows = viewCount*3 - missingProjDepths*3;
 			if (usefulRows < 4)
-			{ // TODO: These can be potentially recovered with more iterations of spreading newly estimated projective depths
+			{
 				LOGC(LTrace, "Col %d cannot be used so far, only %d / %d rows useful!", p, usefulRows, viewCount*3);
 				pointsUnrecoverable++;
 				continue;
@@ -549,5 +583,5 @@ int recoverPointData(
 	LOGC(LDebug, "Fully recovered %d columns with %d unrecoverable and %d confirmed!", pointsRecovered, pointsUnrecoverable, pointsConfirmed);
 	LOGC(LDebug, "Average recovery error of %f and average confirmation error of %f!", recoveryError/pointsRecovered, confirmationError/pointsConfirmed);
 
-	return pointsUnrecoverable;
+	return { pointsRecovered, pointsUnrecoverable };
 }

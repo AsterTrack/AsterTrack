@@ -500,7 +500,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 	ImGui::Text("%s", calibSamples.contextualRLock()->c_str());
 	SameLineTrailing(ImGui::GetFrameHeight());
 	if (RetryButton("Recalc"))
-	{ // TODO: Fix incremental observation update (3/3)
+	{
 		visState.incObsUpdate.resetFirstFrame = 0;
 	}
 

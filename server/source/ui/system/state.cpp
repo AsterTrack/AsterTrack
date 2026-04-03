@@ -84,6 +84,7 @@ void InterfaceState::UpdateSequences(bool reset)
 			}
 		}
 	}
+	visState.incObsUpdate.lastFrameUpdated = pipeline.frameNum.load();
 }
 
 void InterfaceState::UpdateCalibrationError(bool reset, bool userTrigger)
@@ -174,6 +175,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 				map.second.vis.observations.frameIndices.clear();
 				map.second.vis.observations.ptsStable.clear();
 			}
+			inc.frameIndices.clear();
 			inc.frameStable = 0;
 		}
 		else
@@ -186,12 +188,13 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 					map.second.vis.observations.ptsStable.clear();
 				else
 					map.second.vis.observations.ptsStable.resize(std::prev(reset)->second);
-				inc.cameraTriObservations[map.second.camera->pipeline->index] -= prevSize - map.second.vis.observations.ptsStable.size();
+				inc.cameraTriObservations[map.second.camera->pipeline->index] = map.second.vis.observations.ptsStable.size();
 			}
-			auto reset = inc.frameIndices.lower_bound(inc.resetFirstFrame+1);
-			if (reset == inc.frameIndices.end() || reset == inc.frameIndices.begin())
+			auto reset = inc.frameIndices.lower_bound(inc.resetFirstFrame);
+			if (reset == inc.frameIndices.begin())
 			{
-				LOG(LGUI, LDebug, "Resetting visualisation back to frame 0 from frame %d because there was no checkpoint going back before %ld", inc.frameStable, inc.resetFirstFrame);
+				int lastCheckpoint = inc.frameIndices.empty()? 0 : std::prev(inc.frameIndices.end())->first;
+				LOG(LGUI, LDebug, "Resetting visualisation back to frame 0 from frame %d because there was no checkpoint going back before %ld - last %d", inc.frameStable, inc.resetFirstFrame, lastCheckpoint);
 				inc.pointsStable = 0;
 				inc.frameStable = 0;
 			}
@@ -216,18 +219,14 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 	{ // Stable Update
 		std::vector<std::vector<Eigen::Vector2f>> newPointsStable(cameraCount);
 		for (int m = 0; m < markerCount; m++)
-		{
+		{ // Gather new stable points for each camera
 			const MarkerSequences &marker = sequences.markers[m];
-			// TODO: Fix incremental observation update (1/3)
-			// The error is very likely here, with selecting and updating from frmaes
-			// resetFirstFrame > 0 and stableSequenceDelay both don't seem to be the (sole) issue
-			// Instead it seems some markers and/or sequences are afflicted and then never get updated incrementally again
+			if (marker.lastFrame < inc.frameStable) continue;
 			std::map<FrameNum, std::size_t> frameMap;
 			inc.pointsStable += getTriangulationFrameMap(marker, frameMap, inc.frameStable, curStableFrame);
 			handleMappedSequences(marker, frameMap, [&]
 				(const PointSequence &seq, int c, int s, int seqOffset, int start, int length)
-			{
-				inc.cameraTriObservations[c] += length;
+			{ // Sequences part of triangulatable points in new frame span
 				auto &points = rawPoints? seq.rawPoints : seq.points;
 				newPointsStable[c].insert(newPointsStable[c].end(), points.begin()+seqOffset, points.begin()+seqOffset+length);
 			});
@@ -237,17 +236,29 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 			int index = map.second.camera->pipeline->index;
 			for (Eigen::Vector2f &pt : newPointsStable[index])
 				map.second.vis.observations.ptsStable.push_back(pt);
-			map.second.vis.observations.frameIndices[curStableFrame] = map.second.vis.observations.ptsStable.size();
-			while (map.second.vis.observations.frameIndices.size() > 50)
-				map.second.vis.observations.frameIndices.erase(map.second.vis.observations.frameIndices.begin());
+			inc.cameraTriObservations[index] = map.second.vis.observations.ptsStable.size();
 		}
-		inc.frameIndices[curStableFrame] = inc.pointsStable;
-		while (inc.frameIndices.size() > 50)
-			inc.frameIndices.erase(inc.frameIndices.begin());
-		LOG(LGUI, LTrace, "Registering checkpoint at frame %" PRId64 "!", curStableFrame);
+		// Update stable state
 		inc.frameStable = curStableFrame;
 		if (prevPoints != inc.pointsStable)
 			calibError.dirty = true;
+
+		// Create checkpoint to easily reset when a marker was merged way beyond stableSequenceDelay
+		const int MAX_CHECKPOINTS = 50, CHECKPOINT_INTERVAL = 100;
+		int lastCheckpoint = inc.frameIndices.empty()? 0 : std::prev(inc.frameIndices.end())->first;
+		if (curStableFrame-lastCheckpoint > CHECKPOINT_INTERVAL)
+		{
+			for (auto &map : cameraViews)
+			{
+				auto &obs = map.second.vis.observations;
+				obs.frameIndices[curStableFrame] = obs.ptsStable.size();
+				while (obs.frameIndices.size() > MAX_CHECKPOINTS)
+					obs.frameIndices.erase(obs.frameIndices.begin());
+			}
+			inc.frameIndices[curStableFrame] = inc.pointsStable;
+			while (inc.frameIndices.size() > MAX_CHECKPOINTS)
+				inc.frameIndices.erase(inc.frameIndices.begin());
+		}
 	}
 	{ // Recreate unstable points completely (all before curStableFrame will have moved to stable)
 		inc.pointsUnstable = 0;

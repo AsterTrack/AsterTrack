@@ -271,6 +271,7 @@ struct VisualisationState
 		std::map<int, int> frameIndices;
 		std::vector<int> cameraTriObservations;
 		int markerCount = 0; // To check if observations were cleared
+		OptFrameNum lastFrameUpdated = -1;
 		OptFrameNum resetFirstFrame = -1;
 	} incObsUpdate;
 

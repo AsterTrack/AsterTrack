@@ -173,8 +173,8 @@ EXPORT bool _InterfaceThread()
 		else if (curIntervalUS < minIntervalUS)
 			std::this_thread::sleep_for(std::chrono::microseconds(minIntervalUS-curIntervalUS));
 		else if (curIntervalUS > 2000000)
-			LOG(LGUI, LInfo, "Woke up from sleep after %us!", (uint32_t)(curIntervalUS/1000/1000));
-		else if (curIntervalUS > minIntervalUS*5)
+			LOG(LGUI, LDarn, "Woke up from sleep after %us!", (uint32_t)(curIntervalUS/1000/1000));
+		else if (curIntervalUS > minIntervalUS*10)
 			LOG(LGUI, LDarn, "Render thread lagged for %ums!", (uint32_t)(curIntervalUS/1000));
 
 		// Wait for input events or update/render requests while updating general state
@@ -417,24 +417,12 @@ void InterfaceState::GeneralUpdate()
 		} 
 	}
 
-	if ((state.mode == MODE_Device || state.simAdvance.load() != 0) &&
-		(state.mode != MODE_Replay || pipeline.frameNum < state.recording.frames) &&
-		(pipeline.phase == PHASE_Calibration_Point || pipeline.phase == PHASE_Calibration_Target) && pipeline.recordSequences)
-	{
-		static TimePoint_t lastObservationUpdate, lastSequenceReset;
-		if (dtMS(lastObservationUpdate, sclock::now()) > 100 || visState.incObsUpdate.resetFirstFrame >= 0 || calibError.triggered)
-		{ // Incrementally update sequence observations for visualisation / stats in UI
-
-			if (pipeline.phase == PHASE_Calibration_Point && dtMS(lastSequenceReset, sclock::now()) > 1000)
-			{ // Regularly trigger full reset of observations
-				// TODO: Fix incremental observation update (2/3)
-				lastSequenceReset = sclock::now();
-				visState.incObsUpdate.resetFirstFrame = 0;
-			}
-
-			lastObservationUpdate = sclock::now();
-			UpdateSequences();
-		}
+	static TimePoint_t lastObservationUpdate, lastSequenceReset;
+	if ((pipeline.recordSequences && visState.incObsUpdate.lastFrameUpdated != pipeline.frameNum && dtMS(lastObservationUpdate, sclock::now()) > 100)
+		|| visState.incObsUpdate.resetFirstFrame >= 0 || calibError.triggered)
+	{ // Incrementally update sequence observations for visualisation / stats in UI
+		lastObservationUpdate = sclock::now();
+		UpdateSequences();
 	}
 
 	MaintainFilteredLogs();

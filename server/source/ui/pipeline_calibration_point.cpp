@@ -59,7 +59,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 			auto errors = ptCalib.state->errors;
 			if (std::isnan(errors.mean) || std::isinf(errors.mean) || errors.mean > 10.0f)
 			{
-				ImGui::TextUnformatted("Unable to check calibration errors!");
+				ImGui::TextUnformatted("Calibration is numerically unstable!");
 				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
 					errors.mean*PixelFactor,
 					errors.stdDev*PixelFactor,

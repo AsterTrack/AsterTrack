@@ -98,7 +98,7 @@ struct TargetFilteringParameters
 		bool useNumericCov = false;
 		bool useNumericCovPos = false;
 		float stdDevPos = 0.0001f, stdDevEXP = 0.002f;
-	} pose;
+	} pose = {};
 
 	// Partial Target Points Filter Update
 	struct {
@@ -107,13 +107,13 @@ struct TargetFilteringParameters
 		bool useUnscented = false;
 		bool useNumericJac = true;
 		bool separateCorrections = false;
-	} point;
+	} point = {};
 
 	// IMU Filter Update
 	struct {
 		float stdDevAccel = 0.00001f, stdDevIMU = 0.004f;
 		bool useForPrediction = true;
-	} imu;
+	} imu = {};
 
 	template<typename Scalar>
 	Eigen::Matrix<Scalar,6,6> getSyntheticCovariance() const
@@ -189,7 +189,7 @@ struct TargetDetectionParameters
 	struct {
 		int focus = 6;
 		int total = 10;
-	} minObservations;
+	} minObservations = {};
 };
 
 struct TargetMistrustParameters
@@ -221,7 +221,7 @@ struct TargetTrackingParameters
 	struct { // Selecting whether to go down recover path
 		int minCamerasGood = 2;
 		int maxRecoverStages = 2;
-	} selectRecover;
+	} selectRecover = {};
 	TargetMatchingParametersSlow matchRecover = {};
 	struct { // Selecting whether to go down single camera uncertainty path
 		// Uncertain matching is too unstable, may destroy a fine matching

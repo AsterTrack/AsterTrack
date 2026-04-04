@@ -63,11 +63,11 @@ struct FirmwareTransfer
 	FirmwareTransferType type;
 	struct {
 		std::string path;
-	} file;
+	} file = {};
 	struct {
 		VersionDesc since;
 		std::string deps;
-	} package;
+	} package = {};
 
 	uint8_t index;
 	uint16_t blockCount;

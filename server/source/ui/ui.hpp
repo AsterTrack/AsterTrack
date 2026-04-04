@@ -273,7 +273,7 @@ struct VisualisationState
 		int markerCount = 0; // To check if observations were cleared
 		OptFrameNum lastFrameUpdated = -1;
 		OptFrameNum resetFirstFrame = -1;
-	} incObsUpdate;
+	} incObsUpdate = {};
 
 	// Visualisation of reference points in virtual space
 	struct
@@ -365,14 +365,14 @@ public:
 	ImFont *mainFont;
 	struct {
 		ImFont *imgui, *icon, *karla, *notoSans;
-	} fonts;
+	} fonts = {};
 
 	// Window state
 	ImGuiID dockspaceID;
 	std::array<InterfaceWindow, INTERFACE_WINDOWS_MAX> windows;
 
 	// General visualisation state
-	VisualisationState visState = {};
+	VisualisationState visState;
 
 	// Camera Views state
 	std::map<CameraID, CameraView> cameraViews;
@@ -384,7 +384,7 @@ public:
 	bool calibrationsDirty = false;
 
 	// 3D View state
-	View3D view3D = {};
+	View3D view3D;
 
 	// Control/Recording state
 	struct RecordedSections
@@ -415,12 +415,12 @@ public:
 	Synchronised<std::string> calibSamples;
 	struct {
 		int numCalibrated, numUncalibrated, relCertain, relUncertain;
-	} calibState;
+	} calibState = {};
 	int editingLensPreset = -1;
 	struct {
 		TimePoint_t lastCalc;
 		bool calculating, dirty, triggered;
-	} calibError;
+	} calibError = {};
 
 	// Pipeline/TargetCalib state
 	std::vector<std::shared_ptr<TargetView>> targetViewsSorted;
@@ -561,7 +561,7 @@ struct CameraVisState
 			bool blobResegmented, maximaHints, peripheralCenters, resegmentationMask;
 			bool labels;
 			std::vector<bool> showBlobsMaximaStages;
-		} options;
+		} options = {};
 		
 		std::shared_ptr<BlobEmulationVis> vis;
 		std::shared_ptr<BlobEmulationResults> result;

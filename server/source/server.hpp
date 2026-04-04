@@ -62,11 +62,11 @@ struct ServerState
 	ServerMode mode = MODE_None;
 	bool isLoading, isStreaming;
 	TimePoint_t lastStreamingStart;
-	PipelineState pipeline = {};
+	PipelineState pipeline;
 	std::queue<ErrorMessage> errors;
 
 	// Data stored in files
-	GeneralConfig config = {};
+	GeneralConfig config;
 	CameraConfigMap cameraConfig;
 	ControllerConfig controllerConfig; // TODO: Add support for multiple controllers with different configs
 	std::map<int, LensCalib> lensPresets;
@@ -85,7 +85,7 @@ struct ServerState
 	// Device comm state
 	libusb_context_int *libusb_context;
 	ServerCommState server;
-	Synchronised<StreamState> stream = {};
+	Synchronised<StreamState> stream;
 
 	// Thread for current mode
 	std::jthread *coprocessingThread = NULL;

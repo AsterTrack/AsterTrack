@@ -114,7 +114,7 @@ struct CameraCalib_t
 		Scalar p1;
 		Scalar p2;
 		Scalar k3;
-	} distortion;
+	} distortion = {};
 	int lensID;
 
 	/**

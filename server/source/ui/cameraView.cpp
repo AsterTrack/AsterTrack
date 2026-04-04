@@ -566,7 +566,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			// Map desired pixel count to frame streaming settings absed on profile (focus)
 			// Quality doesn't affect processing speed, just transfer speed (and thus, to a degree, minimum interval)
 			// Pixel count determines processing cost for the camera
-			struct {
+			const struct {
 				int maxPixelCount, quality, interval;
 			} profiles[2][6] = {
 				{ // Quality profile

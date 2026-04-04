@@ -163,7 +163,7 @@ struct GeneralConfig
 		std::map<std::string, TargetCalibration3D> trackingTargets;
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;
-	} simulation;
+	} simulation = {};
 
 	struct {
 		bool vrpn_auto_enable;
@@ -173,7 +173,7 @@ struct GeneralConfig
 		bool vmc_auto_enable;
 		std::string vmc_host;
 		int vmc_port;
-	} integrations;
+	} integrations = {};
 };
 
 struct CameraConfigMap

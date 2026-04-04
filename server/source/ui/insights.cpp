@@ -816,7 +816,7 @@ static bool ShowTrackingPanel()
 			procTimeMS.resize(size, NAN);
 			mistrust.resize(size, NAN);
 		}
-	} tracking, recording;
+	} tracking = {}, recording = {};
 	static std::vector<float> imuSampleTime;
 	static std::vector<float> imuSampleRate;
 

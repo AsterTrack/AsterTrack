@@ -23,7 +23,9 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 struct SequenceAquisitionParameters
 {
+	// For editing purposes only
 	std::string label;
+	int ref;
 
 	// Used for matching points to sequences each frame:
 	float maxAcceleration; // Max change from predicted position in one frame. Set to 1cm at 1 meter distance for 90°hFoV camera.
@@ -84,111 +86,19 @@ struct SequenceAquisitionParameters
 // Past this many frames in the past sequence2D will not change marker associations
 const static int stableSequenceDelay = 100;
 
+extern const SequenceAquisitionParameters sequenceUncalibrated;
+extern const SequenceAquisitionParameters sequenceCalibrated;
+
 struct SequenceParameters
 {
-	const SequenceAquisitionParameters sequenceUncalibrated = {
-		"Uncalibrated",
-		20*PixelSize,
-		200,
-		0.1f/(1000*PixelFactor),
-		3,
-		{
-			1.0f*PixelSize,
-			2,
-			3,
-			1,
-			10
-		},
-		100,
-		3*PixelSize,
-		2.0f,
-		5,
-		5,
-		5,
-		stableSequenceDelay,
-		stableSequenceDelay,
-		{
-			1000,
-			0.6f,
-			10000.0f,
-			0.00001f,
-			3,
-			0,
-			3,
-			4,
-		},
-		{
-			100,
-			1000,
-			100,
-			0.3f,
-			2,
-			0.00005f,
-			stableSequenceDelay,
-			0.05f,
-			5,
-			true,
-		},
-	};
-
-	const SequenceAquisitionParameters sequenceCalibrated = {
-		"Calibrated",
-		10*PixelSize,
-		200,
-		0.1f/(1000*PixelFactor),
-		3,	
-		{
-			0.5f*PixelSize,
-			2,
-			2,
-			1,
-			10
-		},
-		100,
-		3*PixelSize,
-		2.0f,
-		2,
-		2,
-		5,
-		50,
-		50,
-		{
-			1000,
-			0.2f,
-			5000.0f,
-			0.0f,
-			3,
-			1,
-			1,
-			4,
-		},
-		{
-			5000,
-			5000,
-			200, // Effectively disabling correspondence matching across cameras
-			// This defers this to target views "Reevaluate Markers" step in target calibration
-			0.1f,
-			2,
-			0.00005f,
-			stableSequenceDelay,
-			0.01f,
-			10,
-			true,
-		},
-	};
-
-	const std::array<SequenceAquisitionParameters, 2> standard = { sequenceUncalibrated, sequenceCalibrated };
-	std::vector<SequenceAquisitionParameters> sequence = { sequenceUncalibrated, sequenceCalibrated };
+	const std::array<const SequenceAquisitionParameters*, 2> standard = { &sequenceUncalibrated, &sequenceCalibrated };
+	std::vector<SequenceAquisitionParameters> sequence;
 	int selected = -1;
-
-	SequenceAquisitionParameters &get(int pref = 0)
-	{
-		return sequence[selected >= 0? selected : pref];
-	}
 
 	const SequenceAquisitionParameters &get(int pref = 0) const
 	{
-		return sequence[selected >= 0? selected : pref];
+		int index = selected >= 0? selected : pref;
+		return pref < sequence.size()? sequence[index] : *standard[index];
 	}
 };
 

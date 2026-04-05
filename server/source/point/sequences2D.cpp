@@ -210,7 +210,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 			Range<VecIt> rangesA = { pointsT.begin(), pointsT.end(), (int)pointsT.size() };
 			Range<VecIt> rangesB = { pointsC.begin(), pointsC.end(), (int)pointsC.size() };
 
-			LOGC(LTrace, "    Overlap of %d frames in cameras (%d-%d) for marker %d (GT %d, %.0f%%)", 
+			LOGC(LDebug, "    Overlap of %d frames in cameras (%d-%d) for marker %d (GT %d, %.0f%%)", 
 				overlap.length, cameraIndex, c, m, seqGTMarker.first, seqGTMarker.second*100);
 			if (exConfident)
 			{ // Calculate correspondence error from existing fundamental matrix
@@ -219,7 +219,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				auto errorEx = calculateCorrespondenceStats(rangesA, rangesB, matrixEx);
 				float fitError = getFitError(params, FMex, errorEx);
 				correspondence[c] = CorrespondenceSupport(errorEx, fitError, 0, fmEntry.candidates.front().floatingTrust);
-				LOGC(LTrace, "      Trusted FM candidate had %f fit error for correspondence with error %f+-%f and weight %d",
+				LOGC(LDebug, "      Trusted FM candidate had %f fit error for correspondence with error %f+-%f and weight %d",
 					fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
 				// TODO: Early discard if a trusted FM discredits correspondence
 				continue;
@@ -240,7 +240,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				auto errorEx = calculateCorrespondenceStats(rangesA, rangesB, matrixEx);
 				candidate.value = errorEx.avg;
 				candidate.context = { getFitError(params, FMex, errorEx), errorEx };
-				LOGC(LTrace, "        Existing FM Candidate %d (%d samples) had %f fit error for correspondence with error %f+-%f and weight %d",
+				LOGC(LDebug, "        Existing FM Candidate %d (%d samples) had %f fit error for correspondence with error %f+-%f and weight %d",
 					i, FMex.stats.num, candidate.context.fitError, errorEx.avg, errorEx.stdDev(), overlap.length);
 				recordMatchCandidate(correspondenceCandidates, candidate).index = i;
 			}
@@ -252,12 +252,12 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				correspondence[c] = CorrespondenceSupport(bestCorr.context.dist, bestCorr.context.fitError, bestCorr.index, fmEntry.candidates[bestCorr.index].floatingTrust);
 				if (bestCorr.context.fitError < 1.0f)
 				{ // Found an FM candidate supporting this correspondence
-					LOGC(!checkGT || GTshouldMatch? LTrace : LDarn,
+					LOGC(!checkGT || GTshouldMatch? LDebug : LDarn,
 						"      Found FM candidate %d to be supporting correspondence with %f fit error (error %f+-%f) - leaving it at that",
 						bestCorr.index, bestCorr.context.fitError, bestCorr.context.dist.avg, bestCorr.context.dist.stdDev());
 					continue;
 				}
-				LOGC(LTrace, "      Best FM candidate %d does not support correspondence, will attempt to create new FM candidate",
+				LOGC(LDebug, "      Best FM candidate %d does not support correspondence, will attempt to create new FM candidate",
 					bestCorr.index);
 			}
 			if (GTshouldMatch && !fmEntry.candidates.empty())
@@ -296,7 +296,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				}
 				else
 				{
-					LOGC(LTrace, "      New FM (%d-%d) is not confident enough with error %f over "
+					LOGC(LDebug, "      New FM (%d-%d) is not confident enough with error %f over "
 						"%d points overlap and confidence %f (< %f)", 
 						cameraIndex, c, FMseq.stats.avg, FMseq.stats.num, confidence, params.correspondences.minConfidence);
 				}
@@ -311,7 +311,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 						cameraIndex, c, FMseq.stats.avg, params.correspondences.maxError, FMseq.stats.num, confidence);
 				}
 				else
-					LOGC(LTrace, "      New FM (%d-%d) does not support correspondence with error %f (> %f) over "
+					LOGC(LDebug, "      New FM (%d-%d) does not support correspondence with error %f (> %f) over "
 						"%d points overlap and confidence %f", 
 						cameraIndex, c, FMseq.stats.avg, params.correspondences.maxError, FMseq.stats.num, confidence);
 				continue;
@@ -341,7 +341,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 		GTOverlapVerifiable += GTMarkerOverlapVerifiable;
 		GTOverlap += GTMarkerOverlap;
 
-		LOGC(LTrace, "    Summary of best correspondence clues to marker %d from relevant cameras:", m);
+		LOGC(LDebug, "    Summary of best correspondence clues to marker %d from relevant cameras:", m);
 		float supportingWeight = 0.0f, discreditingWeight = 0.0f;
 		float errorAvg = 0.0f;
 		for (int c = 0; c < marker.cameras.size(); c++)
@@ -355,14 +355,14 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				assert(!corr.testedNewFM);
 				float trustFactor = getTrustFactor(corr.trust, params.correspondences.TrustBaseDiscrediting);
 				float weight = corr.stats.num * (corr.fitError - 1) * trustFactor;
-				LOGC(LTrace, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - discrediting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
+				LOGC(LDebug, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - discrediting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
 				discreditingWeight += weight;
 			}
 			else
 			{
 				float trustFactor = getTrustFactor(corr.trust, params.correspondences.TrustBaseSupporting);
 				float weight = corr.stats.num * (1 / corr.fitError - 1) * trustFactor;
-				LOGC(LTrace, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - supporting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
+				LOGC(LDebug, "      Camera %d correspondence to marker %d has fit error %f along %d frames with %f trust factor - supporting with %f!", c, m, corr.fitError, corr.stats.num, trustFactor, weight);
 				supportingWeight += weight;
 			}
 			errorAvg += corr.stats.avg;
@@ -378,7 +378,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				LOGC(LDarn, "    Failed to add correct correspondence candidate for marker %d with error %f and %f discrediting, %f supporting it! Had %d total overlaps, %d verifiable",
 					m, errorAvg, discreditingWeight, supportingWeight, GTMarkerOverlap, GTMarkerOverlapVerifiable);
 			else
-				LOGC(LTrace, "      Deemed NOT corresponding to marker %d with error %f and %f discrediting, %f supporting it!",
+				LOGC(LDebug, "      Deemed NOT corresponding to marker %d with error %f and %f discrediting, %f supporting it!",
 					m, errorAvg, discreditingWeight, supportingWeight);
 			continue;
 		}
@@ -1532,3 +1532,96 @@ static float calculateFundamentalMatrix(FundamentalMatrix &FM, const Range<Point
 
 	return confidence;
 }
+
+const SequenceAquisitionParameters sequenceUncalibrated = {
+	"Uncalibrated",
+	0,
+	20*PixelSize,
+	200,
+	0.1f/(1000*PixelFactor),
+	3,
+	{
+		1.0f*PixelSize,
+		2,
+		3,
+		1,
+		10
+	},
+	100,
+	3*PixelSize,
+	2.0f,
+	5,
+	5,
+	5,
+	stableSequenceDelay,
+	stableSequenceDelay,
+	{
+		1000,
+		0.6f,
+		10000.0f,
+		0.00001f,
+		3,
+		0,
+		3,
+		4,
+	},
+	{
+		100,
+		1000,
+		100,
+		0.3f,
+		2,
+		0.00005f,
+		stableSequenceDelay,
+		0.05f,
+		5,
+		true,
+	},
+};
+
+const SequenceAquisitionParameters sequenceCalibrated = {
+	"Calibrated",
+	1,
+	10*PixelSize,
+	200,
+	0.1f/(1000*PixelFactor),
+	3,	
+	{
+		0.5f*PixelSize,
+		2,
+		2,
+		1,
+		10
+	},
+	100,
+	3*PixelSize,
+	2.0f,
+	2,
+	2,
+	5,
+	50,
+	50,
+	{
+		1000,
+		0.2f,
+		5000.0f,
+		0.0f,
+		3,
+		1,
+		1,
+		4,
+	},
+	{
+		5000,
+		5000,
+		200, // Effectively disabling correspondence matching across cameras
+		// This defers this to target views "Reevaluate Markers" step in target calibration
+		0.1f,
+		2,
+		0.00005f,
+		stableSequenceDelay,
+		0.01f,
+		10,
+		true,
+	},
+};

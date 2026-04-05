@@ -164,6 +164,7 @@ int main (void)
 		LogMaxLevelTable[LDetection3D] = LDarn; // This also does not compile LTrace at all in detection3D.cpp
 		LogMaxLevelTable[LTrackingMatch] = LDarn;
 		LogMaxLevelTable[LTrackingOpt] = LDarn;
+		LogMaxLevelTable[LSequence] = LDarn;
 
 		// Basic log file rotation
 		AppInstance.logPath = "log.txt";

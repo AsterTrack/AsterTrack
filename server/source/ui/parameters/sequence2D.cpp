@@ -41,7 +41,8 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 	auto displaySettingsUI = [&](int settingIndex)
 	{
 		auto &setting = params.sequence[settingIndex];
-		const SequenceAquisitionParameters standard = settingIndex < params.standard.size()? params.standard[settingIndex] : SequenceAquisitionParameters{};
+		// Compare default against their standard, and new ones against their reference
+		const SequenceAquisitionParameters &standard = settingIndex < params.standard.size()? *params.standard[setting.ref] : params.sequence[setting.ref];
 
 		if (BeginCollapsingRegion("Matching of points each frame"))
 		{
@@ -133,6 +134,13 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 	if (ImGui::BeginTabBar("SeqSettings", ImGuiTabBarFlags_AutoSelectNewTabs | 
 		ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton | ImGuiTabBarFlags_NoTabListScrollingButtons))
 	{
+		if (params.sequence.size() < params.standard.size())
+		{ // Copy for editing
+			params.sequence.reserve(params.standard.size());
+			for (auto &p : params.standard)
+				params.sequence.push_back(*p);
+		}
+
 		for (int i = 0; i < params.sequence.size(); i++)
 		{
 			bool retain = true;
@@ -151,13 +159,11 @@ void InterfaceState::UpdateSequenceParameters(InterfaceWindow &window)
 			}
 		}
 
-		if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing))
+		if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing) && params.selected >= 0)
 		{
-			if (params.selected >= 0)
-				params.sequence.push_back(params.sequence[params.selected]);
-			else
-				params.sequence.push_back({});
+			params.sequence.push_back(params.sequence[params.selected]);
 			params.sequence.back().label = asprintf_s("Setting %d", (int)params.sequence.size()-1);
+			params.sequence.back().ref = params.selected;
 			params.selected = params.sequence.size()-1;
 		}
 

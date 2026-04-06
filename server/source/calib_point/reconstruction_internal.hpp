@@ -36,7 +36,8 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
 	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
 	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
-	const PointReconstructionParameters &params);
+	const PointReconstructionParameters &params,
+	std::stop_token stopToken);
 
 int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 	Eigen::Ref<MatrixX<BOOL>> projectiveDepthMissing,

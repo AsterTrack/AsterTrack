@@ -214,12 +214,14 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	auto rec1 = pclock::now();
 
 	LOGC(LInfo, "== Reconstructing Geometry:\n");
-	auto error = reconstructGeometry(pointData.points, calibs, params.reconstruction);
+	auto error = reconstructGeometry(pointData.points, calibs, params.reconstruction, stopToken);
 	if (error)
 	{
 		LOGC(LInfo, "== Failed to properly reconstruct geometry!\n");
 		SignalErrorToUser(error.value());
 	}
+	else if (stopToken.stop_requested())
+		LOGC(LInfo, "== Aborted Reconstructing Calibration!\n");
 	else LOGC(LInfo, "== Finished Reconstructing Calibration!\n");
 	
 	auto rec2 = pclock::now();

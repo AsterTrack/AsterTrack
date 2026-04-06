@@ -34,7 +34,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
  * Attempts to reconstruct the geometry (points, cameras calibration) of the scene given the observed points
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params)
+std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::vector<CameraCalib> &cameraCalibs, PointReconstructionParameters params, std::stop_token stopToken)
 {
 	ScopedLogCategory scopedLogCategory(LPointReconstruction);
 
@@ -90,6 +90,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 			LOGC(LError, " View %d got recoverable state %d!", i, viewsDiscarded[i]);
 		return asprintf_s("Cannot recover any views/camera calibrations since only %d/%d had significant overlap!", recViewCount, viewCount);
 	}
+	if (stopToken.stop_requested())
+		return std::nullopt;
 
 	// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
 	MatrixX<BOOL> projectiveDepthMissing(recViewCount, pointCount);
@@ -118,6 +120,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 
 	auto mid1 = pclock::now();
 
+	if (stopToken.stop_requested())
+		return std::nullopt;
+
 
 	// ----- Missing Data Extrapolation
 	LOGC(LDebug, "-- Missing Data Extrapolation");
@@ -126,12 +131,14 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	// Both due to missing points (NaNs) and missing projective depth (marked by projectiveDepthMissing)
 	// For that, find basis for the vector space of rank 4 spanned by the projectiveMatrix
 	// Then complete the columns of the projectiveMatrix as linear combinations of that basis
-	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, observationDataMissing, params);
+	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, observationDataMissing, params, stopToken);
 	if (basis.hasNaN()) // basis (recViewCount*3, 4)
 	{
 		LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
 		return "Failed to determine basis of data samples due to numerical errors!";
 	}
+	if (stopToken.stop_requested())
+		return std::nullopt;
 	auto mid2 = pclock::now();
 	Eigen::MatrixXd P_approx;  // (4, pointCount)
 	int pointsUnrecoverable = recoverPointData(projectiveMatrix, projectiveDepthMissing, basis, P_approx);
@@ -140,6 +147,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		std::sqrt((projectiveMatrix - (basis*P_approx)).squaredNorm() / (recViewCount*3*pointCount)));
 
 	auto mid3 = pclock::now();
+
+	if (stopToken.stop_requested())
+		return std::nullopt;
 
 
 	// ----- Assemble Factorisation Matrix
@@ -181,6 +191,9 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	balanceMatrix3Triplet(factorisationMatrix);
 
 	auto mid4 = pclock::now();
+
+	if (stopToken.stop_requested())
+		return std::nullopt;
 
 
 	// ----- Rank-4 Factorisation

@@ -229,7 +229,8 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
 	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
 	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
-	const PointReconstructionParameters &params)
+	const PointReconstructionParameters &params,
+	std::stop_token stopToken)
 {
 	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());
 	assert(projectiveMatrix.rows() == projectiveDepthMissing.rows()*3);
@@ -273,13 +274,14 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 	#pragma omp for nowait schedule(static, 100) reduction(+:colsN) reduction(+:tested4Tuples)
 	for (int j = 0; j < max4TupleTests; j++)
 #else
-	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests)
+	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests && !stopToken.stop_requested())
 #endif
 	{
 #ifdef PARALLEL
 		int tempColsN = totalColsN.load();
 		int tempPartsN = totalPartN.load();
 		if (tempColsN >= maxNColumns || tempPartsN >= max4Tuples) continue;
+		if (stopToken.stop_requested()) continue;
 #endif
 
 		// Prepare selection buffers
@@ -402,6 +404,9 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 #ifdef PARALLEL
 	omp_set_num_threads(omp_get_max_threads());
 #endif
+
+	if (stopToken.stop_requested())
+		return Eigen::MatrixXd::Constant(viewCount*3, 4, NAN);
 
 	// Combine all collected orthogonal complements together as N
 	LOGC(LDebug, "N has %d columns in total with %d/%d tuples accepted!", colsN, (int)partN.size(), tested4Tuples);

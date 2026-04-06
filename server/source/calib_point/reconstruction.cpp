@@ -589,8 +589,14 @@ static Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixX
 				indices[i] = selectablePoints[rand() % selectablePoints.size()];
 				auto selectableEnd = remove_swap(selectablePoints.begin(), selectablePoints.end(), indices[i]);
 				selectablePoints.erase(selectableEnd, selectablePoints.end());
+				// Determine if its a good pick
+				auto sharedViews = selectedViews.array() * (1 - observationDataMissing.col(indices[i]).array());
+				if (sharedViews.sum() < 2) continue;
 				// Found next column
 				good = true;
+				selectedViews = sharedViews;
+				//auto selectableEnd = std::remove_if(selectablePoints.begin(), selectableEnd, [&](auto &col){ return false; });
+				//selectablePoints.erase(selectableEnd, selectablePoints.end());
 			}
 			if (!good) break;
 		}

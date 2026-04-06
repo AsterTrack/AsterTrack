@@ -104,9 +104,11 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		for (auto &point : data.points)
 		{
 			for (auto &sample : point.samples)
-				//if (cameraCalibs[sample.camera].id != CAMERA_ID_NONE)
-				measurementMatrix.block<3,1>(sample.camera*3, colIndex) =
-					undistortPoint<double>(cameraCalibs[sample.camera], sample.point.cast<double>()).homogeneous();
+			{
+				if (cameraCalibs[sample.camera].lensValid())
+					measurementMatrix.block<3,1>(sample.camera*3, colIndex) =
+						undistortPoint<double>(cameraCalibs[sample.camera], sample.point.cast<double>()).homogeneous();
+			}
 			colIndex++;
 		}
 	}

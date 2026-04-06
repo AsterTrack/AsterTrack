@@ -124,6 +124,7 @@ struct CameraCalib_t
 
 	inline bool valid() const { return id != CAMERA_ID_NONE; }
 	inline bool invalid() const { return id == CAMERA_ID_NONE; }
+	inline bool lensValid() const { return id != CAMERA_ID_NONE || lensID != 0; }
 
 	template<typename T>
 	operator CameraCalib_t<T>() const

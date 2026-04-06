@@ -782,7 +782,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Update undistorted camera borders
 	 */
-	if (calib.valid())
+	if (calib.lensValid())
 	{
 		if (!visCamera.calibration.precalculated)
 		{
@@ -993,7 +993,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.imageVis.show && visCamera.imageVis.texID > 0 && visCamera.image)
 	{ // Display in appropriate part of the frame
-		if (visCamera.imageVis.undistort && calib.valid())
+		if (visCamera.imageVis.undistort && calib.lensValid())
 		{ // Use special shader that undistorts and correctly positions image
 			//showGrayscaleFrameUndistorted(vis.imageVis.texID, vis.image->boundsRel,
 			//	mode, calib, vis.calibration.undistortMapScale,
@@ -1026,7 +1026,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Visualise outline of full frame and used area
 	 */
-	if (!(visCamera.imageVis.show && visCamera.image && !visCamera.imageVis.undistort) && calib.valid())
+	if (!(visCamera.imageVis.show && visCamera.image && !visCamera.imageVis.undistort) && calib.lensValid())
 	{
 		drawWithoutFrame();
 	}

@@ -317,6 +317,13 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 				continue;
 			}
 			float fitError = getFitError(params, FMseq.stats);
+			if (fitError > 1.0f)
+			{ // Not corresponding
+				LOGC(LDarn, "      New FM (%d-%d) unexpectedly does not support correspondence with error %f (< %f) but fit error of %f over "
+					"%d points overlap and confidence %f", 
+					cameraIndex, c, FMseq.stats.avg, params.correspondences.maxError, fitError, FMseq.stats.num, confidence);
+				continue;
+			}
 			LOGC(checkGT && !GTshouldMatch? LDarn : LDebug,
 				"      New FM (%d-%d) confirms correspondence with %f error (fit error %f) over %d points and confidence %f!", 
 				cameraIndex, c, FMseq.stats.avg, fitError, FMseq.stats.num, confidence);
@@ -1276,9 +1283,9 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 
 					for (auto it = std::next(fmEntry.candidates.begin()); it != fmEntry.candidates.end();)
 					{
-						assert(curFrame >= it->lastFrame);
+						// NOTE: curFrame < it->lastframe may happen when jumping back to a past frame in replay
 						if (it->floatingTrust < 1.0f && it->stats.num < params.FM.ConfidentMinSamples
-							&& (curFrame - it->lastFrame) > 500)
+							&& (curFrame < it->lastFrame || curFrame - it->lastFrame > 500))
 						{
 							LOGC(LInfo, "    Deleting lacking FM of relation (%d, %d) with trust %f%s, have %lu remaining candidates!",
 								i, j, it->floatingTrust, it->precalculated? " that was precalculated" : "", fmEntry.candidates.size()-1);
@@ -1343,13 +1350,13 @@ void checkSequenceHealth(const SequenceAquisitionParameters &params, CameraSyste
 			if (relativeErrors[c] > 1)
 			{
 				// TODO: Check last points rigorously, and split sequence off into temporary sequence
-				// Or better yet, assume whole sequence was wrongfully curresoponded, and separate all completely
+				// Or better yet, assume whole sequence was wrongfully corresponded, and separate all completely
 				PointSequence &seq = marker.cameras[c].sequences.back();
 				LOGC(LDarn, "--- Marker %d: camera %d's last point failed correspondence check with error %f, factor %f > 1",
 					m, c, errors[c], relativeErrors[c]);
 
 				// Truncate remaining sequence
-				int removeLength = 10;
+				int removeLength = std::max(2, std::min<int>(10, seq.length()-params.minSequenceLength));
 				int newLength = seq.length()-removeLength;
 				seq.points.resize(newLength);
 				seq.rawPoints.resize(newLength);
@@ -1491,6 +1498,8 @@ static float calculateFundamentalMatrix(FundamentalMatrix &FM, const Range<Point
 	// Build normalisation transformations
 	Eigen::Matrix<Scalar,3,3> TA = getPointNormalisation<Scalar>(sequenceA);
 	Eigen::Matrix<Scalar,3,3> TB = getPointNormalisation<Scalar>(sequenceB);
+	assert(!TA.hasNaN());
+	assert(!TB.hasNaN());
 
 	// Build data matrix
 	Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> dataMatrix(pointCount, 9);

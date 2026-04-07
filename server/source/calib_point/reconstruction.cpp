@@ -267,7 +267,16 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 			continue;
 		}
 		v++;
-		LOGC(LInfo, "Results for view %d for camera #%u, index %d) :", vv, cameraCalibs[vv].id, cameraCalibs[vv].index);
+
+		int validMeasurements = 0;
+		for (int p = 0; p < recPointCount; p++)
+		{
+			if (!recMeasurementMatrix.block<3,1>(v*3, p).hasNaN())
+				validMeasurements++;
+		}
+
+		LOGC(LInfo, "Results for view %d for camera #%u (%d) with %d/%d regarded points filled:",
+			vv, cameraCalibs[vv].id, cameraCalibs[vv].index, recPointCount-validMeasurements, recPointCount);
 
 		// Decompose view projection matrix in V_corrected into camera projection and transformation and update cameraCalibs with it
 		error = SeparatePerspectiveProjection(V_corrected.block<3,4>(v*3,0), v, P_corrected, recMeasurementMatrix, cameraCalibs[vv]);

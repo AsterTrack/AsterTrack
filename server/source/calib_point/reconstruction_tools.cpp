@@ -36,16 +36,16 @@ double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::Matrix<double,
 
 	int ptCnt = 0;
 	double reprojectionErrorSq = 0.0;
-	for (int p = 0; p < measurementMatrix.rows(); p++)
+	for (int p = 0; p < measurementMatrix.cols(); p++)
 	{
-		Eigen::Vector2d measure = measurementMatrix.block<2,1>(v*3,p);
+		Eigen::Vector3d measure = measurementMatrix.block<3,1>(v*3, p);
 		if (measure.hasNaN()) continue;
-		Eigen::Vector3d reprojection = V * P.block<4,1>(0,p);
-		reprojectionErrorSq += (measure-reprojection.hnormalized()).squaredNorm();
+		Eigen::Vector3d reprojection = V * P.block<4,1>(0, p);
+		reprojectionErrorSq += (measure.hnormalized()-reprojection.hnormalized()).squaredNorm();
 		ptCnt++;
 	}
+	assert(ptCnt > 0);
 	return reprojectionErrorSq / ptCnt;
-	
 }
 
 double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::MatrixXd> V,

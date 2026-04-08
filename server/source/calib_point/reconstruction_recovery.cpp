@@ -31,46 +31,45 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix,
+MatrixX<BOOL> estimateProjectiveDepths(
+	Eigen::MatrixXd &projectiveDepthMatrix,
+	const Eigen::MatrixXd &originalMeasurementMatrix,
+	const Eigen::MatrixXd &measurementMatrix,
 	const PointReconstructionParameters &params,
-	Eigen::MatrixXd &projectiveDepthMatrix, Eigen::VectorXi &viewsDiscarded)
+	Eigen::VectorXi &viewsDiscarded)
 {
-	int viewCount = normMeasurementMatrix.rows()/3;
-	int pointCount = normMeasurementMatrix.cols();
+	int viewCount = measurementMatrix.rows()/3;
+	int pointCount = measurementMatrix.cols();
 	assert(projectiveDepthMatrix.rows() == viewCount);
 	assert(projectiveDepthMatrix.cols() == pointCount);
 	assert(viewsDiscarded.size() == viewCount);
 
-	MatrixX<BOOL> pointsObserved = MatrixX<BOOL>::Zero(viewCount, pointCount);
+	MatrixX<BOOL> pointsObserved(viewCount, pointCount);
+	MatrixX<BOOL> pointsFilled(viewCount, pointCount);
 	Eigen::MatrixXi viewCorrespondences = Eigen::MatrixXi::Zero(viewCount, viewCount);
 	for (int p = 0; p < pointCount; p++)
 	{
-		// NOTE: pointsObserved is purely accessed by column so storage access is local
 		for (int v = 0; v < viewCount; v++)
-			pointsObserved(v, p) = std::isnan(normMeasurementMatrix(v*3,p))? 0 : 1;
-		if (pointsObserved.col(p).sum() < 2)
-			continue;
+		{
+			pointsObserved(v, p) = !std::isnan(originalMeasurementMatrix(v*3,p));
+			pointsFilled(v, p) = !std::isnan(measurementMatrix(v*3,p));
+		}
 		for (int v = 0; v < viewCount; v++)
 		{
 			if (pointsObserved(v, p))
-			{
-				viewCorrespondences.row(v) += pointsObserved.col(p).cast<int>();
 				viewCorrespondences.col(v) += pointsObserved.col(p).cast<int>();
-			}
 		}
 	}
-	for (int v = 0; v < viewCount; v++)
-	{ // Remove own points as col/row-sum is used later, and initialise per-view point count
-		viewCorrespondences(v,v) = 0;
-	}
-	viewCorrespondences /= 2; // Each correspondence has been added twice
-
+	// Ensure it's symmetric and remove diagonal
+	viewCorrespondences = (viewCorrespondences + viewCorrespondences.transpose()) / 2;
+	viewCorrespondences.diagonal().setZero();
 	// From now on, we'll access by views, so transpose for better storage access pattern (points as dominant dimension)
 	pointsObserved.transposeInPlace();
+	pointsFilled.transposeInPlace();
 
 	// May only initialise projective depth once per point, then transfer to other cameras
 	VectorX<BOOL> projDepthsUninitialised = VectorX<BOOL>::Ones(pointCount);
-	MatrixX<BOOL> pointsRecoverable = pointsObserved;
+	MatrixX<BOOL> pointsRecoverable = pointsFilled;
 	MatrixX<BOOL> pointsRecovered = MatrixX<BOOL>::Zero(pointCount, viewCount);
 
 	const bool ALLOW_FURTHER_POINT_INITS = false;
@@ -78,7 +77,6 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 
 	// Recovered views and their point count with projective depths
 	std::map<int, int> recovered;
-	int numRecoveredWell = 0;
 	auto getNextBestTransfer = [&]() -> std::pair<int,int>
 	{
 		// Choose next best transfer from one view to another
@@ -97,15 +95,15 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 			Eigen::VectorXi recoverFactor = pairsRecover.cwiseProduct(viewsRecover);
 			int bestView, bestTransfer;
 			int factor = recoverFactor.maxCoeff(&bestView);
-			viewCorrespondences.col(bestView).maxCoeff(&bestTransfer);			
+			viewCorrespondences.col(bestView).maxCoeff(&bestTransfer);
 			recovered.insert({ bestView, 0 });
 			recovered.insert({ bestTransfer, 1 });
 			// Debug
 			recoverFactor(bestView) = 0;
 			int secondFactor = recoverFactor.maxCoeff();
-			LOGC(LInfo, "Selected view %d as center with %d observations, recoverable: %d views, %d pairs, factor %d (next best %d).",
-				bestView, pointsObserved.col(bestView).cast<int>().sum(), viewsRecover(bestView), pairsRecover(bestView), factor, secondFactor);
-			LOGC(LInfo, "Selected view %d as next with %d / %d points overlapping.",
+			LOGC(LInfo, "Selected view %d as center with %d observations (%d originally), recoverable: %d views, %d pairs, factor %d (next best %d).",
+				bestView, pointsFilled.col(bestView).cast<int>().sum(), pointsObserved.col(bestView).cast<int>().sum(), viewsRecover(bestView), pairsRecover(bestView), factor, secondFactor);
+			LOGC(LInfo, "Selected view %d as next with %d / %d original points overlapping.",
 				bestTransfer, viewCorrespondences(bestView, bestTransfer), pointsObserved.col(bestTransfer).cast<int>().sum());
 			return { bestView, bestTransfer };
 		}
@@ -119,17 +117,18 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 			if (viewsDiscarded(s)) continue;
 			if (!ALLOW_INDIRECT_SOURCES && (!recovered.contains(s) || recovered[s] != 0))
 				continue;
+			int indirection = recovered.contains(s)? recovered[s]+1 : 1;
 			for (int t = 0; t < viewCount; t++)
 			{
 				if (viewsDiscarded(t)) continue;
 				if (s == t) continue;
-				auto projDepthsNewInSource = pointsObserved.col(s).array() * projDepthsUninitialised.array();
+				int correspondences = viewCorrespondences(s, t);
+				if (correspondences < params.FM.minPairwiseCorrespondences) continue;
+
+				auto projDepthsNewInSource = pointsFilled.col(s).array() * projDepthsUninitialised.array();
 				int newlyTransferrable = (pointsRecoverable.col(t).array() * projDepthsNewInSource.array()).cast<int>().sum();
 				int existingTransferrable = (pointsRecoverable.col(t).array() * pointsRecovered.col(s).array()).cast<int>().sum();
 				int transferrable = existingTransferrable + (ALLOW_FURTHER_POINT_INITS? newlyTransferrable : 0);
-
-				int correspondences = viewCorrespondences(s, t);
-				int indirection = recovered.contains(s)? recovered[s]+1 : 1;
 
 				float weight = std::pow<float>(transferrable, 0.6f) * std::pow<float>(correspondences, 0.8f) / std::pow<float>(indirection, 0.6f);
 				if (weight > bestWeight)
@@ -152,10 +151,8 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 				bestNext.first, bestNext.second, bestWeight, bestTransferrable, bestExTransfer, bestNewTransfer, correspondences, indirection);
 			if (correspondences < params.FM.minPairwiseCorrespondences || bestTransferrable < 100)
 				return { -1, -1 };
-			if (correspondences >= params.FM.minPairwiseCorrespondences*2)
-				numRecoveredWell++;
-			else // While we'll try to recover, it's really bad
-				indirection++;
+			if (correspondences < params.FM.minPairwiseCorrespondences*2)
+				indirection++; // While we'll try to recover, it's really bad
 			recovered.insert({ bestNext.second, indirection });
 			return bestNext;
 		}
@@ -174,7 +171,7 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 			for (int p = 0; p < pointCount; p++)
 			{
 				if (projDepthsUninitialised(p) == 0) continue;
-				if (normMeasurementMatrix.block<3,1>(transfer.first*3, p).hasNaN()) continue;
+				if (measurementMatrix.block<3,1>(transfer.first*3, p).hasNaN()) continue;
 				projDepthsUninitialised(p) = 0;
 				pointsRecoverable(p, s) = 0;
 				pointsRecovered(p, s) = 1;
@@ -187,7 +184,7 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 
 		// Determine fundamental matrix from rows of measurement matrix
 		Eigen::Matrix3d F;
-		std::pair<int,double> results = calculateFundamentalMatrix(normMeasurementMatrix.middleRows<3>(s*3), normMeasurementMatrix.middleRows<3>(t*3), F, params.FM.minPairwiseCorrespondences);
+		std::pair<int,double> results = calculateFundamentalMatrix(originalMeasurementMatrix.middleRows<3>(s*3), originalMeasurementMatrix.middleRows<3>(t*3), F, params.FM.minPairwiseCorrespondences);
 		if (results.first < params.FM.minPairwiseCorrespondences || results.second < params.FM.minConfidence)
 		{ // View does not have sufficient correspondence with center view 
 			// TODO: Multiple recovery strategy iterations until view can be recovered
@@ -205,16 +202,16 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 				continue; // No source projective depth to transfer
 			if (!pointsRecoverable(p, t))
 				continue; // Is already determined
-			auto x_b = normMeasurementMatrix.block<3,1>(s*3, p) * projectiveDepthMatrix(s,p);
+			auto x_b = measurementMatrix.block<3,1>(s*3, p) * projectiveDepthMatrix(s, p);
 			if (x_b.hasNaN())
 				continue; // Missing data in source camera
-			auto x_v = normMeasurementMatrix.block<3,1>(t*3, p) * projectiveDepthMatrix(t,p);
+			auto x_v = measurementMatrix.block<3,1>(t*3, p) * projectiveDepthMatrix(t, p);
 			if (x_v.hasNaN())
 				continue; // Missing data in target camera
 			// Determine projective depth inferred from reference projective depth of source camera
 			Eigen::Vector3d a = e.cross(x_v);
-			float projDepthFac = std::abs(a.dot(F*x_b)/a.squaredNorm());
-			projectiveDepthMatrix(t,p) *= projDepthFac;
+			float projDepthFac = std::abs(a.dot(F * x_b) / a.squaredNorm());
+			projectiveDepthMatrix(t, p) *= projDepthFac;
 			pointsRecoverable(p, t) = 0;
 			pointsRecovered(p, t) = 1;
 		}
@@ -226,9 +223,11 @@ MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &
 }
 
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
-	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
+float determineRank4Basis(
+	Eigen::MatrixXd &basis,
+	const Eigen::MatrixXd &projectiveMatrix,
+	const MatrixX<BOOL> &projectiveDepthMissing,
+	const MatrixX<BOOL> &observationDataMissing,
 	const PointReconstructionParameters &params,
 	std::stop_token stopToken)
 {
@@ -295,7 +294,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 		for (int i = 0; i < 4; i++)
 		{
 			good = false;
-			for (int j = 0; j < 10 && !selectablePoints.empty() && !good; j++)
+			for (int k = 0; k < 10 && !selectablePoints.empty() && !good; k++)
 			{ // Find next column that results in a useable tuple
 				indices[i] = selectablePoints[rand() % selectablePoints.size()];
 				auto selectableEnd = remove_swap(selectablePoints.begin(), selectablePoints.end(), indices[i]);
@@ -342,6 +341,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 			if (!selectedViews(v)) continue;
 			if (obsDataMissing(v) > 0 || projDepthMissing(v) >= 3)
 			{
+				assert(false); // Currently disabled by selectedViews
 				B(vv*3+0,newColIndex++) = 1;
 				B(vv*3+1,newColIndex++) = 1;
 				B(vv*3+2,newColIndex++) = 1;
@@ -354,10 +354,11 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 				if (!projectiveDepthMissing(v, indices[i])) 
 					B.block<3,1>(vv*3,i) = x;
 				else // Still have coordinates, already embedded
-					B.block<3,1>(vv*3,newColIndex++) = x.normalized();
+					B.block<3,1>(vv*3,newColIndex++) = x;
 			}
 			vv++;
 		}
+		assert(newColIndex == 4+newCols);
 
 		// Check that B is full rank, else discard
 		Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_B(B);
@@ -365,7 +366,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 		int colCount = selViewCount*3 - rankB;
 		if (rankB >= 4+newCols && colCount > 0)
 		{ // Extract null space / orthogonal complement of B
-			LOGC(LTrace, "B of rank %d has added %d orthogonal columns out of %d dimensions", rankB, colCount, selViewCount*3);
+			LOGC(LTrace, "B of rank %d with %d columns has added a nullspace of rank %d / %d", rankB, 4+newCols, colCount, selViewCount*3);
 			Eigen::MatrixXd orthComplementB = svd_B.matrixU().block(0, rankB, selViewCount*3, colCount);
 			Eigen::MatrixXd nullspace = Eigen::MatrixXd::Zero(viewCount*3, colCount);
 			for (int v = 0, vv = 0; v < viewCount; v++)
@@ -386,7 +387,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 		}
 		else
 		{
-			LOGC(LTrace, "B of rank %d is not full rank (%d columns)", rankB, 4+newCols);
+			LOGC(LTrace, "B of rank %d with %d columns is not full rank", rankB, 4+newCols);
 		}
 	}
 
@@ -406,7 +407,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 #endif
 
 	if (stopToken.stop_requested())
-		return Eigen::MatrixXd::Constant(viewCount*3, 4, NAN);
+		return NAN;
 
 	// Combine all collected orthogonal complements together as N
 	LOGC(LDebug, "N has %d columns in total with %d/%d tuples accepted!", colsN, (int)partN.size(), tested4Tuples);
@@ -414,7 +415,7 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 	{
 		LOGC(LError, "Basis cannot be reliably determined with column count %d < %d!", colsN, minNColumns);
 		LOGC(LError, "Likely hit limits: %d / %d tuples recorded, %d / %d tested.", (int)partN.size(), max4Tuples, tested4Tuples, max4TupleTests);
-		return Eigen::MatrixXd::Constant(viewCount*3, 4, NAN);
+		return NAN;
 	}
 	Eigen::MatrixXd N = Eigen::MatrixXd(viewCount*3, colsN);
 	int colN = 0;
@@ -426,37 +427,41 @@ Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &pro
 
 	// Get orthogonal complement of dimension 4, which is the target vector space of M (up to noise ofc)
 	Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeFullU> svd_N(N);
-	Eigen::MatrixXd basis = svd_N.matrixU().block(0, viewCount*3-4, viewCount*3, 4);
+	basis = svd_N.matrixU().block(0, viewCount*3-4, viewCount*3, 4);
 	Eigen::Matrix<double,5,1> rankValues = svd_N.singularValues().tail<5>().reverse();
 
-	if (rankValues(3)*params.basis.minRankFactor > rankValues(4))
+	float noiseFactor = rankValues(4) / rankValues(3);
+	if (noiseFactor < params.basis.minRankFactor)
 	{ // Expected full rank due to noise, less than this means not enough 4-tuples were added
-		LOGC(LWarn, "Failed to completely constrain target vector space, increase number of regarded 4-tuples or data! Rank values (%f, %f, %f, %f) - %f",
-			rankValues(0), rankValues(1), rankValues(2), rankValues(3), rankValues(4));
-		LOGC(LWarn, "Limits: %d Columns within [%d,%d],  %d / %d tuples recorded, %d / %d tested.",
+		LOGC(LWarn, "Failed to completely constrain target vector space, increase number of regarded 4-tuples or data!");
+		LOGC(LWarn, "   Noise factor %f, full rank values (%f, %f, %f, %f) - %f",
+			noiseFactor, rankValues(0), rankValues(1), rankValues(2), rankValues(3), rankValues(4));
+		LOGC(LWarn, "    Limits: %d Columns within [%d,%d],  %d / %d tuples recorded, %d / %d tested.",
 			colsN, minNColumns, maxNColumns, (int)partN.size(), max4Tuples, tested4Tuples, max4TupleTests);
 	}
 
 	// Size of basis: 3*recViewCount rows and 4 columns (the basis vectors)
-	LOGC(LDebug, "Extracted target vector space basis! Noise rank difference %f vs %f", rankValues(3), rankValues(4));
+	LOGC(LDebug, "Extracted target vector space basis with noise factor %f (%f / %f)", noiseFactor, rankValues(4), rankValues(3));
 
-	return basis;
+	return noiseFactor;
 }
 
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<MatrixX<BOOL>> projectiveDepthMissing,
-	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx)
+int recoverPointData(
+	Eigen::MatrixXd &projectiveMatrix,
+	MatrixX<BOOL> &projectiveDepthMissing,
+	const Eigen::MatrixXd &basis, Eigen::MatrixXd &P_approx)
 {
-	assert(projectiveMatrix.cols() == projectiveDepthMissing.cols());
-	assert(projectiveMatrix.rows() == projectiveDepthMissing.rows()*3);
-	assert(projectiveMatrix.rows() == basis.rows());
-	assert(basis.cols() == 4);
-	int pointsUnrecoverable = 0;
 	int pointCount = projectiveMatrix.cols();
 	int viewCount = projectiveMatrix.rows()/3;
-	P_approx = Eigen::MatrixXd::Zero(4, pointCount);
+	assert(projectiveDepthMissing.cols() == pointCount);
+	assert(projectiveDepthMissing.rows() == viewCount);
+	assert(basis.rows() == viewCount*3);
+	assert(basis.cols() == 4);
+	assert(P_approx.rows() == 4);
+	assert(P_approx.cols() == pointCount);
 
+	int pointsUnrecoverable = 0;
 	double recoveryError = 0, confirmationError = 0;
 	int pointsRecovered = 0, pointsConfirmed = 0;
 	for (int p = 0; p < pointCount; p++)
@@ -489,13 +494,20 @@ int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 			//truncatedBasis.colwise().normalise();
 
 			// Get coefficients (3D point) to extrapolate point column (reprojections) from basis (projection matrices)
-			Eigen::Vector4d coeff = truncatedBasis.bdcSvd<Eigen::ComputeThinU | Eigen::ComputeThinV>().solve(truncatedCol);
+			auto svd = truncatedBasis.bdcSvd<Eigen::ComputeThinU | Eigen::ComputeThinV>();
+			if (svd.rank() < 4)
+			{
+				LOGC(LTrace, "Col %d cannot be used so far, only rank %d with %d / %d rows picked!", p, (int)svd.rank(), usefulRows, viewCount*3);
+				pointsUnrecoverable++;
+				continue;
+			}
+			Eigen::Vector4d coeff = svd.solve(truncatedCol);
 
 			// Recover rows using basis and coefficients
 			Eigen::VectorXd estCol = basis*coeff;
 			for (int v = 0; v < viewCount; v++)
 			{
-				if (projectiveDepthMissing(v,p))
+				if (projectiveDepthMissing(v, p))
 				{ // Either only projective depth or also point missing
 					if (projectiveMatrix.block<3,1>(v*3, p).hasNaN())
 					{ // Fill missing point and projective depth with estimation
@@ -505,7 +517,7 @@ int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
 					{ // Only update scale (projective depth)
 						projectiveMatrix.block<3,1>(v*3, p) *= estCol(v*3+2) / projectiveMatrix(v*3+2, p);
 					}
-					projectiveDepthMissing(v,p) = false;
+					projectiveDepthMissing(v, p) = 0;
 				}
 			}
 

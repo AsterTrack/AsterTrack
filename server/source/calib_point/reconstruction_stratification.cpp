@@ -261,14 +261,14 @@ std::optional<ErrorMessage> SeparatePerspectiveProjection(Eigen::Matrix<double,3
 		int front = 0, back = 0;
 		for (int p = 0; p < measurementMatrix.cols(); p++)
 		{
-			Eigen::Vector2d measure = measurementMatrix.block<2,1>(v*3, p);
+			Eigen::Vector3d measure = measurementMatrix.block<3,1>(v*3, p);
 			if (measure.hasNaN()) continue;
 			ptCnt++;
 			Eigen::Vector3d point3D = P.block<4,1>(0,p).hnormalized();
 			Eigen::Vector3d reprojection = P_v * R_v * (point3D - C_T);
 			if (reprojection.z() > 0) front++;
 			else back++;
-			reprojectionError += (measure-reprojection.hnormalized()).squaredNorm();
+			reprojectionError += (measure.hnormalized()-reprojection.hnormalized()).squaredNorm();
 		}
 		reprojectionError = std::sqrt(reprojectionError/ptCnt);
 		LOGC(LInfo, "    Final reprojection error across %d recovered observations: %fpx RMSE", ptCnt, reprojectionError*PixelFactor);

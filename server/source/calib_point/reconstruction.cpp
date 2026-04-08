@@ -72,6 +72,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	Eigen::MatrixXd viewNormInv(3, viewCount*3);
 	for (int v = 0; v < viewCount; v++)
 		viewNormInv.middleCols<3>(v*3) = normalisePointRow(measurementMatrix.middleRows<3>(v*3), normMeasurementMatrix.middleRows<3>(v*3));
+	Eigen::MatrixXd normMeasurementMatrixOriginal = normMeasurementMatrix;
 
 
 	// ----- Projective Depths Estimation
@@ -80,7 +81,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	// Iteratively determine projective depths according to best strategy
 	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
 	Eigen::VectorXi viewsDiscarded = Eigen::VectorXi::Zero(viewCount);
-	MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(normMeasurementMatrix, params, projectiveDepthMatrix, viewsDiscarded);
+	MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(projectiveDepthMatrix, normMeasurementMatrixOriginal, normMeasurementMatrix, params, viewsDiscarded);
+	assert(depthsEstimated.rows() == viewCount && depthsEstimated.cols() == pointCount);
 
 	int recViewCount = viewCount - viewsDiscarded.count();
 	if (recViewCount < 2)
@@ -131,16 +133,18 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	// Both due to missing points (NaNs) and missing projective depth (marked by projectiveDepthMissing)
 	// For that, find basis for the vector space of rank 4 spanned by the projectiveMatrix
 	// Then complete the columns of the projectiveMatrix as linear combinations of that basis
-	Eigen::MatrixXd basis = determineRank4Basis(projectiveMatrix, projectiveDepthMissing, observationDataMissing, params, stopToken);
-	if (basis.hasNaN()) // basis (recViewCount*3, 4)
-	{
+	Eigen::MatrixXd basis(recViewCount*3, 4);
+	float noiseFactor = determineRank4Basis(basis, projectiveMatrix, projectiveDepthMissing, observationDataMissing, params, stopToken);
+	bool recoverProblems = noiseFactor < params.basis.minRankFactor;
+	if (std::isnan(noiseFactor))
+	{ // Signal that recovery of basis is impossible for this submatrix
 		LOGC(LError, "Failed to determine basis of data samples due to numerical errors!");
 		return "Failed to determine basis of data samples due to numerical errors!";
 	}
 	if (stopToken.stop_requested())
 		return std::nullopt;
 	auto mid2 = pclock::now();
-	Eigen::MatrixXd P_approx;  // (4, pointCount)
+	Eigen::MatrixXd P_approx = Eigen::MatrixXd::Constant(4, pointCount, NAN);
 	int pointsUnrecoverable = recoverPointData(projectiveMatrix, projectiveDepthMissing, basis, P_approx);
 
 	LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!", 

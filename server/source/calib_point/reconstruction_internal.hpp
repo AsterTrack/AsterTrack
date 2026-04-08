@@ -29,19 +29,25 @@ typedef uint_fast8_t BOOL;
  * Recovery of measurement matrix by estimating projective depths and filling missing data
  */
 
-MatrixX<BOOL> estimateProjectiveDepths(const Eigen::Ref<const Eigen::MatrixXd> &normMeasurementMatrix, 
+MatrixX<BOOL> estimateProjectiveDepths(
+	Eigen::MatrixXd &projectiveDepthMatrix,
+	const Eigen::MatrixXd &originalMeasurementMatrix,
+	const Eigen::MatrixXd &measurementMatrix,
 	const PointReconstructionParameters &params,
-	Eigen::MatrixXd &projectiveDepthMatrix, Eigen::VectorXi &viewsDiscarded);
+	Eigen::VectorXi &viewsDiscarded);
 
-Eigen::MatrixXd determineRank4Basis(const Eigen::Ref<const Eigen::MatrixXd> &projectiveMatrix,
-	const Eigen::Ref<const MatrixX<BOOL>> &projectiveDepthMissing,
-	const Eigen::Ref<const MatrixX<BOOL>> &observationDataMissing,
+float determineRank4Basis(
+	Eigen::MatrixXd &basis,
+	const Eigen::MatrixXd &projectiveMatrix,
+	const MatrixX<BOOL> &projectiveDepthMissing,
+	const MatrixX<BOOL> &observationDataMissing,
 	const PointReconstructionParameters &params,
 	std::stop_token stopToken);
 
-int recoverPointData(Eigen::Ref<Eigen::MatrixXd> projectiveMatrix,
-	Eigen::Ref<MatrixX<BOOL>> projectiveDepthMissing,
-	const Eigen::Ref<const Eigen::MatrixXd> &basis, Eigen::MatrixXd &P_approx);
+int recoverPointData(
+	Eigen::MatrixXd &projectiveMatrix,
+	MatrixX<BOOL> &projectiveDepthMissing,
+	const Eigen::MatrixXd &basis, Eigen::MatrixXd &P_approx);
 
 
 /**

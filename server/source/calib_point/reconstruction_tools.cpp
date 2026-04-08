@@ -48,6 +48,7 @@ double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::Matrix<double,
 	return reprojectionErrorSq / ptCnt;
 }
 
+
 double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::MatrixXd> V,
 	const Eigen::Ref<const Eigen::MatrixXd> &P, const Eigen::Ref<const Eigen::MatrixXd> &measurementMatrix)
 {
@@ -63,10 +64,10 @@ double calculateReprojectionErrorSq(const Eigen::Ref<const Eigen::MatrixXd> V,
 	{
 		for (int p = 0; p < measurementMatrix.cols(); p++)
 		{
-			Eigen::Vector2d measure = measurementMatrix.block<2,1>(v,p);
+			Eigen::Vector3d measure = measurementMatrix.block<3,1>(v,p);
 			if (measure.hasNaN()) continue;
 			Eigen::Vector3d reprojection = V.block<3,4>(v,0) * P.block<4,1>(0,p);
-			reprojectionErrorSq += (measure-reprojection.hnormalized()).squaredNorm();
+			reprojectionErrorSq += (measure.hnormalized()-reprojection.hnormalized()).squaredNorm();
 			ptCnt++;
 		}
 	}
@@ -101,6 +102,7 @@ Eigen::Matrix3d normalisePointRow(const Eigen::Ref<const Eigen::MatrixXd> &point
 		imageScale += normRow.block<2,1>(0,p).norm();
 	}
 	imageScale /= imagePointCount*sqrt(2);
+	double imageRescale = 1.0 / imageScale;
 
 	// Apply scale
 	for (int p = 0; p < pointRow.cols(); p++)
@@ -108,7 +110,7 @@ Eigen::Matrix3d normalisePointRow(const Eigen::Ref<const Eigen::MatrixXd> &point
 		if (pointRow.col(p).hasNaN())
 			normRow.col(p).setConstant(NAN);
 		else
-			normRow.block<2,1>(0,p) /= imageScale;
+			normRow.block<2,1>(0,p) *= imageRescale;
 	}
 
 	// Build normalisation matrices to invert normalisations later

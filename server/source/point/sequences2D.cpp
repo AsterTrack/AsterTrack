@@ -1067,8 +1067,8 @@ bool updateSequenceCaptures(const SequenceAquisitionParameters &params,
 			// Truncate remaining sequence
 			seq.points.resize(lengthLeft);
 			seq.rawPoints.resize(lengthLeft);
-			// Add new inactive sequence
-			cam.sequences.push_back(inactiveSequence);
+			// Add new inactive sequence as temporary
+			temporaries.push_back(inactiveSequence);
 		}
 	}
 
@@ -1533,6 +1533,8 @@ static float calculateFundamentalMatrix(FundamentalMatrix &FM, const Range<Point
 	return confidence;
 }
 
+const int minSeqLenUncal = stableSequenceDelay;
+const int minCorrLenUncal = stableSequenceDelay;
 const SequenceAquisitionParameters sequenceUncalibrated = {
 	"Uncalibrated",
 	0,
@@ -1541,20 +1543,20 @@ const SequenceAquisitionParameters sequenceUncalibrated = {
 	0.1f/(1000*PixelFactor),
 	3,
 	{
-		1.0f*PixelSize,
-		2,
+		6.0f*PixelSize,
+		6,
 		3,
-		1,
+		0,
 		10
 	},
-	100,
-	3*PixelSize,
-	2.0f,
+	stableSequenceDelay/2,
+	6*PixelSize,
+	3.0f,
 	5,
 	5,
 	5,
-	stableSequenceDelay,
-	stableSequenceDelay,
+	minSeqLenUncal,
+	minCorrLenUncal,
 	{
 		1000,
 		0.6f,
@@ -1570,10 +1572,10 @@ const SequenceAquisitionParameters sequenceUncalibrated = {
 		1000,
 		100,
 		0.3f,
-		2,
+		1.8,
 		0.00005f,
-		stableSequenceDelay,
-		0.05f,
+		minCorrLenUncal,
+		0.2f,
 		5,
 		true,
 	},

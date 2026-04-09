@@ -19,6 +19,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //#define LOG_MAX_LEVEL LTrace
 #include "util/log.hpp"
 #include "util/util.hpp"
+#include "util/stats.hpp"
 
 #include <numeric>
 #include <algorithm>
@@ -232,12 +233,15 @@ MatrixX<BOOL> estimateProjectiveDepths(
 		// Find epipole as kernel of F
 		Eigen::Vector3d e = F.jacobiSvd<Eigen::ComputeFullU>().matrixU().rightCols<1>();
 
+		float relVerificationError = 0;
+		StatDistf relFactor = {};
+		int prevTransferred = 0, newlyTransferred = 0;
 		for (int p = 0; p < pointCount; p++)
 		{
 			if (!pointsRecovered(p, s))
 				continue; // No source projective depth to transfer
-			if (!pointsRecoverable(p, t))
-				continue; // Is already determined
+			//if (!pointsRecoverable(p, t))
+			//	continue; // Is already determined
 			auto x_b = measurementMatrix.block<3,1>(s*3, p) * projectiveDepthMatrix(s, p);
 			if (x_b.hasNaN())
 				continue; // Missing data in source camera
@@ -247,9 +251,39 @@ MatrixX<BOOL> estimateProjectiveDepths(
 			// Determine projective depth inferred from reference projective depth of source camera
 			Eigen::Vector3d a = e.cross(x_v);
 			float projDepthFac = std::abs(a.dot(F * x_b) / a.squaredNorm());
-			projectiveDepthMatrix(t, p) *= projDepthFac;
+			// Debug
+			if (pointsRecoverable(p, t))
+			{
+				projectiveDepthMatrix(t, p) *= projDepthFac;
+				Eigen::Vector3d repA = e.cross(x_v * projDepthFac);
+				float repFactor = std::abs(repA.dot(F * x_b) / repA.squaredNorm());
+				if (std::abs(repFactor-1.0f) > 0.00001f)
+				{ // Projective depth factor to apply on existing, should return 1.0f if calculation repeated with new factor applied
+					LOGC(LDarn, "TXF %.3f -> %.3f via factor %.3f, repeat factor %.3f != 1",
+						x_b(2), x_v(2), projDepthFac, repFactor);
+				}
+				newlyTransferred++;
+			}
+			else
+			{
+				relFactor.update(projDepthFac);
+				/* if (std::abs(projDepthFac - 1.0f) > 0.001f)
+				{ // Projective depth factor to apply on existing, should return 1.0f if calculation repeated with new factor applied
+					LOGC(LDarn, "TXF %.3f -> %.3f, failed to verify, got %.3f",
+						x_b(2), x_v(2), projDepthFac);
+				} */
+				relVerificationError += projDepthFac < 1? 1.0f/projDepthFac : projDepthFac;
+				prevTransferred++;
+			}
 			pointsRecoverable(p, t) = 0;
 			pointsRecovered(p, t) = 1;
+		}
+		if (prevTransferred)
+		{
+			relVerificationError = (relVerificationError/prevTransferred) - 1.0f;
+			LOGC(relVerificationError > 0.05? LWarn : LInfo,
+				"When transferring %d new projective depths ontop of %d existing, relative verification error was %.2f%%, factor %.3f +- %.3f",
+				newlyTransferred, prevTransferred, relVerificationError * 100, relFactor.avg, relFactor.stdDev()*3);
 		}
 	}
 

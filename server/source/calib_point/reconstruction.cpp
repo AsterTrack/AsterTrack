@@ -80,7 +80,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 
 	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
 	Eigen::ArrayX<BOOL> maskedViews(viewCount), maskedPoints(pointCount);
-	int outlierPoints = 0; 
+	int outlierPoints = 0;
 	while (!stopToken.stop_requested())
 	{
 		auto t0 = pclock::now();
@@ -93,28 +93,10 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		projectiveDepthMatrix.setOnes();
 		MatrixX<BOOL> depthsEstimated = estimateProjectiveDepths(projectiveDepthMatrix, normMeasurementMatrixOriginal, normMeasurementMatrix, params);
 		assert(depthsEstimated.rows() == viewCount && depthsEstimated.cols() == pointCount);
-		if (depthsEstimated.all())
-		{ // Got all depths, all measurements, can proceed
-			LOGC(LInfo, "Proceeding after recovery with all data points estimated!");
-			maskedViews.setZero();
-			maskedPoints.setZero();
-			break;
-		}
 		if (stopToken.stop_requested())
 			break;
 
 		// Find relevant submatrix to continue with
-		int recViewCount = (depthsEstimated.cast<int>().rowwise().sum().array() > params.FM.minPairwiseCorrespondences*2).cast<int>().sum();
-		int recPointCount = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<int>().sum();
-		if (!params.strategy.forceOneshotReconstruction &&
-			recViewCount == viewCount && recPointCount > (pointCount-outlierPoints)*params.strategy.stopAtPointRecoveryRate)
-		{ // May leave some cameras with less data than they should have, but useful for testing
-			LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d, with %d outliers) across all views have been recovered!",
-				(float)recPointCount/pointCount*100.0f, recPointCount, pointCount, outlierPoints);
-			maskedViews.setZero();
-			maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<BOOL>();
-			break;
-		}
 		// Take all samples for oneshot, may recover missing projective depths, and are more desparate for data
 		int pointObsLimit = params.strategy.forceOneshotReconstruction? 1 : 2;
 		// Filter points first to inform rough view sample count
@@ -129,14 +111,26 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				depthsEstimated.row(v).setZero();
 		// And finally filter points again incase they are now insufficiently covered
 		maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() < pointObsLimit).cast<BOOL>();
-		recViewCount = viewCount - maskedViews.cast<int>().sum();
-		recPointCount = pointCount - maskedPoints.cast<int>().sum();
-		if (depthsEstimated.cast<int>().sum() == recPointCount * recViewCount)
+		int recViewCount = viewCount - maskedViews.cast<int>().sum();
+		int recPointCount = pointCount - maskedPoints.cast<int>().sum();
+
+		// Check iteration abort conditions
+		bool iterationsDone = false;
+		if (!params.strategy.forceOneshotReconstruction && recViewCount == viewCount)
 		{
-			LOGC(LInfo, "Proceeding after complete recovery of %d/%d cameras and %d/%d points!", recViewCount, viewCount, recPointCount, pointCount);
-			break;
+			Eigen::ArrayX<BOOL> discardedPoints = (depthsEstimated.cast<int>().colwise().sum().array() < viewCount).cast<BOOL>();
+			int goodPointCount = pointCount - discardedPoints.cast<int>().sum();;
+			if (goodPointCount >= (pointCount-outlierPoints)*params.strategy.stopAtPointRecoveryRate)
+			{ // May leave some cameras with less data than they should have, but useful for testing
+				LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d, with %d outliers) across all views have been recovered!",
+					(float)goodPointCount/pointCount*100.0f, goodPointCount, pointCount, outlierPoints);
+				maskedPoints = discardedPoints;
+				recPointCount = goodPointCount;
+				iterationsDone = true;
+			}
 		}
-		LOGC(LInfo, "Filtered down to %d/%d views and %d/%d points for this iterations submatrix!", recViewCount, viewCount, recPointCount, pointCount);
+		if (!iterationsDone)
+			LOGC(LInfo, "Filtered down to %d/%d views and %d/%d points for this iterations submatrix!", recViewCount, viewCount, recPointCount, pointCount);
 
 		// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
 		MatrixX<BOOL> projectiveDepthMissing(recViewCount, recPointCount);
@@ -203,7 +197,6 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 
 		if (recoveredPoints == 0)
 		{ // Can't improve further
-			assert(unrecoverablePoints != 0); // Should have stopped right after depth estimation already
 			LOGC(LInfo, "Proceeding after failing to recover any of the %d points, with %d/%d views and %d/%d points considered.",
 				unrecoverablePoints, recViewCount, viewCount, recPointCount, pointCount);
 			for (int pp = 0, p = -1; pp < pointCount; pp++)
@@ -217,6 +210,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		}
 
 		float maxOutlier = 5*PixelSize;
+		bool removeOutliers = false;
 		if (recoverProblems)
 		{
 			StatValue<float,StatExtremas|StatDistribution> errorStats = {};
@@ -238,11 +232,13 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				}
 			}
 			maxOutlier = errorStats.avg + errorStats.stdDev() * params.outlierSigma;
-			if (errorStats.max < maxOutlier)
-				recoverProblems = false;
+			removeOutliers = errorStats.max > maxOutlier && !iterationsDone;
 			LOGC(LInfo, "Reconstruction error at %.2fpx +- %.2fpx, max %.2fpx over %d samples, picked outlier max at %.2fpx",
 				errorStats.avg*PixelFactor, errorStats.stdDev()*3*PixelFactor, errorStats.max*PixelFactor, errorStats.num, maxOutlier*PixelFactor);
 		}
+
+		if (params.strategy.forceOneshotReconstruction && !removeOutliers)
+			iterationsDone = true;
 
 		// Copy recovered/extrapolated measurements
 		float validationError = 0.0f, maxValError = 0.0f;
@@ -263,14 +259,14 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				// But it will be reestimated anyway, it is of no value to keep
 				if (obsData.hasNaN())
 				{ // Accept reconstructed point as filled sample
-					if (!recoverProblems)
+					if (!removeOutliers)
 						obsData = recData.hnormalized().homogeneous();
 				}
 				else
 				{ // Verify reconstruction against existing measurement
 					auto diff = obsData.hnormalized() - recData.hnormalized();
 					float valError = diff.norm() * viewNormInv(0, vv*3);
-					if (recoverProblems && valError > maxOutlier)
+					if (removeOutliers && valError > maxOutlier)
 					{
 						obsData.setConstant(NAN);
 						//normMeasurementMatrixOriginal.block<3,1>(vv*3, pp).setConstant(NAN);
@@ -292,7 +288,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				}
 
 				// Recover missing projective depths only in oneshot - otherwise, redetermine all anew next iteration
-				if (params.strategy.forceOneshotReconstruction)
+				if (iterationsDone)
 					projectiveDepthMatrix(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
 			}
 		}
@@ -304,7 +300,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		LOGC(LInfo, "-- Submatrix recovery of %dx%d took %.2fms: %.2fms proj. depth, %.2fms basis, %.2fms filling", 
 			recViewCount*3, recPointCount, dtMS(t0, t3), dtMS(t0, t1), dtMS(t1, t2), dtMS(t2, t3));
 
-		if (params.strategy.forceOneshotReconstruction && !recoverProblems)
+		if (iterationsDone)
 		{
 			// Mask off all points not fully recovered
 			for (int pp = 0, p = -1; pp < pointCount; pp++)

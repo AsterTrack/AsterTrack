@@ -71,6 +71,8 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 		ScalarProperty<float>("Min Rank", "", &params.basis.minRankFactor, &standard.basis.minRankFactor, 0, 1000, 1.0f);
 		EndSection();
 
+		ScalarProperty<float>("Sample Outlier Sigma", "o", &params.outlierSigma, &standard.outlierSigma, 0, 1000, 0.5f);
+
 		EndCollapsingRegion();
 	}
 

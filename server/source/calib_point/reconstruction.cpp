@@ -21,6 +21,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //#define LOG_MAX_LEVEL LTrace
 #include "util/log.hpp"
 #include "util/util.hpp"
+#include "util/stats.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -79,6 +80,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 
 	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
 	Eigen::ArrayX<BOOL> maskedViews(viewCount), maskedPoints(pointCount);
+	int outlierPoints = 0; 
 	while (!stopToken.stop_requested())
 	{
 		auto t0 = pclock::now();
@@ -105,10 +107,10 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		int recViewCount = (depthsEstimated.cast<int>().rowwise().sum().array() > params.FM.minPairwiseCorrespondences*2).cast<int>().sum();
 		int recPointCount = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<int>().sum();
 		if (!params.strategy.forceOneshotReconstruction &&
-			recViewCount == viewCount && recPointCount > pointCount*params.strategy.stopAtPointRecoveryRate)
+			recViewCount == viewCount && recPointCount > (pointCount-outlierPoints)*params.strategy.stopAtPointRecoveryRate)
 		{ // May leave some cameras with less data than they should have, but useful for testing
-			LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d) across all views have been recovered!",
-				(float)recPointCount/pointCount*100.0f, recPointCount, pointCount);
+			LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d, with %d outliers) across all views have been recovered!",
+				(float)recPointCount/pointCount*100.0f, recPointCount, pointCount, outlierPoints);
 			maskedViews.setZero();
 			maskedPoints = (depthsEstimated.cast<int>().colwise().sum().array() == viewCount).cast<BOOL>();
 			break;
@@ -214,9 +216,38 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 			break;
 		}
 
+		float maxOutlier = 5*PixelSize;
+		if (recoverProblems)
+		{
+			StatValue<float,StatExtremas|StatDistribution> errorStats = {};
+			for (int vv = 0, v = -1; vv < viewCount; vv++)
+			{
+				if (maskedViews(vv)) continue;
+				v++;
+				for (int pp = 0, p = -1; pp < pointCount; pp++)
+				{
+					if (maskedPoints(pp)) continue;
+					p++;
+					if (P_approx.col(p).hasNaN()) continue;
+					auto obsData = normMeasurementMatrix.block<3,1>(vv*3, pp);
+					if (obsData.hasNaN()) continue;
+					auto recData = basis.middleRows<3>(v*3) * P_approx.col(p);
+					auto diff = obsData.hnormalized() - recData.hnormalized();
+					float valError = diff.norm() * viewNormInv(0, vv*3);
+					errorStats.update(valError);
+				}
+			}
+			maxOutlier = errorStats.avg + errorStats.stdDev() * params.outlierSigma;
+			if (errorStats.max < maxOutlier)
+				recoverProblems = false;
+			LOGC(LInfo, "Reconstruction error at %.2fpx +- %.2fpx, max %.2fpx over %d samples, picked outlier max at %.2fpx",
+				errorStats.avg*PixelFactor, errorStats.stdDev()*3*PixelFactor, errorStats.max*PixelFactor, errorStats.num, maxOutlier*PixelFactor);
+		}
+
 		// Copy recovered/extrapolated measurements
 		float validationError = 0.0f, maxValError = 0.0f;
 		int validationCount = 0;
+		int outlierCount = 0;
 		for (int vv = 0, v = -1; vv < viewCount; vv++)
 		{
 			if (maskedViews(vv)) continue;
@@ -232,16 +263,32 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				// But it will be reestimated anyway, it is of no value to keep
 				if (obsData.hasNaN())
 				{ // Accept reconstructed point as filled sample
-					obsData = recData.hnormalized().homogeneous();
+					if (!recoverProblems)
+						obsData = recData.hnormalized().homogeneous();
 				}
 				else
 				{ // Verify reconstruction against existing measurement
-					Eigen::Vector2d obsPt = (viewNormInv.block<3,3>(0,vv*3) * obsData).hnormalized();
-					Eigen::Vector2d recPt = (viewNormInv.block<3,3>(0,vv*3) * recData).hnormalized();
-					float valError = (obsPt - recPt).norm();
-					validationError += valError;
-					validationCount++;
-					maxValError = std::max(maxValError, valError);
+					auto diff = obsData.hnormalized() - recData.hnormalized();
+					float valError = diff.norm() * viewNormInv(0, vv*3);
+					if (recoverProblems && valError > maxOutlier)
+					{
+						obsData.setConstant(NAN);
+						//normMeasurementMatrixOriginal.block<3,1>(vv*3, pp).setConstant(NAN);
+						if (normMeasurementMatrix.col(pp).array().isNaN().count() >= viewCount-3)
+						{ // Whole point is an outlier now
+							P_approx.col(p).setConstant(NAN);
+							normMeasurementMatrix.col(pp).setConstant(NAN);
+							//normMeasurementMatrixOriginal.col(pp).setConstant(NAN);
+							outlierPoints++;
+						}
+						outlierCount++;
+					}
+					else
+					{
+						validationError += valError;
+						validationCount++;
+						maxValError = std::max(maxValError, valError);
+					}
 				}
 
 				// Recover missing projective depths only in oneshot - otherwise, redetermine all anew next iteration
@@ -249,14 +296,15 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 					projectiveDepthMatrix(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
 			}
 		}
-		LOGC(LWarn, "Validation of reconstructed data has avg error of %.6fpx, max %.6fpx, over %d validated points!", validationError/validationCount*PixelFactor, maxValError*PixelFactor, validationCount);
+		LOGC(LWarn, "Validation of reconstructed data has avg error of %.6fpx, max %.6fpx, over %d validated samples with %d outliers (%d points!",
+			validationError/validationCount*PixelFactor, maxValError*PixelFactor, validationCount, outlierCount, outlierPoints);
 
 		auto t3 = pclock::now();
 
 		LOGC(LInfo, "-- Submatrix recovery of %dx%d took %.2fms: %.2fms proj. depth, %.2fms basis, %.2fms filling", 
 			recViewCount*3, recPointCount, dtMS(t0, t3), dtMS(t0, t1), dtMS(t1, t2), dtMS(t2, t3));
 
-		if (params.strategy.forceOneshotReconstruction)
+		if (params.strategy.forceOneshotReconstruction && !recoverProblems)
 		{
 			// Mask off all points not fully recovered
 			for (int pp = 0, p = -1; pp < pointCount; pp++)

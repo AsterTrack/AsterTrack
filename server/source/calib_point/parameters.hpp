@@ -79,6 +79,8 @@ struct PointReconstructionParameters
 		float tupleTestMaxFactor = 20;
 		float minRankFactor = 10;
 	} basis;
+
+	float outlierSigma = 1000.0f; // Effectively disabled
 };
 
 struct PointCalibParameters

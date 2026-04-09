@@ -199,9 +199,6 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		int recoveredPoints = recoverStats.first;
 		int unrecoverablePoints = recoverStats.second;
 
-		LOGC(LDebug, "Approximated matrix P*X and projectiveMatrix have error of %f RMSE due to differences in projective depths!", 
-			std::sqrt((projectiveMatrix - (basis*P_approx)).squaredNorm() / (recViewCount*3*pointCount)));
-
 		if (recoveredPoints == 0)
 		{ // Can't improve further
 			assert(unrecoverablePoints != 0); // Should have stopped right after depth estimation already
@@ -218,6 +215,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		}
 
 		// Copy recovered/extrapolated measurements
+		float validationError = 0.0f, maxValError = 0.0f;
+		int validationCount = 0;
 		for (int vv = 0, v = -1; vv < viewCount; vv++)
 		{
 			if (maskedViews(vv)) continue;
@@ -228,16 +227,29 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				p++;
 				if (P_approx.col(p).hasNaN()) continue;
 				auto obsData = normMeasurementMatrix.block<3,1>(vv*3, pp);
-				auto recData = projectiveMatrix.block<3,1>(v*3, p);
+				auto recData = basis.middleRows<3>(v*3) * P_approx.col(p);
 				// Could keep projective depth, algorithms should be able to handle it
 				// But it will be reestimated anyway, it is of no value to keep
 				if (obsData.hasNaN())
+				{ // Accept reconstructed point as filled sample
 					obsData = recData.hnormalized().homogeneous();
+				}
+				else
+				{ // Verify reconstruction against existing measurement
+					Eigen::Vector2d obsPt = (viewNormInv.block<3,3>(0,vv*3) * obsData).hnormalized();
+					Eigen::Vector2d recPt = (viewNormInv.block<3,3>(0,vv*3) * recData).hnormalized();
+					float valError = (obsPt - recPt).norm();
+					validationError += valError;
+					validationCount++;
+					maxValError = std::max(maxValError, valError);
+				}
+
 				// Recover missing projective depths only in oneshot - otherwise, redetermine all anew next iteration
 				if (params.strategy.forceOneshotReconstruction)
 					projectiveDepthMatrix(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
 			}
 		}
+		LOGC(LWarn, "Validation of reconstructed data has avg error of %.6fpx, max %.6fpx, over %d validated points!", validationError/validationCount*PixelFactor, maxValError*PixelFactor, validationCount);
 
 		auto t3 = pclock::now();
 

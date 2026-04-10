@@ -74,6 +74,8 @@ MatrixX<BOOL> estimateProjectiveDepths(
 	// - This is not possible for disjointed views without indirect transfers or new initialisations
 	// Goal with iterative algorithm is to select a submatrix to fill the most data with next
 	// - Current implementation is not ideal for true multi-room setups, it just keeps growing the largest submatrix bit by bit
+	//   - But due to filled measurements seemingly sabotaging fundamental matrix calculation, it only uses original measurements
+	//   - That actually limits the current submatrix to points seen by one central camera, even with iterative reconstruction
 	// - Ideal would be strong submatrices of each room recovered first, and then connected
 	// - So need to test each view, determine a strong submatrix based on real measurements, and weigh in how much it can fill
 	// - After strong submatrices are done, it should focus on views that are ideal in connecting those submatrices

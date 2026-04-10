@@ -114,6 +114,19 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		int recViewCount = viewCount - maskedViews.cast<int>().sum();
 		int recPointCount = pointCount - maskedPoints.cast<int>().sum();
 
+		// TODO: Fix iterative reconstruction - still using oneshot reconstruction for now
+		// This also needs a rework of recovery strategy, see comment in estimateProjectiveDepths
+		// But most importantly, any iteration does not seem to perform the same as oneshot
+		// It seems like proper factorisation cannot deal with estimated proj.depths vs proj.dephts factorised in first iteration
+		// Moreover, although proj.depth estimation seems to be generating the same values (plus additional values) in the second iteration
+		//   determining the basis with additional filled data does NOT result in good factorised proj.depths either
+		// It's almost as if any filled data poisons any further work with the matrix, except the final proper factorisation
+		//   TBF, that needs them to even function at all, that's why we do it
+		// Outliers detection also behaves odd, removing any outliers (detected by the initial basis*points used to fill data)
+		//   does not actually improve the next iteration, even when it's handling the same data just minus outliers
+		//   in many cases, it even seems to break it entirely, spiralling into both higher averages and outliers
+		// See develop-reconstruction branch for test cases on this, and further debugging
+
 		// Check iteration abort conditions
 		bool iterationsDone = false;
 		if (!params.strategy.forceOneshotReconstruction && recViewCount == viewCount)

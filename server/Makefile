@@ -75,7 +75,7 @@ endif
 ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
+cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif
@@ -93,18 +93,6 @@ endif
 lmode = $(lto)
 march = -march=native -mtune=native
 mode = release-native
-
-else ifeq ($(BUILD_TYPE), release-verify)
-# Fast, can verify memory is handled correctly, useful for testing code while not sacrificing much performance
-cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=2
-ifeq ($(STDLIB), libcpp)
-	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
-	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
-else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
-	cmode += -D_GLIBCXX_DEBUG
-endif
-lmode = -fsanitize=address
-mode = release-verify
 
 else ifeq ($(BUILD_TYPE), sanitize-thread)
 # Super slow (?), can verify no data races exist
@@ -124,9 +112,9 @@ endif
 lmode = -fsanitize=memory
 mode = sanitize-memory
 
-else ifeq ($(BUILD_TYPE), sanitize-address)
-# Slow, can verify memory is handled correctly, useful for newly written code
-cmode = -O1 -g -fno-omit-frame-pointer -fsanitize=address -DPERF=1
+else ifeq ($(BUILD_TYPE), verify-fast)
+# Rather fast, can verify memory is handled correctly, useful for testing code while not sacrificing much performance
+cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=2
 ifeq ($(STDLIB), libcpp)
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
@@ -134,35 +122,18 @@ else # gccs libstdc++ - may technically already break ABI, but doesn't matter fo
 	cmode += -D_GLIBCXX_DEBUG
 endif
 lmode = -fsanitize=address
-mode = sanitize-address
+mode = verify-fast
 
-else ifeq ($(BUILD_TYPE), debug)
-# Slow, for step-through debug
-cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -DEIGEN_NO_DEBUG -DPERF=1
+else ifeq ($(BUILD_TYPE), debug-fast)
+# Pretty fast, without any sanitization to not break container inspection, for step-through debug
+cmode = -Og -g -fno-omit-frame-pointer -DEIGEN_NO_DEBUG -DPERF=2
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 endif
-lmode = -fsanitize=address
-mode = debug
+lmode =
+mode = debug-fast
 
-else ifeq ($(BUILD_TYPE), super-debug)
-# Super slow (?), for step-through debug with extra verification
-# Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
-cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
-lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
-ifeq ($(STDLIB), libcpp)
-# requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
-	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
-	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
-else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
-	cmode += -D_GLIBCXX_DEBUG
-	ifeq '' '$(findstring clang,$(CC))' # not clang
-		cmode += -D_GLIBCXX_DEBUG_BACKTRACE
-	endif
-endif
-mode = super-debug
-
-else ifeq ($(BUILD_TYPE), super-verify)
+else ifeq ($(BUILD_TYPE), verify-extensive-fast)
 # Slow, verify as much as possible, but still try to be useably fast
 # Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
 cmode = -O3 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=1
@@ -178,7 +149,25 @@ else # gccs libstdc++ - may technically already break ABI, but doesn't matter fo
 	endif
 
 endif
-mode = super-verify
+mode = verify-extensive-fast
+
+else ifeq ($(BUILD_TYPE), verify-extensive-debug)
+# Super slow (?), for debug with extensive verification
+# Though step-through debug is hampered by verification breaking container inspection
+# Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
+cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
+lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
+ifeq ($(STDLIB), libcpp)
+# requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
+	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
+else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project
+	cmode += -D_GLIBCXX_DEBUG
+	ifeq '' '$(findstring clang,$(CC))' # not clang
+		cmode += -D_GLIBCXX_DEBUG_BACKTRACE
+	endif
+endif
+mode = verify-extensive-debug
 
 endif
 

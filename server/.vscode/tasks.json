@@ -178,9 +178,9 @@
 		{ // Allow sanitized builds on linux (gcc and clang)
 			"id": "linuxBuildType",
 			"description": "Build Type:",
-			"default": "release-verify",
+			"default": "verify-fast",
 			"type": "pickString",
-			"options": [ "release", "release-native", "release-verify", "debug", "sanitize-thread", "sanitize-memory", "sanitize-address", "super-debug", "super-verify" ]
+			"options": [ "verify-fast", "debug-fast", "release", "release-native", "sanitize-thread", "sanitize-memory", "verify-extensive-fast", "verify-extensive-debug" ]
 		},
 		{ // On Linux, allow selection of compiler
 			"id": "compiler",

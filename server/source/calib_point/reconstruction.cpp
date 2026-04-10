@@ -79,8 +79,14 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 	// ----- Measurement Extrapolation Loop using Projective Depth Estimation
 
 	Eigen::MatrixXd projectiveDepthMatrix = Eigen::MatrixXd::Ones(viewCount, pointCount);
+	Eigen::MatrixXd projectiveDepthMatrixLast = Eigen::MatrixXd::Ones(viewCount, pointCount);
+	Eigen::MatrixXd projectiveDepthMatrixFactorised = Eigen::MatrixXd::Ones(viewCount, pointCount);
+	MatrixX<BOOL> depthsEstimatedLast = MatrixX<BOOL>::Zero(viewCount, pointCount);
 	Eigen::ArrayX<BOOL> maskedViews(viewCount), maskedPoints(pointCount);
-	int outlierPoints = 0;
+	Eigen::ArrayX<BOOL> maskedViewsLast(viewCount), maskedPointsLast(pointCount);
+	maskedViewsLast.setZero();
+	maskedPointsLast.setZero();
+	int outlierPoints = 0; 
 	while (!stopToken.stop_requested())
 	{
 		auto t0 = pclock::now();
@@ -95,6 +101,74 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		assert(depthsEstimated.rows() == viewCount && depthsEstimated.cols() == pointCount);
 		if (stopToken.stop_requested())
 			break;
+
+		{
+			float avgError = 0;
+			int num = 0, mis = 0;
+			Eigen::VectorXd projDepthDiff = Eigen::VectorXd::Zero(viewCount);
+			Eigen::VectorXd projDepthCount = Eigen::VectorXd::Zero(viewCount);
+			for (int vv = 0; vv < viewCount; vv++)
+			{
+				for (int pp = 0; pp < pointCount; pp++)
+				{
+					if (depthsEstimatedLast(vv, pp) == 0) continue;
+					if (depthsEstimated(vv, pp) == 0) { mis++; continue; }
+					float prevProjDepth = projectiveDepthMatrixLast(vv, pp);
+					float newProjDepth = projectiveDepthMatrix(vv, pp);
+					float error = newProjDepth > prevProjDepth? newProjDepth/prevProjDepth : prevProjDepth/newProjDepth;
+					projDepthDiff(vv) += error;
+					projDepthCount(vv) += 1;
+					avgError += error;
+					num++;
+				}
+			}
+			if (num > 0)
+			{
+				projDepthDiff.array() /= projDepthCount.array();
+				avgError /= num;
+				LOGC(LWarn, "Average projective depth error last to new: %.4f over %d samples (%d pre, %d new, mis %d)!",
+					avgError, num, (int)depthsEstimatedLast.count(), (int)depthsEstimated.count(), mis);
+				LOGC(LInfo, "Per view 0-8: (%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f)!",
+					projDepthDiff(0), projDepthDiff(1), projDepthDiff(2), projDepthDiff(3),
+					projDepthDiff(4), projDepthDiff(5), projDepthDiff(6), projDepthDiff(7));
+			}
+		}
+		{
+			float avgError = 0;
+			int num = 0, mis = 0;
+			Eigen::VectorXd projDepthDiff = Eigen::VectorXd::Zero(viewCount);
+			Eigen::VectorXd projDepthCount = Eigen::VectorXd::Zero(viewCount);
+			for (int vv = 0, v = -1; vv < viewCount; vv++)
+			{
+				if (maskedViewsLast(vv)) continue;
+				v++;
+				for (int pp = 0, p = -1; pp < pointCount; pp++)
+				{
+					if (maskedPointsLast(pp)) continue;
+					p++;
+					if (depthsEstimated(vv, pp) == 0) { mis++; continue; }
+					float prevProjDepth = projectiveDepthMatrixFactorised(vv, pp);
+					float newProjDepth = projectiveDepthMatrix(vv, pp);
+					float error = newProjDepth > prevProjDepth? newProjDepth/prevProjDepth : prevProjDepth/newProjDepth;
+					projDepthDiff(vv) += error;
+					projDepthCount(vv) += 1;
+					avgError += error;
+					num++;
+				}
+			}
+			if (num > 0)
+			{
+				projDepthDiff.array() /= projDepthCount.array();
+				avgError /= num;
+				LOGC(LWarn, "Average projective depth error factorised to new: %.4f over %d samples (%d pre, %d new, mis %d)!",
+					avgError, num, (int)depthsEstimatedLast.count(), (int)depthsEstimated.count(), mis);
+				LOGC(LInfo, "Per view 0-8: (%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f)!",
+					projDepthDiff(0), projDepthDiff(1), projDepthDiff(2), projDepthDiff(3),
+					projDepthDiff(4), projDepthDiff(5), projDepthDiff(6), projDepthDiff(7));
+			}
+		}
+		depthsEstimatedLast = depthsEstimated;
+		projectiveDepthMatrixLast = projectiveDepthMatrix;
 
 		// Find relevant submatrix to continue with
 		// Take all samples for oneshot, may recover missing projective depths, and are more desparate for data
@@ -144,6 +218,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		}
 		if (!iterationsDone)
 			LOGC(LInfo, "Filtered down to %d/%d views and %d/%d points for this iterations submatrix!", recViewCount, viewCount, recPointCount, pointCount);
+		maskedViewsLast = maskedViews;
+		maskedPointsLast = maskedPoints;
 
 		// Merge observations and their partial projectiveDepths into projectiveMatrix and discard irrecoverable views
 		MatrixX<BOOL> projectiveDepthMissing(recViewCount, recPointCount);
@@ -257,6 +333,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		float validationError = 0.0f, maxValError = 0.0f;
 		int validationCount = 0;
 		int outlierCount = 0;
+		projectiveDepthMatrixFactorised.setOnes();
 		for (int vv = 0, v = -1; vv < viewCount; vv++)
 		{
 			if (maskedViews(vv)) continue;
@@ -303,6 +380,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				// Recover missing projective depths only in oneshot - otherwise, redetermine all anew next iteration
 				if (iterationsDone)
 					projectiveDepthMatrix(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
+				projectiveDepthMatrixFactorised(vv, pp) = basis.row(v*3+2) * P_approx.col(p);
 			}
 		}
 		LOGC(LWarn, "Validation of reconstructed data has avg error of %.6fpx, max %.6fpx, over %d validated samples with %d outliers (%d points!",

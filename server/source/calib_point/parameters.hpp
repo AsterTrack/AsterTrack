@@ -47,7 +47,8 @@ struct PointReconstructionParameters
 	struct
 	{
 		// Mimic old, non-iterative behaviour
-		bool forceOneshotReconstruction = true;
+		bool forceOneshotReconstruction = false;
+		int testCondition = 4; // If using iterative algorithm
 
 		// Experimental options for projective depth transfers
 		bool allowIndirectTransfers = false;
@@ -60,14 +61,14 @@ struct PointReconstructionParameters
 
 		// Controlling size of iteration submatrix
 		// \ Judging whether to accept next best transfer or abort
-		int minIterationViews = 3; // Always accept transfer if view count is lacking
+		int minIterationViews = 100; // Always accept transfer if view count is lacking
 		float acceptWithFillRateMin = 0.95f; // Always accept transfer if current submatrix is basically fully determined
 		float minFillRate = 0.6f; // Min total sample fill rate in resulting submatrix
 		float minPrimaryPointRate = 0.4f; // Min primary points in resulting submatrix
 		float primaryPointCoverage = 0.75f; // Coverage to treat a point as primary point
 
 		// Early-out for iteration if most points are already fully recovered
-		float stopAtPointRecoveryRate = 1.0f; // Use for testing only, does not scale with more cameras
+		float stopAtPointRecoveryRate = 0.1f; // Use for testing only, does not scale with more cameras
 	} strategy;
 	struct
 	{

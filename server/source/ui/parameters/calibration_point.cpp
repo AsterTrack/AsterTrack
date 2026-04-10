@@ -47,6 +47,8 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 
 		BeginSection("Recovery Strategy");
 		BooleanProperty("Force Oneshot Reconstruction", &params.strategy.forceOneshotReconstruction, &standard.strategy.forceOneshotReconstruction);
+		ScalarProperty<int>("Test Condition", "", &params.strategy.testCondition, &standard.strategy.testCondition, 1, 4);
+		ImGui::Spacing();
 		BooleanProperty("Allow Indirect Transfers", &params.strategy.allowIndirectTransfers, &standard.strategy.allowIndirectTransfers);
 		BooleanProperty("Allow New Initialisations", &params.strategy.allowNewInititialisations, &standard.strategy.allowNewInititialisations);
 		ScalarProperty<float>("Transfer Weight", "", &params.strategy.transferPow, &standard.strategy.transferPow, 0, 10, 0.1f);

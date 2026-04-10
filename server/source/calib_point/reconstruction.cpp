@@ -211,9 +211,35 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 			{ // May leave some cameras with less data than they should have, but useful for testing
 				LOGC(LInfo, "Proceeding after %.2f%% of points (%d/%d, with %d outliers) across all views have been recovered!",
 					(float)goodPointCount/pointCount*100.0f, goodPointCount, pointCount, outlierPoints);
-				maskedPoints = discardedPoints;
-				recPointCount = goodPointCount;
-				iterationsDone = true;
+				if (params.strategy.testCondition == 1)
+				{ // Traditional one-shot reconstruction, should be about the same as forceOneshotReconstruction
+					projectiveDepthMatrix = projectiveDepthMatrixFactorised;
+					maskedViews = maskedViewsLast;
+					maskedPoints = maskedPointsLast;
+					break;
+				}
+				else if (params.strategy.testCondition == 2)
+				{ // One-shot reconstruction but debugging with one more iteration
+					// That iteration should not modify it, and indeed performs the same as above
+					projectiveDepthMatrix = projectiveDepthMatrixFactorised;
+					maskedViews = maskedViewsLast;
+					maskedPoints = maskedPointsLast;
+					iterationsDone = true;
+				}
+				else if (params.strategy.testCondition == 3)
+				{ // Continue immediately, should work but does not
+					// Uses estimated projective depths directly with final factorisation
+					maskedPoints = discardedPoints;
+					recPointCount = goodPointCount;
+					break;
+				}
+				else if (params.strategy.testCondition == 4)
+				{ // Continue with one more iteration, should work but does not
+					// Changes projective depths from estimations to factorised results
+					maskedPoints = discardedPoints;
+					recPointCount = goodPointCount;
+					iterationsDone = true;
+				}
 			}
 		}
 		if (!iterationsDone)
@@ -234,6 +260,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				if (maskedPoints(pp)) continue;
 				p++;
 				double projDepth = projectiveDepthMatrix(vv,pp);
+				assert(!std::isnan(projDepth));
 				auto obsData = normMeasurementMatrix.block<3,1>(vv*3, pp);
 				projectiveDepthMissing(v,p) = 1 - depthsEstimated(vv, pp);
 				observationDataMissing(v,p) = obsData.hasNaN();
@@ -435,6 +462,8 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 		{
 			if (maskedPoints(pp)) continue;
 			p++;
+			assert(!(normMeasurementMatrix.block<3,1>(vv*3, pp).hasNaN()));
+			assert(!std::isnan(projectiveDepthMatrix(vv,pp)));
 			recMeasurementMatrix.block<3,1>(v*3, p) = measurementMatrix.block<3,1>(vv*3, pp);
 			factorisationMatrix.block<3,1>(v*3, p) = projectiveDepthMatrix(vv,pp) * normMeasurementMatrix.block<3,1>(vv*3, pp);
 		}

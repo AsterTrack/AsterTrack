@@ -195,7 +195,7 @@ struct PipelineState
 			OptimisationOptions options = OptimisationOptions(true, true, false, false);
 			int maxSteps = 20;
 		} settings = {};
-		std::shared_ptr<PointCalibState> state;
+		std::shared_ptr<PointCalibState> state = std::make_shared<PipelineState::PointCalibState>();
 		// Room parameters
 		Synchronised<RoomCalib> room;
 		struct

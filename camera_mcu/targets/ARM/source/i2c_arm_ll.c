@@ -49,10 +49,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // But perhaps keeping the leading bytes just in case to prevent any protocol changes would be good... 
 // NOSTRECH with no leading bytes will NOT work - ZERO reaction time for ISR to parse RX and prepare TX
 #define I2C_USE_CLOCK_STRETCHING	(true || MCU_LEADING_BYTES == 0)
-#define I2C_PREPENDED_BYTES			(MCU_LEADING_BYTES > 1? (MCU_LEADING_BYTES-1) : 0) // Prepended bytes in addition to the first leading byte
 
-static uint8_t receiveBuffer[256];
-static uint8_t transmitBuffer[256];
+static uint8_t receiveBuffer[I2C_RECEIVE_BUFFER_LEN];
+static uint8_t transmitBuffer[I2C_PREPENDED_BYTES+I2C_TRANSMIT_BUFFER_LEN];
 
 
 /* Driver Functions */
@@ -182,25 +181,31 @@ void I2C1_IRQHandler(void)
 				TimePoint start = GetTimePoint();
 
 				// Handle RX data to determine TX data
-				uint8_t transmitLength = 0;
+				uint16_t transmitLength = 0;
+				uint8_t *transmitPtr = transmitBuffer+I2C_PREPENDED_BYTES;
 				if (LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX) && GetRXLength() > 0)
-					transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, GetRXLength()-1, transmitBuffer+I2C_PREPENDED_BYTES);
+					transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, GetRXLength()-1, &transmitPtr);
 				LL_DMA_DisableChannel(DMA1, DMA_CH_RX);
 
-				// Prepare TX data with further leading bytes and a trailing byte which will reset TXDR to 0 after expected transmit length has been reached
-				for (int i = 0; i < I2C_PREPENDED_BYTES; i++)
-					transmitBuffer[i] = 0;
-				transmitBuffer[transmitLength] = 0;
-
-				if (MCU_LEADING_BYTES == 0)
+				bool externalBuffer = transmitPtr != transmitBuffer+I2C_PREPENDED_BYTES;
+				if ((!externalBuffer && transmitLength > I2C_TRANSMIT_BUFFER_LEN) || transmitLength == 0)
+				{ // Don't send anything
+					I2C1->TXDR = transmitPtr[0];
+				}
+				else if (MCU_LEADING_BYTES == 0)
 				{ // Prepare first byte and setup to DMA the rest
-					I2C1->TXDR = transmitBuffer[0];
-					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitBuffer+1);
-					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, I2C_PREPENDED_BYTES+transmitLength-1+1);
+					I2C1->TXDR = transmitPtr[0];
+					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitPtr+1);
+					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, transmitLength-1);
 				}
 				else
 				{ // First leading byte is already in TXDR, setup to DMA the rest
-					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitBuffer);
+					// Prepare TX data with further leading bytes and a trailing byte which will reset TXDR to 0 after expected transmit length has been reachedif (transmitPtr)
+					transmitPtr[transmitLength] = 0; // All external buffers have to allow this
+					transmitPtr -= I2C_PREPENDED_BYTES; // All external buffers have to account for this
+					for (int i = 0; i < I2C_PREPENDED_BYTES; i++)
+						transmitPtr[i] = 0;
+					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitPtr);
 					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, I2C_PREPENDED_BYTES+transmitLength+1);
 				}
 				LL_DMA_EnableChannel(DMA1, DMA_CH_TX);

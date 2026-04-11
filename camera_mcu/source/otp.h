@@ -22,7 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 extern uint8_t OTP_Version;
-extern uint8_t OTP_HwStringData[];
+#define OTP_HW_STRING_PREPEND   8   // For I2C_PREPENDED_BYTES + 16bit size
+extern uint8_t OTP_HwStringData[];  // OTP_HW_STRING_PREPEND + actual string size
 extern uint16_t OTP_HwStringLength;
 extern uint8_t OTP_NumSubParts;
 

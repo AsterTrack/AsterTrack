@@ -29,7 +29,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 uint8_t OTP_Version; // Assume OTP not written, disable parsing
 uint8_t OTP_LenMainData, OTP_MaxSubParts, OTP_MaxHWString; // Lengths in 64Bit blocks
-uint8_t OTP_HwStringData[100*8]; // Ensure >= OTP_MaxHWString
+#define MAX_HW_STRING_BLOCKS 100
+uint8_t OTP_HwStringData[OTP_HW_STRING_PREPEND+MAX_HW_STRING_BLOCKS*8];
 uint16_t OTP_HwStringLength;
 uint8_t OTP_NumSubParts;
 
@@ -48,7 +49,7 @@ void otp_read()
 		case 1:
 			OTP_LenMainData = 8;	// Header, HW Serial, 5 Blocks Reserved
 			OTP_MaxSubParts = 8;	// 8 64-Bit Serial Numbers for sub-parts
-			OTP_MaxHWString = 100;	// 100 Blocks maximum for HW Descriptor String
+			OTP_MaxHWString = MAX_HW_STRING_BLOCKS;	// 100 Blocks maximum for HW Descriptor String
 			break;
 		default: // Unsupported, should not happen, assume 0 sizes and don't parse
 			OTP_LenMainData = 0;
@@ -56,7 +57,7 @@ void otp_read()
 			OTP_MaxHWString = 0;
 			break;
 	}
-	// assert(sizeof(OTP_HwStringData) >= OTP_MaxHWString*8);
+	// assert(sizeof(OTP_HwStringData) >= OTP_HW_STRING_PREPEND+OTP_MaxHWString*8);
 
 	if (OTP_MaxHWString > 0)
 	{
@@ -67,6 +68,7 @@ void otp_read()
 		// Upon encountering a block that has not yet been written, string is terminated again
 		uint8_t otpTextStart = (OTP_LenMainData + OTP_MaxSubParts) * 2;
 		OTP_HwStringLength = 0;
+		uint8_t *OTP_HWStringPtr = OTP_HwStringData + OTP_HW_STRING_PREPEND;
 		for (int b = 0; b < OTP_MaxHWString; b++)
 		{
 			uint8_t otpPtr32 = otpTextStart + b*2;
@@ -78,15 +80,15 @@ void otp_read()
 			{
 				if ((block & 0xFF) == 0)
 				{ // Insert text separator
-					OTP_HwStringData[OTP_HwStringLength++] = MCU_MULTI_TEXT_SEP;
+					OTP_HWStringPtr[OTP_HwStringLength++] = MCU_MULTI_TEXT_SEP;
 					break;
 				}
-				OTP_HwStringData[OTP_HwStringLength++] = block & 0xFF;
+				OTP_HWStringPtr[OTP_HwStringLength++] = block & 0xFF;
 				block >>= 8;
 			}
 		}
 		// Clear trailing separator - but retain the separators between individual texts
-		if (OTP_HwStringLength > 0 && OTP_HwStringLength < OTP_MaxHWString*8 && OTP_HwStringData[OTP_HwStringLength-1] == MCU_MULTI_TEXT_SEP)
+		if (OTP_HwStringLength > 0 && OTP_HwStringLength < OTP_MaxHWString*8 && OTP_HWStringPtr[OTP_HwStringLength-1] == MCU_MULTI_TEXT_SEP)
 			OTP_HwStringLength--;
 	}
 	else OTP_HwStringLength = 0;

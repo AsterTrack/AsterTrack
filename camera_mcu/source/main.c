@@ -371,7 +371,7 @@ int main(void)
 		if (piIsBooted && GetTimeSpanMS(lastPiComm, now) > MCU_COMM_TIMEOUT_MS)
 			piIsBooted = false;
 		if (uartState == UART_CamPi && !piIsBooted)
-		{ // Pi stopped corresponding, clear booted flag and take back UART control
+		{ // Pi stopped corresponding, take back UART control
 			EnterUARTPortZone(0);
 			uartState = UART_None;
 
@@ -751,10 +751,12 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 }
 
 
-uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t response[256])
+uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr)
 {
 	lastPiComm = GetTimePoint();
 	piIsBooted = true;
+	uint8_t *response = *responsePtr; // Maximum size: I2C_TRANSMIT_BUFFER_LEN
+	// WARNING: If responsePtr is changed to an external buffer, it needs to have space for I2C_PREPENDED_BYTES in front of it!
 
 	switch (command)
 	{
@@ -800,15 +802,18 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		case MCU_GET_HW_STR:
 		{
 			// We assume OTP has already been read - otherwise, the Pi would not know the length to read
-			response[0] = OTP_HwStringLength >> 8;
-			response[1] = OTP_HwStringLength & 0xFF;
-			memcpy(response+2, OTP_HwStringData, OTP_HwStringLength);
+			// And it's more complex to read anyway. Advantage: We can just DMA from memory
+			uint16_t pos = OTP_HW_STRING_PREPEND-2;
+			response[pos+0] = OTP_HwStringLength >> 8;
+			response[pos+1] = OTP_HwStringLength & 0xFF;
+			*responsePtr = OTP_HwStringData+pos;
 			return 2 + OTP_HwStringLength;
 		}
 		case MCU_GET_FW_STR:
 		{
 			response[0] = firmwareDescriptorLength >> 8;
 			response[1] = firmwareDescriptorLength & 0xFF;
+			// Can't DMA from rodata (flash)
 			memcpy(response+2, firmwareDescriptor, firmwareDescriptorLength);
 			return 2 + firmwareDescriptorLength;
 		}

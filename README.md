@@ -3,24 +3,50 @@
 <img alt="Banner image with AsterTrack hardware" src="https://docs.astertrack.dev/assets/Banner_AT_Rendered.png">
 
 AsterTrack is a custom multi-camera system designed to track markers and targets in 3D space for a variety of purposes like virtual reality and motion capture.
-This so-called optical tracking is commonly used in professional studios, but typically costs several thousands of euros for even the most basic setups. <br>
-AsterTrack implements the same concept with much less expensive hardware, and pioneer a user-friendly multi-camera tracking experience. <br>
+This so-called marker-based optical tracking is common in professional studios, but typically costs several thousands of euros for even the most basic setup. <br>
+AsterTrack implements the same concept with much less expensive hardware, and tries to pioneer a user-friendly multi-camera tracking experience.
 It aims to be as accurate as the best consumer VR tracking systems, with similarly low latency, while being very affordable for what it does. <br>
-The trackers can be passive (that is, without battery) and are thus very cheap and lightweight.
-Users can even create and calibrate trackers themselves from 3D prints or existing objects.
+Targets can be anything you can attach retroreflective markers to, even 3D prints or existing objects without a battery.
+This allows them to be much lighter, cheaper, and more versatile than any other type of tracker. <br>
+Notably, AsterTrack does not just rely on triangulation, but fully supports the use of flat marker targets, setting it apart even from most professional optical tracking systems.
+This makes tracked objects much less intrusive as it does not require attaching big spherical markers, which would be impractical in consumer VR applications.
+
+## Links
+[Project Website & History](https://www.seneral.dev/astertrack.html) •  [Documentation](https://docs.astertrack.dev) <br>
+[Example Clients Repository](https://github.com/AsterTrack/Clients) <br>
+For compilation and software setup instructions, refer to each sub-projects README. <br>
+<br>
+Bridged Chat Server: [Discord](https://discord.gg/gKPQCW4bZ3) • [Fluxer](https://fluxer.gg/e1SAv1nZ) • [Stoat](https://stt.gg/xpNfGTQF) <br>
+[Ticketing System](https://ticket.astertrack.dev) • contact via [DevKits](mailto:devkits@astertrack.dev) / [Support](mailto:support@astertrack.dev) emails
+
+## How does it work?
+There are three main components of an AsterTrack tracking system: <br>
+<b>AsterTrack Cameras:</b> The tracking cameras that detect markers using onboard processing on the Raspberry Pi - this greatly lowers the burden on the host system for processing and data throughput, enabling a higher quality of tracking, and much more of it. <br>
+<b>AsterTrack Controller:</b> The hub that synchronises the cameras and connects them to the host system via USB,
+ensuring maximum stability for wired cameras and a good user experience. <br>
+<b>AsterTrack Server:</b> The software that performs the tracking, turning the marker observations into usable 3D tracking data for use in external applications. <br>
+<br>
+Both active markers (IR LEDs) as well as passive markers (retroreflective tape) are supported, but the focus is very much on unintrusive flat passive markers that can be easily applied by the end-user. <br>
+Unique sets of such markers can be calibrated and tracked as targets, enabling rotational tracking without an IMU by associating the markers between frames and multiple calibrated cameras.
+Full support for IMUs is very much planned to aid in occlusion resistance in smaller setups, especially for VR use. <br>
+If you're interested in more details, check out our documentation on the <a href="https://docs.astertrack.dev/building/hardware.html">hardware design</a> and <a href="https://docs.astertrack.dev/details/architecture.html">system architecture</a>.
 
 ## Current State
+The base multi-camera experience of AsterTrack is solid and ready for use, though some usability improvements can still be made.
+The rest depends heavily on the use case: <br>
+As a tracking system originally designed for consumer VR use, the support of flat marker targets and 6-DOF tracking in general is well developed.
+But to truly be usable for VR, the IMU integration needs to be completed, and common trackers designed for 3D printing.
+IMU integration will also help track small trackers more reliably. <br>
+For use cases relying on a triangulated point cloud of markers, this is still being developed - both the frame-to-frame labelling of markers as well as integrations like C3D export. <br>
+The hardware is in the process of receiving its final major iteration, adding protections, more mounting points, and support for future wireless features.
+Once it is ready, it will be available as a <a href="https://docs.astertrack.dev/building/hardware.html#hardware">dev kit</a>, and <a href="https://docs.astertrack.dev/building/hardware.html#diy-version">DIY versions</a> are planned as well.
 
-AsterTrack is in a functional state, but usability varies depending on your exact use case. Here are the states of some of the major components:  <br>
-**Camera Calibration:** Fully functional and easy to use - may need improvements for multi-room setups. <br>
-**Target Calibration:** New Targets can be calibrated just fine, but it is a slow, compute-intensive process that requires some manual involvement still. However, this is only needed once for each new target. <br>
-**Target Tracking:** Unassisted target tracking is complete and working almost at the peak of what's reasonably possible. IMU-assisted target tracking is very much still a WIP, with only raw gyroscope samples being automatically calibrated and used for tracking prediction (missing accelerometer and fused orientation measurements).  <br>
-**Integrations:** A VRPN integration exists to send tracker data to other custom applications, but no official VR driver exists yet, nor any file formats used for mocap. A Monado driver is being worked on, and a SteamVR driver is planned.
-
-## Documentation
-
-For guides and instructions (many TBD), refer to the [documentation site](https://docs.astertrack.dev/). <br>
-For compilation and software setup instructions, refer to each sub-projects README.
+## Roadmap
+Out first priority is getting the dev kits ready for early adopters that already know what they need an optical tracking system for. <br>
+In the leadup to this, we will work on integrations into third-party software used for MoCap and VR alike. <br>
+But for true VR use, we will need to complete the IMU integration, both for existing VR hardware via monado, and custom IMU trackers. <br>
+This is our next priority, and involves making retrofitting existing VR hardware as user-friendly as possible, and designing premade VR-ready designs for, among others, DIY HMDs, Controllers and FBT. <br>
+Once the VR use case is fleshed out and ready for day-to-day use, we intend to move from small batches to a crowdfunding-supported consumer version.
 
 ## License
 Most of the software and firmware in this repository is licensed under the LGPL v3, but parts of the codebase are licensed under the MIT license or the MPL 2.0. This can be determined on a file-by-file basis by looking at the file header. <br>

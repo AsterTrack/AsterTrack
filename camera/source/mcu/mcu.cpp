@@ -143,24 +143,29 @@ bool mcu_init()
 	return i2c && gpio;
 }
 
+static void mcu_does_exist()
+{
+	if (!mcu_exists)
+	{
+		printf("Verified existance of MCU!\n");
+		mcu_exists = true;
+		mcu_monitor();
+	}
+}
+
 bool mcu_probe()
 {
 	if (i2c_fd < 0) return false;
 
 	if (i2c_probe())
 	{
-		if (!mcu_exists)
-		{
-			printf("Verified existance of MCU!\n");
-			mcu_exists = true;
-			mcu_monitor();
-		}
 		if (!mcu_active)
 		{
 			printf("Connected with MCU!\n");
 			mcu_active = true;
 			mcu_sync_info();
 		}
+		mcu_does_exist();
 	}
 	else mcu_active = false;
 	return mcu_active;
@@ -333,8 +338,8 @@ bool mcu_probe_bootloader()
 	if (bootloaderGet() == RES_OK)
 	{
 		printf("MCU bootloader was found!\n");
-		mcu_exists = true;
 		mcu_active = false;
+		mcu_does_exist();
 		return true;
 	}
 	return false;
@@ -363,8 +368,8 @@ bool mcu_switch_bootloader()
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			mcu_exists = true;
 			mcu_intentional_bootloader = true;
+			mcu_does_exist();
 			return true;
 		}
 		else
@@ -398,8 +403,8 @@ bool mcu_switch_bootloader()
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			mcu_exists = true;
 			mcu_intentional_bootloader = true;
+			mcu_does_exist();
 			return true;
 		}
 		else

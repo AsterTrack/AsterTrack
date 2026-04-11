@@ -29,8 +29,9 @@ extern "C"
 // Amount of UART ports as implemented in uartd
 #define UART_PORT_COUNT			1
 
-#define UART_RX_BUFFER_SIZE		1024
-#define UART_TX_BUFFER_SIZE		1024
+#define UART_RX_BUFFER_SIZE		1024	// Plenty space, takes 1408us at 8MBaud to fill
+#define UART_TX_BUFFER_SIZE		1024	// Not used and optimised away with gc-sections
+#define UART_RX_FILL_TIME_US	(UART_RX_BUFFER_SIZE * UART_BAUD_PER_BYTE * 1000 / (UART_BAUD_RATE_MAX/1000))
 
 #define UART_HEADROOM 			0
 

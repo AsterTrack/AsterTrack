@@ -142,14 +142,14 @@ DEPEND_FLAGS = -MMD -MP -MF"$(@:%.o=%.d)"
 # Compiler flags
 ASFLAGS = $(MCU) $(OPT) $(COMMON_FLAGS)
 COPTIONS = $(MCU) $(DFLAGS) $(OPT) $(COMMON_FLAGS)
-CFLAGS = $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) -specs=nano.specs 
+CFLAGS = $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS)
 
 # Linker flags
 LDFLAGS = $(COPTIONS) \
 	-Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref \
 	-Wl,--gc-sections \
-	-specs=nano.specs -specs=nosys.specs \
-	-lc -lm -lnosys
+	-Wl,--print-memory-usage \
+	-nostdlib
 
 #######################################
 # BUILD TARGETS
@@ -176,7 +176,6 @@ $(BUILD_DIR)/%.o: %.s Makefile
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 	$(LD) $(OBJECTS) $(LDFLAGS) -T$(LDSCRIPT) -o $@
-	$(SZ) $@
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf
 	$(HEX) $< $@

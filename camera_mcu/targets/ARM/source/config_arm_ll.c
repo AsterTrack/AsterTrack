@@ -437,7 +437,9 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 	return config;
 }
 
-__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+// Unused, but due to being RamFunc, are not discarded automatically and waste away in RAM:
+
+/* __attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t EraseFlashPage(uint16_t page)
 {
 	if (!UnlockFlash())
@@ -473,7 +475,7 @@ uint16_t EraseFlashPage(uint16_t page)
 	return error;
 }
 
-__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+__attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
 {
 	if (length == 0 || (length & 1) || length > 256)
@@ -520,9 +522,9 @@ uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t lengt
 	__enable_irq();
 
 	return error;
-}
+} */
 
-__attribute__((section(".RamFunc"), noinline, optimize("O0")))
+__attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
 {
 	if (length == 0 || (length & 1) || length > 256)

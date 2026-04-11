@@ -166,6 +166,7 @@ CFLAGS = $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS) -specs=nano.specs
 LDFLAGS = $(COPTIONS) \
 	-Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref \
 	-Wl,--gc-sections \
+	-Wl,--print-memory-usage \
 	-specs=nano.specs -specs=nosys.specs \
 	-nostartfiles 
 

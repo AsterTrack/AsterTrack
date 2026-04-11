@@ -494,17 +494,9 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 		return uartd_accept;
 	}
-	else if (state->header.tag == PACKET_CFG_MODE)
-	{
-		return uartd_accept;
-	}
-	else if (state->header.tag == PACKET_CFG_FILTER)
-	{
-		return uartd_accept;
-	}
 	else
 	{ // May have been intended for camera_pi
-		return uartd_ignore;
+		return uartd_accept;
 	}
 }
 
@@ -617,28 +609,6 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 		while (GetTimePoint() < frameSyncEnd);
 		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
 #endif
-		return uartd_accept;
-	}
-	else if (state->header.tag == PACKET_CFG_MODE)
-	{
-		if (receive.packetSize >= 1)
-		{
-			uint8_t modePacket = receive.packetBuffer[0];
-			piIsStreaming = modePacket&TRCAM_FLAG_STREAMING;
-			ReturnToDefaultLEDState(500);
-			// TODO: Get this update from camera_pi directly instead over I2C?
-			// E.g. Errors from camera_pi cannot be read here
-		}
-		return uartd_accept;
-	}
-	else if (state->header.tag == PACKET_CFG_FILTER)
-	{
-		if (receive.packetSize >= 1)
-		{
-			uint8_t filterState = (enum FilterSwitchCommand)receive.packetBuffer[0];
-			if (filterState == FILTER_SWITCH_VISIBLE || filterState == FILTER_SWITCH_INFRARED)
-				UpdateFilterSwitcher(filterState);
-		}
 		return uartd_accept;
 	}
 

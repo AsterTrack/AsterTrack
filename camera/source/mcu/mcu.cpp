@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "mcu.hpp"
 #include "util/timesync.hpp"
 #include "comm/commands.h"
+#include "comm/parsing.hpp"
+#include "comm/comm.hpp"
 #include "stm32_bootloader.hpp"
 #include "version.hpp"
 #include "state.hpp" // framesync
@@ -215,7 +217,7 @@ void mcu_cleanup()
 static bool handle_i2c_error()
 {
 	mcu_active = false;
-	if (errno == EBADF)
+	if (errno == EBADF || errno == ETIMEDOUT)
 	{
 		i2c_init();
 	}
@@ -678,6 +680,56 @@ void mcu_sync_info()
 	}
 }
 
+bool mcu_fetch_packet(uint16_t size)
+{
+	std::vector<uint8_t> packetData(MCU_LEADING_BYTES+size);
+	uint8_t PACKET_DATA[MCU_LEADING_BYTES+MCU_STATUS_LENGTH];
+	unsigned char FETCH_CMD[] = { MCU_GET_PACKET };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)packetData.size(), packetData.data() },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	TimePoint_t requestTime = sclock::now();
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
+		handle_i2c_error();
+		return false;
+	}
+	uint8_t *packet = packetData.data()+MCU_LEADING_BYTES;
+	if (size < PACKET_HEADER_SIZE + PACKET_CHECKSUM_SIZE)
+	{
+		printf("Packet data size of %d is lower than minimum expected of %d+%d!\n",
+			size, PACKET_HEADER_SIZE, PACKET_CHECKSUM_SIZE);
+		return false;
+	}
+
+	PacketHeader header = parsePacketHeader(packet);
+	packet += PACKET_HEADER_SIZE;
+
+	if (size != PACKET_HEADER_SIZE + header.length + PACKET_CHECKSUM_SIZE)
+	{
+		printf("Packet data size of %d doesn't match the expected lengths of %d+%d+%d!\n",
+			size, PACKET_HEADER_SIZE, header.length, PACKET_CHECKSUM_SIZE);
+		return false;
+	}
+
+	uint8_t checksum[PACKET_CHECKSUM_SIZE];
+	calculateForwardPacketChecksum(packet, header.length, checksum);
+	bool correctChecksum = true;
+	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+	{
+		if (checksum[i] != packet[header.length+i])
+			correctChecksum = false;
+	}
+
+	if (!correctChecksum)
+		printf("Failed to verify packet checksum from MCU with tag %d and size %d!\n", header.tag, header.length);
+
+	return ReceivePacketData(state, *comms.get(COMM_MEDIUM_UART), header, packet, header.length, !correctChecksum);
+}
+
 bool mcu_get_status()
 {
 	if (i2c_fd < 0) return false;
@@ -779,7 +831,15 @@ bool mcu_get_status()
 	uint8_t queueSize = packet[9];
 	uint8_t packetSize = (packet[10] << 8) | packet[11];
 	if (queueSize > 0)
-		printf("%d packets are queued, next of size %d!\n", queueSize, packetSize);
+	{ // Got packets in queue
+		if (packetSize > 0)
+		{ // And next one is fully received
+			if (packetSize < PACKET_HEADER_SIZE + PACKET_CHECKSUM_SIZE)
+				printf("%d packets are queued, but next of size %d is of unexpected size!\n", queueSize, packetSize);
+			// Need to fetch either way to remove from queue
+			mcu_fetch_packet(packetSize);
+		}
+	}
 
 	return true;
 }

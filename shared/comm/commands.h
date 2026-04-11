@@ -45,6 +45,7 @@ enum CameraMCUCommand
 	MCU_GET_PARTS,	// Get list of Subpart Serial IDs stored in OTP
 	MCU_UPDATE_ID,	// Tell MCU to update its ID with the one stored on the Pi
 	MCU_GET_STATUS,	// Get Status
+	MCU_GET_PACKET, // Get last packet
 
 	MCU_COMMANDS = 32,
 	MCU_SWITCH_BOOTLOADER

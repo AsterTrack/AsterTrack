@@ -95,6 +95,24 @@ uint32_t lastFrameID;		// ID of last frame (received or generated)
 TimePoint lastFrameTime;	// Intended synced time of last frame
 TimePoint lastFrameSync;	// Actual local time of last frame (FSIN signal)
 
+// State of queued packets from controller intended for SBC
+struct QueuedPacket
+{
+	bool available;
+	uint16_t size; // PACKET_HEADER_SIZE + header.length
+	uint8_t *ptr; // 4-byte-aligned pointer into queuedPacketBuffer
+};
+#define SBCQueueSize (10+1) // One extra space to differenciate 0 from 10 queue entries, and not write to a packet still being sent
+struct QueuedPacket SBCPacketQueue[SBCQueueSize];
+uint8_t SBCQueueHead, SBCQueueTail;
+#define SBCBufferSize 2048
+uint8_t SBCPacketBuffer[SBCBufferSize];
+static inline bool HasSBCQueuePackets(){ return SBCQueueHead != SBCQueueTail; }
+static inline uint8_t GetSBCQueueSize(){ return SBCQueueHead <= SBCQueueTail? (SBCQueueTail-SBCQueueHead) : (SBCQueueSize-(SBCQueueHead-SBCQueueTail)); }
+static inline uint8_t HasSBCQueueSpace(){ return GetSBCQueueSize()+1 < SBCQueueSize; }
+static int8_t AllocateSBCPacket(uint16_t size);
+uint8_t SBCWritingPacket;
+
 
 /* Functions */
 
@@ -424,6 +442,16 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
 		return uartd_ignore;
 
+	if (state->header.tag < PACKET_HOST_COMM)
+	{
+		if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF)
+		{ // Should not happen since header checksum is validated
+			rgbled_transition(LED_ERROR_1, 0);
+			ReturnToDefaultLEDState(500);
+			return uartd_ignore;
+		}
+	}
+
 	if (uartState == UART_None)
 	{
 		if (state->header.tag == PACKET_IDENT)
@@ -494,25 +522,69 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 		return uartd_accept;
 	}
+	else if (state->header.tag >= PACKET_HOST_COMM)
+	{
+		if (!piIsBooted)
+		{ // Only bother queueing packets if SBC is there to fetch them
+			return uartd_ignore;
+		}
+		if (state->header.tag == PACKET_FW_BLOCK)
+		{ // Firmware blocks have extensive redundancy and resend mechanisms by design, AND they are too large to handle by MCU
+			return uartd_ignore;
+		}
+		int8_t packet = AllocateSBCPacket(PACKET_HEADER_SIZE+state->header.length+PACKET_CHECKSUM_SIZE);
+		if (packet < 0)
+		{ // Queue full, may theoretically happen, but should not
+			rgbled_transition(LED_ALL_OFF, 0);
+			ReturnToDefaultLEDState(500);
+			return uartd_ignore;
+		}
+		SBCWritingPacket = packet;
+		SBCPacketQueue[SBCWritingPacket].available = false;
+		memcpy(SBCPacketQueue[SBCWritingPacket].ptr, state->headerRaw, PACKET_HEADER_SIZE);
+		return uartd_accept;
+	}
 	else
-	{ // May have been intended for camera_pi
+	{ // Other protocol comms with SBC (Idents, NAKs, etc)
 		return uartd_accept;
 	}
 }
 
 uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
+	if (state->header.tag >= PACKET_HOST_COMM)
+	{
+		if (PACKET_HEADER_SIZE+state->dataPos+size > SBCPacketQueue[SBCWritingPacket].size)
+		{ // Should never happen, implies UART parsing failed
+			return uartd_ignore;
+		}
+		memcpy(SBCPacketQueue[SBCWritingPacket].ptr+PACKET_HEADER_SIZE+state->dataPos, ptr, size);
+		return uartd_accept;
+	}
+
 	// Copy packet (which may be split by UART receive buffer end) to temporary buffer
 	// The MCU only ever receives small packets that are not addressed to Host
-	if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF || state->dataPos+size > UART_TEMP_PACKET_BUF)
-		return uartd_ignore;	
+	if (state->dataPos+size > UART_TEMP_PACKET_BUF)
+	{ // Should never happen, implies UART parsing failed
+		return uartd_ignore;
+	}
 	memcpy(receive.packetBuffer+state->dataPos, ptr, size);
 	receive.packetSize = state->dataPos+size;
+	return uartd_accept;
 }
 
 uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 {
 	PortState *state = &portStates[port];
+
+	if (state->header.tag >= PACKET_HOST_COMM)
+	{
+		// Cannot easily check checksum here, uses CRC32
+		SBCPacketQueue[SBCWritingPacket].available = true;
+		// Tell SBC to fetch status packet with new frame ID
+		GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+		return uartd_accept;
+	}
 
 	// Verify direct checksum
 	receive.packetSize -= PACKET_CHECKSUM_SIZE;
@@ -736,7 +808,8 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		case MCU_GET_STATUS:
 		{
 			// Reset interrupt flag
-			GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN);
+			if (GetSBCQueueSize() <= 1)
+				GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN);
 			// 16bits of various states
 			uint16_t states = ((filterSwitcherState & 0b11) << 14);
 			response[0] = states >> 8;
@@ -757,8 +830,10 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[7] = usSinceFrame >> 8;
 			response[8] = usSinceFrame & 0xFF;
 			// State of queued packets from controller intended for SBC
-			response[9] = 0; // Queue size
-			uint16_t packetSize = 0; // might not need 16bit, but to be safe
+			response[9] = GetSBCQueueSize();
+			uint16_t packetSize = 0;
+			if (HasSBCQueuePackets() && SBCPacketQueue[SBCQueueHead].available)
+				packetSize = SBCPacketQueue[SBCQueueHead].size;
 			response[10] = packetSize >> 8;
 			response[11] = packetSize & 0xFF;
 			return MCU_STATUS_LENGTH;
@@ -793,6 +868,17 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			response[1] = OTP_NumSubParts;
 			otp_get_subparts((uint32_t*)(response+2));
 			return 2 + OTP_NumSubParts*sizeof(uint64_t);
+		}
+		case MCU_GET_PACKET:
+		{
+			if (!HasSBCQueuePackets() || !SBCPacketQueue[SBCQueueHead].available)
+			{ // SBC should not query without checking status first
+				return 0;
+			}
+			uint8_t packet = SBCQueueHead;
+			SBCQueueHead = (SBCQueueHead+1) % SBCQueueSize;
+			*responsePtr = SBCPacketQueue[packet].ptr;
+			return SBCPacketQueue[packet].size;
 		}
 		default:
 			// TODO: Error?
@@ -916,4 +1002,39 @@ static bool ApplyUserFlashConfiguration()
 		return true;
 	}
 	return false;
+}
+
+static int8_t AllocateSBCPacket(uint16_t size)
+{
+	if (!HasSBCQueueSpace()) return -1;
+	if (SBCQueueHead == SBCQueueTail)
+	{ // Empty
+		if (size > SBCBufferSize) return -1;
+		int packet = SBCQueueTail;
+		SBCQueueTail = (SBCQueueTail+1) % SBCQueueSize;
+		SBCPacketQueue[packet].ptr = SBCPacketBuffer;
+		SBCPacketQueue[packet].size = size;
+		return packet;
+	}
+	uint16_t head = (int)(SBCPacketQueue[SBCQueueHead].ptr - SBCPacketBuffer);
+	uint8_t last = SBCQueueTail == 0? SBCQueueSize-1 : SBCQueueTail-1;
+	uint16_t tail = (int)(SBCPacketQueue[last].ptr - SBCPacketBuffer) + SBCPacketQueue[last].size;
+	tail += I2C_PREPENDED_BYTES;
+	if (tail < head)
+	{
+		if (tail+size > head)
+			return -1;
+	}
+	else if (tail+size > SBCBufferSize)
+	{
+		tail = I2C_PREPENDED_BYTES;
+		if (tail+size > head)
+			return -1;
+	}
+	// Space of size after tail
+	int packet = SBCQueueTail;
+	SBCQueueTail = (SBCQueueTail+1) % SBCQueueSize;
+	SBCPacketQueue[packet].ptr = SBCPacketBuffer+tail;
+	SBCPacketQueue[packet].size = size;
+	return packet;
 }

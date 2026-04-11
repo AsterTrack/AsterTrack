@@ -665,8 +665,13 @@ phase_comm:
 				} */
 				else if (ReceivePacketHeader(comm, proto.header))
 				{
-					if (proto_fetchCmd(proto))
-					{
+					if (mcu_active && comm.medium == COMM_MEDIUM_UART && proto.header.tag != PACKET_FW_BLOCK)
+					{ // UART control packets are routed through MCU if possible for more reliable comms
+						// Except firmware blocks - they have extensive redundancy and resend mechanisms by design, and they are too large to handle by MCU
+						// Reason is because Pis PL011 UART RX driver relies on timely interrupts (not DMA), which is unreliable at 8MBaud
+					}
+					else if (proto_fetchCmd(proto))
+					{ // Else fetch and parse here
 						ReceivePacketData(state, comm, proto.header, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz, !proto.validChecksum);
 					}
 				}

@@ -39,6 +39,7 @@ SOFTWARE.
 #include <cstdio>
 #include <cassert>
 #include <cstdarg>
+#include <algorithm>
 
 #include "error.hpp"
 

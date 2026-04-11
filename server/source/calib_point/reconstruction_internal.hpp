@@ -22,6 +22,8 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "util/eigendef.hpp"
 #include "util/error.hpp"
 
+#include <stop_token>
+
 typedef uint_fast8_t BOOL;
 
 

@@ -75,7 +75,7 @@ endif
 ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
-cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
+cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif

@@ -760,7 +760,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 				if (!stillTrusted)
 				{ // Push to dormant targets for re-detection
-					LOG(LTracking, LWarn, "Decided to drop tracking of target %d (name %s) after increased mistrust!\n",
+					LOG(LTracking, LInfo, "Decided to drop tracking of target %d (name %s) after increased mistrust!\n",
 						tracker.id, tracker.label.c_str());
 				}
 			}

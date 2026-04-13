@@ -722,6 +722,10 @@ bool InterfaceState::Init()
 	// Initialise log
 	for (int i = 0; i < LMaxCategory; i++)
 		LogFilterTable[i] = LInfo;
+	LogFilterTable[LDetection2D] = LWarn;
+	LogFilterTable[LTracking] = LWarn;
+	LogFilterTable[LTrackingIMU] = LDebug; // LTrace is useful too but very verbose
+	LogFilterTable[LIMUDriver] = LDebug;
 
 	init = true;
 

@@ -16,13 +16,13 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "tracking/tracking.hpp"
-#include "tracking/kalman.hpp"
-
-#include "signals.hpp"
-
+#define LOG_MAX_LEVEL LTrace
 #include "util/log.hpp"
 
+#include "tracking/tracking.hpp"
+#include "signals.hpp"
+
+#include "tracking/kalman.hpp"
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
 #include "flexkalman/FlexibleKalmanCorrect.h"
@@ -396,7 +396,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	else if (!samples.empty())
 	{ // Cold start
 		itBegin = std::lower_bound(samples.begin(), samples.end(), filterTime);
-		LOG(LTrackingIMU, LDebug, "    Cold start of IMU %d with sample %lu!", inertial.imu->index, itBegin.index());
+		LOG(LTrackingIMU, LDebug, "    Cold start of IMU '%s' with sample %lu!", inertial.imu->id.string.c_str(), itBegin.index());
 	}
 	if (itBegin == samples.end())
 	{
@@ -431,7 +431,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	{
 		IMUSample sample = *it;
 		sample.timestamp += std::chrono::microseconds(inertial.calib.timestampOffsetUS);
-		LOG(LTrackingFilter, LTrace, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion%s",
+		LOG(LTrackingIMU, LTrace, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion%s",
 			dtMS(lastSample.timestamp, sample.timestamp), dtMS(filterTime, sample.timestamp), dtMS(inertial.fusion.time, sample.timestamp),
 			state.lastObsFrame == 0? "!" : asprintf_s(", %fms ahead of last observation!", dtMS(state.lastObservation, sample.timestamp)).c_str());
 
@@ -447,9 +447,9 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 
 		// Keep stats of IMU samples
 		float dtSample = dtS(inertial.fusion.lastIntegration, sample.timestamp);
-		if (dtSample > 0.1f || dtSample < 0.0f)
+		if (dtSample > 0.2f || dtSample < 0.0f)
 		{
-			LOG(LTrackingIMU, LInfo, "Resetting IMU rate stat due to diff of %fs", dtSample);
+			LOG(LTrackingIMU, LInfo, "Resetting IMU '%s' rate stat due to diff of %fs", inertial.imu->id.string.c_str(), dtSample);
 			inertial.fusion.sampleInterval.reset();
 		}
 		else
@@ -505,7 +505,7 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleFus
 	if (lastSample.timestamp < inertial.fusion.time)
 	{ // Account for time difference between last IMU sample and last filter time (e.g. optical measurement)
 		factor = dtMS(lastSample.timestamp, inertial.fusion.time) / dtMS(lastSample.timestamp, sample.timestamp);
-		LOG(LTrackingFilter, LTrace, "        Lerping last sample to current with a factor of %f", factor);
+		LOG(LTrackingIMU, LTrace, "        Lerping last sample to current with a factor of %f", factor);
 	}
 	Eigen::Quaterniond lastQuat = lastSample.quat.slerp(factor, sample.quat).cast<double>();
 	Eigen::Quaterniond quat = sample.quat.cast<double>();
@@ -681,7 +681,7 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 	{ // Initialise calibration
 		if (inertial.calib.orientation.coeffs().hasNaN())
 		{
-			LOG(LTrackingIMU, LInfo, "IMU %d is entering Orientation Calibration!", inertial.imu->index);
+			LOG(LTrackingIMU, LInfo, "IMU '%s' is entering Orientation Calibration!", inertial.imu->id.string.c_str());
 			inertial.calibration.phase = IMU_CALIB_EXT_ORIENTATION;
 		}
 		else
@@ -689,7 +689,7 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 			inertial.calibration.mat = inertial.calib.orientation.toRotationMatrix().cast<double>() * inertial.calib.conversion.cast<double>();
 			if (inertial.calib.offset.hasNaN())
 			{
-				LOG(LTrackingIMU, LInfo, "IMU %d is entering Offset Calibration!", inertial.imu->index);
+				LOG(LTrackingIMU, LInfo, "IMU '%s' is entering Offset Calibration!", inertial.imu->id.string.c_str());
 				inertial.calibration.phase = IMU_CALIB_EXT_OFFSET;
 			}
 			else
@@ -741,9 +741,9 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 	observation.inertialIntegrated.translation() = state.state.position().cast<float>();
 	observation.inertialFused.translation() = state.state.position().cast<float>();
 
-	//LOG(LTrackingIMU, LDebug, "Re-basing IMU Integration!");
 	if (inertial.fusion.corrections == 0)
 	{
+		LOG(LTrackingIMU, LDebug, "Re-basing IMU Integration for IMU '%s'!", inertial.imu->id.string.c_str());
 		inertial.fusion.integrated = state.state.getCombinedQuaternion();
 		inertial.fusion.quat = state.state.getCombinedQuaternion();
 		inertial.fusion.time = time;
@@ -1211,7 +1211,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 	{
 		LOG(LTrackingIMU, LInfo, "Selected best conversion %d with error %f°", bestConv, bestError);
 		LOG(LTrackingIMU, LDebug, "Orientation Quat: (%f, %f, %f), %f", orientation.x(), orientation.y(), orientation.z(), orientation.w());
-		LOG(LTrackingIMU, LDebug, "Conversion matrix: \n%s", printMatrix(conversion).c_str());
+		LOG(LTrackingIMU, LDebug, "Conversion matrix diagonal: %d, %d, %d", conversion(0,0), conversion(1,1), conversion(2,2));
 
 		inertial.calib.conversion = conversion;
 		inertial.calib.orientation = orientation.cast<float>();

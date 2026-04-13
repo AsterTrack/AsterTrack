@@ -167,24 +167,23 @@ static void StopCoprocessingThread(ServerState &state)
 
 bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker)
 {
+	// TODO: RemoteIMU identity problem on reconnection (1/2)
+	// This can not determine a IMU was disconnected and reconnected as a different IMUDevice
+
 	bool updatedIMU = false;
-	if (tracker.imuIdent)
-	{ // Ensure IMU is properly associated
-		// TODO: RemoteIMU identity problem on reconnection (1/2)
-		// This can not determine a IMU was disconnected and reconnected as a different IMUDevice
-		if (tracker.imu && tracker.imu->id != tracker.imuIdent)
-		{ // Switched / Removed IMU
-			tracker.imu = nullptr;
+	// Ensure IMU is properly associated
+	if (tracker.imu && tracker.imu->id != tracker.imuIdent)
+	{ // Switched / Removed IMU
+		tracker.imu = nullptr;
+		updatedIMU = true;
+	}
+	if (!tracker.imu && tracker.imuIdent)
+	{ // Attempt to find IMU among those connected
+		for (auto &imu : state.pipeline.record.imus)
+		{
+			if (imu->id != tracker.imuIdent) continue;
+			tracker.imu = imu;
 			updatedIMU = true;
-		}
-		if (!tracker.imu)
-		{ // Attempt to find IMU among those connected
-			for (auto &imu : state.pipeline.record.imus)
-			{
-				if (imu->id != tracker.imuIdent) continue;
-				tracker.imu = imu;
-				updatedIMU = true;
-			}
 		}
 	}
 	return updatedIMU;
@@ -232,9 +231,9 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 
 		if (tracker.triggered)
 		{ // Update pipeline with triggered tracker
-			bool updatedIMU = ServerUpdateTrackerIMU(state, tracker);
+			ServerUpdateTrackerIMU(state, tracker);
 			ServerUpdateTrackerConditions(state, tracker, true);
-			ServerUpdateTrackerConfig(state, tracker, updatedIMU);
+			ServerUpdateTrackerConfig(state, tracker, true);
 		}
 	}
 	else if (manualTrigger < 0)
@@ -704,14 +703,14 @@ void StopDeviceMode(ServerState &state)
 	// Diconnect IMU providers
 	state.imuProviders.contextualLock()->clear();
 	hid_exit();
-	for (auto &tracker : state.trackerConfigs)
-		tracker.imu = nullptr;
 
 	assert(state.controllers.empty());
 	assert(state.cameras.empty());
 
 	// Reset state
 	ResetPipelineState(state.pipeline);
+	for (auto &tracker : state.trackerConfigs)
+		tracker.imu = nullptr;
 
 	SignalServerEvent(EVT_MODE_DEVICE_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1145,6 +1144,8 @@ void StopSimulation(ServerState &state)
 	state.mode = MODE_None;
 	state.cameras.clear();
 	ResetPipelineState(state.pipeline);
+	for (auto &tracker : state.trackerConfigs)
+		tracker.imu = nullptr;
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);
@@ -1474,6 +1475,10 @@ void StopReplay(ServerState &state)
 	state.mode = MODE_None;
 	state.cameras.clear();
 	ResetPipelineState(state.pipeline);
+	for (auto &tracker : state.trackerConfigs)
+		tracker.imu = nullptr;
+
+	// Reset replay
 	state.stored.frames.cull_clear();
 	state.stored.imus.clear();
 	state.recording = {};

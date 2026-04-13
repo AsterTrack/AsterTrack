@@ -142,7 +142,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					t.lastTrackedFrame = frameNum;
 				t.trackState = trackRecord.result;
 				t.imuState = trackRecord.imuState;
-				t.imuSampleRate.update(std::round(1/trackRecord.imuSampleInterval));
+				if (trackRecord.imuSampleInterval > 0.0001f)
+					t.imuSampleRate.update(std::round(1/trackRecord.imuSampleInterval));
 				t.imuSampleAgo = dtS(trackRecord.imuLastSample, frameRecord.time);
 			}
 		}

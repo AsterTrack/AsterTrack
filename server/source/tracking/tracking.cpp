@@ -724,7 +724,7 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 		}
 
 		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size() + calib.fused.samples.size();
-		if (newSamples && calib.accel.samples.size() >= 3 && (countSamples % 5) == 0)
+		if (newSamples && (countSamples % 5) == 0)
 		{ // Attempt to align orientation with new data
 			if (alignIMUOrientation(inertial))
 				SignalIMUCalibUpdate(tracker.id, inertial.imu->id, inertial.calib);

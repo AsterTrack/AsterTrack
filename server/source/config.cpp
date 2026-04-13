@@ -1085,7 +1085,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			auto frame = std::make_shared<FrameRecord>();
 			frame->ID = jsFrame["id"].get<FrameID>();
 			frame->num = num-frameOffset;
-			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<uint64_t>());
+			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<int64_t>());
 			frame->timeUTC = convertClockWithRef(frame->time, ref_now);
 			frame->cameras.resize(cameras.size());
 			if (jsCameras.size() > parsedCameras.size())
@@ -1189,8 +1189,9 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 				{
 					auto quat = jsSample["quat"];
 					auto accel = jsSample["accel"];
+					dt_t delta = jsSample["dt"].get<int64_t>();
 					imu->samplesFused.push_back({ 
-						startT + std::chrono::microseconds(jsSample["dt"].get<uint64_t>()),
+						startT + std::chrono::microseconds(delta),
 						Eigen::Quaternionf(quat[3].get<float>(), quat[0].get<float>(), quat[1].get<float>(), quat[2].get<float>()),
 						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>())
 					});
@@ -1203,8 +1204,9 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 					auto gyro = jsSample["gyro"];
 					auto accel = jsSample["accel"];
 					auto mag = imu->hasMag? jsSample["mag"] : noMag;
+					dt_t delta = jsSample["dt"].get<int64_t>();
 					imu->samplesRaw.push_back({ 
-						startT + std::chrono::microseconds(jsSample["dt"].get<uint64_t>()),
+						startT + std::chrono::microseconds(delta),
 						Eigen::Vector3f(gyro[0].get<float>(), gyro[1].get<float>(), gyro[2].get<float>()),
 						Eigen::Vector3f(accel[0].get<float>(), accel[1].get<float>(), accel[2].get<float>()),
 						Eigen::Vector3f(mag[0].get<float>(), mag[1].get<float>(), mag[2].get<float>())

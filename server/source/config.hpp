@@ -136,7 +136,7 @@ struct TrackerConfig
 	TrackerVirtualConfig virtConfig;
 
 	// Optional IMU
-	IMUIdent imuIdent;
+	IMUIdent imuIdent = {};
 	IMUCalib imuCalib;
 
 	// Current state

@@ -28,11 +28,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/blocked_vector.hpp"
 #include "util/log.hpp"
 
-#ifndef NDEBUG
-#define JSON_NOEXCEPTION
-#define JSON_PARSE_TRY_BLOCK
-#define JSON_PARSE_CATCH_BLOCK
-#else
 #define JSON_PARSE_TRY_BLOCK try
 #define JSON_PARSE_CATCH_BLOCK \
 	catch(json::exception e) \
@@ -40,8 +35,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 		LOG(LDefault, LWarn, "Failed to fully parse JSON file '%s': '%s'", path.c_str(), e.what()); \
 		return asprintf_s("Failed to parse '%s'!", path.c_str()); \
 	}
-
-#endif
 
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -96,7 +89,15 @@ std::optional<ErrorMessage> readJSON(const std::string &path, json &data)
 	// Read file
 	std::ifstream fs(path);
 	if (!fs.is_open()) return ErrorMessage(asprintf_s("Failed to open '%s' for reading!", path.c_str()), ENOENT);
-	fs >> data;
+	try
+	{
+		fs >> data;
+	}
+	catch(json::exception e)
+	{
+		LOG(LDefault, LWarn, "Failed to parse syntax of JSON file '%s': '%s'", path.c_str(), e.what()); \
+		return asprintf_s("Failed to parse syntax of '%s'!", path.c_str()); \
+	}
 	if (fs.fail()) return asprintf_s("Failed to read '%s'!", path.c_str());
 	fs.close();
 	if (fs.fail()) return asprintf_s("Failed to close '%s' after reading!", path.c_str());

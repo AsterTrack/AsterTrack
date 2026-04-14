@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "controller_firmware.hpp"
 #include "tracking_controller.hpp"
 #include "comm/usb.hpp"
+#include "comm/firmware.inl"
 
 #include "util/log.hpp"
 
@@ -29,6 +30,7 @@ extern ctpl::thread_pool threadPool;
 #include "libusb/libusb.h"
 
 #include <fstream>
+#include <filesystem>
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
@@ -84,6 +86,31 @@ ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<Tracking
 	status->size = fwSize;
 
 	return updateStatus;
+}
+
+std::string ControllerFirmwareDescriptor(std::string firmwareFile)
+{
+	std::filesystem::path firmware(firmwareFile);
+	if (!std::filesystem::exists(firmware))
+		return "Missing Firmware File";
+	if (!firmwareFile.ends_with(".bin"))
+		return asprintf_s("Not a FW Binary: '%s'", firmware.filename().generic_string().c_str());
+
+	std::ifstream fs(firmware, std::ios::binary);
+	if (!fs.is_open())
+		return "Inaccessible Firmware File";
+
+	// Some firmware files may be tagged. Not required, but provides meta info
+	FirmwareTagHeader tag;
+	if (!ReadFirmwareTag(fs, tag))
+		return asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+
+	if (tag.type == FW_TAG_CONT_MCU_BIN)
+		return asprintf_s("Controller FW v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+	else if (tag.type == FW_TAG_CAM_MCU_BIN)
+		return "Invalid Binary (Camera MCU FW)";
+	else
+		return "Invalid Binary (Unknown)";
 }
 
 /**

@@ -175,7 +175,7 @@ LDFLAGS = $(COPTIONS) \
 #######################################
 
 # Force rebuild of version which includes a build indentifier
-$(shell touch source/version.c >/dev/null)
+$(shell ./source/version.sh)
 
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 
@@ -216,6 +216,7 @@ $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf
 
 $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf
 	$(BIN) $< $@
+	cat $(BUILD_DIR)/tag.bin >> $@
 
 $(BUILD_DIR)/%.asm: $(BUILD_DIR)/%.elf
 	$(DP) -d $< > $@

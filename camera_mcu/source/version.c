@@ -18,16 +18,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/packet.h"
 
-union VersionDesc firmwareVersion;
+#include "../build/version.h"
+
+union VersionDesc firmwareVersion = { { FW_MAJOR, FW_MINOR, FW_PATCH, FW_BUILD } };
 
 // Optional text descriptor
 #ifndef FIRMWARE_DESCRIPTOR
-#define FIRMWARE_DESCRIPTOR "dev"
+#error "Script did not prepare version file properly!"
 #endif
 const char* firmwareDescriptor = FIRMWARE_DESCRIPTOR;
 const uint16_t firmwareDescriptorLength = sizeof(FIRMWARE_DESCRIPTOR)-1;
-
-void version_init()
-{
-	firmwareVersion = GetVersion(0, 1, 0);
-}

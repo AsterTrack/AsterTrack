@@ -28,8 +28,8 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON ..
 make TrackingCamera_$(uname -m) -j 2
 # Can't use more cores as main.cpp already uses more than 300MB of RAM
 # Together with the base usage, it already completely bogs down the system and requires swap to work
-sudo chmod a+rwx ../../../TrackingCamera TrackingCamera_* qpu_blob_tiled_min.bin
-cp TrackingCamera_* qpu_blob_tiled_min.bin ../../../TrackingCamera/
+sudo chmod a+rwx TrackingCamera_* qpu_blob_tiled_min.bin tag.bin ../../../TrackingCamera 
+cp TrackingCamera_* qpu_blob_tiled_min.bin tag.bin ../../../TrackingCamera
 
 cd ../../..
 

@@ -443,7 +443,7 @@ phase_identification:
 							correct = (rcvIdent.device&comm.expIdent.device) != 0 && rcvIdent.type == comm.ownIdent.type;
 							// TODO: Handle differing versions - ideally, try to connect anyway to allow for updating
 							if (rcvIdent.version.major != comm.ownIdent.version.major)
-								LOG(LWireless, LWarn, "Potential Version Mismatch Server is v%d.%d and Camera is v%d.%d!\n",
+								LOG(LWireless, LWarn, "Potential Version Mismatch: Server is v%d.%d and Camera is v%d.%d!\n",
 									comm.ownIdent.version.major, comm.ownIdent.version.minor, rcvIdent.version.major, rcvIdent.version.minor);
 							if (correct)
 							{ // Proper identity

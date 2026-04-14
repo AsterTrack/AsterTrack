@@ -47,13 +47,10 @@ typedef enum
 	UART_CamPi
 } UART_STATE;
 
-/* Function Prototypes */
-
-void version_init();
 
 /* Variables */
 
-// Firmware Version Information initialised in version_init
+// Firmware Version Information from version.c
 extern union VersionDesc firmwareVersion;
 extern const char* firmwareDescriptor;
 extern const uint16_t firmwareDescriptorLength;
@@ -192,9 +189,6 @@ int main(void)
 	rgbled_transition(LED_INITIALISING, 10);
 
 	DEBUG_STR("/START");
-
-	// Initialise version
-	version_init();
 
 	// Read OTP memory
 	otp_read();

@@ -16,27 +16,38 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef CONTROLLER_FIRMWARE_H
-#define CONTROLLER_FIRMWARE_H
+#include "comm/packet.hpp"
 
-#include "util/synchronised.hpp"
+#include <fstream>
 
-struct TrackingControllerState; // device/tracking_controller.hpp
-
-struct ControllerFirmwareUpdateStatus
+static bool ReadFirmwareTag(std::ifstream &fs, FirmwareTagHeader &tag)
 {
-	bool complete;
-	bool success;
-	int progress;
-	int size;
-	std::string text;
-	std::stop_source abort;
-};
+	tag.valid = false;
+	
+	fs.seekg(0, std::ios::end);
+	int size = fs.tellg();
+	if (size <= FIRMWARE_TAG_SIZE) return false;
 
-typedef std::shared_ptr<Synchronised<ControllerFirmwareUpdateStatus>> ControllerFirmwareUpdateRef;
+	fs.seekg(size-FIRMWARE_TAG_SIZE);
+	if (fs.fail()) return false;
 
-ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<TrackingControllerState> controller, std::string firmware);
+	uint8_t tagBuffer[FIRMWARE_TAG_SIZE];
+	fs.read((char*)tagBuffer, FIRMWARE_TAG_SIZE);
+	if (fs.fail()) return false;
 
-std::string ControllerFirmwareDescriptor(std::string firmwareFile);
+	if (!parseFirmwareTagHeader(tagBuffer, &tag))
+		return false;
+	tag.valid = true;
 
-#endif // CONTROLLER_FIRMWARE_H
+	if (tag.descLen > 0)
+	{
+		fs.seekg(-tag.size-tag.descLen, std::ios::end);
+		if (fs.fail()) return true;
+
+		tag.descriptor.resize(tag.descLen);
+		fs.read(tag.descriptor.data(), tag.descLen);
+		if (fs.fail()) tag.descriptor.clear();
+	}
+
+	return true;
+}

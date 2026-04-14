@@ -22,12 +22,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/wireless_server_client.hpp"
 #include "comm/packet.hpp"
 #include "comm/usb.hpp"
+#include "comm/firmware.inl"
 #include "ui/shared.hpp" // Signals
 #include "util/log.hpp"
 
 #include "hash/sha256.hpp"
 
 #include <fstream>
+#include <filesystem>
 
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
@@ -840,21 +842,57 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
  * Different firmware update plans
  */
 
-FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware)
+static FirmwareTransferType GetFirmwareType(const std::string &firmware, const FirmwareTagHeader &tag)
+{
+	if (firmware.ends_with(".tgz") || firmware.ends_with(".tar.gz"))
+	{
+		if (tag.valid && tag.type != FW_TAG_CAM_SBC_PKG)
+			return FW_TX_TYPE_UNKNOWN; // Tagged but unexpected type;
+		return FW_TX_TYPE_SBC_PKG;
+	}
+	else if (firmware.ends_with(".bin"))
+	{
+		if (tag.valid && tag.type != FW_TAG_CAM_MCU_BIN)
+			return FW_TX_TYPE_UNKNOWN; // Tagged but unexpected type;
+		return FW_TX_TYPE_MCU_BIN;
+	}
+	else if (firmware.ends_with(".tcz"))
+	{
+		return FW_TX_TYPE_PACKAGE;
+	}
+	else if (firmware.ends_with(".img") || firmware.ends_with(".img.gz"))
+	{
+		return FW_TX_TYPE_OSIMAGE;
+	}
+	else if (firmware.ends_with(".zip"))
+	{
+		return FW_TX_TYPE_UPDATE;
+	}
+	return FW_TX_TYPE_UNKNOWN;
+}
+
+FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmwareFile)
 {
 	FirmwareUpdateRef updateStatus = std::make_shared<Synchronised<FirmwareUpdateStatus>>();
+
+	std::filesystem::path firmware(firmwareFile);
+	if (!std::filesystem::exists(firmware))
+	{
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Firmware file '%s' not found!", firmwareFile.c_str()));
+		return updateStatus;
+	}
 
 	std::ifstream fs(firmware, std::ios::binary);
 	if (!fs.is_open())
 	{
-		ReportFirmwareUpdateError(updateStatus, asprintf_s("Cannot read firmware file '%s'!", firmware.c_str()));
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Cannot read firmware file '%s'!", firmwareFile.c_str()));
 		return updateStatus;
 	}
 	fs.seekg(0, std::ios::end);
 	std::size_t fwSize = fs.tellg();
 	if (fwSize > 1000000000)
 	{
-		ReportFirmwareUpdateError(updateStatus, asprintf_s("Firmware file '%s' of size %dMB exceeds limit of 1GB!", firmware.c_str(), (int)(fwSize/1000000)));
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Firmware file '%s' of size %dMB exceeds limit of 1GB!", firmwareFile.c_str(), (int)(fwSize/1000000)));
 		return updateStatus;
 	}
 
@@ -864,51 +902,62 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	update.abort = updateStatus->contextualLock()->abort.get_token();
 	update.flags = FW_FLAGS_NONE;
 
-	if (firmware.ends_with(".zip"))
-	{ // TODO: Read zipped folder with json describing full update plan
+	// Setup file metadata
+	update.transfers.emplace_back();
+	FirmwareTransfer &transfer = update.transfers.back();
+
+	// Some firmware files may be tagged. Not required, but provides meta info
+	FirmwareTagHeader tag;
+	ReadFirmwareTag(fs, tag);
+	// WARNING: This may modify fs read position
+
+	// Determine transfer type from file name and, if available, tag
+	FirmwareTransferType type = GetFirmwareType(firmwareFile, tag);
+	switch (type)
+	{
+	case FW_TX_TYPE_SBC_PKG:
+		// Translate to generic file until cameras all support SBC_PKG
+		transfer.type = FW_TX_TYPE_FILE;
+		transfer.file.path = "/mnt/mmcblk0p2/tce/mydata.tgz";
+		update.flags = (FirmwareUpdateFlags)(update.flags | FW_REQUIRE_REBOOT);
+		break;
+	case FW_TX_TYPE_MCU_BIN:
+		// Translate to generic file until cameras all support MCU_BIN
+		transfer.type = FW_TX_TYPE_FILE;
+		transfer.file.path = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
+		update.flags = (FirmwareUpdateFlags)(update.flags | FW_FLASH_MCU);
+		break;
+	case FW_TX_TYPE_PACKAGE:
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading system packages is not yet supported!"));
+		return updateStatus;
+	case FW_TX_TYPE_OSIMAGE:
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading OS image is not yet supported!"));
+		return updateStatus;
+	case FW_TX_TYPE_UPDATE:
+		// TODO: Read zipped folder with json describing full update plan
 		ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading update packages is not yet supported!"));
 		return updateStatus;
+	case FW_TX_TYPE_FILE:
+	case FW_TX_TYPE_UNKNOWN:
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Cannot upload unidentified file!"));
+		return updateStatus;
 	}
-	else
+
+	// Read file data, including any tag
+	transfer.data.resize(fwSize);
+	fs.seekg(0);
+	fs.read((char*)transfer.data.data(), transfer.data.size());
+	if (fs.fail())
 	{
-		// Setup file metadata
-		update.transfers.emplace_back();
-		FirmwareTransfer &transfer = update.transfers.back();
-		if (firmware.ends_with(".tgz") || firmware.ends_with(".tar.gz"))
-		{
-			transfer.type = FW_TX_TYPE_FILE;
-			transfer.file.path = "/mnt/mmcblk0p2/tce/mydata.tgz";
-			update.flags = (FirmwareUpdateFlags)(update.flags | FW_REQUIRE_REBOOT);
-		}
-		else if (firmware.ends_with(".bin"))
-		{
-			transfer.type = FW_TX_TYPE_FILE;
-			transfer.file.path = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
-			update.flags = (FirmwareUpdateFlags)(update.flags | FW_FLASH_MCU);
-		}
-		else if (firmware.ends_with(".tcz"))
-		{
-			ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading system packages is not yet supported!"));
-			return updateStatus;
-			transfer.type = FW_TX_TYPE_PACKAGE;
-		}
-
-		// Read file data
-		transfer.data.resize(fwSize);
-		fs.seekg(0);
-		fs.read((char*)transfer.data.data(), transfer.data.size());
-		if (fs.fail())
-		{
-			ReportFirmwareUpdateError(updateStatus, asprintf_s("Failed to read full data of firmware file: %s (%d)!", strerror(errno), errno));
-			return updateStatus;
-		}
-
-		// Calculate SHA256 of file
-		SHA256 sha;
-		sha.add(transfer.data.data(), transfer.data.size());
-		sha.getHash(transfer.sha256);
-		LOG(LFirmwareUpdate, LDebug, "Calculated SHA256 for firmware file as %s", sha.getHash().c_str());
+		ReportFirmwareUpdateError(updateStatus, asprintf_s("Failed to read full data of firmware file: %s (%d)!", strerror(errno), errno));
+		return updateStatus;
 	}
+
+	// Calculate SHA256 of file
+	SHA256 sha;
+	sha.add(transfer.data.data(), transfer.data.size());
+	sha.getHash(transfer.sha256);
+	LOG(LFirmwareUpdate, LDebug, "Calculated SHA256 for firmware file as %s", sha.getHash().c_str());
 
 	// Check and init update plan
 	if (!InitFirmwareUpdatePlan(update))
@@ -944,4 +993,51 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	}, std::move(update));
 
 	return updateStatus;
+}
+
+std::string CameraFirmwareDescriptor(std::string firmwareFile)
+{
+	std::filesystem::path firmware(firmwareFile);
+	if (!std::filesystem::exists(firmware))
+		return "Missing Firmware File";
+
+	std::ifstream fs(firmware, std::ios::binary);
+	if (!fs.is_open())
+		return "Inaccessible Firmware File";
+
+	// Some firmware files may be tagged. Not required, but provides meta info
+	FirmwareTagHeader tag;
+	ReadFirmwareTag(fs, tag);
+
+	// Determine transfer type from file name and, if available, tag
+	FirmwareTransferType type = GetFirmwareType(firmwareFile, tag);
+	switch (type)
+	{
+	case FW_TX_TYPE_SBC_PKG:
+		if (tag.valid)
+			return asprintf_s("Camera SBC v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+		else
+		 	return asprintf_s("Untagged Package '%s'", firmware.filename().generic_string().c_str());
+	case FW_TX_TYPE_MCU_BIN:
+		if (tag.valid)
+			return asprintf_s("Camera MCU v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+		else
+		 	return asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+	case FW_TX_TYPE_PACKAGE:
+		return asprintf_s("PiCore Package %s", firmware.filename().generic_string().c_str());
+	case FW_TX_TYPE_OSIMAGE:
+		return asprintf_s("OS Image %s", firmware.filename().generic_string().c_str());
+	case FW_TX_TYPE_UPDATE:
+		if (tag.valid)
+			return asprintf_s("Camera Update v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+		else
+		 	return asprintf_s("Untagged Update '%s'", firmware.filename().generic_string().c_str());
+	case FW_TX_TYPE_FILE:
+	case FW_TX_TYPE_UNKNOWN:
+		if (tag.valid && tag.type == FW_TAG_CONT_MCU_BIN)
+			return "Invalid Binary (Controller FW)";
+		return asprintf_s("Invalid file '%s'", firmware.filename().generic_string().c_str());
+	}
+	// Should not reach here
+	return asprintf_s("Invalid file '%s'", firmware.filename().generic_string().c_str());
 }

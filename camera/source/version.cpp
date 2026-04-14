@@ -31,16 +31,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
+#include "../build/version.h"
+
 CameraID cameraID = 0;
 bool isStored = false, isOverwritten = false;
 std::string id_file = "/mnt/mmcblk0p2/config/id";
 
 // Version and build number
-const VersionDesc sbcFWVersion(0, 1, 0);
+const VersionDesc sbcFWVersion(FW_MAJOR, FW_MINOR, FW_PATCH, FW_BUILD);
 
 // Optional text descriptor
 #ifndef FIRMWARE_DESCRIPTOR
-#define FIRMWARE_DESCRIPTOR "dev"
+#error "Script did not prepare version file properly!"
 #endif
 const std::string sbcFWDescriptor = FIRMWARE_DESCRIPTOR;
 

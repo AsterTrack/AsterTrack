@@ -49,4 +49,6 @@ typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
 
 FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware);
 
+std::string CameraFirmwareDescriptor(std::string firmwareFile);
+
 #endif // CAMERA_FIRMWARE_H

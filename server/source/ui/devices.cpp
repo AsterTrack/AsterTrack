@@ -535,12 +535,16 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	}
 	if (showCameraFWUP && !cameraFWUpdateState)
 	{
-		static std::string firmwareFile = "Firmware File";
+		static std::string firmwareFile;
+		static std::string firmwareDesc = "Firmware File";
+		static TimePoint_t lastFirmwareDesc;
+		if (!firmwareFile.empty() && dtMS(lastFirmwareDesc, sclock::now()) > 200)
+		{ // Update descriptor of firmware file on disc
+			lastFirmwareDesc = sclock::now();
+			firmwareDesc = CameraFirmwareDescriptor(firmwareFile);
+		}
 		ImGui::AlignTextToFramePadding();
-		if (std::filesystem::path(firmwareFile).has_filename())
-			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().generic_string().c_str());
-		else
-			ImGui::Text("%s", firmwareFile.c_str());
+		ImGui::Text("%s", firmwareDesc.c_str());
 		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
@@ -570,6 +574,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
+					lastFirmwareDesc = sclock::now();
+					firmwareDesc = CameraFirmwareDescriptor(outPath);
 					firmwareFile = outPath;
 					NFD_FreePath(outPath);
 				}
@@ -613,12 +619,16 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	if (BeginCollapsingRegion("Controller Firmware Update"))
 	{
 		// Static, shared between firmware flashing popups
-		static std::string firmwareFile = "Firmware File";
+		static std::string firmwareFile;
+		static std::string firmwareDesc = "Firmware File";
+		static TimePoint_t lastFirmwareDesc;
+		if (!firmwareFile.empty() && dtMS(lastFirmwareDesc, sclock::now()) > 200)
+		{ // Update descriptor of firmware file on disc
+			lastFirmwareDesc = sclock::now();
+			firmwareDesc = ControllerFirmwareDescriptor(firmwareFile);
+		}
 		ImGui::AlignTextToFramePadding();
-		if (std::filesystem::path(firmwareFile).has_filename())
-			ImGui::Text("%s", std::filesystem::path(firmwareFile).filename().generic_string().c_str());
-		else
-			ImGui::Text("%s", firmwareFile.c_str());
+		ImGui::Text("%s", firmwareDesc.c_str());
 		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
@@ -646,6 +656,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
+					lastFirmwareDesc = sclock::now();
+					firmwareDesc = ControllerFirmwareDescriptor(outPath);
 					firmwareFile = outPath;
 					NFD_FreePath(outPath);
 				}

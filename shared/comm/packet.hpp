@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h> // memcpy
+#include <string.h> // memcpy, memcmp
 #include <limits.h>
 #include <assert.h>
 
@@ -75,9 +75,15 @@ enum WirelessAction {
 #define FIRMWARE_MAX_TRANSFER_SIZE		1000000000 // 1GB - for full image sizes. Most FW updates should be 10MB max
 
 enum FirmwareTransferType : uint8_t
-{
-	FW_TX_TYPE_FILE,
-	FW_TX_TYPE_PACKAGE
+{ // Only used for camera firmware transfers
+	FW_TX_TYPE_FILE,	// Generic file to put at specified path
+	FW_TX_TYPE_UPDATE,	// future packaged update format that may contain a combination of all
+	FW_TX_TYPE_SBC_PKG,	// piCores mydata.tgz package containing SBC firmware
+	FW_TX_TYPE_MCU_BIN,	// MCU firmware binary, tagged appropriately
+	FW_TX_TYPE_PACKAGE, // piCore package file to install
+	FW_TX_TYPE_OSIMAGE, // OS image to flash, may be raw or compressed
+
+	FW_TX_TYPE_UNKNOWN = 255
 };
 
 enum FirmwareStatusType : uint8_t
@@ -121,6 +127,44 @@ enum FirmwareUpdateFlags : uint8_t
 	FW_REQUIRE_REBOOT = 1,
 	FW_FLASH_MCU = 2,
 };
+
+static const uint8_t FIRMWARE_TAG_KEY[] = { 0x08, 0x39, 0xA5, 0x73, 0x20, 0x72, 0xAC, 0x80 };
+#define FIRMWARE_TAG_HEADER		10
+#define FIRMWARE_TAG_SIZE		(FIRMWARE_TAG_HEADER + sizeof(FIRMWARE_TAG_KEY))
+
+enum FirmwareTagType : uint8_t
+{
+	FW_TAG_CAM_UPDATE = 0x53,
+	FW_TAG_CAM_SBC_PKG = 0x17,
+	FW_TAG_CAM_MCU_BIN = 0x9F,
+	FW_TAG_CONT_MCU_BIN = 0xE1
+};
+
+struct FirmwareTagHeader
+{
+	bool valid = false;
+	int size = 0;
+	FirmwareTagType type;
+	union VersionDesc version;
+	uint16_t descLen;
+	std::string descriptor;
+};
+
+static inline bool parseFirmwareTagHeader(const uint8_t data[FIRMWARE_TAG_SIZE], struct FirmwareTagHeader *tag)
+{
+	if (memcmp(data+FIRMWARE_TAG_HEADER, FIRMWARE_TAG_KEY, sizeof(FIRMWARE_TAG_KEY)))
+		return false; // Not tagged.
+	uint8_t version = data[FIRMWARE_TAG_HEADER-1];
+	if (version != 1)
+		return false;
+	tag->size = FIRMWARE_TAG_SIZE; // Version 1
+	tag->type = (FirmwareTagType)data[FIRMWARE_TAG_HEADER-2];
+	// 2 reserved bytes
+	memcpy(&tag->version.num, &data[FIRMWARE_TAG_HEADER-8], 4);
+	tag->descLen = *(uint16_t*)&data[FIRMWARE_TAG_HEADER-10];
+	// May expand here
+	return true;
+}
 
 
 #define CAMERA_INFO_BASE_LENGTH			52

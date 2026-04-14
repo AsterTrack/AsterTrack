@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <string>
 
-VersionDesc serverVersion(0, 1, 0);
+VersionDesc serverVersion(0, 2, 0);
 
 // Optional text descriptor
 #ifndef FIRMWARE_DESCRIPTOR

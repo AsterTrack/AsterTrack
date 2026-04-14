@@ -209,7 +209,7 @@ static inline std::string printMatrix(const Eigen::MatrixBase<Derived> &mat)
 }
 #endif
 
-inline void printBuffer(std::stringstream &ss, uint8_t *buffer, int size)
+inline void printBuffer(std::stringstream &ss, const uint8_t *buffer, int size)
 {
 	ss << "0x" << std::uppercase << std::hex;
 	for (int i = 0; i < size; i++)

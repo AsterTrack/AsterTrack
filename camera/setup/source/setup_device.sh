@@ -297,6 +297,11 @@ pushd $DATA_PATH > /dev/null # because tar is a terribly inconsistent command
 tar -czpf $CWD/$STORAGE_PATH/mydata.tgz --numeric-owner *
 popd > /dev/null
 
+# Tag package if binaries were already built
+if [[ -f "$STORAGE_PATH/TrackingCamera/tag.bin" ]]; then
+	cat $STORAGE_PATH/TrackingCamera/tag.bin >> $STORAGE_PATH/mydata.tgz
+fi
+
 chown -R $USER $DATA_PATH
 chmod -R 775 $DATA_PATH
 

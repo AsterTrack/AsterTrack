@@ -56,11 +56,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 static void InitPacketHub();
 static void SetupPacketHubSinks();
 
-void version_init();
-
 /* Variables */
 
-// Firmware Version Information initialised in version_init
+// Firmware Version Information from version.c
 extern union VersionDesc firmwareVersion;
 extern const char* firmwareDescriptor;
 extern const uint32_t firmwareDescriptorLength;
@@ -233,9 +231,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 
 	// Startup sequence
 	startup = GetTimePoint();
-
-	// Initialise version
-	version_init();
 
 #if defined(ENABLE_EVENTS)
 	for (int i = 0; i < CONTROLLER_EVENT_MAX; i++)

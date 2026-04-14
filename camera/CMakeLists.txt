@@ -102,7 +102,7 @@ endforeach()
 # Force rebuild of version which includes a build indentifier
 add_custom_target(
 	recompile_info
-	COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/source/version.cpp
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/source/version.sh
 )
 
 # Add custom targets as dependencies

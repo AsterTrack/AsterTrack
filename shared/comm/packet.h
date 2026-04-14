@@ -426,6 +426,8 @@ union VersionDesc
 	{
 		build = (uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);
 	}
+	VersionDesc(uint8_t verMajor, uint8_t verMinor, uint8_t verPatch, uint8_t verBuild)
+		: major(verMajor), minor(verMinor), patch(verPatch), build(verBuild) {}
 #endif
 };
 

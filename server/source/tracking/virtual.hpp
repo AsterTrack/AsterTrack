@@ -52,7 +52,7 @@ struct VirtualSubtrackerDebug
 
 struct TrackerVirtualConfig
 {
-	VirtualTrackerType type;
+	VirtualTrackerType type = VirtualTrackerType::STATIC;
 
 	// IDs of actual trackers that define this tracker
 	std::vector<int> ids;

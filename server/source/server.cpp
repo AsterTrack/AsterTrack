@@ -232,7 +232,9 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 
 		if (tracker.triggered)
 		{ // Update pipeline with triggered tracker
-			ServerUpdateTrackerConfig(state, tracker);
+			bool updatedIMU = ServerUpdateTrackerIMU(state, tracker);
+			ServerUpdateTrackerConditions(state, tracker, true);
+			ServerUpdateTrackerConfig(state, tracker, updatedIMU);
 		}
 	}
 	else if (manualTrigger < 0)

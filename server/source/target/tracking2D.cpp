@@ -1194,7 +1194,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		updateCameraMatches(c, matches);
 	}
 
-	//if (!nothingNew)
+	if (targetMatch2D.count() != 0)// && !nothingNew)
 	{ // Final optimisation
 		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.point.stdDev, true);
 	}

@@ -731,6 +731,8 @@ static std::optional<ErrorMessage> parseTrackerConfigurationLegacy(std::filesyst
 		{
 			json &jsVirtual = jsTracker["virtual"];
 
+			tracker.virtConfig.type = VirtualTrackerType::STATIC; // Only type supported rn
+
 			for (auto &jsSubTracker : jsVirtual["subTrackers"])
 				tracker.virtConfig.ids.push_back(jsSubTracker.get<int>());
 

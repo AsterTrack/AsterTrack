@@ -214,7 +214,6 @@ vrpn_IMU_Remote::vrpn_IMU_Remote(const char *name, vrpn_Connection *cn, bool raw
 									 d_sender_id)) {
 		fprintf(stderr,
 				"vrpn_IMU_Remote: can't register raw handler\n");
-		d_connection = NULL;
 	}
 
 	// Register a handler for the raw change callback from this device.
@@ -222,19 +221,21 @@ vrpn_IMU_Remote::vrpn_IMU_Remote(const char *name, vrpn_Connection *cn, bool raw
 									 this, d_sender_id)) {
 		fprintf(stderr,
 				"vrpn_IMU_Remote: can't register fused handler\n");
-		d_connection = NULL;
 	}
 
 	// Find out what time it is and put this into the timestamp
 	vrpn_gettimeofday(&timestamp, NULL);
 
 	// Create a callback for new connections
+	assert(d_connection != NULL);
 	vrpn_int32 got_connection_m_id = d_connection->register_message_type(vrpn_got_connection);
 	d_connection->register_handler(got_connection_m_id, handle_got_connection, this);
 }
 
 vrpn_IMU_Remote::~vrpn_IMU_Remote()
 {
+	vrpn_int32 got_connection_m_id = d_connection->register_message_type(vrpn_got_connection);
+	d_connection->unregister_handler(got_connection_m_id, handle_got_connection, this);
 }
 
 int vrpn_IMU_Remote::request_imu_packets()

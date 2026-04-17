@@ -85,7 +85,7 @@ inline void LeaveUARTPortZone(uint8_t port)
 
 uartd_respond uartd_handle_header(uint_fast8_t port);
 uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size);
-uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos);
+uartd_respond uartd_handle_packet(uint_fast8_t port);
 void uartd_handle_reset(uint_fast8_t port);
 
 
@@ -232,7 +232,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 			state->dataPos += blockSize;
 			if (complete && !state->ignoreData)
 			{
-				resp = uartd_handle_packet(port, pos);
+				resp = uartd_handle_packet(port);
 				if (resp == uartd_reset || resp == uartd_reset_nak)
 				{
 					WARN_STR("!UartPacketBad");
@@ -307,7 +307,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 					if (state->header.length > 0)
 						state->inData = true;
 					else if (!state->ignoreData) // Handle empty packets
-						uartd_handle_data(port, state->bufferPtr+pos, 0);
+						uartd_handle_packet(port);
 				}
 			}
 			TimeSpan dT = GetTimeSinceUS(now);

@@ -526,6 +526,11 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Firmware blocks have extensive redundancy and resend mechanisms by design, AND they are too large to handle by MCU
 			return uartd_ignore;
 		}
+		if (HasSBCQueuePackets() && !SBCPacketQueue[SBCQueueHead].available)
+		{ // Should not happen, imples UART parsing failed to call final packet
+			BREAK();
+			SBCPacketQueue[SBCQueueHead].available = true;
+		}
 		int8_t packet = AllocateSBCPacket(PACKET_HEADER_SIZE+state->header.length+PACKET_CHECKSUM_SIZE);
 		if (packet < 0)
 		{ // Queue full, may theoretically happen, but should not
@@ -540,7 +545,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	}
 	else
 	{ // Other protocol comms with SBC (Idents, NAKs, etc)
-		return uartd_accept;
+		return uartd_ignore;
 	}
 }
 
@@ -567,7 +572,7 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	return uartd_accept;
 }
 
-uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+uartd_respond uartd_handle_packet(uint_fast8_t port)
 {
 	PortState *state = &portStates[port];
 
@@ -580,21 +585,23 @@ uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
 		return uartd_accept;
 	}
 
-	// Verify direct checksum
-	receive.packetSize -= PACKET_CHECKSUM_SIZE;
-	uint8_t checksum[PACKET_CHECKSUM_SIZE];
-	calculateDirectPacketChecksum(receive.packetBuffer, receive.packetSize, checksum);
 	bool correctChecksum = true;
-	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
-	{
-		if (checksum[i] != receive.packetBuffer[receive.packetSize+i])
+	if (receive.packetSize >= PACKET_CHECKSUM_SIZE)
+	{ // Verify direct checksum
+		receive.packetSize -= PACKET_CHECKSUM_SIZE;
+		uint8_t checksum[PACKET_CHECKSUM_SIZE];
+		calculateDirectPacketChecksum(receive.packetBuffer, receive.packetSize, checksum);
+		for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 		{
-			WARN_STR("!PacketChecksum:");
-			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
-			correctChecksum = false;
-			rgbled_transition(LED_UART_ERROR, 0);
-			ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
-			break;
+			if (checksum[i] != receive.packetBuffer[receive.packetSize+i])
+			{
+				WARN_STR("!PacketChecksum:");
+				WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
+				correctChecksum = false;
+				rgbled_transition(LED_UART_ERROR, 0);
+				ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
+				break;
+			}
 		}
 	}
 
@@ -863,9 +870,17 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		}
 		case MCU_GET_PACKET:
 		{
-			if (!HasSBCQueuePackets() || !SBCPacketQueue[SBCQueueHead].available)
+			if (!HasSBCQueuePackets())
 			{ // SBC should not query without checking status first
 				return 0;
+			}
+			if (!SBCPacketQueue[SBCQueueHead].available)
+			{ // SBC should not query without checking status first
+				if (GetSBCQueueSize() == 1)
+					return 0;
+				// Otherwise, something went terribly wrong (should not happen)
+				BREAK();
+				SBCPacketQueue[SBCQueueHead].available = true;
 			}
 			uint8_t packet = SBCQueueHead;
 			SBCQueueHead = (SBCQueueHead+1) % SBCQueueSize;

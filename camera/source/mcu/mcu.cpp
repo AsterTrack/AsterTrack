@@ -802,17 +802,19 @@ bool mcu_fetch_packet(uint16_t size)
 		return false;
 	}
 
-	uint8_t checksum[PACKET_CHECKSUM_SIZE];
-	calculateForwardPacketChecksum(packet, header.length, checksum);
 	bool correctChecksum = true;
-	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+	if (header.length > 0)
 	{
-		if (checksum[i] != packet[header.length+i])
-			correctChecksum = false;
+		uint8_t checksum[PACKET_CHECKSUM_SIZE];
+		calculateForwardPacketChecksum(packet, header.length, checksum);
+		for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
+		{
+			if (checksum[i] != packet[header.length+i])
+				correctChecksum = false;
+		}
+		if (!correctChecksum)
+			printf("Failed to verify packet checksum from MCU with tag %d and size %d!\n", header.tag, header.length);
 	}
-
-	if (!correctChecksum)
-		printf("Failed to verify packet checksum from MCU with tag %d and size %d!\n", header.tag, header.length);
 
 	return ReceivePacketData(state, *comms.get(COMM_MEDIUM_UART), header, packet, header.length, !correctChecksum);
 }

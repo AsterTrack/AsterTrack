@@ -7,8 +7,9 @@ TARGET = TrackingCameraMCU
 # Allow for debugging and flashing over JTAG/SWD - only disable if you know you can flash over other means!
 # Worst case, you may still be able to use SWD if booting with Boot0 active
 DEBUG_FLASH = 1
-# Optimisation level, O0 for debugging, O3 for release
+# Optimisation level, O1 for debugging, O3 for release
 OPT = -O3
+# WARNING: O0 seems unstable, getting erratic memory corruption
 
 # Enables logging at different levels
 #LOG_FLAGS = -DENABLE_LOG
@@ -125,7 +126,7 @@ else
 	MCU =
 endif
 
-COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char
+COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char -ffast-math
 #COMMON_FLAGS += -flto=auto
 COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
 

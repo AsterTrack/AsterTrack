@@ -63,6 +63,7 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"nostatlog",			no_argument,		0,	'l' },
 		{"qpu",					required_argument,	0,	'q' }, // Dev only
 		{"program",				required_argument,	0,	'p' }, // Dev only
+		{"probe",				no_argument,		0,	'j' }, // Dev only
 		{0,						0,					0,	0 }
 	};
 
@@ -86,7 +87,8 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 "    --nocomms                    Explicitly don't wait for any comms\n"
 "    -s,  --sync                  Set camera to frame sync mode\n"
 "    --nostrobe                   Set camera to NOT output frame exposure on the strobe pin\n"
-"    --nostatlog                  Do NOT log frame statistics. Improves performance significantly when printed to screen. \n"
+"    --nostatlog                  Do NOT log frame statistics. Improves performance significantly when printed to screen.\n"
+"  Some Dev Options are hidden. See Code for more.\n"
 "\n"
 "Examples:\n"
 "  sudo %s -r 1280x800 -f 144 -ss 15 -g 16 -ct 0.99 -et 0.3 -db\n"
@@ -164,6 +166,9 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 'l':
 				state.writeStatLogs = false;
+				break;
+			case 'j':
+				state.probeMode = true;
 				break;
 			case 'y':
 				state.server_host = std::string(optarg);

@@ -102,6 +102,8 @@ struct TrackingCameraState
 	std::queue<ImageStreamState> imageRequests;
 	// Logging options
 	bool writeStatLogs = true;
+	// MCU control
+	bool probeMode = false;
 	// Unique ID stored on-device (generated on first boot)
 	CameraID id = 0;
 	// UART & Server comm

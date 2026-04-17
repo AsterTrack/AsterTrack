@@ -37,7 +37,7 @@ extern std::atomic<bool> mcu_exists;
 extern std::atomic<bool> mcu_active;
 
 
-bool mcu_initial_connect();
+bool mcu_initial_connect(bool probe_attached);
 bool mcu_init();
 bool mcu_probe();
 bool mcu_reconnect();

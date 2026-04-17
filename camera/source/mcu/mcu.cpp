@@ -103,7 +103,7 @@ static bool mcu_send_ping();
 static void mcu_thread();
 
 
-bool mcu_initial_connect()
+bool mcu_initial_connect(bool probe_attached)
 {
 	if (!mcu_init())
 		return false;
@@ -115,6 +115,8 @@ bool mcu_initial_connect()
 	if (!mcu_probe())
 	{ // MCU did not respond
 		printf("MCU did not initially respond on startup!\n");
+		if (probe_attached)
+			return true; // Can't communicate rn, but can't interfere
 		// Perhaps MCU is in bootloader mode or an invalid state, reset it and attempt to contact it again
 		mcu_reconnect();
 	}
@@ -151,6 +153,8 @@ bool mcu_initial_connect()
 	}
 	else
 	{ // MCU is either still not responding, and thus either not available in hardware, or bricked
+		if (probe_attached)
+			return true; // Can't communicate rn, but can't interfere
 		printf("Initial connection to MCU failed! Trying to recover!\n");
 		// Or it failed to transmit a valid info packet, which should not happen ever as it's backwards compatible
 		if (!mcu_probe_bootloader() && !mcu_switch_bootloader())

@@ -290,7 +290,7 @@ int main(int argc, char **argv)
 	gatherInfo(state.id);
 
 	// Init, detect, recover, connect with, and monitor MCU
-	mcu_initial_connect();
+	mcu_initial_connect(state.probeMode);
 	atexit(mcu_cleanup);
 
 	// Init VCSM

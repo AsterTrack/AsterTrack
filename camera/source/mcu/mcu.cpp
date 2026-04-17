@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/commands.h"
 #include "comm/parsing.hpp"
 #include "comm/comm.hpp"
+#include "comm/firmware.inl"
 #include "stm32_bootloader.hpp"
 #include "version.hpp"
 #include "state.hpp" // framesync
@@ -36,6 +37,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <thread>
 #include <atomic>
 #include <fstream>
+#include <filesystem>
 
 #include <gpiod.h>
 
@@ -61,7 +63,10 @@ gpiod_line_settings *line_boot0, *line_reset, *line_int;
 gpiod_line_request *line_request_out, *line_request_in;
 gpiod_edge_event_buffer *edge_events;
 
-std::string mcu_flash_file = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
+std::string mcu_firmware_path = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
+FirmwareTagHeader mcu_firmware_tag;
+bool mcu_firmware_version_known = false;
+VersionDesc mcu_firmware_version;
 
 std::mutex mcu_mutex;
 std::atomic<bool> stop_thread;
@@ -77,9 +82,9 @@ std::atomic<uint16_t> floatingSupplyVoltageMV;
 std::ofstream timesyncOut;
 #endif
 
-volatile bool mcu_exists;
-volatile bool mcu_active;
-volatile bool mcu_intentional_bootloader;
+std::atomic<bool> mcu_exists;
+std::atomic<bool> mcu_active;
+std::atomic<bool> mcu_intentional_bootloader;
 
 
 static bool i2c_init();
@@ -98,34 +103,69 @@ bool mcu_initial_connect()
 {
 	if (!mcu_init())
 		return false;
+
+	// Update current firmware tag
+	mcu_read_firmware_tag(mcu_firmware_path, mcu_firmware_tag);
 	
 	std::unique_lock lock(mcu_mutex);
-	if (mcu_probe())
-	{ // MCU responded
-		return true;
+	if (!mcu_probe())
+	{ // MCU did not respond
+		printf("MCU did not initially respond on startup!\n");
+		// Perhaps MCU is in bootloader mode or an invalid state, reset it and attempt to contact it again
+		mcu_reconnect();
 	}
 
-	// Perhaps MCU is in bootloader mode or an invalid state, reset it and attempt to contact it again
-	mcu_reconnect();
+	if (mcu_active && mcu_firmware_version_known)
+	{ // MCU is responding and transmitted a valid info packet, check if its firmware version is older than stored
+		if (mcu_firmware_tag.valid)
+		{
+			//if (mcu_firmware_version.major < mcu_firmware_tag.version.major)
+			if (mcu_firmware_version < mcu_firmware_tag.version)
+			{ // Upgrade major versions - SBC-MCU comms might work, but MCU-Controller might not
+				// This is to allow upgrading old cameras by replacing the SD without having to downgrade anything else first
+				// But can also always auto-upgrade - the only case we should ever be in this scenario is if the SD card was swapped
+				// Or the user attached a debug probe to flash an older version onto the MCU
+				printf("Decided to auto-upgrade MCU!\n");
+				if (!mcu_switch_bootloader())
+				{ // Perhaps an unsupported chip / bootloader?
+					printf("Could not switch to bootloader even though MCU is known to exist!\n");
+				}
+				else
+				{
+					if (mcu_flash_program(mcu_firmware_path))
+						printf("Successfully flashed MCU to auto-upgrade it!\n");
+					else // Made it worse
+						printf("Failed to flash MCU in attempt to auto-upgrade!\n");
+				}
 
-	if (!mcu_active)
-	{ // MCU is still not responding, it is either not available in hardware, or bricked
+				// Reset and probe
+				mcu_reconnect();
+			}
+		}
+		else
+			printf("Connected to MCU on startup, but could not verify MCU FW Version!\n");
+	}
+	else
+	{ // MCU is either still not responding, and thus either not available in hardware, or bricked
+		printf("Initial connection to MCU failed! Trying to recover!\n");
+		// Or it failed to transmit a valid info packet, which should not happen ever as it's backwards compatible
 		if (!mcu_probe_bootloader() && !mcu_switch_bootloader())
 		{ // Could not reboot it into bootloader even via GPIO - likely not available in hardware
 			printf("Could not find MCU!\n");
 		}
-		else if (!mcu_verify_program(mcu_flash_file))
+		else if (!mcu_verify_program(mcu_firmware_path))
 		{ // MCU firmware is just bricked, and we have a differing firmware to try
 			printf("MCU is bricked with differing firmware, will re-flash!\n");
-			if (mcu_flash_program(mcu_flash_file))
+			if (mcu_flash_program(mcu_firmware_path))
 				printf("Successfully re-flashed MCU in attempt to recover it!\n");
-			mcu_reconnect();
 		}
 		else
 		{ // MCU firmware is likely bricked (did not connect after reset)
 			printf("MCU is bricked, but no differing firmware is available to attempt a recovery with!\n");
-			mcu_reconnect();
 		}
+
+		// Reset and probe
+		mcu_reconnect();
 	}
 
 	return mcu_active;
@@ -141,6 +181,16 @@ bool mcu_init()
 	bool i2c = i2c_init();
 	bool gpio = gpio_init();
 	return i2c && gpio;
+}
+
+static void mcu_is_connected()
+{
+	if (!mcu_active)
+	{
+		printf("Connected with MCU!\n");
+		mcu_active = true;
+		mcu_sync_info();
+	}
 }
 
 static void mcu_does_exist()
@@ -159,12 +209,7 @@ bool mcu_probe()
 
 	if (i2c_probe())
 	{
-		if (!mcu_active)
-		{
-			printf("Connected with MCU!\n");
-			mcu_active = true;
-			mcu_sync_info();
-		}
+		mcu_is_connected();
 		mcu_does_exist();
 	}
 	else mcu_active = false;
@@ -244,17 +289,15 @@ static void mcu_thread()
 				if (mcu_active || mcu_intentional_bootloader)
 					continue;
 				lastPing = sclock::now();
-				mcu_active = i2c_probe();
-				if (mcu_active)
-				{ // Reconnected, exchange info again (might have changed)
-					printf("Reconnected with MCU!\n");
-					mcu_sync_info();
-				}
+				if (i2c_probe()) // Reconnected
+					mcu_is_connected();
 				else if (mcu_probe_bootloader())
-				{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader?
-					printf("MCU is in the bootloader!\n");
-					mcu_reset();
+				{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader
+					printf("MCU is in the bootloader, but not being flashed!\n");
+					mcu_reset(); // Should be safe - if a probe initiated this, the I2C bootloader inferface would not respond
 				}
+				else
+					printf("Failed to reconnect with MCU!\n");
 			}
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -315,6 +358,7 @@ void mcu_reset()
 
 	mcu_active = false;
 	mcu_intentional_bootloader = false;
+	mcu_firmware_version_known = false;
 
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
@@ -416,7 +460,7 @@ bool mcu_switch_bootloader()
 	return false;
 }
 
-bool mcu_flash_program(std::string filename)
+bool mcu_flash_program(const std::string &filename)
 {
 	if (i2c_fd < 0) return false;
 
@@ -475,7 +519,7 @@ bool mcu_flash_program(std::string filename)
 	return ret != RES_FAIL;
 }
 
-bool mcu_verify_program(std::string filename)
+bool mcu_verify_program(const std::string &filename)
 {
 	if (i2c_fd < 0) return false;
 	std::ifstream fs(filename);
@@ -508,6 +552,41 @@ bool mcu_verify_program(std::string filename)
 	if (ret != RES_FAIL)
 		printf("MCU Flash: Successfully verified MCU program!\n");
 	return ret != RES_FAIL;
+}
+
+bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag)
+{
+	tag.valid = false;
+	std::filesystem::path firmware(filename);
+	if (!std::filesystem::exists(firmware))
+	{
+		printf("MCU Firmware stored on camera does not exist: %s!\n", filename.c_str());
+		return false;
+	}
+
+	std::ifstream fs(firmware, std::ios::binary);
+	if (!fs.is_open())
+	{
+		printf("MCU Firmware stored on camera cannot be read!\n");
+		return false;
+	}
+
+	if (!ReadFirmwareTag(fs, tag))
+	{
+		printf("MCU Firmware stored on camera is not tagged!\n");
+		return false;
+	}
+
+	if (tag.type != FW_TAG_CAM_MCU_BIN)
+	{
+		printf("MCU Firmware stored on camera is invalid, tagged with %d!\n", tag.type);
+		tag.valid = false;
+		return false;
+	}
+
+	printf("MCU Firmware stored on camera is tagged as version v%d.%d.%d.%d!\n",
+		tag.version.major, tag.version.minor, tag.version.patch, tag.version.build);
+	return true;
 }
 
 static bool mcu_send_ping()
@@ -634,6 +713,17 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 	ptr += sizeof(HardwareSerial);
 	memcpy(&info.mcuUniqueID, ptr, 3*sizeof(uint32_t));
 	ptr += 3*sizeof(uint32_t);
+
+	// Copy for future reference
+	mcu_firmware_version_known = true;
+	mcu_firmware_version = info.mcuFWVersion;
+	if (mcu_firmware_tag.valid && mcu_firmware_tag.version.num != mcu_firmware_version.num)
+	{ // Failed a firmware update, switched SD card, or MCU was flashed with probe
+		// Either way, only ever addressed on initial connect
+		printf("Detected differing MCU firmware versions! Have v%d.%d.%d.%d on SBC, v%d.%d.%d.%d on MCU\n",
+			mcu_firmware_tag.version.major, mcu_firmware_tag.version.minor, mcu_firmware_tag.version.patch, mcu_firmware_tag.version.build,
+			mcu_firmware_version.major, mcu_firmware_version.minor, mcu_firmware_version.patch, mcu_firmware_version.build);
+	}
 
 	uint8_t subpartCount = packet[2];
 	if (!mcu_fetch_subparts(info.subpartSerials, subpartCount))
@@ -837,10 +927,13 @@ bool mcu_get_status()
 	uint8_t packetSize = (packet[10] << 8) | packet[11];
 	if (queueSize > 0)
 	{ // Got packets in queue
-		if (packetSize > 0)
-		{ // And next one is fully received
+		if (queueSize > 5)
+			printf("%d packets are waiting in the MCU - risk of queue overflowing!\n", queueSize);
+		if (packetSize > 0 || queueSize > 1)
+		{ // And next one is fully received, or next one is invalid if queueSize > 1
+			// Then there's been a grave error, and we just clear out the invalid one to not clog queue
 			if (packetSize < PACKET_HEADER_SIZE + PACKET_CHECKSUM_SIZE)
-				printf("%d packets are queued, but next of size %d is of unexpected size!\n", queueSize, packetSize);
+				printf("%d packets waiting in the MCU, but next of size %d is of unexpected size!\n", queueSize, packetSize);
 			// Need to fetch either way to remove from queue
 			mcu_fetch_packet(packetSize);
 		}

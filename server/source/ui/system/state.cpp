@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/pipeline.hpp"
 #include "device/tracking_camera.hpp"
+#include "comm/wireless_server_client.hpp"
 
 #include "point/sequences2D.hpp"
 #include "point/sequence_data.inl"
@@ -381,7 +382,12 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	if (camera.controller && status.commState != COMM_SBC_READY)
 	{ // Controller comms to camera not established
 		if (status.commState == COMM_MCU_READY)
-			statusMsgs.push_back("Camera is connected and starting up...");
+		{
+			if (camera.client && camera.client->ready)
+				statusMsgs.push_back("SBC fails to connect with MCU! Check Firmwares.");
+			else
+				statusMsgs.push_back("Camera is connected and starting up...");
+		}
 		else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			statusMsgs.push_back("Camera is trying to reconnect...");
 		else if (camera.client)
@@ -417,7 +423,7 @@ std::string getStatusText(const TrackingCameraState &camera)
 	auto status = *camera.state.contextualRLock(); // Copy
 	if (GetState().mode != MODE_Device)
 	{
-		return "Camera.";
+		return "Camera."; // It's true,
 	}
 
 	// Detect if camera may need a streaming restart
@@ -450,7 +456,12 @@ std::string getStatusText(const TrackingCameraState &camera)
 	if (camera.controller && status.commState != COMM_SBC_READY)
 	{ // UART comms to camera not established
 		if (status.commState == COMM_MCU_READY)
-			return "Camera is connected and starting up...";
+		{
+			if (camera.client && camera.client->ready)
+				return "SBC fails to connect with MCU! Check Firmwares.";
+			else
+				return "Camera is connected and starting up...";
+		}
 		else if ((status.commState & COMM_READY) != COMM_NO_CONN || dtMS(status.lastConnecting, sclock::now()) < 1000)
 			return "Camera is trying to reconnect...";
 		else if (camera.client)

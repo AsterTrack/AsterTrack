@@ -466,7 +466,7 @@ int main(int argc, char **argv)
 						if (!mcu_probe_bootloader())
 							printf("MCU is not in bootloader!\n");
 						else
-						 	mcu_flash_program(mcu_flash_file);
+						 	mcu_flash_program(mcu_firmware_path);
 					}
 					else if (cin == 'v')
 					{
@@ -474,7 +474,7 @@ int main(int argc, char **argv)
 						if (!mcu_probe_bootloader())
 							printf("MCU is not in bootloader!\n");
 						else
-						 	mcu_verify_program(mcu_flash_file);
+						 	mcu_verify_program(mcu_firmware_path);
 					}
 					else if (cin == 's')
 					{

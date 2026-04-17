@@ -19,21 +19,22 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef MCU_H
 #define MCU_H
 
-#include "comm/packet.h"
+#include "comm/packet.hpp"
 #include "mcu/serial.hpp"
 
 #include <string>
 #include <mutex>
 #include <atomic>
 
-extern std::string mcu_flash_file;
+extern std::string mcu_firmware_path;
+extern FirmwareTagHeader mcu_firmware_tag;
 
 extern std::mutex mcu_mutex;
 
 extern std::atomic<uint16_t> floatingSupplyVoltageMV;
 
-extern volatile bool mcu_exists;
-extern volatile bool mcu_active;
+extern std::atomic<bool> mcu_exists;
+extern std::atomic<bool> mcu_active;
 
 
 bool mcu_initial_connect();
@@ -45,8 +46,9 @@ void mcu_cleanup();
 void mcu_reset();
 bool mcu_probe_bootloader();
 bool mcu_switch_bootloader();
-bool mcu_flash_program(std::string filename);
-bool mcu_verify_program(std::string filename);
+bool mcu_flash_program(const std::string &filename);
+bool mcu_verify_program(const std::string &filename);
+bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag);
 void mcu_sync_info();
 bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config);
 bool mcu_update_id(CameraID cameraID);

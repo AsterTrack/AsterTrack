@@ -428,6 +428,13 @@ union VersionDesc
 	}
 	VersionDesc(uint8_t verMajor, uint8_t verMinor, uint8_t verPatch, uint8_t verBuild)
 		: major(verMajor), minor(verMinor), patch(verPatch), build(verBuild) {}
+
+	bool operator<(const union VersionDesc& other)
+	{
+		return major < other.major ||
+			(major == other.major && minor < other.minor) ||
+			(major == other.major && minor == other.minor && patch < other.patch);
+	};
 #endif
 };
 

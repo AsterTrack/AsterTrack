@@ -22,12 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 
 #include "imgui/imgui_onDemand.hpp"
-
-#include "ctpl/ctpl.hpp"
-extern ctpl::thread_pool threadPool;
-
-#include "nativefiledialog-extended/nfd.h"
-#include "nativefiledialog-extended/nfd_glfw3.h"
+#include "ui/util/nfd.hpp"
 
 #include <filesystem>
 #include <numeric>
@@ -118,11 +113,8 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		{
 			threadPool.push([](int id)
 			{
-				if (!NFD_Init())
-				{ // Thread-specific init
-					SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
-					return;
-				}
+				NFD_Context context{};
+				if (!context) return;
 
 				const int filterLen = 1;
 				nfdfilteritem_t filterList[filterLen] = {
@@ -134,7 +126,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				args.filterList = filterList;
 				args.filterCount = filterLen;
 				args.defaultPath = defPath.c_str();
-				NFD_GetNativeWindowFromGLFWWindow(GetUI().glfwWindow, &args.parentWindow);
+				ConvertGLFWHandleToNFD(GetUI().glfwWindow, &args.parentWindow);
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
@@ -145,9 +137,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				{
 					SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 				}
-
-				NFD_Quit();
-
 				GetUI().RequestUpdates();
 			});
 		}

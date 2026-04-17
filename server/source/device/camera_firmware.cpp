@@ -826,6 +826,11 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 		status->text = "Firmware Update has been aborted!";
 		status->code = FW_STATUS_ABORT;
 	}
+	else
+	{ // Ensure status reflects that we're exiting
+		auto status = update.status->contextualRLock();
+		assert(status->code == FW_STATUS_UPDATED || status->code == FW_STATUS_ERROR || status->code == FW_STATUS_ABORT);
+	}
 
 	LOG(LFirmwareUpdate, LInfo, "Exited firmware update thread!");
 }
@@ -927,13 +932,16 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		return updateStatus;
 	}
 
+	{
+		auto status = updateStatus->contextualLock();
+		status->text = "Starting firmware update...";
+		status->code = FW_STATUS_INVALID;
+	}
+
 	threadPool.push([](int id, FirmwareUpdatePlan &update)
 	{
 		ExecuteFirmwareUpdatePlan(update);
 	}, std::move(update));
 
-	auto status = updateStatus->contextualLock();
-	status->text = "Starting firmware update...";
-	status->code = FW_STATUS_INVALID;
 	return updateStatus;
 }

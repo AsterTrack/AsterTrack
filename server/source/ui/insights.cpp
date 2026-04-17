@@ -30,14 +30,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "gl/visualisation.hpp" // Color
 #include "imguizmo/ImSequencer.hpp"
 #include "implot/implot.h"
+#include "ui/util/nfd.hpp"
 
-#include "ctpl/ctpl.hpp"
 #include <filesystem>
-extern ctpl::thread_pool threadPool;
-
-#include "nativefiledialog-extended/nfd.h"
-#include "nativefiledialog-extended/nfd_glfw3.h"
-
 #include <fstream>
 
 
@@ -1713,11 +1708,8 @@ static bool ShowTimingPanel()
 	{
 		threadPool.push([&loadTimeSyncRecording](int id)
 		{
-			if (!NFD_Init())
-			{ // Thread-specific init
-				SignalErrorToUser(asprintf_s("Failed to initialise File Picker: %s", NFD_GetError()));
-				return;
-			}
+			NFD_Context context{};
+			if (!context) return;
 
 			const int filterLen = 1;
 			nfdfilteritem_t filterList[filterLen] = {
@@ -1734,7 +1726,7 @@ static bool ShowTimingPanel()
 			args.filterList = filterList;
 			args.filterCount = filterLen;
 			args.defaultPath = defPath.c_str();
-			NFD_GetNativeWindowFromGLFWWindow(GetUI().glfwWindow, &args.parentWindow);
+			ConvertGLFWHandleToNFD(GetUI().glfwWindow, &args.parentWindow);
 			nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 			if (result == NFD_OKAY)
 			{
@@ -1746,9 +1738,6 @@ static bool ShowTimingPanel()
 			{
 				SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
 			}
-
-			NFD_Quit();
-
 			GetUI().RequestUpdates();
 		});
 	}

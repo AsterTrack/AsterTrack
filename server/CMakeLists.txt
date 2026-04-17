@@ -63,6 +63,7 @@ set(INTERFACE
 	ui/gl/visualisation.cpp ui/gl/sharedGL.cpp
 	ui/gl/mesh.cpp ui/gl/shader.cpp
 	ui/imgui/imgui_custom.cpp ui/imgui/imgui_onDemand.cpp
+	ui/util/nfd.cpp
 	emulation/detection.cpp
 )
 set(INTERFACE_SHARED

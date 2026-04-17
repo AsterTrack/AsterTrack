@@ -28,12 +28,21 @@
 
 #include "nfd.h"
 
+#include "nfd_linux_shared.hpp"
+
 /*
 Define NFD_APPEND_EXTENSION if you want the file extension to be appended when missing. Linux
 programs usually don't append the file extension, but for consistency with other OSes you might want
 to append it.  However, when using portals, the file overwrite prompt and the Flatpak sandbox won't
 know that we appended an extension, so they will not check or whitelist the correct file.  Enabling
 NFD_APPEND_EXTENSION is not recommended for portals.
+*/
+
+/*
+Define NFD_CASE_SENSITIVE_FILTER if you want file filters to be case-sensitive.  The default
+is case-insensitive.  While Linux uses a case-sensitive filesystem and is designed for
+case-sensitive file extensions, perhaps in the vast majority of cases users actually expect the file
+filters to be case-insensitive.
 */
 
 namespace {
@@ -124,6 +133,27 @@ T* reverse_copy(const T* begin, const T* end, T* out) {
     return out;
 }
 
+#ifndef NFD_CASE_SENSITIVE_FILTER
+nfdnchar_t* emit_case_insensitive_glob(const nfdnchar_t* begin,
+                                       const nfdnchar_t* end,
+                                       nfdnchar_t* out) {
+    // this code will only make regular Latin characters case-insensitive; other
+    // characters remain case sensitive
+    for (; begin != end; ++begin) {
+        if ((*begin >= 'A' && *begin <= 'Z') || (*begin >= 'a' && *begin <= 'z')) {
+            *out++ = '[';
+            *out++ = *begin;
+            // invert the case of the original character
+            *out++ = *begin ^ static_cast<nfdnchar_t>(0x20);
+            *out++ = ']';
+        } else {
+            *out++ = *begin;
+        }
+    }
+    return out;
+}
+#endif
+
 // Returns true if ch is in [0-9A-Za-z], false otherwise.
 bool IsHex(char ch) {
     return ('0' <= ch && ch <= '9') || ('A' <= ch && ch <= 'F') || ('a' <= ch && ch <= 'f');
@@ -172,8 +202,38 @@ constexpr const char* DBUS_PATH = "/org/freedesktop/portal/desktop";
 constexpr const char* DBUS_FILECHOOSER_IFACE = "org.freedesktop.portal.FileChooser";
 constexpr const char* DBUS_REQUEST_IFACE = "org.freedesktop.portal.Request";
 
-void AppendOpenFileQueryParentWindow(DBusMessageIter& iter, const nfdwindowhandle_t& parentWindow) {
+#ifdef NFD_WAYLAND
+constexpr const char* WAYLAND_PREFIX = "wayland:";
+
+void DestroyXdgExported(void* context) {
+    zxdg_exported_v1_destroy(static_cast<struct zxdg_exported_v1*>(context));
+}
+
+void zxdg_exported_v1_handle(void* context, struct zxdg_exported_v1*, const char* handle) {
+    DBusMessageIter& iter = *static_cast<DBusMessageIter*>(context);
+    const size_t handle_len = strlen(handle);
+    const size_t prefix_len = strlen(WAYLAND_PREFIX);
+    char* const buf = NFDi_Malloc<char>(prefix_len + handle_len + 1);
+    char* buf_end = copy(WAYLAND_PREFIX, WAYLAND_PREFIX + prefix_len, buf);
+    buf_end = copy(handle, handle + handle_len, buf_end);
+    *buf_end = '\0';
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &buf);
+    NFDi_Free(buf);
+}
+
+constexpr struct zxdg_exported_v1_listener wayland_xdg_exported_v1_listener {
+    &zxdg_exported_v1_handle
+};
+#endif
+
+void AppendOpenFileQueryParentWindow(DBusMessageIter& iter,
+                                     const nfdwindowhandle_t& parentWindow,
+                                     DestroyFunc& destroy) {
+    (void)iter;
+    (void)parentWindow;
+    (void)destroy;
     switch (parentWindow.type) {
+#ifdef NFD_X11
         case NFD_WINDOW_HANDLE_TYPE_X11: {
             constexpr size_t maxX11WindowStrLen =
                 4 + sizeof(uintptr_t) * 2 + 1;  // "x11:" + "<hex>" + "\0"
@@ -190,6 +250,30 @@ void AppendOpenFileQueryParentWindow(DBusMessageIter& iter, const nfdwindowhandl
             dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &serializedWindow);
             return;
         }
+#endif
+#ifdef NFD_WAYLAND
+        case NFD_WINDOW_HANDLE_TYPE_WAYLAND: {
+            if (wayland_display && wayland_xdg_exporter_v1) {
+                struct zxdg_exported_v1* exported = zxdg_exporter_v1_export(
+                    wayland_xdg_exporter_v1, static_cast<struct wl_surface*>(parentWindow.handle));
+                if (!exported) {
+                    // if we fail to export the wl_surface, act as if the window has no parent
+                    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
+                    return;
+                }
+                zxdg_exported_v1_add_listener(
+                    exported, &wayland_xdg_exported_v1_listener, static_cast<void*>(&iter));
+                wl_display_roundtrip(wayland_display);
+                zxdg_exported_v1_set_user_data(exported, nullptr);
+                destroy.fn = &DestroyXdgExported;
+                destroy.context = static_cast<void*>(exported);
+                return;
+            } else {
+                dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
+                return;
+            }
+        }
+#endif
         default: {
             dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
             return;
@@ -278,7 +362,7 @@ void AppendSingleFilter(DBusMessageIter& base_iter, const nfdnfilteritem_t& filt
     // count number of file extensions
     size_t sep = 1;
     for (const char* p = filter.spec; *p; ++p) {
-        if (*p == L',') {
+        if (*p == ',') {
             ++sep;
         }
     }
@@ -316,13 +400,25 @@ void AppendSingleFilter(DBusMessageIter& base_iter, const nfdnfilteritem_t& filt
             do {
                 ++extn_end;
             } while (*extn_end != ',' && *extn_end != '\0');
-            char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
-            char* buf_end = buf;
-            *buf_end++ = '*';
-            *buf_end++ = '.';
-            buf_end = copy(extn_begin, extn_end, buf_end);
-            *buf_end = '\0';
-            dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+            {
+#ifdef NFD_CASE_SENSITIVE_FILTER
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = copy(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#else
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) * 4 + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = emit_case_insensitive_glob(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#endif
+            }
             dbus_message_iter_close_container(&filter_sublist_iter, &filter_sublist_struct_iter);
             if (*extn_end == '\0') {
                 break;
@@ -346,7 +442,7 @@ bool AppendSingleFilterCheckExtn(DBusMessageIter& base_iter,
     // count number of file extensions
     size_t sep = 1;
     for (const char* p = filter.spec; *p; ++p) {
-        if (*p == L',') {
+        if (*p == ',') {
             ++sep;
         }
     }
@@ -385,13 +481,25 @@ bool AppendSingleFilterCheckExtn(DBusMessageIter& base_iter,
             do {
                 ++extn_end;
             } while (*extn_end != ',' && *extn_end != '\0');
-            char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
-            char* buf_end = buf;
-            *buf_end++ = '*';
-            *buf_end++ = '.';
-            buf_end = copy(extn_begin, extn_end, buf_end);
-            *buf_end = '\0';
-            dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+            {
+#ifdef NFD_CASE_SENSITIVE_FILTER
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = copy(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#else
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) * 4 + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = emit_case_insensitive_glob(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#endif
+            }
             dbus_message_iter_close_container(&filter_sublist_iter, &filter_sublist_struct_iter);
             if (!extn_matched) {
                 const char* match_extn_p;
@@ -495,8 +603,7 @@ void AppendSaveFileQueryDictEntryFilters(DBusMessageIter& sub_iter,
         if (defaultName) {
             const nfdnchar_t* p = defaultName;
             while (*p) ++p;
-            while (*--p != '.')
-                ;
+            while (*--p != '.');
             ++p;
             if (*p) extn = p;
         }
@@ -619,11 +726,12 @@ void AppendOpenFileQueryParams(DBusMessage* query,
                                const nfdnfilteritem_t* filterList,
                                nfdfiltersize_t filterCount,
                                const nfdnchar_t* defaultPath,
-                               const nfdwindowhandle_t& parentWindow) {
+                               const nfdwindowhandle_t& parentWindow,
+                               DestroyFunc& destroy) {
     DBusMessageIter iter;
     dbus_message_iter_init_append(query, &iter);
 
-    AppendOpenFileQueryParentWindow(iter, parentWindow);
+    AppendOpenFileQueryParentWindow(iter, parentWindow, destroy);
     AppendOpenFileQueryTitle<Multiple, Directory>(iter);
 
     DBusMessageIter sub_iter;
@@ -643,11 +751,12 @@ void AppendSaveFileQueryParams(DBusMessage* query,
                                nfdfiltersize_t filterCount,
                                const nfdnchar_t* defaultPath,
                                const nfdnchar_t* defaultName,
-                               const nfdwindowhandle_t& parentWindow) {
+                               const nfdwindowhandle_t& parentWindow,
+                               DestroyFunc& destroy) {
     DBusMessageIter iter;
     dbus_message_iter_init_append(query, &iter);
 
-    AppendOpenFileQueryParentWindow(iter, parentWindow);
+    AppendOpenFileQueryParentWindow(iter, parentWindow, destroy);
     AppendSaveFileQueryTitle(iter);
 
     DBusMessageIter sub_iter;
@@ -1106,8 +1215,7 @@ bool TryGetValidExtension(const char* extn,
     ++extn;
     if (*extn != '.') return false;
     trimmed_extn = extn;
-    for (++extn; *extn != '\0'; ++extn)
-        ;
+    for (++extn; *extn != '\0'; ++extn);
     ++extn;
     trimmed_extn_end = extn;
     return true;
@@ -1195,8 +1303,10 @@ nfdresult_t NFD_DBus_OpenFile(DBusMessage*& outMsg,
     DBusMessage* query = dbus_message_new_method_call(
         DBUS_DESTINATION, DBUS_PATH, DBUS_FILECHOOSER_IFACE, "OpenFile");
     DBusMessage_Guard query_guard(query);
+
+    DestroyFunc destroy;
     AppendOpenFileQueryParams<Multiple, Directory>(
-        query, handle_token_ptr, filterList, filterCount, defaultPath, parentWindow);
+        query, handle_token_ptr, filterList, filterCount, defaultPath, parentWindow, destroy);
 
     DBusMessage* reply =
         dbus_connection_send_with_reply_and_block(dbus_conn, query, DBUS_TIMEOUT_INFINITE, &err);
@@ -1278,8 +1388,16 @@ nfdresult_t NFD_DBus_SaveFile(DBusMessage*& outMsg,
     DBusMessage* query = dbus_message_new_method_call(
         DBUS_DESTINATION, DBUS_PATH, DBUS_FILECHOOSER_IFACE, "SaveFile");
     DBusMessage_Guard query_guard(query);
-    AppendSaveFileQueryParams(
-        query, handle_token_ptr, filterList, filterCount, defaultPath, defaultName, parentWindow);
+
+    DestroyFunc destroy;
+    AppendSaveFileQueryParams(query,
+                              handle_token_ptr,
+                              filterList,
+                              filterCount,
+                              defaultPath,
+                              defaultName,
+                              parentWindow,
+                              destroy);
 
     DBusMessage* reply =
         dbus_connection_send_with_reply_and_block(dbus_conn, query, DBUS_TIMEOUT_INFINITE, &err);
@@ -1408,11 +1526,19 @@ nfdresult_t NFD_Init(void) {
     dbus_unique_name = dbus_bus_get_unique_name(dbus_conn);
     if (!dbus_unique_name) {
         NFDi_SetError("Unable to get the unique name of our D-Bus connection.");
+        dbus_connection_unref(dbus_conn);
         return NFD_ERROR;
     }
+#ifdef NFD_WAYLAND
+    NFD_Wayland_Init();
+#endif
     return NFD_OKAY;
 }
+
 void NFD_Quit(void) {
+#ifdef NFD_WAYLAND
+    NFD_Wayland_Quit();
+#endif
     dbus_connection_unref(dbus_conn);
     // Note: We do not free dbus_error since NFD_Init might set it.
     // To avoid leaking memory, the caller should explicitly call NFD_ClearError after reading the
@@ -1605,17 +1731,17 @@ nfdresult_t NFD_PickFolderN_With_Impl(nfdversion_t version,
     (void)version;
 
     {
-        dbus_uint32_t version;
-        const nfdresult_t res = NFD_DBus_GetVersion(version);
+        dbus_uint32_t portal_version;
+        const nfdresult_t res = NFD_DBus_GetVersion(portal_version);
         if (res != NFD_OKAY) {
             return res;
         }
-        if (version < 3) {
+        if (portal_version < 3) {
             NFDi_SetFormattedError(
                 "The xdg-desktop-portal installed on this system does not support a folder picker; "
                 "at least version 3 of the org.freedesktop.portal.FileChooser interface is "
                 "required but the installed interface version is %u.",
-                version);
+                portal_version);
             return NFD_ERROR;
         }
     }
@@ -1662,17 +1788,17 @@ nfdresult_t NFD_PickFolderMultipleN_With_Impl(nfdversion_t version,
     (void)version;
 
     {
-        dbus_uint32_t version;
-        const nfdresult_t res = NFD_DBus_GetVersion(version);
+        dbus_uint32_t portal_version;
+        const nfdresult_t res = NFD_DBus_GetVersion(portal_version);
         if (res != NFD_OKAY) {
             return res;
         }
-        if (version < 3) {
+        if (portal_version < 3) {
             NFDi_SetFormattedError(
                 "The xdg-desktop-portal installed on this system does not support a folder picker; "
                 "at least version 3 of the org.freedesktop.portal.FileChooser interface is "
                 "required but the installed interface version is %u.",
-                version);
+                portal_version);
             return NFD_ERROR;
         }
     }

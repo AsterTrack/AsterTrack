@@ -88,6 +88,9 @@ std::atomic<bool> mcu_intentional_bootloader;
 
 int mcu_leading_bytes = MCU_LEADING_BYTES;
 
+const int MCU_RESET_HOLDTIME_MS = 10;
+const int MCU_RESET_WAITTIME_MS = 80;
+
 static bool i2c_init();
 static bool i2c_probe();
 static void i2c_cleanup();
@@ -189,6 +192,7 @@ static void mcu_is_connected()
 	if (!mcu_active)
 	{
 		printf("Connected with MCU!\n");
+		ResetTimeSync(timesync);
 		mcu_active = true;
 		mcu_sync_info();
 	}
@@ -221,17 +225,22 @@ bool mcu_reconnect()
 {
 	// Whether we reflashed it or not, reset it into normal mode and try again
 	mcu_reset();
-	if (mcu_probe())
-		return true;
+	for (int i = 0; i < 20; i++)
+	{ // Reset timer should be enough rn, but may change over time
+		if (mcu_probe()) return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 	printf("Failed to reconnect to the MCU!\n");
 	if (mcu_probe_bootloader())
 		printf("MCU is still in the bootloader!\n");
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	mcu_reset();
 	i2c_init();
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	if (mcu_probe())
-		return true;
+	for (int i = 0; i < 20; i++)
+	{ // Reset timer should be enough rn, but may change over time
+		if (mcu_probe()) return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 	printf("Still can't reconnect to the MCU after further reset!\n");
 	return false;
 }
@@ -366,14 +375,14 @@ void mcu_reset()
 	if (gpiod_line_request_set_values(line_request_out, values_reset))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
 
 	// BOOT0, RESET
 	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 	if (gpiod_line_request_set_values(line_request_out, values_normal))
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_WAITTIME_MS));
 }
 
 bool mcu_probe_bootloader()
@@ -408,7 +417,11 @@ bool mcu_switch_bootloader()
 			return false;
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		for (int i = 0; i < 30; i++)
+		{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
+			if (bootloaderGet() == RES_OK) break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
 
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{
@@ -438,12 +451,18 @@ bool mcu_switch_bootloader()
 		if (gpiod_line_request_set_values(line_request_out, values_boot))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
 
 		// BOOT0, RESET
 		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 		if (gpiod_line_request_set_values(line_request_out, values_normal))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+		for (int i = 0; i < 30; i++)
+		{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
+			if (bootloaderGet() == RES_OK) break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
 
 		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
 		{

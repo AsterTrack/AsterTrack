@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 enum CameraMCUCommand
 {
 	MCU_CMD_NONE = 0,
-	MCU_REG_ID = 1,
+	MCU_INITIATE = 1,
 
 	MCU_PING = 16,
 	MCU_BOOT_FIRST, // Notify Pi is booted and may take time initialising
@@ -51,10 +51,11 @@ enum CameraMCUCommand
 	MCU_SWITCH_BOOTLOADER
 };
 
-// Leading Zeros before the actual packet
+// Leading bytes before the actual packet
 // May be inserted in case clock-stretching is not used to give MCU time to process commands
-// Currently, clock-stretching is used, as the Pi-Specific clock-stretching-bug does not seem to manifest
-#define MCU_LEADING_BYTES		0
+// Currently, only one byte actually contributes to increased processing time, but leaves room for that in the future
+#define MCU_MAX_LEADING_BYTES	6
+#define MCU_LEADING_BYTES		1 // Can just change, SBC will be notified in initial packet
 
 // Length of MCU_FETCH_INFO (may increase as long as backwards-compatibility is kept)
 #define MCU_INFO_MAX_LENGTH		(10 * sizeof(uint32_t))

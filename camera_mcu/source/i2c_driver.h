@@ -32,6 +32,7 @@ extern "C"
 // Prepended bytes in addition to the first leading byte
 // See comments on MCU_LEADING_BYTES or I2C_USE_CLOCK_STRETCHING
 #define I2C_PREPENDED_BYTES			(MCU_LEADING_BYTES > 1? (MCU_LEADING_BYTES-1) : 0)
+#define I2C_APPENDED_BYTES			(MCU_LEADING_BYTES > 0? 1 : 0)
 
 #define I2C_RECEIVE_BUFFER_LEN      256
 #define I2C_TRANSMIT_BUFFER_LEN     256

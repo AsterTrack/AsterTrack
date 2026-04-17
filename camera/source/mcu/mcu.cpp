@@ -86,6 +86,7 @@ std::atomic<bool> mcu_exists;
 std::atomic<bool> mcu_active;
 std::atomic<bool> mcu_intentional_bootloader;
 
+int mcu_leading_bytes = MCU_LEADING_BYTES;
 
 static bool i2c_init();
 static bool i2c_probe();
@@ -589,12 +590,26 @@ bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag)
 	return true;
 }
 
+static uint8_t* mcu_read(uint8_t *cmd, uint8_t cmd_len, uint16_t len)
+{
+	static std::vector<uint8_t> MSG_RESP;
+	MSG_RESP.resize(mcu_leading_bytes+len);
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, cmd_len, cmd },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)MSG_RESP.size(), MSG_RESP.data() },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+		return nullptr;
+	return MSG_RESP.data() + mcu_leading_bytes;
+}
+
 static bool mcu_send_ping()
 {
 	if (i2c_fd < 0) return false;
-	unsigned char REG_ID[] = { MCU_PING };
+	unsigned char I2C_CMD[] = { MCU_PING };
 	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
+		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
@@ -612,14 +627,9 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 	descriptor.clear();
 	if (length == 0) return true;
 
-	std::vector<uint8_t> INFO_DATA(MCU_LEADING_BYTES+2+length);
-	unsigned char FETCH_CMD[] = { stringID };
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)INFO_DATA.size(), INFO_DATA.data() },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	unsigned char I2C_CMD[] = { stringID };
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+length);
+	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get descriptor)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
@@ -629,7 +639,6 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 	static_assert(HW_DESC_SEP == MCU_MULTI_TEXT_SEP);
 	// Ensure these are always the same, both camera_mcu and server access their respective versions
 
-	uint8_t *packet = INFO_DATA.data()+MCU_LEADING_BYTES;
 	uint16_t received = (packet[0] << 8) | packet[1];
 	if (received != length)
 		printf("Requested string %d of length %d but received string of length %d!\n", stringID, length, received);
@@ -644,21 +653,15 @@ static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
 	subparts.clear();
 	if (count == 0) return true;
 
-	std::vector<uint8_t> INFO_DATA(MCU_LEADING_BYTES+2+count*sizeof(uint64_t));
-	unsigned char FETCH_CMD[] = { MCU_GET_PARTS };
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)INFO_DATA.size(), INFO_DATA.data() },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	unsigned char I2C_CMD[] = { MCU_GET_PARTS };
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+count*sizeof(uint64_t));
+	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get subparts)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
 		return false;
 	}
 
-	uint8_t *packet = INFO_DATA.data()+MCU_LEADING_BYTES;
 	uint8_t received = packet[1];
 	if (received != count)
 		printf("Requested %d subpart serial IDs but received %d!\n", count, received);
@@ -672,22 +675,16 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 {
 	if (i2c_fd < 0) return false;
 
-	uint8_t INFO_DATA[MCU_LEADING_BYTES+MCU_INFO_MAX_LENGTH];
 	uint8_t FETCH_VERSION = 1; // Request up to this version, may receive lower version
-	unsigned char FETCH_CMD[] = { MCU_FETCH_INFO, FETCH_VERSION };
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(INFO_DATA), INFO_DATA },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	unsigned char I2C_CMD[] = { MCU_FETCH_INFO, FETCH_VERSION };
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), MCU_INFO_MAX_LENGTH);
+	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (fetch info)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
 		return false;
 	}
 
-	uint8_t *packet = INFO_DATA+MCU_LEADING_BYTES;
 	FETCH_VERSION = packet[0]; // Actually received version
 	if (FETCH_VERSION != 1)
 	{
@@ -747,9 +744,9 @@ bool mcu_update_id(CameraID cameraID)
 	printf("Updating MCU CameraID to #%u!\n", cameraID);
 
 	uint8_t *ID_ARR = (uint8_t*)&cameraID;
-	unsigned char UPDATE_CMD[] = { MCU_UPDATE_ID, ID_ARR[0], ID_ARR[1], ID_ARR[2], ID_ARR[3] };
+	unsigned char I2C_CMD[] = { MCU_UPDATE_ID, ID_ARR[0], ID_ARR[1], ID_ARR[2], ID_ARR[3] };
 	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(UPDATE_CMD), UPDATE_CMD },
+		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
@@ -777,22 +774,17 @@ void mcu_sync_info()
 
 bool mcu_fetch_packet(uint16_t size)
 {
-	std::vector<uint8_t> packetData(MCU_LEADING_BYTES+size);
-	uint8_t PACKET_DATA[MCU_LEADING_BYTES+MCU_STATUS_LENGTH];
-	unsigned char FETCH_CMD[] = { MCU_GET_PACKET };
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, (uint16_t)packetData.size(), packetData.data() },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (i2c_fd < 0) return false;
+
 	TimePoint_t requestTime = sclock::now();
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	unsigned char I2C_CMD[] = { MCU_GET_PACKET };
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), size);
+	if (!packet)
 	{
-		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
+		printf("Failed to send I2C message to MCU (fetch packet)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
 		return false;
 	}
-	uint8_t *packet = packetData.data()+MCU_LEADING_BYTES;
 	if (size < PACKET_HEADER_SIZE + PACKET_CHECKSUM_SIZE)
 	{
 		printf("Packet data size of %d is lower than minimum expected of %d+%d!\n",
@@ -829,15 +821,10 @@ bool mcu_get_status()
 {
 	if (i2c_fd < 0) return false;
 
-	uint8_t STATUS_DATA[MCU_LEADING_BYTES+MCU_STATUS_LENGTH];
-	unsigned char FETCH_CMD[] = { MCU_GET_STATUS };
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(FETCH_CMD), FETCH_CMD },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(STATUS_DATA), STATUS_DATA },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	TimePoint_t requestTime = sclock::now();
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	unsigned char I2C_CMD[] = { MCU_GET_STATUS };
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), MCU_STATUS_LENGTH);
+	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
 		handle_i2c_error();
@@ -846,12 +833,11 @@ bool mcu_get_status()
 	TimePoint_t receiveTime = sclock::now();
 	long roundtripTimeUS = dtUS(requestTime, receiveTime);
 	const int observedRoundtripUS = 390;
+	const int txLen = sizeof(I2C_CMD)+1, rxLen = mcu_leading_bytes+MCU_STATUS_LENGTH;
 	const int // Just estimate of fixed delays, they don't exactly add up to the observed roundtrip time
-		transmitUS = ((sizeof(FETCH_CMD)+1)*9 + 2)*1000/400,
-		receiveUS = (sizeof(STATUS_DATA)*9 + 2)*1000/400 + 10;
+		transmitUS = (txLen*9 + 2)*1000/400,
+		receiveUS = (rxLen*9 + 2)*1000/400 + 10;
 	TimePoint_t estSendTime = receiveTime - std::chrono::microseconds(receiveUS);
-
-	uint8_t *packet = STATUS_DATA+MCU_LEADING_BYTES;
 	
 	uint16_t states = (packet[0] << 8) | packet[1];
 
@@ -960,11 +946,11 @@ static bool i2c_probe()
 {
 	if (i2c_fd < 0) return false;
 
-	unsigned char REG_ID[] = { MCU_REG_ID };
-	uint8_t MCU_ID[MCU_LEADING_BYTES+1];
+	unsigned char I2C_CMD[] = { MCU_INITIATE };
+	uint8_t MCU_INIT[3]; // 0x00, MCU_I2C_ID, MCU_LEADING_BYTES
 	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
-		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_ID), MCU_ID },
+		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
+		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_INIT), MCU_INIT },
 	};
 	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
@@ -974,12 +960,21 @@ static bool i2c_probe()
 		return false;
 	}
 
-	if (MCU_ID[MCU_LEADING_BYTES] != MCU_I2C_ID)
+	if (MCU_INIT[1] != MCU_I2C_ID)
 	{
-		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_ID[MCU_LEADING_BYTES], MCU_I2C_ID);
+		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_INIT[1], MCU_I2C_ID);
 		return false;
 	}
-
+	if (MCU_INIT[0] != 0)
+	{
+		printf("MCU Init packet did not start with 0 but %d!\n", MCU_INIT[0]);
+		return false;
+	}
+	if (MCU_INIT[2] != MCU_LEADING_BYTES)
+		printf("MCU has been compiled to use %d leading bytes, different from own %d!\n", MCU_INIT[2], MCU_LEADING_BYTES);
+	if (MCU_INIT[2] > MCU_MAX_LEADING_BYTES)
+		return false;
+	mcu_leading_bytes = MCU_INIT[2];
 	return true;
 }
 

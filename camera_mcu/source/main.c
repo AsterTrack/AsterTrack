@@ -796,9 +796,6 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 
 	switch (command)
 	{
-		case MCU_REG_ID:
-			response[0] = MCU_I2C_ID;
-			return 1;
 		case MCU_GET_STATUS:
 		{
 			// Reset interrupt flag
@@ -1013,17 +1010,18 @@ static int8_t AllocateSBCPacket(uint16_t size)
 	}
 	uint16_t head = (int)(SBCPacketQueue[SBCQueueHead].ptr - SBCPacketBuffer);
 	uint8_t last = SBCQueueTail == 0? SBCQueueSize-1 : SBCQueueTail-1;
-	uint16_t tail = (int)(SBCPacketQueue[last].ptr - SBCPacketBuffer) + SBCPacketQueue[last].size;
-	tail += I2C_PREPENDED_BYTES;
+	uint16_t tail = (int)(SBCPacketQueue[last].ptr - SBCPacketBuffer) + SBCPacketQueue[last].size + I2C_APPENDED_BYTES;
+	uint16_t end = tail+size+I2C_APPENDED_BYTES;
 	if (tail < head)
 	{
-		if (tail+size > head)
+		if (end > head)
 			return -1;
 	}
-	else if (tail+size > SBCBufferSize)
+	else if (end > SBCBufferSize)
 	{
 		tail = I2C_PREPENDED_BYTES;
-		if (tail+size > head)
+		end = tail+size+I2C_APPENDED_BYTES;
+		if (end > head)
 			return -1;
 	}
 	// Space of size after tail

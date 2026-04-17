@@ -48,10 +48,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // No actual issues have been observed yet, so we keep clock stretching on for now
 // But perhaps keeping the leading bytes just in case to prevent any protocol changes would be good... 
 // NOSTRECH with no leading bytes will NOT work - ZERO reaction time for ISR to parse RX and prepare TX
-#define I2C_USE_CLOCK_STRETCHING	(true || MCU_LEADING_BYTES == 0)
+#define I2C_USE_CLOCK_STRETCHING	(MCU_LEADING_BYTES == 0)
 
 static uint8_t receiveBuffer[I2C_RECEIVE_BUFFER_LEN];
-static uint8_t transmitBuffer[I2C_PREPENDED_BYTES+I2C_TRANSMIT_BUFFER_LEN];
+static uint8_t transmitBuffer[I2C_TRANSMIT_BUFFER_LEN+MCU_MAX_LEADING_BYTES];
 
 
 /* Driver Functions */
@@ -180,41 +180,60 @@ void I2C1_IRQHandler(void)
 			{ // Prepare to transmit data
 				TimePoint start = GetTimePoint();
 
-				// Handle RX data to determine TX data
-				uint16_t transmitLength = 0;
-				uint8_t *transmitPtr = transmitBuffer+I2C_PREPENDED_BYTES;
-				if (LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX) && GetRXLength() > 0)
-					transmitLength = i2cd_prepare_response((enum CameraMCUCommand)receiveBuffer[0], receiveBuffer+1, GetRXLength()-1, &transmitPtr);
+				// Determine relevant RX
+				uint16_t receiveLen = LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX)? GetRXLength() : 0;
 				LL_DMA_DisableChannel(DMA1, DMA_CH_RX);
+				enum CameraMCUCommand command = (enum CameraMCUCommand)receiveBuffer[0];
 
-				bool externalBuffer = transmitPtr != transmitBuffer+I2C_PREPENDED_BYTES;
-				if ((!externalBuffer && transmitLength > I2C_TRANSMIT_BUFFER_LEN) || transmitLength == 0)
-				{ // Don't send anything
-					I2C1->TXDR = transmitPtr[0];
-				}
-				else if (MCU_LEADING_BYTES == 0)
-				{ // Prepare first byte and setup to DMA the rest
-					I2C1->TXDR = transmitPtr[0];
-					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitPtr+1);
-					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, transmitLength-1);
+				// Prepare default TX Buffer
+				uint8_t prepend = (I2C_PREPENDED_BYTES+7)/8*8;
+				uint8_t *transmitPtr = transmitBuffer+prepend;
+				uint16_t transmitLength = 0;
+
+				if (command == MCU_INITIATE)
+				{ // Special command to initiate commumication, always the same no matter the leading bytes
+					// First is always a Zero-Byte to allow switching between leading bytes or not
+					if (MCU_LEADING_BYTES == 0)
+						I2C1->TXDR = 0; // Did not already send a Zero-Byte
+					transmitLength = 2; // 3 in total with Zero-Byte
+					transmitPtr[0] = MCU_I2C_ID;
+					transmitPtr[1] = MCU_LEADING_BYTES;
 				}
 				else
-				{ // First leading byte is already in TXDR, setup to DMA the rest
-					// Prepare TX data with further leading bytes and a trailing byte which will reset TXDR to 0 after expected transmit length has been reachedif (transmitPtr)
-					transmitPtr[transmitLength] = 0; // All external buffers have to allow this
-					transmitPtr -= I2C_PREPENDED_BYTES; // All external buffers have to account for this
-					for (int i = 0; i < I2C_PREPENDED_BYTES; i++)
-						transmitPtr[i] = 0;
-					LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitPtr);
-					LL_DMA_SetDataLength(DMA1, DMA_CH_TX, I2C_PREPENDED_BYTES+transmitLength+1);
+				{
+					// TODO: Get I2C_PREPENDED_BYTES sending here already to create a time buffer for response
+					// But can't easily and safely chain another DMA, potentially using an entirely different buffer
+
+					if (receiveLen > 0)
+						transmitLength = i2cd_prepare_response(command, receiveBuffer+1, receiveLen-1, &transmitPtr);
+
+					if (MCU_LEADING_BYTES == 0)
+					{ // Prepare first byte and setup to DMA the rest
+						I2C1->TXDR = transmitPtr[0];
+						transmitPtr++;
+						transmitLength--;
+					}
+					else
+					{ // First leading byte is already in TXDR, append and prepend remaining before setting up DMA
+						for (int i = 0; i < I2C_APPENDED_BYTES; i++)
+							transmitPtr[transmitLength+i] = 0x00;
+						transmitPtr -= I2C_PREPENDED_BYTES;
+						for (int i = 0; i < I2C_PREPENDED_BYTES; i++)
+							transmitPtr[i] = 0x00;
+						transmitLength += MCU_LEADING_BYTES;
+						static_assert(MCU_LEADING_BYTES == I2C_PREPENDED_BYTES+I2C_APPENDED_BYTES);
+					}
 				}
-				LL_DMA_EnableChannel(DMA1, DMA_CH_TX);
 
 				if (I2C_USE_CLOCK_STRETCHING)
 				{ // RPi Clock Stretching bug requires this ISR to take at least 1/2 I2CLK
 					// At 400kHz that is just above 1us, so ensure we spend at least 2 in this ISR
 					while (GetTimePoint() < start+2*TICKS_PER_US);
 				}
+
+				LL_DMA_SetMemoryAddress(DMA1, DMA_CH_TX, (uint32_t)transmitPtr);
+				LL_DMA_SetDataLength(DMA1, DMA_CH_TX, transmitLength);
+				LL_DMA_EnableChannel(DMA1, DMA_CH_TX);
 			}
 			else
 			{ // Prepare to receive command ( + potentially data)

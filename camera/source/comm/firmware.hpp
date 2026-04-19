@@ -62,6 +62,7 @@ struct FirmwareUpdateState
 	CommState *mainComm;
 	bool applyingUpdate;
 	TimePoint_t applyTime;
+	bool appliedUpdateIssues;
 	bool appliedUpdate;
 	bool abortedUpdate;
 
@@ -69,8 +70,7 @@ struct FirmwareUpdateState
 	{
 		if (ID == 0) return false;
 		if (applyingUpdate && dtMS(lastActivity, sclock::now()) < 10000) return true;
-		if (dtMS(lastActivity, sclock::now()) < 3000) return true;
-		ID = 0;
+		if (dtMS(lastActivity, sclock::now()) < 30000) return true;
 		return false;
 	}
 };
@@ -81,6 +81,5 @@ bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, co
 bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
 
 bool ApplyFirmwareUpdate(TrackingCameraState &state);
-void PostFirmwareUpdateActions(TrackingCameraState &state);
 
 #endif // FIRMWARE_H

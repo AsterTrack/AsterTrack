@@ -80,6 +80,7 @@ struct CameraFirmwareUpdate
 {
 	std::shared_ptr<TrackingCameraState> camera;
 	FirmwareStatus status;
+	bool concluded;
 	TimePoint_t lastRequest;
 	TimePoint_t setupTime;
 	TimePoint_t applyTime;
@@ -346,12 +347,7 @@ static bool CameraSendFirmwareStatus(FirmwareUpdatePlan &update, TrackingCameraS
 
 	bool success = camera.sendPacket(PACKET_FW_STATUS, FWPacket.data(), FWPacket.size());
 	if (!success)
-	{
-		LOG(LFirmwareUpdate, LWarn, "Camera %u failed to send status request packet!", camera.id);
-		auto status = camera.firmware->contextualLock();
-		status->text = "Failed to send status request packet!";
-		status->code = FW_STATUS_ERROR;
-	}
+		LOG(LFirmwareUpdate, LWarn, "Camera #%u failed to send firmware status packet!", camera.id);
 	return success;
 }
 
@@ -380,8 +376,21 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 	if (ID != update.ID)
 	{
 		LOG(LFirmwareUpdate, LWarn, "Received status packet with invalid firmware ID %d != %d!", ID, update.ID);
+		camStatus.text = asprintf_s("Invalid firmware status!");
+		camStatus.code = FW_STATUS_ERROR;
 		return true;
 	}
+
+	auto concludeFWUpdate = [&]()
+	{
+		if (camState.concluded)
+			LOG(LFirmwareUpdate, LWarn, "Camera %u will be send another packet to conclude its firmware update!", camState.camera->id);
+		// Send acknowledgement back so it can safely clear data and restart
+		if (CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (int)FW_STATUS_CONCLUDED))
+			camState.concluded = true;
+		else
+			LOG(LFirmwareUpdate, LWarn, "Camera %u could not be notified of concluded firmware update!", camState.camera->id);
+	};
 
 	if (type == FW_STATUS_UPDATE)
 	{
@@ -408,18 +417,10 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 			return true;
 		}
 		case FW_STATUS_ABORT:
-		{ // Camera rejected update during transfer (perhaps user intervention?)
-			LOG(LFirmwareUpdate, LWarn, "Camera %u aborted the firmware update!", camState.camera->id);
-			// Send acknowledgement back so it can safely clear data
-			CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (uint8_t)FW_STATUS_ABORT);
-			if (camStatus.code == FW_STATUS_INITIATING)
-				camStatus.text = asprintf_s("Update request was denied!");
-			else if (camStatus.code == FW_STATUS_TRANSFERRING)
-				camStatus.text = asprintf_s("Update was aborted during transfer!");
-			else if (camStatus.code == FW_STATUS_UPDATING)
-				camStatus.text = asprintf_s("Update was aborted when applying!");
-			else
-				camStatus.text = asprintf_s("Update was unexpectedly aborted during state %d!", camStatus.code);
+		{ // Camera acknowledged a successful firmware update abort request
+			LOG(LFirmwareUpdate, LWarn, "Camera %u successfully aborted the firmware update!", camState.camera->id);
+			concludeFWUpdate();
+			camStatus.text = "Successfully aborted update!";
 			camStatus.code = FW_STATUS_ABORT;
 			return false;
 		}
@@ -427,30 +428,32 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		case FW_STATUS_ISSUE:
 		{ // Camera encountered an error during transfer (perhaps wrong transfer SHA256 despite correct blocks)
 			LOG(LFirmwareUpdate, LWarn, "Camera %u encountered an error during firmware update!", camState.camera->id);
+			concludeFWUpdate();
 			if (camStatus.code == FW_STATUS_INITIATING)
-				camStatus.text = asprintf_s("Update request encountered an error!");
+				camStatus.text = "Failed to initiate update!";
 			else if (camStatus.code == FW_STATUS_TRANSFERRING)
-				camStatus.text = asprintf_s("Update encountered an error during transfer!");
-			else if (camStatus.code == FW_STATUS_UPDATING)
-				camStatus.text = asprintf_s("Applying the firmware update failed!");
+				camStatus.text = "Failed transferring update!";
+			else if (camStatus.code == FW_STATUS_UPDATING && status == FW_STATUS_ERROR)
+				camStatus.text = "Failed to apply update!";
+			else if (camStatus.code == FW_STATUS_UPDATING && status == FW_STATUS_ISSUE)
+				camStatus.text = "Issue applying update! Likely failed to flash MCU.";
 			else
-				camStatus.text = asprintf_s("Update encountered an unexpected error!");
+				camStatus.text = asprintf_s("Unexpected error during stage %d!", camStatus.code);
 			camStatus.code = FW_STATUS_ERROR;
 			return false;
 		}
 		case FW_STATUS_UPDATING:
 		{ // Camera confirms it is currently applying the update
 			LOG(LFirmwareUpdate, LInfo, "Camera %u is applying the firmware update...", camState.camera->id);
-			camStatus.text = asprintf_s("Update is being applied...");
+			camStatus.text = "Update is being applied...";
 			camStatus.code = FW_STATUS_UPDATING;
 			return true;
 		}
 		case FW_STATUS_UPDATED:
 		{ // Camera confirms it has applied the update to disk (but may still be flashing the MCU or rebooting)
 			LOG(LFirmwareUpdate, LInfo, "Camera %u successfully applied firmware update!", camState.camera->id);
-			// Send acknowledgement back so it can safely clear data and restart
-			CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (int)FW_STATUS_UPDATED);
-			camStatus.text = asprintf_s("Update applied!");
+			concludeFWUpdate();
+			camStatus.text = "Update applied!";
 			camStatus.code = FW_STATUS_UPDATED;
 			return true;
 		}
@@ -533,6 +536,8 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState)
 {
 	auto camStatus = camState.camera->firmware->contextualLock();
+	if (camState.concluded && !camStatus->packets.empty())
+		LOG(LFirmwareUpdate, LWarn, "Received firmware update packet from camera after it has already concluded!");
 	bool abort = false;
 	for (auto &packet : camStatus->packets)
 	{ // Read and apply status messages from camera
@@ -554,7 +559,7 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 			camStatus->text = asprintf_s("Firmware update timed out during transfer!");
 		else if (camStatus->code == FW_STATUS_REQAPPLY && dtMS(camStatus->lastActivity, sclock::now()) > 1000)
 			camStatus->text = asprintf_s("Firmware update timed out requesting to apply the update!");
-		else if (camStatus->code == FW_STATUS_UPDATING && dtMS(camStatus->lastActivity, sclock::now()) > 20000)
+		else if (camStatus->code == FW_STATUS_UPDATING && dtMS(camStatus->lastActivity, sclock::now()) > 30000)
 			camStatus->text = asprintf_s("Firmware update timed out applying the update!");
 		else
 			abort = false;
@@ -571,10 +576,10 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 		else if (camState.status == FW_STATUS_REQAPPLY && dtMS(camState.applyTime, sclock::now()) > 100)
 			abort = !CameraApplyFirmwareUpdate(update, camState);
 		else if (camState.status == FW_STATUS_UPDATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
-			abort = !CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
+			CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
 		else if (camState.status != FW_STATUS_NONE && camState.status != FW_STATUS_INITIATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
 		{ // This one is not required, just to prevent a timeout in cameras that are waiting to apply the update if some cameras take significantly longer
-			abort = !CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
+			CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
 		}
 	}
 	if (abort)
@@ -813,17 +818,44 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 		std::this_thread::sleep_for(std::chrono::milliseconds(SEND_INTERVAL_MS));
 	}
 
-	// Notify cameras that firmware update is ending so they may clean up
-	for (auto &camState : update.cameras)
-	{ // Skip the only two outcomes where we already send a status update acknowledging them
-		if (camState.status == FW_STATUS_UPDATED) continue;
-		if (camState.status == FW_STATUS_ABORT) continue;
-		CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (uint8_t)FW_STATUS_ABORT);
-	}
-
 	if (update.abort.stop_requested())
 	{
 		LOG(LFirmwareUpdate, LError, "Firmware Update aborted by the user!");
+		update.status->contextualLock()->text = "Aborting Firmware Update...";
+
+		TimePoint_t sendTime, abortTime = sclock::now();
+		int waiting = 0;
+		do
+		{
+			if (waiting == 0 || dtMS(sendTime, sclock::now()) > 2000)
+			{ // Tell cameras that haven't concluded already about the abort
+				sendTime = sclock::now();
+				for (auto &camState : update.cameras)
+				{
+					if (camState.concluded) continue;
+					CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (uint8_t)FW_STATUS_ABORT);
+				}
+			}
+
+			// Wait for cameras to respond to abort request
+			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			waiting = 0;
+			for (auto &camState : update.cameras)
+			{
+				UpdateCameraStatus(update, camState);
+				if (!camState.concluded) waiting++;
+			}
+		}
+		while (waiting && dtMS(abortTime, sclock::now()) < 30000);
+
+		for (auto &camState : update.cameras)
+		{
+			if (camState.concluded) continue;
+			auto camStatus = camState.camera->firmware->contextualLock();
+			camStatus->text = asprintf_s("Failed to properly abort firmware update!");
+			camStatus->code = FW_STATUS_ERROR;
+		}
+
 		auto status = update.status->contextualLock();
 		status->text = "Firmware Update has been aborted!";
 		status->code = FW_STATUS_ABORT;
@@ -832,6 +864,14 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 	{ // Ensure status reflects that we're exiting
 		auto status = update.status->contextualRLock();
 		assert(status->code == FW_STATUS_UPDATED || status->code == FW_STATUS_ERROR || status->code == FW_STATUS_ABORT);
+	}
+
+	// Notify cameras that firmware update is ending so they may clean up
+	for (auto &camState : update.cameras)
+	{
+		if (camState.concluded) continue;
+		LOG(LFirmwareUpdate, LWarn, "Camera %s (#%u) was not cleaned up automatically!", camState.camera->label.c_str(), camState.camera->id);
+		CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (uint8_t)FW_STATUS_CONCLUDED);
 	}
 
 	LOG(LFirmwareUpdate, LInfo, "Exited firmware update thread!");

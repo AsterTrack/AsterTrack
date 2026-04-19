@@ -106,7 +106,7 @@ static FirmwareTXStatus CheckFirmwareTransfer(FirmwareTransferState &transfer)
 static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 {
 	if (firmware.appliedUpdate)
-		return FW_STATUS_UPDATED;
+		return firmware.appliedUpdateIssues? FW_STATUS_ISSUE : FW_STATUS_UPDATED;
 
 	if (firmware.applyingUpdate)
 		return FW_STATUS_UPDATING;
@@ -343,9 +343,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		for (auto file : files)
 			std::filesystem::remove(file.updated);
 		state.firmware.applyingUpdate = false;
-		SendUpdateStatus(state, comm, FW_STATUS_ERROR);
-		if (state.firmware.abortedUpdate)
-			state.firmware = {};
+		SendUpdateStatus(state, comm, state.firmware.abortedUpdate? FW_STATUS_ABORT : FW_STATUS_ERROR);
 		return false;
 	}
 
@@ -383,29 +381,15 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 		state.firmware.applyingUpdate = false;
 		SendUpdateStatus(state, comm, FW_STATUS_ERROR);
-		if (state.firmware.abortedUpdate)
-			state.firmware = {};
 		return false;
 	}
 
-	printf("Successfully applied update (hopefully)!\n");
+	printf("Successfully updated files (hopefully)!\n");
 	for (auto file : files)
 		std::filesystem::remove(file.backup);
 
-	state.firmware.applyingUpdate = false;
-	state.firmware.appliedUpdate = true;
-	SendUpdateStatus(state, comm, FW_STATUS_UPDATED);
-	if (state.firmware.abortedUpdate)
-	{ // Applied the update despite server aborting, so have to apply post firmware actions anyway
-		state.postFirmwareActions = state.firmware.flags;
-		state.firmware = {};
-	}
-	return true;
-}
-
-void PostFirmwareUpdateActions(TrackingCameraState &state)
-{
-	if (state.postFirmwareActions & FW_FLASH_MCU)
+	bool postApplyGood = true;
+	if (state.firmware.flags & FW_FLASH_MCU)
 	{
 		std::unique_lock lock(mcu_mutex);
 
@@ -417,7 +401,8 @@ void PostFirmwareUpdateActions(TrackingCameraState &state)
 			if (!mcu_verify_program(mcu_firmware_path))
 			{
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-				if (mcu_flash_program(mcu_firmware_path))
+				postApplyGood = mcu_flash_program(mcu_firmware_path);
+				if (postApplyGood)
 					printf("Successfully flashed MCU with new firmware!\n");
 				else
 					printf("Failed to flash MCU with the firmware!\n");
@@ -425,19 +410,20 @@ void PostFirmwareUpdateActions(TrackingCameraState &state)
 			else printf("Will not flash MCU, already flashed with firmware!\n");
 		}
 		else
+		{
 			printf("Cannot flash MCU, failed to switch to the bootloader!\n");
+			postApplyGood = false;
+		}
 
 		// Reset and probe
 		mcu_reconnect();
 	}
 
-	if (state.postFirmwareActions & FW_REQUIRE_REBOOT)
-	{
-		printf("Rebooting Pi!\n");
-		std::system("reboot");
-	}
-
-	state.postFirmwareActions = FW_FLAGS_NONE;
+	state.firmware.applyingUpdate = false;
+	state.firmware.appliedUpdate = true;
+	state.firmware.appliedUpdateIssues = !postApplyGood;
+	SendUpdateStatus(state, comm, postApplyGood? FW_STATUS_UPDATED : FW_STATUS_ISSUE);
+	return true;
 }
 
 bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
@@ -456,16 +442,25 @@ bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const ui
 		if (status == (uint8_t)FW_STATUS_ABORT)
 		{
 			printf("Received Firmware packet aborting the firmware update!\n");
-			if (state.firmware.applyingUpdate)
-				state.firmware.abortedUpdate = true;
-			else
-			 	state.firmware = {};
+			state.firmware.abortedUpdate = true;
+			if (!state.firmware.applyingUpdate)
+				SendUpdateStatus(state, comm, FW_STATUS_ABORT);
 			return true;
 		}
-		if (status == (uint8_t)FW_STATUS_UPDATED && state.firmware.appliedUpdate)
+		else if (status == (uint8_t)FW_STATUS_CONCLUDED)
 		{
-			printf("Received Firmware packet acknowledging completed firmware update!\n");
-			state.postFirmwareActions = state.firmware.flags;
+			if (state.firmware.appliedUpdate)
+				printf("Received Firmware packet acknowledging completed firmware update!\n");
+			else
+				printf("Received Firmware packet to finalise incomplete firmware update!\n");
+
+			if (state.firmware.appliedUpdate && state.firmware.flags & FW_REQUIRE_REBOOT)
+			{
+				printf("Rebooting Pi!\n");
+				std::system("reboot");
+			}
+
+			// Clean up state
 			state.firmware = {};
 			return true;
 		}

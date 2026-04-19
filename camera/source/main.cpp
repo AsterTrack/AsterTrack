@@ -512,11 +512,6 @@ int main(int argc, char **argv)
 				ApplyFirmwareUpdate(state);
 			}
 
-			if (state.postFirmwareActions != FW_FLAGS_NONE)
-			{ // Apply post-firmware actions like flashing MCU or rebooting
-				PostFirmwareUpdateActions(state);
-			}
-
 			if (state.updateSetupCPU.exchange(false))
 			{ // Got a new setup packet to read
 				state.updateSetupQPU = false;

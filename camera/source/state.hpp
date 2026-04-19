@@ -114,7 +114,6 @@ struct TrackingCameraState
 	std::string server_port = "48532";
 	WirelessState wireless = {};
 	FirmwareUpdateState firmware = {};
-	FirmwareUpdateFlags postFirmwareActions = FW_FLAGS_NONE;
 	// Comm Synchronisation
 	std::atomic<bool> updateSetupQPU = { false };
 	std::atomic<bool> updateSetupCPU = { false };

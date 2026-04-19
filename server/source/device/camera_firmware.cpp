@@ -956,16 +956,16 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	switch (type)
 	{
 	case FW_TX_TYPE_SBC_PKG:
+		update.flags = (FirmwareUpdateFlags)(update.flags | FW_REQUIRE_REBOOT);
 		// Translate to generic file until cameras all support SBC_PKG
 		transfer.type = FW_TX_TYPE_FILE;
 		transfer.file.path = "/mnt/mmcblk0p2/tce/mydata.tgz";
-		update.flags = (FirmwareUpdateFlags)(update.flags | FW_REQUIRE_REBOOT);
 		break;
 	case FW_TX_TYPE_MCU_BIN:
+		update.flags = (FirmwareUpdateFlags)(update.flags | FW_FLASH_MCU);
 		// Translate to generic file until cameras all support MCU_BIN
 		transfer.type = FW_TX_TYPE_FILE;
 		transfer.file.path = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
-		update.flags = (FirmwareUpdateFlags)(update.flags | FW_FLASH_MCU);
 		break;
 	case FW_TX_TYPE_PACKAGE:
 		ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading system packages is not yet supported!"));

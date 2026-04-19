@@ -27,6 +27,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <filesystem>
 #include <thread>
 
+std::string sbc_firmware_path = "/mnt/mmcblk0p2/tce/mydata.tgz";
+
 static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm, uint8_t type, uint8_t status, uint8_t transfer = 0, uint16_t block = 0)
 {
 	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER);
@@ -311,30 +313,32 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	for (auto &t : transfers)
 	{
 		auto &transfer = t.second;
-		FileSwap swap = {};
+		std::string target;
 		if (transfer.type == FW_TX_TYPE_FILE)
+			target = transfer.file.path;
+		else if (transfer.type == FW_TX_TYPE_SBC_PKG)
+			target = mcu_firmware_path;
+		else if (transfer.type == FW_TX_TYPE_MCU_BIN)
+			target = sbc_firmware_path;
+		else continue;
+		files.emplace_back(FileSwap{
+			target,
+			target + ".updated",
+			target + ".backup"
+		});
+		std::ofstream out(target + ".updated", std::ios::binary);
+		if (!out.is_open())
 		{
-			swap.target = transfer.file.path;
-			swap.updated = transfer.file.path + ".updated";
-			swap.backup = transfer.file.path + ".backup";
+			aborted = true;
+			break;
 		}
-		if (!swap.updated.empty())
+		// TODO: Check for disk space before continuing to write
+		out.write((const char*)transfer.data.data(), transfer.data.size());
+		out.close();
+		if (out.fail())
 		{
-			std::ofstream out(swap.updated, std::ios::binary);
-			if (!out.is_open())
-			{
-				aborted = true;
-				break;
-			}
-			// TODO: Check for disk space before continuing to write
-			files.push_back(std::move(swap));
-			out.write((const char*)transfer.data.data(), transfer.data.size());
-			out.close();
-			if (out.fail())
-			{
-				aborted = true;
-				break;
-			}
+			aborted = true;
+			break;
 		}
 	}
 	if (aborted || state.firmware.abortedUpdate)

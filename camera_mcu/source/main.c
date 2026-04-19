@@ -843,9 +843,10 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			// We assume OTP has already been read - otherwise, the Pi would not know the length to read
 			// And it's more complex to read anyway. Advantage: We can just DMA from memory
 			uint16_t pos = OTP_HW_STRING_PREPEND-2;
+			*responsePtr = OTP_HwStringData+pos;
+			response = *responsePtr;
 			response[pos+0] = OTP_HwStringLength >> 8;
 			response[pos+1] = OTP_HwStringLength & 0xFF;
-			*responsePtr = OTP_HwStringData+pos;
 			return 2 + OTP_HwStringLength;
 		}
 		case MCU_GET_FW_STR:

@@ -20,11 +20,20 @@ if [[ -z "$DEVICE_PATH" || -z "$IMAGE_FILE" ]]; then
 	exit 1
 fi
 if [[ ! -b "$DEVICE_PATH" ]]; then
-	echo "Device $DEVICE_PATH does not exist! Make sure to first specify the SD card reader, then the image file!"
+	echo "Device '$DEVICE_PATH' does not exist! Make sure to first specify the SD card reader, then the image file!"
 	exit 1
 fi
+# Anything above 64GB is suspicious, don't want to destroy a system drive
+blockDevSize=$(blockdev --getsize64 $DEVICE_PATH)
+if [[ "$blockDevSize" -gt "68719476736" ]]; then
+	read -p "Device '$DEVICE_PATH' is over 64GB: $(expr $blockDevSize / 1073741824)GB - really flash image? yes/NO: " choice
+	if [[ "$choice" != "yes" ]]; then 
+		echo "Will not flash - double check device!" 
+		exit 1
+	fi
+fi
 if [[ ! -f "$IMAGE_FILE" ]]; then
-	echo "Image file does not exist!"
+	echo "Image '$IMAGE_FILE' does not exist!"
 	exit 1
 fi
 

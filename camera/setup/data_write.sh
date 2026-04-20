@@ -9,11 +9,19 @@ echo "Writing data file to TCE partition..."
 sudo chown -R root $DATA_PATH
 sudo chmod -R 777 $DATA_PATH
 
+CWD=$(pwd)
 pushd $DATA_PATH > /dev/null # because tar is a terribly inconsistent command
-tar -czpf $TCE_PATH/mydata.tgz --numeric-owner *
+tar -czpf $CWD/$STORAGE_PATH/mydata.tgz --numeric-owner *
 popd > /dev/null
 
 # Make sure it's again readable by user, but also that SSH keys are protected
 USER=$(who am i | awk '{print $1}')
 sudo chown -R $USER $DATA_PATH
 sudo chmod -R 775 $DATA_PATH
+
+# Change permissions of package data (mydata.tgz)
+chown $USER $STORAGE_PATH/mydata.tgz
+chmod 775 $STORAGE_PATH/mydata.tgz
+
+# Write packed data to device
+cp $STORAGE_PATH/mydata.tgz $TCE_PATH/

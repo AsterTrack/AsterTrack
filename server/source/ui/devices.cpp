@@ -554,11 +554,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				NFD_Context context{};
 				if (!context) return;
 
-				const int filterLen = 3;
+				const int filterLen = 4;
 				nfdfilteritem_t filterList[filterLen] = {
-					{"Any Camera Firmware", "tgz,tar.gz,bin"},
+					{"Any Camera Firmware", "tgz,tar.gz,bin,zip"},
 					{"CameraPi Data Tarball", "tgz,tar.gz"},
 					{"CameraMCU Program Binary", "bin"},
+					{"Camera FW Package", "zip"},
 				};
 				nfdchar_t *outPath;
 			#ifdef _WIN32

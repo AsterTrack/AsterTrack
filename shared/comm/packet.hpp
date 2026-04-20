@@ -80,6 +80,7 @@ enum FirmwareTransferType : uint8_t
 	FW_TX_TYPE_UPDATE,	// future packaged update format that may contain a combination of all
 	FW_TX_TYPE_SBC_PKG,	// piCores mydata.tgz package containing SBC firmware
 	FW_TX_TYPE_MCU_BIN,	// MCU firmware binary, tagged appropriately
+	FW_TX_TYPE_ARCHIVE,	// Simple archive of these files, precursor of packaged update format
 	FW_TX_TYPE_PACKAGE, // piCore package file to install
 	FW_TX_TYPE_OSIMAGE, // OS image to flash, may be raw or compressed
 

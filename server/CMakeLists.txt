@@ -45,7 +45,7 @@ set(SERVER_SHARED
 set(SERVER_DEP
 	recursive_shared_mutex/recursive_shared_mutex.cpp
 	poselib/p3p_ding.cpp dbscan/dbscan.cpp
-	hidapi/windows/hid.c
+	miniz/miniz.c
 	oscpack/OscTypes.cpp oscpack/OscOutboundPacketStream.cpp
 	oscpack/OscReceivedElements.cpp oscpack/OscPrintReceivedElements.cpp
 )
@@ -130,6 +130,7 @@ if(MSVC)
 
 	# Platform-specific compilation units
 	target_sources(astertrack PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/sources/nativefiledialog-extended/nfd_win.cpp)
+	target_sources(astertrack PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/sources/hidapi/windows/hid.c )
 
 	# MSVC-specific compiler setup
 	target_compile_definitions(astertrack PUBLIC _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES _ENABLE_EXTENDED_ALIGNED_STORAGE INTERFACE_LINKED)
@@ -196,6 +197,7 @@ else()
 
 	# Platform-specific compilation units
 	target_sources(astertrack PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/sources/nativefiledialog-extended/nfd_portal.cpp)
+	target_sources(astertrack PRIVATE ${PROJECT_SOURCE_DIR}/dependencies/sources/hidapi/linux/hid.c )
 
 	# gcc-specific compiler setup for Debug and Release
 	target_compile_definitions(astertrack PUBLIC GLEW_EGL _FILE_OFFSET_BITS=64)

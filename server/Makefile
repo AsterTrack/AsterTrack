@@ -223,7 +223,7 @@ SERVER_DEP_CPP = \
 	oscpack/OscTypes.cpp oscpack/OscOutboundPacketStream.cpp \
 	oscpack/OscReceivedElements.cpp oscpack/OscPrintReceivedElements.cpp
 
-SERVER_DEP_C = hidapi/linux/hid.c
+SERVER_DEP_C = hidapi/linux/hid.c miniz/miniz.c
 
 
 INTERFACE_CPP = \

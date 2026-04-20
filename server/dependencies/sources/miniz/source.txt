@@ -1,0 +1,4 @@
+https://github.com/richgel999/miniz
+Release 3.1.1
+
+Disabled parts of miniz via designated defines in miniz.h

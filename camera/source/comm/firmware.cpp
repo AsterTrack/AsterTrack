@@ -55,22 +55,28 @@ static void SendBlockStatus(TrackingCameraState &state, CommState &comm, Firmwar
 	SendFirmwareStatusPacket(state, comm, (uint8_t)FW_STATUS_BLOCK, (uint8_t)status, transfer, block);
 }
 
-static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *data, uint16_t length)
+static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *data, uint16_t length, bool allowReplace = false)
 {
 	if (length < FIRMWARE_PACKET_HEADER)
 	{
-		printf("Invalid Firmware status packet length of %d!\n", length);
+		printf("Invalid firmware packet length of %d!\n", length);
 		return false;
 	}
 	if (state.curMode.streaming)
 	{
-		printf("Received Firmware status packet while streaming!\n");
+		printf("Received firmware packet while streaming!\n");
 		return false;
 	}
 	uint16_t ID = *(uint16_t*)(data+0);
 	if (ID == 0 || (state.firmware && state.firmware.ID != ID))
 	{
-		printf("Received Firmware Apply packet with invalid firmware ID!\n");
+		float deltaMS = dtMS(state.firmware.lastActivity, sclock::now());
+		if (allowReplace && deltaMS > 5000)
+		{
+			printf("Received firmware packet to replace firmware update abandoned %.1fms ago!\n", deltaMS);
+			return true;
+		}
+		printf("Received firmware packet with invalid firmware ID!\n");
 		return false;
 	}
 	return true;
@@ -124,7 +130,7 @@ static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 
 bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
-	if (!validateFirmwarePacket(state, data, length)) return false;
+	if (!validateFirmwarePacket(state, data, length, true)) return false;
 
 	uint16_t ID = *(uint16_t*)(data+0);
 	uint8_t flags = *(uint8_t*)(data+2);

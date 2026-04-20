@@ -700,6 +700,15 @@ void uartd_handle_reset(uint_fast8_t port)
 
 /* ------ I2C Behaviour ------ */
 
+uint8_t i2cd_handle_init(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t *response)
+{
+	lastPiComm = GetTimePoint();
+	piIsBooted = true;
+	response[0] = MCU_I2C_ID;
+	response[1] = MCU_LEADING_BYTES;
+	return 2; // 3 in total with Zero-Byte
+}
+
 bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len)
 {
 	if (command == MCU_BOOT_FIRST)
@@ -792,7 +801,6 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 	static_assert(MCU_INFO_MAX_LENGTH == (10 * sizeof(uint32_t)));
 	return MCU_INFO_MAX_LENGTH;
 }
-
 
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr)
 {

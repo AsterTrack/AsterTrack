@@ -183,7 +183,7 @@ void I2C1_IRQHandler(void)
 				// Determine relevant RX
 				uint16_t receiveLen = LL_DMA_IsEnabledChannel(DMA1, DMA_CH_RX)? GetRXLength() : 0;
 				LL_DMA_DisableChannel(DMA1, DMA_CH_RX);
-				enum CameraMCUCommand command = (enum CameraMCUCommand)receiveBuffer[0];
+				enum CameraMCUCommand command = receiveLen > 0? (enum CameraMCUCommand)receiveBuffer[0] : MCU_CMD_NONE;
 
 				// Prepare default TX Buffer
 				uint8_t prepend = (I2C_PREPENDED_BYTES+7)/8*8;
@@ -195,9 +195,7 @@ void I2C1_IRQHandler(void)
 					// First is always a Zero-Byte to allow switching between leading bytes or not
 					if (MCU_LEADING_BYTES == 0)
 						I2C1->TXDR = 0; // Did not already send a Zero-Byte
-					transmitLength = 2; // 3 in total with Zero-Byte
-					transmitPtr[0] = MCU_I2C_ID;
-					transmitPtr[1] = MCU_LEADING_BYTES;
+					transmitLength = i2cd_handle_init(command, receiveBuffer+1, receiveLen-1, transmitPtr);
 				}
 				else
 				{
@@ -209,9 +207,14 @@ void I2C1_IRQHandler(void)
 
 					if (MCU_LEADING_BYTES == 0)
 					{ // Prepare first byte and setup to DMA the rest
-						I2C1->TXDR = transmitPtr[0];
-						transmitPtr++;
-						transmitLength--;
+						if (transmitLength > 0)
+						{
+							I2C1->TXDR = transmitPtr[0];
+							transmitPtr++;
+							transmitLength--;
+						}
+						else
+							I2C1->TXDR = 0;
 					}
 					else
 					{ // First leading byte is already in TXDR, append and prepend remaining before setting up DMA

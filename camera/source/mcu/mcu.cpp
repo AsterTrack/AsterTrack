@@ -88,6 +88,9 @@ std::atomic<bool> mcu_intentional_bootloader;
 
 int mcu_leading_bytes = MCU_LEADING_BYTES;
 
+std::mutex mcu_packet_mutex;
+std::vector<MCUForwardedPacket> mcu_packet_queue;
+
 const int MCU_RESET_HOLDTIME_MS = 10;
 const int MCU_RESET_WAITTIME_MS = 80;
 
@@ -839,7 +842,15 @@ bool mcu_fetch_packet(uint16_t size)
 			printf("Failed to verify packet checksum from MCU with tag %d and size %d!\n", header.tag, header.length);
 	}
 
-	return ReceivePacketData(state, *comms.get(COMM_MEDIUM_UART), header, packet, header.length, !correctChecksum);
+	// Put packet in queue for UART comm thread to handle
+	MCUForwardedPacket mcuPacket;
+	mcuPacket.header = header;
+	mcuPacket.data = std::vector<uint8_t>(packet, packet+header.length);
+	mcuPacket.valid = correctChecksum;
+
+	std::unique_lock lock(mcu_packet_mutex);
+	mcu_packet_queue.push_back(std::move(mcuPacket));
+	return true;
 }
 
 bool mcu_get_status()

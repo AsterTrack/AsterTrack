@@ -537,14 +537,26 @@ phase_comm:
 		time_read = sclock::now();
 		while (comm.enabled && comm.started && !comm.error)
 		{
-			if (mcu_active)
+			if (comm.medium == COMM_MEDIUM_UART)
 			{
 				// UART RX on the Pi has severe problems, it relies on interrupts clearing the 16-byte FIFO within 22us at 8Mbaud
 				// So frequently, there are missed interrupts and thus bytes missing, making UART RX unreliable
 				// That's why frame sync and all control packets are routed through the MCU (and it needs to parse most of the packets anyway)
 				// The only exception are firmware packets, which are too large and already have robust error handling built-in
-				if (timesync.measurements)
+				if (mcu_active && timesync.measurements)
 					ResetTimeSync(timesync);
+
+				// Parse those forwarded packets here so MCU thread doesn't stall
+				// E.g. firmware control packets may trigger SHA256 calculation lasting hundreds of ms
+				std::vector<MCUForwardedPacket> packetQueue;
+				{
+					std::unique_lock lock(mcu_packet_mutex);
+					packetQueue = std::move(mcu_packet_queue);
+				}
+				for (auto &packet : packetQueue)
+				{
+					ReceivePacketData(state, comm, packet.header, packet.data.data(), packet.data.size(), !packet.valid);
+				}
 			}
 
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);

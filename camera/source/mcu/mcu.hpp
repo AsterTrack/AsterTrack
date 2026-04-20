@@ -36,6 +36,14 @@ extern std::atomic<uint16_t> floatingSupplyVoltageMV;
 extern std::atomic<bool> mcu_exists;
 extern std::atomic<bool> mcu_active;
 
+struct MCUForwardedPacket
+{
+    PacketHeader header;
+    std::vector<uint8_t> data;
+    bool valid;
+};
+extern std::mutex mcu_packet_mutex;
+extern std::vector<MCUForwardedPacket> mcu_packet_queue;
 
 bool mcu_initial_connect(bool probe_attached);
 bool mcu_init();

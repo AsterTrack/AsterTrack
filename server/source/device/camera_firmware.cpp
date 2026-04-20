@@ -90,7 +90,7 @@ struct CameraFirmwareUpdate
 	TimePoint_t applyTime;
 
 	CameraFirmwareUpdate(std::shared_ptr<TrackingCameraState> &camera)
-		: camera(camera) {}
+		: camera(camera), status(FW_STATUS_NONE), concluded(false) {}
 };
 
 struct FirmwareUpdatePlan

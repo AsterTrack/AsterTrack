@@ -767,7 +767,7 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 		{ // Transfer data to all cameras in lockstep (to optimise data transfer through controller)
 			if (!UpdateTransferStatus(update, update.transfers[update.transferIndex]))
 			{ // Transfer is done
-				update.transferIndex = (update.transferIndex++) % update.transfers.size();
+				update.transferIndex = (update.transferIndex + 1) % update.transfers.size();
 				update.blockStart = 0;
 				if (!UpdateTransferStatus(update, update.transfers[update.transferIndex]))
 				{ // May be waiting only for update status packet, with all individual transfers done

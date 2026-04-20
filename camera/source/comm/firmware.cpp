@@ -180,6 +180,7 @@ bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint
 			data += 2;
 			if (pathSize > 0)
 				transfer.file.path = std::string((char*)data, pathSize);
+			data += pathSize;
 		}
 		else if (transfer.type == FW_TX_TYPE_PACKAGE)
 		{
@@ -187,6 +188,7 @@ bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint
 			data += 2;
 			if (depsSize > 0)
 				transfer.package.deps = std::string((char*)data, depsSize);
+			data += depsSize;
 		}
 	}
 	SendUpdateStatus(state, comm, FW_STATUS_INITIATED);

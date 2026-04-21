@@ -84,6 +84,7 @@ std::ofstream timesyncOut;
 
 std::atomic<bool> mcu_exists;
 std::atomic<bool> mcu_active;
+std::atomic<bool> mcu_disabled;
 std::atomic<bool> mcu_intentional_bootloader;
 
 int mcu_leading_bytes = MCU_LEADING_BYTES;
@@ -187,7 +188,12 @@ bool mcu_initial_connect(bool probe_attached)
 				}
 
 				// Reset and probe
-				mcu_reconnect();
+				if (!mcu_reconnect())
+				{
+					printf("Failed to reconnect after auto-upgrading MCU!\n");
+					printf("Disabling MCU to ensure communication channel to controller!\n");
+					mcu_disable();
+				}
 			}
 		}
 		else
@@ -213,7 +219,12 @@ bool mcu_initial_connect(bool probe_attached)
 		}
 
 		// Reset and probe
-		mcu_reconnect();
+		if (!mcu_reconnect())
+		{
+			printf("Failed to reconnect after attempted MCU recovery!\n");
+			printf("Disabling MCU to ensure communication channel to controller!\n");
+			mcu_disable();
+		}
 	}
 
 	return mcu_active;
@@ -379,6 +390,7 @@ void mcu_reset()
 	printf("Resetting MCU...\n");
 
 	mcu_active = false;
+	mcu_disabled = false;
 	mcu_intentional_bootloader = false;
 	mcu_firmware_version_known = false;
 
@@ -395,6 +407,56 @@ void mcu_reset()
 		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_WAITTIME_MS));
+}
+
+void mcu_disable()
+{
+	if (!gpio_chip) return;
+
+	printf("Disabling MCU...\n");
+
+	mcu_exists = false;
+	mcu_active = false;
+	mcu_disabled = true;
+	mcu_intentional_bootloader = false;
+	mcu_firmware_version_known = false;
+
+	mcu_stop_monitor();
+
+	// BOOT0, RESET
+	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_reset))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+	if (gpiod_line_request_get_values(line_request_out, values_reset))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+	if (values_reset[1] != GPIOD_LINE_VALUE_ACTIVE)
+		printf("Failed keep MCU under reset - checked a bit later and reset is low!");
+}
+
+void mcu_check_disabled()
+{
+	if (!gpio_chip) return;
+
+	// BOOT0, RESET
+	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_get_values(line_request_out, values_reset))
+		printf("Failed to get output of GPIO! %d: %s\n", errno, strerror(errno));
+
+	bool is_disabled = values_reset[1] == GPIOD_LINE_VALUE_ACTIVE;
+	if (mcu_disabled != is_disabled)
+	{
+		printf("MCU should be %s but reset output is %s!\n",
+			mcu_disabled? "disabled" : "enabled", is_disabled? "high" : "low");
+
+		// BOOT0, RESET
+		values_reset[0] = GPIOD_LINE_VALUE_INACTIVE;
+		values_reset[1] = mcu_disabled? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE;
+		if (gpiod_line_request_set_values(line_request_out, values_reset))
+			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+	}
 }
 
 bool mcu_probe_bootloader()
@@ -455,6 +517,7 @@ bool mcu_switch_bootloader()
 	{
 		printf("Requesting MCU to switch to bootloader...\n");
 		mcu_active = false;
+		mcu_disabled = false;
 		unsigned char REG_ID[] = { MCU_SWITCH_BOOTLOADER };
 		struct i2c_msg I2C_MSG[] = {
 			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
@@ -488,6 +551,7 @@ bool mcu_switch_bootloader()
 	{
 		printf("Resetting MCU with BOOT0 high to switch to bootloader...\n");
 		mcu_active = false;
+		mcu_disabled = false;
 
 		// BOOT0, RESET
 		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
@@ -1140,11 +1204,21 @@ static bool gpio_init()
 		return false;
 	}
 
+	// Disable GPIO output by default
+	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_normal))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
 	return true;
 }
 
 static void gpio_cleanup()
 {
+	// Disable GPIO output, otherwise they might be active until next boot
+	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_normal))
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+
 	if (edge_events) gpiod_edge_event_buffer_free(edge_events);
 
 	if (line_request_out) gpiod_line_request_release(line_request_out);

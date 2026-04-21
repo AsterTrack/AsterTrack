@@ -51,6 +51,8 @@ bool mcu_probe();
 bool mcu_reconnect();
 void mcu_cleanup();
 void mcu_reset();
+void mcu_disable();
+void mcu_check_disabled();
 bool mcu_probe_bootloader();
 bool mcu_switch_bootloader();
 bool mcu_flash_program(const std::string &filename);

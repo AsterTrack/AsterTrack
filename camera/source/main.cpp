@@ -501,6 +501,16 @@ int main(int argc, char **argv)
 						std::unique_lock lock(mcu_mutex);
 						mcu_update_id(35236462);
 					}
+					else if (cin == 'x')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_disable();
+					}
+					else if (cin == 'c')
+					{
+						std::unique_lock lock(mcu_mutex);
+						mcu_check_disabled();
+					}
 				}
 			}
 

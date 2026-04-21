@@ -517,6 +517,8 @@ phase_identification:
 				printf("%s: Identification timeout exceeded, trying again!\n", commName);
 				comm_write_internal(comm, msg_nak, sizeof(msg_nak));
 				comm_reset(comm);
+				std::unique_lock lock(mcu_mutex);
+				mcu_check_disabled();
 				goto phase_identification;
 			}
 		}

@@ -428,8 +428,15 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		}
 
 		// Reset and probe
-		mcu_reconnect();
+		if (!mcu_reconnect())
+		{
+			postApplyGood = false;
+			// Just disable MCU for now to allow for communication
+			printf("Disabling MCU to ensure communication channel to controller!\n");
+			mcu_disable();
+		}
 	}
+
 
 	state.firmware.applyingUpdate = false;
 	state.firmware.appliedUpdate = true;

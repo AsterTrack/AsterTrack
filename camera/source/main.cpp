@@ -73,7 +73,7 @@ const int emulBufCnt = 4;
 // Terminal Output and Input
 bool isConsole;
 struct termios terminalSettings;
-static void setConsoleRawMode();
+static void setConsoleRawMode(bool certainTTY);
 static char getConsoleChar();
 
 
@@ -277,12 +277,9 @@ int main(int argc, char **argv)
 		return -1;
 
 	// Modify tty to allow for non-blocking input (for console & ssh, but not background execution)
-	isConsole = isatty(STDIN_FILENO);
+	isConsole = true; // Unreliable: isatty(STDIN_FILENO);
 	if (isConsole)
-	{
-		printf("Running in console!\n");
-		setConsoleRawMode();
-	}
+		setConsoleRawMode(isatty(STDIN_FILENO));
 
 	srand((unsigned int)time(NULL));
 
@@ -2178,14 +2175,18 @@ static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTime
 }
 
 /* Sets console to raw mode which among others allows for non-blocking input, even over SSH */
-static void setConsoleRawMode()
+static void setConsoleRawMode(bool certainTTY)
 {
 	tcgetattr(STDIN_FILENO, &terminalSettings);
 	struct termios termSet = terminalSettings;
 	atexit([]{ // Reset at exit
 		tcsetattr(STDIN_FILENO, TCSANOW, &terminalSettings);
 	});
-	termSet.c_lflag &= ~(ECHO | ICANON);
+	termSet.c_lflag &= ~ICANON;
+	if (certainTTY)
+	{ // Nice-to-have, but bad if accidentally set as it affects gdb as well
+		termSet.c_lflag &= ~ECHO;
+	}
 	termSet.c_cc[VMIN] = 0;
 	termSet.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSANOW, &termSet);

@@ -95,16 +95,48 @@ const int MCU_RESET_HOLDTIME_MS = 10;
 const int MCU_RESET_WAITTIME_MS = 80;
 
 static bool i2c_init();
-static bool i2c_probe();
 static void i2c_cleanup();
+static bool i2c_handle_error();
+static bool i2c_probe();
 
 static bool gpio_init();
 static void gpio_cleanup();
 
+static void mcu_is_connected();
+static void mcu_does_exist();
 static bool mcu_send_ping();
-
+static void mcu_start_monitor();
+static void mcu_stop_monitor();
 static void mcu_thread();
 
+
+bool mcu_init()
+{
+#ifdef WRITE_TIMESYNC_LOG
+	timesyncOut.open(asprintf_s("/home/tc/timesync_%d.csv", rand()), std::ios_base::out | std::ios_base::app);
+#endif
+
+	mcu_active = false;
+	mcu_exists = false;
+	bool i2c = i2c_init();
+	bool gpio = gpio_init();
+	return i2c && gpio;
+}
+
+void mcu_cleanup()
+{
+	mcu_stop_monitor();
+
+	if (gpio_chip)
+		gpio_cleanup();
+
+	if (i2c_fd >= 0)
+		i2c_cleanup();
+
+#ifdef WRITE_TIMESYNC_LOG
+	timesyncOut.close();
+#endif
+}
 
 bool mcu_initial_connect(bool probe_attached)
 {
@@ -187,39 +219,6 @@ bool mcu_initial_connect(bool probe_attached)
 	return mcu_active;
 }
 
-bool mcu_init()
-{
-#ifdef WRITE_TIMESYNC_LOG
-	timesyncOut.open(asprintf_s("/home/tc/timesync_%d.csv", rand()), std::ios_base::out | std::ios_base::app);
-#endif
-	mcu_active = false;
-	mcu_exists = false;
-	bool i2c = i2c_init();
-	bool gpio = gpio_init();
-	return i2c && gpio;
-}
-
-static void mcu_is_connected()
-{
-	if (!mcu_active)
-	{
-		printf("Connected with MCU!\n");
-		ResetTimeSync(timesync);
-		mcu_active = true;
-		mcu_sync_info();
-	}
-}
-
-static void mcu_does_exist()
-{
-	if (!mcu_exists)
-	{
-		printf("Verified existance of MCU!\n");
-		mcu_exists = true;
-		mcu_monitor();
-	}
-}
-
 bool mcu_probe()
 {
 	if (i2c_fd < 0) return false;
@@ -257,7 +256,28 @@ bool mcu_reconnect()
 	return false;
 }
 
-void mcu_monitor()
+static void mcu_is_connected()
+{
+	if (!mcu_active)
+	{
+		printf("Connected with MCU!\n");
+		ResetTimeSync(timesync);
+		mcu_active = true;
+		mcu_sync_info();
+	}
+}
+
+static void mcu_does_exist()
+{
+	if (!mcu_exists)
+	{
+		printf("Verified existance of MCU!\n");
+		mcu_exists = true;
+		mcu_start_monitor();
+	}
+}
+
+static void mcu_start_monitor()
 {
 	lastPing = sclock::now();
 	if (!mcu_comm_thread)
@@ -267,33 +287,13 @@ void mcu_monitor()
 	}
 }
 
-void mcu_cleanup()
+static void mcu_stop_monitor()
 {
 	stop_thread = true;
 	if (mcu_comm_thread && mcu_comm_thread->joinable())
 		mcu_comm_thread->join();
 	delete mcu_comm_thread;
 	mcu_comm_thread = nullptr;
-
-	if (gpio_chip)
-		gpio_cleanup();
-
-	if (i2c_fd >= 0)
-		i2c_cleanup();
-
-#ifdef WRITE_TIMESYNC_LOG
-	timesyncOut.close();
-#endif
-}
-
-static bool handle_i2c_error()
-{
-	mcu_active = false;
-	if (errno == EBADF || errno == ETIMEDOUT)
-	{
-		i2c_init();
-	}
-	return false;
 }
 
 static void mcu_thread()
@@ -463,7 +463,7 @@ bool mcu_switch_bootloader()
 		if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 		{
 			printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
-			handle_i2c_error();
+			i2c_handle_error();
 			return false;
 		}
 
@@ -678,7 +678,7 @@ static bool mcu_send_ping()
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to send I2C message to MCU (ping)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 	return true;
@@ -695,7 +695,7 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get descriptor)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 
@@ -721,7 +721,7 @@ static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get subparts)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 
@@ -744,7 +744,7 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (fetch info)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 
@@ -815,7 +815,7 @@ bool mcu_update_id(CameraID cameraID)
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to send I2C message to MCU (update ID)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 	return true;
@@ -845,7 +845,7 @@ bool mcu_fetch_packet(uint16_t size)
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (fetch packet)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 	if (size < PACKET_HEADER_SIZE + PACKET_CHECKSUM_SIZE)
@@ -900,7 +900,7 @@ bool mcu_get_status()
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get status)! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 	TimePoint_t receiveTime = sclock::now();
@@ -1015,6 +1015,23 @@ static bool i2c_init()
 	return true;
 }
 
+static void i2c_cleanup()
+{
+	if (i2c_fd >= 0)
+		close(i2c_fd);
+	i2c_fd = -1;
+}
+
+static bool i2c_handle_error()
+{
+	mcu_active = false;
+	if (errno == EBADF || errno == ETIMEDOUT)
+	{
+		i2c_init();
+	}
+	return false;
+}
+
 static bool i2c_probe()
 {
 	if (i2c_fd < 0) return false;
@@ -1029,7 +1046,7 @@ static bool i2c_probe()
 	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
 	{
 		printf("Failed to read MCU ID register! %d: %s\n", errno, strerror(errno));
-		handle_i2c_error();
+		i2c_handle_error();
 		return false;
 	}
 
@@ -1049,13 +1066,6 @@ static bool i2c_probe()
 		return false;
 	mcu_leading_bytes = MCU_INIT[2];
 	return true;
-}
-
-static void i2c_cleanup()
-{
-	if (i2c_fd >= 0)
-		close(i2c_fd);
-	i2c_fd = -1;
 }
 
 static bool gpio_init()

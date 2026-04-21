@@ -49,7 +49,6 @@ bool mcu_initial_connect(bool probe_attached);
 bool mcu_init();
 bool mcu_probe();
 bool mcu_reconnect();
-void mcu_monitor();
 void mcu_cleanup();
 void mcu_reset();
 bool mcu_probe_bootloader();

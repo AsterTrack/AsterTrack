@@ -65,7 +65,7 @@ struct ClientCommState
 	}
 };
 
-bool comm_write(ClientCommState &comm, PacketTag tag, const uint8_t *data, uint16_t length);
-void comm_abort(ClientCommState &comm);
+bool comm_client_write(ClientCommState &comm, const uint8_t *data, uint16_t length);
+void comm_client_abort(ClientCommState &comm);
 
 #endif // COMM_SERVER_CLIENT_H

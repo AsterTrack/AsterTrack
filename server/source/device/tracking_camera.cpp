@@ -45,37 +45,47 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
+	CommMedium medium = COMM_MEDIUM_UART;
 	if (client && client->ready && length > 100)
-	{ // Prefer wireless for "larger" packets
-		return comm_write(*client, tag, data, (uint16_t)length);
-	}
+		medium = COMM_MEDIUM_WIFI; // Prefer wireless for "larger" packets
 	else if (controller && (camState.commState == COMM_SBC_READY || dtMS(camState.lastConnected, sclock::now()) < 300))
-	{ // Prefer UART for small packets
-		thread_local std::vector<uint8_t> packetBuffer;
-		if (length > 0)
-		{
-			packetBuffer.resize(length + PACKET_CHECKSUM_SIZE);
-			memcpy(packetBuffer.data(), data, length);
-			if (tag >= PACKET_HOST_COMM)
-				calculateForwardPacketChecksum(packetBuffer.data(), length, packetBuffer.data()+length);
-			else // We should not be sending these packets, but do allow for it
-				calculateDirectPacketChecksum(packetBuffer.data(), length, packetBuffer.data()+length);
-			LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(packetBuffer.data()+length));
-		}
-		else
-			packetBuffer.clear();
-		return comm_submit_control_data(controller->comm, COMMAND_OUT_SEND_PACKET,
-			(uint16_t)tag, (uint16_t)(1<<port), packetBuffer.data(), (uint16_t)packetBuffer.size()) >= 0;
-	}
+		medium = COMM_MEDIUM_UART; // Prefer UART for small packets
 	else if (client && client->ready)
-	{ // Fall back to wireless for small packets
-		return comm_write(*client, tag, data, (uint16_t)length);
-	}
+		medium = COMM_MEDIUM_WIFI; // Fall back to wireless for small packets
 	else
 	{
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is not started up yet!", id);
 		return false;
 	}
+	auto prepareBuffer = [&](uint8_t *buffer)
+	{
+		if (length == 0) return;
+		memcpy(buffer, data, length);
+		if (tag >= PACKET_HOST_COMM)
+			calculateForwardPacketChecksum(buffer, length, buffer+length);
+		else // We should not be sending these packets, but do allow for it
+			calculateDirectPacketChecksum(buffer, length, buffer+length);
+		LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(buffer+length));
+	};
+	thread_local std::vector<uint8_t> packetBuffer;
+	int checksum = length > 0? PACKET_CHECKSUM_SIZE : 0;
+	if (medium == COMM_MEDIUM_WIFI)
+	{
+		packetBuffer.resize(UART_PACKET_OVERHEAD_SEND + length - PACKET_CHECKSUM_SIZE + checksum);
+		UARTPacketRef *packet = (UARTPacketRef*)packetBuffer.data();
+		prepareBuffer(packet->data);
+		writeUARTPacketHeader(packet, PacketHeader(tag, length));
+		writeUARTPacketEnd(packet, length + checksum);
+		return comm_client_write(*client, packetBuffer.data(), (uint16_t)packetBuffer.size());
+	}
+	else if (medium == COMM_MEDIUM_UART)
+	{
+		packetBuffer.resize(length + checksum);
+		prepareBuffer(packetBuffer.data());
+		return comm_submit_control_data(controller->comm, COMMAND_OUT_SEND_PACKET,
+			(uint16_t)tag, (uint16_t)(1<<port), packetBuffer.data(), (uint16_t)(packetBuffer.size())) >= 0;
+	}
+	return false;
 }
 
 bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)

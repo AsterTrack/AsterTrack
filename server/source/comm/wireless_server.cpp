@@ -343,24 +343,9 @@ static void comm_identify(ClientCommState &comm)
 	LOG(LWireless, LDebug, "Sent identification packet!\n");
 }
 
-bool comm_write(ClientCommState &comm, PacketTag tag, const uint8_t *data, uint16_t length)
+bool comm_client_write(ClientCommState &comm, const uint8_t *packet, uint16_t length)
 {
-	thread_local std::vector<uint8_t> packetBuffer;
-	packetBuffer.resize(UART_PACKET_OVERHEAD_SEND + (length > 0? length : -PACKET_CHECKSUM_SIZE));
-	UARTPacketRef *packet = (UARTPacketRef*)packetBuffer.data();
-	writeUARTPacketHeader(packet, PacketHeader(tag, length));
-	if (length > 0)
-	{ // Write appropriate checksum
-		memcpy(packet->data, data, length);
-		if (tag >= PACKET_HOST_COMM)
-			calculateForwardPacketChecksum(packet->data, length, packet->data+length);
-		else // We should not be sending these packets, but do allow for it
-			calculateDirectPacketChecksum(packet->data, length, packet->data+length);
-		writeUARTPacketEnd(packet, length+PACKET_CHECKSUM_SIZE);
-	}
-	else // No checksum
-		writeUARTPacketEnd(packet, length);
-	bool success = comm_write_internal(comm, packetBuffer.data(), packetBuffer.size());
+	bool success = comm_write_internal(comm, packet, length);
 	if (success) comm_flush(comm);
 	return success;
 }

@@ -39,7 +39,8 @@ static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm
 	*(uint8_t*)(FWPacket.data()+5) = transfer;
 	*(uint16_t*)(FWPacket.data()+6) = block;
 
-	comm_send(&comm, PacketHeader(PACKET_FW_STATUS, FWPacket.size()), std::move(FWPacket));
+	if (!comm_send(&comm, PacketHeader(PACKET_FW_STATUS, FWPacket.size()), std::move(FWPacket), true))
+		printf("Failed to send firmware status packet!\n");
 }
 
 static void SendUpdateStatus(TrackingCameraState &state, CommState &comm, FirmwareStatus status)
@@ -476,6 +477,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 	}
 
+	printf("Finished applying firmware update %s!\n", postApplyGood? "successfully" : "incompletely");
 	state.firmware.applyingUpdate = false;
 	state.firmware.appliedUpdate = true;
 	state.firmware.appliedUpdateIssues = !postApplyGood;

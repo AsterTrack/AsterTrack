@@ -241,14 +241,20 @@ int main(void)
 
 		if (piWantsBootloader)
 		{
-			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
+			// Signal status on LEDs
 			rgbled_transition(LED_BOOTLOADER, 0);
-			SafeDelayMS(100);
+			// Route UART to MCU
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			delayUS(100);
+			// Force NAK controller so it won't accidentally send 0x7F to trigger UART in bootloader
+			EnterUARTPortZone(0); // Mostly for the debug
+			uartd_nak_int(0);
+			LeaveUARTPortZone(0);
+			// Wait a bit for LED to apply
+			SafeDelayMS(1);
 			// Set flag that persists the reset to switch to bootloader
 			*BOOTLOADER_FLAG = BOOTLOADER_KEY;
 			NVIC_SystemReset();
-			// Should never get here
-			rgbled_animation(&LED_ANIM_FLASH_BAD);
 			while (true);
 		}
 

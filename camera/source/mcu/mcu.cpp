@@ -393,6 +393,7 @@ void mcu_reset()
 	mcu_disabled = false;
 	mcu_intentional_bootloader = false;
 	mcu_firmware_version_known = false;
+	comm_report_uart_interruption();
 
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE };
@@ -420,6 +421,7 @@ void mcu_disable()
 	mcu_disabled = true;
 	mcu_intentional_bootloader = false;
 	mcu_firmware_version_known = false;
+	comm_report_uart_interruption();
 
 	mcu_stop_monitor();
 
@@ -518,6 +520,8 @@ bool mcu_switch_bootloader()
 		printf("Requesting MCU to switch to bootloader...\n");
 		mcu_active = false;
 		mcu_disabled = false;
+		comm_report_uart_interruption();
+
 		unsigned char REG_ID[] = { MCU_SWITCH_BOOTLOADER };
 		struct i2c_msg I2C_MSG[] = {
 			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
@@ -552,6 +556,7 @@ bool mcu_switch_bootloader()
 		printf("Resetting MCU with BOOT0 high to switch to bootloader...\n");
 		mcu_active = false;
 		mcu_disabled = false;
+		comm_report_uart_interruption();
 
 		// BOOT0, RESET
 		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };

@@ -208,9 +208,10 @@ int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<u
 	return largePacket->blockOffset >= largePacket->totalSize? 2 : 1;
 }
 
-bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, bool waitForReady)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!waitForReady && !commPtr->ready) return false;
 	std::unique_lock lock(commPtr->queueMutex);
 	commPtr->packetQueue.emplace(header, std::move(data));
 	return true;
@@ -224,26 +225,28 @@ bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_
 	return true;
 }
 
-bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data)
+bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data, bool waitForReady)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
-	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!waitForReady && !commPtr->ready) return false;
+	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id() || !commPtr->ready)
 	{ // Need to enqueue for different controlling thread to send
 		std::vector<uint8_t> packet(header.length);
 		memcpy(packet.data(), data, header.length);
-		return comm_queue_send(commPtr, header, std::move(packet));
+		return comm_queue_send(commPtr, header, std::move(packet), waitForReady);
 	}
 	else
 		return comm_send_immediate(commPtr, header, data);
 }
 
-bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data)
+bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, bool waitForReady)
 {
-	if (!commPtr || !commPtr->enabled || !commPtr->started || !commPtr->ready || commPtr->error) return false;
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return false;
+	if (!waitForReady && !commPtr->ready) return false;
 	if (data.size() != header.length) return false;
-	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id())
+	if (commPtr->realtimeControlled || std::this_thread::get_id() != commPtr->thread->get_id() || !commPtr->ready)
 	{ // Need to enqueue for different controlling thread to send
-		return comm_queue_send(commPtr, header, std::move(data));
+		return comm_queue_send(commPtr, header, std::move(data), waitForReady);
 	}
 	else
 		return comm_send_immediate(commPtr, header, data.data());
@@ -257,6 +260,45 @@ bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data)
 bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data)
 {
 	return comm_send(comms.get(comm), header, std::move(data));
+}
+
+static const char* comm_get_name(CommState &comm)
+{ // Name to use for thread and logging
+	if (comm.medium == COMM_MEDIUM_UART)
+		return "UART";
+	else if (comm.medium == COMM_MEDIUM_WIFI)
+		return "Wireless";
+	return "Unknown";
+}
+
+static void comm_send_pending_packets(CommState *commPtr)
+{
+	if (!commPtr || !commPtr->enabled || !commPtr->started || commPtr->error) return;
+	CommState &comm = *commPtr;
+	// Send off all pending packets
+	std::unique_lock lock(comm.queueMutex);
+	while (!comm.realtimeControlled && !comm.packetQueue.empty())
+	{
+		auto &packet = comm.packetQueue.front();
+		if (!packet.largePacketHeader.empty())
+		{ // Send large packet all at once since it's not realtime-relevant
+			int sent = 0;
+			int ret = comm_send_block(commPtr, packet.header, packet.data, packet.largePacketHeader, std::numeric_limits<int>::max(), sent);
+			if (ret != 2)
+			{ // Not fully sent, should not occur
+				printf("%s: Failed to send queued large packet!\n", comm_get_name(comm));
+				comm.packetQueue.pop();
+				break;
+			}
+		}
+		else if (!comm_send_immediate(commPtr, packet.header, packet.data.data()))
+		{ // Failed to send queued packet
+			printf("%s: Failed to send queued packet!\n", comm_get_name(comm));
+			comm.packetQueue.pop();
+			break;
+		}
+		comm.packetQueue.pop();
+	}
 }
 
 inline void comm_reset(CommState &comm)
@@ -330,7 +372,7 @@ inline int comm_read_internal(CommState &comm, uint32_t timeoutUS)
 
 bool comm_interject(CommState *commPtr)
 {
-	if (!commPtr || !commPtr->ready || commPtr->error) return false;
+	if (!commPtr || !commPtr->ready || commPtr->error) return true;
 	CommState &comm = *commPtr;
 	if (!comm.writing) return true;
 	comm.writing = false;
@@ -346,7 +388,7 @@ bool comm_interject(CommState *commPtr)
 	return true;
 }
 
-void comm_force_close(CommState *commPtr)
+void comm_force_close(CommState *commPtr, bool error)
 {
 	if (!commPtr || !commPtr->ready || commPtr->error) return;
 	CommState &comm = *commPtr;
@@ -354,7 +396,20 @@ void comm_force_close(CommState *commPtr)
 	finaliseDirectUARTPacket(msg_nak, PacketHeader(PACKET_NAK, 0));
 	comm.write(comm.port, msg_nak, sizeof(msg_nak));
 	comm.flush(comm.port);
-	comm.error = true;
+	comm.ready = false;
+	comm.error = error;
+}
+
+void comm_report_uart_interruption()
+{ // Prepare for upcoming UART interruption (by e.g. resetting MCU)
+	CommState *comm_ptr = comms.medium[COMM_MEDIUM_UART];
+	// Interject in any packet being send on realtime thread using packet/write/submit API
+	if (!comm_interject(comm_ptr))
+		printf("Failed to interject in ongoing distributed UART write!\n");
+	// Send off all pending packets
+	comm_send_pending_packets(comm_ptr);
+	// Send NAK to notify controller and forcefully close
+	comm_force_close(comm_ptr, false);
 }
 
 void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
@@ -371,11 +426,7 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	finaliseDirectUARTPacket(msg_ack, PacketHeader(PACKET_ACK, 0));
 
 	// Set name to use for thread and logging
-	const char* commName = "Unknown";
-	if (comm.medium == COMM_MEDIUM_UART)
-		commName = "UART";
-	else if (comm.medium == COMM_MEDIUM_WIFI)
-		commName = "Wireless";
+	const char* commName = comm_get_name(comm);
 
 	// Set thread properties
 	prctl(PR_SET_NAME, asprintf_s("Comm_%s", commName).c_str());
@@ -537,7 +588,7 @@ phase_comm:
 		sentInfo = false;
 
 		time_read = sclock::now();
-		while (comm.enabled && comm.started && !comm.error)
+		while (comm.enabled && comm.started && !comm.error && comm.ready)
 		{
 			if (comm.medium == COMM_MEDIUM_UART)
 			{
@@ -706,35 +757,15 @@ phase_comm:
 			}
 
 			// Parsing done, now send from packet queue if it's not handled by main thread for realtime data
-			std::unique_lock lock(comm.queueMutex);
-			while (!comm_ptr->realtimeControlled && !comm.packetQueue.empty())
-			{
-				auto &packet = comm.packetQueue.front();
-				if (!packet.largePacketHeader.empty())
-				{ // Send large packet all at once since it's not realtime-relevant
-					int sent = 0;
-					int ret = comm_send_block(comm_ptr, packet.header, packet.data, packet.largePacketHeader, std::numeric_limits<int>::max(), sent);
-					if (ret != 2)
-					{ // Not fully sent, should not occur
-						printf("%s: Failed to send large packet from comm thread!\n", commName);
-						comm.packetQueue.pop();
-						break;
-					}
-				}
-				else if (!comm_send_immediate(comm_ptr, packet.header, packet.data.data()))
-				{ // Failed to send queued packet
-					printf("%s: Failed to send queued packet from comm thread!\n", commName);
-					comm.packetQueue.pop();
-					break;
-				}
-				comm.packetQueue.pop();
-			}
+			comm_send_pending_packets(comm_ptr);
 		}
 
 		if (comm.error)
 			printf("%s: Comms got interrupted because of a write error in another thread!\n", commName);
 		else
 			printf("%s: Comms got interrupted for unknown reason!\n", commName);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
 	comm_stop(comm);

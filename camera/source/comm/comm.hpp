@@ -103,21 +103,22 @@ bool comm_send_immediate(CommState *commPtr, PacketHeader header, const uint8_t 
 /* Send part of a large packet, depending on budget, assuming full control over comm TX */
 int comm_send_block(CommState *commPtr, PacketHeader header, const std::vector<uint8_t> &data, std::vector<uint8_t> &largePacketHeader, int budget, int &sent);
 /* Queue packet to be send via comm in it's respective controlling thread */
-bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data);
+bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, bool waitForReady = false);
 /* Queue large packet to be send (in blocks, if necessary) via comm in it's respective controlling thread */
 bool comm_queue_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, std::vector<uint8_t> largePacketHeader);
 
 /* Send packet, immediately if in controlling thread, queue if not.  */
-bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data);
+bool comm_send(CommState *commPtr, PacketHeader header, const uint8_t *data, bool waitForReady = false);
 /* Send packet, immediately if in controlling thread, queue if not.  */
-bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data);
+bool comm_send(CommState *commPtr, PacketHeader header, std::vector<uint8_t> &&data, bool waitForReady = false);
 /* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommMedium comm, PacketHeader header, const uint8_t *data);
 /* Send packet, immediately if in controlling thread, queue if not.  */
 bool comm_send(CommMedium comm, PacketHeader header, std::vector<uint8_t> &&data);
 
 bool comm_interject(CommState *commPtr);
-void comm_force_close(CommState *commPtr);
+void comm_force_close(CommState *commPtr, bool error = true);
+void comm_report_uart_interruption();
 
 inline bool comm_anyReady(CommList &comms)
 {

@@ -39,21 +39,17 @@ bool TrackingCameraState::hasComms()
 
 bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int length)
 {
-	if (state.contextualRLock()->error.encountered)
+	auto camState = *state.contextualRLock();
+	if (camState.error.encountered)
 	{
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
-	}
-	if (!hasComms())
-	{
-		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is not started up yet!", id);
-		return false;
 	}
 	if (client && client->ready && length > 100)
 	{ // Prefer wireless for "larger" packets
 		return comm_write(*client, tag, data, (uint16_t)length);
 	}
-	else if (controller && state.contextualRLock()->commState == COMM_SBC_READY)
+	else if (controller && (camState.commState == COMM_SBC_READY || dtMS(camState.lastConnected, sclock::now()) < 300))
 	{ // Prefer UART for small packets
 		thread_local std::vector<uint8_t> packetBuffer;
 		if (length > 0)
@@ -76,7 +72,10 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 		return comm_write(*client, tag, data, (uint16_t)length);
 	}
 	else
+	{
+		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is not started up yet!", id);
 		return false;
+	}
 }
 
 bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)

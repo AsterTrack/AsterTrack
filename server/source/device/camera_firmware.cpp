@@ -333,7 +333,7 @@ static bool CameraApplyFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmware
 	else
 	{
 		LOG(LFirmwareUpdate, LWarn, "Camera %u failed to send firmware apply packet!", camState.camera->id);
-		status->text = "Failed to send final packet to apply firmware update!";
+		status->text = "Failed to send packet to apply firmware update!";
 		status->code = FW_STATUS_ERROR;
 	}
 	return success;
@@ -541,9 +541,16 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 
 static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState)
 {
+	bool camHasComms = camState.camera->hasComms();
 	auto camStatus = camState.camera->firmware->contextualLock();
 	if (camState.concluded && !camStatus->packets.empty())
 		LOG(LFirmwareUpdate, LWarn, "Received firmware update packet from camera after it has already concluded!");
+	if (!camHasComms && !camStatus->packets.empty())
+	{ // Controller has not sent status-packet yet that camera is connected
+		// Can either upend the "don't send packets when camera is not connected" protection or just delay parsing until it is connected
+		LOG(LFirmwareUpdate, LDarn, "Received firmware update packet from camera without active comms! Response might not arrive!");
+	}
+	
 	bool abort = false;
 	for (auto &packet : camStatus->packets)
 	{ // Read and apply status messages from camera

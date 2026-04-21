@@ -662,6 +662,12 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			else
 			{
+				if (camera->state.contextualRLock()->commState != COMM_SBC_READY)
+				{ // Known to happen after MCU flashing during firmware update, camera sends packet right after reconnecting
+					// but host only knows its connected when querying controller with status packet, which may happen after
+					LOG(LCameraDevice, LDarn, "Received packet from camera #%u despite it not being known as connected!", camera->id);
+					camera->state.contextualLock()->lastConnected = sclock::now();
+				}
 				ReadCameraPacket(*camera, packet.header, packet.data.data(), packet.data.size(), packet.erroneous);
 			}
 		});

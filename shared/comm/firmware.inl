@@ -37,6 +37,8 @@ static bool ReadFirmwareTag(std::ifstream &fs, FirmwareTagHeader &tag)
 
 	if (!parseFirmwareTagHeader(tagBuffer, &tag))
 		return false;
+	if (size <= tag.size+tag.descLen)
+		return false; // Is tag itself, undesired
 	tag.valid = true;
 
 	if (tag.descLen > 0)

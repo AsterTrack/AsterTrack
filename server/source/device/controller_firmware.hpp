@@ -25,7 +25,7 @@ struct TrackingControllerState; // device/tracking_controller.hpp
 
 struct ControllerFirmwareUpdateStatus
 {
-	bool complete;
+	bool concluded;
 	bool success;
 	int progress;
 	int size;
@@ -37,6 +37,6 @@ typedef std::shared_ptr<Synchronised<ControllerFirmwareUpdateStatus>> Controller
 
 ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<TrackingControllerState> controller, std::string firmware);
 
-std::string ControllerFirmwareDescriptor(std::string firmwareFile);
+bool ControllerCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor);
 
 #endif // CONTROLLER_FIRMWARE_H

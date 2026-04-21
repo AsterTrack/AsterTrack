@@ -169,7 +169,7 @@ static void CameraShowTransferStatus(CameraFirmwareUpdateStatus &status, Firmwar
 {
 	if (camTXStatus.code == FW_TX_QUEUED)
 	{
-		status.text = asprintf_s("Camera does not require transfer %d!", transfer.index+1);
+		status.text = asprintf_s("Transfer %d not started!", transfer.index+1);
 	}
 	else if (camTXStatus.code == FW_TX_TRANSFERRING)
 	{
@@ -177,11 +177,11 @@ static void CameraShowTransferStatus(CameraFirmwareUpdateStatus &status, Firmwar
 	}
 	else if (camTXStatus.code == FW_TX_TRANSFERRED)
 	{
-		status.text = asprintf_s("Firmware update transfer %d succeeded!", transfer.index+1);
+		status.text = asprintf_s("Transfer %d succeeded!", transfer.index+1);
 	}
 	else if (camTXStatus.code == FW_TX_ERROR)
 	{
-		status.text = asprintf_s("Firmware update transfer %d failed!", transfer.index+1);
+		status.text = asprintf_s("Transfer %d failed!", transfer.index+1);
 	}
 }
 
@@ -424,7 +424,6 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		}
 		case FW_STATUS_ABORT:
 		{ // Camera acknowledged a successful firmware update abort request
-			LOG(LFirmwareUpdate, LWarn, "Camera %u successfully aborted the firmware update!", camState.camera->id);
 			concludeFWUpdate();
 			camStatus.text = "Successfully aborted update!";
 			camStatus.code = FW_STATUS_ABORT;
@@ -433,7 +432,6 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		case FW_STATUS_ERROR:
 		case FW_STATUS_ISSUE:
 		{ // Camera encountered an error during transfer (perhaps wrong transfer SHA256 despite correct blocks)
-			LOG(LFirmwareUpdate, LWarn, "Camera %u encountered an error during firmware update!", camState.camera->id);
 			concludeFWUpdate();
 			if (camStatus.code == FW_STATUS_INITIATING)
 				camStatus.text = "Failed to initiate update!";
@@ -464,7 +462,9 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 			return true;
 		}
 		default:
-			LOG(LFirmwareUpdate, LWarn, "Camera %u received an unknown firmware update status code %d!", camState.camera->id, status);
+			concludeFWUpdate();
+			camStatus.text = asprintf_s("Received unknown status %d!", status);
+			camStatus.code = FW_STATUS_ERROR;
 			return false;
 		}
 	}
@@ -501,6 +501,11 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 			LOG(LFirmwareUpdate, LInfo, "Confirmed successful transfer %d!", index);
 			camTXStatus.code = txStatus;
 			camStatus.text = asprintf_s("Firmware update transfer %d succeeded!", transfer.index+1);
+			return true;
+		}
+		else if (txStatus == FW_TX_TRANSFERRING)
+		{ // Still just transferring
+			camTXStatus.code = FW_TX_TRANSFERRING;
 			return true;
 		}
 		LOG(LFirmwareUpdate, LWarn, "Received unknown status %d for transfer %d!!", status, index);
@@ -615,6 +620,7 @@ static void ReportFirmwareUpdateError(FirmwareUpdateRef &updateStatus, std::stri
 	auto status = updateStatus->contextualLock();
 	status->text = error;
 	status->code = FW_STATUS_ERROR;
+	status->concluded = true;
 }
 
 static void SwitchToTransfer(FirmwareUpdatePlan &update, FirmwareTransfer &transfer)
@@ -833,7 +839,7 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 
 	if (update.abort.stop_requested())
 	{
-		LOG(LFirmwareUpdate, LError, "Firmware Update aborted by the user!");
+		LOG(LFirmwareUpdate, LWarn, "Firmware Update aborted by the user!");
 		update.status->contextualLock()->text = "Aborting Firmware Update...";
 
 		TimePoint_t sendTime, abortTime = sclock::now();
@@ -872,11 +878,13 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 		auto status = update.status->contextualLock();
 		status->text = "Firmware Update has been aborted!";
 		status->code = FW_STATUS_ABORT;
+		status->concluded = true;
 	}
 	else
 	{ // Ensure status reflects that we're exiting
-		auto status = update.status->contextualRLock();
+		auto status = update.status->contextualLock();
 		assert(status->code == FW_STATUS_UPDATED || status->code == FW_STATUS_ERROR || status->code == FW_STATUS_ABORT);
+		status->concluded = true;
 	}
 
 	// Notify cameras that firmware update is ending so they may clean up
@@ -1108,15 +1116,21 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	return updateStatus;
 }
 
-std::string CameraFirmwareDescriptor(std::string firmwareFile)
+bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor)
 {
 	std::filesystem::path firmware(firmwareFile);
 	if (!std::filesystem::exists(firmware))
-		return "Missing Firmware File";
+	{
+		firmwareDescriptor = "Missing Firmware File";
+		return false;
+	}
 
 	std::ifstream fs(firmware, std::ios::binary);
 	if (!fs.is_open())
-		return "Inaccessible Firmware File";
+	{
+		firmwareDescriptor = "Inaccessible Firmware File";
+		return false;
+	}
 
 	// Some firmware files may be tagged. Not required, but provides meta info
 	FirmwareTagHeader tag;
@@ -1128,30 +1142,35 @@ std::string CameraFirmwareDescriptor(std::string firmwareFile)
 	{
 	case FW_TX_TYPE_SBC_PKG:
 		if (tag.valid)
-			return asprintf_s("Camera SBC v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera SBC v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
 		else
-		 	return asprintf_s("Untagged Package '%s'", firmware.filename().generic_string().c_str());
+		 	firmwareDescriptor = asprintf_s("Untagged Package '%s'", firmware.filename().generic_string().c_str());
+		return true;
 	case FW_TX_TYPE_MCU_BIN:
 		if (tag.valid)
-			return asprintf_s("Camera MCU v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera MCU v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
 		else
-		 	return asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+		 	firmwareDescriptor = asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+		return true;
 	case FW_TX_TYPE_PACKAGE:
-		return asprintf_s("PiCore Package %s", firmware.filename().generic_string().c_str());
+		firmwareDescriptor = asprintf_s("PiCore Package %s", firmware.filename().generic_string().c_str());
+		return false;
 	case FW_TX_TYPE_OSIMAGE:
-		return asprintf_s("OS Image %s", firmware.filename().generic_string().c_str());
+		firmwareDescriptor = asprintf_s("OS Image %s", firmware.filename().generic_string().c_str());
+		return false;
 	case FW_TX_TYPE_ARCHIVE:
 	case FW_TX_TYPE_UPDATE:
 		if (tag.valid)
-			return asprintf_s("Camera Update v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera Update v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
 		else
-		 	return asprintf_s("Untagged Update '%s'", firmware.filename().generic_string().c_str());
+		 	firmwareDescriptor = asprintf_s("Untagged Update '%s'", firmware.filename().generic_string().c_str());
+		return type == FW_TX_TYPE_ARCHIVE;
 	case FW_TX_TYPE_FILE:
 	case FW_TX_TYPE_UNKNOWN:
+	default:
 		if (tag.valid && tag.type == FW_TAG_CONT_MCU_BIN)
-			return "Invalid Binary (Controller FW)";
-		return asprintf_s("Invalid file '%s'", firmware.filename().generic_string().c_str());
+			firmwareDescriptor = "Invalid Binary (Controller FW)";
+		firmwareDescriptor = asprintf_s("Invalid file '%s'", firmware.filename().generic_string().c_str());
+		return false;
 	}
-	// Should not reach here
-	return asprintf_s("Invalid file '%s'", firmware.filename().generic_string().c_str());
 }

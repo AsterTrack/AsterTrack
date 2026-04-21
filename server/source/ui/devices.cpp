@@ -496,9 +496,14 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", status->text.c_str());
 		SameLineTrailing(button.x);
-		bool ended = status->code == FW_STATUS_UPDATED || status->code == FW_STATUS_ERROR || status->code == FW_STATUS_ABORT;
-		if (ended && ImGui::Button("Close", button))
-		{ // Close or abort firmware update
+		ImGui::BeginDisabled(status->abort.stop_requested());
+		if (!status->concluded && ImGui::Button("Abort", button))
+		{
+			status->abort.request_stop();
+		}
+		ImGui::EndDisabled();
+		if (status->concluded && ImGui::Button("Close", button))
+		{
 			for (auto &camera : state.cameras)
 			{
 				camera->selectedForFirmware = false;
@@ -506,10 +511,6 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			status.unlock();
 			cameraFWUpdateState = nullptr;
-		}
-		if (!ended && ImGui::Button("Abort", button))
-		{ // Close or abort firmware update
-			status->abort.request_stop();
 		}
 	}
 	if (showCameraFWUP && cameraFWUpdateState)
@@ -537,11 +538,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	{
 		static std::string firmwareFile;
 		static std::string firmwareDesc = "Firmware File";
-		static TimePoint_t lastFirmwareDesc;
-		if (!firmwareFile.empty() && dtMS(lastFirmwareDesc, sclock::now()) > 200)
+		static TimePoint_t lastFirmwareCheck;
+		static bool firmwareValid = false;
+		if (!firmwareFile.empty() && dtMS(lastFirmwareCheck, sclock::now()) > 200)
 		{ // Update descriptor of firmware file on disc
-			lastFirmwareDesc = sclock::now();
-			firmwareDesc = CameraFirmwareDescriptor(firmwareFile);
+			lastFirmwareCheck = sclock::now();
+			firmwareValid = CameraCheckFirmwareFile(firmwareFile, firmwareDesc);
 		}
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", firmwareDesc.c_str());
@@ -575,9 +577,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
-					lastFirmwareDesc = sclock::now();
-					firmwareDesc = CameraFirmwareDescriptor(outPath);
 					firmwareFile = outPath;
+					lastFirmwareCheck = sclock::now();
+					firmwareValid = CameraCheckFirmwareFile(firmwareFile, firmwareDesc);
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
@@ -598,7 +600,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::TextWrapped(ICON_LA_DOWNLOAD " to select cameras to update");
 		}
 
-		ImGui::BeginDisabled(!anySelected);
+		ImGui::BeginDisabled(!anySelected || !firmwareValid);
 		if (ImGui::Button("Flash Cameras", SizeWidthFull()))
 		{
 			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
@@ -622,11 +624,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		// Static, shared between firmware flashing popups
 		static std::string firmwareFile;
 		static std::string firmwareDesc = "Firmware File";
-		static TimePoint_t lastFirmwareDesc;
-		if (!firmwareFile.empty() && dtMS(lastFirmwareDesc, sclock::now()) > 200)
+		static TimePoint_t lastFirmwareCheck;
+		static bool firmwareValid = false;
+		if (!firmwareFile.empty() && dtMS(lastFirmwareCheck, sclock::now()) > 200)
 		{ // Update descriptor of firmware file on disc
-			lastFirmwareDesc = sclock::now();
-			firmwareDesc = ControllerFirmwareDescriptor(firmwareFile);
+			lastFirmwareCheck = sclock::now();
+			firmwareValid = ControllerCheckFirmwareFile(firmwareFile, firmwareDesc);
 		}
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", firmwareDesc.c_str());
@@ -657,9 +660,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
-					lastFirmwareDesc = sclock::now();
-					firmwareDesc = ControllerFirmwareDescriptor(outPath);
 					firmwareFile = outPath;
+					lastFirmwareCheck = sclock::now();
+					firmwareValid = ControllerCheckFirmwareFile(firmwareFile, firmwareDesc);
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
@@ -707,11 +710,13 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("%s", status->text.c_str());
 			SameLineTrailing(button.x);
-			if (!status->complete && ImGui::Button("Abort", button))
+			ImGui::BeginDisabled(status->abort.stop_requested());
+			if (!status->concluded && ImGui::Button("Abort", button))
 			{
 				status->abort.request_stop();
 			}
-			if (status->complete && ImGui::Button("Close", button))
+			ImGui::EndDisabled();
+			if (status->concluded && ImGui::Button("Close", button))
 			{
 				status.unlock();
 				controllerFWUpdateState = nullptr;
@@ -721,13 +726,15 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		{
 			ImGui::TextWrapped("Hold 'Flash' button on controller to enter bootloader");
 
+			ImGui::BeginDisabled(!firmwareValid);
 			if (ImGui::Button("Flash Controller", SizeWidthFull()))
 			{
 				controllerFWUpdateState = ControllerFlashFirmwareFile(nullptr, firmwareFile);
 			}
 			ImGui::SetItemTooltip("The controller already has to be running the bootloader, appearing as a WinChipHead USB device.\n"
 				"To get a controller to reboot into the bootloader, hold the middle 'Flash' button for half a second.");
-			
+			ImGui::EndDisabled();
+
 #if defined(_WIN32)
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.5f, 0.25f, 1.0f));
 			bool show = ImGui::TreeNode("Installing Bootloader Drivers " ICON_LA_EXCLAMATION_CIRCLE);

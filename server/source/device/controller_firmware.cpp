@@ -41,7 +41,7 @@ static void ReportFirmwareUpdateError(ControllerFirmwareUpdateRef &updateStatus,
 	auto status = updateStatus->contextualLock();
 	status->text = error;
 	status->success = false;
-	status->complete = true;
+	status->concluded = true;
 }
 
 static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<uint8_t> &firmwareFile);
@@ -88,29 +88,45 @@ ControllerFirmwareUpdateRef ControllerFlashFirmwareFile(std::shared_ptr<Tracking
 	return updateStatus;
 }
 
-std::string ControllerFirmwareDescriptor(std::string firmwareFile)
+bool ControllerCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor)
 {
 	std::filesystem::path firmware(firmwareFile);
 	if (!std::filesystem::exists(firmware))
-		return "Missing Firmware File";
+	{
+		firmwareDescriptor = "Missing Firmware File";
+		return false;
+	}
 	if (!firmwareFile.ends_with(".bin"))
-		return asprintf_s("Not a FW Binary: '%s'", firmware.filename().generic_string().c_str());
+	{
+		firmwareDescriptor = asprintf_s("Not a FW Binary: '%s'", firmware.filename().generic_string().c_str());
+		return false;
+	}
 
 	std::ifstream fs(firmware, std::ios::binary);
 	if (!fs.is_open())
-		return "Inaccessible Firmware File";
+	{
+		firmwareDescriptor = "Inaccessible Firmware File";
+		return false;
+	}
 
 	// Some firmware files may be tagged. Not required, but provides meta info
 	FirmwareTagHeader tag;
 	if (!ReadFirmwareTag(fs, tag))
-		return asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+	{
+		firmwareDescriptor = asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+		return true;
+	}
 
 	if (tag.type == FW_TAG_CONT_MCU_BIN)
-		return asprintf_s("Controller FW v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+	{
+		firmwareDescriptor = asprintf_s("Controller FW v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+		return true;
+	}
 	else if (tag.type == FW_TAG_CAM_MCU_BIN)
-		return "Invalid Binary (Camera MCU FW)";
+		firmwareDescriptor = "Invalid Binary (Camera MCU FW)";
 	else
-		return "Invalid Binary (Unknown)";
+		firmwareDescriptor = "Invalid Binary (Unknown)";
+	return false;
 }
 
 /**
@@ -335,6 +351,6 @@ static void FlashCH32V307(ControllerFirmwareUpdateRef updateStatus, std::vector<
 
 	auto status = updateStatus->contextualLock();
 	status->success = true;
-	status->complete = true;
+	status->concluded = true;
 	status->text = "Successfully flashed firmware file!";
 }

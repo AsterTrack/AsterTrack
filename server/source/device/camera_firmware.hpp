@@ -42,6 +42,7 @@ struct FirmwareUpdateStatus
 	FirmwareStatus code;
 	std::string text;
 	std::stop_source abort;
+	bool concluded;
 };
 
 typedef std::shared_ptr<Synchronised<CameraFirmwareUpdateStatus>> CameraFirmwareUpdateRef;
@@ -49,6 +50,6 @@ typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
 
 FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware);
 
-std::string CameraFirmwareDescriptor(std::string firmwareFile);
+bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor);
 
 #endif // CAMERA_FIRMWARE_H

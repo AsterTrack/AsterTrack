@@ -65,7 +65,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 {
 	if (header.tag < PACKET_HOST_COMM)
 		return false;
-	if (erroneous)
+	if (erroneous && header.tag != PACKET_FW_BLOCK)
 		return false;
 	switch (header.tag)
 	{
@@ -172,7 +172,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 		}
 		case PACKET_FW_BLOCK:
 		{ // Prepare to receive a firmware file
-			return ReceiveFirmwareBlock(state, comm, data, length);
+			return ReceiveFirmwareBlock(state, comm, data, length, erroneous);
 		}
 		case PACKET_FW_APPLY:
 		{ // Prepare to receive a firmware file

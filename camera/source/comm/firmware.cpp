@@ -56,7 +56,7 @@ static void SendBlockStatus(TrackingCameraState &state, CommState &comm, Firmwar
 	SendFirmwareStatusPacket(state, comm, (uint8_t)FW_STATUS_BLOCK, (uint8_t)status, transfer, block);
 }
 
-static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *data, uint16_t length, bool allowReplace = false)
+static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *data, uint16_t length, bool allowNew = false)
 {
 	if (length < FIRMWARE_PACKET_HEADER)
 	{
@@ -68,15 +68,19 @@ static bool validateFirmwarePacket(TrackingCameraState &state, const uint8_t *da
 		printf("Received firmware packet while streaming!\n");
 		return false;
 	}
-	uint16_t ID = *(uint16_t*)(data+0);
-	if (ID == 0 || (state.firmware && state.firmware.ID != ID))
+	if (!state.firmware && !allowNew)
 	{
-		float deltaMS = dtMS(state.firmware.lastActivity, sclock::now());
-		if (allowReplace && deltaMS > 5000)
-		{
-			printf("Received firmware packet to replace firmware update abandoned %.1fms ago!\n", deltaMS);
-			return true;
-		}
+		printf("Received firmware packet without firmware update!\n");
+		return false;
+	}
+	return true;
+}
+
+static bool validateID(TrackingCameraState &state, uint16_t ID)
+{
+	if (!state.firmware) return false;
+	if (ID == 0 || state.firmware.ID != ID)
+	{
 		printf("Received firmware packet with invalid firmware ID!\n");
 		return false;
 	}
@@ -132,6 +136,14 @@ static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length, true)) return false;
+	if (state.firmware)
+	{
+		float deltaMS = dtMS(state.firmware.lastActivity, sclock::now());
+		if (deltaMS > 5000)
+			printf("Received firmware packet to replace firmware update abandoned %.1fms ago!\n", deltaMS);
+		else
+			return false;
+	}
 
 	uint16_t ID = *(uint16_t*)(data+0);
 	uint8_t flags = *(uint8_t*)(data+2);
@@ -202,10 +214,9 @@ bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint
 	return true;
 }
 
-bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
+bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length, bool erroneous)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
-	if (state.firmware.mainComm != &comm) return false;
 
 	uint16_t ID = *(uint16_t*)(data+0);
 	// 1 free byte for future use
@@ -214,40 +225,58 @@ bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uin
 	uint16_t size = *(uint16_t*)(data+6);
 	// 2 free bytes for future use
 
-	if (FIRMWARE_PACKET_HEADER+size != length)
-	{
-		printf("Received firmware block with invalid size %d, expected %d+%d!\n", length, FIRMWARE_PACKET_HEADER, size);
-		SendBlockStatus(state, comm, FW_TX_ERROR, index, block);
-		return false;
-	}
 	if (state.firmware.applyingUpdate)
 	{
 		printf("Received firmware block while applying update - ignoring!\n");
 		return false;
 	}
 
+	// First find faults that would prevent sending even a FW_TX_ERROR status
 	auto transferIt = state.firmware.transfers.find(index);
 	if (transferIt == state.firmware.transfers.end())
 	{
-		printf("Received firmware block for uninitialised transfer!\n");
-		SendBlockStatus(state, comm, FW_TX_ERROR, index, block);
-		return false;
+		printf("Received firmware block for invalid transfer!\n");
+		return false; // Ignore - can't send status for proper transfer
 	}
 	auto &transfer = transferIt->second;
-	state.firmware.lastActivity = sclock::now();
+	if (block >= transfer.blockMap.size())
+	{
+		printf("Received firmware block for invalid block!\n");
+		return false; // Ignore - can't send status for proper block
+	}
 
-	if (size != state.firmware.blockSize && block != transfer.blockMap.size()-1)
+	// Then find additional faults just in case they weren't caught by checksum
+	if (!erroneous && !validateID(state, ID))
+	{
+		printf("Received firmware packet with invalid firmware ID!\n");
+		erroneous = true; // Can send packet since we have our own firmware ID
+	}
+	if (!erroneous && FIRMWARE_PACKET_HEADER+size != length)
+	{
+		printf("Received firmware block with invalid size %d, expected %d+%d!\n", length, FIRMWARE_PACKET_HEADER, size);
+		erroneous = true;
+	}
+	if (!erroneous && size != state.firmware.blockSize && block != transfer.blockMap.size()-1)
 	{
 		printf("Received firmware block with size %d != blockSize before transfer end in packet of length %d!\n", size, length);
-		SendBlockStatus(state, comm, FW_TX_ERROR, index, block);
+		erroneous = true;
+	}
+
+	if (erroneous)
+	{ // Then send error packet for block - though we can't assume it's actually correct, so check existing block status
+		SendBlockStatus(state, comm, transfer.blockMap[block]? FW_TX_TRANSFERRED : FW_TX_ERROR, index, block);
 		return false;
 	}
 
 	uint32_t offset = block*state.firmware.blockSize;
-	memcpy(transfer.data.data()+offset, data+FIRMWARE_PACKET_HEADER, size);
-	transfer.blockMap[block] = true;
 	printf("Successfully received firmware block %d (offset %d, size %d) for transfer %d in packet of length %d!\n", block, offset, size, index, length);
+	if (transfer.blockMap[block])
+		printf(" ==> DUPLICATE\n");
+	else
+	 	memcpy(transfer.data.data()+offset, data+FIRMWARE_PACKET_HEADER, size);
+	transfer.blockMap[block] = true;
 	SendBlockStatus(state, comm, FW_TX_TRANSFERRED, index, block);
+	state.firmware.lastActivity = sclock::now();
 
 	FirmwareTXStatus status = CheckFirmwareTransfer(transfer);
 	if (status == FW_TX_TRANSFERRED)
@@ -268,9 +297,9 @@ bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uin
 bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length)
 {
 	if (!validateFirmwarePacket(state, data, length)) return false;
-	if (state.firmware.mainComm != &comm) return false;
 
 	uint16_t ID = *(uint16_t*)(data+0);
+	if (!validateID(state, ID)) return false;
 	// 8 free bytes for future use
 
 	for (auto &transfer : state.firmware.transfers)
@@ -490,6 +519,7 @@ bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const ui
 	if (!validateFirmwarePacket(state, data, length)) return false;
 
 	uint16_t ID = *(uint16_t*)(data+0);
+	if (!validateID(state, ID)) return false;
 	// 1 free byte for future use
 	FirmwareStatusType type = (FirmwareStatusType)*(uint8_t*)(data+3);
 	uint8_t status = *(uint8_t*)(data+4);

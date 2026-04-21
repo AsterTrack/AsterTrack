@@ -115,11 +115,18 @@ bool mcu_initial_connect(bool probe_attached)
 	mcu_read_firmware_tag(mcu_firmware_path, mcu_firmware_tag);
 	
 	std::unique_lock lock(mcu_mutex);
+
+	if (probe_attached)
+	{ // Can't communicate right now, but can't interfere
+		if (!mcu_probe())
+			printf("MCU did not initially respond on startup! Won't do anything about it with a probe attached!\n");
+		mcu_does_exist();
+		return true;
+	}
+
 	if (!mcu_probe())
 	{ // MCU did not respond
 		printf("MCU did not initially respond on startup!\n");
-		if (probe_attached)
-			return true; // Can't communicate rn, but can't interfere
 		// Perhaps MCU is in bootloader mode or an invalid state, reset it and attempt to contact it again
 		mcu_reconnect();
 	}
@@ -156,8 +163,6 @@ bool mcu_initial_connect(bool probe_attached)
 	}
 	else
 	{ // MCU is either still not responding, and thus either not available in hardware, or bricked
-		if (probe_attached)
-			return true; // Can't communicate rn, but can't interfere
 		printf("Initial connection to MCU failed! Trying to recover!\n");
 		// Or it failed to transmit a valid info packet, which should not happen ever as it's backwards compatible
 		if (!mcu_probe_bootloader() && !mcu_switch_bootloader())
@@ -406,9 +411,47 @@ bool mcu_probe_bootloader()
 	return false;
 }
 
+static bool mcu_connect_bootloader()
+{
+	bool found = false;
+	for (int i = 0; i < 3; i++)
+	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
+		found = bootloaderGet() == RES_OK;
+		if (found) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	if (!found) return false;
+
+	for (int i = 0; i < 3; i++)
+	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
+		found = bootloaderVersion() == RES_OK;
+		if (found) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	if (!found)
+	{
+		printf("Found bootloader but failed to query version via I2C message! %d: %s\n", errno, strerror(errno));
+		return false;
+	}
+
+	for (int i = 0; i < 3; i++)
+	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
+		found = bootloaderId() == RES_OK;
+		if (found) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	if (!found)
+	{
+		printf("Found bootloader but failed to query ID via I2C message! %d: %s\n", errno, strerror(errno));
+		return false;
+	}
+
+	return true;
+}
+
 bool mcu_switch_bootloader()
 {
-	if (i2c_fd >= 0 && mcu_active)
+	if (i2c_fd >= 0)
 	{
 		printf("Requesting MCU to switch to bootloader...\n");
 		mcu_active = false;
@@ -424,13 +467,7 @@ bool mcu_switch_bootloader()
 			return false;
 		}
 
-		for (int i = 0; i < 30; i++)
-		{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
-			if (bootloaderGet() == RES_OK) break;
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-
-		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
+		if (mcu_connect_bootloader())
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
 			mcu_intentional_bootloader = true;
@@ -438,8 +475,14 @@ bool mcu_switch_bootloader()
 			return true;
 		}
 		else
+		{
 			printf("Failed to switch or query the bootloader via I2C message! %d: %s\n", errno, strerror(errno));
+		}
 	}
+	else if (!mcu_active)
+		printf("Can't ask MCU to switch to bootloader, not actively connected...\n");
+	else if (i2c_fd < 0)
+		printf("Can't ask MCU to switch to bootloader, I2C not set up...\n");
 
 	if (gpio_chip)
 	{
@@ -451,27 +494,21 @@ bool mcu_switch_bootloader()
 		if (gpiod_line_request_set_values(line_request_out, values_reset))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
 
 		// BOOT0, RESET
 		gpiod_line_value values_boot[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 		if (gpiod_line_request_set_values(line_request_out, values_boot))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
 		// BOOT0, RESET
 		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 		if (gpiod_line_request_set_values(line_request_out, values_normal))
 			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
 
-		for (int i = 0; i < 30; i++)
-		{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
-			if (bootloaderGet() == RES_OK) break;
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-
-		if (bootloaderGet() == RES_OK && bootloaderVersion() == RES_OK && bootloaderId() == RES_OK)
+		if (mcu_connect_bootloader())
 		{
 			printf("Successfully switched to and queried the MCUs bootloader!\n");
 			mcu_intentional_bootloader = true;
@@ -998,7 +1035,7 @@ static bool i2c_probe()
 
 	if (MCU_INIT[1] != MCU_I2C_ID)
 	{
-		printf("Failed verify MCU ID %x against expected ID %x!\n", MCU_INIT[1], MCU_I2C_ID);
+		printf("Failed to verify MCU ID %x against expected ID %x!\n", MCU_INIT[1], MCU_I2C_ID);
 		return false;
 	}
 	if (MCU_INIT[0] != 0)

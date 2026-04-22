@@ -350,7 +350,6 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 			{ // Found first header byte after leading bytes
 				state->inHeader = true;
 				state->headerPos = 0;
-				state->headerPtr = state->bufferPtr+pos;
 				// Account for delta between first byte of header and interrupt time (which can be assumed to be sending at full speed, as IDLE line would cause interrupt, too)
 				uint64_t bytesFromHeaderToInterrupt = bytesAhead + end - pos - state->numLeading;
 				uint32_t ticksFromHeaderToInterrupt = (bytesFromHeaderToInterrupt * UART_BAUD_PER_BYTE * 1000000) / state->baudrate;

@@ -50,7 +50,6 @@ typedef struct
 	bool inHeader;
 	bool inData;
 	bool ignoreData;
-	uint8_t *headerPtr;	// Beginning of header in buffer
 	uint_fast8_t headerPos; // Bytes of header that are in headerRaw
 	uint8_t headerRaw[PACKET_HEADER_SIZE+HEADER_CHECKSUM_SIZE]; // Bytes of header to parse
 	struct PacketHeader header; // Parsed header

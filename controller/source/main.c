@@ -1491,9 +1491,10 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 			state->queuedPos = (ptr-state->bufferPtr) - PACKET_HEADER_SIZE;
 			memcpy(state->bufferPtr+state->queuedPos, state->headerRaw, PACKET_HEADER_SIZE);
 		}
+		//assert(state->header.length > 0);
 		uint_fast16_t end = (ptr-state->bufferPtr) + size;
 		uint16_t remSize = end - state->queuedPos; // Size remaining to be sent
-		uint16_t expSize = state->header.length > 0? state->header.length+PACKET_CHECKSUM_SIZE : 0;
+		uint16_t expSize = state->header.length+PACKET_CHECKSUM_SIZE;
 		bool completed = state->dataPos+size == expSize;
 		bool endOfBuf = end == UART_RX_BUFFER_SIZE;
 		{ // Temp debug
@@ -1515,12 +1516,6 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 				return uartd_ignore;
 			}
 			state->queuedPos += handled;
-		}
-
-		if (endOfBuf)
-		{
-			state->queuedPos = 0;
-			//TEMP_CHARR('+', 'R', 'S', 'T', 'Q');
 		}
 
 		TimeSpan dT = GetTimeSinceUS(now);
@@ -1546,14 +1541,24 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	}
 }
 
-uartd_respond uartd_handle_packet(uint_fast8_t port, uint_fast16_t endPos)
+uartd_respond uartd_handle_packet(uint_fast8_t port)
 {
 	PortState *state = &portStates[port];
 	CameraState *cam = &camStates[port];
 	TimePoint now = GetTimePoint();
 
 	if (state->header.tag >= PACKET_HOST_COMM)
-	{ // Already sent all data to host
+	{ 
+		if (state->header.length == 0)
+		{ // Header was not sent yet
+			uint16_t remSize = PACKET_HEADER_SIZE;
+			handleSourceData(&packetHub, &packetHub.sources[port], state->headerRaw, &remSize);
+			if (remSize != 0)
+				ERR_STR("!OVF_ZLP");
+		}
+
+		// Sent all data to host
+		state->queuedPos = 0;
 		return uartd_accept;
 	}
 

@@ -467,6 +467,7 @@ void InterfaceState::ResetWindowLayout()
 	ImGui::DockBuilderDockWindow(windows[WIN_TRACKING_PARAMS].title.c_str(), sidePanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_LENS_SELECTION_TOOL].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_TESTING_TOOL].title.c_str(), sidePanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_STYLE_EDITOR].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_IMGUI_DEMO].title.c_str(), mainPanelID);
@@ -706,6 +707,7 @@ bool InterfaceState::Init()
 	windows[WIN_TRACKING_PARAMS] = InterfaceWindow(ICON_LA_SLIDERS_H " Tracking", &InterfaceState::UpdateTrackingParameters, false);
 	// Tools
 	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
+	windows[WIN_TESTING_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Reliability Testing", &InterfaceState::UpdateTestingTool, false);
 	// Shortcut to ImGui's built-in style editor
 	windows[WIN_STYLE_EDITOR] = InterfaceWindow("Style Editor", &InterfaceState::UpdateStyleUI, false, false);
 	// Useful tool to debug and research UI

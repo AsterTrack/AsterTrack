@@ -117,6 +117,7 @@ enum InterfaceWindows
 	WIN_TRACKING_PARAMS,
 
 	WIN_LENS_SELECTION_TOOL,
+	WIN_TESTING_TOOL,
 
 	WIN_STYLE_EDITOR,
 	WIN_IMGUI_DEMO,
@@ -437,6 +438,16 @@ public:
 	bool logsStickToNew = true;
 	bool logKeepBacklog = false;
 
+	struct FirmwareSetup
+	{
+		std::string file;
+		std::string desc = "Firmware File";
+		TimePoint_t lastCheck;
+		bool valid = false;
+	};
+	FirmwareSetup cameraFWSetup = {};
+	FirmwareSetup controllerFWSetup = {};
+
 	InterfaceState();
 	~InterfaceState();
 
@@ -496,6 +507,7 @@ public:
 	void UpdateSubsamplingParameters(SubsampleTargetParameters &params, const SubsampleTargetParameters &standard);
 
 	void UpdateLensSelectionTool(InterfaceWindow &window);
+	void UpdateTestingTool(InterfaceWindow &window);
 
 	void UpdateStyleUI(InterfaceWindow &window);
 	void UpdateImGuiDemoUI(InterfaceWindow &window);

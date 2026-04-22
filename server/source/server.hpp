@@ -41,6 +41,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct TrackingControllerState; // device/tracking_controller.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
 struct libusb_context_int; // comm/usb.hpp
+struct FirmwareUpdateStatus; // device/camera_firmware.hpp
+struct ControllerFirmwareUpdateStatus; // device/controller_firmware.hpp
 
 // Defined later
 struct ServerState;
@@ -86,6 +88,10 @@ struct ServerState
 	libusb_context_int *libusb_context;
 	ServerCommState server;
 	Synchronised<StreamState> stream;
+
+	// Current device firmware update
+	std::shared_ptr<Synchronised<FirmwareUpdateStatus>> cameraFirmwareUpdate;
+	std::shared_ptr<Synchronised<ControllerFirmwareUpdateStatus>> controllerFirmwareUpdate;
 
 	// Thread for current mode
 	std::jthread *coprocessingThread = NULL;

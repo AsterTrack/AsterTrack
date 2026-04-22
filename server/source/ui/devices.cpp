@@ -33,8 +33,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 void InterfaceState::UpdateDevices(InterfaceWindow &window)
 {
-	static FirmwareUpdateRef cameraFWUpdateState;
-	static ControllerFirmwareUpdateRef controllerFWUpdateState;
 	bool controllerFWUpdateSetup = false;
 
 	if (!window.open)
@@ -261,7 +259,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::EndTooltip();
 		}
 		ImGui::SameLine();
-		ImGui::BeginDisabled(state.isStreaming || cameraFWUpdateState);
+		ImGui::BeginDisabled(state.isStreaming || state.cameraFirmwareUpdate);
 		if (InlineIconButton(camera.selectedForFirmware? ICON_LA_BAN"###Update" : ICON_LA_DOWNLOAD"###Update"))
 			camera.selectedForFirmware = !camera.selectedForFirmware;
 		ImGui::EndDisabled();
@@ -489,10 +487,10 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	if (anySelected)
 		ImGui::SetNextItemOpen(true);
 
-	bool showCameraFWUP = BeginCollapsingRegion(cameraFWUpdateState? "Camera Firmware Update" ICON_LA_DOWNLOAD "###CamFw" : "Camera Firmware Update###CamFw");
-	if (showCameraFWUP && cameraFWUpdateState)
+	bool showCameraFWUP = BeginCollapsingRegion(state.cameraFirmwareUpdate? "Camera Firmware Update" ICON_LA_DOWNLOAD "###CamFw" : "Camera Firmware Update###CamFw");
+	if (showCameraFWUP && state.cameraFirmwareUpdate)
 	{
-		auto status = cameraFWUpdateState->contextualLock();
+		auto status = state.cameraFirmwareUpdate->contextualLock();
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", status->text.c_str());
 		SameLineTrailing(button.x);
@@ -510,10 +508,10 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				camera->firmware = nullptr;
 			}
 			status.unlock();
-			cameraFWUpdateState = nullptr;
+			state.cameraFirmwareUpdate = nullptr;
 		}
 	}
-	if (showCameraFWUP && cameraFWUpdateState)
+	if (showCameraFWUP && state.cameraFirmwareUpdate)
 	{
 		for (auto &camera : state.cameras)
 		{
@@ -534,25 +532,23 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::Text("Camera #%u is not part of the firmware update.", camera->id);
 		}
 	}
-	if (showCameraFWUP && !cameraFWUpdateState)
+	if (showCameraFWUP && !state.cameraFirmwareUpdate)
 	{
-		static std::string firmwareFile;
-		static std::string firmwareDesc = "Firmware File";
-		static TimePoint_t lastFirmwareCheck;
-		static bool firmwareValid = false;
-		if (!firmwareFile.empty() && dtMS(lastFirmwareCheck, sclock::now()) > 200)
+		if (!cameraFWSetup.file.empty() && dtMS(cameraFWSetup.lastCheck, sclock::now()) > 200)
 		{ // Update descriptor of firmware file on disc
-			lastFirmwareCheck = sclock::now();
-			firmwareValid = CameraCheckFirmwareFile(firmwareFile, firmwareDesc);
+			cameraFWSetup.lastCheck = sclock::now();
+			cameraFWSetup.valid = CameraCheckFirmwareFile(cameraFWSetup.file, cameraFWSetup.desc);
 		}
 		ImGui::AlignTextToFramePadding();
-		ImGui::Text("%s", firmwareDesc.c_str());
-		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
+		ImGui::Text("%s", cameraFWSetup.desc.c_str());
+		ImGui::SetItemTooltip("%s", cameraFWSetup.file.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
 		{
 			threadPool.push([](int id)
 			{
+				auto &setup = GetUI().cameraFWSetup;
+
 				NFD_Context context{};
 				if (!context) return;
 
@@ -577,9 +573,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
-					firmwareFile = outPath;
-					lastFirmwareCheck = sclock::now();
-					firmwareValid = CameraCheckFirmwareFile(firmwareFile, firmwareDesc);
+					setup.file = outPath;
+					setup.lastCheck = sclock::now();
+					setup.valid = CameraCheckFirmwareFile(setup.file, setup.desc);
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
@@ -600,7 +596,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			ImGui::TextWrapped(ICON_LA_DOWNLOAD " to select cameras to update");
 		}
 
-		ImGui::BeginDisabled(!anySelected || !firmwareValid);
+		ImGui::BeginDisabled(!anySelected || !cameraFWSetup.valid);
 		if (ImGui::Button("Flash Cameras", SizeWidthFull()))
 		{
 			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
@@ -609,7 +605,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				if (camera->selectedForFirmware)
 					firmwareUpdateCameras.push_back(camera); // new shared_ptr
 			}
-			cameraFWUpdateState = CamerasFlashFirmwareFile(firmwareUpdateCameras, firmwareFile);
+			state.cameraFirmwareUpdate = CamerasFlashFirmwareFile(firmwareUpdateCameras, cameraFWSetup.file);
 		}
 		ImGui::EndDisabled();
 	}
@@ -618,27 +614,24 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 	// TODO: Ask controller via USB to automatically switch to Bootloader 2/3
 	// So for now, just always show FW update for controllers
-	//if (controllerFWUpdate)
 	if (BeginCollapsingRegion("Controller Firmware Update"))
 	{
 		// Static, shared between firmware flashing popups
-		static std::string firmwareFile;
-		static std::string firmwareDesc = "Firmware File";
-		static TimePoint_t lastFirmwareCheck;
-		static bool firmwareValid = false;
-		if (!firmwareFile.empty() && dtMS(lastFirmwareCheck, sclock::now()) > 200)
+		if (!controllerFWSetup.file.empty() && dtMS(controllerFWSetup.lastCheck, sclock::now()) > 200)
 		{ // Update descriptor of firmware file on disc
-			lastFirmwareCheck = sclock::now();
-			firmwareValid = ControllerCheckFirmwareFile(firmwareFile, firmwareDesc);
+			controllerFWSetup.lastCheck = sclock::now();
+			controllerFWSetup.valid = ControllerCheckFirmwareFile(controllerFWSetup.file, controllerFWSetup.desc);
 		}
 		ImGui::AlignTextToFramePadding();
-		ImGui::Text("%s", firmwareDesc.c_str());
-		ImGui::SetItemTooltip("%s", firmwareFile.c_str());
+		ImGui::Text("%s", controllerFWSetup.desc.c_str());
+		ImGui::SetItemTooltip("%s", controllerFWSetup.file.c_str());
 		SameLineTrailing(button.x);
 		if (ImGui::Button("Select", button))
 		{
 			threadPool.push([](int id)
 			{
+				auto &setup = GetUI().controllerFWSetup;
+
 				NFD_Context context{};
 				if (!context) return;
 
@@ -660,9 +653,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
 				if (result == NFD_OKAY)
 				{
-					firmwareFile = outPath;
-					lastFirmwareCheck = sclock::now();
-					firmwareValid = ControllerCheckFirmwareFile(firmwareFile, firmwareDesc);
+					setup.file = outPath;
+					setup.lastCheck = sclock::now();
+					setup.valid = ControllerCheckFirmwareFile(setup.file, setup.desc);
 					NFD_FreePath(outPath);
 				}
 				else if (result == NFD_ERROR)
@@ -698,15 +691,15 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				SameLineTrailing(button.x);
 				if (ImGui::Button("Flash", button))
 				{
-					controller->firmware = ControllerFlashFirmwareFile(controller, firmwareFile);
+					controller->firmware = ControllerFlashFirmwareFile(controller, controllerFWSetup.firmwareFile);
 					controller->selectedForFirmware = false;
 				}
 			}
 		} */
 		
-		if (controllerFWUpdateState)
+		if (state.controllerFirmwareUpdate)
 		{
-			auto status = controllerFWUpdateState->contextualLock();
+			auto status = state.controllerFirmwareUpdate->contextualLock();
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("%s", status->text.c_str());
 			SameLineTrailing(button.x);
@@ -719,17 +712,17 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			if (status->concluded && ImGui::Button("Close", button))
 			{
 				status.unlock();
-				controllerFWUpdateState = nullptr;
+				state.controllerFirmwareUpdate = nullptr;
 			}
 		}
 		else
 		{
 			ImGui::TextWrapped("Hold 'Flash' button on controller to enter bootloader");
 
-			ImGui::BeginDisabled(!firmwareValid);
+			ImGui::BeginDisabled(!controllerFWSetup.valid);
 			if (ImGui::Button("Flash Controller", SizeWidthFull()))
 			{
-				controllerFWUpdateState = ControllerFlashFirmwareFile(nullptr, firmwareFile);
+				state.controllerFirmwareUpdate = ControllerFlashFirmwareFile(nullptr, controllerFWSetup.file);
 			}
 			ImGui::SetItemTooltip("The controller already has to be running the bootloader, appearing as a WinChipHead USB device.\n"
 				"To get a controller to reboot into the bootloader, hold the middle 'Flash' button for half a second.");

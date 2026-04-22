@@ -135,6 +135,7 @@ void InterfaceState::UpdateMainMenuBar()
 		if (ImGui::BeginMenu(ICON_LA_TOOLS " Tools"))
 		{
 			addWindowMenuItem(windows[WIN_LENS_SELECTION_TOOL]);
+			addWindowMenuItem(windows[WIN_TESTING_TOOL]);
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();

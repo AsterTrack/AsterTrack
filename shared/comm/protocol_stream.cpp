@@ -211,6 +211,11 @@ begin:
 		skipToEnd(comm, false);
 		assert(comm.head <= comm.tail);
 	}
+	if (comm.cmdWaiting)
+	{
+		comm.cmdWaiting = false;
+		return false;
+	}
 	if (comm.isCmd)
 	{ // If current command exist, make skippable, no further parsing needed
 		comm.cmdSkip = true;
@@ -315,6 +320,7 @@ bool proto_fetchCmd(ProtocolState &comm)
 		assert(comm.head <= comm.tail);
 		return true;
 	}
+	comm.cmdWaiting = true;
 	// Move receive head to beginning of buffer to make it easier to parse packet once it does arrive
 	// comm.cmdErr may also have been set, and this packet abandoned
 	proto_clean(comm, true);

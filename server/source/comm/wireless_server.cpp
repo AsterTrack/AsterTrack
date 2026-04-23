@@ -252,9 +252,9 @@ inline bool comm_write_internal(ClientCommState &comm, const uint8_t *data, uint
 #endif
 		{
 			comm_stop(comm);
-			return false;
 		}
 		LOG(LWireless, LWarn, "Socket error on send: %s (%d)\n", SOCKET_ERR_STR, SOCKET_ERR_NUM);
+		return false;
 	}
 	return true;
 }
@@ -383,9 +383,7 @@ phase_identification:
 				comm_stop(comm);
 				break;
 			}
-			bool prevInCmd = proto.isCmd;
-			bool newToParse = num > 0;
-			while (!stop_token.stop_requested() && newToParse && proto_rcvCmd(proto))
+			while (!stop_token.stop_requested() && num > 0 && proto_rcvCmd(proto))
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK)
 				{ // NAK received
@@ -454,10 +452,6 @@ phase_identification:
 						goto phase_identification;
 					}
 				}
-
-				// Continue parsing if the current command was handled fully
-				newToParse = proto.tail > proto.head && !proto.cmdSkip && !proto.isCmd;
-				num = 0;
 			}
 		}
 
@@ -487,8 +481,7 @@ phase_comm:
 			}
 			else if (num > 0) time_read = sclock::now();
 			bool prevInCmd = proto.isCmd;
-			bool newToParse = num > 0;
-			while (!stop_token.stop_requested() && newToParse && proto_rcvCmd(proto))
+			while (!stop_token.stop_requested() && num > 0 && proto_rcvCmd(proto))
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
 				{ // NAK received
@@ -515,17 +508,14 @@ phase_comm:
 				}
 				else
 				{ // Parse in blocks for lowest latency
-					bool skip = false;
-					if (!prevInCmd && comm.callbacks.onReceivePacketHeader)
-						skip = !comm.callbacks.onReceivePacketHeader(comm, proto.header, receiveTime);
-					if (skip)
-					{
-						proto.cmdSkip = true;
+					if (!prevInCmd && comm.callbacks.onReceivePacketHeader &&
+						!comm.callbacks.onReceivePacketHeader(comm, proto.header, receiveTime))
+					{ // Header rejected, skip
 						prevInCmd = false;
 						LOG(LWireless, LDarn, "Skipping command %d!\n", proto.header.tag);
 					}
 					else
-					{
+					{ // Fetch next block of data
 						bool done = proto_fetchCmd(proto);
 						LOG(LWireless, LTrace, "Received packet %d, block %d bytes, total %d / %d bytes%s\n",
 							proto.header.tag, proto.blockLen, proto.blockPos + proto.blockLen - proto.cmdPos, proto.cmdSz, done? (proto.validChecksum? ", valid" : ", invalid") : "");
@@ -537,10 +527,6 @@ phase_comm:
 						prevInCmd = !done;
 					}
 				}
-
-				// Continue parsing if the current command was handled fully
-				newToParse = proto.tail > proto.head && !proto.cmdSkip && !proto.isCmd;
-				num = 0;
 			}
 
 			// Check timeout

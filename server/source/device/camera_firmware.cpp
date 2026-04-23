@@ -137,16 +137,14 @@ static int CameraValidState(std::shared_ptr<TrackingCameraState> &camera)
 		LOG(LFirmwareUpdate, LError, "Camera %u updating firmware failed because it is currently streaming!", camera->id);
 		return false;
 	}
+	int comms = 0;
 	if (camera->controller && state->commState == COMM_SBC_READY)
-	{ // Connected via controller
-		return 1;
-	}
+		comms |= 0b01;
 	if (camera->client && camera->client->ready)
-	{ // Connected wirelessly
-		return 2;
-	}
-	LOG(LFirmwareUpdate, LError, "Camera %u updating firmware failed because it has not started up yet!", camera->id);
-	return false;
+		comms |= 0b10;
+	if (!comms)
+		LOG(LFirmwareUpdate, LError, "Camera %u updating firmware failed because it has not started up yet!", camera->id);
+	return comms;
 }
 
 static std::vector<int> CameraSelectFirmwareTransfers(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState)
@@ -290,14 +288,19 @@ static void CamerasSendFirmwareBlock(FirmwareUpdatePlan &update, FirmwareTransfe
 	{ // Accumulate cameras by controller
 		auto &camera = transfer.cameras[c].camera;
 		int comms = CameraValidState(camera);
-		if (comms == 1)
-			mapping[camera->controller] |= 1<<camera->port;
-		else if (comms == 2)
+		if (comms & 0b10)
 		{
 			if (!camera->sendPacket(PACKET_FW_BLOCK, FWPacket.data(), FWPacket.size()))
 				LOG(LFirmwareUpdate, LWarn, "Failed to send firmware block with offset %d to camera #%u!", offset, camera->id);
+			else
+				comms = 0;
 		}
+		if (comms & 0b01)
+			mapping[camera->controller] |= 1<<camera->port;
 	}
+
+	if (mapping.empty())
+		return;
 
 	// Add checksum for direct-to-controller packets
 	FWPacket.resize(FIRMWARE_PACKET_HEADER+size+PACKET_CHECKSUM_SIZE);

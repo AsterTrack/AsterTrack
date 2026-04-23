@@ -502,9 +502,7 @@ phase_identification:
 				comm_stop(comm);
 				goto phase_start;
 			}
-			bool prevInCmd = proto.isCmd;
-			bool newToParse = num > 0;
-			while (newToParse && proto_rcvCmd(proto) && !comm.error)
+			while (num > 0 && proto_rcvCmd(proto) && !comm.error)
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK)
 				{ // NAK received
@@ -557,10 +555,6 @@ phase_identification:
 					comm_reset(comm);
 					goto phase_identification;
 				}
-
-				// Continue parsing if the current command was handled fully
-				newToParse = proto.tail > proto.head && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
-				num = 0;
 			}
 
 			if (dtMS(time_ident, sclock::now()) > COMM_IDENT_TIMEOUT_MS)
@@ -632,9 +626,7 @@ phase_comm:
 					break;
 				}
 			}
-			bool prevInCmd = proto.isCmd;
-			bool newToParse = num > 0;
-			while (newToParse && proto_rcvCmd(proto))
+			while (num > 0 && proto_rcvCmd(proto))
 			{ // Got a new command to handle
 				if (proto.header.tag == PACKET_NAK && proto_fetchCmd(proto))
 				{ // NAK received
@@ -740,11 +732,6 @@ phase_comm:
 						ReceivePacketData(state, comm, proto.header, proto.rcvBuf.data()+proto.cmdPos, proto.cmdSz, !proto.validChecksum);
 					}
 				}
-
-				// Continue parsing if the current command was handled fully
-				int rem = proto.tail-proto.head;
-				newToParse = rem > 0 && !proto.cmdSkip && !proto.isCmd && comm.enabled && comm.started;
-				num = 0;
 			}
 
 			fflush(stdout);

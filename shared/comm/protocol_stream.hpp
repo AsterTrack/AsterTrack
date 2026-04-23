@@ -38,6 +38,7 @@ struct ProtocolState
 	bool isCmd; // If we are currently in a packet - head and pos point to header and data respectively
 	bool cmdNAK;
 	bool cmdACK;
+	bool cmdWaiting;
 	bool validChecksum;
 	PacketHeader header;
 	unsigned int cmdSz; // Data size of the current packet, same as header.length

@@ -711,8 +711,10 @@ uint8_t i2cd_handle_init(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 	lastPiComm = GetTimePoint();
 	piIsBooted = true;
 	response[0] = MCU_I2C_ID;
-	response[1] = MCU_LEADING_BYTES;
-	return 2; // 3 in total with Zero-Byte
+	response[1] = 1; // Version
+	response[2] = MCU_LEADING_BYTES;
+	// Can always expand
+	return 3; // 4 in total with Zero-Byte
 }
 
 bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len)

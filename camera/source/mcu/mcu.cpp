@@ -1106,7 +1106,7 @@ static bool i2c_probe()
 	if (i2c_fd < 0) return false;
 
 	unsigned char I2C_CMD[] = { MCU_INITIATE };
-	uint8_t MCU_INIT[3]; // 0x00, MCU_I2C_ID, MCU_LEADING_BYTES
+	uint8_t MCU_INIT[4]; // 0x00, MCU_I2C_ID, VERSION, MCU_LEADING_BYTES, and may always expand
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
 		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_INIT), MCU_INIT },
@@ -1129,11 +1129,16 @@ static bool i2c_probe()
 		printf("MCU Init packet did not start with 0 but %d!\n", MCU_INIT[0]);
 		return false;
 	}
-	if (MCU_INIT[2] != MCU_LEADING_BYTES)
-		printf("MCU has been compiled to use %d leading bytes, different from own %d!\n", MCU_INIT[2], MCU_LEADING_BYTES);
-	if (MCU_INIT[2] > MCU_MAX_LEADING_BYTES)
+	if (MCU_INIT[2] != 1)
+	{
+		printf("MCU Init packet has unsupported version %d!\n", MCU_INIT[2]);
 		return false;
-	mcu_leading_bytes = MCU_INIT[2];
+	}
+	if (MCU_INIT[3] != MCU_LEADING_BYTES)
+		printf("MCU has been compiled to use %d leading bytes, different from own %d!\n", MCU_INIT[3], MCU_LEADING_BYTES);
+	if (MCU_INIT[3] > MCU_MAX_LEADING_BYTES)
+		return false;
+	mcu_leading_bytes = MCU_INIT[3];
 	return true;
 }
 

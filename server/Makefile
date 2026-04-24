@@ -59,7 +59,7 @@ CXX=g++
 CC=gcc
 LD=g++
 # gnu libraries (libstdc++ + libgomp)
-cstd = -fopenmp -Wno-virtual-move-assign
+cstd = -fopenmp -Wno-virtual-move-assign -Wno-var-tracking-assignments
 lstd = -fopenmp -latomic
 lto = -flto=auto
 ifeq "$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 14)" "1"
@@ -179,13 +179,14 @@ dep = dependencies/sources
 b = build
 o = $(b)/$(ENV_PREFIX)$(COMPILER)-$(mode)
 cflags = $(cenv) -Idependencies/include -Idependencies/sources \
-	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus)
+	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus) \
+	-ffp-contract=fast -fno-math-errno -fno-signed-zeros -fno-trapping-math
 cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
 	-DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion -Wno-unknown-attributes \
 	-DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
-	-std=c++23 -ffp-contract=fast
+	-std=c++23
 lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
 
 

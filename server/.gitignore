@@ -25,7 +25,7 @@ config/lens_presets.json
 config/*.obj
 config/*.mtl
 dump
-recordings
+recordings*
 
 # Unnecessary sources
 resources/icons/*.svg

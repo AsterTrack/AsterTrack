@@ -602,10 +602,10 @@ static void LOG_EVT_DATA(uint64_t d, uint_fast8_t id)
 	);
 }
 
-#define LOG_EVT_INT(...) { if (eventLogClass == 1) LOG_EVT(__VA_ARGS__); }
-#define LOG_EVT_USB(...) { if (eventLogClass == 2) LOG_EVT(__VA_ARGS__); }
-#define LOG_EVT_STR(...) { if (eventLogClass == 3) LOG_EVT(__VA_ARGS__); }
-#define LOG_EVT_SET(...) { if (eventLogClass == 4) LOG_EVT(__VA_ARGS__); }
+#define LOG_EVT_INT(...) { if (eventLogClass & 1) LOG_EVT(__VA_ARGS__); }
+#define LOG_EVT_USB(...) { if (eventLogClass & 2) LOG_EVT(__VA_ARGS__); }
+#define LOG_EVT_STR(...) { if (eventLogClass & 4) LOG_EVT(__VA_ARGS__); }
+#define LOG_EVT_SET(...) { if (eventLogClass & 8) LOG_EVT(__VA_ARGS__); }
 //#define LOG_EVT_INT(...) do {} while(false)
 //#define LOG_EVT_USB(...) do {} while(false)
 //#define LOG_EVT_STR(...) do {} while(false)

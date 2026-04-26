@@ -381,11 +381,11 @@ public:
 struct TrackingControllerEventSequence : public ImSequencer::SequenceInterface
 {
 private:
-	int64_t offsetUS = 0, lengthUS = 1000;
+	int64_t offsetUS = 0;
 	int64_t frontIndex = -1, backIndex = -1;
 
 	// Cached rendering structure
-	std::array<std::vector<std::pair<float,float>>, CONTROLLER_EVENT_MAX> evtBars;
+	std::array<std::vector<std::pair<int64_t,int64_t>>, CONTROLLER_EVENT_MAX> evtBars;
 
 	// Visible events
 	std::array<bool, CONTROLLER_EVENT_MAX> evtFilter;
@@ -395,10 +395,13 @@ private:
 	int intendedPos = 0;
 	float intendedWidth = 0;
 
+	const float timelineScale = 1.0f; // 0.001f for 1ms instead of 1us
+
 public:
 	std::shared_ptr<TrackingControllerState> m_controller;
 
-	int viewStartTimeUS = 0;
+	int viewStartFrames = 0;
+	int viewLengthFrames = 1000;
 	bool followLastFrame = true;
 
 	TrackingControllerEventSequence(std::shared_ptr<TrackingControllerState> controller)
@@ -422,8 +425,8 @@ public:
 		frontIndex = backIndex = -1; // Force evtBars to be rebuilt
 	}
 
-	virtual int GetFrameMin() const { return offsetUS; }
-	virtual int GetFrameMax() const { return offsetUS+lengthUS; }
+	virtual int GetFrameMin() const { return 0; }
+	virtual int GetFrameMax() const { return viewLengthFrames; }
 	virtual int GetItemCount() const { return evtList.size(); }
 	virtual int GetItemTypeCount() const { return 1; }
 	virtual const char* GetItemTypeName(int typeIndex) const { return ""; }
@@ -435,7 +438,7 @@ public:
 	void SetViewIntervalUS(float intervalUS)
 	{
 		if (intendedWidth <= 0) return;
-		framePixelWidthTarget = framePixelWidth = intendedWidth/intervalUS;
+		framePixelWidthTarget = framePixelWidth = intendedWidth / (intervalUS*timelineScale);
 		intendedPos = 0;
 	}
 
@@ -449,14 +452,12 @@ public:
 		if (offsetUS == 0)
 		{ // Don't update when culling, keep original timeline range
 			offsetUS = (int64_t)events.front().timestampUS-10;
-			if (viewStartTimeUS < offsetUS)
-				viewStartTimeUS = offsetUS;
 		}
-		lengthUS = std::max<int64_t>(1000, (int64_t)events.back().timestampUS+10-offsetUS);
+		viewLengthFrames = std::max<int64_t>(1000, (int64_t)events.back().timestampUS+10-offsetUS) * timelineScale;
 
-		// Before this, viewStartTimeUS (as firstFrame) could've been modified by panning (should disable followLastFrame)
+		// Before this, viewStartFrames (as firstFrame) could've been modified by panning (should disable followLastFrame)
 		// And visibleFrameCount can change, so have to take start pos
-		if (intendedPos && followLastFrame && intendedPos < viewStartTimeUS)
+		if (intendedPos && followLastFrame && intendedPos < viewStartFrames)
 		{ // Start pos set in PostRenderUpdate
 			followLastFrame = false;
 			intendedPos = 0;
@@ -464,15 +465,16 @@ public:
 		// Modifying firstFrame of sequence is supported here - visibleFrameCount will be updated
 		if (followLastFrame)
 		{
-			viewStartTimeUS = GetFrameMax()-visibleFrameCount;
-			// After this, viewStartTimeUS (as firstFrame) could be modified by scrollbar (only end pos should disable followLastFrame)
+			viewStartFrames = viewLengthFrames - visibleFrameCount;
+			// After this, viewStartFrames (as firstFrame) could be modified by scrollbar (only end pos should disable followLastFrame)
 			// However, visibleFrameCount will not be updated (smoothed over time), so have to recalculate with width/framePixelWidthTarget
-			intendedPos = viewStartTimeUS+visibleFrameCount; // Set end pos for PostRenderUpdate
+			intendedPos = viewLengthFrames; // Set end pos for PostRenderUpdate
 		}
 
 		// This whole update only takes about 0.5ms even with about 40000 events
 
-		int64_t frontUS = viewStartTimeUS, backUS = frontUS+visibleFrameCount;
+		int64_t frontUS = viewStartFrames/timelineScale + offsetUS, backUS = frontUS + visibleFrameCount/timelineScale;
+		backUS += 5000;
 		auto frontIt = std::lower_bound(events.begin(), events.end(), frontUS,
 		[](const ControllerEventLog& event, int64_t us) { return (int64_t)event.timestampUS < us; });
 		auto backIt = std::upper_bound(events.begin(), events.end(), backUS,
@@ -487,27 +489,27 @@ public:
 		backIndex = backIt.index();
 
 		LOG(LGUI, LTrace, "Rendering events from index %" PRId64 " (%" PRIu64 "us) to %" PRId64 " (%" PRIu64 "us), viewing %" PRId64 "us - %" PRId64 "us (start %d, width %d, offset %" PRId64 "), first has timestamp %" PRIu64 " (%" PRIu64 "us)",
-			frontIndex, frontIt->timestampUS, backIndex, backIt->timestampUS, frontUS, backUS, viewStartTimeUS, visibleFrameCount, offsetUS, events.front().timestamp, events.front().timestampUS);
+			frontIndex, frontIt->timestampUS, backIndex, backIt->timestampUS, frontUS, backUS, viewStartFrames, visibleFrameCount, offsetUS, events.front().timestamp, events.front().timestampUS);
 
-		float dUS = sequenceWidth/visibleFrameCount;
-		float mergeLimit = 1.5f/dUS; // 1px from minimum width of rendering, the rest to avoid flickering
+		float usPerPt = visibleFrameCount / (sequenceWidth * timelineScale);
+		// Merging to avoid flickering, should scale with framebuffer but not trivial
+		int mergeLimit = 1.5f * usPerPt;// / ImGui::GetIO().DisplayFramebufferScale.x;
+		int64_t invisStart = viewStartFrames/timelineScale - 10 * usPerPt - 10;
 
-		std::array<std::pair<float,float>, CONTROLLER_EVENT_MAX> render;
+		std::array<std::pair<int64_t,int64_t>, CONTROLLER_EVENT_MAX> render;
 		for (int i = 0; i < CONTROLLER_EVENT_MAX; i++)
 		{
-			float invisStart = (float)(viewStartTimeUS - GetFrameMin()) - 2*dUS;
-			render[i] = { invisStart, invisStart };
 			evtBars[i].clear();
+			evtBars[i].emplace_back(invisStart, invisStart);
 		}
 		for (auto p = frontIt; p <= backIt; p++)
 		{
 			if (!evtFilter[p->id]) continue;
-			auto &evtRender = render[p->id];
-			double pos = p->timestampUS - GetFrameMin();
+			auto &evtRender = evtBars[p->id].back();
+			int64_t pos = p->timestampUS - offsetUS;
 			if (!p->isNewEvent)
 			{ // Have to add to current bar because it's ending
-				if (evtRender.second < pos)
-					evtRender.second = pos;
+				evtRender.second = pos;
 			}
 			else if (pos-evtRender.second < mergeLimit)
 			{ // Will merge with bar because it's too close to differentiate anyway
@@ -515,21 +517,12 @@ public:
 			}
 			else
 			{ // Last bar is done, start new
-				evtBars[p->id].push_back(evtRender);
-				evtRender.first = pos;
-				evtRender.second = pos;
+				evtBars[p->id].emplace_back(pos, pos);
 			}
 		}
 		for (int i = 0; i < CONTROLLER_EVENT_MAX; i++)
-		{
-			auto &evtRender = render[i];
-			// TODO: Minor glitch since there's no data to differentiate singular event and beginning of sequence
-			/* if (lastIsBegin)
-				evtRender.second = viewStartTimeUS+visibleFrameCount; */
-			if (evtRender.first != evtRender.second)
-			{ // Finish last bar
-				evtBars[i].push_back(evtRender);
-			}
+		{ // Append latest event
+			evtBars[i].push_back(render[i]);
 		}
 	}
 
@@ -538,7 +531,7 @@ public:
 		// framePixelWidthTarget might've just been updated via scrollbar zooming
 		// Need to check if scrollbar editing caused end frame to change
 		int newVisibleFrameCount = intendedWidth/framePixelWidthTarget;
-		if (followLastFrame && intendedPos < viewStartTimeUS+newVisibleFrameCount)
+		if (followLastFrame && intendedPos < viewStartFrames+newVisibleFrameCount)
 		{ // End pos set in PrepareRendering
 			followLastFrame = false;
 			intendedPos = 0;
@@ -546,7 +539,7 @@ public:
 
 		if (followLastFrame)
 		{ // Set start pos for PrepareRendering
-			intendedPos = viewStartTimeUS;
+			intendedPos = viewStartFrames;
 		}
 	}
 
@@ -568,12 +561,16 @@ public:
 		if (evtList.size() <= i) return;
 		draw_list->PushClipRect(clippingRect.Min, clippingRect.Max, true);
 		float width = rc.Max.x - rc.Min.x;
-		float dUS = width/(GetFrameMax()-GetFrameMin()+1);
+		float ptPerUS = timelineScale * width / (viewLengthFrames+1);
 		auto &bars = evtBars[evtList[i]];
-		for (auto bar : bars)
+		if (bars.empty()) return;
+		auto bar = bars.begin();
+		if (bar->first == bar->second)
+			bar = std::next(bar); // No invisible start
+		for (; bar != bars.end(); bar++)
 		{
-			ImVec2 min(rc.Min.x + dUS * bar.first - 0.5f, rc.Min.y + 5);
-			ImVec2 max(rc.Min.x + dUS * bar.second + 0.5f, rc.Max.y - 3);
+			ImVec2 min(rc.Min.x + ptPerUS * bar->first - 0.5f, rc.Min.y + 5);
+			ImVec2 max(rc.Min.x + ptPerUS * bar->second + 0.5f, rc.Max.y - 3);
 			draw_list->AddRectFilled(min, max, IM_COL32(0xFF, 0x00, 0x00, 0xFF));
 		}
 		draw_list->PopClipRect();
@@ -1198,6 +1195,31 @@ static bool ShowTrackingControllerPanel()
 	/* Choose events to view */
 
 	const char* curTab = nullptr;
+	if (ImGui::BeginTabItem("All"))
+	{
+		curTab = "All";
+		eventClassCode = 0xFF;
+		eventSelection = {
+			CONTROLLER_INTERRUPT_USB,
+			CONTROLLER_INTERRUPT_UART,
+			CONTROLLER_INTERRUPT_SYNC_GEN,
+			CONTROLLER_INTERRUPT_SYNC_INPUT,
+			CONTROLLER_INTERRUPT_LED_UPDATE,
+			CONTROLLER_INTERRUPT_PD_INT,
+			CONTROLLER_INTERRUPT_FLASH_BUTTON,
+			CONTROLLER_INTERRUPT_FLASH_TIMER,
+			CONTROLLER_EVENT_USB_SOF,
+			CONTROLLER_EVENT_USB_CONTROL,
+			CONTROLLER_EVENT_USB_DATA_TX,
+			CONTROLLER_EVENT_USB_SENDING_NULL,
+			CONTROLLER_EVENT_USB_SENDING_PACKET,
+			CONTROLLER_EVENT_USB_QUEUE_SOF,
+			CONTROLLER_EVENT_SYNC,
+			CONTROLLER_EVENT_DATA_IN,
+			CONTROLLER_EVENT_DATA_OUT
+		};
+		ImGui::EndTabItem();
+	}
 	if (ImGui::BeginTabItem("Interrupts"))
 	{
 		curTab = "Interrupts";
@@ -1228,7 +1250,7 @@ static bool ShowTrackingControllerPanel()
 	if (ImGui::BeginTabItem("Streaming"))
 	{
 		curTab = "Streaming";
-		eventClassCode = 3;
+		eventClassCode = 4;
 		eventSelection = {
 			CONTROLLER_EVENT_SYNC,
 			CONTROLLER_EVENT_DATA_IN,
@@ -1239,7 +1261,7 @@ static bool ShowTrackingControllerPanel()
 	if (ImGui::BeginTabItem("Sending"))
 	{
 		curTab = "Sending";
-		eventClassCode = 4;
+		eventClassCode = 8;
 		eventSelection = {
 			CONTROLLER_EVENT_USB_SENDING_NULL,
 			CONTROLLER_EVENT_USB_SENDING_PACKET,
@@ -1279,8 +1301,8 @@ static bool ShowTrackingControllerPanel()
 
 	/* Show controls for sequence */
 
-	if (ImGui::TabItemButton("Follow frame", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
-		ui.seqEvents->followLastFrame = true;
+	if (ImGui::TabItemButton(ui.seqEvents->followLastFrame? "Pin Frame##Follow" : "Follow Frame##Follow", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
+		ui.seqEvents->followLastFrame = !ui.seqEvents->followLastFrame;
 
 	ImGui::BeginDisabled(!controller->sync);
 	if (ImGui::TabItemButton("Set Frame Interval", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
@@ -1304,14 +1326,14 @@ static bool ShowTrackingControllerPanel()
 		markedFrame = ui.seqJumpToPos;
 		if (ui.seqJumpToPos >= 0)
 		{
-			ui.seqEvents->viewStartTimeUS = ui.seqJumpToPos - ui.seqEvents->visibleFrameCount/2;
+			ui.seqEvents->viewStartFrames = ui.seqJumpToPos - ui.seqEvents->visibleFrameCount/2;
 			ui.seqEvents->followLastFrame = false;
 		}
 	}
 
 	// Draw sequencer viewer
 	int curFrame = (int)ui.seqJumpToPos;
-	ImSequencer::Sequencer(ui.seqEvents.get(), &curFrame, nullptr, nullptr, &ui.seqEvents->viewStartTimeUS,
+	ImSequencer::Sequencer(ui.seqEvents.get(), &curFrame, nullptr, nullptr, &ui.seqEvents->viewStartFrames,
 		ImSequencer::SEQUENCER_EDIT_NONE);
 	if (ui.seqEvents->GetItemCount() > 0)
 	{ // Else rendering, and thus PrepareRendering, is skipped

@@ -238,7 +238,7 @@ static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, Shared
 	if (hub->sharedStallTimeout == 0)
 	{ // Debug why we couldn't allocate shared buffer, this should not happen during normal use
 		ERR_STR("\n#SharedFull(");
-		ERR_CHARR(INT999_TO_CHARR(size), ')');
+		ERR_CHARR(INT9999_TO_CHARR(size), ')');
 		for (int i = 0; i < SHARED_BUF_COUNT; i++)
 		{
 			SharedBuffer *buf = &hub->shared[i];
@@ -272,7 +272,7 @@ static uint_fast16_t allocateSharedUSBSpace(Hub *hub, uint_fast16_t size, Shared
 				}
 				continue;
 			}
-			ERR_CHARR('+', INT9_TO_CHARR(i), ':', INT999_TO_CHARR(buf->packet.size));
+			ERR_CHARR('+', INT9_TO_CHARR(i), ':', INT9999_TO_CHARR(buf->packet.size));
 			ERR_STR("=Full");
 			if (!buf->packet.queued)
 				ERR_STR("!NotQueued");
@@ -444,10 +444,19 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 	blockHeader.portNr = source->id;
 
 	uint_fast16_t packetSz = *size+BLOCK_HEADER_SIZE;
-	const int MaxSharedSize = (USBD_PACKET_SIZE-USB_PACKET_HEADER)/4;
-	if (packetSz <= MaxSharedSize || hub->sinkCount == 0)
+	int MaxSharedSize = (USBD_PACKET_SIZE-USB_PACKET_HEADER)/4;
+	if (hub->sinkCount == 0)
+	{ // If no sink exists, we are not streaming, and we have to put data into shared packets for sending over control
+		MaxSharedSize = PACKET_BLOCK_SZ-USB_PACKET_HEADER;
+		if (packetSz > MaxSharedSize)
+		{
+			ERR_STR("!PKT_OVS:");
+			ERR_CHARR(INT9999_TO_CHARR(*size));
+			return NULL;
+		}
+	}
+	if (packetSz <= MaxSharedSize)
 	{ // Allocate space in shared buffer among other smaller data
-		// If no sink exists, we are not streaming, and we have to put data into shared packets for sending over control
 		SharedBuffer *buf;
 		uint8_t *ptr;
 		uint_fast16_t allocated = allocateSharedUSBSpace(hub, packetSz, &buf, &ptr);
@@ -493,6 +502,8 @@ static PacketRef* handleSourceData(Hub *hub, Source *source, uint8_t *data, uint
 	}
 
 	// Queue packet to DMA from UART buffer
+	if (hub->sinkCount == 0)
+		return NULL;
 
 	PacketRef *ref = NULL;
 	/// Not needed since this is the only place that uses source->packets

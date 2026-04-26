@@ -300,7 +300,7 @@ bool VerifyChecksum(const PacketBlocks &packet)
 	{
 		if (checksum[i] != packet.checksumBuf[i])
 		{ // Fault is currently almost certainly UART
-			LOG(LParsing, LDarn, "DIFFERENT CHECKSUM! Packet %d had wrong checksum of size %d\n", packet.header.tag, PACKET_CHECKSUM_SIZE);
+			LOG(LParsing, LDarn, "DIFFERENT CHECKSUM! Packet %d of size %d had wrong checksum of size %d\n", packet.header.tag, packet.header.length, PACKET_CHECKSUM_SIZE);
 			return false;
 		}
 	}

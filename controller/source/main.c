@@ -1379,7 +1379,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 				cam->comm |= COMM_GOT_ACK;
 				COMM_STR("/Connected:");
 				COMM_CHARR(INT9_TO_CHARR(port));
-				return uartd_accept;
+				return uartd_ignore;
 			}
 			else
 			{
@@ -1497,19 +1497,12 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 		uint16_t expSize = state->header.length+PACKET_CHECKSUM_SIZE;
 		bool completed = state->dataPos+size == expSize;
 		bool endOfBuf = end == UART_RX_BUFFER_SIZE;
-		{ // Temp debug
-			if (completed) TEMP_STR("/Last:");
-			else TEMP_STR("/Cont:");
-			if (endOfBuf) TEMP_STR("+EOB");
-			TEMP_CHARR('+', INT9999_TO_CHARR(size), '=', INT9999_TO_CHARR(remSize), ':', INT99999_TO_CHARR(state->queuedPos), '-', INT99999_TO_CHARR(end));
-		}
 		uint_fast16_t fullPacketSize = USBD_PACKET_SIZE-USB_PACKET_HEADER-BLOCK_HEADER_SIZE;
 		while (remSize > 0 && (completed || endOfBuf || remSize >= fullPacketSize))
 		{ // Need to send a block to host
 			uint16_t handled = remSize;
 			handleSourceData(&packetHub, &packetHub.sources[port], state->bufferPtr+state->queuedPos, &remSize);
 			handled -= remSize;
-			TEMP_CHARR('+', 'B', INT999_TO_CHARR(handled), '/', INT999_TO_CHARR(remSize+handled));
 			if (handled == 0)
 			{ // Failed to queue data, can't handle packet
 				ERR_CHARR('!', 'O', 'V', 'F');
@@ -1517,6 +1510,9 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 			}
 			state->queuedPos += handled;
 		}
+
+		if (endOfBuf)
+			state->queuedPos = 0;
 
 		TimeSpan dT = GetTimeSinceUS(now);
 		if (dT > 100)
@@ -1558,23 +1554,24 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		}
 
 		// Sent all data to host
-		state->queuedPos = 0;
 		return uartd_accept;
 	}
 
-	// Verify direct checksum
-	cam->packetSize -= PACKET_CHECKSUM_SIZE;
-	uint8_t checksum[PACKET_CHECKSUM_SIZE];
-	calculateDirectPacketChecksum(cam->packetBuffer, cam->packetSize, checksum);
 	bool correctChecksum = true;
-	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
-	{
-		if (checksum[i] != cam->packetBuffer[cam->packetSize+i])
+	if (state->header.length > 0)
+	{ // Verify direct checksum
+		cam->packetSize -= PACKET_CHECKSUM_SIZE;
+		uint8_t checksum[PACKET_CHECKSUM_SIZE];
+		calculateDirectPacketChecksum(cam->packetBuffer, cam->packetSize, checksum);
+		for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 		{
-			WARN_STR("!PacketChecksum:");
-			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
-			correctChecksum = false;
-			break;
+			if (checksum[i] != cam->packetBuffer[cam->packetSize+i])
+			{
+				WARN_STR("!PacketChecksum:");
+				WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
+				correctChecksum = false;
+				break;
+			}
 		}
 	}
 
@@ -1645,7 +1642,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		return uartd_accept;
 	}
 
-	// Should not arrive here
+	// Should not arrive here - all zero-length-packets should use uartd_ignore
 	WARN_STR("/UART_HP_UNKNOWN:");
 	WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
 	return uartd_accept;

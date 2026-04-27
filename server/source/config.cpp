@@ -1855,7 +1855,7 @@ std::optional<ErrorMessage> dumpTargetAssemblyStage(const std::string &path, con
 	return writeJSON(path, file);
 }
 
-std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size)
+std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size, bool filterGroups)
 {
 	std::vector<Eigen::Vector3f> verts;
 	std::vector<Eigen::Vector3f> nrms;
@@ -1863,10 +1863,11 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 	std::ifstream fs(path);
 	if (!fs.is_open()) return asprintf_s("Failed to open '%s' for reading!", path.c_str());
 
-	std::map<std::string, TargetCalibration3D> groups = { { path, TargetCalibration3D() } };
-	TargetCalibration3D *curGroup = &groups[path];
+	std::string label = std::filesystem::path(path).stem();
+	std::map<std::string, TargetCalibration3D> groups = { { label, TargetCalibration3D() } };
+	TargetCalibration3D *curGroup = &groups[label];
 
-	float limit = std::cos(fov/360*PI);
+	float viewAngle = std::cos(fov/360*PI);
 
 	// Convert to right-handed coordinate system, in a specific way to ensure repeatable import/export in Blender
 	// For anything but Y Forward Axis and Up Axis Z import settings, blender applies a rotation
@@ -1877,73 +1878,79 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 		0, 1, 0,
 		0, 0, 1;
 
+	while (true)
 	{
-		while (true)
-		{
-			// Read line header if possible
-			std::string header;
-			if (!(fs >> header)) break;
-			// Handle line of data
-			if (header == "v")
-			{ // Read vertex
-				Eigen::Vector3f vert;
-				fs >> vert.x();
-				fs >> vert.y();
-				fs >> vert.z();
-				verts.push_back(vert);
+		// Read line header if possible
+		std::string header;
+		if (!(fs >> header)) break;
+		// Handle line of data
+		if (header == "v")
+		{ // Read vertex
+			Eigen::Vector3f vert;
+			fs >> vert.x();
+			fs >> vert.y();
+			fs >> vert.z();
+			verts.push_back(vert);
+		}
+		else if (header == "vn")
+		{ // Read normal
+			Eigen::Vector3f nrm;
+			fs >> nrm.x();
+			fs >> nrm.y();
+			fs >> nrm.z();
+			nrms.push_back(nrm);
+		}
+		else if (header == "f")
+		{ // Read face
+			std::getline(fs, header);
+			TargetMarker pt;
+			pt.pos.setZero();
+			pt.nrm.setZero();
+			int pos = 0, sz = 0, count = 0;
+			int vID, nID;
+			while (sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
+			{ // Sum vert values
+				pos += sz;
+				count++;
+				pt.pos += verts.at(vID-1);
+				pt.nrm += nrms.at(nID-1);
 			}
-			else if (header == "vn")
-			{ // Read normal
-				Eigen::Vector3f nrm;
-				fs >> nrm.x();
-				fs >> nrm.y();
-				fs >> nrm.z();
-				nrms.push_back(nrm);
+			if (count == 0) return "Failed to parse face! Make sure to not export UVs!";
+			if (count < 3) continue; // Failed to read face, probably because UVs were exported
+			// Calculate face center as average
+			pt.pos = convertAxis * pt.pos/count;
+			pt.nrm = convertAxis * pt.nrm.normalized();
+			pt.viewAngle = viewAngle;
+			pt.size = size/1000.0f; // mm to m
+			bool duplicate = false;
+			for (auto &altPt : curGroup->markers)
+			{
+				if ((altPt.pos-pt.pos).norm() < 0.0005 && altPt.nrm.dot(pt.nrm) > 0.95)
+					duplicate = true;
 			}
-			else if (header == "f")
-			{ // Read face
-				std::getline(fs, header);
-				TargetMarker pt;
-				pt.pos.setZero();
-				pt.nrm.setZero();
-				int pos = 0, sz = 0, count = 0;
-				int vID, nID;
-				while (sscanf(header.c_str() + pos, "%d//%d%n", &vID, &nID, &sz) == 2)
-				{ // Sum vert values
-					pos += sz;
-					count++;
-					pt.pos += verts.at(vID-1);
-					pt.nrm += nrms.at(nID-1);
-				}
-				if (count == 0) return "";
-				if (count < 3) continue; // Failed to read face, probably because UVs were exported
-				// Calculate face center as average
-				pt.pos = convertAxis * pt.pos/count;
-				pt.nrm = convertAxis * pt.nrm.normalized();
-				pt.viewAngle = limit;
-				pt.size = size/1000.0f; // mm to m
+			if (!duplicate)
 				curGroup->markers.push_back(pt);
-			}
-			else if (header == "g")
-			{ // Read next group name and assign current group
-				std::getline(fs >> std::ws, header);
-				curGroup = &groups[header];
-			}
-			else
-			{ // Skip line
-				std::getline(fs, header);
-			}
 		}
+		else if (header == "g")
+		{ // Read next group name and assign current group
+			fs.seekg(1, std::ios::cur); // skip whitespace
+			if (fs.fail()) return "Failed to parse group name!";
+			std::getline(fs, header);
+			curGroup = &groups[header];
+		}
+		else
+		{ // Skip line
+			std::getline(fs, header);
+		}
+	}
 
-		// Turn vertex groups found into targets
-		for (auto &group : groups)
-		{
-			if (group.first != "Base" && group.first != "(null)" && (groups.size() == 1 || group.first != path))
-			{ // Given vertex group (polygroup) is a set of markers
-				group.second.updateMarkers();
-				targets.emplace(group.first, std::move(group.second));
-			}
-		}
+	// Turn vertex groups found into targets
+	for (auto &group : groups)
+	{
+		if (group.second.markers.empty()) continue;
+		if (filterGroups && (group.first.empty() || group.first == "Base" || group.first == "off" || group.first == "(null)" || group.first == "None")) continue;
+		if (filterGroups && (groups.size() != 1 && group.first == label)) continue;
+		targets.emplace(group.first.empty()? "Default" : group.first, std::move(group.second));
 	}
 
 	return std::nullopt;

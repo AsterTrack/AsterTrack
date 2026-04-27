@@ -270,7 +270,7 @@ HANDLE_ERROR dumpTargetViewRecords(const std::string &path, const std::vector<st
 HANDLE_ERROR parseTargetAssemblyStage(const std::string &path, TargetAssemblyBase &base);
 HANDLE_ERROR dumpTargetAssemblyStage(const std::string &path, const TargetAssemblyBase &base);
 
-HANDLE_ERROR parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size);
+HANDLE_ERROR parseTargetObjFile(const std::string &path, std::map<std::string, TargetCalibration3D> &targets, float fov, float size, bool filterGroups = true);
 HANDLE_ERROR writeTargetObjFile(const std::string &path, const std::string &label, const TargetCalibration3D &target);
 
 #endif // CONFIG_H

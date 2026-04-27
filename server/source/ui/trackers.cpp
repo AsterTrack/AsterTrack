@@ -27,6 +27,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <filesystem>
 #include <numeric>
 
+const char* objImportExportGuide =
+	"Import/Export this .obj in e.g. Blender with Y as Forward Axis and Z as Up Axis.\n"
+	"Mind the Vertex Groups, they mark which faces to use and store the label.\n"
+	"That way, you can demark individual faces of a tracker model as markers.";
+static void OpenObjImportPopup(ImGuiID popup, int trackerID);
+static void HandleObjImportObj(ImGuiID popup);
+
+
 void InterfaceState::ManualUpCalibrationControl(ServerState &state, TrackerConfig &tracker)
 { // Manual up vector alignment
 	static bool startedCalibrationTimeout = false;
@@ -83,148 +91,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	const char* objImportExportGuide =
-		"Import/Export this .obj in e.g. Blender with Y as Forward Axis and Z as Up Axis.\n"
-		"Mind the Vertex Groups, they mark which faces to use and store the label.\n"
-		"That way, you can demark individual faces of a tracker model as markers.";
-
-	// Popup to import target from .obj
-	const ImGuiID loadObjPopupID = ImGui::GetID("ImportTargetObj");
-	static struct
-	{
-		int trackerID = 0;
-		std::string path;
-		bool markerMerge = true;
-		const float defaultMarkerFoV = 180, defaultMarkerSize = 6;
-		float markerFoV = defaultMarkerFoV, markerSize = defaultMarkerSize;
-	} loadObj;
-
-	ImGui::SetNextWindowSize(ImVec2(30*ImGui::GetFontSize(), -1), ImGuiCond_Appearing);
-	if (BeginPopup(loadObjPopupID))
-	{
-		ImGui::AlignTextToFramePadding();
-		if (std::filesystem::path(loadObj.path).has_filename())
-			ImGui::Text("%s", std::filesystem::path(loadObj.path).filename().generic_string().c_str());
-		else
-			ImGui::Text("%s", loadObj.path.c_str());
-		ImGui::SetItemTooltip("%s", loadObj.path.c_str());
-		SameLineTrailing(SizeWidthDiv4().x);
-		if (ImGui::Button("Select", SizeWidthDiv4()))
-		{
-			threadPool.push([](int id)
-			{
-				NFD_Context context{};
-				if (!context) return;
-
-				const int filterLen = 1;
-				nfdfilteritem_t filterList[filterLen] = {
-					{"Object Target", "obj"},
-				};
-				nfdchar_t *outPath;
-				std::string defPath = std::filesystem::absolute(temporaryStoreFolder).string();
-				nfdopendialogu8args_t args;
-				args.filterList = filterList;
-				args.filterCount = filterLen;
-				args.defaultPath = defPath.c_str();
-				ConvertGLFWHandleToNFD(GetUI().glfwWindow, &args.parentWindow);
-				nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
-				if (result == NFD_OKAY)
-				{
-					loadObj.path = outPath;
-					NFD_FreePath(outPath);
-				}
-				else if (result == NFD_ERROR)
-				{
-					SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
-				}
-				GetUI().RequestUpdates();
-			});
-		}
-
-		ScalarProperty("Marker FoV", "°", &loadObj.markerFoV, &loadObj.defaultMarkerFoV, 0.0f, 360.0f);
-		ScalarProperty("Marker Size", "mm", &loadObj.markerSize, &loadObj.defaultMarkerSize, 0.1f, 100.0f);
-
-		if (loadObj.trackerID != 0)
-		{
-			BooleanProperty("Merge Markers", &loadObj.markerMerge, nullptr);
-		}
-
-		ImGui::TextUnformatted(objImportExportGuide);
-
-		if (ImGui::Button("Cancel", SizeWidthDiv2()))
-			ImGui::CloseCurrentPopup();
-		ImGui::SameLine();
-		if (ImGui::Button(loadObj.trackerID == 0? "Load as New" : "Load and Overwrite", SizeWidthDiv2()))
-		{
-			std::map<std::string, TargetCalibration3D> targets;
-			auto error = parseTargetObjFile(loadObj.path, targets, 180, 5);
-			if (error)
-				SignalErrorToUser(error.value());
-			else if (loadObj.trackerID != 0)
-			{
-				if (targets.size() > 1)
-					SignalErrorToUser("Object file contains multiple targets! Will not override.");
-				else if (targets.size() == 0)
-					SignalErrorToUser("Object file contains no targets!");
-				else if (loadObj.markerMerge)
-				{
-					auto &loadCalib = targets.begin()->second;
-					auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-						[&](auto &t){ return t.id == loadObj.trackerID; });
-					if (trackerIt == state.trackerConfigs.end())
-					{
-						SignalErrorToUser(asprintf_s("Could not find tracker by ID %d to import markers into!", loadObj.trackerID));
-					}
-					else
-					{
-						auto &refCalib = trackerIt->calib;
-						auto &params = state.pipeline.targetCalib.params.assembly;
-
-						// Prepare interface for target detection
-						std::vector<TriangulatedPoint> triPoints;
-						triPoints.reserve(refCalib.markers.size());
-						for (const auto &mk : refCalib.markers)
-							triPoints.push_back(TriangulatedPoint(mk.pos, params.alignPointError/1000, 10.0f));
-						std::vector<int> triIndices(triPoints.size());
-						std::iota(triIndices.begin(), triIndices.end(), 0);
-
-						// Match markers between the two targets
-						auto match = detectTarget3D(loadCalib, triPoints, triIndices, params.alignPointSigma, params.alignPoseSigma, false);
-
-						// Copy marker parameters for matched markers
-						for (int m = 0; m < match.pointMap.size(); m++)
-						{
-							if (match.pointMap[m] < 0) continue;
-							auto &mkRef = refCalib.markers[m];
-							auto &mkLoad = loadCalib.markers[match.pointMap[m]];
-							mkLoad.size = mkRef.size;
-							mkLoad.viewAngle = mkRef.viewAngle;
-						}
-					}
-					SignalTargetCalibUpdate(loadObj.trackerID, loadCalib);
-				}
-				else
-				{
-					SignalTargetCalibUpdate(loadObj.trackerID, targets.begin()->second);
-				}
-			}
-			else
-			{ // Import as new target
-				auto selectNewID = [&]()
-				{ // Find max occupied target id
-					int id = 0;
-					for (auto &tracker : state.trackerConfigs)
-						id = std::max(id, tracker.id);
-					return id + 1;
-				};
-				for (auto &target : targets)
-					state.trackerConfigs.push_back(TrackerConfig(selectNewID(), target.first, std::move(target.second), TargetDetectionConfig()));
-			}
-			ImGui::CloseCurrentPopup();
-		}
-		ImGui::EndPopup();
-	}
-
 	bool isDirty = false;
 	for (auto &tracker : state.trackerConfigs)
 		isDirty |= tracker.configDirty | tracker.targetDirty;
@@ -234,11 +100,12 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		if (error) SignalErrorToUser(error.value());
 	}
 
+	const ImGuiID loadObjPopupID = ImGui::GetID("ImportTargetObj");
 	if (ImGui::Button("Import Target from OBJ", SizeWidthFull()))
 	{
-		loadObj.trackerID = 0;
-		ImGui::OpenPopup(loadObjPopupID);
+		OpenObjImportPopup(loadObjPopupID, 0);
 	}
+	HandleObjImportObj(loadObjPopupID);
 
 	if (ImGui::Button("Add Virtual Tracker", SizeWidthFull()))
 	{ // Import as new target
@@ -817,8 +684,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		if (ImGui::Button("Import OBJ", SizeWidthDiv2()))
 		{
-			loadObj.trackerID = tracker.id;
-			ImGui::OpenPopup(loadObjPopupID);
+			OpenObjImportPopup(loadObjPopupID, tracker.id);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Export OBJ", SizeWidthDiv2()))
@@ -1012,4 +878,229 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	ImGui::EndChild();
 
 	ImGui::End();
+}
+
+const static float defaultMarkerFoV = 145, defaultMarkerSize = 6;
+struct MarkerParams
+{
+	float markerFoV = defaultMarkerFoV, markerSize = defaultMarkerSize;
+};
+static struct
+{
+	int trackerID = 0;
+	bool markerMerge = true;
+	std::string path;
+	bool requireReload;
+	std::map<std::string, TargetCalibration3D> groups;
+	std::string groupSelected;
+	std::map<std::string, MarkerParams> groupParams;
+} loadObj;
+
+static void OpenObjImportPopup(ImGuiID popup, int trackerID)
+{
+	loadObj.trackerID = trackerID;
+	loadObj.requireReload = true;
+	ImGui::OpenPopup(popup);
+}
+
+static void HandleObjImportObj(ImGuiID popup)
+{
+	ImGui::SetNextWindowSize(ImVec2(30*ImGui::GetFontSize(), -1), ImGuiCond_Appearing);
+	if (!BeginPopup(popup))
+		return;
+	ServerState &state = GetState();
+
+	ImGui::AlignTextToFramePadding();
+	if (std::filesystem::path(loadObj.path).has_filename())
+		ImGui::Text("%s", std::filesystem::path(loadObj.path).filename().generic_string().c_str());
+	else
+		ImGui::Text("%s", loadObj.path.c_str());
+	ImGui::SetItemTooltip("%s", loadObj.path.c_str());
+	SameLineTrailing(SizeWidthDiv4().x + ImGui::GetStyle().ItemSpacing.x + ImGui::GetFrameHeight());
+	if (ImGui::Button("Select", SizeWidthDiv4()))
+	{
+		threadPool.push([](int id)
+		{
+			NFD_Context context{};
+			if (!context) return;
+
+			const int filterLen = 1;
+			nfdfilteritem_t filterList[filterLen] = {
+				{"Object Target", "obj"},
+			};
+			nfdchar_t *outPath;
+			std::string defPath = std::filesystem::absolute(temporaryStoreFolder).string();
+			nfdopendialogu8args_t args;
+			args.filterList = filterList;
+			args.filterCount = filterLen;
+			args.defaultPath = defPath.c_str();
+			ConvertGLFWHandleToNFD(GetUI().glfwWindow, &args.parentWindow);
+			nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+			if (result == NFD_OKAY)
+			{
+				loadObj.path = outPath;
+				loadObj.requireReload = true;
+				NFD_FreePath(outPath);
+			}
+			else if (result == NFD_ERROR)
+			{
+				SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+			}
+			GetUI().RequestUpdates();
+		});
+	}
+	ImGui::SameLine();
+	if (RetryButton("Reload"))
+	{
+		loadObj.requireReload = true;
+	}
+	ImGui::SetItemTooltip("Reload the object file.");
+
+	if (loadObj.trackerID != 0)
+	{
+		BooleanProperty("Retain Existing Parameters", &loadObj.markerMerge, nullptr);
+		ImGui::SetItemTooltip("If the loaded target is broadly the same target (e.g. after manually aligning it externally),\n"
+			"then you may want to keep existing learned parameters such as marker view angles.\n"
+			"This will also work with minor modifications of markers or addition of new markers.");
+	}
+
+	if (loadObj.requireReload && !loadObj.path.empty())
+	{
+		loadObj.requireReload = false;
+		loadObj.groups.clear();
+		auto error = parseTargetObjFile(loadObj.path, loadObj.groups, defaultMarkerFoV, defaultMarkerSize, false);
+		if (error)
+			SignalErrorToUser(error.value());
+
+		// Keep params only if groups match
+		for (auto &group : loadObj.groupParams)
+		{
+			if (loadObj.groups.contains(group.first)) continue;
+			loadObj.groupParams.clear();
+			break;
+		}
+		if (!loadObj.groupParams.contains(loadObj.groupSelected))
+			loadObj.groupSelected = "";
+		if (loadObj.groupParams.empty())
+		{
+			for (auto &group : loadObj.groups)
+			{
+				if (group.first.empty() || group.first == "Base" || group.first == "off" || group.first == "(null)" || group.first == "None")
+					continue;
+				loadObj.groupParams.emplace(group.first, MarkerParams{});
+				loadObj.groupSelected = group.first;
+			}
+		}
+	}
+	if (!loadObj.groups.empty())
+	{
+		std::string editing;
+		ImGui::Text("Groups:");
+		for (auto &group : loadObj.groups)
+		{
+			ImGui::PushID(group.first.c_str());
+			bool enabled = loadObj.groupParams.contains(group.first);
+			if (ImGui::Checkbox("##enabled", &enabled))
+			{
+				if (enabled)
+					loadObj.groupParams.emplace(group.first, MarkerParams{});
+				else
+					loadObj.groupParams.erase(group.first);
+			}
+			ImGui::SameLine();
+			std::string label = asprintf_s("%s (%d faces)", group.first.c_str(), (int)group.second.markers.size());
+			if (ImGui::Selectable(label.c_str(), loadObj.groupSelected == group.first, ImGuiSelectableFlags_SpanAvailWidth | ImGuiSelectableFlags_NoAutoClosePopups))
+				loadObj.groupSelected = group.first;
+			if (enabled && loadObj.groupSelected == group.first)
+				editing = loadObj.groupSelected;
+			ImGui::PopID();
+		}
+		if (!editing.empty())
+		{
+			auto &editParams = loadObj.groupParams[editing];
+			ScalarProperty("Marker FoV", "°", &editParams.markerFoV, &defaultMarkerFoV, 0.0f, 360.0f);
+			ScalarProperty("Marker Size", "mm", &editParams.markerSize, &defaultMarkerSize, 0.1f, 100.0f);
+		}
+	}
+
+	ImGui::TextUnformatted(objImportExportGuide);
+
+	if (ImGui::Button("Cancel", SizeWidthDiv2()))
+		ImGui::CloseCurrentPopup();
+	ImGui::SameLine();
+	ImGui::BeginDisabled(loadObj.groups.empty() || loadObj.groupParams.empty());
+	if (ImGui::Button(loadObj.trackerID == 0? "Load as New" : "Load and Overwrite", SizeWidthDiv2()))
+	{
+		TargetCalibration3D target;
+		for (auto &group : loadObj.groups)
+		{ // Add all selected group faces as markers
+			if (!loadObj.groupParams.contains(group.first)) continue;
+			auto &params = loadObj.groupParams[group.first];
+			float viewAngle = std::cos(params.markerFoV/360*PI);
+			target.markers.reserve(target.markers.size() + group.second.markers.size());
+			for (auto &marker : group.second.markers)
+			{
+				marker.size = params.markerSize;
+				marker.viewAngle = viewAngle;
+				target.markers.push_back(marker);
+			}
+		}
+		target.updateMarkers();
+		if (loadObj.trackerID != 0 && loadObj.markerMerge)
+		{ // Copy existing learned marker parameters
+			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+				[&](auto &t){ return t.id == loadObj.trackerID; });
+			if (trackerIt == state.trackerConfigs.end())
+			{
+				SignalErrorToUser(asprintf_s("Could not find tracker by ID %d to import markers into! Added as new.", loadObj.trackerID));
+				loadObj.trackerID = 0;
+			}
+			else
+			{
+				auto &refCalib = trackerIt->calib;
+				auto &params = state.pipeline.targetCalib.params.assembly;
+
+				// Prepare interface for target detection
+				std::vector<TriangulatedPoint> triPoints;
+				triPoints.reserve(refCalib.markers.size());
+				for (const auto &mk : refCalib.markers)
+					triPoints.push_back(TriangulatedPoint(mk.pos, params.alignPointError/1000, 10.0f));
+				std::vector<int> triIndices(triPoints.size());
+				std::iota(triIndices.begin(), triIndices.end(), 0);
+
+				// Match markers between the two targets
+				auto match = detectTarget3D(target, triPoints, triIndices, params.alignPointSigma, params.alignPoseSigma, false);
+
+				// Copy marker parameters for matched markers
+				for (int m = 0; m < match.pointMap.size(); m++)
+				{
+					if (match.pointMap[m] < 0) continue;
+					auto &mkRef = refCalib.markers[m];
+					auto &mkLoad = target.markers[match.pointMap[m]];
+					mkLoad.size = mkRef.size;
+					mkLoad.viewAngle = mkRef.viewAngle;
+				}
+			}
+			SignalTargetCalibUpdate(loadObj.trackerID, target);
+		}
+		if (loadObj.trackerID != 0 && !loadObj.markerMerge)
+		{ // Replace existing
+			SignalTargetCalibUpdate(loadObj.trackerID, target);
+		}
+		if (loadObj.trackerID == 0)
+		{ // Import as new target
+			auto selectNewID = [&]()
+			{ // Find max occupied target id
+				int id = 0;
+				for (auto &tracker : state.trackerConfigs)
+					id = std::max(id, tracker.id);
+				return id + 1;
+			};
+			std::string label = loadObj.groupParams.contains(loadObj.groupSelected)? loadObj.groupSelected : loadObj.groupParams.begin()->first;
+			state.trackerConfigs.push_back(TrackerConfig(selectNewID(), label, std::move(target), TargetDetectionConfig()));
+		}
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndDisabled();
+	ImGui::EndPopup();
 }

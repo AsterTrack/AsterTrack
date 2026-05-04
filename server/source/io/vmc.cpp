@@ -64,7 +64,7 @@ static std::optional<ErrorMessage> socket_udp_init(const std::string &host, cons
 	sock = -1;
 
 	struct addrinfo hints = {};
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = host == "localhost"? AF_INET : AF_UNSPEC; // Prefer IPv4 localhost
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ALL;

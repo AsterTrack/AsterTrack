@@ -519,6 +519,8 @@ public:
     explicit ReceivedBundle( const ReceivedPacket& packet );
     explicit ReceivedBundle( const ReceivedBundleElement& bundleElement );
 
+    uint32 TimeSec() const;
+    uint32 TimeFrac() const;
     uint64 TimeTag() const;
 
     uint32 ElementCount() const { return elementCount_; }

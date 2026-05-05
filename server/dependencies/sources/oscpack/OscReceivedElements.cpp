@@ -786,9 +786,20 @@ void ReceivedBundle::Init( const char *bundle, osc_bundle_element_size_t size )
 }
 
 
+
+uint32 ReceivedBundle::TimeSec() const
+{
+    return ToUInt32( timeTag_+0 );
+}
+
+uint32 ReceivedBundle::TimeFrac() const
+{
+    return ToUInt32( timeTag_+4 );
+}
+
 uint64 ReceivedBundle::TimeTag() const
 {
-    return ToUInt64( timeTag_ );
+    return (uint64)TimeSec() << 32 | TimeFrac();
 }
 
 

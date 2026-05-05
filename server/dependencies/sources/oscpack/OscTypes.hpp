@@ -135,8 +135,10 @@ enum TypeTagValues {
 // i/o manipulators used for streaming interfaces
 
 struct BundleInitiator{
-    explicit BundleInitiator( uint64 timeTag_ ) : timeTag( timeTag_ ) {}
-    uint64 timeTag;
+    explicit BundleInitiator( uint64 timeTag ) : timeSec( timeTag >> 32 ), timeFrac( timeTag & 0xFFFFFFFF ) {}
+    explicit BundleInitiator( uint32 timeSec, uint32 timeFrac ) : timeSec( timeSec ), timeFrac( timeFrac ) {}
+    uint32 timeSec;
+    uint32 timeFrac;
 };
 
 extern BundleInitiator BeginBundleImmediate;

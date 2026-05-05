@@ -327,7 +327,8 @@ OutboundPacketStream& OutboundPacketStream::operator<<( const BundleInitiator& r
     messageCursor_ = BeginElement( messageCursor_ );
 
     std::memcpy( messageCursor_, "#bundle\0", 8 );
-    FromUInt64( messageCursor_ + 8, rhs.timeTag );
+    FromUInt32( messageCursor_ + 8, rhs.timeSec );
+    FromUInt32( messageCursor_ + 12, rhs.timeFrac );
 
     messageCursor_ += 16;
     argumentCurrent_ = messageCursor_;

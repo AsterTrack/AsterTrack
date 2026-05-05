@@ -181,19 +181,7 @@ static uint64_t toOSCTimeTag(std::chrono::system_clock::time_point tp)
 	uint32_t ntpFrac = (dtSub.count() << 32) / 1000000;
 
 	// Assemble OSC timetag in NTP format
-	uint64_t timetag;
-	uint8_t *ttPtr = (uint8_t*)&timetag + sizeof(timetag);
-	for (int i = 0; i < sizeof(timetag)/2; i++)
-	{
-        *--ttPtr = ntpSec & 0xFF;
-        ntpSec >>= 8;
-    }
-	for (int i = sizeof(timetag)/2; i < sizeof(timetag); i++)
-	{
-        *--ttPtr = ntpFrac & 0xFF;
-        ntpFrac >>= 8;
-    }
-	return timetag;
+	return (uint64_t)ntpSec << 32 | ntpFrac;
 }
 
 void vmc_send_device_packets(opaque_ptr<vmc_output> &vmc, const std::vector<vmc_device> &trackers, TimePoint_t timestamp, float deltaS)

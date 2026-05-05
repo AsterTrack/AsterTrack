@@ -117,16 +117,19 @@ bool vmc_is_connected(opaque_ptr<vmc_output> &vmc)
 	return vmc->socket >= 0 && vmc->connected;
 }
 
-bool vmc_try_open(opaque_ptr<vmc_output> &vmc)
+bool vmc_try_open(opaque_ptr<vmc_output> &vmc, std::string &address)
 {
 	if (vmc->socket >= 0) return true;
 
 	struct sockaddr_storage addr;
-	auto error = socket_udp_init(vmc->host.c_str(), vmc->port.c_str(), vmc->socket, addr);
+	auto error = socket_udp_init(vmc->host, vmc->port, vmc->socket, addr);
 	if (error)
 		LOG(LIO, LError, "%s", error->c_str());
 	else
-		LOG(LIO, LInfo, "Opened VMC server port %s!\n", getAddrString(&addr).c_str());
+	{
+		address = getAddrString(&addr);
+		LOG(LIO, LInfo, "Opened VMC server port %s!\n", address.c_str());
+	}
 	return !error.has_value();
 }
 

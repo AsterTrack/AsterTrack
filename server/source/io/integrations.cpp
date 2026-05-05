@@ -70,7 +70,7 @@ void IntegrationsReconfigureVMC(IntegrationsState &state, const GeneralConfig &c
 	int port = cfg.vmc_port? cfg.vmc_port : vmc_DEFAULT_PERFORMER_PORT_NO;
 	state.vmc.host = host + ":" + std::to_string(port);
 	state.vmc.output = vmc_init_output(host, std::to_string(port));
-	vmc_try_open(state.vmc.output);
+	vmc_try_open(state.vmc.output, state.vmc.host);
 }
 
 void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
@@ -149,7 +149,7 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 		}
 	}
 
-	if (state.vmc.enabled && vmc_try_open(state.vmc.output))
+	if (state.vmc.enabled && vmc_try_open(state.vmc.output, state.vmc.host))
 	{ // Try opening UDP port if not already done
 		std::vector<vmc_device> cameras;
 		cameras.reserve(server.pipeline.cameras.size());

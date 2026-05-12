@@ -701,7 +701,6 @@ static bool ShowTrackingPanel()
 	}
 	if (ImGui::BeginCombo("Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{ // Local change
-		bool changed = false;
 		auto TrackerSelect = [&](const TrackerConfig &tracker)
 		{
 			ImGui::PushID(tracker.id);
@@ -710,15 +709,12 @@ static bool ShowTrackingPanel()
 				focusedTrackerID = tracker.id;
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
-				changed = true;
 			}
 			ImGui::PopID();
 		};
 		for (auto &tracker : state.trackerConfigs)
 			TrackerSelect(tracker);
 		ImGui::EndCombo();
-		if (changed)
-			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 		[&](auto &t){ return t.id == curTrackerID; });
@@ -1640,17 +1636,13 @@ static bool ShowTimingPanel()
 	if (timeType == TimeType::None) typeLabel = "Select Type";
 	if (ImGui::BeginCombo("Type", typeLabel, ImGuiComboFlags_WidthFitPreview))
 	{
-		bool changed = false;
 		for (int i = 0; i < (int)TimeType::Max; i++)
 		{
 			if (!ImGui::Selectable(timeTypeSelection[i])) continue;
-			changed = true;
 			typeLabel = timeTypeSelection[i];
 			timeType = (TimeType)i;
 		}
 		ImGui::EndCombo();
-		if (changed)
-			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
 	if (timeType == TimeType::None) return false;
 
@@ -1658,13 +1650,11 @@ static bool ShowTimingPanel()
 	if (sourceType < 0) sourceLabel = "Select Source";
 	if (ImGui::BeginCombo("Source", sourceLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{
-		bool changed = false;
 		for (int i = 0; i < state.controllers.size(); i++)
 		{
 			if (timeType == TimeType::Latency) break;
 			std::string label = asprintf_s("Controller %d", i);
 			if (!ImGui::Selectable(label.c_str(), sourceType == 0 && sourceIndex == i)) continue;
-			changed = true;
 			sourceType = 0;
 			sourceIndex = i;
 			sourceLabel = std::move(label);
@@ -1681,7 +1671,6 @@ static bool ShowTimingPanel()
 							  || (timeType == TimeType::Latency && imuProvider->timingRecord.supportsLatency);
 				if (supported && ImGui::Selectable(label.c_str() , sourceType == 2 && sourceIndex == i))
 				{
-					changed = true;
 					sourceType = 2;
 					sourceIndex = i;
 					sourceLabel = std::move(label);
@@ -1701,7 +1690,6 @@ static bool ShowTimingPanel()
 				std::string label = asprintf_s("%s (%d) [%d]", device.getDescriptor().c_str(), device.id.driver, device.index);
 				if (label.empty()) continue;
 				if (!ImGui::Selectable(label.c_str() , sourceType == 1 && sourceIndex == device.index)) continue;
-				changed = true;
 				sourceType = 1;
 				sourceIndex = device.index;
 				sourceLabel = std::move(label);
@@ -1716,12 +1704,9 @@ static bool ShowTimingPanel()
 			{
 				if (!ImGui::Selectable(getRecordingLabel(recordedTimesyncs[i]).c_str(), sourceType == 3 && sourceIndex == i)) continue;
 				loadTimeSyncRecording(i);
-				changed = true;
 			}
 		}
 		ImGui::EndCombo();
-		if (changed)
-			ImGui::MarkItemEdited(ImGui::GetItemID());
 	}
 
 	if (timeType == TimeType::TimeSync)

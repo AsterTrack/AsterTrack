@@ -336,8 +336,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 					tracker.trigger = (TrackerConfig::TrackerTrigger)((tracker.trigger & TrackerConfig::TRIGGER_FLAG_MASK) | TrackerConfig::TRIGGER_ON_IO_CONNECT);
 			}
 			ImGui::EndCombo();
-			if (updated)
-				ImGui::MarkItemEdited(ImGui::GetItemID());
 			changed |= updated;
 		}
 		ImGui::EndGroup();
@@ -411,8 +409,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 					trackerID = trackerConfig.id;
 				}
 				ImGui::EndCombo();
-				if (changed)
-					ImGui::MarkItemEdited(ImGui::GetItemID());
 			}
 			return changed;
 		};
@@ -436,8 +432,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 					subtrackerIdx = t;
 				}
 				ImGui::EndCombo();
-				if (changed)
-					ImGui::MarkItemEdited(ImGui::GetItemID());
 			}
 			return changed;
 		};
@@ -466,8 +460,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 					}
 				}
 				ImGui::EndCombo();
-				if (changed)
-					ImGui::MarkItemEdited(ImGui::GetItemID());
 			}
 			return changed;
 		};
@@ -792,26 +784,22 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		BeginLabelledGroup("IMU");
 		if (ImGui::BeginCombo("##IMUSel", getIMUIdentLabel(tracker.imuIdent).c_str()))
 		{
-			bool changed = false;
 			if (ImGui::Selectable(NoIMULabel.c_str(), !tracker.imuIdent))
 			{
-				changed = tracker.imuIdent;
-				SignalIMUCalibUpdate(tracker.id, {}, {});
+				if (tracker.imuIdent)
+					SignalIMUCalibUpdate(tracker.id, {}, {});
 			}
 			for (auto &imu : state.pipeline.record.imus)
 			{
 				ImGui::PushID(imu->index);
 				if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->id == tracker.imuIdent))
 				{
-					changed = tracker.imuIdent != imu->id;
-					if (changed)
+					if (tracker.imuIdent != imu->id)
 						SignalIMUCalibUpdate(tracker.id, imu->id, {});
 				}
 				ImGui::PopID();
 			}
 			ImGui::EndCombo();
-			if (changed)
-				ImGui::MarkItemEdited(ImGui::GetItemID());
 		}
 		ImGui::EndGroup();
 

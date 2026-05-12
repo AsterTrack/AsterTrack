@@ -37,10 +37,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 const bool recordPoints = true;
 
-const std::array<MotionParameters, MotionCustom> motionPresets = {
-	MotionParameters { 2.0f, 0.0f, 0.00004f, 1.5f, 0.2f, 0.0f, 0.003f, 0.0f, 0.2f },
-	MotionParameters { 0.5f, 0.01f, 0.00005f, 1.2f, 0.2f, 0.05f, 0.005f, 0.01f, 0.2f },
-	MotionParameters { 0.02f, 0.0015f, 0.00005f, 1.0f, 0.5f, 0.05f, 0.01f, 0.005f, 0.1f }
+std::vector<MotionParameters> motionPresets = {
+	MotionParameters { "Room", 2.0f, 0.0f, 0.00004f, 1.5f, 0.2f, 0.0f, 0.003f, 0.0f, 0.2f },
+	MotionParameters { "Wide", 0.5f, 0.01f, 0.00005f, 1.2f, 0.2f, 0.05f, 0.005f, 0.01f, 0.2f },
+	MotionParameters { "Center", 0.02f, 0.0015f, 0.00005f, 1.0f, 0.5f, 0.05f, 0.01f, 0.005f, 0.1f }
 };
 
 
@@ -89,7 +89,7 @@ static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, Simula
 static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object)
 {
 	auto &motion = object.internalMotionState;
-	auto &params = object.motion;
+	auto &params = motionPresets[object.motionPreset];
 	// Generate consistent movement (positional acceleration is in mm)
 	motion.TA += Eigen::Vector3f(
 		(rand()%10000 / 10000.0f) * params.accT - params.accT/2,
@@ -195,6 +195,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 		{
 			LOGC(LTrace, "  Camera %u Frame %" PRIu64 ":\n", cam->id, frameState.num);
 			auto &record = frameState.cameras[cam->index];
+			record.received = true;
 
 			// Project marker into camera view (simulated test data)
 			int startPts = record.rawPoints2D.size();

@@ -227,10 +227,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			}
 		}
 
-		if (state.mode == MODE_Simulation)
+		if (state.mode == MODE_Simulation && ImGui::CollapsingHeader("Simulated Objects", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			BeginSection("Simulated Objects");
-
 			auto sim_lock = pipeline.simulation.contextualLock();
 			for (auto &object : sim_lock->objects)
 			{
@@ -238,16 +236,17 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				ImGui::Checkbox(object.label.c_str(), &object.enabled);
 				SameLineTrailing(SizeWidthDiv2().x);
 				ImGui::SetNextItemWidth(SizeWidthDiv2().x);
-				const char* motionPresetLabels[] = { "Room", "Wide", "Center", "Custom" };
-				if (ImGui::Combo("##Motion", &object.motionPreset, motionPresetLabels, MotionCustom+1))
+				if (ImGui::BeginCombo("##Motion", motionPresets[object.motionPreset].label.c_str()))
 				{
-					if (object.motionPreset != MotionCustom)
-						object.motion = motionPresets[object.motionPreset];
+					for (int p = 0; p < motionPresets.size(); p++)
+					{
+						if (ImGui::Selectable(motionPresets[p].label.c_str()))
+							object.motionPreset = p;
+					}
+					ImGui::EndCombo();
 				}
 				ImGui::PopID();
 			}
-
-			EndSection();
 		}
 	}
 

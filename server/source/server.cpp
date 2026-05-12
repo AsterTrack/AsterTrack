@@ -1032,7 +1032,7 @@ void StartSimulation(ServerState &state)
 	}
 
 	// Add testing targets for which there isn't already a calibration
-	for (auto simTarget : state.config.simulation.trackingTargets)
+	for (const auto &simTarget : state.config.simulation.trackingTargets)
 	{
 		const std::string &label = simTarget.first;
 		const TargetCalibration3D &calib = simTarget.second;
@@ -1085,7 +1085,7 @@ void StartSimulation(ServerState &state)
 		}
 
 		state.pipeline.simulation.contextualLock()->objects.push_back(
-			SimulatedObject { .id = id, .label = label, .target = calib, .motionPreset = 2, .motion = motionPresets[2] }
+			SimulatedObject { .id = id, .label = label, .target = calib, .motionPreset = 2 }
 		);
 	}
 

@@ -44,6 +44,7 @@ extern TargetCalibration3D PointCalibMarker;
 
 struct MotionParameters
 {
+	std::string label;
 	float accT = 0.2f, accR = 0.005f;
 	float centerForce = 0.01f, centerAttenuation = 0.01f;
 	float dampT = 0.05f, dampR = 0.1f;
@@ -51,8 +52,7 @@ struct MotionParameters
 	float minAcc = 0.05f;
 };
 
-const int MotionCustom = 3;
-const extern std::array<MotionParameters, MotionCustom> motionPresets;
+extern std::vector<MotionParameters> motionPresets;
 
 struct SimulatedObject
 {
@@ -61,7 +61,6 @@ struct SimulatedObject
 	std::string label;
 	TargetCalibration3D target;
 	int motionPreset;
-	MotionParameters motion;
 	struct {
 		Eigen::Vector3f TGT = Eigen::Vector3f(0,0,1);
 		Eigen::Matrix3f RGT = Eigen::Matrix3f::Identity();
@@ -131,7 +130,7 @@ struct SimulationState
 		if (objects.empty())
 		{
 			objects = {
-			SimulatedObject { .id = 0, .label = "Single Marker", .target = PointCalibMarker, .motionPreset = 0, .motion = motionPresets[0] }
+			SimulatedObject { .id = 0, .label = "Single Marker", .target = PointCalibMarker, .motionPreset = 0 }
 		 	};
 		}
 		primaryObject = 0;

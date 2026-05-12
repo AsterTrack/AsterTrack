@@ -159,7 +159,6 @@ struct TrackerConfig
 struct GeneralConfig
 {
 	struct {
-		float blobPxStdDev = 0.5f;
 		std::map<std::string, TargetCalibration3D> trackingTargets;
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;

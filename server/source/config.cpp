@@ -162,10 +162,6 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 		if (cfg.contains("simulation"))
 		{
 			auto &simulation = cfg["simulation"];
-			if (simulation.contains("blobPxStdDev"))
-				config.simulation.blobPxStdDev = simulation["blobPxStdDev"].get<float>();
-			if (config.simulation.blobPxStdDev <= 0.0f)
-				config.simulation.blobPxStdDev = 0.0001f;
 			if (simulation.contains("trackingTargets"))
 			{
 				float defaultMarkerFoV = 180;

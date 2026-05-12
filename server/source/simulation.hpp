@@ -72,6 +72,15 @@ struct SimulatedObject
 	Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
 };
 
+struct SimProjectionParameters
+{
+	float blobNoiseStdDev = 0.3f * PixelSize;
+	float blobNoiseMaxSigma = 3.0f; 
+	float expandMarkerViewAngle = 0.0f;
+	float minSourceBlobSize = 1.0f * PixelSize;
+	float mergeFactor = 0.5f;
+};
+
 struct SimulationState
 {
 	BlockedVector<Eigen::Isometry3f> framePoses;
@@ -83,10 +92,11 @@ struct SimulationState
 	};
 	// Generating custom pose
 	FrameInfo triangulatedPoints3D;
-	float blobPxStdDev = 0;
 
 	std::vector<SimulatedObject> objects;
 	int primaryObject;
+
+	SimProjectionParameters projectionParams;
 
 	inline const SimulatedObject &getPrimary() const
 	{

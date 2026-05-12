@@ -79,7 +79,7 @@ TargetCalibration3D LineCalibMarker({
 /* Functions */
 
 static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation);
+	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params);
 
 static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline> &cameras);
 
@@ -201,7 +201,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			int startPts = record.rawPoints2D.size();
 			std::vector<int> markerMap;
 			createTargetProjection(record.rawPoints2D, record.properties, markerMap, object.target,
-				cam->simulation.calib, cam->mode, object.pose, simulation.blobPxStdDev);
+				cam->simulation.calib, cam->mode, object.pose, simulation.projectionParams);
 
 			// Keep track of how many times a point is visible
 
@@ -324,21 +324,17 @@ static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline
  * Projects target into camera view, clipping out-of-view points, merging closeby points, and applying noise
  */
 static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, float stdDeviation)
+	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params)
 {
 	// Create MVP in camera space
 	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
 	Eigen::Projective3f mvp = calib.camera.cast<float>() * pose;
 	// Create random noise generator
-	float noiseScaleX = 2.0f/mode.widthPx, noiseScaleY = 2.0f/mode.heightPx;
-	std::normal_distribution<float> noise(0, stdDeviation);
-	const float maxNoise = 3*stdDeviation;
+	std::normal_distribution<float> noise(0, params.blobNoiseStdDev);
+	const float maxNoise = params.blobNoiseMaxSigma * params.blobNoiseStdDev;
 	// Reserve space for projected points
 	points2D.reserve(points2D.size() + target.markers.size());
 	properties.reserve(properties.size() + target.markers.size());
-	// Determine limit for point size (below which it is to small to be detected)
-	float SizeLimit = 2.0/mode.widthPx * 1.0f; // 1px for now
-	float mergeFactor = 0.5f; // Unless they are overlapping really bad, the algorithm could potentially discern them still
 	// Init marker -> pt map
 	markerMap.clear();
 	markerMap.resize(target.markers.size(), -1);
@@ -352,26 +348,22 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		// Calculate and clip marker points not facing the camera in regards to their field of view
 		Eigen::Vector3f ptNrm = mv.linear() * markerPt.nrm;
 		float facing = -ptNrm.dot(camPoint.normalized());
-		if (facing < markerPt.viewAngle)
+		if (facing + params.expandMarkerViewAngle < markerPt.viewAngle)
 			continue;
 		// Project point
 		Eigen::Vector2f proj = applyProjection2D(calib, camPoint);
-		// Clip
-		float distSafety = 2.0f;
-		if (proj.x() < -mode.sizeW*distSafety || proj.y() < -mode.sizeH*distSafety || proj.x() > mode.sizeW*distSafety || proj.y() > mode.sizeH*distSafety)
-			continue;
 		// Apply distortion
 		Eigen::Vector2f distProj = distortPointUnstable<float>(calib, proj.head<2>(), 1000, 0.001f*PixelSize);
 		Eigen::Vector2f check = undistortPoint(calib, distProj);
 		float diff = (proj.head<2>()-check).squaredNorm();
 		if (diff > 1*1*PixelSize*PixelSize)
-			continue; // Unstable
+			LOGC(LDarn, "Simulated blob distortion is unstable in camera #%u: Error of %.2fpx", calib.id, std::sqrt(diff)*PixelFactor);
 		// Generate noise
 		float noiseX = noise(gen), noiseY = noise(gen); // NOTE: Noise select, first unpredictable, second predictable
-//		float noiseX = rand()%10000 / 10000.0f * stdDeviation*2, noiseY = rand()%10000 / 10000.0f * stdDeviation*2;
+//		float noiseX = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2, noiseY = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2;
 		if (std::abs(noiseX) > maxNoise) noiseX /= std::ceil(std::abs(noiseX)/maxNoise);
 		if (std::abs(noiseY) > maxNoise) noiseY /= std::ceil(std::abs(noiseY)/maxNoise);
-		Eigen::Vector2f ptPos = distProj + Eigen::Vector2f(noiseX*noiseScaleX, noiseY*noiseScaleY);
+		Eigen::Vector2f ptPos = distProj + Eigen::Vector2f(noiseX, noiseY);
 		// Clip
 		if (ptPos.x() < -mode.sizeW || ptPos.y() < -mode.sizeH || ptPos.x() > mode.sizeW || ptPos.y() > mode.sizeH)
 			continue;
@@ -385,14 +377,14 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		float ptSize = (sideProj-distProj).norm()*2;
 		//LOGC(LTrace, "CamUpVec %f, sideVec %f, sidePos %f, sideProj %f\n", camUpVec.norm(), sideVec.norm(), sidePos.norm(), sideProj.norm());
 		//LOGC(LTrace, "Point size is %.2fpx with %.4fmm source size, f of %f, at distance of %.4fm\n", ptSize*1280/2, markerPt.size*1000, calib.f, (markerPt.pos-calib.transform.translation().cast<float>()).norm());
-		if (ptSize < SizeLimit)
+		if (ptSize < params.minSourceBlobSize)
 			continue;
 		int merged = -1;
 		for (int p = 0; p < points2D.size(); p++)
 		{
 			auto &prop = properties[p];
 			float distSq = (points2D[p]-ptPos).squaredNorm();
-			if (distSq < (prop.size+ptSize)*(prop.size+ptSize) * mergeFactor*mergeFactor)
+			if (distSq < (prop.size+ptSize)*(prop.size+ptSize) * params.mergeFactor*params.mergeFactor)
 			{ // Both sides need to be /4 (/2 + sqrt) - 2D point dist because its -1 to 1, and size because we need radius
 				LOGC(LDebug, "Merged with point %d at distance %.2fpx with size %.2fpx and %.2fpx\n",
 					p, std::sqrt(distSq)*1280/2, prop.size*1280/2, ptSize*1280/2);

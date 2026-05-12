@@ -115,6 +115,7 @@ enum InterfaceWindows
 	WIN_POINT_CALIB_PARAMS,
 	WIN_TARGET_CALIB_PARAMS,
 	WIN_TRACKING_PARAMS,
+	WIN_SIMULATION_PARAMS,
 
 	WIN_LENS_SELECTION_TOOL,
 	WIN_TESTING_TOOL,
@@ -504,7 +505,8 @@ public:
 	void UpdatePointCalibParameters(InterfaceWindow &window);
 	void UpdateTargetCalibParameters(InterfaceWindow &window);
 	void UpdateTrackingParameters(InterfaceWindow &window);
-	void UpdateSubsamplingParameters(SubsampleTargetParameters &params, const SubsampleTargetParameters &standard);
+		void UpdateSubsamplingParameters(SubsampleTargetParameters &params, const SubsampleTargetParameters &standard);
+	void UpdateSimulationParameters(InterfaceWindow &window);
 
 	void UpdateLensSelectionTool(InterfaceWindow &window);
 	void UpdateTestingTool(InterfaceWindow &window);

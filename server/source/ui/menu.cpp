@@ -130,6 +130,7 @@ void InterfaceState::UpdateMainMenuBar()
 			addWindowMenuItem(windows[WIN_POINT_CALIB_PARAMS]);
 			addWindowMenuItem(windows[WIN_TARGET_CALIB_PARAMS]);
 			addWindowMenuItem(windows[WIN_TRACKING_PARAMS]);
+			addWindowMenuItem(windows[WIN_SIMULATION_PARAMS]);
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu(ICON_LA_TOOLS " Tools"))

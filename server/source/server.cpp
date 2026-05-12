@@ -1026,7 +1026,6 @@ void StartSimulation(ServerState &state)
 
 	{ // Initialise simulation
 		auto simLock = state.pipeline.simulation.contextualLock();
-		simLock->blobPxStdDev = state.config.simulation.blobPxStdDev;
 		simLock->objects.clear();
 		simLock->resetState();
 	}

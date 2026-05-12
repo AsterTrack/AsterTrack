@@ -55,7 +55,8 @@ set(INTERFACE
 	ui/pipeline_calibration_point.cpp ui/pipeline_calibration_target.cpp
 	ui/insights.cpp ui/logging.cpp
 	ui/devices.cpp ui/wireless.cpp ui/cameraSettings.cpp
-	ui/parameters/sequence2D.cpp ui/parameters/calibration_point.cpp ui/parameters/calibration_target.cpp ui/parameters/tracking.cpp
+	ui/parameters/sequence2D.cpp ui/parameters/calibration_point.cpp ui/parameters/calibration_target.cpp
+	ui/parameters/tracking.cpp ui/parameters/simulation.cpp
 	ui/trackers.cpp ui/integrations.cpp
 	ui/tools/lens_selection.cpp ui/tools/testing.cpp
 	ui/cameraPanels.cpp ui/cameraView.cpp ui/view3D.cpp ui/visSettings.cpp

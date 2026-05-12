@@ -465,6 +465,7 @@ void InterfaceState::ResetWindowLayout()
 	ImGui::DockBuilderDockWindow(windows[WIN_POINT_CALIB_PARAMS].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_TARGET_CALIB_PARAMS].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_TRACKING_PARAMS].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_SIMULATION_PARAMS].title.c_str(), sidePanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_LENS_SELECTION_TOOL].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_TESTING_TOOL].title.c_str(), sidePanelID);
@@ -705,6 +706,7 @@ bool InterfaceState::Init()
 	windows[WIN_POINT_CALIB_PARAMS] = InterfaceWindow(ICON_LA_SLIDERS_H " Point Calib", &InterfaceState::UpdatePointCalibParameters, false);
 	windows[WIN_TARGET_CALIB_PARAMS] = InterfaceWindow(ICON_LA_SLIDERS_H " Target Calib", &InterfaceState::UpdateTargetCalibParameters, false);
 	windows[WIN_TRACKING_PARAMS] = InterfaceWindow(ICON_LA_SLIDERS_H " Tracking", &InterfaceState::UpdateTrackingParameters, false);
+	windows[WIN_SIMULATION_PARAMS] = InterfaceWindow(ICON_LA_SLIDERS_H " Simulation", &InterfaceState::UpdateSimulationParameters, false);
 	// Tools
 	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
 	windows[WIN_TESTING_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Reliability Testing", &InterfaceState::UpdateTestingTool, false);

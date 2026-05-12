@@ -157,7 +157,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 		ImGui::EndDisabled();
 
-		bool showDebug = ImGui::CollapsingHeader("Test Tooling");
+		bool showDebug = ImGui::CollapsingHeader("Debug / Tooling");
 
 		if (showDebug)
 		{ // Show controls for simulating dropouts
@@ -242,6 +242,60 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					{
 						if (ImGui::Selectable(motionPresets[p].label.c_str()))
 							object.motionPreset = p;
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::PopID();
+			}
+		}
+		else if (state.mode == MODE_Replay && ImGui::CollapsingHeader("Replace Trackers"))
+		{
+			BooleanProperty("Keep Unmatched Observerations", &state.keepUnmatchedObservations, nullptr);
+			auto sim_lock = pipeline.simulation.contextualLock();
+			for (auto &tracker : state.trackerConfigs)
+			{
+				ImGui::PushID(tracker.id);
+				ImGui::Text("Replace %s (%d):", tracker.label.c_str(), tracker.id);
+				SameLineTrailing(SizeWidthDiv2().x);
+				ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+				auto replaceConfig = sim_lock->replace.find(tracker.id);
+				std::string replaceLabel = replaceConfig == sim_lock->replace.end()? "Keep" : replaceConfig->second.tgtLabel;
+				if (ImGui::BeginCombo("##TrackerReplacement", replaceLabel.c_str()))
+				{
+					bool replacing = replaceConfig != sim_lock->replace.end();
+					int replaceID = replacing? replaceConfig->second.tgtID : 0;
+					if (ImGui::Selectable("Keep", !replacing) && replacing)
+					{
+						replaceID = 0;
+						sim_lock->replace.erase(replaceConfig);
+					}
+					if (ImGui::Selectable("Remove", replacing && replaceID == 0) && !(replacing && replaceID == 0))
+					{
+						replaceID = 0;
+						sim_lock->replace[tracker.id] = ReplacedObject{ tracker.id, tracker.calib, 0, {}, "Remove" };
+					}
+					for (auto &replace : state.trackerConfigs)
+					{
+						if (replace.type != TrackerConfig::TRACKER_TARGET) continue;
+						ImGui::PushID(replace.id);
+						if (ImGui::Selectable(replace.label.c_str(), replaceID == replace.id) && replaceID != replace.id)
+						{
+							replaceID = replace.id;
+							sim_lock->replace[tracker.id] = ReplacedObject{ tracker.id, tracker.calib, replace.id, replace.calib, replace.label };
+						}
+						ImGui::PopID();
+					}
+					int id = 0;
+					for (const auto &simTarget : state.config.simulation.trackingTargets)
+					{
+						id--;
+						ImGui::PushID(id);
+						if (ImGui::Selectable(simTarget.first.c_str(), replaceID == id) && replaceID != id)
+						{
+							replaceID = id;
+							sim_lock->replace[tracker.id] = ReplacedObject{ tracker.id, tracker.calib, id, simTarget.second, simTarget.first };
+						}
+						ImGui::PopID();
 					}
 					ImGui::EndCombo();
 				}

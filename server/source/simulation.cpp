@@ -298,6 +298,155 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 	}
 }
 
+/**
+ * Replace point data in frameState belonging to the given tracker record with simulated data
+ */
+void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers, bool keepUnmatchedObservations)
+{
+	ScopedLogCategory optLogCategory(LSimulation);
+	auto sim_lock = pipeline.simulation.contextualRLock();
+	const SimulationState &simulation = *sim_lock;
+	const ReplaceParameters &params = simulation.replaceParams;
+	// For temporarily showing original observations (e.g. to interactively compare)
+	if (params.suspendReplacing) return;
+
+	struct CameraReplace
+	{
+		std::vector<Eigen::Vector2f> rawPoints2D;
+		std::vector<BlobProperty> properties;
+		std::vector<bool> removedPoints;
+	};
+	std::vector<CameraReplace> cameraReplace(frame.cameras.size());
+	for (int c = 0; c < frame.cameras.size(); c++)
+		cameraReplace[c].removedPoints.resize(frame.cameras[c].rawPoints2D.size());
+
+	for (const TrackerRecord &record : trackers)
+	{
+		if (!record.result.isDetected() && !record.result.isTracked()) continue;
+
+		auto replaceIt = simulation.replace.find(record.id);
+		if (replaceIt == simulation.replace.end()) continue;
+		auto &replace = replaceIt->second;
+
+		Eigen::Vector3f pos = record.poseObserved.translation()*100, rot = getEulerXYZ(record.poseObserved.rotation())*180/PI;
+		LOGC(LDebug, "Replacing target %d with %d! Pos (%.2fcm, %.2fcm, %.2fcm), Rot (%.2f°, %.2f°, %.2f°)!",
+			replace.srcID, replace.tgtID, pos.x(), pos.y(), pos.z(), rot.x(), rot.y(), rot.z());
+
+		for (int c = 0; c < frame.cameras.size(); c++)
+		{
+			if (pipeline.cameras[c]->disabled) continue;
+			auto &camRec = frame.cameras[c];
+			auto &camRep = cameraReplace[c];
+			CameraCalib calib = pipeline.cameras[c]->calib;
+			Eigen::Isometry3f mv = calib.view.cast<float>() * record.poseObserved;
+			float targetDist = (record.poseObserved.translation() - calib.transform.translation().cast<float>()).norm();
+			float paramScale = 5.0f / targetDist;
+			float matchDist = paramScale * params.matchDist;
+			// TODO: Rework all paramScale of expandAngle across all code
+			// Needs more than one parameter to be fully expressive
+			float expandViewAngle = params.expandMarkerViewAngle * paramScale;
+			float occludeAngleTolerance = params.occludeAngleTolerance / paramScale; // Inverted to expandAngle so divide.
+
+			// Reproject previously tracked tracker
+			// Both to remove its samples from observations
+			// And to determine where it was likely occluded
+			int projected = 0, matched = 0;
+			std::vector<std::pair<Eigen::Vector2f, float>> occlusionMap;
+			occlusionMap.reserve(replace.srcCalib.markers.size());
+			for (int i = 0; i < replace.srcCalib.markers.size(); i++)
+			{
+				Eigen::Vector2f proj2D;
+				float facing = projectMarker(proj2D, replace.srcCalib.markers[i], calib, mv);
+				if (facing + expandViewAngle < 0) continue;
+
+				bool ptMatched = false;
+				for (int p = 0; p < camRec.rawPoints2D.size(); p++)
+				{
+					Eigen::Vector2f obs2D = undistortPoint(calib, camRec.rawPoints2D[p]);
+					if ((obs2D - proj2D).squaredNorm() < matchDist*matchDist)
+					{ // may have multiple matches
+						camRep.removedPoints[p] = true;
+						ptMatched = true;
+					}
+				}
+				if (ptMatched)
+					matched++;
+				projected++;
+
+				// Build data point on occlusion map
+				// If not matched, it might be occluded, or just 
+				float occlusionFactor = ptMatched? -params.occlusionDiscredit : std::max(0.0f, facing - occludeAngleTolerance);
+				occlusionMap.emplace_back(proj2D, occlusionFactor);
+			}
+			LOGC(LDebug, "    Camera %u: Matched %d / %d projected target markers, target distance %.2fm!", calib.id, matched, projected, targetDist);
+
+			if (replace.tgtID == 0 || (matched == 0 && projected > 0))
+				continue; // Don't want to replace or source target was fully occluded
+
+			int preIndex = camRep.rawPoints2D.size();
+			std::vector<int> markerMap;
+			createTargetProjection(camRep.rawPoints2D, camRep.properties, markerMap, replace.tgtCalib,
+				calib, pipeline.cameras[c]->mode, record.poseObserved, simulation.projectionParams);
+			int replacePoints = camRep.rawPoints2D.size() - preIndex;
+
+			// Remove points likely to be occluded based on actually occluded observations
+			int pp = preIndex;
+			for (int p = preIndex; p < camRep.rawPoints2D.size(); p++)
+			{ // Check if projected point is likely occluded based on actual tracker matches
+				Eigen::Vector2f proj = undistortPoint(calib, camRep.rawPoints2D[p]);
+				float occlusionFactor = 0.0f;
+				for (auto &occlusionSample : occlusionMap)
+					occlusionFactor += occlusionSample.second / (proj - occlusionSample.first).squaredNorm();
+				if (occlusionFactor > 0)
+				{
+					LOGC(LTrace, "        Camera %u: Marker occluded with factor %.2f!", calib.id, occlusionFactor);
+					continue;
+				}
+				camRep.rawPoints2D[pp] = camRep.rawPoints2D[p];
+				camRep.properties[pp] = camRep.properties[p];
+				pp++;
+			}
+			LOGC(LDebug, "    Camera %u: Added %d / %d projected replacement target markers!",
+				calib.id, pp-preIndex, (int)camRep.rawPoints2D.size()-preIndex);
+			camRep.rawPoints2D.resize(pp);
+			camRep.properties.resize(pp);
+		}
+	}
+
+	for (int c = 0; c < frame.cameras.size(); c++)
+	{
+		if (pipeline.cameras[c]->disabled) continue;
+		auto &camRec = frame.cameras[c];
+		auto &camRep = cameraReplace[c];
+
+		if (keepUnmatchedObservations)
+		{ // Filter out matched points from recorded observations
+			int pp = 0;
+			for (int p = 0; p < camRec.rawPoints2D.size(); p++)
+			{
+				if (camRep.removedPoints[p]) continue;
+				camRec.rawPoints2D[pp] = camRec.rawPoints2D[p];
+				camRec.properties[pp] = camRec.properties[p];
+				pp++;
+			}
+			LOGC(LDebug, "Camera %u: %d/%d observations remain, with %d newly projected!",
+				pipeline.cameras[c]->calib.id, pp, (int)camRec.rawPoints2D.size(), (int)camRep.rawPoints2D.size());
+			camRec.rawPoints2D.resize(pp);
+			camRec.properties.resize(pp);
+			camRec.points2D.clear();
+		}
+		else
+		{ // Delete all existing, act like simulation mode with movement determined by recorded trackers
+			camRec.rawPoints2D.clear();
+			camRec.properties.clear();
+			camRec.points2D.clear();
+		}
+
+		camRec.rawPoints2D.append_range(camRep.rawPoints2D);
+		camRec.properties.append_range(camRep.properties);
+	}
+}
+
 static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline> &cameras)
 {
 	// Min forced on the groundplane

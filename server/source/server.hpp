@@ -114,6 +114,8 @@ struct ServerState
 	// Dropout Simulation
 	std::atomic<int> simDropoutIndex = { -1 };
 	std::vector<float> simDropoutSeverity = { 1 };
+	// Tracker Replacement
+	bool keepUnmatchedObservations = true;
 	// Loaded records for replay
 	struct {
 		std::vector<std::string> captures;

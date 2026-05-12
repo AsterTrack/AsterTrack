@@ -1254,6 +1254,11 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
 
+				if (!state.keepUnmatchedObservations || !pipeline.simulation.contextualRLock()->replace.empty())
+				{ // Replace some target observations with simulated data (configurable in UI)
+					ReplaceTargetObservations(pipeline, *frameRecord, loadedRecord->trackers, state.keepUnmatchedObservations);
+				}
+
 				// Copy imu samples a bit ahead of the frame into record
 				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);
 				assert(pipeline.record.imus.size() == state.stored.imus.size());

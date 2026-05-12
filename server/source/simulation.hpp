@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define SIMULATION_H
 
 #include "target/target.hpp"
+#include "pipeline/record.hpp"
 
 #include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
@@ -72,6 +73,24 @@ struct SimulatedObject
 	Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
 };
 
+struct ReplacedObject
+{
+	int srcID;
+	TargetCalibration3D srcCalib;
+	int tgtID;
+	TargetCalibration3D tgtCalib;
+	std::string tgtLabel;
+};
+
+struct ReplaceParameters
+{
+	bool suspendReplacing = false;
+	float matchDist = 1.0f * PixelSize;
+	float expandMarkerViewAngle = 0.1f;
+	float occludeAngleTolerance = 0.1f;
+	float occlusionDiscredit = 0.1f;
+};
+
 struct SimProjectionParameters
 {
 	float blobNoiseStdDev = 0.3f * PixelSize;
@@ -100,6 +119,9 @@ struct SimulationState
 
 	std::vector<SimulatedObject> objects;
 	int primaryObject;
+
+	std::map<int, ReplacedObject> replace;
+	ReplaceParameters replaceParams;
 
 	SimProjectionParameters projectionParams;
 
@@ -160,5 +182,10 @@ struct SimulationState
  * Generates simulated data according to config and current phase
  */
 void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frame);
+
+/**
+ * Replace point data in frameState belonging to the given tracker records with simulated data if configured
+ */
+void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers, bool keepUnmatchedObservations);
 
 #endif // SIMULATION_H

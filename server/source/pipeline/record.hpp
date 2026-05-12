@@ -64,7 +64,9 @@ struct BlobProperty
 	float size; // (blob diameter in pixels) / (camera width in pixels), or radius in -1 to 1 space - max 255 pixels
 	int value; // Metric derived from contrast and absolute brightness - max 1024
 
-	BlobProperty(float size, int value) : size(size), value(value) {} // For MSVC...
+	// For MSVC...
+	BlobProperty() {}
+	BlobProperty(float size, int value) : size(size), value(value) {}
 };
 
 struct CameraFrameRecord

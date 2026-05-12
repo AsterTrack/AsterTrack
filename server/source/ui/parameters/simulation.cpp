@@ -62,6 +62,24 @@ void InterfaceState::UpdateSimulationParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
+	if (BeginCollapsingRegion("Replace Parameters"))
+	{
+		auto &params = sim_lock->replaceParams;
+		const static ReplaceParameters standard = {};
+
+		modified |= BooleanProperty("Suspend Replacing", &params.suspendReplacing, &standard.suspendReplacing);
+
+		ImGui::SeparatorText("Match Tracked Target to Observations");
+		modified |= ScalarProperty<float>("Match Range", "px", &params.matchDist, &standard.matchDist, 0, 10, 0.05f, PixelFactor, "%.1f");
+		modified |= ScalarProperty<float>("Expand Marker View Angle", "", &params.expandMarkerViewAngle, &standard.expandMarkerViewAngle, -2.0f, 2.0f, 0.02f);
+
+		ImGui::SeparatorText("Evaluate Occlusions based on Matches");
+		modified |= ScalarProperty<float>("Occlusion View Angle Tolerance", "", &params.occludeAngleTolerance, &standard.occludeAngleTolerance, -2.0f, 2.0f, 0.02f);
+		modified |= ScalarProperty<float>("Occlusion Discredit Strength", "", &params.occlusionDiscredit, &standard.occlusionDiscredit, 0.0f, 1.0f, 0.02f);
+
+		EndCollapsingRegion();
+	}
+
 	if (modified && state.mode == MODE_Replay && state.simAdvance.load() == 0)
 	{ // Simulation mode will loose simulation state, and doesn't benefit much from this anyway
 		// Load last frame if currently halted

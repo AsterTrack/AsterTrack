@@ -896,7 +896,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			// Instead of limiting which markers to reproject at a distance
 			// May want to project more (especially if pose is uncertain)
 			// And instead weight them somehow based on their suspected brightness
-			float expandView = expandViewAngle / paramScale[c];
+			float expandView = expandViewAngle * paramScale[c];
 
 			// Project markers and mark those not seen with NAN
 			Eigen::Isometry3f mv = calibs[c].view.cast<float>() * targetMatch2D.pose;
@@ -904,7 +904,9 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			relevantProjected2D[c].reserve(target.markers.size());
 			for (int i = 0; i < target.markers.size(); i++)
 			{
-				if (projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv, expandView))
+				float facing = projectMarker(projected2D[c][i], target.markers[i], calibs[c], mv) + expandView;
+				// TODO: Improve selection/projection of markers at a distance (see above)
+				if (facing > 0)
 					relevantProjected2D[c].push_back(i);
 				else
 				 	projected2D[c][i].setConstant(NAN);

@@ -73,7 +73,7 @@ void TargetCalibration3D::updateMarkers()
 	// markerDistLookup is now a list of relations sorted by distance with at least triTargetMinRelations of the closest relations per point
 }
 
-static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
+static inline bool projectMarkerCullOnly(Eigen::Vector2f &projected, const TargetMarker &marker,
 	const CameraCalib &calib, const Eigen::Isometry3f mv)
 {
 	Eigen::Vector3f camPoint = mv * marker.pos;
@@ -81,8 +81,8 @@ static inline bool projectMarker(Eigen::Vector2f &projected, const TargetMarker 
 	return camPoint.z() > 0; // Cull back
 }
 
-bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
-	const CameraCalib &calib, const Eigen::Isometry3f mv, float expandViewAngle)
+float projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
+	const CameraCalib &calib, const Eigen::Isometry3f mv)
 {
 	Eigen::Vector3f camPoint = mv * marker.pos;
 	// Cull back
@@ -93,7 +93,7 @@ bool projectMarker(Eigen::Vector2f &projected, const TargetMarker &marker,
 	// Calculate and clip marker points not facing the camera in regards to their field of view
 	Eigen::Vector3f ptNrm = mv.linear() * marker.nrm;
 	float facing = -ptNrm.dot(camPoint.normalized());
-	return facing+expandViewAngle >= marker.viewAngle;
+	return facing - marker.viewAngle;
 }
 
 /**
@@ -111,7 +111,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 	points2D.resize(target.markers.size());
 	projected.reserve(target.markers.size());
 	for (int i = 0; i < target.markers.size(); i++)
-		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandViewAngle))
+		if (projectMarker(points2D[i], target.markers[i], calib, mv) + expandViewAngle > 0)
 			projected.push_back(i);
 }
 
@@ -131,7 +131,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D, std::vector<int> &pro
 	points2D.resize(target.markers.size());
 	projected.reserve(target.markers.size());
 	for (int i : relevant)
-		if (projectMarker(points2D[i], target.markers[i], calib, mv, expandViewAngle))
+		if (projectMarker(points2D[i], target.markers[i], calib, mv) + expandViewAngle > 0)
 			projected.push_back(i);
 }
 
@@ -149,7 +149,7 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D,
 	points2D.reserve(target.markers.size());
 	Eigen::Vector2f projPt;
 	for (int i = 0; i < target.markers.size(); i++)
-		if (projectMarker(projPt, target.markers[i], calib, mv, expandViewAngle))
+		if (projectMarker(projPt, target.markers[i], calib, mv) + expandViewAngle > 0)
 			points2D.push_back(projPt);
 }
 
@@ -169,6 +169,6 @@ void projectTarget(std::vector<Eigen::Vector2f> &points2D,
 	points2D.reserve(target.markers.size());
 	Eigen::Vector2f projPt;
 	for (int i : relevant)
-		if (projectMarker(projPt, target.markers[i], calib, mv))
+		if (projectMarkerCullOnly(projPt, target.markers[i], calib, mv))
 			points2D.push_back(projPt);
 }

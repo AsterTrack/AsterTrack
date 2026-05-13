@@ -75,9 +75,14 @@ struct SimulatedObject
 struct SimProjectionParameters
 {
 	float blobNoiseStdDev = 0.3f * PixelSize;
-	float blobNoiseMaxSigma = 3.0f; 
-	float expandMarkerViewAngle = 0.0f;
-	float minSourceBlobSize = 1.0f * PixelSize;
+	float blobNoiseMaxSigma = 4.0f; 
+	float expandMarkerViewAngle = -0.04f;
+	float minSourceBlobSize = 0.0f * PixelSize;
+	float blobVisualSizeFlare = 0.5f * PixelSize;
+	float blobVisualSizeFactor = 2.0f;
+	bool grazingAngleDiminishSize = true;
+	float grazingAngleLower = -expandMarkerViewAngle-0.1f;
+	float grazingAngleUpper = 0.8f;
 	float mergeFactor = 0.5f;
 };
 

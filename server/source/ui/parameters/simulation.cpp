@@ -43,14 +43,21 @@ void InterfaceState::UpdateSimulationParameters(InterfaceWindow &window)
 
 		ImGui::SeparatorText("Blob Projection");
 		modified |= ScalarProperty<float>("Expand Marker View Angle", "", &params.expandMarkerViewAngle, &standard.expandMarkerViewAngle, -2.0f, 2.0f, 0.02f);
-		modified |= ScalarProperty<float>("Noise Std Dev", "px", &params.blobNoiseStdDev, &standard.blobNoiseStdDev, 0, 10, 0.1f, PixelFactor, "%.2f");
-		modified |= ScalarProperty<float>("Noise Max Sigma", "o", &params.blobNoiseMaxSigma, &standard.blobNoiseMaxSigma, 1, 10, 0.1f);
+		modified |= ScalarProperty<float>("Noise Std Dev", "px", &params.blobNoiseStdDev, &standard.blobNoiseStdDev, 0, 10, 0.02f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Noise Max Sigma", "o", &params.blobNoiseMaxSigma, &standard.blobNoiseMaxSigma, 1, 10, 0.2f);
 
 		ImGui::SeparatorText("Blob Size");
-		modified |= ScalarProperty<float>("Min Source Size", "px", &params.minSourceBlobSize, &standard.minSourceBlobSize, 0, 10, 0.1f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Min Source Size", "px", &params.minSourceBlobSize, &standard.minSourceBlobSize, 0, 10, 0.02f, PixelFactor, "%.2f");
+		modified |= ScalarProperty<float>("Visual Size Factor", "x", &params.blobVisualSizeFactor, &standard.blobVisualSizeFactor, 0, 100, 0.05f);
+		modified |= ScalarProperty<float>("Visual Size Flare", "px", &params.blobVisualSizeFlare, &standard.blobVisualSizeFlare, 0, 10, 0.05f, PixelFactor, "%.2f");
+		modified |= BooleanProperty("Diminish Size at Grazing View Angle", &params.grazingAngleDiminishSize, &standard.grazingAngleDiminishSize);
+		ImGui::BeginDisabled(!params.grazingAngleDiminishSize);
+		modified |= ScalarProperty<float>("Grazing Angle Lower Offset", "", &params.grazingAngleLower, &standard.grazingAngleLower, -2.0f, 2.0f, 0.02f);
+		modified |= ScalarProperty<float>("Grazing Angle Upper Offset", "", &params.grazingAngleUpper, &standard.grazingAngleUpper, -2.0f, 2.0f, 0.02f);
+		ImGui::EndDisabled();
 
 		ImGui::SeparatorText("Merge Nearby Blobs");
-		modified |= ScalarProperty<float>("Merge Distance Factor", "", &params.mergeFactor, &standard.mergeFactor, 0.0f, 5.0f, 0.05f);
+		modified |= ScalarProperty<float>("Merge Distance Factor", "", &params.mergeFactor, &standard.mergeFactor, 0.0f, 1000.0f, 0.05f);
 
 		EndCollapsingRegion();
 	}

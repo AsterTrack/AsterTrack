@@ -193,6 +193,8 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		for (auto &cam : pipeline.cameras)
 		{
+			if (cam->disabled) continue;
+
 			LOGC(LTrace, "  Camera %u Frame %" PRIu64 ":\n", cam->id, frameState.num);
 			auto &record = frameState.cameras[cam->index];
 			record.received = true;
@@ -338,6 +340,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 	// Init marker -> pt map
 	markerMap.clear();
 	markerMap.resize(target.markers.size(), -1);
+	std::map<int,int> mergeMap;
 	for (int i = 0; i < target.markers.size(); i++)
 	{
 		const TargetMarker &markerPt = target.markers[i];
@@ -353,8 +356,8 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		// Project point
 		Eigen::Vector2f proj = applyProjection2D(calib, camPoint);
 		// Apply distortion
-		Eigen::Vector2f distProj = distortPointUnstable<float>(calib, proj.head<2>(), 1000, 0.001f*PixelSize);
-		Eigen::Vector2f check = undistortPoint(calib, distProj);
+		Eigen::Vector2f projDist = distortPointUnstable<float>(calib, proj.head<2>(), 1000, 0.001f*PixelSize);
+		Eigen::Vector2f check = undistortPoint(calib, projDist);
 		float diff = (proj.head<2>()-check).squaredNorm();
 		if (diff > 1*1*PixelSize*PixelSize)
 			LOGC(LDarn, "Simulated blob distortion is unstable in camera #%u: Error of %.2fpx", calib.id, std::sqrt(diff)*PixelFactor);
@@ -363,59 +366,103 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 //		float noiseX = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2, noiseY = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2;
 		if (std::abs(noiseX) > maxNoise) noiseX /= std::ceil(std::abs(noiseX)/maxNoise);
 		if (std::abs(noiseY) > maxNoise) noiseY /= std::ceil(std::abs(noiseY)/maxNoise);
-		Eigen::Vector2f ptPos = distProj + Eigen::Vector2f(noiseX, noiseY);
+		Eigen::Vector2f ptPos = projDist + Eigen::Vector2f(noiseX, noiseY);
 		// Clip
 		if (ptPos.x() < -mode.sizeW || ptPos.y() < -mode.sizeH || ptPos.x() > mode.sizeW || ptPos.y() > mode.sizeH)
 			continue;
 		// Determine point size
 		//float ptSize = 1.0f + 0.1f/camPoint.z();
 		Eigen::Vector3f camUpVec = calib.transform.matrix().col(2).head<3>().cast<float>();
-		Eigen::Vector3f sideVec = (markerPt.pos-calib.transform.translation().cast<float>()).cross(camUpVec);
-		Eigen::Vector3f sidePos = markerPt.pos + (markerPt.size/2*sideVec.normalized());
-		Eigen::Vector2f sideProj = projectPoint2D(mvp, sidePos);
-		sideProj = distortPointUnstable<float>(calib, sideProj, 1000, 0.001f*PixelSize);
-		float ptSize = (sideProj-distProj).norm()*2;
-		//LOGC(LTrace, "CamUpVec %f, sideVec %f, sidePos %f, sideProj %f\n", camUpVec.norm(), sideVec.norm(), sidePos.norm(), sideProj.norm());
-		//LOGC(LTrace, "Point size is %.2fpx with %.4fmm source size, f of %f, at distance of %.4fm\n", ptSize*1280/2, markerPt.size*1000, calib.f, (markerPt.pos-calib.transform.translation().cast<float>()).norm());
+		Eigen::Vector3f distVec = markerPt.pos - calib.transform.translation().cast<float>();
+		Eigen::Vector3f sideVec = distVec.cross(camUpVec).normalized() * markerPt.size/2;
+		Eigen::Vector2f sideProj = projectPoint2D(mvp, markerPt.pos + sideVec);
+		Eigen::Vector2f sideDist = distortPointUnstable<float>(calib, sideProj, 1000, 0.001f*PixelSize);
+		// Get point size as radius in -1 to 1 space (or diameter in 0 to 1 space)
+		float ptSize = (sideDist - projDist).norm();
+		if (SHOULD_LOGC(LTrace) && ptSize < 2*PixelFactor)
+		{
+			float ptSizeUndist = (sideProj - proj.head<2>()).norm();
+			float ptDist = (markerPt.pos-calib.transform.translation().cast<float>()).norm();
+			float sideDist = (markerPt.pos+sideVec-calib.transform.translation().cast<float>()).norm();
+			LOGC(LTrace, "        Point size is %.2fpx with %.4fmm source size, f of %f, at distance of %.4fm",
+				ptSize*PixelFactor, markerPt.size*1000, calib.f, ptDist);
+			LOGC(LTrace, "        CamUpVec %f, sideVec %fmm, side point dist diff of %.4fmm, size undist %.2fpx",
+				camUpVec.norm(), sideVec.norm()*1000, (sideDist-ptDist)*1000, ptSizeUndist * PixelFactor);
+		}
+		// Adjust by view angle
+		if (params.grazingAngleDiminishSize && markerPt.viewAngle > 0.1)
+		{ // Well below 180° FoV - very likely flat marker that has less light reflected on tight view angles
+			float sizeDiminish = (facing - markerPt.viewAngle - params.grazingAngleLower) / (params.grazingAngleUpper-params.grazingAngleLower);
+			ptSize *= std::max(0.0f, std::min(1.0f, sizeDiminish));
+		}
 		if (ptSize < params.minSourceBlobSize)
 			continue;
-		int merged = -1;
+		ptSize = ptSize*params.blobVisualSizeFactor + params.blobVisualSizeFlare;
+		// Test if it should be merged with another nearby blob
 		for (int p = 0; p < points2D.size(); p++)
 		{
 			auto &prop = properties[p];
-			float distSq = (points2D[p]-ptPos).squaredNorm();
-			if (distSq < (prop.size+ptSize)*(prop.size+ptSize) * params.mergeFactor*params.mergeFactor)
-			{ // Both sides need to be /4 (/2 + sqrt) - 2D point dist because its -1 to 1, and size because we need radius
+			float distSq = (points2D[p] - ptPos).squaredNorm();
+			float radius = prop.size + ptSize;
+			if (distSq < radius*radius * params.mergeFactor*params.mergeFactor)
+			{ // Unless they are overlapping really bad, the algorithm could potentially discern them still, so mergeFactor < 1 is fine
+				LOGC(LTrace, "     -> Point merging into %d!", p);
 				LOGC(LDebug, "Merged with point %d at distance %.2fpx with size %.2fpx and %.2fpx\n",
-					p, std::sqrt(distSq)*1280/2, prop.size*1280/2, ptSize*1280/2);
-				points2D[p] = (prop.size*points2D[p] + ptSize*ptPos) / (prop.size + ptSize);
-				LOGC(LTrace, "    While projecting point %d (%f, %f), decided to merge into point %d instead. "
-					"Distance %f, sizes %f and %f, new size %f, pos  (%f, %f)\n",
-						(int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p, std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor,
-						prop.size*PixelFactor, (prop.size/2 + ptSize/2 + std::sqrt(distSq))*PixelFactor, points2D[p].x()*PixelFactor, points2D[p].y()*PixelFactor);
-				prop.size = prop.size/2 + ptSize/2 + std::sqrt(distSq);
-				merged = p;
+					p, std::sqrt(distSq)*PixelFactor, prop.size*PixelFactor, ptSize*PixelFactor);
+				LOGC(LTrace, "        While projecting point %d (%f, %f), decided to merge into point %d instead. "
+					"Distance %f, sizes %f and %f, new size %f, pos (%f, %f)\n",
+						(int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p,
+						std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, (radius-ptSize)*PixelFactor,
+						prop.size*PixelFactor, points2D[p].x()*PixelFactor, points2D[p].y()*PixelFactor);
+				mergeMap[points2D.size()] = mergeMap.contains(p)? mergeMap[p] : p;
 				break;
 			}
-			else if (distSq < (prop.size+ptSize)*2*(prop.size+ptSize)*2)
+			else if (distSq < radius*radius * 2*2)
 			{
-				LOGC(LTrace, "    While projecting point %d (%f, %f), nearly merged into point %d instead. Distance %f, sizes %f and %f\n",
+				LOGC(LTrace, "        While projecting point %d (%f, %f), nearly merged into point %d instead. Distance %f, sizes %f and %f\n",
 					(int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p, std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, properties[p].size*PixelFactor);
 			}
 		}
-		if (merged >= 0)
-		{
-			markerMap[i] = merged;
-			LOGC(LTrace, "    Camera %u: Point merged into %d!", calib.id, merged);
-			continue;
+		// Register projected marker point
+		markerMap[i] = points2D.size();
+		points2D.push_back(ptPos);
+		properties.emplace_back(ptSize, 1000);
+		LOGC(LTrace, "    Camera %u: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
+		
+	}
+
+	if (mergeMap.empty()) return;
+
+	for (auto &merge : mergeMap)
+	{ // Apply merges, retaining original points to not disturb indices
+		float dist = (points2D[merge.first] - points2D[merge.second]).norm();
+		float radius = properties[merge.first].size + properties[merge.second].size;
+		points2D[merge.second] = (properties[merge.first].size*points2D[merge.first] + properties[merge.second].size*points2D[merge.second]) / radius;
+		properties[merge.second].size = (radius + dist) / 2;
+	}
+
+	int p = 0, pp = 0;
+	for (int i = 0; i < target.markers.size(); i++)
+	{
+		if (markerMap[i] < 0) continue;
+		if (mergeMap.contains(markerMap[i]))
+		{ // Update markerMap and delete point p, was merged into an earlier one
+			markerMap[i] = mergeMap[markerMap[i]];
+			for (auto &merge : mergeMap)
+			{ // Update indices of mergeMap
+				if (merge.second > p)
+					merge.second--;
+			}
 		}
 		else
-		{
-			// Register projected marker point
-			markerMap[i] = points2D.size();
-			points2D.push_back(ptPos);
-			properties.emplace_back(ptSize, 1000);
-			LOGC(LTrace, "    Camera %u: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
+		{ // Keep point, move it to new location
+			points2D[pp] = points2D[p];
+			properties[pp] = properties[p];
+			markerMap[i] = pp;
+			pp++;
 		}
+		p++;
 	}
+	points2D.resize(pp);
+	properties.resize(pp);
 }

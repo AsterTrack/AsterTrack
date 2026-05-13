@@ -950,9 +950,10 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.imageVis.show && imageFrameState && (!visCamera.image || imageFrameState->ID != visCamera.image->frameID))
 	{ // Got a different camera image to load
-		if (camera.receiving.latestFrameImage && imageFrameState->ID == camera.receiving.latestFrameImage->frameID)
+		auto latestCache = camera.receiving.latestFrameImage; // new shared_ptr
+		if (latestCache && imageFrameState->ID == latestCache->frameID)
 		{ // Already cached recent frame image
-			visCamera.image = camera.receiving.latestFrameImage; // new shared_ptr
+			visCamera.image = std::move(latestCache);
 		}
 		else
 		{ // Have to load image from JPEG record

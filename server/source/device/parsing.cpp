@@ -824,8 +824,9 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 			}
 
 			// Store as most recent decompressed image
-			camera->receiving.latestFrameImage = std::move(image);
-			camera->receiving.latestFrameImageRecord = std::move(imageRecord);
+			camera->receiving.latestFrameImage.swap(image);
+			camera->receiving.latestFrameImageRecord.swap(imageRecord);
+			// Swap so deconstructor of last frame happens after switch
 
 			SignalCameraRefresh(camera->id);
 		}, std::move(imageRecord));
@@ -836,7 +837,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 	return true;
 }
 
-std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraImageRecord> &imageRecord)
+std::shared_ptr<const CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraImageRecord> &imageRecord)
 {
 	int width, height;
 	std::vector<uint8_t> imageBuf;

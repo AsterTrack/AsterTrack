@@ -1294,8 +1294,9 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 						if (!image) return; // Image jpeg is faulty, don't store record
 
 						// Store as most recent decompressed image
-						cam->receiving.latestFrameImage = std::move(image);
-						cam->receiving.latestFrameImageRecord = std::move(imageRecord);
+						cam->receiving.latestFrameImage.swap(image);
+						cam->receiving.latestFrameImageRecord.swap(imageRecord);
+						// Swap so deconstructor of last frame happens after switch
 
 						SignalCameraRefresh(cam->id);
 					}, frameRecord->cameras[cam->pipeline->index].image); // new shared_ptr

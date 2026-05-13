@@ -49,6 +49,6 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, c
 // Delegate to correct parsing function
 void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 
-std::shared_ptr<CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraImageRecord> &imageRecord);
+std::shared_ptr<const CameraImage> decompressCameraImageRecord(std::shared_ptr<CameraImageRecord> &imageRecord);
 
 #endif // PARSING_H

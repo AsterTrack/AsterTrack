@@ -184,8 +184,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	};
 
 	// Set pixel values for visualisation only
-	float PixelSize = 1.0f / config.width * camPixFactor.x();
-	float PixelStride = 2.0f * PixelSize; // 2 because of -1 to 1 space
+	float ImgPixelSize = 1.0f / config.width * camPixFactor.x();
 
 	// CV image manipulation
 	Bounds2i imageRect(0, 0, frame->width, frame->height);
@@ -294,8 +293,8 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 			{
 				VisPoint vert;
 				vert.pos.head<2>() = emulPix2Cam(dot.cast<float>());
-				vert.pos.z() = 1-0.9f;
-				vert.size = PixelSize;
+				vert.pos.z() = 0.2f;
+				vert.size = ImgPixelSize;
 				if (centerMask.test(dot.y()*frame->width+dot.x()))
 				{
 					vert.color = Color{ 0.2f, 0.8f, 0.2f, 0.5f };
@@ -400,7 +399,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		for (auto &hint : hints)
 		{
 			Eigen::Vector2f blob2D = emulPix2Cam(hint.peak.cast<float>());
-			float size = (hint.scale+1) * PixelStride/3;
+			float size = (hint.scale+1) * ImgPixelSize/3;
 			result->maximaHints.push_back(Eigen::Vector3f(blob2D.x(), blob2D.y(), size));
 		}
 
@@ -433,13 +432,20 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		resegmentedClusterCount++;
 
 		for (auto &cluster : resegmentedClusters)
-			result->resegmentedBlobs.emplace_back(emulPix2Cam(cluster.centroid).homogeneous(), Color{ 1, 0, 0, 1 }, cluster.size * PixelStride);
+		{ // Update point visualisation
+			VisPoint vert;
+			vert.pos.head<2>() = emulPix2Cam(cluster.centroid);
+			vert.pos.z() = 0.1f;
+			vert.size = cluster.size * 2 * ImgPixelSize;
+			vert.color = Color{ 1, 0, 0, 1 };
+			result->resegmentedBlobs.push_back(vert);
+		}
 
 		for (auto &cluster : resegmentedClusters)
 		{
 			SceneLabel label;
-			label.position.head<2>() = emulPix2Cam(cluster.centroid);
-			label.radius = cluster.size * PixelStride;
+			label.position = emulPix2Cam(cluster.centroid).homogeneous();
+			label.radius = cluster.size * ImgPixelSize * 2; // -1 to 1 space
 			label.text = asprintf_s("Value %.2f\nSize %.2fpx\nWeight %.1f\nContrast %.1f\nReliability %.1f",
 				cluster.value, cluster.size*2, cluster.weight/20, cluster.contrast, cluster.reliability);
 			label.color = Color{ 1, 0, 0, 1 };
@@ -461,7 +467,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		for (auto &peaks : stage)
 		{
 			Eigen::Vector2f blob2D = emulPix2Cam(peaks.center.cast<float>());
-			float size = (peaks.scale+1) * PixelStride/3;
+			float size = (peaks.scale+1) * ImgPixelSize/3;
 			result->maximaHintStages[s].push_back(Eigen::Vector3f(blob2D.x(), blob2D.y(), size));
 		}
 	}
@@ -469,7 +475,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	for (auto &itCenter : iterativeCenters)
 	{
 		Eigen::Vector2f blob2D = emulPix2Cam(itCenter.center);
-		float size = (itCenter.scale+1) * PixelStride/3;
+		float size = (itCenter.scale+1) * ImgPixelSize/3;
 		result->peripheralCenters.push_back(Eigen::Vector3f(blob2D.x(), blob2D.y(), size));
 	}
 
@@ -505,9 +511,9 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		for (int e = 0; e < edgeRefined.size(); e++)
 		{
 			VisPoint vert;
-			vert.pos.head<2>() = emulPix2Cam(edgeRefined[e]);
-			vert.pos.z() = 1-0.9f;
-			vert.size = PixelSize/6;
+			vert.pos.head<2>() = emulPix2Cam(cluster.centroid);
+			vert.pos.z() = 0.1f;
+			vert.size = ImgPixelSize/3;
 			if (edgeOutliers[e])
 				vert.color = Color{ 0.2f, 0.8f, 0.8f, 1.0f };
 			else
@@ -525,7 +531,8 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		{ // Update point visualisation
 			VisPoint vert;
 			vert.pos.head<2>() = emulPix2Cam(cluster.centroid);
-			vert.size = cluster.size * PixelStride;
+			vert.pos.z() = 0.1f;
+			vert.size = cluster.size * 2 * ImgPixelSize;
 			vert.color = Color{ 1, 0, 0, 1 };
 			result->refinedBlobs.push_back(vert);
 		}
@@ -539,7 +546,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 		VisPoint vert;
 		vert.pos.head<2>() = emulPix2Cam(cluster.centroid);
 		vert.pos.z() = 0.1f;
-		vert.size = cluster.size*2;
+		vert.size = cluster.size * 2 * ImgPixelSize;
 		vert.color = Color{ 
 			std::min(1.0f, 0.4f + cluster.value/800*0.6f), 
 			0.0f, 

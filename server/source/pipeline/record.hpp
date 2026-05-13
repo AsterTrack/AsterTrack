@@ -61,8 +61,8 @@ struct CameraImageRecord
 
 struct BlobProperty
 {
-	float size;
-	int value;
+	float size; // (blob diameter in pixels) / (camera width in pixels), or radius in -1 to 1 space - max 255 pixels
+	int value; // Metric derived from contrast and absolute brightness - max 1024
 
 	BlobProperty(float size, int value) : size(size), value(value) {} // For MSVC...
 };
@@ -70,7 +70,7 @@ struct BlobProperty
 struct CameraFrameRecord
 {
 	bool received;
-	std::vector<BlobProperty> properties; // Point sizes input, normalised (size in pixels / camera width in pixels)
+	std::vector<BlobProperty> properties; // Blob properties and metrics
 	std::vector<Eigen::Vector2f> rawPoints2D; // Points2D input, normalised image coordinates
 	std::vector<Eigen::Vector2f> points2D; // Points2D undistorted, normalised image coordinates
 

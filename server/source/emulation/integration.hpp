@@ -201,8 +201,8 @@ static void updateEmulationVisualisation(const TrackingCameraState &camera, Came
 		if (emul.options.blobEmulated)
 		{ // Show emulated blobs using blob circle
 			for (const auto &blob : emul.result->emulatedBlobs)
-				visualiseBlobCircle(blob.pos.head<2>(), blob.size * PixelStride/2, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, PixelStride);
-			visualisePointsSprites(emul.result->emulatedBlobs, true);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, PixelStride);
+			visualisePointsSprites(emul.result->emulatedBlobs, true, viewSize.x());
 		}
 
 		if (emul.options.blobRefined)

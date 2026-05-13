@@ -73,7 +73,7 @@ struct VisPoint
 {
 	Eigen::Vector3f pos;
 	Color8 color;
-	float size;
+	float size; // In 2D, size generally is radius in -1 to 1 space, or diameter in 0 - 1 space (with appropriate sizeFactor)
 
 	// For MSVC...
 	VisPoint() {}
@@ -147,7 +147,7 @@ void visualisePointsVBOSprites(unsigned int VBO, unsigned int count, bool round 
 /**
  * Render points as round or square 2D sprites
  */
-void visualisePointsSprites(const std::vector<VisPoint> &points, bool round = true);
+void visualisePointsSprites(const std::vector<VisPoint> &points, bool round = true, float sizeFactor = 1.0f);
 
 /**
  * Render points as round 3D meshes
@@ -267,6 +267,7 @@ void visualiseCircle(Eigen::Vector2f pos, float size, Color color)
 
 /**
  * Render blob circle with cross in the middle
+ * Size is radius in -1 to 1 space, or diameter in 0 - 1 space
  */
 void visualiseBlobCircle(Eigen::Vector2f pos, float size, Color color, float crossSize = 1/100.0f);
 

@@ -1067,7 +1067,12 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 * Visualise frame based on phase
 	 */
 	bool displayInternalDebug = (GetState().mode == MODE_Replay || GetState().mode == MODE_Simulation) && (GetState().simAdvance.load() == 0 || dbg_isBreaking);
-	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f, blobCross = 2.0f / mode.widthPx;
+	float blobAlpha = 1.0f, blobCross = 0.0f;
+	if (visCamera.image && visCamera.imageVis.show)
+	{ // Make blob more transparent and instead use blob cross
+		blobAlpha = 0.6f;
+		blobCross = 2.0f / mode.widthPx;
+	}
 	if (visCamera.visMode == VIS_BACKGROUND_TILES)
 	{
 		auto bgCalib = camera.receiving.background.contextualRLock();

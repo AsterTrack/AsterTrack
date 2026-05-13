@@ -173,12 +173,12 @@ void visualisePointsVBOSprites(unsigned int VBO, unsigned int count, bool round,
 	}
 }
 
-void visualisePointsSprites(const std::vector<VisPoint> &points, bool round)
+void visualisePointsSprites(const std::vector<VisPoint> &points, bool round, float sizeFactor)
 {
 	if (points.empty()) return;
 	static unsigned int DynamicPointsVBO;
 	updatePointsVBO(DynamicPointsVBO, points);
-	visualisePointsVBOSprites(DynamicPointsVBO, points.size(), round);
+	visualisePointsVBOSprites(DynamicPointsVBO, points.size(), round, sizeFactor);
 }
 
 void visualisePointsSpheres(const std::vector<VisPoint> &points)

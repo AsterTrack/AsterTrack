@@ -82,7 +82,6 @@ static void DeletePipelineSetup(PipelineState &pipeline)
 	pipeline.cameras.clear();
 	pipeline.record.imus.clear();
 	pipeline.simulation.contextualLock()->resetState();
-
 }
 
 void ResetPipelineState(PipelineState &pipeline)

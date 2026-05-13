@@ -190,8 +190,9 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 					view->plan = {
 						TargetView::RECONSTRUCT, TargetView::OPTIMISE_COARSE,
 						TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
-					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
-					TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE };
+						TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE,
+						TargetView::TEST_REEVALUATE_MARKERS, TargetView::OPTIMISE_COARSE
+					};
 					view->planned = true;
 					views_lock->push_back(std::move(view));
 				}

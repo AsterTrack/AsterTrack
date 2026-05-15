@@ -1040,7 +1040,7 @@ static void HandleObjImportObj(ImGuiID popup)
 			target.markers.reserve(target.markers.size() + group.second.markers.size());
 			for (auto &marker : group.second.markers)
 			{
-				marker.size = params.markerSize;
+				marker.size = params.markerSize/1000;
 				marker.viewAngle = viewAngle;
 				target.markers.push_back(marker);
 			}

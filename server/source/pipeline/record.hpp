@@ -286,4 +286,14 @@ struct TrackingRecord
 	std::vector<std::shared_ptr<IMU>> imus;
 };
 
+/**
+ * Record of one trackers data used for comparison
+ */
+struct TrackerCompareRecord
+{
+	int trackerID;
+	std::string label;
+	BlockedQueue<std::shared_ptr<FrameRecord>> frames;
+};
+
 #endif // RECORD_H

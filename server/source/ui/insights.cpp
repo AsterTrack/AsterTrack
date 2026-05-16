@@ -684,55 +684,99 @@ static bool ShowTrackingPanel()
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	int &focusedTrackerID = ui.visState.tracking.focusedTrackerID;
+	static bool comparingTrackers = false;
+	static int compIndexA = -1, compIndexB = -1;
 	static int curTrackerID = 0;
 	static std::string curTrackerLabel = "Select Tracker";
-	if (focusedTrackerID != 0 && focusedTrackerID != curTrackerID)
+	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID)
 	{ // External change
-		curTrackerID = focusedTrackerID;
 		for (auto &tracker : state.trackerConfigs)
 		{
-			if (tracker.id == focusedTrackerID)
+			if (tracker.id == ui.visState.tracking.focusedTrackerID)
 			{
+				comparingTrackers = false;
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
 			}
 		}
 	}
-	if (ImGui::BeginCombo("Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
+	if (ui.visState.tracking.focusTrackerCompare)
+	{
+		ui.visState.tracking.focusTrackerCompare = false;
+		comparingTrackers = true;
+		curTrackerLabel = "Compare";
+	}
+	if (ImGui::BeginCombo("##Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{ // Local change
-		auto TrackerSelect = [&](const TrackerConfig &tracker)
+		if (ImGui::Selectable("Compare", comparingTrackers) && !comparingTrackers)
 		{
+			comparingTrackers = true;
+			curTrackerLabel = "Compare";
+		}
+		for (auto &tracker : state.trackerConfigs)
+		{
+			if (tracker.type != TrackerConfig::TRACKER_TARGET)
+				continue; // TODO: Support marker trackers
 			ImGui::PushID(tracker.id);
-			if (ImGui::Selectable(tracker.label.c_str(), curTrackerID == tracker.id) && curTrackerID != tracker.id)
+			if (ImGui::Selectable(tracker.label.c_str(), !comparingTrackers && curTrackerID == tracker.id) && (comparingTrackers || curTrackerID != tracker.id))
 			{
-				focusedTrackerID = tracker.id;
+				comparingTrackers = false;
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
+				ui.visState.tracking.focusedTrackerID = tracker.id;
 			}
 			ImGui::PopID();
-		};
-		for (auto &tracker : state.trackerConfigs)
-			TrackerSelect(tracker);
+		}
 		ImGui::EndCombo();
 	}
-	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-		[&](auto &t){ return t.id == curTrackerID; });
-	if (trackerIt == state.trackerConfigs.end()) return false;
-	if (trackerIt->type != TrackerConfig::TRACKER_TARGET) return false;
-	bool hasIMU = trackerIt->imu != nullptr;
-	// TODO: Support marker trackers
 
 	static bool followFrame = true, showCur = true, showRec = true;
-	ImGui::SameLine();
-	ImGui::Checkbox("Follow Frame", &followFrame);
-	ImGui::SameLine();
-	ImGui::Checkbox("Current", &showCur);
-	if (state.mode == MODE_Replay)
+	if (comparingTrackers)
 	{
 		ImGui::SameLine();
-		ImGui::Checkbox("Recorded", &showRec);
+		ImGui::Spacing();
+		float spacingW = ImGui::GetStyle().ItemSpacing.x;
+		for (int i = 0; i < state.compareTrackers.size(); i++)
+		{
+			auto &trackComp = state.compareTrackers[i];
+			ImGui::SameLine();
+			ImGui::PushID(i);
+			ImVec2 labelPos = ImGui::GetCursorPos();
+			ImVec2 labelSize = ImGui::CalcTextSize(trackComp.label.c_str());
+			ImVec2 selectSize(labelSize.x + spacingW*2 + ImGui::GetFrameHeight()*2, labelSize.y);
+			if (ImGui::Selectable(trackComp.label.c_str(), compIndexA == i, ImGuiSelectableFlags_AllowOverlap, selectSize))
+				compIndexA = i;
+			ImGui::SameLine(labelPos.x + spacingW + labelSize.x);
+			ImGui::BeginDisabled(compIndexB == i);
+			if (CircleButton("BG"))
+				compIndexB = i;
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			if (CrossButton("##Delete"))
+			{
+				state.compareTrackers.erase(state.compareTrackers.begin()+i);
+				i--;
+				if (compIndexA > i) compIndexA--;
+				if (compIndexB > i) compIndexB--;
+			}
+			ImGui::PopID();
+		}
 	}
+	else
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox("Follow Frame", &followFrame);
+		ImGui::SameLine();
+		ImGui::Checkbox("Current", &showCur);
+		if (state.mode == MODE_Replay)
+		{
+			ImGui::SameLine();
+			ImGui::Checkbox("Recorded", &showRec);
+		}
+	}
+
+	if ((comparingTrackers && compIndexA < 0) || (!comparingTrackers && curTrackerID == 0))
+		return false;
 
 	auto framesRecord = pipeline.record.frames.getView();
 	auto framesStored = state.stored.frames.getView();
@@ -740,13 +784,13 @@ static bool ShowTrackingPanel()
 	if (framesRecord.empty() && framesStored.empty())
 		return false;
 
-	if (!ImPlot::BeginPlot("##RealtimeTracking", ImVec2(-1, -1)))
+	if (!ImPlot::BeginPlot("##Tracking", ImVec2(-1, -1)))
 		return false;
 
 	// Update frameRange
 	static ImPlotRange frameRange(0, 1000);
 	int maxOffset = std::max(10.0, frameRange.Size()/6);
-	if (followFrame)
+	if (followFrame && !comparingTrackers)
 	{ // Apply offset due to new recent frame
 		double offset = 0;
 		if (frameRange.Max < frameNum+maxOffset)
@@ -784,7 +828,7 @@ static bool ShowTrackingPanel()
 	frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
 	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
 
-	static struct {
+	struct TrackerRecordGraph {
 		std::vector<int> sampleCount;
 		std::vector<float> errors2D;
 		std::vector<float> tracking;
@@ -804,14 +848,19 @@ static bool ShowTrackingPanel()
 			procTimeMS.resize(size, NAN);
 			mistrust.resize(size, NAN);
 		}
-	} tracking = {}, recording = {};
+	};
+	static TrackerRecordGraph tracking = {}, recording = {};
 	static std::vector<float> imuSampleTime;
 	static std::vector<float> imuSampleRate;
 
+	double frameShift = 0.0f, frameShiftRec = 0.0f;
+	bool drawCur = false, drawRec = false;
+
 	float mistrustScale = ImPlot::GetPlotLimits(IMPLOT_AUTO, ImAxis_Y2).Y.Max / pipeline.params.track.mistrust.maxMistrust;
-	auto updateFrameStats = [&](auto &stats, FrameNum index, FrameRecord &frame)
+
+	auto updateFrameStats = [mistrustScale](auto &stats, FrameNum index, FrameRecord &frame, int trackerID)
 	{
-		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == curTrackerID; });
+		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == trackerID; });
 		if (trackRecord == frame.trackers.end())
 			return;
 		stats.sampleCount[index] = trackRecord->error.samples;
@@ -834,80 +883,82 @@ static bool ShowTrackingPanel()
 		stats.procTimeMS[index] = trackRecord->procTimeMS;
 		stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
 	};
-
-	double frameShift = 0.0f, frameShiftRec = 0.0f;
-	bool drawCur = false, drawRec = false;
-
-	OptFrameNum min = 1, max = 0;
-	if (showCur && !framesRecord.empty())
-	{ // Gather stats for realtime tracking data
-		min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
-		max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
-		if (max >= min)
+	auto gatherTrackingData = [&updateFrameStats](TrackerRecordGraph &stats, const auto framesRecord, double &frameShift, int trackerID)
+	{
+		OptFrameNum min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
+		OptFrameNum max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
+		if (max < min) return false;
+		FrameNum frameCnt = max-min+1;
+		stats.setup(frameCnt);
+		auto frameIt = framesRecord.pos(max);
+		for (int i = 0; i < frameCnt; i++, frameIt--)
 		{
-			FrameNum frameCnt = max-min+1;
-			tracking.setup(frameCnt);
-			auto frameIt = framesRecord.pos(max);
-			for (int i = 0; i < frameCnt; i++, frameIt--)
-			{
-				if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
-				updateFrameStats(tracking, frameCnt-i-1, *frameIt->get());
-			}
-			frameShift = (double)min;
-			drawCur = frameCnt > 0;
+			if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
+			updateFrameStats(stats, frameCnt-i-1, *frameIt->get(), trackerID);
 		}
+		frameShift = (double)min;
 		GetUI().RequestUpdates();
-	}
+		return frameCnt > 0;
+	};
 
-	if (hasIMU)
-	{ // Show individual IMU samples at their timestamp, with Y showing deltaT to last sample (hopefully building a smooth line)
-		imuSampleTime.clear();
-		imuSampleRate.clear();
-		auto getIMUSamples = [&](auto samples)
+	bool hasIMU = false;
+	if (comparingTrackers)
+	{
+		if (compIndexA >= 0)
 		{
-			if (max <= min) return; // Need at least two frames to serve as an anchor
-			float frameRate = (max-min)/dtS(framesRecord[min]->time, framesRecord[max]->time);
-			OptFrameNum anchorFrame = min;
-			TimePoint_t anchorTime = framesRecord[min]->time -  std::chrono::microseconds(trackerIt->imuCalib.timestampOffsetUS);
-			TimePoint_t minTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Min - anchorFrame)/frameRate*1000000));
-			TimePoint_t maxTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Max - anchorFrame)/frameRate*1000000));
-			auto itBegin = std::lower_bound(samples.begin(), samples.end(), minTime);
-			auto itEnd = std::upper_bound(samples.begin(), samples.end(), maxTime);
-			if (itBegin == itEnd) return;
-			imuSampleTime.reserve(itEnd.index()-itBegin.index());
-			imuSampleRate.reserve(itEnd.index()-itBegin.index());
-			TimePoint_t last = itBegin->timestamp;
-			for (auto it = itBegin; it != itEnd; it++)
-			{
-				imuSampleTime.push_back(anchorFrame + dtS(anchorTime, it->timestamp)*frameRate);
-				imuSampleRate.push_back(1/dtS(last, it->timestamp));
-				last = it->timestamp;
-			}
-		};
-		auto &imu = *trackerIt->imu;
-		if (imu.isFused)
-			getIMUSamples(imu.samplesFused.getView<true>());
-		else
-			getIMUSamples(imu.samplesRaw.getView<true>());
-	}
-
-	if (showRec && state.mode == MODE_Replay && !framesStored.empty())
-	{ // Gather stats for recorded tracking data
-		min = std::max<OptFrameNum>(frameRange.Min-1, framesStored.beginIndex());
-		max = std::min<OptFrameNum>(frameRange.Max+1, framesStored.endIndex()-1);
-		if (max >= min)
-		{
-			FrameNum frameCnt = max-min+1;
-			recording.setup(frameCnt);
-			auto frameIt = framesStored.pos(max);
-			for (int i = 0; i < frameCnt; i++, frameIt--)
-			{
-				if (!*frameIt) continue;
-				updateFrameStats(recording, frameCnt-i-1, *frameIt->get());
-			}
-			frameShiftRec = (double)min;
-			drawRec = frameCnt > 0;
+			auto &comp = state.compareTrackers[compIndexA];
+			drawCur = gatherTrackingData(tracking, comp.frames.getView(), frameShift, comp.trackerID);
 		}
+		if (compIndexB >= 0)
+		{
+			auto &comp = state.compareTrackers[compIndexB];
+			drawRec = gatherTrackingData(recording, comp.frames.getView(), frameShiftRec, comp.trackerID);
+		}
+	}
+	else
+	{
+		if (showCur && !framesRecord.empty())
+			drawCur = gatherTrackingData(tracking, framesRecord, frameShift, curTrackerID);
+		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
+			drawRec = gatherTrackingData(recording, framesStored, frameShiftRec, curTrackerID);
+
+		auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+			[&](auto &t){ return t.id == curTrackerID; });
+		hasIMU = trackerIt != state.trackerConfigs.end() && trackerIt->imu != nullptr;
+		if (hasIMU)
+		{ // Show individual IMU samples at their timestamp, with Y showing deltaT to last sample (hopefully building a smooth line)
+			imuSampleTime.clear();
+			imuSampleRate.clear();
+			OptFrameNum min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
+			OptFrameNum max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
+			auto getIMUSamples = [&](auto samples)
+			{
+				if (max <= min) return; // Need at least two frames to serve as an anchor
+				float frameRate = (max-min)/dtS(framesRecord[min]->time, framesRecord[max]->time);
+				OptFrameNum anchorFrame = min;
+				TimePoint_t anchorTime = framesRecord[min]->time -  std::chrono::microseconds(trackerIt->imuCalib.timestampOffsetUS);
+				TimePoint_t minTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Min - anchorFrame)/frameRate*1000000));
+				TimePoint_t maxTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Max - anchorFrame)/frameRate*1000000));
+				auto itBegin = std::lower_bound(samples.begin(), samples.end(), minTime);
+				auto itEnd = std::upper_bound(samples.begin(), samples.end(), maxTime);
+				if (itBegin == itEnd) return;
+				imuSampleTime.reserve(itEnd.index()-itBegin.index());
+				imuSampleRate.reserve(itEnd.index()-itBegin.index());
+				TimePoint_t last = itBegin->timestamp;
+				for (auto it = itBegin; it != itEnd; it++)
+				{
+					imuSampleTime.push_back(anchorFrame + dtS(anchorTime, it->timestamp)*frameRate);
+					imuSampleRate.push_back(1/dtS(last, it->timestamp));
+					last = it->timestamp;
+				}
+			};
+			auto &imu = *trackerIt->imu;
+			if (imu.isFused)
+				getIMUSamples(imu.samplesFused.getView<true>());
+			else
+				getIMUSamples(imu.samplesRaw.getView<true>());
+		}
+
 	}
 
 	ImPlot::PushColormap(ImPlotColormap_Deep);

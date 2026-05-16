@@ -159,7 +159,7 @@ struct VisualisationState
 	{
 		// Tracking target to focus on
 		int focusedTrackerID = 0;
-		bool focusTrackingInsights;
+		bool focusTrackingInsights, focusTrackerCompare;
 
 		struct TrackingTargets
 		{

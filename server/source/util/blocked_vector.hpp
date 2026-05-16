@@ -390,7 +390,7 @@ public:
  * NOTE: This is not necessarily the full runtime of each function, but only the period in which the mutex is held
  */
 template<typename T, std::size_t N = 1024>
-class BlockedQueue : private std::list<std::array<T, N>>
+class BlockedQueue
 {
 	typedef std::array<T, N> BLOCK;
 	typedef std::list<std::array<T, N>> BASE;
@@ -398,6 +398,8 @@ class BlockedQueue : private std::list<std::array<T, N>>
 	using BlockIt = typename std::conditional_t<Const, typename BASE::const_iterator, typename BASE::iterator>;
 
 private:
+	BASE m_base;
+
 	struct STATE
 	{
 		// Block state
@@ -477,14 +479,14 @@ private:
 		// Resize while accounting for culled blocks
 		std::size_t added = b - m_state.start - m_state.count + 1;
 		m_state.count = b - m_state.start + 1;
-		BASE::resize(BASE::size()+added);
-		if (m_state.begin == BASE::end())
+		m_base.resize(m_base.size()+added);
+		if (m_state.begin == m_base.end())
 		{ // Just added first non-culled block, initialise begin
-			m_state.begin = std::prev(BASE::end(), m_state.count);
-			m_state.const_begin = std::prev(std::add_const_t<BASE>::end(), m_state.count);
+			m_state.begin = std::prev(m_base.end(), m_state.count);
+			m_state.const_begin = std::prev(std::as_const(m_base).end(), m_state.count);
 		}
-		m_state.back = std::prev(BASE::end());
-		m_state.const_back = std::prev(std::add_const_t<BASE>::end());
+		m_state.back = std::prev(m_base.end());
+		m_state.const_back = std::prev(std::as_const(m_base).end());
 		return true;
 	}
 
@@ -722,10 +724,49 @@ public:
 		m_state.start = 0;
 		m_state.count = 0;
 		m_state.index = 0;
-		m_state.begin = BASE::end();
-		m_state.back = BASE::end();
-		m_state.const_begin = std::add_const_t<BASE>::end();
-		m_state.const_back = std::add_const_t<BASE>::end();
+		m_state.begin = m_base.end();
+		m_state.back = m_base.end();
+		m_state.const_begin = std::as_const(m_base).end();
+		m_state.const_back = std::as_const(m_base).end();
+	}
+
+	BlockedQueue(BlockedQueue<T,N>&& other) noexcept
+	{
+		std::unique_lock lock(other.m_mutex);
+		m_base = std::move(other.m_base);
+		m_state = std::move(other.m_state);
+		m_blockLifetime = std::move(other.m_blockLifetime);
+		m_culledBlocks = std::move(other.m_culledBlocks);
+	}
+
+	~BlockedQueue()
+	{ // WILL block if still in use. Only use in edge cases.
+		clear();
+	}
+
+	BlockedQueue& operator=(BlockedQueue<T,N>&& other)
+	{
+		std::scoped_lock lock(m_mutex, other.m_mutex);
+		m_base = std::move(other.m_base);
+		m_state = std::move(other.m_state);
+		m_blockLifetime = std::move(other.m_blockLifetime);
+		m_culledBlocks = std::move(other.m_culledBlocks);
+		return *this;
+	}
+
+	void swap(BlockedQueue<T, N> &other) noexcept
+	{
+		std::scoped_lock lock(m_mutex, other.m_mutex);
+		std::swap(m_base, other.m_base);
+		std::swap(m_state, other.m_state);
+		std::swap(m_blockLifetime, other.m_blockLifetime);
+		std::swap(m_culledBlocks, other.m_culledBlocks);
+	}
+
+	template<typename _T, std::size_t _N>
+	constexpr inline void swap(BlockedQueue<_T, _N> &a, BlockedQueue<_T, _N> &b) noexcept
+	{
+		a.swap(b);
 	}
 
 	template<typename U = T>
@@ -772,21 +813,21 @@ public:
 		{ // Past culled blocks might still being referenced by Views
 			while (m_culledBlocks.front().use_count() > 1)
 				std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-			BASE::erase(m_culledBlocks.front()->front, std::next(m_culledBlocks.front()->back));
+			m_base.erase(m_culledBlocks.front()->front, std::next(m_culledBlocks.front()->back));
 			m_culledBlocks.pop();
 		}
 		// Wait for all current views to disappear (if on this thread, deadlock)
 		while (m_blockLifetime.use_count() > 1)
 			std::this_thread::sleep_for(std::chrono::nanoseconds(100));
 		// Now with no more views active (and hopefully no iterators), we can clear
-		BASE::clear();
+		m_base.clear();
 		m_state.start = 0;
 		m_state.count = 0;
 		m_state.index = 0;
-		m_state.begin = BASE::end();
-		m_state.back = BASE::end();
-		m_state.const_begin = std::add_const_t<BASE>::end();
-		m_state.const_back = std::add_const_t<BASE>::end();
+		m_state.begin = m_base.end();
+		m_state.back = m_base.end();
+		m_state.const_begin = std::as_const(m_base).end();
+		m_state.const_back = std::as_const(m_base).end();
 	}
 
 	/**
@@ -808,10 +849,10 @@ public:
 		m_state.start = 0;
 		m_state.count = 0;
 		m_state.index = 0;
-		m_state.begin = BASE::end();
-		m_state.back = BASE::end();
-		m_state.const_begin = std::add_const_t<BASE>::end();
-		m_state.const_back = std::add_const_t<BASE>::end();
+		m_state.begin = m_base.end();
+		m_state.back = m_base.end();
+		m_state.const_begin = std::as_const(m_base).end();
+		m_state.const_back = std::as_const(m_base).end();
 		detachBlocks(front, m_state.begin);
 	}
 	
@@ -834,10 +875,10 @@ public:
 		m_state.start += m_state.count;
 		m_state.count = 0;
 		m_state.index = m_state.start*N;
-		m_state.begin = BASE::end();
-		m_state.back = BASE::end();
-		m_state.const_begin = std::add_const_t<BASE>::end();
-		m_state.const_back = std::add_const_t<BASE>::end();
+		m_state.begin = m_base.end();
+		m_state.back = m_base.end();
+		m_state.const_begin = std::as_const(m_base).end();
+		m_state.const_back = std::as_const(m_base).end();
 		detachBlocks(front, m_state.begin);
 	}
 
@@ -863,10 +904,10 @@ public:
 		{
 			m_state.start += m_state.count+num;
 			m_state.count = -num;
-			m_state.begin = std::next(BASE::end(), num);
-			m_state.const_begin = std::next(std::add_const_t<BASE>::end(), num);
-			m_state.back = std::prev(BASE::end());
-			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
+			m_state.begin = std::next(m_base.end(), num);
+			m_state.const_begin = std::next(std::as_const(m_base).end(), num);
+			m_state.back = std::prev(m_base.end());
+			m_state.const_back = std::prev(std::as_const(m_base).end());
 			detachBlocks(front, m_state.begin);
 		}
 		else if (num > 0)
@@ -875,8 +916,8 @@ public:
 			m_state.count -= num;
 			m_state.begin = std::next(m_state.begin, num);
 			m_state.const_begin = std::next(m_state.const_begin, num);
-			m_state.back = std::prev(BASE::end());
-			m_state.const_back = std::prev(std::add_const_t<BASE>::end());
+			m_state.back = std::prev(m_base.end());
+			m_state.const_back = std::prev(std::as_const(m_base).end());
 			detachBlocks(front, m_state.begin);
 		}
 	}
@@ -903,28 +944,13 @@ public:
 		{ // Past culled blocks might still being referenced by Views
 			if (m_culledBlocks.front().use_count() > 1)
 				break;
-			removedBlocks.splice(removedBlocks.end(), *this, m_culledBlocks.front()->front, std::next(m_culledBlocks.front()->back));
+			removedBlocks.splice(removedBlocks.end(), m_base, m_culledBlocks.front()->front, std::next(m_culledBlocks.front()->back));
 			m_culledBlocks.pop();
 		}
-		assert(!m_culledBlocks.empty() || BASE::begin() == m_state.begin);
+		assert(!m_culledBlocks.empty() || m_base.begin() == m_state.begin);
 		// Let destructor of removedBlocks delete the blocks (done this way to be able to do it without holding mutex)
 		// Order of destruction should already put this after mutex is released, but be explicit anyway
 		lock.unlock();
-	}
-
-	void swap(BlockedQueue<T, N> &other) noexcept
-	{
-		std::scoped_lock lock(m_mutex, other.m_mutex);
-		BASE::swap(other);
-		std::swap(m_state, other.m_state);
-		std::swap(m_blockLifetime, other.m_blockLifetime);
-		std::swap(m_culledBlocks, other.m_culledBlocks);
-	}
-
-	template<typename _T, std::size_t _N>
-	constexpr inline void swap(BlockedQueue<_T, _N> &a, BlockedQueue<_T, _N> &b) noexcept
-	{
-		a.swap(b);
 	}
 };
 

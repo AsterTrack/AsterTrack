@@ -125,6 +125,8 @@ struct ServerState
 		TimePoint_t replayTime;
 	} recording = {};
 	TrackingRecord stored;
+	// Manual selection of tracking data to compare (persistent across UI reloads)
+	std::vector<TrackerCompareRecord> compareTrackers;
 
 	// IMU Device integration
 	std::mutex hid_access;

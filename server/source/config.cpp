@@ -1418,6 +1418,7 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			frame.triangulations.clear();
 			// TODO: Properly integrate triangulation records (3/3)
 			frame.trackers.clear();
+			frame.finishedProcessing = true; // Just indicates tracker records are filled
 			for (auto &jsTarget : jsTrackers)
 			{
 				if (!jsTarget.is_object() || !jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;

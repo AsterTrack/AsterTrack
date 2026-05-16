@@ -734,7 +734,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						it->second.label = tracker.label;
 				}
 			}
-			if (!trackers.empty() && ImGui::TreeNode("Target Results"))
+
+			if (!trackers.empty())
 			{
 				ImGui::Text("Tracking Losses: %d  [%d]  +%d -%d", losses.current, losses.loaded, losses.added, losses.removed);
 				ImGui::Text("2D Searches: %d  [%d]  +%d -%d", search2D.current, search2D.loaded, search2D.added, search2D.removed);
@@ -745,7 +746,30 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				for (auto &trackedTarget : trackers)
 				{
 					ImGui::PushID(trackedTarget.first);
-					if (ImGui::TreeNode(trackedTarget.second.label.c_str()))
+					ImGui::AlignTextToFramePadding();
+					bool open = ImGui::TreeNodeEx(trackedTarget.second.label.c_str(), ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_AllowOverlap);
+					SameLineTrailing(ImGui::CalcTextSize("Compare").x + ImGui::GetStyle().FramePadding.x*2);
+					if (ImGui::Button("Compare"))
+					{
+						TrackerCompareRecord record { trackedTarget.first, trackedTarget.second.label };
+						auto framesRecord = pipeline.record.frames.getView<true>();
+						for (const auto &frameRecord : framesRecord)
+						{ // Filter frame records down to just tracking records used by insights
+							if (!frameRecord || !frameRecord->finishedProcessing) continue;
+							auto trackRecord = std::find_if(frameRecord->trackers.begin(), frameRecord->trackers.end(),
+								[&](auto &t){ return t.id == trackedTarget.first; });
+							if (trackRecord == frameRecord->trackers.end()) continue;
+							auto copyFrame = std::make_shared<FrameRecord>();
+							copyFrame->num = copyFrame->ID = frameRecord->num;
+							copyFrame->time = sclock::now();
+							copyFrame->trackers = { *trackRecord };
+							copyFrame->finishedProcessing = true;
+							record.frames.insert(frameRecord->num, std::move(copyFrame));
+						}
+						state.compareTrackers.push_back(std::move(record));
+						visState.tracking.focusTrackerCompare = true;
+					}
+					if (open)
 					{
 						auto &tgt = trackedTarget.second;
 						ImGui::Text("Frames: %u  [%u]  +%u -%u", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
@@ -763,7 +787,6 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					}
 					ImGui::PopID();
 				}
-				ImGui::TreePop();
 			}
 
 			EndCollapsingRegion();

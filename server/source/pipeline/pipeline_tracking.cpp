@@ -71,16 +71,15 @@ static TrackerRecord& enterTrackerRecord(std::shared_ptr<FrameRecord> &frame, Tr
 /**
  * Update tracked target record with tracker target data
  */
-static void recordTrackerTarget(TrackerRecord &record, const TrackerTarget &target, bool keepInternalData)
+static void recordTrackerMatch(TrackerRecord &record, const TargetMatch2D &match, bool keepInternalData)
 {
-	record.error = target.match2D.error;
+	record.error = match.error;
 	if (keepInternalData)
 	{
-		record.match2D = target.match2D;
-		record.freeObservations = target.data.freeObservations;
-		record.freeProjections = target.data.freeProjections;
+		record.match2D = ptr::make_value<TargetMatch2D>(match);
 	}
-	updateVisibleMarkers(record.visibleMarkers, target.match2D);
+	if (!record.visual) record.visual = ptr::make_value<TrackerRecordVis>();
+	updateVisibleMarkers(record.visual->visibleMarkers, match);
 }
 
 /**
@@ -110,26 +109,13 @@ static void recordTrackerInertial(TrackerRecord &record, const TrackerInertial &
 /**
  * Update tracked target record with tracker pose
  */
-static void recordTrackerObservation(TrackerRecord &record, const TrackerObservation &pose, bool keepInternalData)
+static void recordTrackerObservation(TrackerRecord &record, const TrackerObservation &observation, bool keepInternalData)
 {
-	record.posePredicted = pose.predicted;
-	record.covPredicted = pose.covPredicted;
-	record.poseExtrapolated = pose.extrapolated;
-	record.poseInertialIntegrated = pose.inertialIntegrated;
-	record.poseInertialFused = pose.inertialFused;
-	record.poseInertialFiltered = pose.inertialFiltered;
-	if (record.result.isTracked())
-	{
-		record.poseObserved = pose.observed;
-		record.covObserved = pose.covObserved;
-	}
+	record.pose = observation.pose;
+	if (keepInternalData)
+		record.ext = ptr::make_value<TrackerPoseExtended>(observation.ext);
 	else
-	{
-		record.poseObserved.setIdentity();
-		record.covObserved.setZero();
-	}
-	record.poseFiltered = pose.filtered;
-	record.covFiltered = pose.covFiltered;
+		record.ext = nullptr;
 }
 
 /**
@@ -198,27 +184,27 @@ static void recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameR
 	record.mistrust = tracker.mistrust;
 	if (record.result.isTracked())
 	{
-		recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
-		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
+		recordTrackerObservation(record, tracker.obs, pipeline.keepInternalData);
+		recordTrackerMatch(record, tracker.target.match2D, pipeline.keepInternalData);
 		if (!record.result.hasFlag(TrackingResult::FILTER_FAILED))
 			recordTrackingTargetData(pipeline, tracker.id, tracker.target, frame);
 	}
 	else if (record.result.isDetected())
 	{
-		recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
-		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
+		recordTrackerObservation(record, tracker.obs, pipeline.keepInternalData);
+		recordTrackerMatch(record, tracker.target.match2D, pipeline.keepInternalData);
 	}
 	else if (record.result.isState(TrackingResult::NO_TRACK))
 	{ // Failed to track
-		recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
-		recordTrackerTarget(record, tracker.target, pipeline.keepInternalData);
+		recordTrackerObservation(record, tracker.obs, pipeline.keepInternalData);
+		recordTrackerMatch(record, tracker.target.match2D, pipeline.keepInternalData);
 	}
 	recordTrackerInertial(record, tracker.inertial, pipeline.keepInternalData);
 }
 
 static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const TrackedTarget &tracker)
 {
-	TrackerRecord record = { tracker.id, tracker.result, tracker.procTimeMS };
+	TrackerRecord record{ tracker.id, tracker.result, tracker.procTimeMS };
 	recordTrackingResult(pipeline, frame, tracker, record);
 	return enterTrackerRecord(frame, std::move(record));
 }
@@ -226,7 +212,7 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
 static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_ptr<FrameRecord> &frame, const DormantTarget &dormant, TrackingResult result, float procTimeMS)
 {
 	assert(result.isProbe());
-	TrackerRecord record = { dormant.id, result, procTimeMS };
+	TrackerRecord record{ dormant.id, result, procTimeMS };
 	if (result.isState(TrackingResult::PROBED_2D) || result.isState(TrackingResult::SEARCHED_2D))
 		recordTrackerFailedTest(record, dormant.target.match2D, pipeline.keepInternalData);
 	return enterTrackerRecord(frame, std::move(record));
@@ -237,28 +223,20 @@ static TrackerRecord &recordTrackingResult(PipelineState &pipeline, std::shared_
  */
 static void recordTrackerFailedTest(TrackerRecord &record, const TargetMatch2D &match2D, bool keepInternalData)
 {
-	record.error = match2D.error;
-	if (keepInternalData)
-	{
-		record.match2D = match2D;
-	}
-	updateVisibleMarkers(record.visibleMarkers, match2D);
-	// TODO: Record original pose estimate used for search / probe detection as posePredicted
+	recordTrackerMatch(record, match2D, keepInternalData);
 	if (match2D.pose.matrix().hasNaN())
 	{
-		record.posePredicted.setIdentity();
-		record.poseObserved.setIdentity();
-		record.poseFiltered.setIdentity();
+		record.pose.observed.setIdentity();
+		record.pose.filtered.setIdentity();
 	}
 	else
 	{ // At least had a candidate
-		record.posePredicted = match2D.pose;
-		record.poseObserved = match2D.pose;
-		record.poseFiltered = match2D.pose;
+		record.pose.observed = match2D.pose;
+		record.pose.filtered = match2D.pose;
 	}
-	record.covPredicted.setZero();
-	record.covObserved.setZero();
-	record.covFiltered.setZero();
+	record.pose.observedCov.setZero();
+	record.pose.filteredCov.setZero();
+	// TODO: Record original pose estimate used for search / probe detection as posePredicted
 }
 
 template<typename TRACKER_LIST>
@@ -274,7 +252,7 @@ static std::vector<std::vector<int>> getMarkerMatchesFromTrackers(const TargetMi
 		if constexpr (std::is_same_v<typename TRACKER_LIST::value_type, TrackedTarget>)
 			match2D = &tracker.target.match2D;
 		else if constexpr (std::is_same_v<typename TRACKER_LIST::value_type, TrackerRecord>)
-			match2D = &tracker.match2D;
+			match2D = tracker.match2D.get();
 		else static_assert(false);
 		for (int c = 0; c < match2D->points2D.size(); c++)
 		{
@@ -287,7 +265,7 @@ static std::vector<std::vector<int>> getMarkerMatchesFromTrackers(const TargetMi
 
 static void updateTrackerMistrust(const TargetMistrustParameters &params, const std::shared_ptr<FrameRecord> &frame,
 	std::vector<std::vector<int>> matchedMarkers,
-	const TargetMatch2D &match2D, TrackingResult result, int freeObs, int freeProj, float &mistrust)
+	const TargetMatch2D &match2D, TrackingResult result, float &mistrust)
 {
 	if (!result.isTracked())
 	{
@@ -303,13 +281,13 @@ static void updateTrackerMistrust(const TargetMistrustParameters &params, const 
 		mistrust += (match2D.error.mean - params.highErrorThreshold) * params.highErrorFactor;
 
 	// Mistrust from unmatched pairs of projections and observations
-	mistrust += std::min(freeProj, freeObs) * params.unmatchedCertainAccum;
+	mistrust += std::min(match2D.freeProjections, match2D.freeObservations) * params.unmatchedCertainAccum;
 
 	// Slight mistrust from observed markers not matched in vicinity
-	mistrust += freeObs * params.unmatchedObservationsAccum;
+	mistrust += match2D.freeObservations * params.unmatchedObservationsAccum;
 
 	// Slight mistrust from projected markers not matched
-	mistrust += freeProj * params.unmatchedProjectionsAccum;
+	mistrust += match2D.freeProjections * params.unmatchedProjectionsAccum;
 
 	if (!matchedMarkers.empty())
 	{ // Mistrust from conflicting markers, claimed by two trackers
@@ -344,14 +322,14 @@ static void retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &trac
 	}
 
 	if (tracker.inertial)
-		integrateIMU(tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
+		integrateIMU(tracker.state, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
-	tracker.result = trackTarget(tracker.state, tracker.target, tracker.pose,
+	tracker.result = trackTarget(tracker.state, tracker.target, tracker.obs,
 		calibs, points2D, properties, relevantPoints2D,
 		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.track);
 
 	if (tracker.result.isTracked() && tracker.inertial)
-		postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
+		postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
 	tracker.result.setFlag(TrackingResult::CATCHING_UP);
 	tracker.procTimeMS = dtMS(start, sclock::now());
@@ -360,8 +338,7 @@ static void retroactivelyTrackFrame(PipelineState &pipeline, TrackedTarget &trac
 	// Don't care about occupied markers, by design retroactive tracking cannot conflict as it uses only remainingPoints2D
 	std::vector<std::vector<int>> occupiedMarkers;
 	updateTrackerMistrust(pipeline.params.track.mistrust, frame, occupiedMarkers,
-		tracker.target.match2D, tracker.result,
-		tracker.target.data.freeObservations, tracker.target.data.freeProjections, tracker.mistrust);
+		tracker.target.match2D, tracker.result, tracker.mistrust);
 
 	// IF tracking was successful, we should also update frame->remainingPoints2D like realtime tracking does, but not critical
 }
@@ -543,7 +520,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
 			if (targetIt->state.lastObsFrame > frameRecord.num || trackRecord.result.isDetected())
 			{ // Initialise filter as good as possible
-				targetIt->state = TrackerState(trackRecord.poseFiltered, frameRecord.num, frameRecord.time, pipeline.params.track);
+				targetIt->state = TrackerState(trackRecord.pose.filtered, frameRecord.time, frameRecord.num, pipeline.params.track);
 				targetIt->state.lastObsFrame = frameRecord.num;
 				targetIt->state.lastObservation = frameRecord.time;
 				targetIt->state.lastIMUSample = -1;
@@ -551,15 +528,15 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 			}
 
 			if (targetIt->inertial)
-				integrateIMU(targetIt->state, targetIt->inertial, targetIt->pose, frameRecord.time, pipeline.params.track);
+				integrateIMU(targetIt->state, targetIt->inertial, targetIt->obs, frameRecord.time, pipeline.params.track);
 
-			targetIt->result = simulateTrackTarget(targetIt->state, targetIt->target, targetIt->pose,
+			targetIt->result = simulateTrackTarget(targetIt->state, targetIt->target, targetIt->obs,
 				calibs, points2D, trackRecord, frameRecord.time, frameRecord.num, pipeline.params.track);
 
 			if (targetIt->result.isTracked() && targetIt->inertial)
-				postCorrectIMU(*targetIt, targetIt->state, targetIt->inertial, targetIt->pose, frameRecord.time, pipeline.params.track);
+				postCorrectIMU(*targetIt, targetIt->state, targetIt->inertial, targetIt->obs, frameRecord.time, pipeline.params.track);
 
-			recordTrackerObservation(trackRecord, targetIt->pose, pipeline.keepInternalData);
+			recordTrackerObservation(trackRecord, targetIt->obs, pipeline.keepInternalData);
 			recordTrackerInertial(trackRecord, targetIt->inertial, pipeline.keepInternalData);
 		}
 	}
@@ -587,9 +564,9 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 		auto occupiedMarkers = getMarkerMatchesFromTrackers(pipeline.params.track.mistrust, *frameRecordIt, frameRecord.trackers);		
 		for (auto &tracker : frameRecord.trackers)
 		{
+			if (!tracker.match2D) continue;
 			updateTrackerMistrust(pipeline.params.track.mistrust, *frameRecordIt, occupiedMarkers,
-				tracker.match2D, tracker.result,
-				tracker.freeObservations, tracker.freeProjections, tracker.mistrust);
+				*tracker.match2D, tracker.result, tracker.mistrust);
 		};
 		// Gather new mistrust for next frame
 		trackerMistrust.clear();
@@ -661,7 +638,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		while (tracker != track.orphanedIMUs.end())
 		{
 			LOG(LTracking, LDebug, "Integrating orphaned IMU %d!\n", i++);
-			integrateIMU(tracker->state, tracker->inertial, tracker->pose, frame->time, pipeline.params.track);
+			integrateIMU(tracker->state, tracker->inertial, tracker->obs, frame->time, pipeline.params.track);
 			tracker++;
 		}
 		// TODO: Associate orphaned IMU with tracked target
@@ -681,10 +658,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				tracker.id, tracker.label.c_str(), (int)tracker.target.calib.markers.size());
 
 			if (tracker.inertial)
-				integrateIMU(tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
+				integrateIMU(tracker.state, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
 			TimePoint_t start = sclock::now();
-			tracker.result = trackTarget(tracker.state, tracker.target, tracker.pose,
+			tracker.result = trackTarget(tracker.state, tracker.target, tracker.obs,
 				calibs, points2D, properties, relevantPoints2D,
 				frame->time, frame->num, camCount, pipeline.params.track);
 			tracker.procTimeMS = dtMS(start, sclock::now());
@@ -697,8 +674,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		for (auto &tracker : track.trackedTargets)
 		{
 			updateTrackerMistrust(pipeline.params.track.mistrust, frame, occupiedMarkers,
-				tracker.target.match2D, tracker.result,
-				tracker.target.data.freeObservations, tracker.target.data.freeProjections, tracker.mistrust);
+				tracker.target.match2D, tracker.result, tracker.mistrust);
 		};
 
 		// Async Detection writes to frame->trackers while UI is reading, meaning it has to be thread-safe (2/5)
@@ -717,7 +693,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					tracker.id, tracker.label.c_str(), tracker.target.match2D.error.samples, tracker.target.match2D.error.mean*PixelFactor);
 
 				if (tracker.inertial)
-					postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.pose, frame->time, pipeline.params.track);
+					postCorrectIMU(tracker, tracker.state, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
 				// Occupy all 2D points of tracked target
 				occupyTargetMatches(tracker.target.match2D);
@@ -734,9 +710,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				{
 					// Try to find ground truth pose of what it believes it is tracking (it may have detected wrong)
 					Eigen::Isometry3f gtPose = pipeline.simulation.contextualRLock()->getGTPose(tracker.id);
-					std::pair<double,double> GTErrorOpt = calculatePoseError(gtPose, tracker.pose.observed);
+					std::pair<double,double> GTErrorOpt = calculatePoseError(gtPose, tracker.obs.pose.observed);
 					LOG(LTracking, LDebug, "    GT Opt Tracking Error: %fmm, %fdeg\n", GTErrorOpt.first, GTErrorOpt.second);
-					std::pair<double,double> GTError = calculatePoseError(gtPose, tracker.pose.filtered);
+					std::pair<double,double> GTError = calculatePoseError(gtPose, tracker.obs.pose.filtered);
 					LOG(LTracking, LDebug, "    GT Tracking Error: %fmm, %fdeg\n", GTError.first, GTError.second);
 					if (GTError.first > 10 || GTError.second > 5)
 						LOG(LTracking, LDarn, "=== WAY too high tracking error!!!\n");
@@ -788,14 +764,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			TrackingResult prevRes = tracker.result;
 
 			TimePoint_t start = sclock::now();
-			tracker.result = processVirtualTracker(tracker.state, tracker.virt, tracker.pose, subtrackers, frame->time, frame->num, pipeline.params.virt);
+			tracker.result = processVirtualTracker(tracker.state, tracker.virt, tracker.obs, subtrackers, frame->time, frame->num, pipeline.params.virt);
 			tracker.procTimeMS = dtMS(start, sclock::now());
 			if (tracker.result.isTracked())
 			{
-				TrackerRecord record = { tracker.id, tracker.result, tracker.procTimeMS };
-				recordTrackerObservation(record, tracker.pose, pipeline.keepInternalData);
-				record.virtualRelations = std::move(tracker.virt.relations);
-				record.virtualSubtrackers = std::move(tracker.virt.subtrackers);
+				TrackerRecord record{ tracker.id, tracker.result, tracker.procTimeMS };
+				recordTrackerObservation(record, tracker.obs, pipeline.keepInternalData);
+				if (!record.visual) record.visual = ptr::make_value<TrackerRecordVis>();
+				record.visual->virtualRelations = std::move(tracker.virt.relations);
+				record.visual->virtualSubtrackers = std::move(tracker.virt.subtrackers);
 				enterTrackerRecord(frame, std::move(record));
 
 				if (!prevRes.isTracked())

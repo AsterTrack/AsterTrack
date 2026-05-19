@@ -288,6 +288,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 						[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
 			if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
 				&& !trackRecord->result.isProbe() && trackConfig->type == TrackerConfig::TRACKER_TARGET
+				&& trackRecord->match2D && trackRecord->ext
 				&& BeginCollapsingRegion("Target Tracking Debug"))
 			{
 				auto &debugVis = visState.tracking.debug;
@@ -313,11 +314,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				if (debugVis.needsUpdate)
 				{
 					debugVis.needsUpdate = false;
-					debugVis.showInitial = trackRecord->match2D.error.samples > 0 && trackRecord->result.isProbe();
-					debugVis.initialMatch2D = trackRecord->match2D;
+					debugVis.showInitial = trackRecord->match2D->error.samples > 0 && trackRecord->result.isProbe();
+					debugVis.initialMatch2D = *trackRecord->match2D;
 					debugVis.internalData.init(pipeline.cameras.size());
 					debugVis.targetMatch2D = trackTarget2D(trackConfig->calib,
-						trackRecord->posePredicted, trackRecord->covPredicted,
+						trackRecord->ext->predicted, trackRecord->ext->predictedCov,
 						pipeline.getCalibs(), pipeline.cameras.size(),
 						points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
 					debugVis.editedMatch2D = debugVis.targetMatch2D;
@@ -359,7 +360,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (ImGui::Button("Optimise", SizeWidthDiv4()))
 					{
 						debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
-							debugVis.editedMatch2D, *debugVis.calib, trackRecord->posePredicted, pipeline.params.track.opt);
+							debugVis.editedMatch2D, *debugVis.calib, trackRecord->ext->predicted, pipeline.params.track.opt);
 					}
 					ImGui::SameLine();
 					if (ImGui::Button("Reset", SizeWidthDiv4()))

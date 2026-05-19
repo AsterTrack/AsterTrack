@@ -96,9 +96,9 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 			auto trackRecord = std::find_if(trackRecords.begin(), trackRecords.end(),
 				[&](auto &tgt){ return tgt.id == tracking.focusedTrackerID; });
 			if (trackRecord != trackRecords.end())
-				return trackRecord->poseFiltered.translation();
+				return trackRecord->pose.filtered.translation();
 		}
-		return trackRecords.front().poseFiltered.translation();
+		return trackRecords.front().pose.filtered.translation();
 	}
 
 	if (!GetState().pipeline.record.imus.empty())

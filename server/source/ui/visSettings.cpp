@@ -74,7 +74,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		if (ImGui::TreeNode("Covariance"))
 		{
 			ImGui::Checkbox("Show Positional Covariance", &visState.tracking.showCovariancePos);
-			ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovariancePos);
+			ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovarianceRot);
 			ImGui::SliderFloat("Covariance Sigma", &visState.tracking.scaleCovariance, 1, 100);
 			ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
 
@@ -86,7 +86,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 					[&](auto &tgt){ return tgt.id == visState.tracking.focusedTrackerID; });
 				if (trackRecord != visFrame.frameIt->get()->trackers.end())
 				{
-					Eigen::Matrix3f covariance = trackRecord->covFiltered.topLeftCorner<3,3>().transpose();
+					Eigen::Matrix3f covariance = trackRecord->pose.filteredCov.topLeftCorner<3,3>().transpose();
 					ImGui::InputFloat3("##CovT1", covariance.data()+0, "%.8f");
 					ImGui::InputFloat3("##CovT2", covariance.data()+3, "%.8f");
 					ImGui::InputFloat3("##CovT3", covariance.data()+6, "%.8f");

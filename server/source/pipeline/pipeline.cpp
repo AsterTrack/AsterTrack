@@ -254,7 +254,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	for (auto &virtualTracker : pipeline.tracking.virtualTrackers)
 	{ // Manually reset virtual trackers which can not enter dormant state
 		virtualTracker.state = {};
-		virtualTracker.pose = {};
+		virtualTracker.obs = {};
 		virtualTracker.mistrust = 0;
 	}
 
@@ -265,7 +265,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 			[&](auto &trk){ return trk.id == targetRecord.id; });
 		if (dormantIt == pipeline.tracking.dormantTargets.end()) continue;
-		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), targetRecord.poseObserved, frameRecord.time, frameRecord.num, pipeline.params.track);
+		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), targetRecord.pose.observed, frameRecord.time, frameRecord.num, pipeline.params.track);
 		pipeline.tracking.dormantTargets.erase(dormantIt);
 	}
 	// TODO: Adopt tracked markers

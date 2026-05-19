@@ -1213,7 +1213,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		int matched = targetMatch2D.points2D[calibs[c].index].size();
-		internalData.freeProjections += std::max<int>(0, relevantProjected2D[c].size()-matched);
+		targetMatch2D.freeProjections += std::max<int>(0, relevantProjected2D[c].size()-matched);
 
 		if (closePoints2D[c].empty()) continue;
 
@@ -1231,7 +1231,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			if (bounds.includes(points2D[c]->at(p)))
 				closeObservations++;
 		}
-		internalData.freeObservations += std::max<int>(0, closeObservations-matched);
+		targetMatch2D.freeObservations += std::max<int>(0, closeObservations-matched);
 	}
 
 	return targetMatch2D;

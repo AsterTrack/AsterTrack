@@ -28,6 +28,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp" // TimePoint_t
 #include "util/blocked_vector.hpp"
 
+#include "ptr/value_ptr.hpp"
+
 #include <vector>
 #include <memory>
 
@@ -112,8 +114,9 @@ struct TargetMatch2D
 	std::vector<std::vector<std::pair<int,int>>> points2D;
 	Eigen::Isometry3f pose;
 	TargetMatchError error = {};
+	int freeProjections, freeObservations;
 	CovarianceMatrix covariance;
-	std::vector<VectorX<float>> deviations;
+	std::vector<VectorX<float>> deviations; // Experimental: covariance from jacobian samples
 
 	inline int count() const 
 	{
@@ -191,7 +194,7 @@ private:
 	Value value;
 };
 
-enum class TrackerInertialState 
+enum class TrackerInertialState : uint8_t
 {
 	NO_IMU,
 	IMU_CALIBRATING,
@@ -199,37 +202,64 @@ enum class TrackerInertialState
 	IMU_LOST
 };
 
-struct TrackerRecord
+struct TrackerPose
 {
+	// Pose as observed by the cameras
+	Eigen::Isometry3f observed;
+	// Pose filtered from all observations
+	Eigen::Isometry3f filtered;
+	// Covariances of those poses
+	CovarianceMatrix observedCov;
+	CovarianceMatrix filteredCov;
+};
+
+struct TrackerPoseExtended
+{
+	// Extrapolated using just the model from last observation
+	Eigen::Isometry3f extrapolated;
+	// Predicted using extrapolation and/or IMU integration
+	Eigen::Isometry3f predicted;
+	CovarianceMatrix predictedCov;
+	// Only for trackers with IMUs:
+	Eigen::Isometry3f inertialIntegrated; // Pose as integrated from new IMU samples
+	Eigen::Isometry3f inertialFused; // Pose as integrated and fused with optical samples
+	Eigen::Isometry3f inertialFiltered; // Pose as integrated and filtered with kalman filter
+};
+
+struct TrackerRecordVis
+{
+	// Target-specific
+	std::vector<std::vector<int>> visibleMarkers;
+
+	// Visual Tracker-specific
+	std::vector<Eigen::Vector3f> virtualRelations; // Relations from virtual tracker to subtrackers in world space
+	std::vector<VirtualSubtrackerDebug> virtualSubtrackers;
+};
+
+struct TrackerRecord
+{ // 6-DOF tracker record
 	int id;
 
+	// Results
 	TrackingResult result;
 	float procTimeMS;
-	TargetMatchError error;
 	float mistrust;
-	int freeProjections, freeObservations;
+	TrackerPose pose;
+	TargetMatchError error;
 
+	// Extended results for debug & visualisation (may be dropped)
+	ptr::value_ptr<TrackerPoseExtended> ext;
+	ptr::value_ptr<TrackerRecordVis> visual;
+	ptr::value_ptr<TargetMatch2D> match2D;
+
+	// IMU-specific
 	TrackerInertialState imuState;
 	float imuSampleInterval;
 	TimePoint_t imuLastSample;
 
-	Eigen::Isometry3f poseObserved, poseFiltered;
-	CovarianceMatrix covObserved, covFiltered;
-
-	// Following is mostly for debug
-	// TODO: Consider reducing memory-footprint of frameRecords in release builds
-	// Extended filter output for visualisation (e.g. in trail)
-	Eigen::Isometry3f posePredicted, poseExtrapolated;
-	Eigen::Isometry3f poseInertialIntegrated, poseInertialFused, poseInertialFiltered;
-	CovarianceMatrix covPredicted;
-	// Intermediary tracking results for simulating filter again after modifying parameters
-	TargetMatch2D match2D;
-
-	// Following is for more general visualisation beyond debugging
-	// TODO: Consider garbage-collecting visualisation data in frameRecords or storing it separately
-	std::vector<std::vector<int>> visibleMarkers;
-	std::vector<Eigen::Vector3f> virtualRelations; // Relations from virtual tracker to subtrackers in world space
-	std::vector<VirtualSubtrackerDebug> virtualSubtrackers;
+	TrackerRecord() {}
+	TrackerRecord(int id, TrackingResult result, float procTimeMS)
+		: id(id), result(result), procTimeMS(procTimeMS) {}
 };
 
 struct FrameRecord

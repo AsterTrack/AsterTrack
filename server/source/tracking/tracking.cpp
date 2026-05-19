@@ -43,7 +43,7 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 	return covObserved;
 }
 
-TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
@@ -53,21 +53,22 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 	{ // Predict new state if not done already using IMU samples
 		flexkalman::predict(state.state, model, dtS(state.time, time));
 		state.time = time;
-		observation.extrapolated = state.state.getIsometry().cast<float>();
+		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
 	}
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = state.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	if (!record.result.isTracked()) return record.result;
-	target.match2D = record.match2D; // May be uninitialised outside of replay/simulation
+	if (record.match2D) // May be uninitialised outside of replay/simulation
+		target.match2D = *record.match2D;
 	target.match2D.error = record.error;
-	observation.observed = record.poseObserved;
-	observation.covObserved = selectPoseCovariance(record.match2D, params);
-	if (observation.covObserved.hasNaN()) // Missing match2D in recording
-		observation.covObserved = record.covObserved;
+	obs.pose.observed = record.pose.observed;
+	obs.pose.observedCov = selectPoseCovariance(target.match2D, params);
+	if (obs.pose.observedCov.hasNaN()) // Missing match2D in recording
+		obs.pose.observedCov = record.pose.observedCov;
 
 	int pointCount = target.match2D.count();
-	bool trackSparse = pointCount <= params.filter.point.obsLimit;
+	bool trackSparse = pointCount > 0 && pointCount <= params.filter.point.obsLimit;
 	TrackingResult trackResult = trackSparse? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
 	if (trackSparse)
 	{
@@ -113,9 +114,9 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 	{
 		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
-			observation.observed.translation().cast<double>(),
-			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
-			observation.covObserved.cast<double>()
+			obs.pose.observed.translation().cast<double>(),
+			Eigen::Quaterniond(obs.pose.observed.rotation().cast<double>()),
+			obs.pose.observedCov.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
@@ -128,14 +129,14 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 
-	observation.filtered = state.state.getIsometry().cast<float>();
-	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.time = time;
+	obs.pose.filtered = state.state.getIsometry().cast<float>();
+	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.time = time;
 
 	return trackResult;
 }
 
-TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &observation,
+TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -148,13 +149,13 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	{ // Predict new state if not done already using IMU samples
 		flexkalman::predict(state.state, model, dtS(state.time, time));
 		state.time = time;
-		observation.extrapolated = state.state.getIsometry().cast<float>();
+		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
 	}
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = state.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Match target with points and optimise pose
-	target.match2D = trackTarget2D(target.calib, observation.predicted, observation.covPredicted,
+	target.match2D = trackTarget2D(target.calib, obs.ext.predicted, obs.ext.predictedCov,
 		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
 	int pointCount = target.match2D.count();
 	if (pointCount != target.match2D.error.samples)
@@ -166,8 +167,8 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 		return TrackingResult::NO_TRACK;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
-	observation.observed = target.match2D.pose;
-	observation.covObserved = selectPoseCovariance(target.match2D, params);
+	obs.pose.observed = target.match2D.pose;
+	obs.pose.observedCov = selectPoseCovariance(target.match2D, params);
 
 	// Update state
 
@@ -217,9 +218,9 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	{
 		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
-			observation.observed.translation().cast<double>(),
-			Eigen::Quaterniond(observation.observed.rotation().cast<double>()),
-			observation.covObserved.cast<double>()
+			obs.pose.observed.translation().cast<double>(),
+			Eigen::Quaterniond(obs.pose.observed.rotation().cast<double>()),
+			obs.pose.observedCov.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
@@ -232,14 +233,14 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 
-	observation.filtered = state.state.getIsometry().cast<float>();
-	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.time = time;
+	obs.pose.filtered = state.state.getIsometry().cast<float>();
+	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.time = time;
 
 	return trackResult;
 }
 
-TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &observation,
+TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &obs,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma)
 {
@@ -252,13 +253,13 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 	{ // Predict new state if not done already using IMU samples
 		flexkalman::predict(state.state, model, dtS(state.time, time));
 		state.time = time;
-		observation.extrapolated = state.state.getIsometry().cast<float>();
+		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
 	}
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = state.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
-	Eigen::Vector3f predPos = observation.predicted.translation();
-	Eigen::Matrix3f predCov = observation.covPredicted.topLeftCorner<3,3>();
+	Eigen::Vector3f predPos = obs.ext.predicted.translation();
+	Eigen::Matrix3f predCov = obs.ext.predictedCov.topLeftCorner<3,3>();
 
 	// Find best candidate
 	int matchedPoint = -1;
@@ -282,14 +283,14 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 		LOG(LTracking, LWarn, "Best point %d of %d points had %f error probability\n", matchedPoint, (int)points3D.size(), matchedErrorProbability);
 		return TrackingResult::NO_TRACK;
 	}
-	observation.observed.translation() = points3D[matchedPoint];
-	observation.covObserved.setIdentity();
-	observation.covObserved.diagonal().head<3>().setConstant(params.filter.pose.stdDevPos);
+	obs.pose.observed.translation() = points3D[matchedPoint];
+	obs.pose.observedCov.setIdentity();
+	obs.pose.observedCov.diagonal().head<3>().setConstant(params.filter.pose.stdDevPos);
 
 	// Update state
 	auto measurement = AbsolutePositionMeasurement(
 		points3D[matchedPoint].cast<double>(),
-		observation.covObserved.diagonal().head<3>().cast<double>().eval());
+		obs.pose.observedCov.diagonal().head<3>().cast<double>().eval());
 	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
 	{
@@ -300,9 +301,9 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 	state.lastObsFrame++;
 	// TODO: Track individual large markers (2/4) - switch to frame number
 
-	observation.filtered = state.state.getIsometry().cast<float>() ;
-	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.time = time;
+	obs.pose.filtered = state.state.getIsometry().cast<float>() ;
+	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.time = time;
 
 	*bestPoint = matchedPoint;
 	return TrackingResult::TRACKED_MARKER;
@@ -316,7 +317,7 @@ static Eigen::Quaterniond GyroToQuat(Eigen::Vector3d gyro)
 }
 
 template<typename IMUSample>
-static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params);
 
 template<typename IMUSample>
@@ -325,13 +326,13 @@ static void integrateIMUSample(TrackerInertial &inertial, const IMUSample &sampl
 template<typename IMUSample>
 static IMUSample interpolateIMUSample(const IMUSample &sampleA, const IMUSample &sampleB, TimePoint_t time);
 
-bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	if (inertial.imu->isFused)
-		return integrateIMU<IMUSampleFused>(state, inertial, observation, time, params);
+		return integrateIMU<IMUSampleFused>(state, inertial, obs, time, params);
 	else
-		return integrateIMU<IMUSampleRaw>(state, inertial, observation, time, params);
+		return integrateIMU<IMUSampleRaw>(state, inertial, obs, time, params);
 	return true;
 }
 
@@ -357,7 +358,7 @@ template<> IMUSampleRaw interpolateIMUSample(const IMUSampleRaw &sampleA, const 
 }
 
 template<typename IMUSample>
-bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	typename TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
@@ -365,7 +366,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	{ // Extrapolate without IMU samples for debug purposes
 		auto filterState = state.state;
 		flexkalman::predict(filterState, model, dtS(state.time, time));
-		observation.extrapolated = filterState.getIsometry().cast<float>();
+		obs.ext.extrapolated = filterState.getIsometry().cast<float>();
 	}
 
 	auto filterState = state.state;
@@ -478,14 +479,14 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	integrateIMUSample(inertial, *interpolatedSample, lastSample, params, filterState, updateFilter, isOptical, true);
 	state.lastIMUTime = time;
 
-	observation.inertialIntegrated.translation() = filterState.position().cast<float>();
-	observation.inertialIntegrated.linear() = inertial.fusion.integrated.toRotationMatrix().cast<float>();
-	observation.inertialFused.translation() = filterState.position().cast<float>();
-	observation.inertialFused.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
-	observation.inertialFiltered.translation() = filterState.position().cast<float>();
-	observation.inertialFiltered.linear() = filterState.getCombinedQuaternion().toRotationMatrix().cast<float>();
+	obs.ext.inertialIntegrated.translation() = filterState.position().cast<float>();
+	obs.ext.inertialIntegrated.linear() = inertial.fusion.integrated.toRotationMatrix().cast<float>();
+	obs.ext.inertialFused.translation() = filterState.position().cast<float>();
+	obs.ext.inertialFused.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
+	obs.ext.inertialFiltered.translation() = filterState.position().cast<float>();
+	obs.ext.inertialFiltered.linear() = filterState.getCombinedQuaternion().toRotationMatrix().cast<float>();
 	if (!isOptical)
-		observation.filtered = observation.inertialFiltered;
+		obs.pose.filtered = obs.ext.inertialFiltered;
 
 	//observation.covIMU = ;
 
@@ -672,7 +673,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial);
 
 static void calibrateIMUOffset(TrackerInertial &inertial, const TrackerInertial::State &lastState, const TrackerInertial::State &newState);
 
-void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &observation,
+void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	auto &calib = inertial.calibration;
@@ -738,8 +739,8 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 	}
 
 	// Update IMU positions
-	observation.inertialIntegrated.translation() = state.state.position().cast<float>();
-	observation.inertialFused.translation() = state.state.position().cast<float>();
+	obs.ext.inertialIntegrated.translation() = state.state.position().cast<float>();
+	obs.ext.inertialFused.translation() = state.state.position().cast<float>();
 
 	//LOG(LTrackingIMU, LDebug, "Re-basing IMU Integration!");
 	if (inertial.fusion.corrections == 0)

@@ -719,7 +719,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 						{
 							if (trackRecord.result.isTracked())
 							{
-								accum += trackRecord.poseFiltered.rotation().cast<double>();
+								accum += trackRecord.pose.filtered.rotation().cast<double>();
 								samples++;
 							}
 						}

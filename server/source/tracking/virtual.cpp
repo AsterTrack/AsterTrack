@@ -32,7 +32,7 @@ static Eigen::Vector3f AxisToUnit(TrackerAxis axis)
 	return unit;
 }
 
-TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &observation,
+TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &obs,
 	std::vector<TrackerState*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params)
 {
 	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
@@ -244,9 +244,9 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	// Predict new state
 	flexkalman::predict(state.state, model, dtS(state.time, time));
 	state.time = time;
-	observation.extrapolated = state.state.getIsometry().cast<float>();
-	observation.predicted = state.state.getIsometry().cast<float>();
-	observation.covPredicted = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.extrapolated = state.state.getIsometry().cast<float>();
+	obs.ext.predicted = state.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Update filter with observed tracker poses
 	std::vector<Eigen::Vector3f> obsPos(subtrackers.size());
@@ -349,9 +349,9 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	state.lastObservation = time;
 	state.lastObsFrame = frame;
 
-	observation.filtered = state.state.getIsometry().cast<float>() ;
-	observation.covFiltered = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	observation.time = time;
+	obs.pose.filtered = state.state.getIsometry().cast<float>() ;
+	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.time = time;
 
 	return trackResult;
 }

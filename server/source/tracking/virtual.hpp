@@ -19,8 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef VIRTUAL_TRACKER_H
 #define VIRTUAL_TRACKER_H
 
-#include "pipeline/parameters.hpp"
-
 #include "util/eigendef.hpp"
 
 enum class VirtualTrackerType

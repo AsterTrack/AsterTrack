@@ -192,8 +192,8 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 			auto io_tracker = state.vrpn.trackers.find(trackRecord.id);
 			if (io_tracker == state.vrpn.trackers.end()) continue;
-			// TODO: Send both poseObserved and poseFiltered?
-			io_tracker->second->updatePose(0, frame->time, trackRecord.poseFiltered);
+			// TODO: Send both observed and filtered poses?
+			io_tracker->second->updatePose(0, frame->time, trackRecord.pose.filtered);
 		}
 
 		LOG(LIO, LTrace, "Updating server connection to push tracker packets!\n");
@@ -221,7 +221,7 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 			if (cfg_tracker->role == TrackerConfig::ROLE_CONTROLLER) role = VMCRole::Controller;
 			trackers.emplace_back(role,
 				cfg_tracker->label,
-				trackRecord.poseFiltered
+				trackRecord.pose.filtered
 			);
 		}
 		vmc_send_device_packets(state.vmc.output, trackers, frame->time, dtS(server.lastStreamingStart, frame->time));

@@ -1436,7 +1436,7 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 				if (jsTarget.contains("mistrust"))
 					tracker.mistrust = jsTarget["mistrust"].get<float>();
 				int i = 0;
-				auto poseArr = tracker.poseObserved.matrix().array();
+				auto poseArr = tracker.pose.observed.matrix().array();
 				for (auto &val : jsTarget["pose"])
 					poseArr(i++) = val.is_number_float()? val.get<float>() : NAN;
 				tracker.error.samples = jsTarget["num"].get<int>();
@@ -1492,7 +1492,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 			jsTarget["time"] = target.procTimeMS;
 			jsTarget["mistrust"] = target.mistrust;
 			jsTarget["pose"] = json::array();
-			auto poseArr = target.poseObserved.matrix().array();
+			auto poseArr = target.pose.observed.matrix().array();
 			for (int i = 0; i < 16; i++)
 				jsTarget["pose"].push_back(poseArr(i));
 			jsTarget["num"] = target.error.samples;

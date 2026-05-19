@@ -328,7 +328,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 		if (replaceIt == simulation.replace.end()) continue;
 		auto &replace = replaceIt->second;
 
-		Eigen::Vector3f pos = record.poseObserved.translation()*100, rot = getEulerXYZ(record.poseObserved.rotation())*180/PI;
+		Eigen::Vector3f pos = record.pose.observed.translation()*100, rot = getEulerXYZ(record.pose.observed.rotation())*180/PI;
 		LOGC(LDebug, "Replacing target %d with %d! Pos (%.2fcm, %.2fcm, %.2fcm), Rot (%.2f°, %.2f°, %.2f°)!",
 			replace.srcID, replace.tgtID, pos.x(), pos.y(), pos.z(), rot.x(), rot.y(), rot.z());
 
@@ -338,8 +338,8 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 			auto &camRec = frame.cameras[c];
 			auto &camRep = cameraReplace[c];
 			CameraCalib calib = pipeline.cameras[c]->calib;
-			Eigen::Isometry3f mv = calib.view.cast<float>() * record.poseObserved;
-			float targetDist = (record.poseObserved.translation() - calib.transform.translation().cast<float>()).norm();
+			Eigen::Isometry3f mv = calib.view.cast<float>() * record.pose.observed;
+			float targetDist = (record.pose.observed.translation() - calib.transform.translation().cast<float>()).norm();
 			float paramScale = 5.0f / targetDist;
 			float matchDist = paramScale * params.matchDist;
 			// TODO: Rework all paramScale of expandAngle across all code
@@ -386,7 +386,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 			int preIndex = camRep.rawPoints2D.size();
 			std::vector<int> markerMap;
 			createTargetProjection(camRep.rawPoints2D, camRep.properties, markerMap, replace.tgtCalib,
-				calib, pipeline.cameras[c]->mode, record.poseObserved, simulation.projectionParams);
+				calib, pipeline.cameras[c]->mode, record.pose.observed, simulation.projectionParams);
 			int replacePoints = camRep.rawPoints2D.size() - preIndex;
 
 			// Remove points likely to be occluded based on actually occluded observations

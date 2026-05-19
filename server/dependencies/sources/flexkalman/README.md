@@ -99,6 +99,7 @@ type (the "Curiously-Recurring Template Pattern").
   - to indicate dimension of your measurement, aka *m* - here 4.
 - `Vector<m> getResidual(State const& state) const`
   - Also known as the "innovation" or delta *z* - this function predicts the measurement expected given the (predicted) state provided, then takes the difference (contextually defined - may be multiplicative) and returns that, typically by value.
+  - Note: This generally needs to be measurement-prediction, not prediction-measurement!
 - `Matrix<m,m> getCovariance(State & state) const`
   - Gets the measurement error covariance matrix *R* - a square matrix of dimension equal to measurement dimension. Sometimes a function of state, rather than a fixed value for a measurement, so often returning by value. (Sometimes this doesn't need the state or just needs particular state methods that could be implemented by many state classes, so this could be a function template in a base class, as done with the absolute pose and orientation measurements included.)
 - `Matrix<m,n> getJacobian(State & s) const`
@@ -110,6 +111,7 @@ type (the "Curiously-Recurring Template Pattern").
 - `Vector<m> getResidual(Vector<m> const &prediction, State const& state) const`
   - Unlike the single-argument `getResidual()`, this version does not (usually) use the actual data of the measurement. Instead, it uses a prediction, likely from `predictMeasurement()`.
   - This is only technically required for the unscented-style correction, but you may implemented in all cases since it helps to implement the single-parameter `getResidual()` - it becomes `return getResidual(predictMeasurement(s), s);` (often)
+  - Note: This generally needs to be measurement-prediction, not prediction-measurement!
 
 ## Acknowledgments
 

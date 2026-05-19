@@ -483,4 +483,82 @@ class TargetMatchMeasurement :
 	bool m_numerical;
 };
 
+class LeveragedPoseMeasurement :
+	public flexkalman::MeasurementBase<LeveragedPoseMeasurement>
+{
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	static constexpr size_t Dimension = 6;
+	using MeasurementVector = flexkalman::types::Vector<Dimension>;
+	using MeasurementSquareMatrix = flexkalman::types::SquareMatrix<Dimension>;
+
+	LeveragedPoseMeasurement(Eigen::Vector3d const &pos,
+							Eigen::Quaterniond const &quat,
+							MeasurementSquareMatrix const &covariance,
+							Eigen::Quaterniond const &reference,
+							Eigen::Vector3d const &offsetPos,
+							Eigen::Quaterniond const &offsetQuat)
+		: m_pos(pos), m_quat(quat), m_reference(reference),
+		  m_offsetPos(offsetPos), m_offsetQuat(offsetQuat)
+	{
+		// Reorient the covariance to fit reference
+		MeasurementSquareMatrix reorient = MeasurementSquareMatrix::Identity();
+		reorient.block<3, 3>(3, 3) = m_reference.toRotationMatrix();
+		m_covariance = (reorient * covariance * reorient.transpose()).eval();
+	}
+
+	template <typename State>
+	MeasurementSquareMatrix const &getCovariance(State const &)
+	{
+		return m_covariance;
+	}
+
+	template <typename State>
+	MeasurementVector predictMeasurement(State const &state) const
+	{
+		const Eigen::Quaterniond stateQuat = state.getCombinedQuaternion();
+		const Eigen::Vector3d predictedPos = state.position() + (stateQuat * m_offsetPos);
+		const Eigen::Quaterniond predictedQuat = stateQuat * m_offsetQuat;
+
+		MeasurementVector prediction;
+		prediction.head<3>() = predictedPos;
+		prediction.tail<3>() = 2 * flexkalman::util::quat_ln(predictedQuat * m_reference.conjugate());
+		return prediction;
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(MeasurementVector const &prediction,
+								  State const &state) const
+	{
+		const Eigen::Vector3d predictedPos = prediction.head<3>();
+		const Eigen::Quaterniond predictedQuat = flexkalman::util::quat_exp(prediction.tail<3>() / 2) * m_reference;
+
+		MeasurementVector residual;
+		residual.head<3>() = m_pos - predictedPos;
+		residual.tail<3>() = 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+		return residual;
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(State const &state) const
+	{
+		const Eigen::Quaterniond stateQuat = state.getCombinedQuaternion();
+		const Eigen::Vector3d predictedPos = state.position() + (stateQuat * m_offsetPos);
+		const Eigen::Quaterniond predictedQuat = stateQuat * m_offsetQuat;
+
+		MeasurementVector residual;
+		residual.head<3>() = m_pos - predictedPos;
+		residual.tail<3>() = 2 * flexkalman::util::smallest_quat_ln(m_quat * predictedQuat.conjugate());
+		return residual;
+	}
+
+private:
+	Eigen::Vector3d m_pos;
+	Eigen::Quaterniond m_quat;
+	Eigen::Quaterniond m_reference;
+	MeasurementSquareMatrix m_covariance;
+	Eigen::Vector3d m_offsetPos;
+	Eigen::Quaterniond m_offsetQuat;
+};
+
 #endif // TARGET_KALMAN_H

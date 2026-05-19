@@ -67,17 +67,15 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 	{
 		// Redetermine position based on centerweights
 		virt.config.centerWeights.resize(virt.config.ids.size(), 1);
-		Eigen::Vector3f offset = Eigen::Vector3f::Zero();
+		Eigen::Vector3f alignmentOffset = Eigen::Vector3f::Zero();
 		float weight = 0;
 		for (int t = 0; t < virt.config.ids.size(); t++)
 		{
-			offset += virt.config.offsetPos[t] * virt.config.centerWeights[t];
+			alignmentOffset += virt.config.offsetPos[t] * virt.config.centerWeights[t];
 			weight += virt.config.centerWeights[t];
 		}
-		offset /= weight;
-		for (int t = 0; t < virt.config.ids.size(); t++)
-			virt.config.offsetPos[t] -= offset;
-		filter.state.position() += offset.cast<double>();
+		alignmentOffset /= weight;
+		filter.state.position() += alignmentOffset.cast<double>();
 
 		// Redetermine rotation
 		Eigen::Quaternionf alignment = Eigen::Quaternionf::Identity();
@@ -102,7 +100,7 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 
 		if (virt.config.alignAxis.tracker >= 0 && virt.config.alignAxis.tracker < virt.config.ids.size())
 		{
-			Eigen::Vector3f alignAxis = virt.config.offsetPos[virt.config.alignAxis.tracker] - virt.config.centerOffset;
+			Eigen::Vector3f alignAxis = virt.config.offsetPos[virt.config.alignAxis.tracker] - alignmentOffset- virt.config.centerOffset;
 			Eigen::Vector3f curAxis = alignment * AxisToUnit(virt.config.alignAxis.axis);
 			alignment = Eigen::Quaternionf::FromTwoVectors(curAxis, alignAxis) * alignment;
 		}
@@ -122,19 +120,30 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 			alignment = virt.config.offsetRot[virt.config.copyRotationFromTracker];
 		}
 
-		// Apply new alignment
+		// Update offset
 		for (int t = 0; t < virt.config.ids.size(); t++)
 		{
+			virt.config.offsetPos[t] -= alignmentOffset;
 			virt.config.offsetRot[t] = alignment.conjugate() * virt.config.offsetRot[t];
 			virt.config.offsetPos[t] = alignment.conjugate() * virt.config.offsetPos[t];
+			virt.config.offsetPos[t] -= virt.config.centerOffset;
 		}
+
+		// Reorient error covariance and angular velocity to new alignment
+		auto orient = filter.state.getQuaternion().conjugate().toRotationMatrix();
+		TrackerFilter::State::StateSquareMatrix reorient;
+		reorient.setIdentity();
+		reorient.block<3, 3>(3, 3) = orient;
+		reorient.block<3, 3>(9, 9) = orient;
+		filter.state.errorCovariance() = reorient * filter.state.errorCovariance() * reorient.transpose();
+		filter.state.angularVelocity() = orient * filter.state.angularVelocity();
+
+		// Apply new alignment to state
 		filter.state.setQuaternion(filter.state.getCombinedQuaternion() * alignment.cast<double>());
 		filter.state.incrementalOrientation().setZero();
+		filter.state.position() += (alignmentOffset + virt.config.centerOffset).cast<double>();
 
-		// Apply center offset
-		for (int t = 0; t < virt.config.ids.size(); t++)
-			virt.config.offsetPos[t] -= virt.config.centerOffset;
-		filter.state.position() += virt.config.centerOffset.cast<double>();
+		LOG(LTracking, LInfo, "Realigning virtual tracker!");
 
 	};
 
@@ -163,6 +172,7 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
 		filter.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
 		filter.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
+		filter.time = time;
 
 		// Realign based on actual config
 		realignTracker();
@@ -273,11 +283,12 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 			upAxis = (subtrackers[t]->state.getQuaternion().cast<float>() * virt.trackerUpVector[t].conjugate()) * Eigen::Vector3f::UnitZ();
 		virt.subtrackers.push_back({ subtrackers[t]->state.position().cast<float>(), -relation, upAxis });
 
-		// TODO: transfer covariance from subtracker
-		CovarianceMatrix virtCov = params.filter.getSyntheticCovariance<float>();
-
 		// Use observation of subtarget to update virtual target filter
-		AbsolutePoseMeasurement measurement(obsPos[t].cast<double>(), obsRot[t].cast<double>(), virtCov.cast<double>());
+		Eigen::Quaterniond ref = filter.state.getQuaternion() * virt.config.offsetRot[t].cast<double>();
+		// Oddly enough, seems to perform better than subtrackers[t]->state.getCombinedQuaternion()
+		LeveragedPoseMeasurement measurement(subtrackers[t]->state.position(), subtrackers[t]->state.getCombinedQuaternion(),
+			subtrackers[t]->state.errorCovariance().topLeftCorner<6,6>(), ref,
+			virt.config.offsetPos[t].cast<double>(), virt.config.offsetRot[t].cast<double>());
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 		bool success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
 		if (!success)

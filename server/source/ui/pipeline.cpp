@@ -630,6 +630,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			struct TrackingSamples
 			{
 				std::string label;
+				TrackerConfig::TrackerType type;
 				EventChange tracked;
 				StatValue<float,StatExtremas|StatDistribution> samplesLoaded, samplesCurrent, samplesAdded, samplesRemoved;
 				StatValue<float,StatExtremas|StatDistribution> errorLoaded, errorCurrent, errorAdded, errorRemoved;
@@ -732,7 +733,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				{
 					auto it = trackers.find(tracker.id);
 					if (it != trackers.end())
+					{
 						it->second.label = tracker.label;
+						it->second.type = tracker.type;
+					}
 				}
 			}
 
@@ -752,7 +756,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					SameLineTrailing(ImGui::CalcTextSize("Compare").x + ImGui::GetStyle().FramePadding.x*2);
 					if (ImGui::Button("Compare"))
 					{
-						TrackerCompareRecord record { trackedTarget.first, trackedTarget.second.label };
+						TrackerCompareRecord record { trackedTarget.first, trackedTarget.second.label, trackedTarget.second.type };
 						auto framesRecord = pipeline.record.frames.getView<true>();
 						for (const auto &frameRecord : framesRecord)
 						{ // Filter frame records down to just tracking records used by insights
@@ -773,17 +777,28 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					if (open)
 					{
 						auto &tgt = trackedTarget.second;
+						auto type = trackedTarget.second.type; 
 						ImGui::Text("Frames: %u  [%u]  +%u -%u", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
 						ImGui::Text("Times: %.2fms +- %.2f  [%.2fms +- %.2f]", tgt.trackTimeCurrent.avg, tgt.trackTimeCurrent.stdDev()*2, tgt.trackTimeLoaded.avg, tgt.trackTimeLoaded.stdDev()*2);
-						ImGui::Text("Samples:");
+						ImGui::Text(type == TrackerConfig::TRACKER_VIRTUAL? "Trackers:" : "Samples:");
 						ImGui::Text("    sum: %u  [%u]  +%u -%u", (uint32_t)tgt.samplesCurrent.sum, (uint32_t)tgt.samplesLoaded.sum, (uint32_t)tgt.samplesAdded.sum, (uint32_t)tgt.samplesRemoved.sum);
 						ImGui::Text("     avg: %.2f +- %.2f  [%.2f +- %.2f]", tgt.samplesCurrent.avg, tgt.samplesCurrent.stdDev()*2, tgt.samplesLoaded.avg, tgt.samplesLoaded.stdDev()*2);
 						ImGui::Text("	 diff: +%.2f (%u) -%.2f (%u), %u unchanged", tgt.samplesAdded.avg, tgt.samplesAdded.num, tgt.samplesRemoved.avg, tgt.samplesRemoved.num, coveredFrames-(tgt.samplesAdded.num+tgt.samplesRemoved.num));
 						ImGui::Text("      >/<: %u/%u  [%u/%u]", (uint32_t)tgt.samplesCurrent.min, (uint32_t)tgt.samplesCurrent.max, (uint32_t)tgt.samplesLoaded.min, (uint32_t)tgt.samplesLoaded.max);
-						ImGui::Text("Errors :");
-						ImGui::Text("     avg: %.2fpx +- %.2fpx  [%.2fpx +- %.2fpx]", tgt.errorCurrent.avg*PixelFactor, tgt.errorCurrent.stdDev()*2*PixelFactor, tgt.errorLoaded.avg*PixelFactor, tgt.errorLoaded.stdDev()*2*PixelFactor);
-						ImGui::Text("	 diff: +%.2fpx (%u) -%.2fpx (%u), %u unchanged", tgt.errorAdded.avg*PixelFactor, tgt.errorAdded.num, tgt.errorRemoved.avg*PixelFactor, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
-						ImGui::Text("      >/<: %.3fpx/%.2fpx  [%.3fpx/%.2fpx]", tgt.errorCurrent.min*PixelFactor, tgt.errorCurrent.max*PixelFactor, tgt.errorLoaded.min*PixelFactor, tgt.errorLoaded.max*PixelFactor);
+						if (type == TrackerConfig::TRACKER_VIRTUAL)
+						{
+							ImGui::Text("Errors :");
+							ImGui::Text("     avg: %.2fmm +- %.2fmm  [%.2fmm +- %.2fmm]", tgt.errorCurrent.avg*1000, tgt.errorCurrent.stdDev()*2*1000, tgt.errorLoaded.avg*1000, tgt.errorLoaded.stdDev()*2*1000);
+							ImGui::Text("	 diff: +%.2fmm (%u) -%.2fmm (%u), %u unchanged", tgt.errorAdded.avg*1000, tgt.errorAdded.num, tgt.errorRemoved.avg*1000, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
+							ImGui::Text("      >/<: %.3fmm/%.2fmm  [%.3fmm/%.2fmm]", tgt.errorCurrent.min*1000, tgt.errorCurrent.max*1000, tgt.errorLoaded.min*1000, tgt.errorLoaded.max*1000);
+						}
+						else
+						{
+							ImGui::Text("Errors :");
+							ImGui::Text("     avg: %.2fpx +- %.2fpx  [%.2fpx +- %.2fpx]", tgt.errorCurrent.avg*PixelFactor, tgt.errorCurrent.stdDev()*2*PixelFactor, tgt.errorLoaded.avg*PixelFactor, tgt.errorLoaded.stdDev()*2*PixelFactor);
+							ImGui::Text("	 diff: +%.2fpx (%u) -%.2fpx (%u), %u unchanged", tgt.errorAdded.avg*PixelFactor, tgt.errorAdded.num, tgt.errorRemoved.avg*PixelFactor, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
+							ImGui::Text("      >/<: %.3fpx/%.2fpx  [%.3fpx/%.2fpx]", tgt.errorCurrent.min*PixelFactor, tgt.errorCurrent.max*PixelFactor, tgt.errorLoaded.min*PixelFactor, tgt.errorLoaded.max*PixelFactor);
+						}
 						ImGui::TreePop();
 					}
 					ImGui::PopID();

@@ -63,8 +63,6 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		LOG(LTracking, LDebug, "Virtual Tracker detected after %" PRId64 " frames!", frame - filter.lastObsFrame);
 	}
 
-	TrackingResult trackResult = TrackingResult::TRACKED_VIRTUAL;
-
 	auto realignTracker = [&]()
 	{
 		// Redetermine position based on centerweights
@@ -181,6 +179,7 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 			filter.firstObsFrame = frame;
 			filter.firstObservation = time;
 		}
+		return TrackingResult::INIT_VIRTUAL;
 	}
 
 	if (virt.config.calibrateUp.clear)
@@ -241,12 +240,16 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		}
 	}
 
+	TrackingResult trackResult = TrackingResult::TRACKED_VIRTUAL;
+
 	// Predict new state
 	flexkalman::predict(filter.state, model, dtS(filter.time, time));
 	filter.time = time;
 	obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	obs.ext.predicted = filter.state.getIsometry().cast<float>();
 	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.pose.observed.matrix().setZero();
+	virt.error = {};
 
 	// Update filter with observed tracker poses
 	std::vector<Eigen::Vector3f> obsPos(subtrackers.size());
@@ -259,6 +262,10 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		obsRot[t] = subtrackers[t]->state.getQuaternion().cast<float>() * virt.config.offsetRot[t].conjugate();
 		Eigen::Vector3f relation = obsRot[t] * virt.config.offsetPos[t];
 		obsPos[t] = subtrackers[t]->state.position().cast<float>() - relation;
+
+		// Update observed pose as average
+		obs.pose.observed.translation() += obsPos[t] / numTracked;
+		obs.pose.observed.linear() += obsRot[t].toRotationMatrix() / numTracked;
 
 		// Enter debug information for subtrackers
 		Eigen::Vector3f upAxis = Eigen::Vector3f::Zero();
@@ -286,6 +293,30 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		virt.relations.push_back(filter.state.getQuaternion().cast<float>() * virt.config.offsetPos[t]);
 	}
 
+	for (int t = 0; t < subtrackers.size(); t++)
+	{
+		if (!subtrackers[t]) continue; // Not tracked
+		float posError = (obsPos[t] - filter.state.position().cast<float>()).norm();
+		float angleError = Eigen::AngleAxisf(obsRot[t] * filter.state.getQuaternion().conjugate().cast<float>()).angle();
+		if (posError < 10.0f/1000 && angleError < 5.0f/180*PI)
+		{ // Kalman filter agrees with subtracker
+			virt.error.subtrackers++;
+			virt.error.pos += posError;
+			virt.error.rot += angleError;
+			virt.error.posVar += filter.state.errorCovariance().topLeftCorner<3,3>().diagonal().norm(); // Approximate is fine
+		}
+	}
+	if (virt.error.subtrackers > 0)
+	{
+		virt.error.pos /= virt.error.subtrackers;
+		virt.error.rot /= virt.error.subtrackers;
+		virt.error.posVar /= virt.error.subtrackers;
+	}
+	else
+	{
+		trackResult.setFlag(TrackingResult::VIRT_MISTRUST);
+	}
+
 	if (numTracked > 1)
 	{
 		// Determine mistrust of current frame from tracked trackers
@@ -295,15 +326,16 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 			if (!subtrackers[t]) continue; // Not tracked
 			float posError = (obsPos[t] - filter.state.position().cast<float>()).norm() * 1000;
 			float angleError = Eigen::AngleAxisf(obsRot[t] * filter.state.getQuaternion().conjugate().cast<float>()).angle()/PI*180;
-			LOG(LTracking, LTrace, "Virtual tracker subtracker %d had error of %.2fmm and %.2f°!", t, posError, angleError);
-			mistrust += posError/20 + angleError/20;
+			LOG(LTracking, LDebug, "Virtual tracker subtracker %d had error of %.2fmm and %.2f°!", t, posError, angleError);
+			mistrust += posError/10 + angleError/5;
 		}
 
 		// Accumulate frames of mistrust
 		if (mistrust > subtrackers.size())
 		{
-			LOG(LTracking, LTrace, "Virtual tracker pose is mistrusted with rating %.4f!", mistrust);
+			LOG(LTracking, LDebug, "Virtual tracker pose is mistrusted with rating %.4f!", mistrust);
 			virt.mistrustFrames++;
+			trackResult.setFlag(TrackingResult::VIRT_MISTRUST);
 		}
 		else
 		{
@@ -319,7 +351,7 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 			virt.mistrustFrames = 0;
 			virt.collectingUpVectors = 0;
 			virt.trackerUpAccum.clear();
-			trackResult.setFlag(TrackingResult::FILTER_FAILED);
+			trackResult = TrackingResult::INIT_VIRTUAL;
 		}
 
 		if ((params.calibration.lerpFactorPos > 0.0f || params.calibration.lerpFactorRot > 0.0f)

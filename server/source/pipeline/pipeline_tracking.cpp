@@ -773,6 +773,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				if (!record.visual) record.visual = ptr::make_value<TrackerRecordVis>();
 				record.visual->virtualRelations = std::move(tracker.virt.relations);
 				record.visual->virtualSubtrackers = std::move(tracker.virt.subtrackers);
+				record.virtualError = tracker.virt.error;
 				enterTrackerRecord(frame, std::move(record));
 
 				if (!prevRes.isTracked())

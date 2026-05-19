@@ -216,6 +216,7 @@ struct TrackerVirtual
 	OptFrameNum lastValidFrame;
 	OptFrameNum mistrustFrames;
 	bool alignmentDirty;
+	TrackerVirtualError error;
 
 	// Calibrated up vector of each subtracker, manually calibrated
 	int collectingUpVectors;

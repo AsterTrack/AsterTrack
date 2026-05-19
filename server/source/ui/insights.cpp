@@ -688,15 +688,19 @@ static bool ShowTrackingPanel()
 	static int compIndexA = -1, compIndexB = -1;
 	static int curTrackerID = 0;
 	static std::string curTrackerLabel = "Select Tracker";
+	static bool curTrackerVirt = false;
 	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID)
 	{ // External change
 		for (auto &tracker : state.trackerConfigs)
 		{
+			if (tracker.type != TrackerConfig::TRACKER_TARGET && tracker.type != TrackerConfig::TRACKER_VIRTUAL)
+				continue; // TODO: Support marker trackers
 			if (tracker.id == ui.visState.tracking.focusedTrackerID)
 			{
 				comparingTrackers = false;
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
+				curTrackerVirt = tracker.type == TrackerConfig::TRACKER_VIRTUAL;
 			}
 		}
 	}
@@ -715,7 +719,7 @@ static bool ShowTrackingPanel()
 		}
 		for (auto &tracker : state.trackerConfigs)
 		{
-			if (tracker.type != TrackerConfig::TRACKER_TARGET)
+			if (tracker.type != TrackerConfig::TRACKER_TARGET && tracker.type != TrackerConfig::TRACKER_VIRTUAL)
 				continue; // TODO: Support marker trackers
 			ImGui::PushID(tracker.id);
 			if (ImGui::Selectable(tracker.label.c_str(), !comparingTrackers && curTrackerID == tracker.id) && (comparingTrackers || curTrackerID != tracker.id))
@@ -723,6 +727,7 @@ static bool ShowTrackingPanel()
 				comparingTrackers = false;
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
+				curTrackerVirt = tracker.type == TrackerConfig::TRACKER_VIRTUAL;
 				ui.visState.tracking.focusedTrackerID = tracker.id;
 			}
 			ImGui::PopID();
@@ -761,6 +766,9 @@ static bool ShowTrackingPanel()
 			}
 			ImGui::PopID();
 		}
+
+		if (compIndexA > 0 && compIndexA < state.compareTrackers.size())
+			curTrackerVirt = state.compareTrackers[compIndexA].type == TrackerConfig::TRACKER_VIRTUAL;
 	}
 	else
 	{
@@ -784,7 +792,8 @@ static bool ShowTrackingPanel()
 	if (framesRecord.empty() && framesStored.empty())
 		return false;
 
-	if (!ImPlot::BeginPlot("##Tracking", ImVec2(-1, -1)))
+	// Different ID when different set of axis are used
+	if (!ImPlot::BeginPlot(curTrackerVirt? "##Virt" : "##Tracking", ImVec2(-1, -1)))
 		return false;
 
 	// Update frameRange
@@ -805,21 +814,33 @@ static bool ShowTrackingPanel()
 	// Setup plots
 	ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
 	ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
-	ImPlot::SetupAxis(ImAxis_Y1, "Samples",ImPlotAxisFlags_Lock);
-	ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50);
-	ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
-	ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
-	//if (hasIMU)
-	{
-		ImPlot::SetupAxis(ImAxis_Y3, "IMU /Hz", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y3, 0, 1020);
+	if (curTrackerVirt)
+	{ // Virtual Tracker uses different metrics
+		ImPlot::SetupAxis(ImAxis_Y1, "Trackers",ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 5);
+		ImPlot::SetupAxis(ImAxis_Y2, "Pos /mm", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 10.0f);
+		ImPlot::SetupAxis(ImAxis_Y4, "Rot /°", ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 5);
 	}
-	// TODO: Would love to toggle time axis along with time data, but needs to be setup before SetAxis is called
-	// Thus, the only way to do this is to implement a IsItemHidden with from the last call, and show axis by default
-	// String ID doesn't work since something (perhaps SetupFinish) will change the ID stack before the actual item is drawn
-	{
-		ImPlot::SetupAxis(ImAxis_Y4, "Time", ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 10);
+	else
+	{ // Normal target tracker
+		ImPlot::SetupAxis(ImAxis_Y1, "Samples",ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 50);
+		ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
+		//if (hasIMU)
+		{
+			ImPlot::SetupAxis(ImAxis_Y3, "IMU /Hz", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+			ImPlot::SetupAxisLimits(ImAxis_Y3, 0, 1020);
+		}
+		// TODO: Would love to toggle time axis along with time data, but needs to be setup before SetAxis is called
+		// Thus, the only way to do this is to implement a IsItemHidden with from the last call, and show axis by default
+		// String ID doesn't work since something (perhaps SetupFinish) will change the ID stack before the actual item is drawn
+		{
+			ImPlot::SetupAxis(ImAxis_Y4, "Time", ImPlotAxisFlags_Lock);
+			ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 10);
+		}
 	}
 	ImPlot::SetupAxisLinks(ImAxis_X1, &frameRange.Min, &frameRange.Max);
 
@@ -829,29 +850,28 @@ static bool ShowTrackingPanel()
 	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
 
 	struct TrackerRecordGraph {
-		std::vector<int> sampleCount;
-		std::vector<float> errors2D;
+		std::vector<int> dataNum;
+		std::vector<float> errors;
+		std::vector<float> dataTimeRot;
 		std::vector<float> tracking;
-		std::vector<float> procTimeMS;
 		std::vector<float> mistrust;
 
 		void setup(FrameNum size)
 		{
-			sampleCount.clear();
-			errors2D.clear();
+			dataNum.clear();
+			errors.clear();
+			dataTimeRot.clear();
 			tracking.clear();
-			procTimeMS.clear();
 			mistrust.clear();
-			sampleCount.resize(size, 0);
-			errors2D.resize(size, NAN);
+			dataNum.resize(size, 0);
+			errors.resize(size, NAN);
+			dataTimeRot.resize(size, NAN);
 			tracking.resize(size, NAN);
-			procTimeMS.resize(size, NAN);
 			mistrust.resize(size, NAN);
 		}
 	};
 	static TrackerRecordGraph tracking = {}, recording = {};
-	static std::vector<float> imuSampleTime;
-	static std::vector<float> imuSampleRate;
+	static std::vector<float> imuSampleTime, imuSampleRate;
 
 	double frameShift = 0.0f, frameShiftRec = 0.0f;
 	bool drawCur = false, drawRec = false;
@@ -863,15 +883,29 @@ static bool ShowTrackingPanel()
 		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == trackerID; });
 		if (trackRecord == frame.trackers.end())
 			return;
-		stats.sampleCount[index] = trackRecord->error.samples;
-		stats.errors2D[index] = trackRecord->error.mean * PixelFactor;
+		if (curTrackerVirt)
+		{
+			stats.dataNum[index] = trackRecord->virtualError.subtrackers;
+			stats.errors[index] = trackRecord->virtualError.pos * 1000;
+			stats.dataTimeRot[index] = trackRecord->virtualError.rot * 180 / PI;
+			stats.mistrust[index] = std::sqrt(trackRecord->virtualError.posVar) * 1000 * 3;
+		}
+		else
+		{
+			stats.dataNum[index] = trackRecord->error.samples;
+			stats.errors[index] = trackRecord->error.mean * PixelFactor;
+			stats.dataTimeRot[index] = trackRecord->procTimeMS;
+			stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
+		}
 
 		// Indices into ImPlotColormap_Dark:
 		if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
 			stats.tracking[index] = 0;
 		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
 			stats.tracking[index] = 1;
-		else if (trackRecord->result.isTracked() && !trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
+		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::VIRT_MISTRUST))
+			stats.tracking[index] = 4;
+		else if (trackRecord->result.isTracked())
 			stats.tracking[index] = 2;
 		else if (trackRecord->result.isProbe())
 			stats.tracking[index] = 3;
@@ -879,9 +913,6 @@ static bool ShowTrackingPanel()
 			stats.tracking[index] = 4;
 		else if (trackRecord->result.isDetected())
 			stats.tracking[index] = 7;
-
-		stats.procTimeMS[index] = trackRecord->procTimeMS;
-		stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
 	};
 	auto gatherTrackingData = [&updateFrameStats](TrackerRecordGraph &stats, const auto framesRecord, double &frameShift, int trackerID)
 	{
@@ -962,65 +993,64 @@ static bool ShowTrackingPanel()
 
 	ImPlot::PushColormap(ImPlotColormap_Deep);
 
-	// Sample count bars
 	ImPlot::SetAxis(ImAxis_Y1);
+	const char *y1Label = curTrackerVirt? "Trackers" : "Samples";
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
 		ImPlot::SetNextFillStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
-		ImPlot::PlotBars("Samples", tracking.sampleCount.data(), tracking.sampleCount.size(), 0.67f, frameShift);
+		ImPlot::PlotBars(y1Label, tracking.dataNum.data(), tracking.dataNum.size(), 0.67f, frameShift);
 	}
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
 		ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
-		ImPlot::PlotBars("Samples", recording.sampleCount.data(), recording.sampleCount.size(), 0.67f, frameShiftRec);
+		ImPlot::PlotBars(y1Label, recording.dataNum.data(), recording.dataNum.size(), 0.67f, frameShiftRec);
 	}
 
-	// Error line
 	ImPlot::SetAxis(ImAxis_Y2);
+	const char *y2Label = curTrackerVirt? "Pos Error" : "Errors";
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
-		ImPlot::PlotLine("Errors", recording.errors2D.data(), recording.errors2D.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y2Label, recording.errors.data(), recording.errors.size(), 1, frameShiftRec);
 	}
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
-		ImPlot::PlotLine("Errors", tracking.errors2D.data(), tracking.errors2D.size(), 1, frameShift);
+		ImPlot::PlotLine(y2Label, tracking.errors.data(), tracking.errors.size(), 1, frameShift);
 	}
 
-	// Processing time line
-	ImPlot::SetAxis(ImAxis_Y4); // Use same axis, but not same scala
+	ImPlot::SetAxis(ImAxis_Y4);
+	const char *y4Label = curTrackerVirt? "Rot Error" : "Time";
 	if (drawRec)
 	{ // Draw recorded
-		ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
-		ImPlot::PlotLine("Time", recording.procTimeMS.data(), recording.procTimeMS.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y4Label, recording.dataTimeRot.data(), recording.dataTimeRot.size(), 1, frameShiftRec);
 	}
 	if (drawCur)
 	{ // Draw current
-		ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
-		ImPlot::PlotLine("Time", tracking.procTimeMS.data(), tracking.procTimeMS.size(), 1, frameShift);
+		ImPlot::PlotLine(y4Label, tracking.dataTimeRot.data(), tracking.dataTimeRot.size(), 1, frameShift);
 	}
 
-	// Mistrust line
-	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not same scala
+	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
+	const char *y2AltLabel = curTrackerVirt? "Pos 3-Sigma" : "Mistrust";
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
-		ImPlot::PlotLine("Mistrust", recording.mistrust.data(), recording.mistrust.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameShiftRec);
 	}
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(1.0, 0.2, 0.2, 1), 2.0);
-		ImPlot::PlotLine("Mistrust", tracking.mistrust.data(), tracking.mistrust.size(), 1, frameShift);
+		ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameShift);
 	}
 
-	// IMU Update Rate line
 	if (hasIMU)
-	{ // Draw recorded
+	{ // IMU Update Rate line (current data only)
 		ImPlot::SetAxis(ImAxis_Y3);
 		ImPlot::SetNextMarkerStyle(ImPlotMarker_Diamond, 2, ImVec4(0.87, 0.82, 0.22, 1.0), 0);
 		ImPlot::PlotScatter("IMU", imuSampleTime.data(), imuSampleRate.data(), imuSampleTime.size());

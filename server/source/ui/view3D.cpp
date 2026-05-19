@@ -631,6 +631,9 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();
 
+	thread_local std::vector<VisModel> covariances;
+	covariances.clear();
+
 	for (auto &trackRecord : frame.trackers)
 	{
 		if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
@@ -646,7 +649,9 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 		{
 			const Color colVirtual = Color{ 0.5f, 0.1f, 0.7f, 0.6f };
+			const Color colObserved = Color{ 0.4f, 0.8f, 0.2f, 0.6f };
 			visualisePose(trackRecord.pose.filtered, colVirtual, 0.15f, 2.0f);
+			visualisePose(trackRecord.pose.observed, colObserved, 0.15f, 2.0f);
 
 			if (!trackRecord.visual) continue;
 
@@ -691,6 +696,21 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				}
 				edgeBaseIndex += subtrackers.size();
 			}
+			if (visState.tracking.showTargetFiltered)
+				covariances.emplace_back(composeCovarianceTransform(
+					trackRecord.pose.filtered, trackRecord.pose.filteredCov.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colVirtual);
+			if (visState.tracking.showTargetObserved)
+				covariances.emplace_back(composeCovarianceTransform(
+					trackRecord.pose.observed, trackRecord.pose.observedCov.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colObserved);
+			if (visState.tracking.showCovarianceRot)
+			{ // Visualise rotational covariance rings around pose cross
+				// TODO: Show different rotational covariances somehow (predicted, observed, filtered)
+				visualiseRotationalCovariance(trackRecord.pose.filtered, trackRecord.pose.filteredCov.bottomRightCorner<3,3>(),
+					visState.tracking.scaleCovariance, 0.2f);
+			}
+			
 			assert(edgeBaseIndex == edges.size());
 			visualiseLines(edges, 1);
 
@@ -775,8 +795,6 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		colObserved.a = 0.4f;
 		colFiltered.a = 0.4f;
 
-		thread_local std::vector<VisModel> covariances;
-		covariances.clear();
 		auto enterCovariances = [&](TrackerRecord &trk)
 		{
 			if (visState.tracking.showTargetFiltered)
@@ -848,13 +866,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 		if (visState.tracking.showCovariancePos)
 		{ // Visualise positional covariance ellipsoids
-			glDisable(GL_DEPTH_TEST);
-			glEnable(GL_CULL_FACE);
-			glCullFace(GL_BACK);
 			enterCovariances(trackRecord);
-			visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
-			glDisable(GL_CULL_FACE);
-			glEnable(GL_DEPTH_TEST);
 		}
 		if (visState.tracking.showCovarianceRot)
 		{ // Visualise rotational covariance rings around pose cross
@@ -864,6 +876,16 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 
 		visualisePointsSpheresDepthSorted(markers);
+	}
+
+	if (!covariances.empty())
+	{ // Visualise positional covariance ellipsoids
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
+		visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
+		glDisable(GL_CULL_FACE);
+		glEnable(GL_DEPTH_TEST);
 	}
 
 	if (pipeline.phase == PHASE_Calibration_Point)

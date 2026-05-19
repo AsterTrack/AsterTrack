@@ -105,6 +105,12 @@ struct TargetMatchError
 	int samples;
 };
 
+struct TrackerVirtualError
+{
+	float pos, rot, posVar;
+	int subtrackers;
+};
+
 using CovarianceMatrix = Eigen::Matrix<float,6,6>;
 
 struct TargetCalibration3D;
@@ -164,6 +170,7 @@ public:
 		FILTER_FAILED		= (1 << 16),
 		CATCHING_UP			= (1 << 17),
 		REMOVED				= (1 << 18),
+		VIRT_MISTRUST		= (1 << 19),
 	};
 	enum Value : int
 	{
@@ -245,7 +252,11 @@ struct TrackerRecord
 	float procTimeMS;
 	float mistrust;
 	TrackerPose pose;
-	TargetMatchError error;
+	union
+	{
+		TargetMatchError error;
+		TrackerVirtualError virtualError;
+	};
 
 	// Extended results for debug & visualisation (may be dropped)
 	ptr::value_ptr<TrackerPoseExtended> ext;
@@ -323,6 +334,7 @@ struct TrackerCompareRecord
 {
 	int trackerID;
 	std::string label;
+	int type;
 	BlockedQueue<std::shared_ptr<FrameRecord>> frames;
 };
 

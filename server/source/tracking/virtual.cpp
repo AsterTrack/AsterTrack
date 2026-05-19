@@ -32,10 +32,10 @@ static Eigen::Vector3f AxisToUnit(TrackerAxis axis)
 	return unit;
 }
 
-TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &obs,
-	std::vector<TrackerState*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params)
+TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt, TrackerObservation &obs,
+	std::vector<TrackerFilter*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params)
 {
-	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
 	assert(subtrackers.size() == virt.config.ids.size());
 	assert(virt.config.offsetPos.size() == virt.config.offsetRot.size());
@@ -58,9 +58,9 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	{
 		return TrackingResult::NO_TRACK;
 	}
-	if (frame - state.lastObsFrame > 5)
+	if (frame - filter.lastObsFrame > 5)
 	{
-		LOG(LTracking, LDebug, "Virtual Tracker detected after %" PRId64 " frames!", frame - state.lastObsFrame);
+		LOG(LTracking, LDebug, "Virtual Tracker detected after %" PRId64 " frames!", frame - filter.lastObsFrame);
 	}
 
 	TrackingResult trackResult = TrackingResult::TRACKED_VIRTUAL;
@@ -79,7 +79,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		offset /= weight;
 		for (int t = 0; t < virt.config.ids.size(); t++)
 			virt.config.offsetPos[t] -= offset;
-		state.state.position() += offset.cast<double>();
+		filter.state.position() += offset.cast<double>();
 
 		// Redetermine rotation
 		Eigen::Quaternionf alignment = Eigen::Quaternionf::Identity();
@@ -130,13 +130,13 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 			virt.config.offsetRot[t] = alignment.conjugate() * virt.config.offsetRot[t];
 			virt.config.offsetPos[t] = alignment.conjugate() * virt.config.offsetPos[t];
 		}
-		state.state.setQuaternion(state.state.getCombinedQuaternion() * alignment.cast<double>());
-		state.state.incrementalOrientation().setZero();
+		filter.state.setQuaternion(filter.state.getCombinedQuaternion() * alignment.cast<double>());
+		filter.state.incrementalOrientation().setZero();
 
 		// Apply center offset
 		for (int t = 0; t < virt.config.ids.size(); t++)
 			virt.config.offsetPos[t] -= virt.config.centerOffset;
-		state.state.position() += virt.config.centerOffset.cast<double>();
+		filter.state.position() += virt.config.centerOffset.cast<double>();
 
 	};
 
@@ -159,27 +159,27 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		}
 
 		// Reinitialise filter
-		state.state = {};
-		state.state.position() = center.cast<double>();
-		state.state.setQuaternion(quat.cast<double>());
+		filter.state = {};
+		filter.state.position() = center.cast<double>();
+		filter.state.setQuaternion(quat.cast<double>());
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
-		state.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
-		state.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
+		filter.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
+		filter.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
 
 		// Realign based on actual config
 		realignTracker();
 	};
 
-	if (state.firstObsFrame < 0 || virt.config.offsetPos.size() != virt.config.ids.size())
+	if (filter.firstObsFrame < 0 || virt.config.offsetPos.size() != virt.config.ids.size())
 	{
 		if (!allTracked) return TrackingResult::NO_TRACK;
 		LOG(LTracking, LDebug, "Initialising virtual tracker for the first time!");
 		calibrateTracker();
 		virt.alignmentDirty = false;
-		if (state.firstObsFrame < 0)
+		if (filter.firstObsFrame < 0)
 		{
-			state.firstObsFrame = frame;
-			state.firstObservation = time;
+			filter.firstObsFrame = frame;
+			filter.firstObservation = time;
 		}
 	}
 
@@ -242,11 +242,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 	}
 
 	// Predict new state
-	flexkalman::predict(state.state, model, dtS(state.time, time));
-	state.time = time;
-	obs.ext.extrapolated = state.state.getIsometry().cast<float>();
-	obs.ext.predicted = state.state.getIsometry().cast<float>();
-	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	flexkalman::predict(filter.state, model, dtS(filter.time, time));
+	filter.time = time;
+	obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
+	obs.ext.predicted = filter.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Update filter with observed tracker poses
 	std::vector<Eigen::Vector3f> obsPos(subtrackers.size());
@@ -272,7 +272,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		// Use observation of subtarget to update virtual target filter
 		AbsolutePoseMeasurement measurement(obsPos[t].cast<double>(), obsRot[t].cast<double>(), virtCov.cast<double>());
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+		bool success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
 		if (!success)
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct virtual pose with pose from subtracker %d!", t);
@@ -283,7 +283,7 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 
 	for (int t = 0; t < subtrackers.size(); t++)
 	{
-		virt.relations.push_back(state.state.getQuaternion().cast<float>() * virt.config.offsetPos[t]);
+		virt.relations.push_back(filter.state.getQuaternion().cast<float>() * virt.config.offsetPos[t]);
 	}
 
 	if (numTracked > 1)
@@ -293,8 +293,8 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		for (int t = 0; t < subtrackers.size(); t++)
 		{
 			if (!subtrackers[t]) continue; // Not tracked
-			float posError = (obsPos[t] - state.state.position().cast<float>()).norm() * 1000;
-			float angleError = Eigen::AngleAxisf(obsRot[t] * state.state.getQuaternion().conjugate().cast<float>()).angle()/PI*180;
+			float posError = (obsPos[t] - filter.state.position().cast<float>()).norm() * 1000;
+			float angleError = Eigen::AngleAxisf(obsRot[t] * filter.state.getQuaternion().conjugate().cast<float>()).angle()/PI*180;
 			LOG(LTracking, LTrace, "Virtual tracker subtracker %d had error of %.2fmm and %.2f°!", t, posError, angleError);
 			mistrust += posError/20 + angleError/20;
 		}
@@ -329,10 +329,10 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 			{
 				if (!subtrackers[t]) continue; // Not tracked
 
-				Eigen::Vector3f diffPos = (obsPos[t] - state.state.position().cast<float>()) * params.calibration.lerpFactorPos;
+				Eigen::Vector3f diffPos = (obsPos[t] - filter.state.position().cast<float>()) * params.calibration.lerpFactorPos;
 				virt.config.offsetPos[t] += obsRot[t].conjugate() * diffPos;
 
-				Eigen::Quaternionf diffRot = obsRot[t] * state.state.getQuaternion().conjugate().cast<float>();
+				Eigen::Quaternionf diffRot = obsRot[t] * filter.state.getQuaternion().conjugate().cast<float>();
 				Eigen::AngleAxisf diffAA(diffRot);
 				diffAA.angle() *= params.calibration.lerpFactorRot;
 				diffRot = diffAA;
@@ -346,11 +346,11 @@ TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, 
 		}
 	}
 
-	state.lastObservation = time;
-	state.lastObsFrame = frame;
+	filter.lastObservation = time;
+	filter.lastObsFrame = frame;
 
-	obs.pose.filtered = state.state.getIsometry().cast<float>() ;
-	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.pose.filtered = filter.state.getIsometry().cast<float>() ;
+	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	obs.time = time;
 
 	return trackResult;

@@ -43,20 +43,20 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 	return covObserved;
 }
 
-TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
-	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
-	if (dtMS(state.time, time) > 0.01f)
+	if (dtMS(filter.time, time) > 0.01f)
 	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(state.state, model, dtS(state.time, time));
-		state.time = time;
-		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
+		flexkalman::predict(filter.state, model, dtS(filter.time, time));
+		filter.time = time;
+		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	}
-	obs.ext.predicted = state.state.getIsometry().cast<float>();
-	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = filter.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	if (!record.result.isTracked()) return record.result;
 	if (record.match2D) // May be uninitialised outside of replay/simulation
@@ -89,20 +89,20 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 			{
 				measurement.setSample(i);
 				if (params.filter.point.useUnscented)
-					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
-				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
+					success &= flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
+				else success &= flexkalman::correctExtended(filter.state, model, measurement, true);
 			}
 			measurement.setSample(-1);
 		}
 		else
 		{
 			if (params.filter.point.useUnscented)
-				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
-			else success = flexkalman::correctExtended(state.state, model, measurement, true);
+				success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
+			else success = flexkalman::correctExtended(filter.state, model, measurement, true);
 		}
 		Eigen::VectorXd error(errorTerm.m_observedPoints.size()*2);
-		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
-		auto residual = measurement.getResidual(state.state);
+		errorTerm.calculatePointErrors(filter.state.getIsometry(), error);
+		auto residual = measurement.getResidual(filter.state);
 		LOG(LTrackingFilter, LDarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
 		{ // TODO: Actually reset
@@ -119,40 +119,40 @@ TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, T
 			obs.pose.observedCov.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+		bool success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
 		if (!success)
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct pose using pose filter! Reset!");
 			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 	}
-	state.lastObservation = time;
-	state.lastObsFrame = frame;
+	filter.lastObservation = time;
+	filter.lastObsFrame = frame;
 
-	obs.pose.filtered = state.state.getIsometry().cast<float>();
-	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.pose.filtered = filter.state.getIsometry().cast<float>();
+	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	obs.time = time;
 
 	return trackResult;
 }
 
-TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params)
 {
-	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
-	if (dtMS(state.time, time) > 0.01f)
+	if (dtMS(filter.time, time) > 0.01f)
 	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(state.state, model, dtS(state.time, time));
-		state.time = time;
-		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
+		flexkalman::predict(filter.state, model, dtS(filter.time, time));
+		filter.time = time;
+		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	}
-	obs.ext.predicted = state.state.getIsometry().cast<float>();
-	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = filter.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Match target with points and optimise pose
 	target.match2D = trackTarget2D(target.calib, obs.ext.predicted, obs.ext.predictedCov,
@@ -193,20 +193,20 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 			{
 				measurement.setSample(i);
 				if (params.filter.point.useUnscented)
-					success &= flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
-				else success &= flexkalman::correctExtended(state.state, model, measurement, true);
+					success &= flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
+				else success &= flexkalman::correctExtended(filter.state, model, measurement, true);
 			}
 			measurement.setSample(-1);
 		}
 		else
 		{
 			if (params.filter.point.useUnscented)
-				success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
-			else success = flexkalman::correctExtended(state.state, model, measurement, true);
+				success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
+			else success = flexkalman::correctExtended(filter.state, model, measurement, true);
 		}
 		Eigen::VectorXd error(errorTerm.m_observedPoints.size()*2);
-		errorTerm.calculatePointErrors(state.state.getIsometry(), error);
-		auto residual = measurement.getResidual(state.state);
+		errorTerm.calculatePointErrors(filter.state.getIsometry(), error);
+		auto residual = measurement.getResidual(filter.state);
 		LOG(LTrackingFilter, LDarn, "    Remaining residual %fpx, error %fpx!", residual.cwiseAbs().mean()*PixelFactor, error.cwiseAbs().mean()*PixelFactor);
 		if (!success)
 		{ // TODO: Actually reset
@@ -223,40 +223,40 @@ TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerOb
 			obs.pose.observedCov.cast<double>()
 		);
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-		bool success = flexkalman::correctUnscented(state.state, measurement, true, sigmaParams);
+		bool success = flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams);
 		if (!success)
 		{ // TODO: Actually reset
 			LOG(LTrackingFilter, LWarn, "Failed to correct pose using pose filter! Reset!");
 			trackResult.setFlag(TrackingResult::FILTER_FAILED);
 		}
 	}
-	state.lastObservation = time;
-	state.lastObsFrame = frame;
+	filter.lastObservation = time;
+	filter.lastObsFrame = frame;
 
-	obs.pose.filtered = state.state.getIsometry().cast<float>();
-	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.pose.filtered = filter.state.getIsometry().cast<float>();
+	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	obs.time = time;
 
 	return trackResult;
 }
 
-TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &obs,
+TrackingResult trackMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma)
 {
 	// TODO: Track individual large markers (1/4) - expose parameters
 	TargetTrackingParameters params = {};
 
-	TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
-	if (dtMS(state.time, time) > 0.01f)
+	if (dtMS(filter.time, time) > 0.01f)
 	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(state.state, model, dtS(state.time, time));
-		state.time = time;
-		obs.ext.extrapolated = state.state.getIsometry().cast<float>();
+		flexkalman::predict(filter.state, model, dtS(filter.time, time));
+		filter.time = time;
+		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	}
-	obs.ext.predicted = state.state.getIsometry().cast<float>();
-	obs.ext.predictedCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.ext.predicted = filter.state.getIsometry().cast<float>();
+	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	Eigen::Vector3f predPos = obs.ext.predicted.translation();
 	Eigen::Matrix3f predCov = obs.ext.predictedCov.topLeftCorner<3,3>();
@@ -292,17 +292,17 @@ TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerOb
 		points3D[matchedPoint].cast<double>(),
 		obs.pose.observedCov.diagonal().head<3>().cast<double>().eval());
 	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-	if (!flexkalman::correctUnscented(state.state, measurement, true, sigmaParams))
+	if (!flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams))
 	{
 		LOG(LTrackingFilter, LWarn, "Failed to correct pose in marker filter! Reset!");
 	}
 
-	state.lastObservation = time;
-	state.lastObsFrame++;
+	filter.lastObservation = time;
+	filter.lastObsFrame++;
 	// TODO: Track individual large markers (2/4) - switch to frame number
 
-	obs.pose.filtered = state.state.getIsometry().cast<float>() ;
-	obs.pose.filteredCov = state.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	obs.pose.filtered = filter.state.getIsometry().cast<float>() ;
+	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	obs.time = time;
 
 	*bestPoint = matchedPoint;
@@ -317,7 +317,7 @@ static Eigen::Quaterniond GyroToQuat(Eigen::Vector3d gyro)
 }
 
 template<typename IMUSample>
-static bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+static bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params);
 
 template<typename IMUSample>
@@ -326,13 +326,13 @@ static void integrateIMUSample(TrackerInertial &inertial, const IMUSample &sampl
 template<typename IMUSample>
 static IMUSample interpolateIMUSample(const IMUSample &sampleA, const IMUSample &sampleB, TimePoint_t time);
 
-bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	if (inertial.imu->isFused)
-		return integrateIMU<IMUSampleFused>(state, inertial, obs, time, params);
+		return integrateIMU<IMUSampleFused>(filter, inertial, obs, time, params);
 	else
-		return integrateIMU<IMUSampleRaw>(state, inertial, obs, time, params);
+		return integrateIMU<IMUSampleRaw>(filter, inertial, obs, time, params);
 	return true;
 }
 
@@ -358,21 +358,21 @@ template<> IMUSampleRaw interpolateIMUSample(const IMUSampleRaw &sampleA, const 
 }
 
 template<typename IMUSample>
-bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
-	typename TrackerState::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	typename TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
 
 	{ // Extrapolate without IMU samples for debug purposes
-		auto filterState = state.state;
-		flexkalman::predict(filterState, model, dtS(state.time, time));
+		auto filterState = filter.state;
+		flexkalman::predict(filterState, model, dtS(filter.time, time));
 		obs.ext.extrapolated = filterState.getIsometry().cast<float>();
 	}
 
-	auto filterState = state.state;
-	auto filterTime = state.time;
+	auto filterState = filter.state;
+	auto filterTime = filter.time;
 	bool updateFilter = inertial.calibration.phase > IMU_CALIB_EXT_ORIENTATION;
-	bool isOptical = state.lastObsFrame >= 0;
+	bool isOptical = filter.lastObsFrame >= 0;
 	// TODO: Disable isOptical if target has not been tracked for a bit - or better, transition somehow
 
 	// Find first IMU sample after last state time (e.g. last frame)
@@ -389,9 +389,9 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 		interpolatedSample = &inertial.interpolatedSample.raw;
 	}
 	auto itBegin = samples.begin();
-	if (state.lastIMUSample >= samples.beginIndex() && state.lastIMUSample < samples.endIndex())
+	if (filter.lastIMUSample >= samples.beginIndex() && filter.lastIMUSample < samples.endIndex())
 	{ // Start search from last sample used
-		itBegin = samples.pos(state.lastIMUSample+1);
+		itBegin = samples.pos(filter.lastIMUSample+1);
 		while (itBegin != samples.end() && itBegin->timestamp < filterTime) itBegin++;
 	}
 	else if (!samples.empty())
@@ -401,7 +401,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	}
 	if (itBegin == samples.end())
 	{
-		state.lastIMUSample = samples.endIndex()-1;
+		filter.lastIMUSample = samples.endIndex()-1;
 		return false;
 	}
 
@@ -409,7 +409,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 	IMUSample lastSample;
 	if (itBegin == samples.begin() || dtMS(std::prev(itBegin)->timestamp, itBegin->timestamp) > 20)
 	{ // No prior reference, use first IMU sample as reference
-		if ((state.lastObsFrame >= 0 || state.lastIMUSample >= 0) && filterTime < itBegin->timestamp)
+		if ((filter.lastObsFrame >= 0 || filter.lastIMUSample >= 0) && filterTime < itBegin->timestamp)
 		{ // Have prior filter state to update
 			flexkalman::predict(filterState, model, dtS(filterTime, itBegin->timestamp));
 		}
@@ -434,7 +434,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 		sample.timestamp += std::chrono::microseconds(inertial.calib.timestampOffsetUS);
 		LOG(LTrackingFilter, LTrace, "    Integrating sample %fms ahead of last IMU sample, %fms ahead of state, %fms ahead of fusion%s",
 			dtMS(lastSample.timestamp, sample.timestamp), dtMS(filterTime, sample.timestamp), dtMS(inertial.fusion.time, sample.timestamp),
-			state.lastObsFrame == 0? "!" : asprintf_s(", %fms ahead of last observation!", dtMS(state.lastObservation, sample.timestamp)).c_str());
+			filter.lastObsFrame == 0? "!" : asprintf_s(", %fms ahead of last observation!", dtMS(filter.lastObservation, sample.timestamp)).c_str());
 
 		// Predict up until new IMU filter time
 		flexkalman::predict(filterState, model, dtS(filterTime, sample.timestamp));
@@ -443,8 +443,8 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 		// Integrate on current IMU filter state
 		integrateIMUSample(inertial, sample, lastSample, params, filterState, updateFilter, isOptical, false);
 		lastSample = sample;
-		state.lastIMUSample = it.index();
-		state.lastIMUTime = sample.timestamp;
+		filter.lastIMUSample = it.index();
+		filter.lastIMUTime = sample.timestamp;
 
 		// Keep stats of IMU samples
 		float dtSample = dtS(inertial.fusion.lastIntegration, sample.timestamp);
@@ -477,7 +477,7 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 
 	// Integrate interpolated IMU sample to bring IMU fusion time up to date
 	integrateIMUSample(inertial, *interpolatedSample, lastSample, params, filterState, updateFilter, isOptical, true);
-	state.lastIMUTime = time;
+	filter.lastIMUTime = time;
 
 	obs.ext.inertialIntegrated.translation() = filterState.position().cast<float>();
 	obs.ext.inertialIntegrated.linear() = inertial.fusion.integrated.toRotationMatrix().cast<float>();
@@ -492,8 +492,8 @@ bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObserva
 
 	if (updateFilter && params.filter.imu.useForPrediction)
 	{ // Actually apply IMU integrations to state
-		state.state = filterState;
-		state.time = filterTime;
+		filter.state = filterState;
+		filter.time = filterTime;
 	}
 
 	return true;
@@ -667,13 +667,13 @@ template<> void integrateIMUSample(TrackerInertial &inertial, const IMUSampleRaw
 }
 
 static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInertial::State &state);
-static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &state);
+static bool collectGyroSamples(TrackerInertial &inertial, const TrackerFilter &filter);
 static bool collectFusedSamples(TrackerInertial &inertial, const TrackerInertial::State &state);
 static bool alignIMUOrientation(TrackerInertial &inertial);
 
 static void calibrateIMUOffset(TrackerInertial &inertial, const TrackerInertial::State &lastState, const TrackerInertial::State &newState);
 
-void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+void postCorrectIMU(TrackedBase &tracker, TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
 	auto &calib = inertial.calibration;
@@ -700,28 +700,28 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 		}
 	}
 	else if (calib.phase < IMU_CALIB_DONE &&
-		std::abs(dtMS(state.time, inertial.fusion.time)) < 0.001 && 
-		std::abs(dtMS(state.time, inertial.interpolatedSample.raw.timestamp)) < 0.001)
+		std::abs(dtMS(filter.time, inertial.fusion.time)) < 0.001 && 
+		std::abs(dtMS(filter.time, inertial.interpolatedSample.raw.timestamp)) < 0.001)
 	{ // In calibration phase
 		// TODO: More explicitly require a) a postCorrectIMU of the previous frame and b) an IMU sample since then
 		// And for collectGyroSamples perhaps that the interpolatedSample is truly interpolated and not extrapolated
 		bool newSamples = false;
 
 		if (calib.phase & IMU_CALIB_EXT_GRAVITY)
-			newSamples |= collectGravitySamples(inertial, state.state);
+			newSamples |= collectGravitySamples(inertial, filter.state);
 
 		if (calib.phase & IMU_CALIB_EXT_ALIGNMENT && !inertial.imu->isFused)
-			newSamples |= collectGyroSamples(inertial, state);
+			newSamples |= collectGyroSamples(inertial, filter);
 
 		float dtLast = dtMS(calib.lastTime, time);
 		if (dtLast > 400)
 		{
 			if (calib.phase & IMU_CALIB_EXT_ALIGNMENT && inertial.imu->isFused)
-				newSamples |= collectFusedSamples(inertial, state.state);
+				newSamples |= collectFusedSamples(inertial, filter.state);
 
 			// Update last state based on observation for calibration
-			calib.lastState = state.state;
-			calib.lastTime = state.time;
+			calib.lastState = filter.state;
+			calib.lastTime = filter.time;
 		}
 
 		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size() + calib.fused.samples.size();
@@ -739,33 +739,33 @@ void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &
 	}
 
 	// Update IMU positions
-	obs.ext.inertialIntegrated.translation() = state.state.position().cast<float>();
-	obs.ext.inertialFused.translation() = state.state.position().cast<float>();
+	obs.ext.inertialIntegrated.translation() = filter.state.position().cast<float>();
+	obs.ext.inertialFused.translation() = filter.state.position().cast<float>();
 
 	//LOG(LTrackingIMU, LDebug, "Re-basing IMU Integration!");
 	if (inertial.fusion.corrections == 0)
 	{
-		inertial.fusion.integrated = state.state.getCombinedQuaternion();
-		inertial.fusion.quat = state.state.getCombinedQuaternion();
+		inertial.fusion.integrated = filter.state.getCombinedQuaternion();
+		inertial.fusion.quat = filter.state.getCombinedQuaternion();
 		inertial.fusion.time = time;
 	}
 	else
 	{
-		inertial.fusion.quat = inertial.fusion.quat.slerp(0.1f, state.state.getCombinedQuaternion());
+		inertial.fusion.quat = inertial.fusion.quat.slerp(0.1f, filter.state.getCombinedQuaternion());
 		inertial.fusion.time = time;
 	}
 	inertial.fusion.corrections++;
 
 	/*
-	inertial.fusion.positionalVelocity = state.state.velocity();
-	inertial.fusion.angularVelocity = state.state.angularVelocity();
+	inertial.fusion.positionalVelocity = filter.state.velocity();
+	inertial.fusion.angularVelocity = filter.state.angularVelocity();
 	{
-		Eigen::Quaterniond rot = flexkalman::util::quat_exp(state.state.angularVelocity());
+		Eigen::Quaterniond rot = flexkalman::util::quat_exp(filter.state.angularVelocity());
 		Eigen::AngleAxisd eul(rot);
 		inertial.fusion.angularVelocity = eul.angle() * eul.axis();
 	}
 	inertial.fusion.tangentialVelocity = inertial.fusion.angularVelocity.cross(calib.offset);
-	inertial.fusion.imuVelocity = state.state.velocity() + inertial.fusion.tangentialVelocity;
+	inertial.fusion.imuVelocity = filter.state.velocity() + inertial.fusion.tangentialVelocity;
 	*/
 }
 
@@ -842,15 +842,15 @@ static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInerti
 	return false;
 }
 
-static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &state)
+static bool collectGyroSamples(TrackerInertial &inertial, const TrackerFilter &filter)
 {
 	const int MIN = 50, MAX = 300;
 	const double MinAng = 20, MaxAng = 60;
 
 	auto &calib = inertial.calibration.gyro;
-	float diff = Eigen::AngleAxisd(calib.current.quatStart.conjugate() * state.state.getCombinedQuaternion()).angle()*180/PI;
+	float diff = Eigen::AngleAxisd(calib.current.quatStart.conjugate() * filter.state.getCombinedQuaternion()).angle()*180/PI;
 
-	double angVel = state.state.angularVelocity().norm();
+	double angVel = filter.state.angularVelocity().norm();
 	bool abortSampling = angVel < 0.1f || angVel > 5.0f;
 	if (abortSampling && calib.current.gyroSamples.size() > 50)
 		LOG(LTrackingIMU, LDebug, "    Collection of %d gyro samples was aborted due to filtered angular velocity of %f°/s",
@@ -883,8 +883,8 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 	{ // Start new collection
 		calib.sampling = true;
 		calib.current = {};
-		calib.current.quatStart = state.state.getCombinedQuaternion();
-		calib.current.quatEnd = state.state.getCombinedQuaternion();
+		calib.current.quatStart = filter.state.getCombinedQuaternion();
+		calib.current.quatEnd = filter.state.getCombinedQuaternion();
 		// Add first sample interpolated at the time of reference optical measurement
 		calib.current.gyroSamples.emplace_back(inertial.interpolatedSample.raw.timestamp, inertial.interpolatedSample.raw.gyro.cast<double>());
 	}
@@ -892,7 +892,7 @@ static bool collectGyroSamples(TrackerInertial &inertial, const TrackerState &st
 	if (calib.sampling)
 	{ // Record new optical measurement as "checkpoint"
 		calib.opticalInterpolated = inertial.interpolatedSample.raw;
-		calib.current.quatEnd = state.state.getCombinedQuaternion();
+		calib.current.quatEnd = filter.state.getCombinedQuaternion();
 	}
 	else if (calib.current.gyroSamples.size() >= MIN && diff >= MinAng)
 	{ // Accept collected samples for calibration

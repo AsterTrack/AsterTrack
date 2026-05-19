@@ -253,7 +253,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 
 	for (auto &virtualTracker : pipeline.tracking.virtualTrackers)
 	{ // Manually reset virtual trackers which can not enter dormant state
-		virtualTracker.state = {};
+		virtualTracker.filter = {};
 		virtualTracker.obs = {};
 		virtualTracker.mistrust = 0;
 	}

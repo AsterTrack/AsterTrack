@@ -38,7 +38,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Tracker Components */
 
-struct TrackerState
+struct TrackerFilter
 {
 	using State = flexkalman::pose_externalized_rotation::State;
 	using Model = flexkalman::PoseSeparatelyDampedConstantVelocityProcessModel<State>;
@@ -55,9 +55,9 @@ struct TrackerState
 	TimePoint_t lastObservation;
 	TimePoint_t firstObservation;
 
-	TrackerState() : state{}, lastIMUSample(-1), lastObsFrame(-1), firstObsFrame(-1) {}
+	TrackerFilter() : state{}, lastIMUSample(-1), lastObsFrame(-1), firstObsFrame(-1) {}
 
-	TrackerState(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params) :
+	TrackerFilter(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params) :
 		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(frame), lastObservation(time), firstObsFrame(frame), firstObservation(time)
 	{
 		state.position() = pose.translation().cast<double>();
@@ -255,7 +255,7 @@ struct TrackedTarget : public virtual TrackedBase
 	TrackerInertial inertial;
 
 	// Current filtered state
-	TrackerState state;
+	TrackerFilter filter;
 
 	// Latest observation
 	TrackerObservation obs;
@@ -273,7 +273,7 @@ struct TrackedMarker : public virtual TrackedBase
 	TrackerInertial inertial;
 
 	// Current filtered state
-	TrackerState state;
+	TrackerFilter filter;
 
 	// Latest observation
 	TrackerObservation obs;
@@ -312,7 +312,7 @@ struct VirtualTracker : public virtual TrackedBase
 	TrackerVirtual virt;
 
 	// Current filtered state
-	TrackerState state;
+	TrackerFilter filter;
 
 	// Latest virtual observation
 	TrackerObservation obs;
@@ -325,7 +325,7 @@ const static Eigen::Isometry3f orphanedIMUPose = Eigen::Isometry3f(Eigen::Transl
 
 struct OrphanedIMU
 {
-	TrackerState state;
+	TrackerFilter filter;
 
 	// Inertial tracking source
 	TrackerInertial inertial;
@@ -334,12 +334,12 @@ struct OrphanedIMU
 	TrackerObservation obs;
 
 	OrphanedIMU(std::shared_ptr<IMU> &imu, const TargetTrackingParameters &params) :
-		state(orphanedIMUPose, sclock::now(), -1, params),
+		filter(orphanedIMUPose, sclock::now(), -1, params),
 		inertial(imu, IMUCalib()),
 		obs(orphanedIMUPose, sclock::now(), params) {}
 	
 	OrphanedIMU(std::shared_ptr<IMU> &&imu, const TargetTrackingParameters &params) :
-		state(orphanedIMUPose, sclock::now(), -1, params),
+		filter(orphanedIMUPose, sclock::now(), -1, params),
 		inertial(std::move(imu), IMUCalib()),
 		obs(orphanedIMUPose, sclock::now(), params) {}
 };
@@ -347,27 +347,27 @@ struct OrphanedIMU
 
 /* Functions */
 
-TrackingResult simulateTrackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 
-TrackingResult trackTarget(TrackerState &state, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params);
 
-TrackingResult trackMarker(TrackerState &state, TrackerMarker &marker, TrackerObservation &obs,
+TrackingResult trackMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma);
 
-TrackingResult processVirtualTracker(TrackerState &state, TrackerVirtual &virt, TrackerObservation &obs,
-	std::vector<TrackerState*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params);
+TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt, TrackerObservation &obs,
+	std::vector<TrackerFilter*> &subtrackers, TimePoint_t time, FrameNum frame, const VirtualTrackingParameters &params);
 
-bool integrateIMU(TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params);
-void postCorrectIMU(TrackedBase &tracker, TrackerState &state, TrackerInertial &inertial, TrackerObservation &obs,
+void postCorrectIMU(TrackedBase &tracker, TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params);
 void interruptIMU(TrackerInertial &inertial);
 
@@ -376,10 +376,10 @@ inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f p
 	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
-	state(pose, time, frame, params), obs(pose, time, params)
+	filter(pose, time, frame, params), obs(pose, time, params)
 {
 	if (inertial)
-		postCorrectIMU(*this, state, inertial, this->obs, time, params);
+		postCorrectIMU(*this, filter, inertial, this->obs, time, params);
 }
 
 inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
@@ -393,11 +393,11 @@ inline TrackedMarker::TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos
 	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
 	TrackedBase(dormant.id, dormant.label),
 	marker(std::move(dormant.marker)), inertial(std::move(dormant.inertial)),
-	state(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, frame, params), 
+	filter(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, frame, params), 
 	obs(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params)
 {
 	if (inertial)
-		postCorrectIMU(*this, state, inertial, this->obs, time, params);
+		postCorrectIMU(*this, filter, inertial, this->obs, time, params);
 }
 
 inline DormantMarker::DormantMarker(TrackedMarker &&tracker) :

@@ -551,7 +551,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			for (auto &tracker : pipeline.tracking.trackedTargets)
 			{
 				{
-					Eigen::Vector3f dir = tracker.state.state.velocity().cast<float>();
+					Eigen::Vector3f dir = tracker.filter.state.velocity().cast<float>();
 					Eigen::Vector3f pos = tracker.obs.pose.filtered.translation();
 					imuAccelLines.emplace_back(
 						VisPoint{ pos, colIMUDir },

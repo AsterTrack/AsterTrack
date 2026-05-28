@@ -29,19 +29,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "unsupported/Eigen/NonLinearOptimization"
 
-static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2D, const TargetTrackingParameters &params)
-{
-	// Option 1: Synthetic values
-	Eigen::Matrix<float,6,6> covObserved = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
-	// Option 2: Full covariance numerically estimated
-	if (params.filter.pose.useNumericCov)
-		covObserved = match2D.covariance;
-	// Option 3: Numerical covariance for position only
-	if (params.filter.pose.useNumericCovPos)
-		covObserved.topLeftCorner<3,3>() = match2D.covariance.topLeftCorner<3,3>();
-	return covObserved;
-}
-
 TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
@@ -62,9 +49,9 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 		target.match2D = *record.match2D;
 	target.match2D.error = record.error;
 	obs.pose.observed = record.pose.observed;
-	obs.pose.observedCov = selectPoseCovariance(target.match2D, params);
-	if (obs.pose.observedCov.hasNaN()) // Missing match2D in recording
-		obs.pose.observedCov = record.pose.observedCov;
+	obs.pose.observedCov = target.match2D.covariance;
+	if (params.filter.pose.useSyntheticCov || obs.pose.observedCov.hasNaN()) // Missing match2D in recording
+		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
 
 	int pointCount = target.match2D.count();
 	bool trackSparse = pointCount > 0 && pointCount <= params.filter.point.obsLimit;
@@ -167,7 +154,9 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
 		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
 	obs.pose.observed = target.match2D.pose;
-	obs.pose.observedCov = selectPoseCovariance(target.match2D, params);
+	obs.pose.observedCov = target.match2D.covariance;
+	if (params.filter.pose.useSyntheticCov)
+		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
 
 	// Update state
 

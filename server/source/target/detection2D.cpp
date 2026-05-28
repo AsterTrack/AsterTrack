@@ -384,7 +384,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			continue;
 
 		// Optimise and remove outliers
-		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, target3D, pose, params.opt, track.filter.point.stdDev, true);
+		TargetMatchError errors = optimiseTargetPose<false>(calibs, points2D, targetMatch2D, target3D, pose, params.opt, track.filter.pose.cov);
 		LOGC(LDebug, "        Optimised to %d points with error %fpx!",
 			errors.samples, errors.mean*PixelFactor);
 

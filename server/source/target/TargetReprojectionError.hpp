@@ -43,7 +43,7 @@ struct TargetReprojectionError
 {
 	enum
 	{
-		InputsAtCompileTime = Eigen::Dynamic,
+		InputsAtCompileTime = Eigen::Dynamic, // 6 but no fixed-size support
 		ValuesAtCompileTime = Eigen::Dynamic
 	};
 	typedef Eigen::Matrix<Scalar, InputsAtCompileTime, 1> InputType;
@@ -228,23 +228,74 @@ struct TargetReprojectionError
 	 */
 
 	template<typename DiffScalar = Scalar>
-	Eigen::Matrix<DiffScalar,6,6> covarianceEXP(const Isometry3<DiffScalar> &pose, DiffScalar errorStdDev, std::vector<VectorX<DiffScalar>> &deviations) const
+	Eigen::Matrix<DiffScalar,6,6> covarianceEXP(const Isometry3<DiffScalar> &pose, const NumericCovarianceParameters &params,
+		std::vector<std::pair<Eigen::Vector<DiffScalar, 6>, DiffScalar>> &hessianSamples) const
 	{
-		Eigen::Matrix<DiffScalar,6,1> poseVec;
+		Eigen::Vector<DiffScalar,6> poseVec = Eigen::Vector<DiffScalar,6>::Zero();
 		poseVec.template head<3>() = pose.translation();
-		poseVec.template tail<3>() = flexkalman::util::quat_ln(Eigen::Quaternion<DiffScalar>(pose.rotation()));
-
-		Eigen::Matrix<DiffScalar,6,6> covariance;
-		VectorX<DiffScalar> errors(m_observedPoints.size());
-		NumericCovariance<DiffScalar, false>([this, &errors](const VectorX<DiffScalar> &poseVec)
+		if (!params.relineariseRotation)
+			poseVec.template tail<3>() = flexkalman::util::quat_ln(Eigen::Quaternion<DiffScalar>(pose.rotation()));
+		auto decodePose = [&](const Eigen::Vector<DiffScalar,6> &poseVec)
 		{
-			Isometry3<DiffScalar> pose;
-			pose.translation() = poseVec.template head<3>();
-			pose.linear() = flexkalman::util::quat_exp(poseVec.template tail<3>()).toRotationMatrix();
-			calculateSampleErrors<DiffScalar>(pose, errors);
-			return std::sqrt(errors.mean());
-		}, poseVec, covariance, errorStdDev, 0.01f*PixelSize, 0.001f, deviations);
-		return covariance;
+			Isometry3<DiffScalar> diffPose;
+			diffPose.translation() = poseVec.template head<3>();
+			diffPose.linear() = flexkalman::util::quat_exp(poseVec.template tail<3>()).toRotationMatrix();
+			if (params.relineariseRotation) diffPose.linear() = diffPose.linear() * pose.rotation();
+			return diffPose;
+		};
+
+		Eigen::Matrix<DiffScalar,6,6> hessian;
+		if (params.hessianEstimator == 0)
+		{ // Sampled Hessian -> Covariance
+			if (params.sampleGenerator == 0)
+				GenerateSamplesRandom(params, hessianSamples);
+			else if (params.sampleGenerator == 1)
+				GenerateSamplesUniform(params, hessianSamples);
+
+			if (params.sampleRemapGaussian)
+				RedistributeSamplesGaussian(params, hessianSamples);
+
+			if (params.sampleRedistributor == 0)
+				RedistributeSamplesScale(params, hessianSamples);
+			else if (params.sampleRedistributor == 1)
+				RedistributeSamplesSphere(params, hessianSamples);
+			else if (params.sampleRedistributor == 2)
+				RedistributeSamplesShell(params, hessianSamples);
+
+			VectorX<DiffScalar> errors(m_observedPoints.size());
+			SampleErrorFunctor<DiffScalar, 6>([&](const Eigen::Vector<DiffScalar,6> &poseVec)
+			{
+				calculateSampleErrors<DiffScalar>(decodePose(poseVec), errors);
+				return params.sumObsError? errors.sum() : errors.mean();
+			}, poseVec, hessianSamples);
+
+			hessian = fitHessianToSamples<DiffScalar>(hessianSamples);
+		}
+		else if (params.hessianEstimator == 1)
+		{ // Numeric Hessian -> Covariance
+			Eigen::Vector<DiffScalar,6> epsJac = params.getPosRotVec<DiffScalar>(params.epsJacPos, params.epsJacRot);
+			Eigen::Vector<DiffScalar,6> epsHess = params.getPosRotVec<DiffScalar>(params.epsHessPos, params.epsHessRot);
+
+			VectorX<DiffScalar> errors(m_observedPoints.size());
+			NumericDiffHessian<DiffScalar, NumericDiffCentral>([&](const Eigen::Vector<DiffScalar,6> &poseVec)
+			{
+				calculateSampleErrors<DiffScalar>(decodePose(poseVec), errors);
+				return params.sumObsError? errors.sum() : errors.mean();
+			}, poseVec, hessian, epsHess, epsJac);
+		}
+		else if (params.hessianEstimator == 2)
+		{ // Numeric Jacobian -> Hessian Estimate -> Covariance
+			Eigen::Vector<DiffScalar,6> epsJac = params.getPosRotVec<DiffScalar>(params.epsJacPos, params.epsJacRot);
+
+			MatrixX<DiffScalar> jacobian(m_observedPoints.size(), 6);
+			NumericDiffJacobian<DiffScalar, NumericDiffCentral>([&](const Eigen::Vector<DiffScalar,6> &poseVec, VectorX<DiffScalar> &errors)
+			{
+				calculateSampleErrors<DiffScalar>(decodePose(poseVec), errors);
+			}, poseVec, jacobian, epsJac);
+			hessian = jacobian.transpose() * jacobian;
+		}
+
+		return covarianceFromHessian(params, hessian);
 	}
 
 	/*

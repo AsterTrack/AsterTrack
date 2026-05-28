@@ -524,7 +524,7 @@ float matchTargetPointsAlongAxis(
 template<bool REFERENCE, bool OUTLIER>
 TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib,
-	Eigen::Isometry3f prediction, TargetOptimisationParameters params, float errorStdDev, bool updateCovariance)
+	Eigen::Isometry3f prediction, const TargetOptimisationParameters &params, std::optional<const NumericCovarianceParameters> cov)
 {
 	ScopedLogCategory scopedLogCategory(LTrackingOpt);
 	assert(match.error.samples >= 0);
@@ -691,8 +691,8 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	else
 		match.pose = errorTerm.decodePose(poseVec).template cast<float>();
 
-	if (updateCovariance)
-		match.covariance = errorTerm.covarianceEXP(match.pose, errorStdDev, match.deviations);
+	if (cov)
+		match.covariance = errorTerm.covarianceEXP(match.pose, cov.value(), match.hessianSamples);
 
 	if constexpr (OUTLIER) if (outlierCount > 0)
 	{ // Remove detected outliers from target match
@@ -743,10 +743,10 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 
 template TargetMatchError optimiseTargetPose<true, true>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib,
-	Eigen::Isometry3f prediction, TargetOptimisationParameters params, float errorStdDev, bool updateCovariance);
+	Eigen::Isometry3f prediction, const TargetOptimisationParameters &params, std::optional<const NumericCovarianceParameters> cov);
 template TargetMatchError optimiseTargetPose<false, true>(const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib,
-	Eigen::Isometry3f prediction, TargetOptimisationParameters params, float errorStdDev, bool updateCovariance);
+	Eigen::Isometry3f prediction, const TargetOptimisationParameters &params, std::optional<const NumericCovarianceParameters> cov);
 
 /**
  * Evaluate the given target match and update its pose error
@@ -771,7 +771,8 @@ TargetMatchError evaluateTargetPose(const std::vector<CameraCalib> &calibs,
  * Evaluate the given target match and update its pose error, and numerically calculates its covariance
  */
 TargetMatchError evaluateTargetPoseCovariance(const std::vector<CameraCalib> &calibs,
-	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match, const TargetCalibration3D &calib, float errorStdDev)
+	const std::vector<std::vector<Eigen::Vector2f> const *> points2D, TargetMatch2D &match,
+	const TargetCalibration3D &calib, const NumericCovarianceParameters &params)
 {
 	TargetReprojectionError<float, OptUndistorted> errorTerm(calibs);
 	errorTerm.setData(points2D, match, calib);
@@ -783,7 +784,7 @@ TargetMatchError evaluateTargetPoseCovariance(const std::vector<CameraCalib> &ca
 	match.error.mean = errors.sum() / match.error.samples;
 	match.error.stdDev = std::sqrt((errors.array() - match.error.mean).square().sum() / match.error.samples);
 	match.error.max = errors.maxCoeff();
-	match.covariance = errorTerm.covarianceEXP(match.pose, errorStdDev, match.deviations);
+	match.covariance = errorTerm.covarianceEXP(match.pose, params, match.hessianSamples);
 	return match.error;
 }
 
@@ -934,7 +935,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 			LOGC(LDebug, "        Cannot optimise pose without any points!\n");
 			return {};
 		}
-		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.point.stdDev, false);
+		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt);
 		if (errors.samples > 0)
 		{
 			reprojectTargetMarkers(expand? params.expandMarkerViewAngle : std::min(params.expandMarkerViewAngle, 0.0f));
@@ -1199,10 +1200,10 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 
 	if (targetMatch2D.count() != 0)// && !nothingNew)
 	{ // Final optimisation
-		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.point.stdDev, true);
+		auto errors = optimiseTargetPose<true>(calibs, points2D, targetMatch2D, target, prediction, params.opt, params.filter.pose.cov);
 	}
 	// Update covariance (done in optimiseTargetMatch with !quick)
-	//evaluateTargetPoseCovariance(calibs, points2D, targetMatch2D, target, params.filter.point.stdDev);
+	//evaluateTargetPoseCovariance(calibs, points2D, targetMatch2D, target, params.filter.pose.cov);
 	{
 		auto stdDev = targetMatch2D.covariance.diagonal().cwiseSqrt();
 		Eigen::Vector3f devPos = stdDev.head<3>()*1000, devRot = stdDev.tail<3>()*1000;

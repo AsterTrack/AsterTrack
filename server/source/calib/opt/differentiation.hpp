@@ -159,6 +159,54 @@ static inline int NumericDiffJacobian(Functor &&functor, const Eigen::MatrixBase
 	return ret;
 }
 
+template<typename Scalar, int Mode = NumericDiffForward, typename Functor, typename TI, typename E>
+static inline int NumericDiffHessian(Functor &&functor, const Eigen::MatrixBase<TI> &input, Eigen::Ref<MatrixX<Scalar>> hessian, E eps = 0.00001, E epsJac = 0.00001)
+{
+	static_assert(std::is_same<Scalar, typename TI::Scalar>::value);
+	if (hessian.size() == 0) return 0;
+
+	int ret = 0; // Number of function evaluations
+
+	Eigen::Matrix<Scalar, 1, Eigen::Dynamic> minJac, maxJac;
+	minJac.resize(1, hessian.rows());
+	maxJac.resize(1, hessian.rows());
+
+	auto evalFunc = [&](const VectorX<Scalar> &input, VectorX<Scalar> &errors) { errors(0) = functor(input); };
+
+	typename TI::PlainObject evalInput = input;
+	if constexpr (Mode == NumericDiffForward)
+	{
+		ret += NumericDiffJacobian<Scalar, Mode>(evalFunc, evalInput, minJac, epsJac);
+	}
+
+	for (int i = 0; i < input.rows(); i++)
+	{
+		Scalar h;
+		if constexpr (std::is_scalar_v<E>)
+			h = (Scalar)eps;
+		else
+			h = (Scalar)eps(i);
+		if constexpr (Mode == NumericDiffForward)
+		{
+			evalInput[i] += h;
+			NumericDiffJacobian<Scalar, Mode>(evalFunc, evalInput, maxJac, epsJac);
+			evalInput[i] = input[i];
+			hessian.row(i) = (maxJac-minJac)/h;
+		}
+		else if constexpr (Mode == NumericDiffCentral)
+		{
+			evalInput[i] += h;
+			NumericDiffJacobian<Scalar, Mode>(evalFunc, evalInput, maxJac, epsJac);
+			evalInput[i] -= 2*h;
+			NumericDiffJacobian<Scalar, Mode>(evalFunc, evalInput, minJac, epsJac);
+			evalInput[i] = input[i];
+			hessian.row(i) = (maxJac-minJac)/(2*h);
+		}
+	}
+
+	return ret;
+}
+
 #ifdef OPT_AUTODIFF
 
 template<typename Scalar>

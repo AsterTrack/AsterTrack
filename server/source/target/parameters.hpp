@@ -22,6 +22,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define INCLUDE_MATCHING_PARAMS_ONLY
 #include "util/matching.hpp"
 
+#define INCLUDE_COVARIANCE_PARAMS_ONLY
+#include "calib/opt/covariance.hpp"
+
 #define INCLUDE_ROTATION_GEN_PARAMS_ONLY
 #include "target/rotationGen.hpp"
 
@@ -72,6 +75,7 @@ struct TargetMatchingParametersUncertain
 	int maxSteps = 20;
 	TargetMatchingParametersFast subMatch = {};
 };
+
 struct TargetOptimisationParameters
 {
 	int maxOutlierIterations = 20;
@@ -99,9 +103,9 @@ struct TargetFilteringParameters
 	// Full Target Pose Filter Update
 	struct {
 		bool useUnscented = true;
-		bool useNumericCov = false;
-		bool useNumericCovPos = false;
+		bool useSyntheticCov = false;
 		float stdDevPos = 0.0001f, stdDevEXP = 0.002f;
+		NumericCovarianceParameters cov;
 	} pose = {};
 
 	// Partial Target Points Filter Update

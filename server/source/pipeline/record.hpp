@@ -122,7 +122,7 @@ struct TargetMatch2D
 	TargetMatchError error = {};
 	int freeProjections, freeObservations;
 	CovarianceMatrix covariance;
-	std::vector<VectorX<float>> deviations; // Experimental: covariance from jacobian samples
+	std::vector<std::pair<Eigen::Vector<float, 6>, float>> hessianSamples;
 
 	inline int count() const 
 	{

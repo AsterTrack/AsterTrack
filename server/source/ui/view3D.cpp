@@ -844,18 +844,24 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			samples.clear();
 			Color devCol = { 1.0f, 1.0f, 1.0f, 1.0f };
 			Color hypCol = { 0.5f, 1.0f, 1.0f, 0.4f };
-			for (int i = 0; i < tgtMatch.deviations.size(); i++)
+			auto &covParam = state.pipeline.params.track.filter.pose.cov;
+			float posNorm = 1.0f/(covParam.sampleRangePos*covParam.sampleRangePos);
+			float rotNorm = 1.0f/(covParam.sampleRangeRot*covParam.sampleRangeRot);
+			for (auto &sample : tgtMatch.hessianSamples)
 			{
-				bool hyperdimensional = tgtMatch.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
-				samples[i].pos = trackRecord.pose.observed * (tgtMatch.deviations[i].head<3>() * visState.tracking.scaleCovariance);
-				samples[i].size = 0.00001f*visState.tracking.scaleCovariance;
-				samples[i].color = hyperdimensional? hypCol : devCol;
+				float pos = sample.first.head<3>().squaredNorm()*posNorm, rot = sample.first.tail<3>().squaredNorm()*rotNorm;
+				samples.emplace_back(
+					tgtMatch.pose.translation() + (sample.first.head<3>() * visState.tracking.covSamplesScaling),
+					lerp(devCol, hypCol, rot/(pos+rot)),
+					std::min(10.0f*PixelSize, std::max(0.1f*PixelSize, sample.second)) * visState.tracking.covSamplesSize
+				);
 			}
 			visualisePointsSpheres(samples);
 
-			if (visState.tracking.showCovariancePos && !tgtMatch.deviations.empty())
-			{ // This should be the same, but it is not
-				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(trackRecord.match2D->deviations);
+			if (visState.tracking.showCovariancePos && !tgtMatch.hessianSamples.empty())
+			{
+				CovarianceMatrix hessian = fitHessianToSamples(tgtMatch.hessianSamples);
+				Eigen::Matrix3f covariance = covarianceFromHessian(pipeline.params.track.filter.pose.cov, hessian).topLeftCorner<3,3>();
 				covariances.emplace_back(composeCovarianceTransform(
 					tgtMatch.pose, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.5f, 0.6f, 0.2f, 0.4f });

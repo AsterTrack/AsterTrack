@@ -178,9 +178,11 @@ struct VisualisationState
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
 		bool showPoseExtrapolated = false, showInertialIntegrated = false, showInertialFused = false, showInertialFiltered = false;
 		int trailLength = 0;
-		bool showCovariancePos = false, showCovarianceRot = false;
+		bool showCovariancePos = true, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
 		bool showCovarianceSamples = false;
+		float covSamplesSize = 0.5f;
+		float covSamplesScaling = 10.0f;
 
 		// Debug visualisation settings & state
 		bool showUncertaintyAxis = false;

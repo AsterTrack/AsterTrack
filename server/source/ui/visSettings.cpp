@@ -77,6 +77,8 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovarianceRot);
 			ImGui::SliderFloat("Covariance Sigma", &visState.tracking.scaleCovariance, 1, 100);
 			ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
+			ImGui::SliderFloat("Sample Size", &visState.tracking.covSamplesSize, 0, 1);
+			ImGui::SliderFloat("Sample Scaling", &visState.tracking.covSamplesScaling, 0, 100);
 
 			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
 			VisFrameLock visFrame = visState.lockVisFrame(pipeline, true, -1, true);

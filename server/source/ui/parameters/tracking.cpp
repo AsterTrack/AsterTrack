@@ -283,7 +283,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Quality");
 		modified |= ScalarProperty<int>("Good Camera Min Obs", "", &params.quality.cameraGoodObs, &standard.quality.cameraGoodObs, 0, 20);
-		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "px", &params.quality.cameraGoodRatio, &standard.quality.cameraGoodRatio, 0, 1, 0.05f);
+		modified |= ScalarProperty<float>("Good Camera Sample Ratio", "", &params.quality.cameraGoodRatio, &standard.quality.cameraGoodRatio, 0, 1, 0.05f);
 		modified |= ScalarProperty<int>("Min Points To Improve", "", &params.quality.minImprovePoints, &standard.quality.minImprovePoints, 0, 20);
 		modified |= ScalarProperty<float>("Min Factor To Improve", "x", &params.quality.minImproveFactor, &standard.quality.minImproveFactor, 0, 10, 0.1f);
 		modified |= ScalarProperty<int>("Min total Observations", "", &params.quality.minTotalObs, &standard.quality.minTotalObs, 1, 50); // 6 needed to optimise 6 parameters
@@ -338,13 +338,47 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ImGui::BeginDisabled(true);
 		filterMod |= BooleanProperty("Use Unscented (UKF)##Pose", &params.filter.pose.useUnscented, &standard.filter.pose.useUnscented);
 		ImGui::EndDisabled();
-		filterMod |= BooleanProperty("Use Numerical Covariance", &params.filter.pose.useNumericCov, &standard.filter.pose.useNumericCov);
-		ImGui::BeginDisabled(params.filter.pose.useNumericCov);
-		filterMod |= BooleanProperty("Pos Numerical Covariance", &params.filter.pose.useNumericCovPos, &standard.filter.pose.useNumericCovPos);
-		ImGui::BeginDisabled(params.filter.pose.useNumericCovPos);
+		filterMod |= BooleanProperty("Use Synthetic Covariance", &params.filter.pose.useSyntheticCov, &standard.filter.pose.useSyntheticCov);
+		ImGui::BeginDisabled(!params.filter.pose.useSyntheticCov);
 		filterMod |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.pose.stdDevPos, &standard.filter.pose.stdDevPos, 0, 10, 0.01f, 1000, "%.4f");
-		ImGui::EndDisabled();
 		filterMod |= ScalarProperty<float>("StdDev Rot", "", &params.filter.pose.stdDevEXP, &standard.filter.pose.stdDevEXP, 0, 10, 0.05f, 1000, "%.4f");
+		ImGui::EndDisabled();
+
+		ImGui::BeginDisabled(params.filter.pose.useSyntheticCov);
+		if (ImGui::TreeNode("Pose Covariance Estimation"))
+		{
+			filterMod |= ScalarProperty<float>("Obs Error Std Dev", "px", &params.filter.pose.cov.obsStdDev, &standard.filter.pose.cov.obsStdDev, 0, 10, 0.1f, PixelFactor, "%.4f");
+			filterMod |= BooleanProperty("Sum Obs Error", &params.filter.pose.cov.sumObsError, &standard.filter.pose.cov.sumObsError);
+			filterMod |= BooleanProperty("Relinearise Rotation", &params.filter.pose.cov.relineariseRotation, &standard.filter.pose.cov.relineariseRotation);
+			filterMod |= ScalarProperty<int>("Hessian Estimator", "", &params.filter.pose.cov.hessianEstimator, &standard.filter.pose.cov.hessianEstimator, 0, 2);
+
+			ImGui::BeginDisabled(params.filter.pose.cov.hessianEstimator != 0);
+			ImGui::SeparatorText("Sampled Hessian");
+			filterMod |= ScalarProperty<int>("Sample Count", "", &params.filter.pose.cov.sampleCount, &standard.filter.pose.cov.sampleCount, 0, 10000);
+			filterMod |= ScalarProperty<int>("Sample Generator", "", &params.filter.pose.cov.sampleGenerator, &standard.filter.pose.cov.sampleGenerator, 0, 2);
+			filterMod |= BooleanProperty("Sample Remap Gaussian", &params.filter.pose.cov.sampleRemapGaussian, &standard.filter.pose.cov.sampleRemapGaussian);
+			filterMod |= ScalarProperty<int>("Sample Redistributor", "", &params.filter.pose.cov.sampleRedistributor, &standard.filter.pose.cov.sampleRedistributor, 0, 2);
+			filterMod |= ScalarProperty<float>("Sample Range Pos", "mm", &params.filter.pose.cov.sampleRangePos, &standard.filter.pose.cov.sampleRangePos, 0, 100, 0.02f, 1000, "%.5f");
+			filterMod |= ScalarProperty<float>("Sample Range Rot", "", &params.filter.pose.cov.sampleRangeRot, &standard.filter.pose.cov.sampleRangeRot, 0, 100, 0.02f, 1000, "%.5f");
+			filterMod |= ScalarProperty<float>("Sample Range Min", "", &params.filter.pose.cov.sampleRangeMin, &standard.filter.pose.cov.sampleRangeMin, 0, 10, 0.02f, 1000, "%.5f");
+			ImGui::EndDisabled();
+
+			ImGui::BeginDisabled(params.filter.pose.cov.hessianEstimator == 0);
+			ImGui::SeparatorText("Numeric Hessian & Jacobian");
+			filterMod |= ScalarProperty<float>("Jacobian Pos Epsilon", "mm", &params.filter.pose.cov.epsJacPos, &standard.filter.pose.cov.epsJacPos, 0, 10, 0.01f, 1000, "%.5f");
+			filterMod |= ScalarProperty<float>("Jacobian Rot Epsilon", "", &params.filter.pose.cov.epsJacRot, &standard.filter.pose.cov.epsJacRot, 0, 10, 0.01f, 1000, "%.5f");
+			ImGui::BeginDisabled(params.filter.pose.cov.hessianEstimator != 1);
+			filterMod |= ScalarProperty<float>("Hessian Pos Epsilon", "mm", &params.filter.pose.cov.epsHessPos, &standard.filter.pose.cov.epsHessPos, 0, 10, 0.01f, 1000, "%.5f");
+			filterMod |= ScalarProperty<float>("Hessian Rot Epsilon", "", &params.filter.pose.cov.epsHessRot, &standard.filter.pose.cov.epsHessRot, 0, 10, 0.01f, 1000, "%.5f");
+			ImGui::EndDisabled();
+			ImGui::EndDisabled();
+
+			ImGui::SeparatorText("Hessian Conditioning");
+			filterMod |= ScalarProperty<int>("Method", "", &params.filter.pose.cov.hessianConditioning, &standard.filter.pose.cov.hessianConditioning, 0, 3);
+			filterMod |= ScalarProperty<float>("Hessian Min EV", "", &params.filter.pose.cov.minHessian, &standard.filter.pose.cov.minHessian, 0, 100, 1.0f, 1000, "%.5f");
+			filterMod |= ScalarProperty<float>("Hessian Max EV", "", &params.filter.pose.cov.maxHessian, &standard.filter.pose.cov.maxHessian, 0, 100000, 10.0f, 1000, "%.5f");
+			ImGui::TreePop();
+		}
 		ImGui::EndDisabled();
 
 		ImGui::SeparatorText("Partial Target Point Update");

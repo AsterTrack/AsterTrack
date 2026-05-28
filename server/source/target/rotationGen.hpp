@@ -16,12 +16,38 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#ifndef ROTATION_GEN_PARAMS_H
+#define ROTATION_GEN_PARAMS_H
+
+#include "util/eigendef.hpp"
+
+struct RotationGenerationParameters
+{
+	int shellPoints = 100;
+	int rollAxisShells = 10;
+
+	// Right parameter is increasingly sensitive with point counts > 1000, so precision here is required
+	std::vector<Eigen::Vector2f> shells = {
+		Eigen::Vector2f(0.0f, 0.0f),
+		Eigen::Vector2f(2.5f, 0.0728f),
+		Eigen::Vector2f(0.5f, 0.5f),
+		Eigen::Vector2f(1.25f, 0.191f)
+	};
+
+	float spreadFloor = 0.5f, spreadCeil = 0.1f;
+	float spreadVariance = 1.0f;
+};
+
+#endif
+
+#ifdef INCLUDE_ROTATION_GEN_PARAMS_ONLY
+#undef INCLUDE_ROTATION_GEN_PARAMS_ONLY
+#else
+
 #ifndef ROTATION_GEN_H
 #define ROTATION_GEN_H
 
-#include "pipeline/parameters.hpp"
-
-#include "util/eigendef.hpp"
+#include <cassert>
 
 /**
  * Parameters for tracking algorithms
@@ -60,3 +86,4 @@ static inline Eigen::Quaternionf generateRotation(const RotationGenerationParame
 };
 
 #endif // ROTATION_GEN_H
+#endif // INCLUDE_ROTATION_GEN_PARAMS_ONLY

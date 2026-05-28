@@ -36,10 +36,9 @@ static Eigen::Matrix<float,6,6> selectPoseCovariance(const TargetMatch2D &match2
 	// Option 2: Full covariance numerically estimated
 	if (params.filter.pose.useNumericCov)
 		covObserved = match2D.covariance;
-	// But yields a bit odd results, distorts the positional covariance when I don't see why it should
 	// Option 3: Numerical covariance for position only
 	if (params.filter.pose.useNumericCovPos)
-		covObserved.topLeftCorner<3,3>() = fitCovarianceToSamples<3,float>(match2D.deviations);
+		covObserved.topLeftCorner<3,3>() = match2D.covariance.topLeftCorner<3,3>();
 	return covObserved;
 }
 

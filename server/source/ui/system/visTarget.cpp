@@ -642,7 +642,8 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 
 		// Show final accepted matches
 		projectTarget(projected2D, target, calib, tgtMatch.pose);
-		assert(projected2D.size() == target.markers.size());
+		// May happen if edited or redone tracking in debug failed to match any points
+		//assert(projected2D.size() == target.markers.size());
 		matchLines.clear();
 		matchLines.reserve(matches.size());
 		for (auto match : matches)

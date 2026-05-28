@@ -202,9 +202,9 @@ struct TrackerObservation
 	TrackerObservation() {}
 
 	TrackerObservation(Eigen::Isometry3f pose_, TimePoint_t time, const TargetTrackingParameters &params) :
-		time(time), pose(pose_, pose_)
+		time(time), pose(pose_, pose_), ext(pose_, pose_)
 	{
-		pose.observedCov = pose.filteredCov = params.filter.getSyntheticCovariance<float>() * params.filter.sigmaInitState;
+		pose.observedCov = pose.filteredCov = ext.predictedCov = params.filter.getSyntheticCovariance<float>() * params.filter.sigmaInitState;
 	}
 };
 

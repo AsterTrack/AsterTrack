@@ -325,8 +325,8 @@ Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix
 		axis.col(0) *= -1;
 
 	Eigen::Affine3f transform = Eigen::Affine3f::Identity();
-	transform.linear() = axis;
-	transform = pose * transform * Eigen::Scaling(stdDev*scale);
+	transform.linear() = axis * Eigen::Scaling(stdDev*scale);
+	transform.translation() = pose.translation();
 	return transform;
 }
 

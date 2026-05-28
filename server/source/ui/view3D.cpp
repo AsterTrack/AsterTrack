@@ -470,11 +470,9 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.targetCalib.selectedObservation >= 0)
 		{ // Draw all observation rays of a selected sequence
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
-			if (obs_lock->markers.size() > visState.targetCalib.selectedObservation)
-			{
-				auto &seq = obs_lock->markers[visState.targetCalib.selectedObservation];
-				visualiseMarkerSequenceRays(pipeline.getCalibs(), visFrame.target, seq, visState.targetCalib.selectedObservation);
-			}
+			int selObs = visState.targetCalib.selectedObservation;
+			if (selObs >= 0 && obs_lock->markers.size() > selObs)
+				visualiseMarkerSequenceRays(pipeline.getCalibs(), visFrame.target, obs_lock->markers[selObs], selObs);
 		}
 
 		// Draw marker visualisation of the current target and its related state
@@ -634,6 +632,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	thread_local std::vector<VisModel> covariances;
 	covariances.clear();
 
+	auto &trkDbg = visState.tracking.debug;
+	bool debugging = state.pipeline.phase == PHASE_Tracking && trkDbg.frameNum == frame.num && trkDbg.trackerID == visState.tracking.focusedTrackerID;
 	for (auto &trackRecord : frame.trackers)
 	{
 		if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
@@ -641,6 +641,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			[&](auto &t){ return t.id == trackRecord.id; });
 		if (trackerIt == state.trackerConfigs.end()) continue;
 		auto tracker = *trackerIt;
+		bool trackerDebugged = debugging && trkDbg.trackerID == tracker.id;
 		if (tracker.type == TrackerConfig::TRACKER_MARKER)
 		{
 			// TODO: Render marker
@@ -801,14 +802,14 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				covariances.emplace_back(composeCovarianceTransform(
 					trk.pose.filtered, trk.pose.filteredCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colFiltered);
-			if (visState.tracking.showTargetObserved)
-				covariances.emplace_back(composeCovarianceTransform(
-					trk.pose.observed, trk.pose.observedCov.topLeftCorner<3,3>(),
-					visState.tracking.scaleCovariance), colObserved);
 			if (visState.tracking.showTargetPredicted && trk.ext)
 				covariances.emplace_back(composeCovarianceTransform(
 					trk.ext->predicted, trk.ext->predictedCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colPredicted);
+			if (visState.tracking.showTargetObserved)
+				covariances.emplace_back(composeCovarianceTransform(
+					trk.pose.observed, trk.pose.observedCov.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colObserved);
 		};
 
 		auto trailIt = visFrame.frameIt;
@@ -834,39 +835,51 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				trailPt[2] = { pastTrack->pose.filtered.translation(), colFiltered, 0.002f };
 		}
 
-		if (visState.tracking.showCovarianceSamples && trackRecord.match2D)
+		if (visState.tracking.showCovarianceSamples && (trackRecord.match2D || trackerDebugged))
 		{ // Visualise samples on covariance ellipsoid shell
 			thread_local std::vector<VisPoint> samples;
-			samples.resize(trackRecord.match2D->deviations.size());
+			const auto &tgtMatch = !trackerDebugged? *trackRecord.match2D.get() :
+				(trkDbg.showInitial? trkDbg.initialMatch2D :
+					(trkDbg.showEdited? trkDbg.editedMatch2D : trkDbg.targetMatch2D));
+			samples.clear();
 			Color devCol = { 1.0f, 1.0f, 1.0f, 1.0f };
 			Color hypCol = { 0.5f, 1.0f, 1.0f, 0.4f };
-			for (int i = 0; i < trackRecord.match2D->deviations.size(); i++)
+			for (int i = 0; i < tgtMatch.deviations.size(); i++)
 			{
-				bool hyperdimensional = trackRecord.match2D->deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
-				samples[i].pos = trackRecord.pose.observed * (trackRecord.match2D->deviations[i].head<3>() * visState.tracking.scaleCovariance);
+				bool hyperdimensional = tgtMatch.deviations[i].tail<3>().cwiseAbs().sum() > 0.00000001f;
+				samples[i].pos = trackRecord.pose.observed * (tgtMatch.deviations[i].head<3>() * visState.tracking.scaleCovariance);
 				samples[i].size = 0.00001f*visState.tracking.scaleCovariance;
 				samples[i].color = hyperdimensional? hypCol : devCol;
 			}
 			visualisePointsSpheres(samples);
 
-			if (visState.tracking.showCovariancePos)
+			if (visState.tracking.showCovariancePos && !tgtMatch.deviations.empty())
 			{ // This should be the same, but it is not
 				Eigen::Matrix3f covariance = fitCovarianceToSamples<3,float>(trackRecord.match2D->deviations);
 				covariances.emplace_back(composeCovarianceTransform(
-					trackRecord.pose.observed, covariance,
-					visState.tracking.scaleCovariance), Color{ 0.2f, 0.8f, 0.2f, 0.4f });
+					tgtMatch.pose, covariance,
+					visState.tracking.scaleCovariance), Color{ 0.5f, 0.6f, 0.2f, 0.4f });
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
 				Eigen::Matrix3f covariance = pipeline.params.track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
-					trackRecord.pose.observed, covariance,
+					tgtMatch.pose, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });
 			}
 		}
-		if (visState.tracking.showCovariancePos)
+		else if (visState.tracking.showCovariancePos)
 		{ // Visualise positional covariance ellipsoids
 			enterCovariances(trackRecord);
+			if (visState.tracking.showTargetObserved && trackerDebugged)
+			{
+				covariances.pop_back(); // Replace observed with debugging state
+				const auto &tgtMatch = trkDbg.showInitial? trkDbg.initialMatch2D :
+					(trkDbg.showEdited? trkDbg.editedMatch2D : trkDbg.targetMatch2D);
+				covariances.emplace_back(composeCovarianceTransform(
+					tgtMatch.pose, tgtMatch.covariance.topLeftCorner<3,3>(),
+					visState.tracking.scaleCovariance), colObserved);
+			}
 		}
 		if (visState.tracking.showCovarianceRot)
 		{ // Visualise rotational covariance rings around pose cross

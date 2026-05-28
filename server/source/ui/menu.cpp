@@ -185,7 +185,7 @@ void InterfaceState::UpdateMainMenuBar()
 	static std::map<int,Recording> recordEntries;
 	if (ImGui::BeginMenu("Replay"))
 	{
-		auto showCaptureMenus = [&](bool append, bool separate)
+		auto showCaptureMenus = [&](bool append, bool separate, bool select = false)
 		{
 			cachePaths = true;
 			if (!cachingRecordEntries)
@@ -196,18 +196,32 @@ void InterfaceState::UpdateMainMenuBar()
 			}
 			if (recordEntries.empty())
 				ImGui::MenuItem("No stored captures", nullptr, nullptr, false);
-
 			for (auto entryIt = recordEntries.rbegin(); entryIt != recordEntries.rend(); entryIt++)
 			{
 				const auto &entry = entryIt->second;
 				std::string label = entry.label.empty()? asprintf_s("Capture %d", entry.number)
 					: asprintf_s("Capture %d: %s", entry.number, entry.label.c_str());
+				if (select)
+				{ // Just select via recordingTestSet
+					auto selectedIt = std::find(state.recordingTestSet.begin(), state.recordingTestSet.end(), entry.number);
+					bool selected = selectedIt != state.recordingTestSet.end();
+					if (selected) label += asprintf_s(" (%d)", (int)(selectedIt - state.recordingTestSet.begin()) + 1);
+					ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+					if (ImGui::MenuItem(label.c_str(), nullptr, selected))
+					{
+						if (selected) state.recordingTestSet.erase(selectedIt);
+						else state.recordingTestSet.insert(state.recordingTestSet.begin(), entry.number);
+						ImGui::MarkIniSettingsDirty(); // These are stored in config
+					}
+					ImGui::PopItemFlag();
+					continue;
+				}
 				if (!ImGui::MenuItem(label.c_str())) continue;
 				// Perform read in a separate thread to prevent blocking UI
 				state.isLoading = true;
 				threadPool.push([](int, Recording entry, bool append, bool separate)
 				{
-					if (!append && GetState().mode == MODE_Replay)
+					if (!append && GetState().mode != MODE_None)
 						StopReplay(GetState());
 					auto error = loadRecording(GetState(), std::move(entry), append, separate);
 					if (error) SignalErrorToUser(error.value());
@@ -230,6 +244,50 @@ void InterfaceState::UpdateMainMenuBar()
 			showCaptureMenus(true, true);
 			ImGui::EndMenu();
 		}
+		ImGui::Separator();
+		if (ImGui::BeginMenu("Select test captures"))
+		{
+			showCaptureMenus(false, false, true);
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("Start test captures", nullptr, false, !state.isLoading && (state.mode == MODE_Replay || state.mode == MODE_None)))
+		{ // Perform read in a separate thread to prevent blocking UI
+			if (!cachingRecordEntries)
+			{
+				cachingRecordEntries = true;
+				recordEntries.clear();
+				parseRecordEntries(recordEntries);
+			}
+			std::vector<Recording> selectedRecordings;
+			selectedRecordings.reserve(state.recordingTestSet.size());
+			for (int selected : state.recordingTestSet)
+				if (recordEntries.contains(selected))
+					selectedRecordings.push_back(recordEntries[selected]);
+			state.isLoading = true;
+			threadPool.push([](int, std::vector<Recording> &recordings)
+			{
+				ServerState &state = GetState();
+				if (state.mode != MODE_None)
+					StopReplay(state);
+				// Automatically open tracking settings
+				GetUI().windows[WIN_TRACKING_PARAMS].open = true;
+				// Load all recordings marked for testing with all their captures
+				bool first = true;
+				for (auto &recording : recordings)
+				{
+					auto error = loadRecording(state, std::move(recording), !first, !first);
+					if (error) SignalErrorToUser(error.value());
+					first = false;
+				}
+				state.isLoading = false;
+				// Setup to very quick tracking verification by default
+				state.pipeline.params.detect.useAsyncDetection = false;
+				state.simAdvanceQuickly = true;
+				// Automatically start tracking
+				state.pipeline.phase = PHASE_Tracking;
+				StartStreaming(state);
+			}, std::move(selectedRecordings));
+		}
 
 		ImGui::Separator();
 	
@@ -248,10 +306,7 @@ void InterfaceState::UpdateMainMenuBar()
 	}
 	focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 	if (!cachePaths)
-	{
-		recordEntries.clear();
 		cachingRecordEntries = false;
-	}
 
 	ImGui::Dummy(ImVec2(20, ImGui::GetFrameHeight()));
 

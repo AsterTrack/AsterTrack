@@ -127,6 +127,8 @@ struct ServerState
 	TrackingRecord stored;
 	// Manual selection of tracking data to compare (persistent across UI reloads)
 	std::vector<TrackerCompareRecord> compareTrackers;
+	// Recordings part of a test set to verify tracking results
+	std::vector<int> recordingTestSet;
 
 	// IMU Device integration
 	std::mutex hid_access;

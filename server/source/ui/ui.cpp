@@ -85,21 +85,13 @@ static void closePlatformWindow(GLFWwindow *windowHandle);
 static void RefreshGLFWWindow(GLFWwindow *window);
 // ImGui Code
 static ImFont* loadFont(const std::string font, ImFontConfig &config);
-static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings);
-static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header);
-static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line);
-static void writeCustomSettings(ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output);
+
 
 /**
  * Main loop of UI
  */
 
 
-static void glfw_error_callback(int error, const char* description)
-{
-	fprintf(stderr, "Error: %s\n", description);
-	LOG(LGUI, LError, "Error: %s\n", description);
-}
 extern "C" {
 
 EXPORT bool _InterfaceThread()
@@ -111,7 +103,11 @@ EXPORT bool _InterfaceThread()
 	SetCurrentThreadName("Interface Thread");
 
 	// Open platform window
-	glfwSetErrorCallback(glfw_error_callback);
+	glfwSetErrorCallback([](int error, const char* description)
+	{
+		fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+		LOG(LGUI, LError, "GLFW Error %d: %s", error, description);
+	});
 	ui.glfwWindow = setupPlatformWindow(ui.useCustomHeader);
 	if (!ui.glfwWindow)
 		return false;
@@ -573,14 +569,78 @@ bool InterfaceState::Init()
 	loadFont("resources/fonts/LineAwesome-Solid-Icon.ttf", configIconMain);
 
 	{ // Read/Write custom UI state settings
-		ImGuiSettingsHandler uiStateHandler;
-		uiStateHandler.TypeName = "UIState";
-		uiStateHandler.TypeHash = ImHashStr("UIState");
-		uiStateHandler.ReadOpenFn = readCustomSettingsHeader;
-		uiStateHandler.ReadLineFn = readCustomSettingsLine;
-		uiStateHandler.WriteAllFn = writeCustomSettings;
-		uiStateHandler.ApplyAllFn = readSettingsFile;
-		ImGui::AddSettingsHandler(&uiStateHandler); // Does not keep the pointer, so safe, just... odd
+		ImGuiSettingsHandler handler;
+		handler.TypeName = "UIState";
+		handler.TypeHash = ImHashStr("UIState");
+		handler.ReadOpenFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header)
+		{
+			bool uiStateOld = strncmp("UIState", header, sizeof("UIState")-1) == 0;
+			bool uiState = strncmp("LogState", header, sizeof("LogState")-1) == 0;
+			return (void*)(intptr_t)(uiStateOld || uiState? 1 : 0);
+		};
+		handler.ReadLineFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line)
+		{
+			if ((intptr_t)entry == 1)
+			{ // LogState
+				int d1, d2;
+				if (sscanf(line, "L%d=%d", &d1, &d2) == 2)
+				{
+					if (d1 >= 0 && d1 < LMaxCategory && d2 >= 0 && d2 < LMaxLevel)
+					{ // This cannot be used to set it lower than LOG_MAX_LEVEL_DEFAULT or the LOG_MAX_LEVEL of a file
+						// But we can't use that fact that because we don't know LOG_MAX_LEVEL
+						LogFilterTable[d1] = (LogLevel)d2;
+						LogMaxLevelTable[d1] = std::min(LogMaxLevelTable[d1], LogFilterTable[d1]);
+					}
+				}
+			}
+		};
+		handler.ApplyAllFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings)
+		{
+			GetUI().loadedSettingsIni = true;
+		};
+		handler.WriteAllFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output)
+		{
+			output->appendf("[%s][LogState]\n", settings->TypeName);
+			output->reserve(output->size() + LMaxCategory * (sizeof("LXX=XX\n")-1) + 1);
+			for (int i = 0; i < LMaxCategory; i++)
+				output->appendf("L%.2d=%.2d\n", i, (int)LogFilterTable[i]);
+			output->appendf("\n");
+		};
+		ImGui::AddSettingsHandler(&handler); // Does not keep the pointer, so safe, just... odd
+	}
+
+	{ // Read/Write testing settings
+		ImGuiSettingsHandler handler;
+		handler.TypeName = "Testing";
+		handler.TypeHash = ImHashStr("Testing");
+		handler.ReadOpenFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header)
+		{
+			bool recordings = strncmp("Recordings", header, sizeof("Recordings")-1) == 0;
+			if (recordings)
+				GetState().recordingTestSet.clear();
+			return (void*)(intptr_t)(recordings? 1 : 0);
+		};
+		handler.ReadLineFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line)
+		{
+			if ((intptr_t)entry == 1)
+			{ // Recordings
+				int d1;
+				if (sscanf(line, "%d", &d1) >= 1)
+					GetState().recordingTestSet.push_back(d1);
+			}
+		};
+		handler.WriteAllFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output)
+		{
+			if (!GetState().recordingTestSet.empty())
+			{
+				output->appendf("[%s][Recordings]\n", settings->TypeName);
+				output->reserve(output->size() + GetState().recordingTestSet.size() * (sizeof("XXXX\n")-1) + 1);
+				for (auto &record : GetState().recordingTestSet)
+					output->appendf("%.4d\n", record);
+				output->appendf("\n");
+			}
+		};
+		ImGui::AddSettingsHandler(&handler); // Does not keep the pointer, so safe, just... odd
 	}
 
 	if (!ImGui_ImplGlfw_InitForOpenGL(glfwWindow, true))
@@ -1191,45 +1251,4 @@ static ImFont* loadFont(const std::string font, ImFontConfig &config)
 	}
 	complained = true;
 	return nullptr;
-}
-
-/* ImGui Settings for UI-related persistency */
-
-static void readSettingsFile(ImGuiContext *context, ImGuiSettingsHandler *settings)
-{
-	GetUI().loadedSettingsIni = true;
-}
-
-static void* readCustomSettingsHeader(ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header)
-{
-	int cmp = strncmp("UIState", header, 8); // With \0
-	if (cmp != 0)
-		return (void*)(intptr_t)0;
-	return (void*)(intptr_t)1;
-}
-
-static void readCustomSettingsLine(ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line)
-{
-	if ((intptr_t)entry == 0)
-		return; // Invalid header name
-	int d1, d2;
-	if (sscanf(line, "L%d=%d", &d1, &d2) == 2)
-	{
-		if (d1 >= 0 && d1 < LMaxCategory && d2 >= 0 && d2 < LMaxLevel)
-		{ // This cannot be used to set it lower than LOG_MAX_LEVEL_DEFAULT or the LOG_MAX_LEVEL of a file
-			// But we can't use that fact that because we don't know LOG_MAX_LEVEL
-			LogFilterTable[d1] = (LogLevel)d2;
-			LogMaxLevelTable[d1] = std::min(LogMaxLevelTable[d1], LogFilterTable[d1]);
-		}
-	}
-}
-
-static void writeCustomSettings(ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output)
-{
-	output->reserve(output->size() + LMaxCategory * 7); // LXX=XX\n
-	output->appendf("[%s][%s]\n", settings->TypeName, "UIState");
-	for (int i = 0; i < LMaxCategory; i++)
-	{
-		output->appendf("L%d=%d\n", i, (int)LogFilterTable[i]);
-	}
 }

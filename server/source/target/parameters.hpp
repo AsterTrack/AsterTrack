@@ -82,7 +82,8 @@ struct TargetOptimisationParameters
 	float outlierGrouping = 0.9f;
 	float outlierSigma = 2.5f;
 	float outlierVarMin = 0.5f*PixelSize;
-	float predictionInfluence = 0.000005f;
+	double predictionInfluence = 0.000005f;
+	double jacobianEpsilon = 0.0000012f;
 };
 
 struct TargetFilteringParameters
@@ -109,6 +110,7 @@ struct TargetFilteringParameters
 		int obsLimit = 8;
 		bool useUnscented = false;
 		bool useNumericJac = true;
+		double jacobianEpsilon = 0.000008;
 		bool separateCorrections = false;
 	} point = {};
 

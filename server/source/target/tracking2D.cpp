@@ -536,6 +536,7 @@ TargetMatchError optimiseTargetPose(const std::vector<CameraCalib> &calibs,
 	if constexpr (REFERENCE)
 		errorTerm.setReferencePose(prediction.cast<double>(), params.predictionInfluence);
 	errorTerm.setData(points2D, match, calib);
+	errorTerm.m_jacobianEpsilon = params.jacobianEpsilon;
 	if (errorTerm.values() < errorTerm.inputs() || errorTerm.m_observedPoints.empty())
 	{
 		LOGC(LError, "Got only %d inputs to optimise %d parameters!\n", errorTerm.values(), errorTerm.inputs());

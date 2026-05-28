@@ -318,9 +318,11 @@ class TargetMatchMeasurement :
 		m_sample = sample;
 	}
 
-	void useNumerical(bool numerical)
+	void useNumerical(bool numerical, double jacobianEpsilon = NAN)
 	{
 		m_numerical = numerical;
+		if (!std::isnan(jacobianEpsilon))
+			m_jacobianEpsilon = jacobianEpsilon;
 	}
 
 	template <typename State>
@@ -341,7 +343,7 @@ class TargetMatchMeasurement :
 				tempState.position() = params.head<3>();
 				tempState.incrementalOrientation() = params.tail<3>();
 				output = projectPoint2D(m_targetError.m_mvps[c], tempState.getIsometry() * tgtPt);
-			}, stateParams, jacobian, 100);
+			}, stateParams, jacobian, m_jacobianEpsilon);
 			return;
 		}
 
@@ -481,6 +483,7 @@ class TargetMatchMeasurement :
 	TargetMatchError &m_targetError;
 	int m_sample;
 	bool m_numerical;
+	double m_jacobianEpsilon = std::sqrt(Eigen::NumTraits<double>::epsilon())*10;
 };
 
 class LeveragedPoseMeasurement :

@@ -78,7 +78,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 		errorTerm.setData(points2D, target.match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
-		measurement.useNumerical(params.filter.point.useNumericJac);
+		measurement.useNumerical(params.filter.point.useNumericJac, params.filter.point.jacobianEpsilon);
 
 		bool success = true;
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
@@ -182,7 +182,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 		errorTerm.setData(points2D, target.match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
-		measurement.useNumerical(params.filter.point.useNumericJac);
+		measurement.useNumerical(params.filter.point.useNumericJac, params.filter.point.jacobianEpsilon);
 
 		bool success = true;
 		flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);

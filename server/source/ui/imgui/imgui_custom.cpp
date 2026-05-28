@@ -368,8 +368,10 @@ bool ScalarInputN(const char *label, const char *unit, Scalar *value, Scalar *va
 
 template bool ScalarInputN(const char *label, const char *unit, int *value, int *value2, const int *compare, int min, int max, int step, int editFactor, const char *fmt);
 template bool ScalarInputN(const char *label, const char *unit, float *value, float *value2, const float *compare, float min, float max, float step, float editFactor, const char *fmt);
+template bool ScalarInputN(const char *label, const char *unit, double *value, double *value2, const double *compare, double min, double max, double step, double editFactor, const char *fmt);
 template bool SliderInputN(const char *label, int *value, int *value2, int min, int max, int editFactor, const char *fmt);
 template bool SliderInputN(const char *label, float *value, float *value2, float min, float max, float editFactor, const char *fmt);
+template bool SliderInputN(const char *label, double *value, double *value2, double min, double max, double editFactor, const char *fmt);
 
 template<typename Scalar>
 bool ScalarFieldsN(const char *label, const char *unit, int N, Scalar *value, const Scalar *compare, Scalar min, Scalar max, Scalar editFactor, const char *fmt)

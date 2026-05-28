@@ -61,6 +61,7 @@ struct TargetReprojectionError
 	};
 	std::vector<PointSample> m_observedPoints;
 	std::vector<bool> m_outlierMap;
+	Scalar m_jacobianEpsilon = std::sqrt(Eigen::NumTraits<Scalar>::epsilon())*10;
 	Eigen::Matrix<Scalar,6,1> refPose;
 	Scalar refInfluence = 1.0f;
 
@@ -187,6 +188,7 @@ struct TargetReprojectionError
 	template<typename DiffScalar = Scalar>
 	void calculateSampleErrors(const Isometry3<DiffScalar> &pose, VectorX<DiffScalar> &errors) const
 	{
+		assert(errors.size() >= m_observedPoints.size());
 		for (int p = 0; p < m_observedPoints.size(); p++)
 		{
 			if ((Options&OptOutliers) && m_outlierMap.at(p))
@@ -199,7 +201,7 @@ struct TargetReprojectionError
 	template<typename DiffScalar = Scalar>
 	int operator()(const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors) const
 	{
-		Isometry3<DiffScalar> pose = decodePose(poseVec);
+		Isometry3<DiffScalar> pose = decodePose<DiffScalar>(poseVec);
 
 		calculateSampleErrors(pose, errors);
 
@@ -214,12 +216,11 @@ struct TargetReprojectionError
 	template<typename DiffScalar = Scalar>
 	int df(const VectorX<DiffScalar> &poseVec, JacobianType &jacobian) const
 	{
-		NumericDiffJacobian<DiffScalar>([this](const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors)
+		return NumericDiffJacobian<DiffScalar>([this](const VectorX<DiffScalar> &poseVec, VectorX<DiffScalar> &errors)
 		{
 			return operator()(poseVec, errors);
-		}, poseVec, jacobian);
-
-		return 0; // <0 : abort, =0 : success, >0 : num function evaluation
+		}, poseVec, jacobian, m_jacobianEpsilon);
+		// return <0 : abort, =0 : success, >0 : num function evaluation
 	}
 
 	/*

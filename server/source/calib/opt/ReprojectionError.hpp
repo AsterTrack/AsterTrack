@@ -245,7 +245,7 @@ struct ReprojectionError
 			if constexpr (Options%OptTgtMotionOpt)
 				#warning "Nested optimisation doesn't work well here, since even a jacobian update would update the best pose estimation. Not optimal, but works"
 			return operator()(calibParams, errors);
-		}, calibParams, jacobian, 100);
+		}, calibParams, jacobian);
 		s2 = sclock::now(); */
 
 		//JacobianType numericFullJac = jacobian;
@@ -400,7 +400,7 @@ struct ReprojectionError
 					readTargetStructure<Scalar>(tgtStruct, target, params);
 					auto stats = optimiseTargetPoseErrors<Scalar>(cameras, target, tgtStruct, posesVec, errors, m_targetOptTolerance);
 					//statAccum[stats.first] += stats.second;
-				}, calibParams.segment(paramStart, paramLen), jacobian.block(errorStart, paramStart, errorLen, paramLen), 10);
+				}, calibParams.segment(paramStart, paramLen), jacobian.block(errorStart, paramStart, errorLen, paramLen));
 
 				/* int maxCode = 0;
 				float sumStat = 0;
@@ -478,7 +478,7 @@ struct ReprojectionError
 						for (int f = 0; f < target.frames.size(); f++)
 						{
 							int errorLen = target.frames[f].samples.size();
-							NumericDiffJacobian<Scalar>([&](const VectorX<Scalar> &params, VectorX<Scalar> &errors)
+							NumericDiffJacobian<Scalar>([&](const Eigen::Vector<Scalar, 6> &params, VectorX<Scalar> &errors)
 							{
 								calculateTargetObsErrors<Scalar>(cameras, target, tgtParam.structure, f, DecodeAAPose<Scalar>(params), errors);
 							}, calibParams.segment(paramIndex, 6), jacobian.block(errorIndex, paramIndex, errorLen, 6));

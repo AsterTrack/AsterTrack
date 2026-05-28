@@ -34,30 +34,40 @@ SOFTWARE.
 
 enum NumericalDiffMode { NumericDiffForward, NumericDiffCentral };
 
-template<typename Scalar, int Mode = NumericDiffForward, bool Parallelise = false, typename Functor>
-static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &input, Eigen::Ref<MatrixX<Scalar>> jacobian, int eps = 10)
+template<typename Scalar, int Mode = NumericDiffForward, bool Parallelise = false, bool RelativeEps = false, typename Functor, typename TI, typename E = Scalar>
+static inline int NumericDiffJacobian(Functor &&functor, const Eigen::MatrixBase<TI> &input, Eigen::Ref<MatrixX<Scalar>> jacobian, E eps = std::sqrt(Eigen::NumTraits<Scalar>::epsilon()))
 {
+	static_assert(std::is_same<Scalar, typename TI::Scalar>::value);
 	if (jacobian.size() == 0) return 0;
 
 	int ret = 0; // Number of function evaluations
-	const Scalar epsilon = std::sqrt(Eigen::NumTraits<Scalar>::epsilon()*eps);
+	auto epsilon = [&](int i)
+	{
+		Scalar h;
+		if constexpr (std::is_scalar_v<E>)
+			h = (Scalar)eps;
+		else
+			h = (Scalar)eps(i);
+		if constexpr (RelativeEps)
+			return h * abs(input(i));
+		return h;
+	};
 
 	if constexpr (Parallelise)
 	{
 		if constexpr (Mode == NumericDiffForward)
 		{
+			typename TI::PlainObject baseInput(input);
 			VectorX<Scalar> minVal;
 			minVal.resize(jacobian.rows());
-			functor(input, minVal); ret++;
+			functor(baseInput, minVal); ret++;
 
 		#pragma omp parallel for schedule(dynamic)
 			for (int i = 0; i < input.rows(); i++)
 			{
 				VectorX<Scalar> maxVal(jacobian.rows());
-				VectorX<Scalar> evalInput = input;
-				Scalar h = epsilon * abs(input[i]);
-				if (h == 0.)
-					h = epsilon;
+				typename TI::PlainObject evalInput = input;
+				Scalar h = epsilon(i);
 				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
 				evalInput[i] = input[i];
@@ -72,21 +82,19 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 			functor(input, minVal); ret++;
 
 			//VectorX<Scalar> maxVal;
-			//VectorX<Scalar> evalInput = input;
+			//typename TI::PlainObject evalInput = input;
 		//#pragma omp threadprivate(evalInput, maxVal)
 
 		#pragma omp parallel for schedule(dynamic) //copyin(evalInput)
 			for (int i = 0; i < input.rows(); i++)
 			{
 				VectorX<Scalar> maxVal(jacobian.rows());
-				VectorX<Scalar> evalInput = input;
-				//thread_local VectorX<Scalar> evalInput = input;
+				typename TI::PlainObject evalInput = input;
+				//thread_local typename TI::PlainObject evalInput = input;
 				//assert(evalInput.size() == jacobian.cols());
 				//assert(evalInput(0) == input(0));
 				//// This assert DOES fail
-				Scalar h = epsilon * abs(input[i]);
-				if (h == 0.)
-					h = epsilon;
+				Scalar h = epsilon(i);
 				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
 				evalInput[i] = input[i];
@@ -102,10 +110,8 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 				thread_local VectorX<Scalar> minVal, maxVal;
 				minVal.resize(jacobian.rows());
 				maxVal.resize(jacobian.rows());
-				VectorX<Scalar> evalInput = input;
-				Scalar h = epsilon * abs(input[i]);
-				if (h == 0.)
-					h = epsilon;
+				typename TI::PlainObject evalInput = input;
+				Scalar h = epsilon(i);
 				evalInput[i] += h;
 				functor(evalInput, maxVal); ret++;
 				evalInput[i] -= 2*h;
@@ -122,7 +128,7 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 		minVal.resize(jacobian.rows());
 		maxVal.resize(jacobian.rows());
 
-		VectorX<Scalar> evalInput = input;
+		typename TI::PlainObject evalInput = input;
 		if constexpr (Mode == NumericDiffForward)
 		{
 			functor(evalInput, minVal); ret++;
@@ -130,9 +136,7 @@ static inline int NumericDiffJacobian(Functor &&functor, const VectorX<Scalar> &
 
 		for (int i = 0; i < input.rows(); i++)
 		{
-			Scalar h = epsilon * abs(input[i]);
-			if (h == 0.)
-				h = epsilon;
+			Scalar h = epsilon(i);
 			if constexpr (Mode == NumericDiffForward)
 			{
 				evalInput[i] += h;

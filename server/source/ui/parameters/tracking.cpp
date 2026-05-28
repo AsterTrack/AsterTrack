@@ -205,7 +205,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Outlier Grouping", "x", &params.opt.outlierGrouping, &standard.opt.outlierGrouping, 0, 1, 0.05f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
-		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
+		modified |= ScalarProperty<double>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
+		modified |= ScalarProperty<double>("Jacobian Epsilon", "", &params.opt.jacobianEpsilon, &standard.opt.jacobianEpsilon, 0, 10, 0.01f, 1000, "%.8f");
 		EndSection();
 
 		if (modified)
@@ -314,7 +315,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Outlier Grouping", "x", &params.opt.outlierGrouping, &standard.opt.outlierGrouping, 0, 1, 0.05f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Outlier Sigma", "o", &params.opt.outlierSigma, &standard.opt.outlierSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Outlier Min Variance", "px", &params.opt.outlierVarMin, &standard.opt.outlierVarMin, 0, 10, 0.1f, PixelFactor, "%.2f");
-		modified |= ScalarProperty<float>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 100, 0.01f, 1, "%.8f");
+		modified |= ScalarProperty<double>("Prediction Influence", "x", &params.opt.predictionInfluence, &standard.opt.predictionInfluence, 0, 1, 0.0001f, 1000, "%.8f");
+		modified |= ScalarProperty<double>("Jacobian Epsilon", "", &params.opt.jacobianEpsilon, &standard.opt.jacobianEpsilon, 0, 1, 0.0001f, 1000, "%.8f");
 		EndSection();
 
 		BeginSection("Filtering");
@@ -349,6 +351,9 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		filterMod |= ScalarProperty<int>("Max Observations", "", &params.filter.point.obsLimit, &standard.filter.point.obsLimit, 1, 50);
 		filterMod |= BooleanProperty("Use Unscented (UKF)##Point", &params.filter.point.useUnscented, &standard.filter.point.useUnscented);
 		filterMod |= BooleanProperty("Use Numerical Jacobian", &params.filter.point.useNumericJac, &standard.filter.point.useNumericJac);
+		ImGui::BeginDisabled(!params.filter.point.useNumericJac);
+		filterMod |= ScalarProperty<double>("Jacobian Epsilon", "", &params.filter.point.jacobianEpsilon, &standard.filter.point.jacobianEpsilon, 0, 100, 0.0001f, 1000, "%.5f");
+		ImGui::EndDisabled();
 		filterMod |= BooleanProperty("Use Separate Corrections", &params.filter.point.separateCorrections, &standard.filter.point.separateCorrections);
 		filterMod |= ScalarProperty<float>("StdDev Error", "px", &params.filter.point.stdDev, &standard.filter.point.stdDev, 0, 10, 0.01f, PixelFactor, "%.4f");
 

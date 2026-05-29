@@ -202,7 +202,8 @@ struct TargetTrackingParameters
 	float minUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;
 	// Marker Matching
-	float expandMarkerViewAngle = 0.2f;
+	float expandMarkerViewAngle = 0.025f;
+	bool inverseDistExpand = false;
 	float normaliseDistance = 5.0f;
 	TargetMatchingParametersFast matchFast = {};
 	struct { // Selecting whether to go down recover path

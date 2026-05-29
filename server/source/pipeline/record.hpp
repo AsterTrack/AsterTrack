@@ -101,14 +101,14 @@ struct CameraFrameRecord
 
 struct TargetMatchError
 {
-	float mean, stdDev, max;
-	int samples;
+	float mean = 0, stdDev = 0, max = 0;
+	int samples = 0;
 };
 
 struct TrackerVirtualError
 {
-	float pos, rot, posVar;
-	int subtrackers;
+	float pos = 0, rot = 0, posVar = 0;
+	int subtrackers = 0;
 };
 
 using CovarianceMatrix = Eigen::Matrix<float,6,6>;
@@ -254,7 +254,7 @@ struct TrackerRecord
 	TrackerPose pose;
 	union
 	{
-		TargetMatchError error;
+		TargetMatchError error = {};
 		TrackerVirtualError virtualError;
 	};
 

@@ -684,6 +684,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					std::map<int, FrameTrackers> frameTrackers;
 					for (auto &trackRecord : record.trackers)
 					{
+						if (!trackRecord.result.isTracked() && !trackRecord.result.isDetected()) continue;
 						auto &trkFrame = frameTrackers[trackRecord.id];
 						trkFrame.samplesCurrent = trackRecord.error.samples;
 						trkFrame.errorCurrent = trackRecord.error.mean;
@@ -692,6 +693,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					}
 					for (auto &trackStored : stored.trackers)
 					{
+						if (!trackStored.result.isTracked() && !trackStored.result.isDetected()) continue;
 						auto &trkFrame = frameTrackers[trackStored.id];
 						trkFrame.samplesLoaded = trackStored.error.samples;
 						trkFrame.errorLoaded = trackStored.error.mean;

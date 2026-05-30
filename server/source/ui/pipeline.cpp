@@ -667,6 +667,43 @@ static void ShowTrackingResults()
 	static std::map<int, TrackingSamples> trackers;
 	static uint32_t coveredFrames; // All following code relies on frame number
 
+	// Trim implementation
+	static bool trimTrackers = true;
+	static float trimRatio = 0.01f;
+	struct TrackerObservations
+	{
+		uint32_t loaded, current;
+	};
+	std::map<int, TrackerObservations> trackerObservations;
+	auto trimObservedTrackers = [&](auto framesRecord, auto framesStored, FrameNum start, FrameNum end)
+	{
+		trackerObservations.clear();
+		FrameNum framesCovered = 0;
+		// First accumulate tracked frames for each tracker
+		for (FrameNum f = start; f < end; f++)
+		{
+			if (!framesRecord[f] || !framesRecord[f]->finishedProcessing) continue;
+			framesCovered++;
+			for (auto &trackRecord : framesRecord[f]->trackers)
+			{
+				if (!trackRecord.result.isTracked() && !trackRecord.result.isDetected()) continue;
+				trackerObservations[trackRecord.id].current++;
+			}
+			for (auto &trackStored : framesStored[f]->trackers)
+			{
+				if (!trackStored.result.isTracked() && !trackStored.result.isDetected()) continue;
+				trackerObservations[trackStored.id].loaded++;
+			}
+		}
+		// Then filter out trackers who were likely falsely detected
+		for (auto trackerIt = trackerObservations.begin(); trackerIt != trackerObservations.end();)
+		{
+			if (trackerIt->second.current < framesCovered*trimRatio && trackerIt->second.loaded < framesCovered*trimRatio)
+				trackerIt = trackerObservations.erase(trackerIt);
+			else trackerIt++;
+		}
+	};
+
 	// Events implementation
 	struct { uint32_t losses, search2D, detect2D, detect3D, tracked; } eventsStored, eventsCurrent;
 	auto handleTrackerEvents = [](const TrackerRecord &trackRecord, auto &events)
@@ -683,6 +720,8 @@ static void ShowTrackingResults()
 
 	auto gatherTrackingSamples = [&](auto framesRecord, auto framesStored, FrameNum start, FrameNum end)
 	{
+		if (trimTrackers)
+			trimObservedTrackers(framesRecord, framesStored, start, end);
 		for (FrameNum f = start; f < end; f++)
 		{
 			if (!framesRecord[f] || !framesRecord[f]->finishedProcessing) continue;
@@ -697,6 +736,7 @@ static void ShowTrackingResults()
 			eventsCurrent = {};
 			for (auto &trackRecord : framesRecord[f]->trackers)
 			{
+				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsCurrent)) continue;
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesCurrent = trackRecord.error.samples;
@@ -706,6 +746,7 @@ static void ShowTrackingResults()
 			}
 			for (auto &trackRecord : framesStored[f]->trackers)
 			{
+				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsStored)) continue;
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesLoaded = trackRecord.error.samples;
@@ -766,8 +807,17 @@ static void ShowTrackingResults()
 
 		auto framesRecord = pipeline.record.frames.getView<true>();
 		auto framesStored = state.stored.frames.getView<true>();
-		FrameNum end = std::min(framesRecord.endIndex(), framesStored.endIndex());
-		gatherTrackingSamples(framesRecord, framesStored, framesRecord.beginIndex(), end);
+
+		// Handle each appended recording (if multiple) separately
+		// This allows us to filter out erroneous trackers per recording
+		FrameNum lastFrame = std::min(framesRecord.endIndex(), framesStored.endIndex());
+		for (auto recording : state.recording.recordings)
+		{
+			if (recording.frameStart >= lastFrame) break;
+			FrameNum end = std::min(recording.frameStart + recording.frameCount, lastFrame);
+			gatherTrackingSamples(framesRecord, framesStored, recording.frameStart, end);
+		}
+
 
 		// Add proper label and type in post
 		for (auto &tracker: state.trackerConfigs)
@@ -779,6 +829,21 @@ static void ShowTrackingResults()
 				it->second.type = tracker.type;
 			}
 		}
+	}
+
+	ImGui::AlignTextToFramePadding();
+	if (ImGui::TreeNode("Filtering Options"))
+	{
+		ImGui::BeginGroup();
+		ImGui::Checkbox("Trim Trackers", &trimTrackers);
+		ImGui::BeginDisabled(!trimTrackers);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(LineWidthRemaining());
+		ImGui::SliderFloat("##ratio", &trimRatio, 0, 0.1);
+		ImGui::EndDisabled();
+		ImGui::EndGroup();
+
+		ImGui::TreePop();
 	}
 
 	if (trackers.empty())

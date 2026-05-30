@@ -126,17 +126,16 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	{
 		if (cam->disabled)
 			continue;
-		if (cam->calib.invalid())
-			fullyCalibrated = false;
 		if (cam->index >= frame->cameras.size())
 			continue; // May have been added since the frame was recorded
 		auto &record = frame->cameras[cam->index];
+		if (!record.received)
+			continue;
+		if (cam->calib.invalid())
+			fullyCalibrated = false;
 		PreprocessCameraData(cam->calib, record);
 		cameras.push_back(cam.get());
 	}
-	// TODO: Some systems might still break if this subset cameras != pipeline.cameras - verify they work
-	// But they have been designed to support that by using cameras[x]->index for storage
-	// However, temporary data uses the same indexing as this subset of cameras
 
 	if (fullyCalibrated)
 	{
@@ -156,7 +155,7 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 
 		auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::wlock(pipeline.seqDatabase));
 		std::get<0>(lock)->verifyCameraCount(pipeline.cameras.size()); // Keep camera count up-to-date
-		std::get<0>(lock)->verifyCameraCount(pipeline.cameras.size()); // Keep camera count up-to-date
+		std::get<1>(lock)->verifyCameraCount(pipeline.cameras.size()); // Keep camera count up-to-date
 
 		auto &params = pipeline.sequenceParams.get(pipeline.phase == PHASE_Calibration_Point? 0 : 1);
 
@@ -203,15 +202,6 @@ void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record)
 	else
 	{ // Initialise with raw points if starting with no calibration
 		record.points2D.insert(record.points2D.begin(), record.rawPoints2D.begin(), record.rawPoints2D.end());
-	}
-}
-
-void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record)
-{
-	assert(record.cameras.size() == pipeline.cameras.size());
-	for (auto &cam : pipeline.cameras)
-	{
-		PreprocessCameraData(cam->calib, record.cameras[cam->index]);
 	}
 }
 

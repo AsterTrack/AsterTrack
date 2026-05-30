@@ -67,7 +67,7 @@ void InterfaceState::UpdateCameras()
 		if (cam == state.cameras.end())
 		{ // Remove old camera view
 			if (view->second.isDetached)
-			{
+			{ // Ignore isHidden if explicitly detached
 				ImGuiWindow* imguiWindow = ImGui::FindWindowByName(view->second.ImGuiTitle.c_str());
 				if (imguiWindow)
 					ImGui::DockContextProcessUndockWindow(ImGui::GetCurrentContext(), imguiWindow, false);
@@ -108,6 +108,38 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 	// Spacing between camera views
 	ImVec2 gridSpacing(2,2);
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, gridSpacing);
+
+	ServerState &state = GetState();
+	static int lastRecordingNum = -1;
+	if (state.mode == MODE_Replay && state.recording.recordings.size() > 1)
+	{ // If in replay mode with multiple recordings appended, only show cameras used for current recording
+		OptFrameNum frame = state.pipeline.frameNum.load();
+		// No synchronisation with actual frame displayed required
+		// CameraViews support being displayed even when not used, this is just for visuals
+		auto rec = std::find_if(state.recording.recordings.begin(), state.recording.recordings.end(),
+			[frame](auto &rec){ return frame >= rec.frameStart && frame < rec.frameStart+rec.frameCount; });
+		if (rec == state.recording.recordings.end())
+		{
+			if (lastRecordingNum != -1)
+			{ // Display all if e.g. streaming has not started
+				lastRecordingNum = -1;
+				cameraGridDirty = true;
+				for (auto &viewIt : cameraViews)
+					viewIt.second.isHidden = false;
+			}
+		}
+		else if (lastRecordingNum != rec->number || cameraGridDirty)
+		{ // Found current recording, hide camera views if they're not used
+			lastRecordingNum = rec->number;
+			cameraGridDirty = true;
+			for (auto &viewIt : cameraViews)
+			{
+				CameraView &view = viewIt.second;
+				view.isHidden = std::find(rec->cameras.begin(), rec->cameras.end(), view.camera->pipeline->index) == rec->cameras.end();
+			}
+		}
+	}
+	else lastRecordingNum = -1;
 
 	static ImVec2 oldSize;
 	ImVec2 newSize = ImGui::GetCurrentWindowRead()->InnerRect.GetSize();
@@ -153,7 +185,7 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 	for (auto &viewIt : cameraViews)
 	{
 		CameraView &view = viewIt.second;
-		if (view.isDetached) continue;
+		if (view.isDetached || view.isHidden) continue;
 		if (view.gridX != 0) ImGui::SameLine(0);
 		if (ImGui::BeginChild(view.ImGuiTitle.c_str(), view.size, true, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
 		{
@@ -257,7 +289,7 @@ bool InterfaceState::UpdateCameraGrid()
 {
 	int gridCnt = 0;
 	for (auto &view : cameraViews)
-		if (!view.second.isDetached)
+		if (!view.second.isDetached && !view.second.isHidden)
 			gridCnt++;
 	gridCnt += camerasConnecting;
 
@@ -380,7 +412,7 @@ bool InterfaceState::UpdateCameraGrid()
 	int g = 0;
 	for (auto &viewIt : cameraViews)
 	{
-		if (viewIt.second.isDetached) continue;
+		if (viewIt.second.isDetached || viewIt.second.isHidden) continue;
 		viewIt.second.gridX = g%grid.x();
 		viewIt.second.gridY = g/grid.x();
 		viewIt.second.size.x = view.x();

@@ -292,8 +292,6 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> newFrame
 
 void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record);
 
-void PreprocessFrame(const PipelineState &pipeline, FrameRecord &record);
-
 /**
  * Updates status of e.g. calibration background tasks in the absence of new frames
  */

@@ -87,24 +87,26 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	}
 	else
 	{ // Clear previous recording
+		state.recording = {};
 		state.stored.frames.cull_clear();
 		state.stored.imus.clear();
-		state.recording = {};
 		state.stored.frames.delete_culled();
 	}
+	// Prepare full recording data
+	std::size_t recStart = state.stored.frames.getView().size();
+	std::vector<int> cameraIndices;
 	// Will load recording in numbered segments
-	std::size_t segmentOffset = state.recording.segments.size(), framesCount = 0;
+	std::size_t segmentOffset = state.recording.segments.size();
 	state.recording.segments.reserve(segmentOffset + recordEntries.captures.size());
 	// Load all capture segments containing recorded data
 	for (int i = 0; i < recordEntries.captures.size(); i++)
 	{
 		std::size_t start = state.stored.frames.getView().size();
 		std::size_t offset;
-		auto error = parseRecording(recordEntries.captures[i], cameras, state.stored, offset, separate);
+		auto error = parseRecording(recordEntries.captures[i], cameras, cameraIndices, state.stored, offset, separate);
 		if (error) return error;
 		std::size_t count = state.stored.frames.getView().size() - start;
 		state.recording.segments.emplace_back(start, count, offset);
-		framesCount += count;
 	}
 	// Load all tracking segments containing recorded tracking results
 	for (int i = 0; i < recordEntries.tracking.size(); i++)
@@ -117,7 +119,9 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	// Store paths of each numbered segment as well
 	std::move(std::begin(recordEntries.captures), std::end(recordEntries.captures), std::back_inserter(state.recording.captures));
 	std::move(std::begin(recordEntries.tracking), std::end(recordEntries.tracking), std::back_inserter(state.recording.tracking));
-	state.recording.frames += framesCount;
+	std::size_t recCount = state.stored.frames.getView().size() - recStart;
+	state.recording.recordings.emplace_back(recordEntries.number, recordEntries.label, recStart, recCount, std::move(cameraIndices));
+	state.recording.frames += recCount;
 
 	std::vector<CameraCalib> cameraCalibs;
 	if (!recordEntries.calib.empty())
@@ -126,7 +130,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 		if (error && error->code != ENOENT) return error;
 	}
 
-	LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", framesCount);
+	LOG(LGUI, LInfo, "Loaded %ld frames for replay!\n", recCount);
 	if (append)
 	{
 		// Add new IMUs

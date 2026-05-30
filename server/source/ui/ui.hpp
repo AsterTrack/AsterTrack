@@ -619,7 +619,7 @@ struct CameraView
 	bool resized;
 	// ImGui State
 	std::string ImGuiTitle;
-	bool isDetached, isIntendedFocus;
+	bool isDetached, isHidden, isIntendedFocus;
 	int detachedIndex = -1;
 };
 

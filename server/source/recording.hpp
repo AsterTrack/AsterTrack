@@ -35,17 +35,12 @@ struct ServerState;
 
 struct Recording
 {
-    int number;
-    std::string label;
-    bool corrupt = false;
-    std::vector<std::string> captures;
-    std::vector<std::string> tracking;
-    std::string calib;
-};
-
-struct RecordingSegment
-{
-    std::size_t frameStart, frameCount, frameOffset;
+	int number;
+	std::string label;
+	bool corrupt = false;
+	std::vector<std::string> captures;
+	std::vector<std::string> tracking;
+	std::string calib;
 };
 
 

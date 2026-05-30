@@ -981,7 +981,7 @@ std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &folder
 	return std::nullopt;
 }
 
-std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate)
+std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, std::vector<int> &cameraIndices, TrackingRecord &record, std::size_t &frameOffset, bool separate)
 {
 	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 	frameOffset = 0;
@@ -1030,28 +1030,35 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 		else
 			return asprintf_s("Invalid recording file '%s' - cameras!", path.c_str());
 
-		std::vector<int> cameraIndices(parsedCameras.size(), -1);
-		if (separate)
-		{
-			for (int c = 0; c < parsedCameras.size(); c++)
-			{
-				cameraIndices[c] = cameras.size();
-				cameras.push_back(parsedCameras[c]);
-			}
-		}
-		else if (cameras.empty())
-		{
-			std::iota(cameraIndices.begin(), cameraIndices.end(), 0);
-			cameras = parsedCameras;
+		if (!cameraIndices.empty() && parsedCameras.size() < cameraIndices.size())
+			return asprintf_s("Invalid recording file '%s' - subsequent captures camera count is lower!", path.c_str());
+
+		/*
+		 * If cameraIndices is not empty, this is a subsequent capture of a recording (think one recording saved in blocks)
+		 *     Later captures may have additional cameras that have been added at runtime, but never less
+		 *     They should always share cameras with prior captures, achieved by sharing cameraIndices
+		 * Between captures of different recordings, they may only share the cameras if the calibrations were the same 
+		 *     So when adding any new cameras, while shared within a recording, they may need to be separate outside of it
+		 *     When calibs are assumed to be the same, cameras of this recording are merged into existing cameras of others
+		 */
+		int priorCameras = cameraIndices.size();
+		int newCameras = parsedCameras.size() - priorCameras;
+		cameraIndices.resize(parsedCameras.size(), -1);
+		if (separate || cameras.size() == priorCameras)
+		{ // Append any new cameras
+			std::iota(cameraIndices.begin()+priorCameras, cameraIndices.end(), cameras.size());
+			std::move(parsedCameras.begin()+priorCameras, parsedCameras.end(), std::back_inserter(cameras));
 		}
 		else
 		{ // Check match with any prior cameras (for segmented/appended recordings)
-			for (int c = 0; c < parsedCameras.size(); c++)
+			for (int c = priorCameras; c < parsedCameras.size(); c++)
 			{
-				// Try to match with existing camera
 				for (int cc = 0; cc < cameras.size(); cc++)
-					if (cameras[cc].ID == parsedCameras[c].ID)
-						cameraIndices[c] = cc;
+				{ // Try to match with existing camera
+					if (cameras[cc].ID != parsedCameras[c].ID) continue;
+					cameraIndices[c] = cc;
+					break;
+				}
 				if (cameraIndices[c] < 0)
 				{ // Add as new camera
 					cameraIndices[c] = cameras.size();
@@ -1084,7 +1091,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 			frame->time = startT + std::chrono::microseconds(jsFrame["dt"].get<int64_t>());
 			frame->timeUTC = convertClockWithRef(frame->time, ref_now);
 			frame->cameras.resize(cameras.size());
-			if (jsCameras.size() > parsedCameras.size())
+			if (jsCameras.size() > cameraIndices.size())
 				return asprintf_s("Invalid recording file '%s' - frame with more cameras!", path.c_str());
 
 			for (int c = 0; c < jsCameras.size(); c++)

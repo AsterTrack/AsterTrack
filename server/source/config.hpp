@@ -253,7 +253,7 @@ HANDLE_ERROR storeTrackerConfigurations(const std::string &folder, std::vector<T
 
 HANDLE_ERROR parseTrackerConfigurationsLegacy(const std::string &path, std::vector<TrackerConfig> &trackerConfig);
 
-HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, TrackingRecord &record, std::size_t &frameOffset, bool separate);
+HANDLE_ERROR parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, std::vector<int> &cameraIndices, TrackingRecord &record, std::size_t &frameOffset, bool separate);
 HANDLE_ERROR saveRecording(const std::string &path, const std::vector<CameraConfigRecord> &cameras, const TrackingRecord &record, std::size_t begin, std::size_t end);
 
 HANDLE_ERROR parseTrackingResults(std::string &path, TrackingRecord &record, std::size_t frameOffset);

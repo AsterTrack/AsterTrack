@@ -1234,6 +1234,28 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 					imu->samplesFused.delete_culled();
 				}
 			}
+			else if (state.recording.recordings.size() > 1)
+			{ // Check if on transition from one replay to another
+				for (int i = 1; i < state.recording.recordings.size(); i++)
+				{
+					auto &recording = state.recording.recordings[i];
+					if (recording.frameStart > frame) break;
+					if (recording.frameStart < frame) continue;
+					// Frame is indeed start of a recording, interrupt and restart tracking
+					// Ensures tracking results are deterministic whether recording is loaded individually or appended
+					// NOTE: KEEP IN LINE WITH StartStreaming!
+					state.isStreaming = false;
+					for (auto &tracker : state.trackerConfigs)
+						ServerUpdateTrackerConditions(state, tracker, true);
+					InitPipelineStreaming(state.pipeline);
+					state.isStreaming = true;
+					for (auto &tracker : state.trackerConfigs)
+						ServerUpdateTrackerConditions(state, tracker, true);
+					auto &lastRec = state.recording.recordings[i-1];
+					LOG(LSimulation, LDebug, "Transitioned from recording %d '%s' to %d '%s'!",
+						lastRec.number, lastRec.label.c_str(), recording.number, recording.label.c_str());
+				}
+			}
 
 			auto framesStored = state.stored.frames.getView();
 			if (frame < framesStored.endIndex() && framesStored[frame])
@@ -1520,12 +1542,12 @@ bool StartStreaming(ServerState &state)
 	// NOTE: Also edit clearing records in EVT_START_STREAMING
 	ResetPipelineData(state.pipeline);
 
-	// Initialise state
+	// Initialise state - NOTE: KEEP IN LINE WITH Replay transition between captures!
 	InitPipelineStreaming(state.pipeline);
 	state.isStreaming = true;
 	state.lastStreamingStart = sclock::now();
 
-	// Setup trackers
+	// Setup trackers - NOTE: KEEP IN LINE WITH Replay transition between captures!
 	for (auto &tracker : state.trackerConfigs)
 	{ // Check initial trigger conditions of trackers
 		ServerUpdateTrackerConditions(state, tracker, true);

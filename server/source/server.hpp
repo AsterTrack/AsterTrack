@@ -24,7 +24,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/streaming.hpp" // Streaming blob data in
 #include "comm/wireless_server.hpp"
 #include "imu/device.hpp"
-#include "recording.hpp"
 #include "io/integrations.hpp"
 
 #include <thread>
@@ -118,9 +117,16 @@ struct ServerState
 	bool keepUnmatchedObservations = true;
 	// Loaded records for replay
 	struct {
+		// This may contain info about multiple appended recordings
+		// And each recording may be split into multiple segments (capture+tracking)
+		// The following lists have an entry for each segment
 		std::vector<std::string> captures;
 		std::vector<std::string> tracking;
-		std::vector<RecordingSegment> segments;
+		struct Segment { FrameNum frameStart, frameCount, frameOffset; };
+		std::vector<Segment> segments;
+		// This list has an entry for each appended recording
+		struct Recording { int number; std::string label; FrameNum frameStart, frameCount; std::vector<int> cameras; };
+		std::vector<Recording> recordings;
 		FrameNum frames = 0;
 		TimePoint_t replayTime;
 	} recording = {};

@@ -135,6 +135,8 @@ struct ServerState
 	std::vector<TrackerCompareRecord> compareTrackers;
 	// Recordings part of a test set to verify tracking results
 	std::vector<int> recordingTestSet;
+	// Copy detections of trackers from stored records (to replace slow detection attempts)
+	bool simCopyDetectionsFromStored = false, simCopyAlsoFromTracked = true, simCopyLimitedReinstatement = true;
 
 	// IMU Device integration
 	std::mutex hid_access;

@@ -160,6 +160,35 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		bool showDebug = ImGui::CollapsingHeader("Debug / Tooling");
 
 		if (showDebug)
+		{
+			ImGui::AlignTextToFramePadding();
+			ImGui::Text("Detection");
+			ImGui::SameLine();
+			ImGui::Checkbox("Copy", &state.simCopyDetectionsFromStored);
+			ImGui::SetItemTooltip("Disables actual detection routines and instead copies detection from stored tracking results.\n"
+				"This may significantly speed up testing if detection is assumed to behave the same.\n"
+				"NOTE: Interpret the results carefully, whether only copying detections or also tracked.");
+			ImGui::SameLine();
+			ImGui::BeginDisabled(!state.simCopyDetectionsFromStored);
+			ImGui::Checkbox("Tracked", &state.simCopyAlsoFromTracked);
+			ImGui::SetItemTooltip("Don't just copy detections, but also reinstate from a tracked state in stored recorss\n."
+				"NOTE: This may not result in a stable track itself as filter is not initialised!\n"
+				"Use filtering tools when interpreting tracking results.");
+			ImGui::SameLine();
+			ImGui::BeginDisabled(!state.simCopyAlsoFromTracked);
+			ImGui::Checkbox("Limited", &state.simCopyLimitedReinstatement);
+			ImGui::SetItemTooltip("Limit copying from tracked records to once per stored detection.\n"
+				"So it must have performed better and thus skipped the detection to be allowed to be reinstated.");
+			ImGui::EndDisabled();
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.simCopyDetectionsFromStored;
+			ImGui::BeginDisabled(state.pipeline.params.detect.suspendDetections);
+			ImGui::Checkbox("Async", &state.pipeline.params.detect.useAsyncDetection);
+			ImGui::EndDisabled();
+		}
+
+		if (showDebug)
 		{ // Show controls for simulating dropouts
 			ImGui::BeginDisabled(state.simDropoutIndex >= 0);
 			if (ImGui::Button("Frame Drop", SizeWidthDiv3()))

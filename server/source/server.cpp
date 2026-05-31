@@ -1157,6 +1157,57 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 
 	SetCurrentThreadName("Simulation/Replay Thread");
 
+	auto copyDetectionFromStoredRecord = [&state, &pipeline](const std::shared_ptr<FrameRecord> &frameStored, std::shared_ptr<FrameRecord> &frameRecord)
+	{
+		auto hasTracker = [](const std::shared_ptr<FrameRecord> &frame, auto predicate)
+		{
+			return frame && std::find_if(frame->trackers.begin(), frame->trackers.end(), predicate) != frame->trackers.end();
+		};
+		for (const TrackerRecord &trackerRecord : frameStored->trackers)
+		{
+			if (!trackerRecord.result.isDetected() && !(state.simCopyAlsoFromTracked && trackerRecord.result.isTracked())) continue;
+			auto existing = std::find_if(frameRecord->trackers.begin(), frameRecord->trackers.end(),
+				[&](const auto &t){ return t.id == trackerRecord.id; });
+			if (existing != frameRecord->trackers.end()) continue;
+			if (state.simCopyLimitedReinstatement && trackerRecord.result.isTracked())
+			{ // Must've just lost tracking, or denied reinstation before
+				auto framesRecord = pipeline.record.frames.getView();
+				if (!hasTracker(framesRecord[frameRecord->num-1], [&](auto &t){ return t.id == trackerRecord.id && t.result.hasFlag(TrackingResult::REMOVED); }))
+					continue;
+				// Just lost the tracker, but was still tracking in stored records
+				// Check if tracker was still tracking from before last detection in stored frames
+				auto framesStored = state.stored.frames.getView();
+				bool reinstate = false;
+				for (int f = frameRecord->num-1; f > 0; f--)
+				{
+					if (hasTracker(framesRecord[f], [&](auto &t){ return t.id == trackerRecord.id && t.result.isDetected(); }))
+						break; // Tracker allready got reinstate with or after stored detection
+					if (hasTracker(framesStored[f], [&](auto &t){ return t.id == trackerRecord.id && t.result.isDetected(); }))
+					{ // Found stored detection first, so can reinstate
+						reinstate = true;
+						break;
+					}
+				}
+				if (!reinstate) continue;
+			}
+			// Copy detection record - if copied from tracking, clearly denote it as such to allow filtering
+			TrackerRecord detectRecord = trackerRecord;
+			if (!trackerRecord.result.isDetected())
+				detectRecord.result = TrackingResult::COPIED_DETECTION;
+			frameRecord->trackers.push_back(std::move(detectRecord));			
+			// Switch from dormant to tracked target (if not already tracked)
+			auto dormantTarget = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
+				[&](const auto &d){ return d.id == trackerRecord.id; });
+			if (dormantTarget != pipeline.tracking.dormantTargets.end())
+			{
+				pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantTarget), trackerRecord.pose.observed, frameRecord->time, frameRecord->num, pipeline.params.track);
+				pipeline.tracking.dormantTargets.erase(dormantTarget);
+			}
+			// Probably no need to do the same for TrackedMarker
+			SignalTrackerDetected(trackerRecord.id);
+		}
+	};
+
 	while (!stop_token.stop_requested())
 	{
 		if (!state.isStreaming)
@@ -1380,7 +1431,18 @@ static void SimulationThread(std::stop_token stop_token, ServerState *statePtr)
 			IntegrationsUpdate(state.io, state);
 			IntegrationsReceive(state.io, state);
 
+			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.simCopyDetectionsFromStored;
+
 			ProcessFrame(pipeline, frameRecord); // new shared_ptr
+
+			if (state.mode == MODE_Replay && state.simCopyDetectionsFromStored)
+			{
+				auto framesStored = state.stored.frames.getView();
+				if (frameRecord->num < framesStored.size() && framesStored[frameRecord->num])
+				{
+					copyDetectionFromStoredRecord(framesStored[frameRecord->num], frameRecord);
+				}
+			}
 
 			IntegrationsSendFrame(state.io, state, frameRecord);
 
@@ -1506,10 +1568,11 @@ void StopReplay(ServerState &state)
 		tracker.imu = nullptr;
 
 	// Reset replay
+	state.recording = {};
 	state.stored.frames.cull_clear();
 	state.stored.imus.clear();
-	state.recording = {};
 	state.stored.frames.delete_culled();
+	state.pipeline.params.detect.suspendDetections = false;
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
 	SignalServerEvent(EVT_UPDATE_CAMERAS);

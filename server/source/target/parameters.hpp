@@ -155,6 +155,7 @@ struct TargetDetectionConfig
 
 struct TargetDetectionParameters
 {
+	bool suspendDetections = false;
 	bool useAsyncDetection = true;
 	int maxParallelism = 8;
 	struct

@@ -919,7 +919,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	det0 = pclock::now();
 
-	if (trackTargets && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount)
+	if (trackTargets && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount && !detect.suspendDetections)
 	{ // Target detection in 3D point cloud
 
 		auto dormantIt = pipeline.tracking.dormantTargets.begin();
@@ -1061,7 +1061,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		trackedClusters3D.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.1f);
 	}
 
-	if (trackTargets && !pipeline.tracking.asyncDetection && (!clusters2DTri.empty() || detect.search.allowSingleCamera))
+	if (trackTargets && !pipeline.tracking.asyncDetection && (!clusters2DTri.empty() || detect.search.allowSingleCamera) && !detect.suspendDetections)
 	{
 		// Select target, cluster, and detection method
 		int opt, focusPoints, focusCamera;
@@ -1179,7 +1179,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					dormant.target.match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
 						dormant.target.calib, calibs, points2D, properties, detectionPoints2DSync,
 						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
-					
 				}
 				float procTimeMS = dtMS(start, sclock::now());
 				if (dormant.target.match2D.error.samples < pipeline.params.detect.minObservations.total

@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 extern ctpl::thread_pool threadPool;
 
 #include <numeric>
+#include <set>
 
 static void ShowTrackingResults();
 
@@ -704,6 +705,48 @@ static void ShowTrackingResults()
 		}
 	};
 
+	// Filter implementation
+	static bool filterBadDetections = true;
+	static int filterMinStableTrack = 10;
+	std::set<int> filterTrackerCurrent, filterTrackerStored;
+	auto filterTrackerOccurences = [](const auto &framesRecord, int detect, int end, const TrackerRecord &trackRecord, std::set<int> &ignoreTracker)
+	{
+		auto lookAheadForStableTrack = [&]()
+		{
+			int trackedFor = 0;
+			for (FrameNum f = detect+1; f < end; f++)
+			{
+				if (!framesRecord[f] || !framesRecord[f]->finishedProcessing) continue;
+				bool tracked = false;
+				for (auto &futureRecord : framesRecord[f]->trackers)
+				{
+					if (futureRecord.id != trackRecord.id) continue;
+					//tracked = futureRecord.result.isTracked();
+					tracked = !futureRecord.result.hasFlag(TrackingResult::REMOVED);
+					break;
+				}
+				if (!tracked) return false;
+				if (trackedFor++ >= filterMinStableTrack) return true;
+			}
+			return false;
+		};
+		if (ignoreTracker.contains(trackRecord.id))
+		{ // Filter tracker until it is removed again 
+			if (trackRecord.result.hasFlag(TrackingResult::REMOVED))
+				ignoreTracker.erase(trackRecord.id);
+			return false;
+		}
+		if (filterBadDetections && trackRecord.result.isDetected())
+		{ // Look ahead to ensure the detection actually resulted in stable tracking
+			if (!lookAheadForStableTrack())
+			{
+				ignoreTracker.insert(trackRecord.id);
+				return false;
+			}
+		}
+		return true;
+	};
+
 	// Events implementation
 	struct { uint32_t losses, search2D, detect2D, detect3D, tracked; } eventsStored, eventsCurrent;
 	auto handleTrackerEvents = [](const TrackerRecord &trackRecord, auto &events)
@@ -737,6 +780,7 @@ static void ShowTrackingResults()
 			for (auto &trackRecord : framesRecord[f]->trackers)
 			{
 				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
+				if (!filterTrackerOccurences(framesRecord, f+1, end, trackRecord, filterTrackerCurrent)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsCurrent)) continue;
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesCurrent = trackRecord.error.samples;
@@ -747,6 +791,7 @@ static void ShowTrackingResults()
 			for (auto &trackRecord : framesStored[f]->trackers)
 			{
 				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
+				if (!filterTrackerOccurences(framesStored, f+1, end, trackRecord, filterTrackerStored)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsStored)) continue;
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesLoaded = trackRecord.error.samples;
@@ -842,6 +887,17 @@ static void ShowTrackingResults()
 		ImGui::SliderFloat("##ratio", &trimRatio, 0, 0.1);
 		ImGui::EndDisabled();
 		ImGui::EndGroup();
+
+		ImGui::Checkbox("Filter Bad Detections", &filterBadDetections);
+		ImGui::SetItemTooltip("Some detections might fail to regain a stable tracking state.\n"
+			"Especially when tracking is copied from tracked records, this makes interpreting results difficult.\n"
+			"This option filters those out to a) prevent unfair new tracking losses and\n"
+			"b) prevent unfair added tracking samples that would not actually manifest");
+		ImGui::BeginDisabled(!filterBadDetections);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(LineWidthRemaining());
+		ImGui::InputInt("##length", &filterMinStableTrack);
+		ImGui::EndDisabled();
 
 		ImGui::TreePop();
 	}

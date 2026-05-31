@@ -347,6 +347,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 	// Verify pose candidates with other points of focus camera, then with other cameras
 	TargetMatch2D bestMatch = {};
 	bestMatch.error.mean = std::numeric_limits<float>::max();
+	bestMatch.error.samples = 1; // Prevent NAN later
 	TargetMatchingData matchData = {};
 	TargetTracking2DData trackData = {};
 	trackData.init(cameraCount);

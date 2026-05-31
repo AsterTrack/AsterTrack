@@ -289,8 +289,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	{
 		auto &trkVis = visState.tracking;
 		int camera = view.camera->pipeline->index;
-		if (trkVis.debugFocusStage > 0)
-		{
+		if (trkVis.debugFocusStage > 0 && trkVis.debug.internalData.matching.size() > camera)
+		{ // Camera may not be involved if it was added after this frame (e.g. from future appended replay)
 			auto &matchingData = trkVis.debug.internalData.matching.at(camera);
 			if (trkVis.debugFocusStage-1 < matchingData.numStages
 				&& matchingData.stages[trkVis.debugFocusStage-1].identifier >= 0)
@@ -1624,7 +1624,9 @@ static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &cam
 	visCamera.calibration.precalculated = true;
 }
 
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(__GNUC__) || defined(__clang_version__)
 #pragma GCC pop_options
+#endif
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera)
 { // Adapt requested image to zoomed view

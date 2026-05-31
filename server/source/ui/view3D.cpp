@@ -424,8 +424,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	if (visState.showMarkerRays && visFrame)
 	{
 		auto &frame = *visFrame.frameIt->get();
-		for (auto &camera : pipeline.cameras)
-			visualiseRays(camera->calib, frame.cameras[camera->index].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
+		for (int c = 0; c < frame.cameras.size(); c++)
+			visualiseRays(pipeline.cameras[c]->calib, frame.cameras[c].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
 	}
 
 	if (visState.show3DClusters && visFrame && visFrame.isRealtimeFrame)

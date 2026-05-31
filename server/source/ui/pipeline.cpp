@@ -309,12 +309,16 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			&& BeginCollapsingRegion("Target Tracking Debug"))
 		{
 			auto &debugVis = visState.tracking.debug;
+			// Might be less than pipeline cameras if more cameras where added in a future frame
+			// E.g. appended replays may add pipeline cameras but don't need to modify past records
+			// Device mode may do the same when hardware is added, but this is ofc not relevant here
+			int cameraCount = frameRecord.cameras.size();
 
-			std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
-			std::vector<std::vector<BlobProperty> const *> properties(pipeline.cameras.size());
-			std::vector<std::vector<int>> remainingPoints2D(pipeline.cameras.size());
-			std::vector<std::vector<int> const *> relevantPoints2D(pipeline.cameras.size());
-			for (int c = 0; c < pipeline.cameras.size(); c++)
+			std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameraCount);
+			std::vector<std::vector<BlobProperty> const *> properties(cameraCount);
+			std::vector<std::vector<int>> remainingPoints2D(cameraCount);
+			std::vector<std::vector<int> const *> relevantPoints2D(cameraCount);
+			for (int c = 0; c < cameraCount; c++)
 			{
 				points2D[c] = &frameRecord.cameras[c].points2D;
 				properties[c] = &frameRecord.cameras[c].properties;
@@ -333,10 +337,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				debugVis.needsUpdate = false;
 				debugVis.showInitial = trackRecord->match2D->error.samples > 0 && trackRecord->result.isProbe();
 				debugVis.initialMatch2D = *trackRecord->match2D;
-				debugVis.internalData.init(pipeline.cameras.size());
+				debugVis.internalData.init(cameraCount);
+				auto calibs = pipeline.getCalibs();
+				calibs.resize(cameraCount);
 				debugVis.targetMatch2D = trackTarget2D(trackConfig->calib,
 					trackRecord->ext->predicted, trackRecord->ext->predictedCov,
-					pipeline.getCalibs(), pipeline.cameras.size(),
+					calibs, cameraCount,
 					points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
 				debugVis.trackerID = visState.tracking.focusedTrackerID;
@@ -625,6 +631,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			{
 				if (!frameRecord) continue;
 				if (framesStored.size() <= frameRecord->num) break;
+				framesStored[frameRecord->num]->finishedProcessing = frameRecord->finishedProcessing;
 				framesStored[frameRecord->num]->trackers = frameRecord->trackers;
 				framesStored[frameRecord->num]->triangulations = frameRecord->triangulations;
 			}

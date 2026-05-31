@@ -667,6 +667,7 @@ static void ShowTrackingResults()
 	};
 	static std::map<int, TrackingSamples> trackers;
 	static uint32_t coveredFrames; // All following code relies on frame number
+	static bool ignoreVirtualTrackers = true;
 
 	// Trim implementation
 	static bool trimTrackers = true;
@@ -779,6 +780,7 @@ static void ShowTrackingResults()
 			eventsCurrent = {};
 			for (auto &trackRecord : framesRecord[f]->trackers)
 			{
+				if (ignoreVirtualTrackers && trackers[trackRecord.id].type == TrackerConfig::TRACKER_VIRTUAL) continue;
 				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
 				if (!filterTrackerOccurences(framesRecord, f+1, end, trackRecord, filterTrackerCurrent)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsCurrent)) continue;
@@ -790,6 +792,7 @@ static void ShowTrackingResults()
 			}
 			for (auto &trackRecord : framesStored[f]->trackers)
 			{
+				if (ignoreVirtualTrackers && trackers[trackRecord.id].type == TrackerConfig::TRACKER_VIRTUAL) continue;
 				if (trimTrackers && !trackerObservations.contains(trackRecord.id)) continue;
 				if (!filterTrackerOccurences(framesStored, f+1, end, trackRecord, filterTrackerStored)) continue;
 				if (!handleTrackerEvents(trackRecord, eventsStored)) continue;
@@ -850,6 +853,10 @@ static void ShowTrackingResults()
 		trackers.clear();
 		coveredFrames = 0;
 
+		// Initially add trackers with label and type
+		for (auto &tracker: state.trackerConfigs)
+			trackers[tracker.id] = { tracker.label, tracker.type };
+
 		auto framesRecord = pipeline.record.frames.getView<true>();
 		auto framesStored = state.stored.frames.getView<true>();
 
@@ -863,17 +870,8 @@ static void ShowTrackingResults()
 			gatherTrackingSamples(framesRecord, framesStored, recording.frameStart, end);
 		}
 
-
-		// Add proper label and type in post
-		for (auto &tracker: state.trackerConfigs)
-		{
-			auto it = trackers.find(tracker.id);
-			if (it != trackers.end())
-			{
-				it->second.label = tracker.label;
-				it->second.type = tracker.type;
-			}
-		}
+		// Filter out any trackers without data
+		std::erase_if(trackers, [](auto &tracker){ return tracker.second.tracked.loaded == 0 && tracker.second.tracked.current == 0; });
 	}
 
 	ImGui::AlignTextToFramePadding();
@@ -898,6 +896,8 @@ static void ShowTrackingResults()
 		ImGui::SetNextItemWidth(LineWidthRemaining());
 		ImGui::InputInt("##length", &filterMinStableTrack);
 		ImGui::EndDisabled();
+
+		ImGui::Checkbox("Ignore Virtual Trackers", &ignoreVirtualTrackers);
 
 		ImGui::TreePop();
 	}

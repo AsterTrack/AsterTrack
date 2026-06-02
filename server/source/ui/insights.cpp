@@ -690,6 +690,7 @@ static bool ShowTrackingPanel()
 	static std::string curTrackerLabel = "Combined";
 	static bool curTrackerVirt = false;
 	static bool combinedResults = true;
+	static bool stateDifferences = false;
 	static bool combinedHideProbes = true;
 	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID && curTrackerID >= 0)
 	{ // External change
@@ -808,6 +809,8 @@ static bool ShowTrackingPanel()
 		{
 			ImGui::SameLine();
 			ImGui::Checkbox("Recorded", &showRec);
+			ImGui::SameLine();
+			ImGui::Checkbox("State Diff", &stateDifferences);
 		}
 		if (state.mode == MODE_Replay && combinedResults)
 		{
@@ -910,14 +913,18 @@ static bool ShowTrackingPanel()
 	struct TrackerRecordState
 	{
 		int frames;
-		std::vector<TrackingResult> state;
+		std::vector<TrackingResult> stateCur, stateAlt;
 		std::vector<float> stateVis;
 
-		void setup(FrameNum size)
-		{
+		void setup(OptFrameNum sizeCur, OptFrameNum sizeAlt)
+		{ // Either may be < 0, in which case it is not used
 			frames = 0;
-			state.clear();
-			state.resize(size, NAN);
+			stateCur.clear();
+			if (sizeCur > 0)
+				stateCur.resize(sizeCur, TrackingResult::NONE);
+			stateAlt.clear();
+			if (sizeAlt > 0)
+				stateAlt.resize(sizeAlt, TrackingResult::NONE);
 		}
 	};
 	static TrackerRecordGraph tracking = {}, recording = {};
@@ -965,6 +972,36 @@ static bool ShowTrackingPanel()
 			 	stateVis[i] = NAN;
 		}
 	};
+	auto diffTrackerState = [](std::vector<float> &stateVis, const std::vector<TrackingResult> &stateCur, const std::vector<TrackingResult> &stateAlt)
+	{
+		int maxDiff = std::min(stateCur.size(), stateAlt.size());
+		stateVis.clear();
+		stateVis.resize(maxDiff, NAN);
+		for (int i = 0; i < maxDiff; i++)
+		{
+			TrackingResult cur = stateCur[i];
+			TrackingResult alt = stateAlt[i];
+			// Indices into ImPlotColormap_Dark:
+			if (cur.hasFlag(TrackingResult::REMOVED) && !alt.hasFlag(TrackingResult::REMOVED))
+				stateVis[i] = 0; // Red
+			else if (!(cur.isTracked() || cur.isDetected()) && alt.isDetected())
+				stateVis[i] = 5; // Yellow
+			else if ( (cur.isTracked() || cur.isDetected()) && !cur.hasFlag(TrackingResult::REMOVED) && alt.hasFlag(TrackingResult::REMOVED))
+				stateVis[i] = 1; // Blue
+			else if ( cur.isTracked() && !alt.isTracked())
+				stateVis[i] = 2; // Green
+			else if (cur.isDetected() && !(alt.isDetected() || alt.isTracked()))
+				stateVis[i] = 7; // Bright Rose
+			else if (cur.isDetected() && alt.isTracked())
+				stateVis[i] = 3; // Purple
+			else if (cur.isFailure() && alt.isTracked())
+				stateVis[i] = 4; // Orange
+			else if (!cur.isTracked() && alt.isTracked())
+				stateVis[i] = 6; // Brown
+			else // No meaningful difference
+				stateVis[i] = NAN;
+		}
+	};
 	auto updateFrameStats = [mistrustScale](auto &stats, FrameNum index, FrameRecord &frame, int trackerID)
 	{
 		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == trackerID; });
@@ -1005,7 +1042,9 @@ static bool ShowTrackingPanel()
 				trackerNum++;
 			}
 			if (isCurrent)
-				tracker->second.state[index] = trackRecord.result;
+				tracker->second.stateCur[index] = trackRecord.result;
+			else
+				tracker->second.stateAlt[index] = trackRecord.result;
 			if (!combinedHideProbes || !trackRecord.result.isProbe())
 				tracker->second.frames++;
 		}
@@ -1049,18 +1088,27 @@ static bool ShowTrackingPanel()
 	else
 	{
 		OptFrameNum curLen = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex()) - frameRange.Min;
+		OptFrameNum altLen = std::min<OptFrameNum>(frameRange.Max, framesStored.endIndex()) - frameRange.Min;
 		if (combinedResults)
 			for (auto &tracker : combinedTrackers)
-				tracker.second.setup(curLen);
+				tracker.second.setup(curLen, altLen);
 
 		if (showCur && !framesRecord.empty())
 			drawCur = gatherTrackingData(tracking, framesRecord, curTrackerID, true);
 		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
 			drawRec = gatherTrackingData(recording, framesStored, curTrackerID, false);
 
-		if (combinedResults)
+		if (combinedResults && stateDifferences)
 			for (auto &tracker : combinedTrackers)
-				copyTrackerState(tracker.second.stateVis, tracker.second.state);
+				diffTrackerState(tracker.second.stateVis, tracker.second.stateCur, tracker.second.stateAlt);
+		else if (combinedResults)
+			for (auto &tracker : combinedTrackers)
+				copyTrackerState(tracker.second.stateVis, tracker.second.stateCur);
+		else if (stateDifferences)
+		{
+			diffTrackerState(tracking.stateVis, tracking.state, recording.state);
+			recording.stateVis.clear();
+		}
 		else
 		{
 			copyTrackerState(tracking.stateVis, tracking.state);
@@ -1185,9 +1233,9 @@ static bool ShowTrackingPanel()
 	}
 	else
 	{ // Show states of current and compared trackers
-		if (drawRec)
+		if (drawRec && !recording.stateVis.empty())
 			ImPlot::PlotDigital("##TrackingRec", recording.stateVis.data(), recording.stateVis.size(), frameRange.Min-0.5f);
-		if (drawCur)
+		if (drawCur && !tracking.stateVis.empty())
 			ImPlot::PlotDigital("##Tracking", tracking.stateVis.data(), tracking.stateVis.size(), frameRange.Min-0.5f);
 	}
 	ImPlot::PopColormap();

@@ -809,7 +809,7 @@ static bool ShowTrackingPanel()
 		frameRange.Min += offset;
 		frameRange.Max += offset;
 	}
-	double framesAxisMax = std::max((double)std::max(framesRecord.endIndex(), framesStored.size()), frameRange.Max);
+	double framesAxisMax = std::max((double)std::max(framesRecord.endIndex(), framesStored.endIndex()), frameRange.Max);
 
 	// Setup plots
 	ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
@@ -847,37 +847,66 @@ static bool ShowTrackingPanel()
 	// Update frameRange from inputs
 	ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
 	frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
+	frameRange.Min -= 1;
+	frameRange.Max += 1;
 	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
 
-	struct TrackerRecordGraph {
+	struct TrackerRecordGraph
+	{
 		std::vector<int> dataNum;
 		std::vector<float> errors;
 		std::vector<float> dataTimeRot;
-		std::vector<float> tracking;
 		std::vector<float> mistrust;
+		std::vector<TrackingResult> state;
+		std::vector<float> stateVis;
 
 		void setup(FrameNum size)
 		{
 			dataNum.clear();
-			errors.clear();
-			dataTimeRot.clear();
-			tracking.clear();
-			mistrust.clear();
 			dataNum.resize(size, 0);
+			errors.clear();
 			errors.resize(size, NAN);
+			dataTimeRot.clear();
 			dataTimeRot.resize(size, NAN);
-			tracking.resize(size, NAN);
+			mistrust.clear();
 			mistrust.resize(size, NAN);
+			state.clear();
+			state.resize(size, TrackingResult::NONE);
 		}
 	};
 	static TrackerRecordGraph tracking = {}, recording = {};
-	static std::vector<float> imuSampleTime, imuSampleRate;
+	static std::vector<float> imuSampleTime = {}, imuSampleRate = {};
 
-	double frameShift = 0.0f, frameShiftRec = 0.0f;
 	bool drawCur = false, drawRec = false;
 
 	float mistrustScale = ImPlot::GetPlotLimits(IMPLOT_AUTO, ImAxis_Y2).Y.Max / pipeline.params.track.mistrust.maxMistrust;
 
+	auto copyTrackerState = [](std::vector<float> &stateVis, const std::vector<TrackingResult> &state)
+	{
+		stateVis.clear();
+		stateVis.resize(state.size(), NAN);
+		for (int i = 0; i < state.size(); i++)
+		{
+			TrackingResult result = state[i];
+			// Indices into ImPlotColormap_Dark:
+			if (result.hasFlag(TrackingResult::REMOVED))
+				stateVis[i] = 0; // Red // May have been technically tracked but mistrusted for other reasons
+			else if (result.isTracked() && result.hasFlag(TrackingResult::CATCHING_UP))
+				stateVis[i] = 1; // Blue
+			else if (result.isTracked() && result.hasFlag(TrackingResult::VIRT_MISTRUST))
+				stateVis[i] = 4; // Orange
+			else if (result.isTracked())
+				stateVis[i] = 2; // Green
+			else if (result.isProbe())
+				stateVis[i] = 3; // Purple
+			else if (result.isFailure())
+				stateVis[i] = 4; // Orange
+			else if (result.isDetected())
+				stateVis[i] = 7; // Bright Rose
+			else // Should not happen
+			 	stateVis[i] = NAN;
+		}
+	};
 	auto updateFrameStats = [mistrustScale](auto &stats, FrameNum index, FrameRecord &frame, int trackerID)
 	{
 		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == trackerID; });
@@ -897,39 +926,22 @@ static bool ShowTrackingPanel()
 			stats.dataTimeRot[index] = trackRecord->procTimeMS;
 			stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
 		}
-
-		// Indices into ImPlotColormap_Dark:
-		if (trackRecord->result.isFailure() && trackRecord->result.hasFlag(TrackingResult::REMOVED))
-			stats.tracking[index] = 0;
-		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::CATCHING_UP))
-			stats.tracking[index] = 1;
-		else if (trackRecord->result.isTracked() && trackRecord->result.hasFlag(TrackingResult::VIRT_MISTRUST))
-			stats.tracking[index] = 4;
-		else if (trackRecord->result.isTracked())
-			stats.tracking[index] = 2;
-		else if (trackRecord->result.isProbe())
-			stats.tracking[index] = 3;
-		else if (trackRecord->result.isFailure() && !trackRecord->result.hasFlag(TrackingResult::REMOVED))
-			stats.tracking[index] = 4;
-		else if (trackRecord->result.isDetected())
-			stats.tracking[index] = 7;
+		stats.state[index] = trackRecord->result;
 	};
-	auto gatherTrackingData = [&updateFrameStats](TrackerRecordGraph &stats, const auto framesRecord, double &frameShift, int trackerID)
+	auto gatherTrackingData = [&updateFrameStats](TrackerRecordGraph &stats, const auto framesRecord, int trackerID)
 	{
-		OptFrameNum min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
-		OptFrameNum max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
-		if (max < min) return false;
-		FrameNum frameCnt = max-min+1;
-		stats.setup(frameCnt);
-		auto frameIt = framesRecord.pos(max);
-		for (int i = 0; i < frameCnt; i++, frameIt--)
+		OptFrameNum min = std::max<OptFrameNum>(frameRange.Min, framesRecord.beginIndex());
+		OptFrameNum max = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex());
+		if (max <= min) return false;
+		stats.setup(max - frameRange.Min);
+		auto frameIt = framesRecord.pos(max-1);
+		for (int f = max-1; f >= min; f--, frameIt--)
 		{
 			if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
-			updateFrameStats(stats, frameCnt-i-1, *frameIt->get(), trackerID);
+			updateFrameStats(stats, f - frameRange.Min, *frameIt->get(), trackerID);
 		}
-		frameShift = (double)min;
 		GetUI().RequestUpdates();
-		return frameCnt > 0;
+		return true;
 	};
 
 	bool hasIMU = false;
@@ -938,20 +950,23 @@ static bool ShowTrackingPanel()
 		if (compIndexA >= 0)
 		{
 			auto &comp = state.compareTrackers[compIndexA];
-			drawCur = gatherTrackingData(tracking, comp.frames.getView(), frameShift, comp.trackerID);
+			drawCur = gatherTrackingData(tracking, comp.frames.getView(), comp.trackerID);
 		}
 		if (compIndexB >= 0)
 		{
 			auto &comp = state.compareTrackers[compIndexB];
-			drawRec = gatherTrackingData(recording, comp.frames.getView(), frameShiftRec, comp.trackerID);
+			drawRec = gatherTrackingData(recording, comp.frames.getView(), comp.trackerID);
 		}
 	}
 	else
 	{
 		if (showCur && !framesRecord.empty())
-			drawCur = gatherTrackingData(tracking, framesRecord, frameShift, curTrackerID);
+			drawCur = gatherTrackingData(tracking, framesRecord, curTrackerID);
 		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
-			drawRec = gatherTrackingData(recording, framesStored, frameShiftRec, curTrackerID);
+			drawRec = gatherTrackingData(recording, framesStored, curTrackerID);
+
+		copyTrackerState(tracking.stateVis, tracking.state);
+		copyTrackerState(recording.stateVis, recording.state);
 
 		auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 			[&](auto &t){ return t.id == curTrackerID; });
@@ -960,8 +975,8 @@ static bool ShowTrackingPanel()
 		{ // Show individual IMU samples at their timestamp, with Y showing deltaT to last sample (hopefully building a smooth line)
 			imuSampleTime.clear();
 			imuSampleRate.clear();
-			OptFrameNum min = std::max<OptFrameNum>(frameRange.Min-1, framesRecord.beginIndex());
-			OptFrameNum max = std::min<OptFrameNum>(frameRange.Max+1, framesRecord.endIndex()-1);
+			OptFrameNum min = std::max<OptFrameNum>(frameRange.Min, framesRecord.beginIndex());
+			OptFrameNum max = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex()-1);
 			auto getIMUSamples = [&](auto samples)
 			{
 				if (max <= min) return; // Need at least two frames to serve as an anchor
@@ -999,13 +1014,13 @@ static bool ShowTrackingPanel()
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
 		ImPlot::SetNextFillStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
-		ImPlot::PlotBars(y1Label, tracking.dataNum.data(), tracking.dataNum.size(), 0.67f, frameShift);
+		ImPlot::PlotBars(y1Label, tracking.dataNum.data(), tracking.dataNum.size(), 0.67f, frameRange.Min);
 	}
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
 		ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
-		ImPlot::PlotBars(y1Label, recording.dataNum.data(), recording.dataNum.size(), 0.67f, frameShiftRec);
+		ImPlot::PlotBars(y1Label, recording.dataNum.data(), recording.dataNum.size(), 0.67f, frameRange.Min);
 	}
 
 	ImPlot::SetAxis(ImAxis_Y2);
@@ -1013,12 +1028,12 @@ static bool ShowTrackingPanel()
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
-		ImPlot::PlotLine(y2Label, recording.errors.data(), recording.errors.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y2Label, recording.errors.data(), recording.errors.size(), 1, frameRange.Min);
 	}
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
-		ImPlot::PlotLine(y2Label, tracking.errors.data(), tracking.errors.size(), 1, frameShift);
+		ImPlot::PlotLine(y2Label, tracking.errors.data(), tracking.errors.size(), 1, frameRange.Min);
 	}
 
 	ImPlot::SetAxis(ImAxis_Y4);
@@ -1027,13 +1042,13 @@ static bool ShowTrackingPanel()
 	{ // Draw recorded
 		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
-		ImPlot::PlotLine(y4Label, recording.dataTimeRot.data(), recording.dataTimeRot.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y4Label, recording.dataTimeRot.data(), recording.dataTimeRot.size(), 1, frameRange.Min);
 	}
 	if (drawCur)
 	{ // Draw current
 		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
-		ImPlot::PlotLine(y4Label, tracking.dataTimeRot.data(), tracking.dataTimeRot.size(), 1, frameShift);
+		ImPlot::PlotLine(y4Label, tracking.dataTimeRot.data(), tracking.dataTimeRot.size(), 1, frameRange.Min);
 	}
 
 	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
@@ -1041,12 +1056,12 @@ static bool ShowTrackingPanel()
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
-		ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameShiftRec);
+		ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameRange.Min);
 	}
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(1.0, 0.2, 0.2, 1), 2.0);
-		ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameShift);
+		ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameRange.Min);
 	}
 
 	if (hasIMU)
@@ -1059,9 +1074,9 @@ static bool ShowTrackingPanel()
 	// Tracking state
 	ImPlot::PushColormap(ImPlotColormap_Dark);
 	if (drawRec)
-		ImPlot::PlotDigital("##TrackingRec", recording.tracking.data(), recording.tracking.size(), frameShiftRec-0.5f);
+		ImPlot::PlotDigital("##TrackingRec", recording.stateVis.data(), recording.stateVis.size(), frameRange.Min-0.5f);
 	if (drawCur)
-		ImPlot::PlotDigital("##Tracking", tracking.tracking.data(), tracking.tracking.size(), frameShift-0.5f);
+		ImPlot::PlotDigital("##Tracking", tracking.stateVis.data(), tracking.stateVis.size(), frameRange.Min-0.5f);
 	ImPlot::PopColormap();
 
 	// Current and selected frames

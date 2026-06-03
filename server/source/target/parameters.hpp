@@ -40,6 +40,12 @@ struct TargetMatchingParametersFast
 	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
 };
 
+static constexpr float getFalloffFactorSq(float radius, int power, float cutoff = 0.05f)
+{ // Factor to rescale a squared value for falloff computation
+	float falloffEnd = std::pow(1/cutoff-1, 1.0f/power);
+	return falloffEnd / (radius*radius);
+}
+
 struct TargetMatchingParametersSlow
 {
 	// Factors for final match filter value
@@ -54,13 +60,16 @@ struct TargetMatchingParametersSlow
 	// Calculation of difference in position
 	float differenceRadius = 15.0f*PixelSize;
 	int differenceFalloff = 2;
+	float differenceFalloffFactorSq = getFalloffFactorSq(differenceRadius, differenceFalloff);
 
 	// Influence of neighbouring markers on mismatch
 	float influenceRadius = 70.0f*PixelSize;
 	int influenceFalloff = 2;
+	float influenceFalloffFactorSq = getFalloffFactorSq(influenceRadius, influenceFalloff);
 	// Evaluating similarity of neighbouring matches for mismatch
 	float similarityRadius = 7.0f*PixelSize;
 	int similarityFalloff = 2;
+	float similarityFalloffFactorSq = getFalloffFactorSq(similarityRadius, similarityFalloff);
 	// Mismatch is roughly 1 / (similarity*influence)
 	float mismatchPower = 2.5f;
 
@@ -111,7 +120,7 @@ struct TargetFilteringParameters
 	// Partial Target Points Filter Update
 	struct {
 		float stdDev = 3.0f * PixelSize;
-		int obsLimit = 8;
+		int obsLimit = 7;
 		bool useUnscented = false;
 		bool useNumericJac = true;
 		double jacobianEpsilon = 0.000008;
@@ -228,7 +237,7 @@ struct TargetTrackingParameters
 	// Quality
 	struct {
 		int cameraGoodObs = 5;
-		float cameraGoodRatio = 0.5f;
+		float cameraGoodRatio = 0.7f;
 		int minImprovePoints = 2;
 		float minImproveFactor = 1.3f;
 		int minTotalObs = 3;

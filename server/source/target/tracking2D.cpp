@@ -259,13 +259,10 @@ void matchTargetPointsRecover(
 
 	float filterMatchValue = params.maxValue*params.match.primAdvantage;
 	float matchRadiusSq = params.matchRadius*params.matchRadius*distFactor*distFactor;
-	const float cutoff = 0.05f; // Max being 1
-	float influenceFalloffEnd = std::pow(1/cutoff-1, 1.0f/params.influenceFalloff);
-	float influenceFactorSq = influenceFalloffEnd/(params.influenceRadius*params.influenceRadius*distFactor*distFactor);
-	float similarityFalloffEnd = std::pow(1/cutoff-1, 1.0f/params.similarityFalloff);
-	float similarityFactorSq = similarityFalloffEnd/(params.similarityRadius*params.similarityRadius*distFactor*distFactor);
-	float differenceFalloffEnd = std::pow(1/cutoff-1, 1.0f/params.differenceFalloff);
-	float differenceFactorSq = differenceFalloffEnd/(params.differenceRadius*params.differenceRadius*distFactor*distFactor);
+	float distFactorSqInv = 1.0f / (distFactor*distFactor);
+	float influenceFactorSq = params.influenceFalloffFactorSq * distFactorSqInv;
+	float similarityFactorSq = params.similarityFalloffFactorSq * distFactorSqInv;
+	float differenceFactorSq = params.differenceFalloffFactorSq * distFactorSqInv;
 
 	// Sole purpose: If there's NO match within maxIncludeDistance, this will increase it to include at least a few points
 	MultipleExtremum<float, 3> minimumDistanceSq(std::numeric_limits<float>::max());
@@ -1038,7 +1035,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			int camera = calibs[c].index;
 			auto &cameraMatches = targetMatch2D.points2D[camera];
-			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+			if (cameraMatches.size() >= params.quality.cameraGoodObs || 
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 			int maxPossible = std::min(closePoints2D[c].size(), relevantProjected2D[c].size());
@@ -1066,7 +1063,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			int camera = calibs[c].index;
 			auto &cameraMatches = targetMatch2D.points2D[camera];
-			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+			if (cameraMatches.size() >= params.quality.cameraGoodObs || 
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}
@@ -1109,7 +1106,7 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		{
 			int camera = calibs[c].index;
 			auto &cameraMatches = targetMatch2D.points2D[camera];
-			if (cameraMatches.size() >= params.quality.cameraGoodObs && 
+			if (cameraMatches.size() >= params.quality.cameraGoodObs ||
 				cameraMatches.size()/(float)closePoints2D[c].size() > params.quality.cameraGoodRatio)
 				camerasGood++;
 		}

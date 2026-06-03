@@ -124,6 +124,13 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		plotSquaredFalloffGraph("##Similarity", params.similarityRadius, params.similarityFalloff);
 		modified |= ScalarProperty<float>("Mismatch Power", "x", &params.mismatchPower, &standard.mismatchPower, 0, 100, 0.1f);
 
+		if (modified)
+		{ // Updated precomputed, derived parameters
+			params.differenceFalloffFactorSq = getFalloffFactorSq(params.differenceRadius, params.differenceFalloff);
+			params.influenceFalloffFactorSq = getFalloffFactorSq(params.influenceRadius, params.influenceFalloff);
+			params.similarityFalloffFactorSq = getFalloffFactorSq(params.similarityRadius, params.similarityFalloff);
+		}
+
 		ImGui::SeparatorText("Point Matching Algorithm");
 		modified |= matchAlgParamUI(params.match, standard.match);
 

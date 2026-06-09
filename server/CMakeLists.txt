@@ -113,7 +113,7 @@ target_include_directories(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/dependencie
 target_include_directories(astertrack PRIVATE "${PROJECT_SOURCE_DIR}/dependencies/sources/imgui")
 
 # Specify language features used
-target_compile_features(astertrack PRIVATE cxx_generalized_initializers cxx_static_assert cxx_std_20)
+target_compile_features(astertrack PRIVATE cxx_generalized_initializers cxx_static_assert cxx_std_23)
 
 # Specify definitions
 target_compile_definitions(astertrack PUBLIC GLEW_STATIC

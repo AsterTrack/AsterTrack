@@ -62,7 +62,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 
 			if (wpa_supplicant_edit.size() > 2000)
 			{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE (1/2)
-				ImGui::TextWrapped("Length of %ld is over limit of 2000!", wpa_supplicant_edit.size());
+				ImGui::TextWrapped("Length of %d is over limit of 2000!", (int)wpa_supplicant_edit.size());
 			}
 			ImGui::TextWrapped("Remember to 'Apply Config' to make cameras store new credentials, and 'Clear Credentials' to make them delete it!");
 

@@ -1046,7 +1046,7 @@ std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<
 		cameraIndices.resize(parsedCameras.size(), -1);
 		if (separate || cameras.size() == priorCameras)
 		{ // Append any new cameras
-			std::iota(cameraIndices.begin()+priorCameras, cameraIndices.end(), cameras.size());
+			std::iota(cameraIndices.begin()+priorCameras, cameraIndices.end(), (int)cameras.size());
 			std::move(parsedCameras.begin()+priorCameras, parsedCameras.end(), std::back_inserter(cameras));
 		}
 		else
@@ -1867,7 +1867,7 @@ std::optional<ErrorMessage> parseTargetObjFile(const std::string &path, std::map
 	std::ifstream fs(path);
 	if (!fs.is_open()) return asprintf_s("Failed to open '%s' for reading!", path.c_str());
 
-	std::string label = std::filesystem::path(path).stem();
+	std::string label = std::filesystem::path(path).stem().string();
 	std::map<std::string, TargetCalibration3D> groups = { { label, TargetCalibration3D() } };
 	TargetCalibration3D *curGroup = &groups[label];
 

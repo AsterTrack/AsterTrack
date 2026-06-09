@@ -40,7 +40,8 @@ struct TargetMatchingParametersFast
 	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
 };
 
-static constexpr float getFalloffFactorSq(float radius, int power, float cutoff = 0.05f)
+// Cannot be constexpr because of MSVC and standard < C++26
+static float getFalloffFactorSq(float radius, int power, float cutoff = 0.05f)
 { // Factor to rescale a squared value for falloff computation
 	float falloffEnd = std::pow(1/cutoff-1, 1.0f/power);
 	return falloffEnd / (radius*radius);

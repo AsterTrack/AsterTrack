@@ -569,8 +569,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			{
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualRLock();
 				TargetAssemblyBase &base = stages_lock->back()->base;
-				ImGui::Text("%ld markers, %.4fpx += %.4fpx, %.4fpx max",
-					base.target.markers.size(),
+				ImGui::Text("%d markers, %.4fpx += %.4fpx, %.4fpx max",
+					(int)base.target.markers.size(),
 					base.errors.mean*PixelFactor,
 					base.errors.stdDev*PixelFactor,
 					base.errors.max*PixelFactor);
@@ -1179,9 +1179,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::TableNextColumn();
 			ImGui::Text("%d", i);
 			ImGui::TableNextColumn();
-			ImGui::Text("%ld", stage.base.merged.size());
+			ImGui::Text("%d", (int)stage.base.merged.size());
 			ImGui::TableNextColumn();
-			ImGui::Text("%ld", stage.base.target.markers.size());
+			ImGui::Text("%d", (int)stage.base.target.markers.size());
 			ImGui::TableNextColumn();
 			ImGui::Text("%d", stage.base.target.totalSamples);
 			ImGui::SetItemTooltip("%d samples, %d inliers, %d outliers",
@@ -1272,7 +1272,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::TableNextColumn();
 				ImGui::Text("%d", test.id);
 				ImGui::TableNextColumn();
-				ImGui::Text("%ld", test.bestCandidate < 0? 0 : test.candidates[test.bestCandidate].points.size());
+				ImGui::Text("%d", test.bestCandidate < 0? 0 : (int)test.candidates[test.bestCandidate].points.size());
 				ImGui::TableNextColumn();
 				ImGui::Text("%f", test.RMSE);
 				ImGui::TableNextColumn();
@@ -1297,7 +1297,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 		if (visState.targetCalib.stageSubIndex >= 0)
 		{
 			auto &test = visState.targetCalib.stage->alignResults[visState.targetCalib.stageSubIndex];
-			ImGui::Text("Alignment Candidates (%ld):", test.candidates.size());
+			ImGui::Text("Alignment Candidates (%d):", (int)test.candidates.size());
 			if (ImGui::BeginTable("TargetBase Merge Candidates Table", 3, //4,
 				ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY | ImGuiTableFlags_PadOuterX,
 				ImVec2(0, ImGui::GetFrameHeight()*10)))
@@ -1315,7 +1315,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					ImGui::TableNextColumn();
 					ImGui::Text("%d", i);
 					ImGui::TableNextColumn();
-					ImGui::Text("%ld", cand.points.size());
+					ImGui::Text("%d", (int)cand.points.size());
 					ImGui::TableNextColumn();
 					/* ImGui::Text("%f", cand.RMSE);
 					ImGui::TableNextColumn(); */
@@ -1355,9 +1355,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				ImGui::TableNextColumn();
 				ImGui::Text("%d", test.id);
 				ImGui::TableNextColumn();
-				ImGui::Text("%ld", test.pointMap.size());
+				ImGui::Text("%d", (int)test.pointMap.size());
 				ImGui::TableNextColumn();
-				ImGui::Text("%ld", test.markers.size() - test.pointMap.size());
+				ImGui::Text("%d", (int)(test.markers.size() - test.pointMap.size()));
 				ImGui::TableNextColumn();
 				ImGui::Text("%.4fpx", test.error.rmse*PixelFactor);
 				ImGui::TableNextColumn();

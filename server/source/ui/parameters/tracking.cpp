@@ -144,7 +144,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		bool modified = false;
 
 		BooleanProperty("Use Async Search/Probe", &params.useAsyncDetection, &standard.useAsyncDetection);
-		ScalarProperty<int>("Max Parallelism", "threads", &params.maxParallelism, &standard.maxParallelism, 0, 128);
+		ScalarProperty<int>("Max Parallelism", "threads", &params.maxParallelism, &standard.maxParallelism, 1, 128);
 
 		BeginSection("2D Search");
 		modified |= ScalarProperty<float>("Error Sigma over Best", "o", &params.search.errorSigma, &standard.search.errorSigma, 0, 10, 0.1f);
@@ -230,7 +230,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		const auto &standard = defaultParams.track;
 		bool modified = false, trustMod = false, filterMod = false;
 
-		ScalarProperty<int>("Max Parallelism", "threads", &params.maxParallelism, &standard.maxParallelism, 0, 128);
+		ScalarProperty<int>("Max Parallelism", "threads", &params.maxParallelism, &standard.maxParallelism, 1, 128);
 
 		BeginSection("Prediction");
 		modified |= ScalarProperty<float>("Min 3D Uncertainty", "mm", &params.minUncertainty3D, &standard.minUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");

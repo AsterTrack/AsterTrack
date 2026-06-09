@@ -3,7 +3,7 @@
 
 # Read implicit compiler defaults if not explicitly specified
 ifneq ($(COMPILER), clang-libc)
-ifneq ($(COMPILER), clang-gnu)
+ifneq ($(COMPILER), clang-std)
 ifneq ($(COMPILER), gcc)
 ifneq '' '$(findstring clang,$(CC))'
 COMPILER=clang-gnu
@@ -35,32 +35,32 @@ endif
 # Set compiler and options used
 ifeq ($(COMPILER), clang-libc)
 # clang compiler
-CXX=clang++
+CXX=clang++ -MMD -MP
 CC=clang
 LD=clang++
 # clang libraries (libc++ + libomp)
 cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -fuse-ld=lld -lc++ -fopenmp=libomp # --rtlib=compiler-rt -lunwind
+lstd = -fuse-ld=lld -lc++ -fopenmp=libomp -Wl,-rpath='$$ORIGIN' # --rtlib=compiler-rt -lunwind
 lto = -flto=thin
 STDLIB = libcpp
 else ifeq ($(COMPILER), clang-std)
 # clang compiler
-CXX=clang++
+CXX=clang++ -MMD -MP
 CC=clang
 LD=clang++
 # gnu library (libstdc++) but using clangs libomp (libgomp config stopped working)
 cstd = -stdlib=libstdc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -fuse-ld=lld -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic
+lstd = -fuse-ld=lld -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic -Wl,-rpath='$$ORIGIN'
 lto = -flto=thin
 STDLIB = libstdcpp
 else ifeq ($(COMPILER), gcc)
 # gcc compiler
-CXX=g++
+CXX=g++ -MMD -MP
 CC=gcc
 LD=g++
 # gnu libraries (libstdc++ + libgomp)
 cstd = -fopenmp -Wno-virtual-move-assign -Wno-var-tracking-assignments
-lstd = -fopenmp -latomic
+lstd = -fopenmp -latomic -Wl,-rpath='$$ORIGIN'
 lto = -flto=auto
 ifeq "$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 14)" "1"
 	lstd += -lstdc++exp
@@ -187,16 +187,16 @@ sh = ../shared
 dep = dependencies/sources
 b = build
 o = $(b)/$(ENV_PREFIX)$(COMPILER)-$(mode)
-cflags = $(cenv) -Idependencies/include -Idependencies/sources \
-	-DGLEW_STATIC $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus) \
-	-ffp-contract=fast -fno-math-errno -fno-signed-zeros -fno-trapping-math
+cflags = -Idependencies/include -Idependencies/sources \
+	$(cenv) $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus) \
+	-ffp-contract=fast -fno-math-errno -fno-signed-zeros -fno-trapping-math \
+	-DGLEW_STATIC
 cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
-	-DEIGEN_MPL2_ONLY -D_FILE_OFFSET_BITS=64 \
 	-Wno-deprecated-enum-enum-conversion -Wno-unknown-attributes \
-	-DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
+	-DEIGEN_MPL2_ONLY -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
 	-std=c++23
-lflags = $(lenv) -Wl,-rpath='$$ORIGIN' $(lstd) $(lmode) $(march)
+lflags = $(lenv) $(lstd) $(lmode) $(march)
 
 
 # Define all source files to be compiled
@@ -284,12 +284,12 @@ SOURCES_INTERFACE = $(addprefix $(src)/,$(INTERFACE_CPP)) $(addprefix $(dep)/,$(
 
 # Find libraries
 libdir = dependencies/lib/linux
-usblibs = $(libdir)/libusb/libusb-1.0.so.0
+usblib = $(libdir)/libusb/libusb-1.0.so.0
 vrpnlibs = $(libdir)/vrpn/libvrpn.a $(libdir)/vrpn/libquat.a
-glfwlibs = $(libdir)/libglfw3.a
+glfwlib = $(libdir)/libglfw3.a
 trackerlibs = -ludev
-server_libs = $(usblibs) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg
-interface_libs = $(glfwlibs) -ldbus-1
+server_libs = $(usblib) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg
+interface_libs = $(glfwlib) -ldbus-1
 
 # Run prechecks before starting compilation
 checkLibs := $(shell $(ldconfig) | grep libturbojpeg > /dev/null 2>&1; echo $$?)
@@ -312,13 +312,13 @@ checkLibs := $(shell test -d "dependencies/include/vrpn"; echo $$?)
 ifneq ($(checkLibs),0)
   $(error vrpn include files are missing, make sure to build dependencies)
 endif
-checkLibs := $(shell test -f "$(libdir)/libglfw3.a"; echo $$?)
+checkLibs := $(shell test -f "$(glfwlib)"; echo $$?)
 ifneq ($(checkLibs),0)
-  $(error GLFW library is missing ($(libdir)/libglfw3.a), make sure to build dependencies)
+  $(error GLFW library is missing ($(glfwlib)), make sure to build dependencies)
 endif
-checkLibs := $(shell test -d "$(libdir)/libusb"; echo $$?)
+checkLibs := $(shell test -f "$(usblib)"; echo $$?)
 ifneq ($(checkLibs),0)
-  $(error libusb library is missing ($(libdir)/libusb), make sure to build dependencies)
+  $(error libusb library is missing ($(usblib)), make sure to build dependencies)
 endif
 checkLibs := $(shell test -d "$(libdir)/vrpn"; echo $$?)
 ifneq ($(checkLibs),0)
@@ -332,10 +332,9 @@ all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static 
 
 .PHONY: copybinaries
 copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
-	@cp -u $(usblibs) "$(b)/"
-	@-rm -f $(b)/astertrack-*
-	@cd 
-	@ln -sr $(o)/astertrack-* $(b)/
+	@cp -u $(usblib) "$(b)/"
+	@-rm -f $(b)/astertrack*
+	@ln -sr $(o)/astertrack* $(b)/
 
 
 # May prefix this before each target to measure compile times
@@ -343,13 +342,13 @@ copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrac
 
 # Generic compile targets
 $(o)/%.obj: $(src)/%.cpp
-	$(CXX) -MMD -MP $(cxxflags) -c $< -o $@
+	$(CXX) $(cxxflags) -c $< -o $@
 $(o)/shared/%.obj: $(sh)/%.cpp
-	$(CXX) -MMD -MP $(cxxflags) -c $< -o $@
+	$(CXX) $(cxxflags) -c $< -o $@
 $(o)/shared/%.obj: $(sh)/%.c
 	$(CC) $(cflags) -c $< -o $@
 $(o)/dependencies/%.obj: $(dep)/%.cpp
-	$(CXX) -MMD -MP $(cxxflags) -c $< -o $@
+	$(CXX) $(cxxflags) -c $< -o $@
 $(o)/dependencies/%.obj: $(dep)/%.c
 	$(CC) $(cflags) -c $< -o $@
 
@@ -367,9 +366,9 @@ $(shell mkdir -p $(dir $(OBJECTS_INTERFACE)) >/dev/null)
 # Combined server and interface just to have compile-time validation of interface
 OBJECTS_STATIC = $(subst $(o)/app.obj,$(o)/app-static.obj,$(OBJECTS_SERVER)) $(OBJECTS_INTERFACE)
 $(o)/app-static.obj: $(src)/app.cpp
-	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
+	$(CXX) $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
 $(o)/astertrack-static: $(OBJECTS_STATIC)
-	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
+	$(LD) $(lenv) -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
 	objcopy --only-keep-debug $@ $@.debug
 	strip -S $@
 	objcopy --add-gnu-debuglink=$@.debug $@

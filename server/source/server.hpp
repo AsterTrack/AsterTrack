@@ -116,16 +116,16 @@ struct ServerState
 	// Tracker Replacement
 	bool keepUnmatchedObservations = true;
 	// Loaded records for replay
+	struct Segment { FrameNum frameStart, frameCount, frameOffset; };
+	struct Recording { int number; std::string label; FrameNum frameStart, frameCount; std::vector<int> cameras; };
 	struct {
 		// This may contain info about multiple appended recordings
 		// And each recording may be split into multiple segments (capture+tracking)
 		// The following lists have an entry for each segment
 		std::vector<std::string> captures;
 		std::vector<std::string> tracking;
-		struct Segment { FrameNum frameStart, frameCount, frameOffset; };
 		std::vector<Segment> segments;
 		// This list has an entry for each appended recording
-		struct Recording { int number; std::string label; FrameNum frameStart, frameCount; std::vector<int> cameras; };
 		std::vector<Recording> recordings;
 		FrameNum frames = 0;
 		TimePoint_t replayTime;

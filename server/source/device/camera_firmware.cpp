@@ -1032,7 +1032,7 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 
 					bool isDir = mz_zip_reader_is_file_a_directory(&zip_archive, i);
 					LOG(LFirmwareUpdate, LInfo, "FW File: \"%s\", Comment: \"%s\", Uncompressed size: %u, Compressed size: %u, Is Dir: %u",
-						file_stat.m_filename, file_stat.m_comment, (uint)file_stat.m_uncomp_size, (uint)file_stat.m_comp_size, isDir);
+						file_stat.m_filename, file_stat.m_comment, (unsigned int)file_stat.m_uncomp_size, (unsigned int)file_stat.m_comp_size, isDir);
 					if (isDir) continue;
 
 					if (!file_stat.m_is_supported)

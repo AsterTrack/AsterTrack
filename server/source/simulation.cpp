@@ -442,8 +442,8 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 			camRec.points2D.clear();
 		}
 
-		camRec.rawPoints2D.append_range(camRep.rawPoints2D);
-		camRec.properties.append_range(camRep.properties);
+		std::move(std::begin(camRep.rawPoints2D), std::end(camRep.rawPoints2D), std::back_inserter(camRec.rawPoints2D));
+		std::move(std::begin(camRep.properties), std::end(camRep.properties), std::back_inserter(camRec.properties));
 	}
 }
 

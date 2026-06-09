@@ -69,7 +69,7 @@ bool SetCurrentThreadName(const char *name)
     wchar_t* wname = new wchar_t[cSize];
     mbstowcs (wname, name, cSize);
 	bool res = SetThreadDescription(GetCurrentThread(), wname);
-	delete wname;
+	delete[] wname;
 	return res;
 #else
 	return prctl(PR_SET_NAME, name) >= 0;

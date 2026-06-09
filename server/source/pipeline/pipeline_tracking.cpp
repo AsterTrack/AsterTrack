@@ -649,7 +649,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		trk0 = pclock::now();
 
-		omp_set_num_threads(std::min<int>(track.trackedTargets.size(), pipeline.params.track.maxParallelism));
+		omp_set_num_threads(std::min<int>(omp_get_max_threads(), pipeline.params.track.maxParallelism));
 	#pragma omp parallel for schedule(dynamic)
 		for (int t = 0; t < track.trackedTargets.size(); t++)
 		{

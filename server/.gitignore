@@ -16,6 +16,8 @@ log_*.txt
 imgui.ini
 imgui_log.txt
 *.tar.gz
+crash_reports
+crash_inspect.lldb
 # Permanent Outputs
 store/camera_calib*
 store/trackers*

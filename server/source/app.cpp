@@ -46,6 +46,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
+#include "crash_handler.inl"
+
+#include "comm/packet.h"
+extern VersionDesc serverVersion;
+extern std::string serverVersionDescriptor;
+
 AppState AppInstance;
 ServerState StateInstance = {};
 static std::atomic<bool> quitApp = { false };
@@ -90,7 +96,10 @@ static inline bool AssumeInterface()
 	return false;
 }
 #endif
-static inline void UnlinkInterface(void *uidl = nullptr)
+#ifdef ALLOW_DYNAMIC_LINKING
+static void *InterfaceDL = nullptr;
+#endif
+static inline void UnlinkInterface()
 {
 	InterfaceThread = []() -> bool { return false; };
 	SignalInterfaceShouldClose = [](){};
@@ -100,12 +109,14 @@ static inline void UnlinkInterface(void *uidl = nullptr)
 	SignalObservationReset = [](FrameNum){};
 	SignalServerEvent = [](ServerEvents){};
 #ifdef ALLOW_DYNAMIC_LINKING
-	if (uidl) dlclose(uidl);
+	if (InterfaceDL) dlclose(InterfaceDL);
+	InterfaceDL = nullptr;
 #endif
 }
 static inline bool LinkInterface(void *uidl)
 {
 #ifdef ALLOW_DYNAMIC_LINKING
+	InterfaceDL = uidl;
 	InterfaceThread = (InterfaceThread_t)dlsym(uidl, "_InterfaceThread");
 	SignalInterfaceShouldClose = (SignalShouldClose_t)dlsym(uidl, "_SignalShouldClose");
 	SignalLogUpdate = (SignalLogUpdate_t)dlsym(uidl, "_SignalLogUpdate");
@@ -136,6 +147,7 @@ uint32_t LogLevelHexColors[LMaxLevel];
 static void initialise_logging_strings();
 static bool rotate_log_files(std::string logPath);
 
+
 /* Main Server Loop */
 
 int main (void)
@@ -151,6 +163,32 @@ int main (void)
 
 	// Set thread name - may be used by the OS to show in e.g. the task manager
 	SetCurrentThreadName("AsterTrack App");
+
+    { // Setup crash handler
+		CrashConfig config = {};
+		config.version     = asprintf_s("v%d.%d.%d (Build %.2x)",
+			serverVersion.major, serverVersion.minor, serverVersion.patch, serverVersion.build);
+		//config.build       = "Release";
+		config.descriptor  = serverVersionDescriptor;
+		config.includeRegMemMap = true;
+		//config.showCrashDialog   = true;
+		//config.heapSafeFork      = false;
+
+		config.onCrash = [](const CrashContext& ctx)
+		{
+			printf("Written full crash report to '%s'\n", ctx.logFilePath.c_str());
+#ifdef __unix__
+			printf("Check for any core dump with 'sudo coredumpctl list \"AsterTrack App\"'\n");
+#elif defined(_WIN32)
+			printf("Written core dump to '%s'\n", ctx.dumpFilePath.c_str());
+#endif
+			// TODO: Desparate attenot at recovering if fault was in Interface Thread? Unlikely
+			//UnlinkInterface();
+			return false;
+		};
+
+		EnableCrashHandler(config);
+	}
 
 	{ // Setup logging
 		initialise_logging_strings();
@@ -235,11 +273,10 @@ int main (void)
 	{
 		// TODO: Wait for request to open interface
 
-		void *uidl = nullptr;
 		if (!AssumeInterface())
 		{ // Open interface library and link it
 #ifdef ALLOW_DYNAMIC_LINKING
-			uidl = dlopen("astertrack-interface.so", RTLD_NOW);
+			void *uidl = dlopen("astertrack-interface.so", RTLD_NOW);
 			if (!uidl || !LinkInterface(uidl))
 			{ // Error during linking
 				const char * reason = dlerror();
@@ -273,7 +310,7 @@ int main (void)
 		closedUI = false;
 
 		// Unlink interface library again
-		UnlinkInterface(uidl);
+		UnlinkInterface();
 	}
 
 	// Exit manually before rest

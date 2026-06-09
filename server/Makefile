@@ -40,7 +40,7 @@ CC=clang
 LD=clang++
 # clang libraries (libc++ + libomp)
 cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -lc++ -fopenmp=libomp # --rtlib=compiler-rt -lunwind
+lstd = -fuse-ld=lld -lc++ -fopenmp=libomp # --rtlib=compiler-rt -lunwind
 lto = -flto=thin
 STDLIB = libcpp
 else ifeq ($(COMPILER), clang-std)
@@ -50,7 +50,7 @@ CC=clang
 LD=clang++
 # gnu library (libstdc++) but using clangs libomp (libgomp config stopped working)
 cstd = -stdlib=libstdc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic
+lstd = -fuse-ld=lld -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic
 lto = -flto=thin
 STDLIB = libstdcpp
 else ifeq ($(COMPILER), gcc)
@@ -75,7 +75,7 @@ endif
 ifeq ($(BUILD_TYPE), release)
 # Very fast, but slow to iterate on, used for final deployment
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
+cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif
@@ -86,7 +86,7 @@ else ifeq ($(BUILD_TYPE), release-native)
 # Very fast, but slow to iterate on, only used to check for any modern optimisation we missed to take advantage of
 # lto makes it faster to compile from scratch, but slower to iterate, as linking will do all optimisations
 # Much slower to compile than non-native
-cmode = -O3 -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
+cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif
@@ -132,6 +132,15 @@ ifeq ($(STDLIB), libcpp)
 endif
 lmode =
 mode = debug-fast
+
+else ifeq ($(BUILD_TYPE), debug)
+# Slow, without any sanitization to not break container inspection, for step-through debug
+cmode = -O0 -g -fno-omit-frame-pointer -DEIGEN_NO_DEBUG -DPERF=1
+ifeq ($(STDLIB), libcpp)
+	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+endif
+lmode =
+mode = debug
 
 else ifeq ($(BUILD_TYPE), verify-extensive-fast)
 # Slow, verify as much as possible, but still try to be useably fast
@@ -324,12 +333,9 @@ all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static 
 .PHONY: copybinaries
 copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
 	@cp -u $(usblibs) "$(b)/"
-	@-rm -f $(b)/astertrack-static
-	@-rm -f $(b)/astertrack-server
-	@-rm -f $(b)/astertrack-interface.so
-	@cp $(o)/astertrack-server $(b)/astertrack-server
-	@cp $(o)/astertrack-interface.so $(b)/astertrack-interface.so
-	@-test -f $(o)/astertrack-static && cp $(o)/astertrack-static $(b)/astertrack-static
+	@-rm -f $(b)/astertrack-*
+	@cd 
+	@ln -sr $(o)/astertrack-* $(b)/
 
 
 # May prefix this before each target to measure compile times
@@ -364,16 +370,25 @@ $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) -MMD -MP $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
 $(o)/astertrack-static: $(OBJECTS_STATIC)
 	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
+	objcopy --only-keep-debug $@ $@.debug
+	strip -S $@
+	objcopy --add-gnu-debuglink=$@.debug $@
 
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
 $(o)/astertrack-server: $(OBJECTS_SERVER)
 	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
+	objcopy --only-keep-debug $@ $@.debug
+	strip -S $@
+	objcopy --add-gnu-debuglink=$@.debug $@
 
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
 $(o)/astertrack-interface.so: $(OBJECTS_INTERFACE)
 	$(LD) $(lenv) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
+	objcopy --only-keep-debug $@ $@.debug
+	strip -S $@
+	objcopy --add-gnu-debuglink=$@.debug $@
 
 # Always force re-link at least, since different modes share the same target
 .PHONY: .FORCE

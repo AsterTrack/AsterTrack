@@ -180,7 +180,7 @@
 			"description": "Build Type:",
 			"default": "verify-fast",
 			"type": "pickString",
-			"options": [ "verify-fast", "debug-fast", "release", "release-native", "sanitize-thread", "sanitize-memory", "verify-extensive-fast", "verify-extensive-debug" ]
+			"options": [ "verify-fast", "debug-fast", "debug", "release", "release-native", "sanitize-thread", "sanitize-memory", "verify-extensive-fast", "verify-extensive-debug" ]
 		},
 		{ // On Linux, allow selection of compiler
 			"id": "compiler",

@@ -883,8 +883,8 @@ static bool ShowTrackingPanel()
 	// Update frameRange from inputs
 	ImPlot::SetupFinish(); // Will process inputs, but not update frameRange yet (EndPlot does)
 	frameRange = ImPlot::GetPlotLimits(ImAxis_X1).X;
-	frameRange.Min -= 1;
-	frameRange.Max += 1;
+	OptFrameNum visibleMin = std::floor(frameRange.Min);
+	OptFrameNum visibleMax = std::ceil(frameRange.Max);
 	// TODO: Bit of jelly in tracking graph since there's no true constraints to ensure frameRange.Max == framesAxisMax after input
 
 	struct TrackerRecordGraph
@@ -1051,21 +1051,21 @@ static bool ShowTrackingPanel()
 		stats.dataTimeRot[index] /= trackerNum; // Possible NAN is intended
 		stats.errors[index] /= stats.dataNum[index]; // Possible NAN is intended
 	};
-	auto gatherTrackingData = [&updateFrameStats, &combineFrameStats]
+	auto gatherTrackingData = [&]
 		(TrackerRecordGraph &stats, const auto framesRecord, int trackerID, bool isCurrent)
 	{
-		OptFrameNum min = std::max<OptFrameNum>(frameRange.Min, framesRecord.beginIndex());
-		OptFrameNum max = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex());
+		OptFrameNum min = std::max<OptFrameNum>(visibleMin, framesRecord.beginIndex());
+		OptFrameNum max = std::min<OptFrameNum>(visibleMax, framesRecord.endIndex());
 		if (max <= min) return false;
-		stats.setup(max - frameRange.Min);
+		stats.setup(max - visibleMin);
 		auto frameIt = framesRecord.pos(max-1);
 		for (int f = max-1; f >= min; f--, frameIt--)
 		{
 			if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
 			if (combinedResults)
-				combineFrameStats(stats, f - frameRange.Min, *frameIt->get(), isCurrent);
+				combineFrameStats(stats, f - visibleMin, *frameIt->get(), isCurrent);
 			else
-				updateFrameStats(stats, f - frameRange.Min, *frameIt->get(), trackerID);
+				updateFrameStats(stats, f - visibleMin, *frameIt->get(), trackerID);
 		}
 		GetUI().RequestUpdates();
 		return true;
@@ -1087,8 +1087,8 @@ static bool ShowTrackingPanel()
 	}
 	else
 	{
-		OptFrameNum curLen = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex()) - frameRange.Min;
-		OptFrameNum altLen = std::min<OptFrameNum>(frameRange.Max, framesStored.endIndex()) - frameRange.Min;
+		OptFrameNum curLen = std::min<OptFrameNum>(visibleMax, framesRecord.endIndex()) - visibleMin;
+		OptFrameNum altLen = std::min<OptFrameNum>(visibleMax, framesStored.endIndex()) - visibleMin;
 		if (combinedResults)
 			for (auto &tracker : combinedTrackers)
 				tracker.second.setup(curLen, altLen);
@@ -1122,16 +1122,16 @@ static bool ShowTrackingPanel()
 		{ // Show individual IMU samples at their timestamp, with Y showing deltaT to last sample (hopefully building a smooth line)
 			imuSampleTime.clear();
 			imuSampleRate.clear();
-			OptFrameNum min = std::max<OptFrameNum>(frameRange.Min, framesRecord.beginIndex());
-			OptFrameNum max = std::min<OptFrameNum>(frameRange.Max, framesRecord.endIndex()-1);
+			OptFrameNum min = std::max<OptFrameNum>(visibleMin, framesRecord.beginIndex());
+			OptFrameNum max = std::min<OptFrameNum>(visibleMax, framesRecord.endIndex()-1);
 			auto getIMUSamples = [&](auto samples)
 			{
 				if (max <= min) return; // Need at least two frames to serve as an anchor
 				float frameRate = (max-min)/dtS(framesRecord[min]->time, framesRecord[max]->time);
 				OptFrameNum anchorFrame = min;
 				TimePoint_t anchorTime = framesRecord[min]->time -  std::chrono::microseconds(trackerIt->imuCalib.timestampOffsetUS);
-				TimePoint_t minTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Min - anchorFrame)/frameRate*1000000));
-				TimePoint_t maxTime = anchorTime + std::chrono::microseconds((OptFrameNum)((frameRange.Max - anchorFrame)/frameRate*1000000));
+				TimePoint_t minTime = anchorTime + std::chrono::microseconds((int64_t)((frameRange.Min - anchorFrame)/frameRate*1000000));
+				TimePoint_t maxTime = anchorTime + std::chrono::microseconds((int64_t)((frameRange.Max - anchorFrame)/frameRate*1000000));
 				auto itBegin = std::lower_bound(samples.begin(), samples.end(), minTime);
 				auto itEnd = std::upper_bound(samples.begin(), samples.end(), maxTime);
 				if (itBegin == itEnd) return;

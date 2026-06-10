@@ -36,6 +36,8 @@ struct IntegrationsState
 {
 	std::mutex mutex;
 
+	TimePoint_t lastUpdatedCameras;
+
 	struct
 	{ // Virtual Reality Peripheral Network
 		bool enabled = false;

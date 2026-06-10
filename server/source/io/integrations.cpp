@@ -30,6 +30,7 @@ void IntegrationsInit(IntegrationsState &state, const GeneralConfig &config)
 	auto io_lock = std::unique_lock(state.mutex);
 	state.vrpn.enabled = config.integrations.vrpn_auto_enable;
 	state.vmc.enabled = config.integrations.vmc_auto_enable;
+	state.lastUpdatedCameras = sclock::now() - std::chrono::seconds(2);
 
 	IntegrationsReconfigureVRPN(state, config);
 	IntegrationsReconfigureVMC(state, config);
@@ -87,6 +88,10 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 			timestamp = view[frame]->time;
 	}
 
+	bool updateCameras = dtS(state.lastUpdatedCameras, sclock::now()) > 1;
+	if (updateCameras)
+		state.lastUpdatedCameras = sclock::now();
+
 	if (state.vrpn.enabled)
 	{
 		for (auto &tracker : server.trackerConfigs)
@@ -126,20 +131,22 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 			}
 		}
 
-		// Add cameras as trackers to give clients an opportunity to display them as references
-		// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
-		for (const auto &camera : server.pipeline.cameras)
-		{
-			auto io_tracker = state.vrpn.trackers.find(camera->id);
-			if (io_tracker == state.vrpn.trackers.end())
-			{
-				std::string path = asprintf_s("AsterCamera_%d", camera->index);
-				auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.vrpn.server.get());
-				io_tracker = state.vrpn.trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
-			}
-			// Send static position of cameras as reference for clients
+		if (updateCameras)
+		{ // Add cameras as trackers to give clients an opportunity to display them as references
 			// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
-			io_tracker->second->updatePose(0, timestamp, camera->calib.transform.cast<float>());
+			for (const auto &camera : server.pipeline.cameras)
+			{
+				auto io_tracker = state.vrpn.trackers.find(camera->id);
+				if (io_tracker == state.vrpn.trackers.end())
+				{
+					std::string path = asprintf_s("AsterTrack_Camera_%d", camera->index);
+					auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(camera->id, path.c_str(), state.vrpn.server.get());
+					io_tracker = state.vrpn.trackers.insert({ camera->id, std::move(vrpn_tracker) }).first;
+				}
+				// Send static position of cameras as reference for clients
+				// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
+				io_tracker->second->updatePose(0, timestamp, camera->calib.transform.cast<float>());
+			}
 		}
 
 		LOG(LIO, LTrace, "Updating individual trackers!\n");
@@ -151,18 +158,20 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 
 	if (state.vmc.enabled && vmc_try_open(state.vmc.output, state.vmc.host))
 	{ // Try opening UDP port if not already done
-		std::vector<vmc_device> cameras;
-		cameras.reserve(server.pipeline.cameras.size());
-		for (const auto &camera : server.pipeline.cameras)
-		{
-			// TODO: Camera role is intended for tracked cameras for virtual production, not as debug for optical tracking systems...
-			cameras.emplace_back(VMCRole::Camera,
-				asprintf_s("Camera #%u", camera->id),
-				camera->calib.transform.cast<float>(),
-				(float)getEffectiveFoVD(camera->calib, camera->mode)
-			);
+		if (updateCameras)
+		{ // Send cameras as trackers to give clients an opportunity to display them as references
+			std::vector<vmc_device> cameras;
+			cameras.reserve(server.pipeline.cameras.size());
+			for (const auto &camera : server.pipeline.cameras)
+			{
+				cameras.emplace_back(VMCRole::Tracker,
+					asprintf_s("AsterTrack_Camera_%d", camera->index),
+					camera->calib.transform.cast<float>(),
+					(float)getEffectiveFoVD(camera->calib, camera->mode)
+				);
+			}
+			vmc_send_device_packets(state.vmc.output, cameras, timestamp, dtS(server.lastStreamingStart, timestamp));
 		}
-		vmc_send_device_packets(state.vmc.output, cameras, timestamp, dtS(server.lastStreamingStart, timestamp));
 	}
 }
 
@@ -219,6 +228,7 @@ void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, 
 			VMCRole role = VMCRole::Tracker;
 			if (cfg_tracker->role == TrackerConfig::ROLE_HMD) role = VMCRole::HMD;
 			if (cfg_tracker->role == TrackerConfig::ROLE_CONTROLLER) role = VMCRole::Controller;
+			if (cfg_tracker->role == TrackerConfig::ROLE_CAMERA) role = VMCRole::Camera;
 			trackers.emplace_back(role,
 				cfg_tracker->label,
 				trackRecord.pose.filtered

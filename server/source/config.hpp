@@ -109,6 +109,7 @@ struct TrackerConfig
 		ROLE_TRACKER = 0,
 		ROLE_HMD = 1,
 		ROLE_CONTROLLER = 2,
+		ROLE_CAMERA = 3,
 		ROLE_MAX
 	};
 

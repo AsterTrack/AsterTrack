@@ -282,10 +282,11 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 
 		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Role");
-		std::array<const char*,3> roleLabel;
+		std::array<const char*,4> roleLabel;
 		roleLabel[TrackerConfig::ROLE_TRACKER] = "Tracker";
 		roleLabel[TrackerConfig::ROLE_HMD] = "HMD";
 		roleLabel[TrackerConfig::ROLE_CONTROLLER] = "Controller";
+		roleLabel[TrackerConfig::ROLE_CAMERA] = "Camera";
 		int roleEnum = tracker.role;
 		if (ImGui::Combo("##Role", &roleEnum, roleLabel.data(), roleLabel.size()))
 		{

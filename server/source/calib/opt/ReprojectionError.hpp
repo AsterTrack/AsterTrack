@@ -460,7 +460,7 @@ struct ReprojectionError
 							tgtFrameIndices.push_back(std::make_pair(f, sampleIndex));
 							sampleIndex += target.frames[f].samples.size();
 						}
-					#pragma omp parallel for schedule(dynamic)
+					#pragma omp parallel for schedule(static)
 						for (int f = 0; f < tgtFrameIndices.size(); f++)
 						{
 							int frameIndex = tgtFrameIndices[f].first;

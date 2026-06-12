@@ -900,7 +900,6 @@ static std::shared_ptr<TargetView> selectCentralTargetView(const std::vector<std
 	LOGC(LInfo, "-- Finding best view to use as base among %ld views!", targetViews.size());
 
 	std::vector<float> baseScores(targetViews.size());
-#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < targetViews.size(); i++)
 	{
 		auto &viewPtr = targetViews[i];

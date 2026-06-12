@@ -294,8 +294,7 @@ float determineRank4Basis(
 #ifdef PARALLEL
 	std::atomic<int> totalPartN = 0, totalColsN = 0;
 
-	omp_set_num_threads(std::min<int>(omp_get_max_threads(), params.basis.maxParallelism));
-	#pragma omp parallel
+	#pragma omp parallel num_threads(params.basis.maxParallelism)
 #endif
 	{
 	std::vector<int> selectablePoints;
@@ -306,7 +305,7 @@ float determineRank4Basis(
 
 	auto p0 = sclock::now();
 
-	#pragma omp for nowait schedule(static, 100) reduction(+:colsN) reduction(+:tested4Tuples)
+	#pragma omp for nowait schedule(static, 10) reduction(+:colsN) reduction(+:tested4Tuples)
 	for (int j = 0; j < max4TupleTests; j++)
 #else
 	while (colsN < maxNColumns && partN.size() < max4Tuples && tested4Tuples++ < max4TupleTests && !stopToken.stop_requested())
@@ -438,9 +437,6 @@ float determineRank4Basis(
 	}
 #endif
 	}
-#ifdef PARALLEL
-	omp_set_num_threads(omp_get_max_threads());
-#endif
 
 	if (stopToken.stop_requested())
 		return NAN;

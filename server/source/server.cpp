@@ -48,7 +48,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <numeric> // iota
 
 #include "ctpl/ctpl.hpp"
-#include <omp.h>
 
 #include "hidapi/hidapi.h"
 
@@ -116,8 +115,6 @@ bool ServerInit(ServerState &state)
 		}
 		DebugSpecificCameraParameters(state.cameraCalibrations, modes);
 	}
-
-	omp_set_num_threads(omp_get_max_threads());
 
 	if (socket_initialise())
 	{

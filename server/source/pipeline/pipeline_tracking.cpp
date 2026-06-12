@@ -649,8 +649,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		trk0 = pclock::now();
 
-		omp_set_num_threads(std::min<int>(omp_get_max_threads(), pipeline.params.track.maxParallelism));
-	#pragma omp parallel for schedule(dynamic)
+	#pragma omp parallel for schedule(dynamic) num_threads(std::min<int>(track.trackedTargets.size(), pipeline.params.track.maxParallelism))
 		for (int t = 0; t < track.trackedTargets.size(); t++)
 		{
 			auto &tracker = *std::next(track.trackedTargets.begin(), t);
@@ -666,7 +665,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				frame->time, frame->num, camCount, pipeline.params.track);
 			tracker.procTimeMS = dtMS(start, sclock::now());
 		}
-		omp_set_num_threads(omp_get_max_threads());
 
 		// Update mistrust rating of each tracker based on matched points
 		// Use tracked targets directly as remainingPoints2D have not yet been updated

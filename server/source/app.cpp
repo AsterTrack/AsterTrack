@@ -46,6 +46,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
+#include <omp.h>
+
 #include "crash_handler.inl"
 
 #include "comm/packet.h"
@@ -152,6 +154,13 @@ static bool rotate_log_files(std::string logPath);
 
 int main (void)
 {
+	// Configure OpenMP
+	static char OMP_ENV[] = "OMP_WAIT_POLICY=PASSIVE";
+    putenv(OMP_ENV); // Terrible, horrible hack, but OpenMP leaves me no choice...
+	omp_set_num_threads(omp_get_max_threads());
+	omp_set_dynamic(true);
+	// NOTE: Keep putenv as early as possible! Not threadsafe and may conflict with future desktop integrations
+
 	// Set interface pointers to NOP functions
 	UnlinkInterface();
 

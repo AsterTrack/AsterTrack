@@ -23,10 +23,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/matching.hpp"
 
 #define INCLUDE_COVARIANCE_PARAMS_ONLY
-#include "calib/opt/covariance.hpp"
+#include "target/detail/covariance.hpp"
 
 #define INCLUDE_ROTATION_GEN_PARAMS_ONLY
-#include "target/rotationGen.hpp"
+#include "target/detail/rotationGen.hpp"
 
 #include "util/eigendef.hpp"
 

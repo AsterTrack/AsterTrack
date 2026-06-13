@@ -30,7 +30,7 @@ SOFTWARE.
 #include "flexkalman/FlexibleKalmanBase.h"
 #include "flexkalman/EigenQuatExponentialMap.h"
 
-#include "target/TargetReprojectionError.hpp"
+#include "target/detail/TargetReprojectionError.hpp"
 
 /**
  * AbsolutePoseMeasurement for use with flexkalman UKF

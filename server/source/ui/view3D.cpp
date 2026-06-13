@@ -27,8 +27,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "imgui/imgui_onDemand.hpp"
 
-#include "target/rotationGen.hpp"
-#include "calib/opt/covariance.hpp"
+#include "target/detail/rotationGen.hpp"
+#include "target/detail/covariance.hpp"
 #include "util/eigenalg.hpp"
 
 #include "implot/implot.h"

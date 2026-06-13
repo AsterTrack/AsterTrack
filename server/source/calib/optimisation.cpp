@@ -19,8 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define EIGEN_HAS_OPENMP
 
 #include "optimisation.hpp"
-#include "opt/utilities.hpp"
-#include "opt/ReprojectionError.hpp"
+#include "calib/detail/utilities.hpp"
+#include "calib/detail/ReprojectionError.hpp"
 
 #include "util/log.hpp"
 

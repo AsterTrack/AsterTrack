@@ -19,8 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "calibration_room.hpp"
 
 #include "calib/optimisation.hpp"
-#include "calib/opt/utilities.hpp" // getErrorStats
-#include "calib/opt/ReprojectionError.hpp"
+#include "calib/detail/utilities.hpp" // getErrorStats
+#include "calib/detail/ReprojectionError.hpp"
 
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"

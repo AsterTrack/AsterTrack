@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "target/parameters.hpp"
 #include "target/target.hpp"
-#include "target/TargetReprojectionError.hpp"
+#include "target/detail/TargetReprojectionError.hpp"
 
 #include "util/matching.hpp"
 #include "util/stats.hpp"

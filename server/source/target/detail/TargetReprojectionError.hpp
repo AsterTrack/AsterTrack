@@ -20,8 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define TARGET_REPROJECTION_ERROR_H
 
 //#define OPT_AUTODIFF
-#include "calib/opt/differentiation.hpp"
-#include "calib/opt/covariance.hpp"
+#include "calib/detail/differentiation.hpp"
+#include "target/detail/covariance.hpp"
 
 #include "util/eigenutil.hpp" // MRP2Quat, DecodeAARot, etc.
 

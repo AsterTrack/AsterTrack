@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "device/parsing.hpp" // decompressCameraImageRecord
 #include "device/tracking_camera.hpp"
 #include "device/tracking_controller.hpp"
-#include "calib/opt/covariance.hpp"
+#include "target/detail/covariance.hpp"
 
 #include "util/eigenalg.hpp"
 #include "util/debugging.hpp" // For checking debugging state

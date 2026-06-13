@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "detection2D.hpp"
 
 #include "target/parameters.hpp"
-#include "target/rotationGen.hpp"
+#include "target/detail/rotationGen.hpp"
 
 #include "util/matching.hpp"
 #include "util/eigenalg.hpp"

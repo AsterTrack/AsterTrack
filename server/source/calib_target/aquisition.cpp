@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "aquisition.hpp"
 
 #include "calib/obs_data.inl"
-#include "calib/opt/utilities.hpp" // getErrorStats
+#include "calib/detail/utilities.hpp" // getErrorStats
 #include "point/sequence_data.inl"
 
 #include "util/eigenalg.hpp"

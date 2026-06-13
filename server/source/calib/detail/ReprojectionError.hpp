@@ -19,12 +19,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef REPROJECTION_ERROR_H
 #define REPROJECTION_ERROR_H
 
-#include "utilities.hpp"
+#include "calib/detail/utilities.hpp"
 #include "calib/optimisation.hpp"
 #include "calib/obs_data.hpp"
 #include "point/triangulation.hpp"
 
-#include "target/TargetReprojectionError.hpp"
+#include "target/detail/TargetReprojectionError.hpp"
 
 #include "util/eigendef.hpp"
 
@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 
 //#define OPT_AUTODIFF // Would need to be set for point/triangulation.cpp as well
-#include "differentiation.hpp"
+#include "calib/detail/differentiation.hpp"
 
 #include <Eigen/SparseCore>
 #include <Eigen/SparseQR>

@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/ui.hpp"
 #include "ui/gl/visualisation.hpp"
 
-#include "tracking/rotation.hpp"
+#include "tracking/detail/rotation.hpp"
 
 #include "Eigen/Eigenvalues"
 

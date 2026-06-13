@@ -27,13 +27,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/debugging.hpp"
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"
+#include "util/threading.hpp"
 
 #include "dbscan/dbscan.hpp"
 
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
-
-#include <omp.h>
 
 #include <numeric>
 
@@ -652,6 +651,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	#pragma omp parallel for schedule(dynamic) num_threads(std::min<int>(track.trackedTargets.size(), pipeline.params.track.maxParallelism))
 		for (int t = 0; t < track.trackedTargets.size(); t++)
 		{
+			LazyNameWorkerThread();
+
 			auto &tracker = *std::next(track.trackedTargets.begin(), t);
 			LOG(LTracking, LDebug, "Tracking target %d (name %s) with %d markers!",
 				tracker.id, tracker.label.c_str(), (int)tracker.target.calib.markers.size());

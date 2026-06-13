@@ -221,7 +221,7 @@ struct PipelineState
 	{
 		int targetID;
 		int numSteps = 0, maxSteps = 5;
-		ThreadControl control;
+		ThreadControl control = {};
 	};
 	struct
 	{

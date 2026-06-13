@@ -973,7 +973,7 @@ static void onInterruptIN(libusb_transfer *transfer)
 
 static void usbEventHandler(libusb_context_int *libusb)
 {
-	SetCurrentThreadName("USB Event Handler Thread");
+	SetCurrentThreadName("USB Events");
 
 	struct timeval tv;
 	tv.tv_sec = 60;

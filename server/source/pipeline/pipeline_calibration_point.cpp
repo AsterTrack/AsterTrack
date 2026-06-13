@@ -86,7 +86,6 @@ void UpdatePointCalibrationStatus(PipelineState &pipeline)
 
 		ptCalib.planned = false;
 		ptCalib.control = std::make_shared<ThreadControl>();
-		ptCalib.control->init();
 		if (ptCalib.settings.typeFlags & 0b0001)
 			ptCalib.control->thread = new std::thread(ThreadCalibrationReconstruction, &pipeline, cameras, ptCalib.control, ptCalib.state);
 		else if (ptCalib.settings.typeFlags & 0b0010)
@@ -187,7 +186,7 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
-	SetCurrentThreadName("CameraCalib Reconstruction Thread");
+	SetCurrentThreadName("CamCalib Reconstruction");
 
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LDebug);
@@ -286,7 +285,7 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
-	SetCurrentThreadName("CameraCalib Optimisation Thread");
+	SetCurrentThreadName("CamCalib Opt");
 
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LInfo);
@@ -436,7 +435,7 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
-	SetCurrentThreadName("CameraCalib Target Optimisation Thread");
+	SetCurrentThreadName("CamCalib Target Opt");
 
 	ScopedLogCategory scopedLogCategory(LOptimisation, true);
 	ScopedLogLevel scopedLogLevel(LInfo);
@@ -524,7 +523,7 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 
-	SetCurrentThreadName("Room Calibration Thread");
+	SetCurrentThreadName("Room Calib");
 
 	ScopedLogCategory scopedLogCategory(LPointCalib, true);
 	ScopedLogLevel scopedLogLevel(LInfo);

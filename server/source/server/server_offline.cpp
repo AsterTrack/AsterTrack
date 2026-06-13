@@ -312,7 +312,7 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 	ServerState &state = *statePtr;
 	PipelineState &pipeline = state.pipeline;
 
-	SetCurrentThreadName("Simulation/Replay Thread");
+	SetCurrentThreadName("Replay / Sim");
 
 	auto copyDetectionFromStoredRecord = [&state, &pipeline](const std::shared_ptr<FrameRecord> &frameStored, std::shared_ptr<FrameRecord> &frameRecord)
 	{

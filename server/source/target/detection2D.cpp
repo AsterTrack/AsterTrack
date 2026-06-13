@@ -25,10 +25,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigenalg.hpp"
 #include "util/stats.hpp"
 #include "util/log.hpp"
+#include "util/threading.hpp"
 
 #include "poselib/p3p_ding.hpp"
-
-#include <omp.h>
 
 #include <algorithm>
 #include <random>
@@ -89,9 +88,11 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 #pragma omp parallel for schedule(static) num_threads(params.maxParallelism)
 	for (int i = 0; i < rotations.size(); i++)
 	{
-		const auto &quat = rotations[i];
 		if (stopToken.stop_requested())
 			continue;
+		LazyNameWorkerThread();
+
+		const auto &quat = rotations[i];
 
 		Eigen::Isometry3f estimate;
 		estimate.linear() = quat.toRotationMatrix();
@@ -260,9 +261,11 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 #pragma omp parallel for schedule(static) num_threads(params.maxParallelism)
 	for (int i = 0; i < permIndices.size(); i++)
 	{
-		const auto &perm = permIndices[i];
 		if (stopToken.stop_requested())
 			continue;
+		LazyNameWorkerThread();
+
+		const auto &perm = permIndices[i];
 
 		std::array<Eigen::Isometry3f,4> poses;
 		int poseCnt = poselib::p3p_ding(camPoints_triplet,

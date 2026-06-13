@@ -151,7 +151,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 {
 	ServerCommState &server = *serverState;
 
-	SetCurrentThreadName("Wireless Server Thread");
+	SetCurrentThreadName("Wireless Server");
 
 	if (server.socket == 0)
 		return;
@@ -352,7 +352,7 @@ void ClientThread(std::stop_token stop_token, ClientCommState *clientState)
 	ClientCommState &comm = *clientState;
 	ProtocolState &proto = comm.protocol;
 
-	SetCurrentThreadName("Wireless Client Thread");
+	SetCurrentThreadName("Wireless Client");
 
 	ScopedLogContext ServerLogContext(clientState->socket);
 

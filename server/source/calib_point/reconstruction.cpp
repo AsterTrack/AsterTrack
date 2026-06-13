@@ -25,7 +25,6 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include <cassert>
 #include <chrono>
-#include <omp.h>
 
 /**
  * Geometric reconstruction of observations used for calibration

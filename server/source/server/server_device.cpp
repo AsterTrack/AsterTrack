@@ -133,7 +133,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 {
 	ServerState &state = *statePtr;
 
-	SetCurrentThreadName("Device Supervisor Thread");
+	SetCurrentThreadName("Device Supervisor");
 
 	int it = 0;
 
@@ -530,7 +530,7 @@ void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr)
 	ServerState &state = *statePtr;
 	PipelineState &pipeline = state.pipeline;
 
-	SetCurrentThreadName("Realtime Processing Thread");
+	SetCurrentThreadName("Realtime Processing");
 
 	while (!stop_token.stop_requested())
 	{

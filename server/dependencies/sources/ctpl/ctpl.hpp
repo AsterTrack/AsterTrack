@@ -37,6 +37,8 @@
 // where id is the index of the thread that runs the functor
 // ret is some return type
 
+// Custom: Name CTPL threads once upon startup
+bool SetCurrentThreadName(const char *name);
 
 namespace ctpl {
 
@@ -209,6 +211,7 @@ namespace ctpl {
 		void set_thread(int i) {
 			std::shared_ptr<std::atomic<bool>> flag(this->flags[i]); // a copy of the shared ptr to the flag
 			auto f = [this, i, flag/* a copy of the shared ptr to the flag */]() {
+				SetCurrentThreadName("ThreadPool");
 				std::atomic<bool> & _flag = *flag;
 				std::function<void(int id)> * _f;
 				bool isPop = this->q.pop(_f);

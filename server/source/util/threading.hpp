@@ -27,7 +27,6 @@ SOFTWARE.
 #define THREADING_H
 
 #include <thread>
-#include <cassert>
 
 /**
  * Custom thread wrapper
@@ -52,7 +51,6 @@ struct ThreadControl
 
 	void init()
 	{
-		assert(thread == nullptr);
 		stop_source = {};
 		finished = false;
 	}
@@ -82,18 +80,26 @@ struct ThreadControl
 		return thread != nullptr && stop_source.stop_requested();
 	}
 
-    ThreadControl()
-    {
-        init();
-    }
-    ~ThreadControl()
-    {
-        stop();
-    }
+	ThreadControl()
+	{
+		init();
+	}
+	~ThreadControl()
+	{
+		stop();
+	}
 };
 
 bool SetThreadPriority(std::thread &thread, int priority);
 bool SetCurrentThreadPriority(int priority);
 bool SetCurrentThreadName(const char *name);
+
+extern thread_local bool namedThread;
+
+inline void LazyNameWorkerThread()
+{
+	if (!namedThread)
+		SetCurrentThreadName("OpenMP");
+}
 
 #endif // THREADING_H

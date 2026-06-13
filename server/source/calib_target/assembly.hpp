@@ -52,7 +52,7 @@ struct TargetView
 	SynchronisedS<TargetCalibration3D> calib = {};
 	// Calibration
 	bool planned;
-	ThreadControl control;
+	ThreadControl control = {};
 	enum CalibrationStep { NONE,
 		OPTIMISE_FINE,
 		OPTIMISE_COARSE,

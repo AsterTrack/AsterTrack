@@ -100,7 +100,7 @@ EXPORT bool _InterfaceThread()
 	if (!InterfaceInstance)
 		return false;
 
-	SetCurrentThreadName("Interface Thread");
+	SetCurrentThreadName("Interface");
 
 	// Open platform window
 	glfwSetErrorCallback([](int error, const char* description)

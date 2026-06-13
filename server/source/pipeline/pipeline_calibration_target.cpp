@@ -80,7 +80,6 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 	{
 		auto state = std::make_shared<PipelineState::TargetOptimisationState>(tgtCalib.optPlannedForTargetID);
 		tgtCalib.optPlannedForTargetID = 0;
-		state->control.init();
 		state->control.thread = new std::thread(ThreadTargetOptimisation, &pipeline, state);
 		tgtCalib.targetOptimisations.contextualLock()->push_back(std::move(state));
 		SignalPipelineUpdate();
@@ -140,7 +139,6 @@ void UpdateTargetCalibrationStatus(PipelineState &pipeline)
 			tgtCalib.assembly.planned = false;
 			tgtCalib.assembly.state = std::make_shared<PipelineState::TargetAssemblyState>();
 			tgtCalib.assembly.control = std::make_shared<ThreadControl>();
-			tgtCalib.assembly.control->init();
 			tgtCalib.assembly.control->thread = new std::thread(ThreadTargetAssembly, &pipeline, tgtCalib.assembly.control, tgtCalib.assembly.state);
 			SignalPipelineUpdate();
 		}
@@ -270,7 +268,7 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 	std::stop_token stopToken = viewPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { viewPtr->control.finished = true; });
 
-	SetCurrentThreadName("TargetView Thread");
+	SetCurrentThreadName("TargetView Opt");
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
 	ScopedLogContext scopedLogContext(viewPtr->beginFrame); // Need something visible in the UI
@@ -955,7 +953,7 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
 	std::stop_token stopToken = control->stop_source.get_token();
 
-	SetCurrentThreadName("Target Assembly Thread");
+	SetCurrentThreadName("Target Assembly");
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib, true);
 	ScopedLogContext scopedLogContext(rand()); // Need something visible in the UI
@@ -1392,7 +1390,7 @@ static void ThreadTargetOptimisation(PipelineState *pipeline, std::shared_ptr<Pi
 	std::stop_token stopToken = targetPtr->control.stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { targetPtr->control.finished = true; });
 
-	SetCurrentThreadName("Target Optimisation Thread");
+	SetCurrentThreadName("Target Opt");
 
 	ScopedLogCategory scopedLogCategory(LOptimisation, true);
 	ScopedLogContext scopedLogContext(targetPtr->targetID); // Need something visible in the UI

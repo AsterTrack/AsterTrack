@@ -19,12 +19,12 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //#define LOG_MAX_LEVEL LTrace
 #include "util/log.hpp"
 #include "util/util.hpp"
+#include "util/threading.hpp"
 
 #include <numeric>
 #include <algorithm>
 #include <map>
 #include <cassert>
-#include <omp.h>
 
 /**
  * Recovery of measurement matrix by estimating projective depths and filling missing data
@@ -301,6 +301,8 @@ float determineRank4Basis(
 	VectorX<BOOL> selectedViews = VectorX<BOOL>::Ones(viewCount);
 
 #ifdef PARALLEL
+	LazyNameWorkerThread();
+
 	std::vector<Eigen::MatrixXd> priv_partN;
 
 	auto p0 = sclock::now();

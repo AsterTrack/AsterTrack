@@ -34,6 +34,8 @@ SOFTWARE.
 #include <sys/prctl.h>
 #endif
 
+thread_local bool namedThread = false;
+
 bool SetThreadPriority(std::thread &thread, int priority)
 {
 #ifdef _WIN32
@@ -63,11 +65,11 @@ bool SetCurrentThreadPriority(int priority)
 
 bool SetCurrentThreadName(const char *name)
 {
+	namedThread = true;
 #ifdef _WIN32
-
-    const size_t cSize = strlen(name)+1;
-    wchar_t* wname = new wchar_t[cSize];
-    mbstowcs (wname, name, cSize);
+	const size_t cSize = strlen(name)+1;
+	wchar_t* wname = new wchar_t[cSize];
+	mbstowcs (wname, name, cSize);
 	bool res = SetThreadDescription(GetCurrentThread(), wname);
 	delete[] wname;
 	return res;

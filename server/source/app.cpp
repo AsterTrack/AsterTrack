@@ -17,7 +17,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "app.hpp"
-#include "server.hpp"
+#include "version.hpp"
+#include "server/server.hpp"
 
 #include "ui/shared.hpp" // Signals
 
@@ -49,10 +50,6 @@ extern ctpl::thread_pool threadPool;
 #include <omp.h>
 
 #include "crash_handler.inl"
-
-#include "comm/packet.h"
-extern VersionDesc serverVersion;
-extern std::string serverVersionDescriptor;
 
 AppState AppInstance;
 ServerState StateInstance = {};

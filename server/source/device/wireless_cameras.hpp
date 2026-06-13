@@ -16,12 +16,14 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "version.hpp"
+#ifndef WIRELESS_CAMERAS_H
+#define WIRELESS_CAMERAS_H
 
-VersionDesc serverVersion(0, 2, 0);
+#include "comm/wireless_server.hpp"
 
-// Optional text descriptor
-#ifndef FIRMWARE_DESCRIPTOR
-#define FIRMWARE_DESCRIPTOR "dev"
-#endif
-std::string serverVersionDescriptor = FIRMWARE_DESCRIPTOR;
+struct ServerState;
+
+void StartWirelessServer(ServerCommState &server, ServerState &state);
+void StopWirelessServer(ServerCommState &server);
+
+#endif // WIRELESS_CAMERAS_H

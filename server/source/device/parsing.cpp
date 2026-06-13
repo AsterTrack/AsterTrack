@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "tracking_camera.hpp"
 #include "tracking_controller.hpp"
 
-#include "server.hpp"
+#include "server/server.hpp"
 #include "ui/shared.hpp" // Signals
 #include "camera_firmware.hpp"
 

@@ -41,7 +41,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "calib_target/aquisition.hpp" // TargetViewAquisition
 #include "calib_target/assembly.hpp" // TargetView, TargetAssemblyStage, TargetAssemblyStageID
 
-#include "simulation.hpp" // SimulationState
+#include "offline/simulation.hpp" // SimulationState
 
 #include "util/blocked_vector.hpp"
 #include "util/eigendef.hpp"

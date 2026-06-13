@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui.hpp"
 
 #include "device/tracking_camera.hpp"
+#include "device/wireless_cameras.hpp"
 
 void InterfaceState::
 UpdateWirelessSetup(InterfaceWindow &window)
@@ -129,8 +130,8 @@ UpdateWirelessSetup(InterfaceWindow &window)
 					}
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				StopWirelessServer(state);
-				StartWirelessServer(state);
+				StopWirelessServer(state.server);
+				StartWirelessServer(state.server, state);
 			}
 			ImGui::SetItemTooltip("Restart the server on the new port (currently on %s).\nTries to communicate new port to currently connected cameras.",
 				state.server.portUsed.c_str());

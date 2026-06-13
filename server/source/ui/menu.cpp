@@ -19,7 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui.hpp"
 
 #include "app.hpp"
-#include "recording.hpp"
+#include "version.hpp"
+#include "offline/recording.hpp"
 
 #include "device/tracking_camera.hpp"
 
@@ -29,9 +30,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 
-// Found in version.cpp
-extern VersionDesc serverVersion;
-extern std::string serverVersionDescriptor;
 
 
 void InterfaceState::UpdateMainMenuBar()

@@ -16,12 +16,18 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "version.hpp"
+#ifndef VERSION_H
+#define VERSION_H
 
-VersionDesc serverVersion(0, 2, 0);
+#include "comm/packet.h"
 
-// Optional text descriptor
-#ifndef FIRMWARE_DESCRIPTOR
-#define FIRMWARE_DESCRIPTOR "dev"
-#endif
-std::string serverVersionDescriptor = FIRMWARE_DESCRIPTOR;
+#include <string>
+
+/**
+ * Version
+ */
+
+extern VersionDesc serverVersion;
+extern std::string serverVersionDescriptor;
+
+#endif // VERSION_H

@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "io/integrations.hpp"
 #include "io/vrpn.hpp"
 #include "io/vmc.hpp"
-#include "server.hpp"
+#include "server/server.hpp"
 
 #include "util/log.hpp"
 #include "util/eigenutil.hpp"

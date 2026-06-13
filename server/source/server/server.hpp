@@ -29,10 +29,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <thread>
 #include <atomic>
 
-/**
- * Main program flow
- */
-
 
 /* Structures */
 
@@ -151,6 +147,7 @@ struct ServerState
 
 bool ServerInit(ServerState &state);
 void ServerExit(ServerState &state);
+
 bool ServerUpdateTrackerIMU(ServerState &state, TrackerConfig &tracker);
 void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool updatedIMU = false);
 void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, bool initial = false, int manualTrigger = 0, int manualExpose = 0);
@@ -159,13 +156,8 @@ std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID i
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);
 CameraMode getCameraMode(ServerState &state, CameraID id);
 
-void StartWirelessServer(ServerState &state);
-void StopWirelessServer(ServerState &state);
-
-bool StartDeviceMode(ServerState &state);
+void StartDeviceMode(ServerState &state);
 void StopDeviceMode(ServerState &state);
-
-void StartServer(ServerState &state);
 
 void StartSimulation(ServerState &state);
 void StopSimulation(ServerState &state);

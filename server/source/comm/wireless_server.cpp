@@ -25,7 +25,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/socket.hpp"
 #include "comm/protocol_stream.hpp"
 #include "comm/uart.h" // Use same format as UART just to share protocol_stream
-#include "comm/packet.hpp"
+
+#include "version.hpp"
 
 #include <fcntl.h>
 #include <thread>
@@ -46,10 +47,6 @@ static uint8_t msg_ack[UART_PACKET_OVERHEAD_SEND], msg_nak[UART_PACKET_OVERHEAD_
 #define COMM_INTERVAL_US			10000
 #define COMM_PING_INTERVAL_MS		100
 #define COMM_PING_TIMEOUT_MS		1000
-
-// Found in version.cpp
-extern VersionDesc serverVersion;
-extern std::string serverVersionDescriptor;
 
 void ClientThread(std::stop_token stop_token, ClientCommState *clientState);
 

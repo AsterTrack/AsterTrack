@@ -120,8 +120,6 @@ static bool operator==(const TrackingControllerState& a, const TrackingControlle
 
 int DetectNewControllers(ServerState &state);
 void DisconnectController(ServerState &state, TrackingControllerState &controller);
-void DevicesStartStreaming(ServerState &state);
-void DevicesStopStreaming(ServerState &state);
 void HandleController(ServerState &state, TrackingControllerState &controller);
 void ParseControllerPackets(ServerState &state, TrackingControllerState &controller);
 

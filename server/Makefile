@@ -201,10 +201,12 @@ lflags = $(lenv) $(lstd) $(lmode) $(march)
 
 # Define all source files to be compiled
 SERVER_CPP = \
-	app.cpp server.cpp config.cpp simulation.cpp recording.cpp version.cpp \
+	app.cpp config.cpp version.cpp \
+	server/server.cpp server/server_device.cpp server/server_offline.cpp \
+	offline/simulation.cpp offline/recording.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp comm/streaming.cpp \
 	comm/wireless_server.cpp \
-	device/tracking_controller.cpp device/tracking_camera.cpp \
+	device/tracking_controller.cpp device/tracking_camera.cpp device/wireless_cameras.cpp \
 	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp \
 	io/integrations.cpp io/vmc.cpp io/vrpn.cpp io/vrpn_imu.cpp \
 	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp imu/remoteIMU.cpp \

@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui/ui.hpp"
 
-#include "simulation.hpp"
+#include "offline/simulation.hpp"
 
 
 void InterfaceState::UpdateSimulationParameters(InterfaceWindow &window)

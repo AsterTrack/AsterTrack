@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "recording.hpp"
 
-#include "server.hpp"
+#include "server/server.hpp"
 #include "config.hpp"
 #include "ui/shared.hpp" // Signals to UI
 

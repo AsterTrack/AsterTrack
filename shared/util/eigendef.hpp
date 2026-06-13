@@ -119,6 +119,7 @@ struct CameraCalib_t
 
 	/**
 	 * Update the view and camera matrix when transform or intrinsiv parameters of cameras changed
+	 * If you get a linker error here, include eigenutil.hpp to get the inline definition
 	 */
 	void UpdateDerived();
 

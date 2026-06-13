@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //#define LOG_MAX_LEVEL LTrace
 
-#include "server.hpp"
+#include "server/server.hpp"
 #include "tracking_camera.hpp"
 #include "tracking_controller.hpp"
 #include "comm/wireless_server_client.hpp"

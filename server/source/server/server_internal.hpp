@@ -16,12 +16,20 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "version.hpp"
+#ifndef SERVER_INTERNAL_H
+#define SERVER_INTERNAL_H
 
-VersionDesc serverVersion(0, 2, 0);
+#include "server.hpp"
 
-// Optional text descriptor
-#ifndef FIRMWARE_DESCRIPTOR
-#define FIRMWARE_DESCRIPTOR "dev"
-#endif
-std::string serverVersionDescriptor = FIRMWARE_DESCRIPTOR;
+void SetupSyncGroups(ServerState &state);
+void SetupVirtualSyncGroup(ServerState &state);
+void DeleteVirtualSyncGroup(ServerState &state);
+
+void DevicesStartStreaming(ServerState &state);
+void DevicesStopStreaming(ServerState &state);
+
+void StopCoprocessingThread(ServerState &state);
+
+void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr);
+
+#endif // SERVER_INTERNAL_H

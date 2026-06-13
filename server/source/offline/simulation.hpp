@@ -26,9 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
-#include <queue>
 #include <map>
-#include <memory>
 
 /*
  * Generate simulated data

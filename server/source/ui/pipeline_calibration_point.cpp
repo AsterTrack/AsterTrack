@@ -21,6 +21,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
 
+#include "util/eigenutil.hpp"
+
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
 

@@ -340,10 +340,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				debugVis.internalData.init(cameraCount);
 				auto calibs = pipeline.getCalibs();
 				calibs.resize(cameraCount);
-				debugVis.targetMatch2D = trackTarget2D(trackConfig->calib,
+				trackTarget2D(pipeline.params.track, trackConfig->calib,
 					trackRecord->ext->predicted, trackRecord->ext->predictedCov,
-					calibs, cameraCount,
-					points2D, properties, relevantPoints2D, pipeline.params.track, debugVis.internalData);
+					calibs, cameraCount, points2D, properties, relevantPoints2D,
+					debugVis.targetMatch2D, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
 				debugVis.trackerID = visState.tracking.focusedTrackerID;
 				debugVis.calib = &trackConfig->calib;

@@ -45,24 +45,22 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	if (!record.result.isTracked()) return record.result;
-	if (record.match2D) // May be uninitialised outside of replay/simulation
-		target.match2D = *record.match2D;
-	target.match2D.error = record.error;
-	obs.pose.observed = record.pose.observed;
-	obs.pose.observedCov = target.match2D.covariance;
-	if (params.filter.pose.useSyntheticCov || obs.pose.observedCov.hasNaN()) // Missing match2D in recording
+	if (!record.match2D) return record.result;
+	TargetMatch2D &match2D = *record.match2D;
+	obs.pose.observed = match2D.pose;
+	obs.pose.observedCov = match2D.covariance;
+	if (params.filter.pose.useSyntheticCov)
 		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
 
-	int pointCount = target.match2D.count();
+	int pointCount = match2D.count();
 	bool trackSparse = pointCount > 0 && pointCount <= params.filter.point.obsLimit;
 	TrackingResult trackResult = trackSparse? TrackingResult::TRACKED_SPARSE : TrackingResult::TRACKED_POSE;
 	if (trackSparse)
 	{
-		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
-			target.match2D.error.samples);
+		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!", match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
-		errorTerm.setData(points2D, target.match2D, target.calib);
+		errorTerm.setData(points2D, match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
 		measurement.useNumerical(params.filter.point.useNumericJac, params.filter.point.jacobianEpsilon);
@@ -98,7 +96,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	}
 	else
 	{
-		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
 			obs.pose.observed.translation().cast<double>(),
 			Eigen::Quaterniond(obs.pose.observed.rotation().cast<double>()),
@@ -122,7 +120,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	return trackResult;
 }
 
-TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs, TargetMatch2D &match2D,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -141,20 +139,22 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 
 	// Match target with points and optimise pose
-	target.match2D = trackTarget2D(target.calib, obs.ext.predicted, obs.ext.predictedCov,
-		calibs, cameraCount, points2D, properties, relevantPoints2D, params, target.data);
-	int pointCount = target.match2D.count();
-	if (pointCount != target.match2D.error.samples)
+	trackTarget2D(params, target.calib,
+		obs.ext.predicted, obs.ext.predictedCov,
+		calibs, cameraCount, points2D, properties, relevantPoints2D,
+		match2D, target.data);
+	int pointCount = match2D.count();
+	if (pointCount != match2D.error.samples)
 	{
 		LOG(LTracking, LDarn, "Target Match has %d / %d points with %fpx mean error!",
-			pointCount, target.match2D.error.samples, target.match2D.error.mean*PixelFactor);
+			pointCount, match2D.error.samples, match2D.error.mean*PixelFactor);
 	}
-	if (pointCount < params.quality.minTotalObs || target.match2D.error.mean > params.quality.maxTotalError)
+	if (pointCount < params.quality.minTotalObs || match2D.error.mean > params.quality.maxTotalError)
 		return TrackingResult::NO_TRACK;
 	LOG(LTracking, LDebug, "    Pixel Error after 2D target track: %fpx mean over %d points\n",
-		target.match2D.error.mean*PixelFactor, target.match2D.error.samples);
-	obs.pose.observed = target.match2D.pose;
-	obs.pose.observedCov = target.match2D.covariance;
+		match2D.error.mean*PixelFactor, match2D.error.samples);
+	obs.pose.observed = match2D.pose;
+	obs.pose.observedCov = match2D.covariance;
 	if (params.filter.pose.useSyntheticCov)
 		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
 
@@ -165,10 +165,10 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	if (trackSparse)
 	{
 		LOG(LTrackingFilter, LDarn, "Using Point Filter Update with %d points!",
-			target.match2D.error.samples);
+			match2D.error.samples);
 
 		TargetReprojectionError<double, OptUndistorted> errorTerm(calibs);
-		errorTerm.setData(points2D, target.match2D, target.calib);
+		errorTerm.setData(points2D, match2D, target.calib);
 
 		TargetMatchMeasurement measurement(errorTerm, params.filter.point.stdDev*params.filter.point.stdDev);
 		measurement.useNumerical(params.filter.point.useNumericJac, params.filter.point.jacobianEpsilon);
@@ -204,7 +204,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	}
 	else
 	{
-		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", target.match2D.error.samples);
+		LOG(LTrackingFilter, LDebug, "Using Pose Filter Update with %d points!", match2D.error.samples);
 		AbsolutePoseMeasurement measurement(
 			obs.pose.observed.translation().cast<double>(),
 			Eigen::Quaterniond(obs.pose.observed.rotation().cast<double>()),

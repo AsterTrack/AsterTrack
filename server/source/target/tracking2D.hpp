@@ -174,11 +174,12 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * Redetect the target in the observed 2D points using a predicted pose
  * Iteratively matches fast, then slow if needed, optimises, matches more, and optimises
  */
-TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
+void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibration3D &target,
+	Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	const TargetTrackingParameters &params, TargetTracking2DData &internalData);
+	TargetMatch2D &targetMatch2D, TargetTracking2DData &internalData);
 
 #endif // TARGET_TRACKING_2D_H

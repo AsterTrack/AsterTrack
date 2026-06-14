@@ -807,12 +807,13 @@ void updateVisibleMarkers(std::vector<std::vector<int>> &visibleMarkers, const T
  * Iteratively matches fast, then slow if needed, optimises, matches more, and optimises
  */
 [[gnu::flatten, gnu::target_clones("arch=x86-64-v4", "default")]]
-TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
+void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibration3D &target,
+	Eigen::Isometry3f prediction, const CovarianceMatrix &covariance,
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int> const *> &relevantPoints2D,
-	const TargetTrackingParameters &params, TargetTracking2DData &internalData)
+	TargetMatch2D &targetMatch2D, TargetTracking2DData &internalData)
 {
 	ScopedLogCategory scopedLogCategory(LTracking);
 	assert(calibs.size() == points2D.size());
@@ -820,7 +821,6 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 	assert(calibs.size() == relevantPoints2D.size());
 
 	// Find candidate for 2D point matches
-	TargetMatch2D targetMatch2D = {};
 	targetMatch2D.pose = prediction;
 	targetMatch2D.points2D.resize(cameraCount); // Indexed with calib.index, not index into calibs
 
@@ -1232,6 +1232,4 @@ TargetMatch2D trackTarget2D(const TargetCalibration3D &target, Eigen::Isometry3f
 		}
 		targetMatch2D.freeObservations += std::max<int>(0, closeObservations-matched);
 	}
-
-	return targetMatch2D;
 }

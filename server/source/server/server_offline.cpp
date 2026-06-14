@@ -630,9 +630,7 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			{} // Advance freely, do nothing
 		}
 
-		if (state.simAdvanceQuickly)
-			std::this_thread::sleep_for(std::chrono::microseconds(500));
-		else
+		if (!state.simAdvanceQuickly)
 			std::this_thread::sleep_until(frameReceiveTime + std::chrono::microseconds(desiredFrameIntervalUS));
 
 		// Waiting for processing of last frame to finish

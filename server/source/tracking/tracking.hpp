@@ -80,11 +80,8 @@ struct TrackerTarget
 	// Store internal data for visualisation purposes (low overhead)
 	TargetTracking2DData data;
 
-	// 2D Tracking result
-	TargetMatch2D match2D;
-
 	TrackerTarget(TargetCalibration3D &&calib, TargetDetectionConfig config) :
-		calib(std::move(calib)), detectionConfig(config), detectionCycle(0), data{}, match2D{} {}
+		calib(std::move(calib)), detectionConfig(config), detectionCycle(0), data{} {}
 };
 
 struct TrackerMarker
@@ -241,7 +238,6 @@ struct TrackedBase
 	int id;
 	std::string label;
 	TrackingResult result;
-	float procTimeMS;
 	float mistrust = 0.0f;
 
 	inline TrackedBase(int id, std::string label) : id(id), label(label), mistrust(0.0f) {} // For MSVC...
@@ -352,7 +348,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 
-TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs,
+TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs, TargetMatch2D &match2D,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

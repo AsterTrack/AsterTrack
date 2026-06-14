@@ -373,7 +373,8 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 		matchTargetPointsRecover(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
 			projected2D, relevantProjected2D, cameraMatches, matchData,
 			params.match, distFactor);
-	
+
+		if (SHOULD_LOGC(LTrace))
 		{ // For debug only
 			TargetMatchError errors = evaluateTargetPose(calibs, points2D, targetMatch2D, target3D);
 			LOGC(LTrace, "    Candidate %d matched %d points in focus camera %u with error %fpx!",
@@ -388,8 +389,9 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			errors.samples, errors.mean*PixelFactor);
 
 		// Potentially overwrite numeric covariance with default initial covariance
-		targetMatch2D.covariance = track.filter.getSyntheticCovariance<float>() * track.filter.detectSigma;
+		CovarianceMatrix detectCov = track.filter.pose.useSyntheticCov? track.filter.getSyntheticCovariance<float>() * track.filter.detectSigma : targetMatch2D.covariance;
 
+		if (SHOULD_LOGC(LDebug))
 		{
 			auto stdDev = targetMatch2D.covariance.diagonal().cwiseSqrt();
 			Eigen::Vector3f devPos = stdDev.head<3>()*1000, devRot = stdDev.tail<3>()*1000;
@@ -398,8 +400,10 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 		}
 
 		// Properly track to expand to other cameras to acquire more certainty
-		targetMatch2D = trackTarget2D(target3D, targetMatch2D.pose, targetMatch2D.covariance,
-			calibs, cameraCount, points2D, properties, relevantPoints2D, track, trackData);
+		trackTarget2D(track, target3D,
+			targetMatch2D.pose, detectCov,
+			calibs, cameraCount, points2D, properties, relevantPoints2D,
+			targetMatch2D, trackData);
 
 		if (bestMatch.error.mean/bestMatch.error.samples > targetMatch2D.error.mean/targetMatch2D.error.samples)
 		{

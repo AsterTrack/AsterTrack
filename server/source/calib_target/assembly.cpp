@@ -850,9 +850,12 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 
 	TargetTracking2DData internalData(frameRecord->cameras.size());
 	CovarianceMatrix covariance = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
-	return trackTarget2D(trkTarget, prediction, covariance,
-		calibs, frameRecord->cameras.size(),
-		points2D, properties, relevantPoints2D, params, internalData);
+	TargetMatch2D match2D = {};
+	trackTarget2D(params, trkTarget,
+		prediction, covariance,
+		calibs, frameRecord->cameras.size(), points2D, properties, relevantPoints2D,
+		match2D, internalData);
+	return match2D;
 }
 
 void expandFrameObservations(const std::vector<CameraCalib> &calibs, const BlockedQueue<std::shared_ptr<FrameRecord>> &frameRecords,
@@ -860,7 +863,7 @@ void expandFrameObservations(const std::vector<CameraCalib> &calibs, const Block
 {
 	LOG(LTargetCalib, LDebug, "Expand frame observations for target:");
 
-	auto obsFrameFromTracked = [](const FrameRecord &frame, TargetMatch2D &targetMatch2D)
+	auto obsFrameFromTracked = [](const FrameRecord &frame, const TargetMatch2D &targetMatch2D)
 	{
 		ObsTargetFrame newFrame;
 		newFrame.frame = frame.num;

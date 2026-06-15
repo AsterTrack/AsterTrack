@@ -33,7 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "target/target.hpp" // TargetCalibration3D
 
-#include "tracking/tracking.hpp" // TrackedTarget, TrackedMarker, DormantTarget, OrphanedIMU
+#include "tracking/tracking.hpp" // TrackedTarget, DormantTarget, IMUMarker, OrphanedIMU
 
 #include "calib_point/parameters.hpp" // PointCalibParameters
 #include "calib_point/calibration_room.hpp" // StaticPointSamples
@@ -153,12 +153,10 @@ struct PipelineState
 		std::vector<Eigen::Vector3f> points3D; // points of triangulations3D
 		std::vector<TriangulatedPoint> triangulations3D; // Likely to be real markers
 		std::vector<TriangulatedPoint> discarded3D; // Unlikely to be real markers
-		// Currently tracked objects
+		// Trackers (dormant & tracked)
 		std::list<TrackedTarget> trackedTargets;
-		std::list<TrackedMarker> trackedMarkers;
-		// Objects not currently tracked
 		std::list<DormantTarget> dormantTargets;
-		std::list<DormantMarker> dormantMarkers;
+		std::list<IMUMarker> markers;
 		std::list<OrphanedIMU> orphanedIMUs;
 		// Virtual trackers composed of and interfacing with tracked objects
 		std::list<VirtualTracker> virtualTrackers;

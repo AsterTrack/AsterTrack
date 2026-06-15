@@ -351,16 +351,22 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			TrackerRecord detectRecord = trackerRecord;
 			if (!trackerRecord.result.isDetected())
 				detectRecord.result = TrackingResult::COPIED_DETECTION;
-			frameRecord->trackers.push_back(std::move(detectRecord));			
+			if (existing != frameRecord->trackers.end())
+				*existing = std::move(detectRecord);
+			else
+				frameRecord->trackers.push_back(std::move(detectRecord));
 			// Switch from dormant to tracked target (if not already tracked)
-			auto dormantTarget = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
+			auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
 				[&](const auto &d){ return d.id == trackerRecord.id; });
-			if (dormantTarget != pipeline.tracking.dormantTargets.end())
+			if (dormantIt != pipeline.tracking.dormantTargets.end())
 			{
-				pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantTarget), trackerRecord.pose.observed, frameRecord->time, frameRecord->num, pipeline.params.track);
-				pipeline.tracking.dormantTargets.erase(dormantTarget);
+				pipeline.tracking.trackedTargets.push_back(std::move(*dormantIt));
+				pipeline.tracking.dormantTargets.erase(dormantIt);
 			}
-			// Probably no need to do the same for TrackedMarker
+			auto trackerIt = std::find_if(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(),
+				[&](auto &trk){ return trk.id == trackerRecord.id; });
+			if (trackerIt != pipeline.tracking.trackedTargets.end())
+				trackerIt->PickUpTracking(trackerRecord.pose.observed, frameRecord->time, frameRecord->num, pipeline.params.track);
 			SignalTrackerDetected(trackerRecord.id);
 		}
 	};

@@ -235,11 +235,14 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// Point and Target calibration pipeline can just stay as is, as long as frame records stays
 	// We will be overwriting frame records, so technically leaving them as-is is not thread-safe
 
-	// Mark all trackers as dormant
-	std::move(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(), std::back_inserter(pipeline.tracking.dormantTargets));
+	// Forcefully move all trackers to dormant state (no matter whether it has inertial unit or not)
+	std::move(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(), std::front_inserter(pipeline.tracking.dormantTargets));
 	pipeline.tracking.trackedTargets.clear();
-	std::move(pipeline.tracking.trackedMarkers.begin(), pipeline.tracking.trackedMarkers.end(), std::back_inserter(pipeline.tracking.dormantMarkers));
-	pipeline.tracking.trackedMarkers.clear();
+	for (auto &tracker : pipeline.tracking.markers)
+	{ // Interrupt as if tracking lost, but also reset IMU due to jump to another frame
+		tracker.InterruptTracking();
+		resetIMU(tracker.inertial);
+	}
 
 	for (auto &virtualTracker : pipeline.tracking.virtualTrackers)
 	{ // Manually reset virtual trackers which can not enter dormant state
@@ -249,13 +252,13 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	}
 
 	// Adopt state for all recorded trackers in that frame to kickstart tracking
-	for (auto &targetRecord : frameRecord.trackers)
+	for (auto &trackerRecord : frameRecord.trackers)
 	{
-		if (!targetRecord.result.isDetected() && !targetRecord.result.isTracked()) continue;
+		if (!trackerRecord.result.isDetected() && !trackerRecord.result.isTracked()) continue;
 		auto dormantIt = std::find_if(pipeline.tracking.dormantTargets.begin(), pipeline.tracking.dormantTargets.end(),
-			[&](auto &trk){ return trk.id == targetRecord.id; });
+			[&](auto &trk){ return trk.id == trackerRecord.id; });
 		if (dormantIt == pipeline.tracking.dormantTargets.end()) continue;
-		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), targetRecord.pose.observed, frameRecord.time, frameRecord.num, pipeline.params.track);
+		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), trackerRecord.pose.observed, frameRecord.time, frameRecord.num, pipeline.params.track);
 		pipeline.tracking.dormantTargets.erase(dormantIt);
 	}
 	// TODO: Adopt tracked markers

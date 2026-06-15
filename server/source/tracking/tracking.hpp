@@ -48,18 +48,19 @@ struct TrackerFilter
 	TimePoint_t time;
 
 	// Information about state
+	OptFrameNum firstObsFrame;
+	TimePoint_t firstObservation;
+	OptFrameNum lastObsFrame;
+	TimePoint_t lastObservation;
 	OptFrameNum lastIMUSample;
 	TimePoint_t lastIMUTime;
-	OptFrameNum lastObsFrame;
-	OptFrameNum firstObsFrame;
-	TimePoint_t lastObservation;
-	TimePoint_t firstObservation;
 
-	TrackerFilter() : state{}, lastIMUSample(-1), lastObsFrame(-1), firstObsFrame(-1) {}
+	TrackerFilter() : state{}, firstObsFrame(-1), lastObsFrame(-1), lastIMUSample(-1) {}
 
-	TrackerFilter(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params) :
-		state{}, time(time), lastIMUSample(-1), lastIMUTime(time), lastObsFrame(frame), lastObservation(time), firstObsFrame(frame), firstObservation(time)
+	inline void initialise(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params)
 	{
+		firstObsFrame = lastObsFrame = frame;
+		firstObservation = lastObservation = time;
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
@@ -75,13 +76,12 @@ struct TrackerTarget
 
 	// Config of detection methods used for this target 
 	TargetDetectionConfig detectionConfig;
-	int detectionCycle;
 
 	// Store internal data for visualisation purposes (low overhead)
 	TargetTracking2DData data;
 
 	TrackerTarget(TargetCalibration3D &&calib, TargetDetectionConfig config) :
-		calib(std::move(calib)), detectionConfig(config), detectionCycle(0), data{} {}
+		calib(std::move(calib)), detectionConfig(config), data{} {}
 };
 
 struct TrackerMarker
@@ -229,20 +229,24 @@ struct TrackerVirtual
 
 struct TrackedTarget;
 struct DormantTarget;
-struct TrackedMarker;
-struct DormantMarker;
+struct IMUMarker;
 struct OrphanedIMU;
 
 struct TrackedBase
 {
 	int id;
 	std::string label;
-	TrackingResult result;
-	float mistrust = 0.0f;
+	TrackingResult result;	// Read-Write by main pipeline only
+	float mistrust = 0.0f;	// Read-Write by main pipeline only
 
 	inline TrackedBase(int id, std::string label) : id(id), label(label), mistrust(0.0f) {} // For MSVC...
 };
 
+/**
+ * A target with some information to feed the filter
+ * Might be currently or recently optically tracked
+ * Or might have an IMU associated that updates filter
+ */
 struct TrackedTarget : public virtual TrackedBase
 {
 	// Target tracking source
@@ -257,16 +261,51 @@ struct TrackedTarget : public virtual TrackedBase
 	// Latest observation
 	TrackerObservation obs;
 
-	inline TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
+	inline TrackedTarget(DormantTarget &&dormant);
+
+	inline TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f obsPose,
 		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
+
+	inline void PickUpTracking(Eigen::Isometry3f obsPose,
+		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
+
+	inline void InterruptTracking();
 };
 
-struct TrackedMarker : public virtual TrackedBase
+/**
+ * A target with no information where it is
+ * May have been observed before or not
+ * Does not have an (active) IMU
+ */
+struct DormantTarget : public virtual TrackedBase
+{
+	// Target tracking source
+	TrackerTarget target;
+
+	// TODO: May add information about when it was last seen
+	int detectionCycle;
+
+	// Optional inertial tracking source
+	// Generally inactive if associated at all, otherwise it should be kept as TrackedTarget with filter
+	TrackerInertial inertial;
+
+	inline DormantTarget(TrackedTarget &&tracker);
+
+	DormantTarget(int id, std::string label, TrackerTarget &&target)
+		: TrackedBase(id, label), target(std::move(target)), detectionCycle(0), inertial{} {}
+};
+
+/**
+ * A marker of known size with IMU associated, allowing for consistent identification.
+ * 6-DOF by combining 3-DOF absolute optical position and 3-DOF inertial rotation (may drift).
+ */
+struct IMUMarker : public virtual TrackedBase
 {
 	// Single Marker tracking source
 	TrackerMarker marker;
 
-	// Optional inertial tracking source
+	// Inertial tracking source
+	// Should always be assigned, otherwise hard to reliably identify just based on size
 	TrackerInertial inertial;
 
 	// Current filtered state
@@ -275,32 +314,13 @@ struct TrackedMarker : public virtual TrackedBase
 	// Latest observation
 	TrackerObservation obs;
 
-	inline TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos,
+	IMUMarker(int id, std::string label, TrackerMarker marker) :
+		TrackedBase(id, label), marker(std::move(marker)), inertial{} {}
+
+	inline void PickUpTracking(Eigen::Vector3f pos,
 		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
-};
 
-struct DormantTarget : public virtual TrackedBase
-{
-	// Target tracking source
-	TrackerTarget target;
-
-	// Optional inertial tracking source
-	TrackerInertial inertial;
-
-	inline DormantTarget(TrackedTarget &&tracker);
-	DormantTarget(int id, std::string label, TrackerTarget &&target) : TrackedBase(id, label), target(std::move(target)), inertial() {}
-};
-
-struct DormantMarker : public virtual TrackedBase
-{
-	// Single Marker tracking source
-	TrackerMarker marker;
-
-	// Optional inertial tracking source
-	TrackerInertial inertial;
-
-	inline DormantMarker(TrackedMarker &&tracker);
-	DormantMarker(int id, std::string label, TrackerMarker &&marker) : TrackedBase(id, label), marker(std::move(marker)), inertial() {}
+	inline void InterruptTracking();
 };
 
 struct VirtualTracker : public virtual TrackedBase
@@ -331,14 +351,20 @@ struct OrphanedIMU
 	TrackerObservation obs;
 
 	OrphanedIMU(std::shared_ptr<IMU> &imu, const TargetTrackingParameters &params) :
-		filter(orphanedIMUPose, sclock::now(), -1, params),
+		filter{},
 		inertial(imu, IMUCalib()),
-		obs(orphanedIMUPose, sclock::now(), params) {}
-	
+		obs(orphanedIMUPose, sclock::now(), params)
+	{
+		filter.initialise(orphanedIMUPose, sclock::now(), -1, params);
+	}
+
 	OrphanedIMU(std::shared_ptr<IMU> &&imu, const TargetTrackingParameters &params) :
-		filter(orphanedIMUPose, sclock::now(), -1, params),
+		filter{},
 		inertial(std::move(imu), IMUCalib()),
-		obs(orphanedIMUPose, sclock::now(), params) {}
+		obs(orphanedIMUPose, sclock::now(), params)
+	{
+		filter.initialise(orphanedIMUPose, sclock::now(), -1, params);
+	}
 };
 
 
@@ -367,41 +393,57 @@ bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObser
 void postCorrectIMU(TrackedBase &tracker, TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params);
 void interruptIMU(TrackerInertial &inertial);
+void resetIMU(TrackerInertial &inertial);
 
 
-inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f pose,
+/* Methods */
+
+inline TrackedTarget::TrackedTarget(DormantTarget &&dormant) :
+	TrackedBase(dormant.id, dormant.label), target(std::move(dormant.target)), inertial(std::move(dormant.inertial)) {}
+
+inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f obsPose,
 	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
-	TrackedBase(dormant.id, dormant.label),
-	target(std::move(dormant.target)), inertial(std::move(dormant.inertial)),
-	filter(pose, time, frame, params), obs(pose, time, params)
+	TrackedBase(dormant.id, dormant.label), target(std::move(dormant.target)), inertial(std::move(dormant.inertial))
 {
+	PickUpTracking(obsPose, time, frame, params);
+}
+
+inline void TrackedTarget::PickUpTracking(Eigen::Isometry3f obsPose,
+	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
+{
+	filter.initialise(obsPose, time, frame, params);
+	obs = TrackerObservation(obsPose, time, params);
 	if (inertial)
-		postCorrectIMU(*this, filter, inertial, this->obs, time, params);
+		postCorrectIMU(*this, filter, inertial, obs, time, params);
+}
+
+inline void TrackedTarget::InterruptTracking()
+{
+	// TODO: Add seeded re-detection for targets with inertial units (1/3)
+	// This will be called with the intention to interrupt optical tracking
+	// with subsequent re-detection efforts based on inertial data 
+	interruptIMU(inertial);
 }
 
 inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
-	TrackedBase(tracker.id, tracker.label),
-	inertial(std::move(tracker.inertial)), target(std::move(tracker.target)) 
+	TrackedBase(tracker.id, tracker.label), target(std::move(tracker.target)), detectionCycle(0), inertial(std::move(tracker.inertial))
 {
-	interruptIMU(inertial);
+	resetIMU(inertial);
 }
 
-inline TrackedMarker::TrackedMarker(DormantMarker &&dormant, Eigen::Vector3f pos,
-	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params) :
-	TrackedBase(dormant.id, dormant.label),
-	marker(std::move(dormant.marker)), inertial(std::move(dormant.inertial)),
-	filter(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, frame, params), 
-	obs(Eigen::Isometry3f(Eigen::Translation3f(pos)), time, params)
+inline void IMUMarker::PickUpTracking(Eigen::Vector3f pos,
+	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
-	if (inertial)
-		postCorrectIMU(*this, filter, inertial, this->obs, time, params);
+	Eigen::Isometry3f obsPose;
+	obsPose.translation() = pos;
+	obsPose.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
+	filter.initialise(obsPose, time, frame, params);
+	obs = TrackerObservation(obsPose, time, params);
 }
 
-inline DormantMarker::DormantMarker(TrackedMarker &&tracker) :
-	TrackedBase(tracker.id, tracker.label),
-	inertial(std::move(tracker.inertial)), marker(std::move(tracker.marker)) 
+inline void IMUMarker::InterruptTracking()
 {
-	interruptIMU(inertial);
+	// TODO: Now in search for marker of given size following same pattern as IMU accelerometer
 }
 
 #endif // TRACKING_3D_H

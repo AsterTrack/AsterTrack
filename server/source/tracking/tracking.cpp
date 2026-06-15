@@ -763,10 +763,15 @@ void interruptIMU(TrackerInertial &inertial)
 	inertial.calibration.gyro.sampling = false;
 	inertial.calibration.gyro.aborted = false;
 	inertial.calibration.fused.sampling = false;
+}
+
+void resetIMU(TrackerInertial &inertial)
+{
+	interruptIMU(inertial);
 	inertial.fusion = {};
 }
 
-static bool collectGravitySamples(TrackerInertial &inertial, const TrackerInertial::State &state)
+static bool collectGravitySamples(TrackerInertial &inertial, const TrackerFilter::State &state)
 {
 	double vel = state.velocity().norm();
 	double ang = state.angularVelocity().norm();

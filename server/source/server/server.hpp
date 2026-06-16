@@ -60,7 +60,10 @@ struct ServerState
 	bool isLoading, isStreaming;
 	TimePoint_t lastStreamingStart;
 	PipelineState pipeline;
-	std::queue<ErrorMessage> errors;
+
+	// Error reporting
+	std::mutex errorPushMutex;
+	std::queue<ErrorMessage, std::list<ErrorMessage>> errors;
 
 	// Data stored in files
 	GeneralConfig config;

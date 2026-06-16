@@ -288,7 +288,9 @@ int main (void)
 				const char * reason = dlerror();
 				printf("Failed to link interface library: %s", reason);
 				LOG(LDefault, LError, "Failed to link interface library: %s", reason);
+				std::unique_lock lock(StateInstance.errorPushMutex);
 				StateInstance.errors.push(asprintf_s("Failed to link interface library: %s", reason));
+				lock.unlock();
 				fflush(stdout);
 				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 				exit(-1); // TODO: notify user that UI failed to open

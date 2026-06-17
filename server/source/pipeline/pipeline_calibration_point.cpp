@@ -530,24 +530,22 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 
 	LOGC(LInfo, "=======================\n");
 
-	auto roomCalib = pipeline->pointCalib.room.contextualLock();
-	std::vector<CameraCalib> calibs(pipeline->cameras.size());
+	// Copy data
+	auto roomCalib = *pipeline->pointCalib.room.contextualRLock();
+	std::vector<CameraCalib> calibs(cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
-	{
-		int index = cameras[c]->index;
-		calibs[index] = cameras[c]->calib;
-	}
+		calibs[c] = cameras[c]->calib;
 
 	LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
 
 	// Re-evaluate positions in case calibration changed since observation
-	for (auto &point : roomCalib->floorPoints)
+	for (auto &point : roomCalib.floorPoints)
 		point.update(calibs);
 
 	// Estimate a transform to align floor plane to points with correct scale
 	Eigen::Matrix3d roomOrientation;
 	Eigen::Affine3d roomTransform;
-	auto error = estimateFloorTransform<double>(calibs, roomCalib->floorPoints, roomCalib->distance12, roomOrientation, roomTransform);
+	auto error = estimateFloorTransform<double>(calibs, roomCalib.floorPoints, roomCalib.distance12, roomOrientation, roomTransform);
 	if (error)
 	{
 		LOG(LPointCalib, LError, "Failed to calibrate the floor: %s", error->c_str());
@@ -555,7 +553,7 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 	}
 	else
 	{
-		LOG(LPointCalib, LInfo, "Successfully calibrated floor with %d points!\n", (int)roomCalib->floorPoints.size());
+		LOG(LPointCalib, LInfo, "Successfully calibrated floor with %d points!\n", (int)roomCalib.floorPoints.size());
 		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
 			roomTransform.linear().colwise().norm().mean());
 

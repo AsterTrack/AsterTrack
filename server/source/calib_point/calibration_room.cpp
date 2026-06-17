@@ -230,6 +230,11 @@ OptErrorRes determinePointOutliers(ObsData &data, const std::vector<CameraCalib>
 template<typename Scalar>
 void StaticPointSamples<Scalar>::update(const std::vector<CameraCalib> &calibs)
 {
+	if (sampleCount == 0)
+	{
+		confidence = 0;
+		return;
+	}
 	std::vector<std::vector<Vector2<Scalar>>> samplePoints(calibs.size());
 	std::vector<const std::vector<Vector2<Scalar>>*> samplePointGroups(calibs.size());
 	TriangulatedPoint_t<Scalar> sampleTri(pos, 0, 0, calibs.size());
@@ -278,16 +283,16 @@ HANDLE_ERROR estimateFloorTransform(const std::vector<CameraCalib_t<Scalar>> &ca
 		if (floorPoints[i].confidence > 1)
 			N.col(index++) = floorPoints[i].pos-origin;
 	}
-	Eigen::BDCSVD<Matrix3<Scalar>, Eigen::ComputeFullU> svd_N(N);
+	Eigen::BDCSVD<MatrixX<Scalar>, Eigen::ComputeFullU> svd_N(N);
 	Vector3<Scalar> axis = svd_N.matrixU().template block<3,1>(0, 2);
 	Vector3<Scalar> rankValues = svd_N.singularValues().template tail<3>().reverse();
 	LOG(LPointCalib, LDebug, "    PCA for rotation has ranks (%f, %f, %f)\n", rankValues(2), rankValues(1), rankValues(0));
 
-	if (rankValues(0)*1000 > rankValues(1))
-		return asprintf_s("The floor points don't appear to be on a plane or are too noisy!");
+	if (rankValues(1)/rankValues(0) < 100)
+		return asprintf_s("The floor points don't appear to be on a plane or are too noisy! Rank factor %.3f < 100", rankValues(1)/rankValues(0));
 
-	if (rankValues(1)*20 < rankValues(2))
-		return asprintf_s("The floor points appear to be close to a straight line - make sure they span a plane!");
+	if (rankValues(2)/rankValues(1) > 20)
+		return asprintf_s("The floor points appear to be close to a straight line - make sure they span a plane! Rank factor %.3f > 20", rankValues(2)/rankValues(1));
 
 	// TODO: Account for marker size by shifting floor plane up by their radius
 	// Supporting varying sizes sounds like a pain though

@@ -48,9 +48,9 @@ bool CircularButton(const char* str_id, float size, ImVec4 color = ImVec4(1,1,1,
 
 bool CheckboxInput(const char *label, bool *value);
 
-bool BooleanProperty(const char *label, bool *value, const bool *compare);
+bool BooleanProperty(const char *label, bool *value, const bool *compare = nullptr);
 
-bool TextProperty(const char *label, std::string *value, const std::string *compare);
+bool TextProperty(const char *label, std::string *value, const std::string *compare = nullptr);
 
 template<typename Scalar>
 bool ScalarFieldsN(const char *label, const char *unit, int N, Scalar *value, const Scalar *compare, Scalar min, Scalar max, Scalar editFactor = 1, const char *fmt = nullptr);
@@ -152,6 +152,7 @@ static void BeginLabelledGroup(const char* fmt, ...)
 {
 	ImGui::BeginGroup();
 
+	ImGui::AlignTextToFramePadding();
 	va_list args;
 	va_start(args, fmt);
 	ImGui::TextV(fmt, args);

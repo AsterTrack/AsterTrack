@@ -32,6 +32,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/util.hpp" // printBuffer, TimePoint_t
 #include "util/eigenutil.hpp" // UpdateDerived used in CameraCalib()
 
+#include "flexkalman/FlexibleKalmanFilter.h"
+
 // Processing
 #include "ctpl/ctpl.hpp"
 ctpl::thread_pool threadPool = ctpl::thread_pool(6);
@@ -173,6 +175,25 @@ void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool 
 	if (!state.isStreaming) return;
 	if (!tracker.triggered) return;
 
+	// Make use of recursive mutex, subroutines will also lock
+	std::unique_lock lock (state.pipeline.pipelineLock);
+	
+	// Ensure tracker output is registered for pipeline to use
+	auto registerOutput = state.trackerOutput.emplace(tracker.id, tracker.id);
+	TrackerOutput &output = registerOutput.first->second;
+	if (registerOutput.second)
+	{ // Newly setup output
+		auto io_lock = std::unique_lock(state.io.mutex);
+		if (state.io.vrpn.trackers.contains(tracker.id))
+			output.vrpn = state.io.vrpn.trackers[tracker.id];
+	}
+	{ // Update output
+		output.label = tracker.label;
+		output.role = tracker.role;
+		output.config = tracker.output;
+		output.adoptConfig();
+	}
+
 	// Set (or update) tracked object with tracker config
 	if (tracker.type == TrackerConfig::TRACKER_TARGET)
 		SetTrackedTarget(state.pipeline, tracker.id, tracker.label, tracker.calib, tracker.detectionConfig);
@@ -211,12 +232,16 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 		if (tracker.triggered)
 		{ // Update pipeline with triggered tracker
 			ServerUpdateTrackerIMU(state, tracker);
-			ServerUpdateTrackerConditions(state, tracker, true);
+			ServerUpdateTrackerConditions(state, tracker, false);
 			ServerUpdateTrackerConfig(state, tracker, true);
 		}
 	}
 	else if (manualTrigger < 0)
-	{ // Remove tracker
+	{
+		// Make use of recursive mutex, subroutines will also lock
+		std::unique_lock lock (state.pipeline.pipelineLock);
+
+		// Remove tracker
 		tracker.triggered = false;
 		if (tracker.type == TrackerConfig::TRACKER_TARGET)
 			RemoveTrackedTarget(state.pipeline, tracker.id);
@@ -224,6 +249,9 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 			RemoveTrackedMarker(state.pipeline, tracker.id);
 		else if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 			RemoveVirtualTracker(state.pipeline, tracker.id);
+
+		// Could also keep output until end of streaming
+		state.trackerOutput.erase(tracker.id);
 	}
 
 	if (!tracker.exposed)
@@ -248,15 +276,11 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 // Signals
 // ----------------------------------------------------------------------------
 
-void SignalTrackerDetected(int trackerID)
+void SignalErrorToUser(ErrorMessage error)
 {
-	for (auto &tracker : GetState().trackerConfigs)
-	{
-		if (tracker.id != trackerID) continue;
-		tracker.tracked = true;
-		ServerUpdateTrackerConditions(GetState(), tracker);
-		return;
-	}
+	LOG(LGUI, LWarn, "Error: %s", error.c_str());
+	std::unique_lock lock(GetState().errorPushMutex);
+	GetState().errors.push(std::move(error));	
 }
 
 void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
@@ -320,11 +344,66 @@ void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs)
 	// This update is assumed to have come from pipeline, so no need to update it
 }
 
-void SignalErrorToUser(ErrorMessage error)
+void SignalTrackerDetected(int trackerID)
 {
-	LOG(LGUI, LWarn, "Error: %s", error.c_str());
-	std::unique_lock lock(GetState().errorPushMutex);
-	GetState().errors.push(std::move(error));	
+	for (auto &tracker : GetState().trackerConfigs)
+	{
+		if (tracker.id != trackerID) continue;
+		tracker.tracked = true;
+		ServerUpdateTrackerConditions(GetState(), tracker);
+		return;
+	}
+}
+
+void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial)
+{ // Lowest-latency signal of tracker being tracked or detected
+	// For now only called from pipeline thread under pipelineLock
+	// In the future, may be called from individual tracker thread
+	//   NOTE: Need to ensure we're still under pipelineLock then!
+	// Either way, filter and inertial are safe to access and copy
+	// But server needs to be accessed in a thread-safe manner
+	ServerState &state = GetState();
+
+	// Valid throughout streaming, only modified under pipelineLock
+	TrackerOutput &output = state.trackerOutput.at(record.id);
+	TrackerOutputData data { frame.num, record.pose.filtered, frame.time, record.pose.filtered };
+
+	// If configured, extrapolate filter (with or without additional inertial samples)
+	auto &params = state.pipeline.params.track;
+	if (output.config.extrapolateWithIMU || (output.config.extrapolateAlways && inertial))
+	{ // Extrapolate with any new IMU samples
+		data.processedTime = sclock::now();
+		// TODO: there may be none, and will still extrapolate to current time - not really intended
+		TrackerFilter extFilter = filter;
+		TrackerInertial extInertial = inertial;
+		TrackerObservation dummy;
+		integrateIMU(extFilter, extInertial, dummy, data.processedTime, params);
+		data.processedPose = extFilter.state.getIsometry().cast<float>();
+	}
+	else if (output.config.extrapolateAlways)
+	{ // Extrapolate just based on current filter
+		data.processedTime = sclock::now();
+		TrackerFilter::State extState = filter.state;
+		TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+		flexkalman::predict(extState, model, dtS(filter.time, data.processedTime));
+		data.processedPose = extState.getIsometry().cast<float>();
+	}
+
+	if (output.config.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
+	{ // Apply simple filter as post-process
+		Eigen::Vector3f pos(data.processedPose.translation());
+		Eigen::Quaternionf rot(data.processedPose.rotation());
+		pos = output.filterPos.filter(pos, data.processedTime);
+		rot = output.filterRot.filter(rot, data.processedTime);
+		LOG(LIO, LTrace, "Post-Proc-Filter chose alphas %.5f (%.5f) and %.5f (%.5f)!",
+			output.filterPos.filterValue.alpha, output.filterPos.filterDelta.alpha,
+			output.filterRot.filterValue.alpha, output.filterRot.filterDelta.alpha);
+		data.processedPose.translation() = pos;
+		data.processedPose.linear() = rot.toRotationMatrix();
+	}
+
+	// Fast-track output to selected integrations and record for remaining
+	IntegrationsSendTracker(state.io, output, data, frame.time);
 }
 
 // ----------------------------------------------------------------------------

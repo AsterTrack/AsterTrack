@@ -143,6 +143,7 @@ struct ServerState
 
 	// All integrations
 	IntegrationsState io;
+	std::map<int, TrackerOutput> trackerOutput; // Synchronised via pipelineLock
 };
 
 

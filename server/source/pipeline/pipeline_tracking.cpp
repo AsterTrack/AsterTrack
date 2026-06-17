@@ -637,6 +637,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				postCorrectIMU(tracker, tracker.filter, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
 			recordTargetTracking(record, tracker, pipeline.keepInternalData);
+
+			// Shortcut to output tracking results
+			SignalTrackerTracked(*frame, record, tracker.filter, tracker.inertial);
 		}
 
 		auto occupiedMarkers = getMarkerMatchesFromTrackers(frame);
@@ -942,8 +945,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					TrackerRecord record(tracker.id, TrackingResult::DETECTED_M3D, procTimeMS);
 					record.match2D = std::move(match2D);
 					recordTargetTracking(record, tracker, pipeline.keepInternalData);
-					enterTrackerRecord(frame, std::move(record));
+
+					// Shortcut to output tracking results
 					SignalTrackerDetected(tracker.id);
+					SignalTrackerTracked(*frame, record, tracker.filter, tracker.inertial);
+
+					enterTrackerRecord(frame, std::move(record));
 
 					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 				}
@@ -1182,8 +1189,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					TrackerRecord record(tracker.id, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D, procTimeMS);
 					record.match2D = std::move(match2D);
 					recordTargetTracking(record, tracker, pipeline.keepInternalData);
-					enterTrackerRecord(frame, std::move(record));
+
+					// Shortcut to output tracking results
 					SignalTrackerDetected(tracker.id);
+					SignalTrackerTracked(*frame, record, tracker.filter, tracker.inertial);
+
+					enterTrackerRecord(frame, std::move(record));
 
 					pipeline.tracking.trackedTargets.push_back(std::move(tracker));
 					pipeline.tracking.dormantTargets.pop_back();

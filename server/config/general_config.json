@@ -1,21 +1,30 @@
 {
-	"simulation" : {
-		"trackingTargets" : [
-			{ "path": "Target_Ring.obj", "markerViewAngle": 115, "markerSizeMM": 8 },
-			{ "path": "Target_Sparse.obj", "markerViewAngle": 270, "markerSizeMM": 12 }
-		],
-		"cameras": "camera_simulated.json"
-	},
-	"integrations" : {
-		"vrpn": {
-			"auto_enable": false,
-			"host": "",
-			"port": 3883
-		},
+	"integrations": {
 		"vmc": {
 			"auto_enable": false,
 			"host": "",
 			"port": 39540
+		},
+		"vrpn": {
+			"auto_enable": false,
+			"host": "",
+			"low_latency": true,
+			"port": 3883
 		}
+	},
+	"simulation": {
+		"cameras": "camera_simulated.json",
+		"trackingTargets": [
+			{
+				"markerSizeMM": 8,
+				"markerViewAngle": 115,
+				"path": "Target_Ring.obj"
+			},
+			{
+				"markerSizeMM": 12,
+				"markerViewAngle": 270,
+				"path": "Target_Sparse.obj"
+			}
+		]
 	}
 }

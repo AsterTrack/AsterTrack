@@ -28,6 +28,8 @@ SOFTWARE.
 
 #include "signals.hpp"
 
+#include "util/util.hpp"
+
 #include "nativefiledialog-extended/nfd.h"
 #include "nativefiledialog-extended/nfd_glfw3.h"
 

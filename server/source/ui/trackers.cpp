@@ -280,7 +280,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::SetNextItemWidth(LineWidthRemaining());
 		changed |= ImGui::InputText("##TrkLabel", &tracker.label);
 
-		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Role");
 		std::array<const char*,4> roleLabel;
 		roleLabel[TrackerConfig::ROLE_TRACKER] = "Tracker";
@@ -296,7 +295,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::EndGroup();
 		ImGui::SetItemTooltip("Role to use when interfacing with integrations.");
 
-		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Trigger Conditions");
 		std::array<const char*,7> triggerLabels;
 		triggerLabels.fill("Invalid State");
@@ -342,7 +340,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		ImGui::EndGroup();
 		ImGui::SetItemTooltip("Conditions to trigger a tracker. After that it is expected to be in the tracking volume and actively searched for.");
 
-		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("Expose Conditions");
 		std::array<const char*,3> exposeLabel;
 		exposeLabel[TrackerConfig::EXPOSE_BY_DEFAULT] = "By Default";
@@ -781,7 +778,6 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			else
 				return NoIMULabel;
 		};
-		ImGui::AlignTextToFramePadding();
 		BeginLabelledGroup("IMU");
 		if (ImGui::BeginCombo("##IMUSel", getIMUIdentLabel(tracker.imuIdent).c_str()))
 		{
@@ -862,6 +858,47 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		EndSection();
 		// TODO: Can we make filtering methods configurable? Currently selected at compile time in tracking3D.hpp
 		// Maybe make TrackedTarget::filter object an opaque pointer, and have a few method calls abstracted away
+	}
+
+	{
+		BeginSection("Output Settings");
+
+		const static TrackerOutputConfig defaultConfig = {};
+		bool changed = false;
+
+		changed |= BooleanProperty("Always Extrapolate", &tracker.output.extrapolateAlways);
+		ImGui::BeginDisabled(tracker.output.extrapolateAlways);
+		changed |= BooleanProperty("Extrapolate with IMU", &tracker.output.extrapolateWithIMU);
+		ImGui::EndDisabled();
+
+		BeginLabelledGroup("Apply Filter");
+		changed |= ImGui::Combo("##filter", (int*)&tracker.output.applyFiltering, "None\0One Euro Filter\0\0");
+		ImGui::EndGroup();
+
+		ImGui::AlignTextToFramePadding();
+		if (tracker.output.applyFiltering > TrackerOutputConfig::NO_FILTER && ImGui::TreeNode("Filter Settings"))
+		{
+			if (tracker.output.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
+			{
+				auto &params = tracker.output.oneEuroFilter;
+				const auto &standard = defaultConfig.oneEuroFilter;
+				changed |= ScalarProperty("Pos Freq Cutoff Base", "", &params.posCutoffBase, &standard.posCutoffBase, 0.0f, 100.0f);
+				changed |= ScalarProperty("Pos Freq Cutoff Beta", "", &params.posCutoffBeta, &standard.posCutoffBeta, 0.0f, 100.0f);
+				changed |= ScalarProperty("Pos Freq Cutoff Delta", "", &params.posCutoffDelta, &standard.posCutoffDelta, 0.0f, 100.0f);
+				changed |= ScalarProperty("Rot Freq Cutoff Base", "", &params.rotCutoffBase, &standard.rotCutoffBase, 0.0f, 100.0f);
+				changed |= ScalarProperty("Rot Freq Cutoff Beta", "", &params.rotCutoffBeta, &standard.rotCutoffBeta, 0.0f, 100.0f);
+				changed |= ScalarProperty("Rot Freq Cutoff Delta", "", &params.rotCutoffDelta, &standard.rotCutoffDelta, 0.0f, 100.0f);
+			}
+			ImGui::TreePop();
+		}
+
+		if (changed)
+		{
+			tracker.configDirty = true;
+			ServerUpdateTrackerConfig(state, tracker);
+		}
+
+		EndSection();
 	}
 
 	ImGui::EndChild();

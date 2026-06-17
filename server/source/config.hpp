@@ -76,6 +76,24 @@ struct ControllerConfig
 	// Should be configurable in UI in "Devices" window
 };
 
+struct TrackerOutputConfig
+{
+	enum FilterType
+	{ // Saved on disk, don't change
+		NO_FILTER = 0,
+		ONE_EURO_FILTER = 1
+	};
+
+	bool extrapolateAlways = false;
+	bool extrapolateWithIMU = false;
+	FilterType applyFiltering = NO_FILTER;
+	struct
+	{
+		float posCutoffBase = 5, posCutoffBeta = 5, posCutoffDelta = 5;
+		float rotCutoffBase = 5, rotCutoffBeta = 5, rotCutoffDelta = 5;
+	} oneEuroFilter;
+};
+
 struct TrackerConfig
 {
 	enum TrackerType
@@ -121,6 +139,7 @@ struct TrackerConfig
 	TrackerTrigger trigger = TRIGGER_BY_DEFAULT;
 	TrackerExpose expose = EXPOSE_BY_DEFAULT;
 	TrackerRole role = ROLE_TRACKER;
+	TrackerOutputConfig output = {};
 
 	// Tracker specific dirty flags
 	bool configDirty = false;
@@ -141,7 +160,9 @@ struct TrackerConfig
 	IMUCalib imuCalib;
 
 	// Current state
+	// Lifetime: Start Mode -> Stop Mode
 	std::shared_ptr<IMU> imu;
+	// Lifetime: Start Stream -> End Stream
 	bool triggered = false, tracked = false;
 	bool exposed = false;
 	int connected = 0;
@@ -159,16 +180,19 @@ struct TrackerConfig
 
 struct GeneralConfig
 {
-	struct {
+	struct
+	{
 		std::map<std::string, TargetCalibration3D> trackingTargets;
 		std::vector<CameraCalib> cameraDefinitions;
 		std::string cameraDefPath;
 	} simulation = {};
 
-	struct {
+	struct
+	{
 		bool vrpn_auto_enable;
 		std::string vrpn_host;
 		int vrpn_port;
+		bool vrpn_low_latency;
 
 		bool vmc_auto_enable;
 		std::string vmc_host;

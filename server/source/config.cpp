@@ -212,6 +212,8 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 					config.integrations.vrpn_port = vrpn["port"].get<int>();
 				if (vrpn.contains("auto_enable"))
 					config.integrations.vrpn_auto_enable = vrpn["auto_enable"].get<bool>();
+				if (vrpn.contains("low_latency"))
+					config.integrations.vrpn_low_latency = vrpn["low_latency"].get<bool>();
 			}
 			if (integrations.contains("vmc"))
 			{
@@ -232,8 +234,33 @@ std::optional<ErrorMessage> parseGeneralConfigFile(const std::string &path, Gene
 
 std::optional<ErrorMessage> storeGeneralConfigFile(const std::string &path, const GeneralConfig &config)
 {
-	// TODO
-	return std::nullopt;
+	// Actually read and modify config
+	json cfg;
+	auto error = readJSON(path, cfg);
+	if (error) return error;
+
+	// Write camera configurations
+	cfg["integrations"] = json::object();
+	auto &integrations = cfg["integrations"];
+	{
+		auto &vrpn = integrations["vrpn"];
+		vrpn["host"] = config.integrations.vrpn_host;
+		vrpn["port"] = config.integrations.vrpn_port;
+		vrpn["auto_enable"] = config.integrations.vrpn_auto_enable;
+		vrpn["low_latency"] = config.integrations.vrpn_low_latency;
+	}
+	{
+		auto &vmc = integrations["vmc"];
+		vmc["host"] = config.integrations.vmc_host;
+		vmc["port"] = config.integrations.vmc_port;
+		vmc["auto_enable"] = config.integrations.vmc_auto_enable;
+	}
+
+	// Keep 
+	/* cfg["simulation"] = json::object();
+	auto &simulation = cfg["simulation"]; */
+
+	return writeJSON(path, cfg);
 }
 
 std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, CameraConfigMap &configMap)
@@ -779,6 +806,27 @@ static std::optional<ErrorMessage> parseTrackerConfigurationLegacy(std::filesyst
 		}
 	}
 
+	if (jsTracker.contains("output") && jsTracker["output"].is_object())
+	{
+		auto &jsOutput = jsTracker["output"];
+		if (jsOutput.contains("extrapolateAlways"))
+			tracker.output.extrapolateAlways = jsOutput["extrapolateAlways"].get<bool>();
+		if (jsOutput.contains("extrapolateWithIMU"))
+			tracker.output.extrapolateWithIMU = jsOutput["extrapolateWithIMU"].get<bool>();
+		if (jsOutput.contains("applyFiltering"))
+			tracker.output.applyFiltering = (TrackerOutputConfig::FilterType)jsOutput["applyFiltering"].get<int>();
+		if (jsOutput.contains("oneEuroFilter") && jsOutput["oneEuroFilter"].is_object())
+		{
+			auto &jsFilter = jsOutput["oneEuroFilter"];
+			tracker.output.oneEuroFilter.posCutoffBase = jsFilter["posBase"].get<float>();
+			tracker.output.oneEuroFilter.posCutoffBeta = jsFilter["posBeta"].get<float>();
+			tracker.output.oneEuroFilter.posCutoffDelta = jsFilter["posDelta"].get<float>();
+			tracker.output.oneEuroFilter.rotCutoffBase = jsFilter["rotBase"].get<float>();
+			tracker.output.oneEuroFilter.rotCutoffBeta = jsFilter["rotBeta"].get<float>();
+			tracker.output.oneEuroFilter.rotCutoffDelta = jsFilter["rotDelta"].get<float>();
+		}
+	}
+
 	trackerConfig = std::move(tracker);
 	return std::nullopt;
 }
@@ -921,6 +969,23 @@ static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, co
 		jsIMU["driver"] = tracker.imuIdent.driver;
 		jsIMU["id"] = tracker.imuIdent.string;
 		writeIMUCalib(tracker.imuCalib, jsIMU);
+	}
+
+	{
+		auto &jsOutput = jsTracker["output"];
+		jsOutput["extrapolateAlways"] = tracker.output.extrapolateAlways;
+		jsOutput["extrapolateWithIMU"] = tracker.output.extrapolateWithIMU;
+		jsOutput["applyFiltering"] = tracker.output.applyFiltering;
+		if (tracker.output.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
+		{
+			auto &jsFilter = jsOutput["oneEuroFilter"];
+			jsFilter["posBase"] = tracker.output.oneEuroFilter.posCutoffBase;
+			jsFilter["posBeta"] = tracker.output.oneEuroFilter.posCutoffBeta;
+			jsFilter["posDelta"] = tracker.output.oneEuroFilter.posCutoffDelta;
+			jsFilter["rotBase"] = tracker.output.oneEuroFilter.rotCutoffBase;
+			jsFilter["rotBeta"] = tracker.output.oneEuroFilter.rotCutoffBeta;
+			jsFilter["rotDelta"] = tracker.output.oneEuroFilter.rotCutoffDelta;
+		}
 	}
 
 	return error;

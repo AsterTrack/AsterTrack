@@ -20,6 +20,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define INTEGRATIONS_H
 
 #include "config.hpp"
+#include "tracking/detail/filters.hpp"
+
 #include "util/memory.hpp"
 
 #include <map>
@@ -41,6 +43,7 @@ struct IntegrationsState
 	struct
 	{ // Virtual Reality Peripheral Network
 		bool enabled = false;
+		bool lowLatencySend;
 		std::string host;
 		opaque_ptr<vrpn_Connection> server;
 		std::map<int, std::shared_ptr<vrpn_Tracker_AsterTrack>> trackers;
@@ -54,16 +57,56 @@ struct IntegrationsState
 	} vmc;
 };
 
+struct TrackerOutputData
+{
+	FrameNum frame;
+	Eigen::Isometry3f pose;
+	// May add velocity, covariance, etc.
+
+	// May have post-processed the pose already
+	// May even be extrapolated past original frame time
+	TimePoint_t processedTime;
+	Eigen::Isometry3f processedPose;
+};
+
+struct TrackerOutput
+{
+	int id;
+	std::string label;
+	TrackerConfig::TrackerRole role;
+	TrackerOutputConfig config;
+	std::queue<TrackerOutputData> processed;
+
+	// Post-processing states
+	OneEuroFilter<Eigen::Vector3f, float, Eigen::Vector3f> filterPos;
+	OneEuroFilter<Eigen::Quaternionf, float, Eigen::Vector3f> filterRot;
+
+	// I/O-specific shortcuts
+	std::shared_ptr<vrpn_Tracker_AsterTrack> vrpn;
+
+	inline void adoptConfig()
+	{
+		if (config.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
+		{ // Update OneEuroFilter
+			auto &params = config.oneEuroFilter;
+			filterPos.setParams(params.posCutoffBase, params.posCutoffBeta, params.posCutoffDelta);
+			filterRot.setParams(params.rotCutoffBase, params.rotCutoffBeta, params.rotCutoffDelta);
+		}
+	}
+};
+
 
 /* Functions */
 
-void IntegrationsInit(IntegrationsState &state, const GeneralConfig &config);
-void IntegrationsCleanup(IntegrationsState &state, const GeneralConfig &config);
-void IntegrationsReconfigureVRPN(IntegrationsState &state, const GeneralConfig &config);
-void IntegrationsReconfigureVMC(IntegrationsState &state, const GeneralConfig &config);
+void IntegrationsInit(IntegrationsState &io, const GeneralConfig &config);
+void IntegrationsCleanup(IntegrationsState &io, const GeneralConfig &config);
+void IntegrationsUpdateNonessentialConfig(IntegrationsState &io, const GeneralConfig &config);
+void IntegrationsReconfigureVRPN(IntegrationsState &io, const GeneralConfig &config);
+void IntegrationsReconfigureVMC(IntegrationsState &io, const GeneralConfig &config);
 
-void IntegrationsUpdate(IntegrationsState &state, ServerState &server);
-void IntegrationsReceive(IntegrationsState &state, const ServerState &server);
-void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, std::shared_ptr<FrameRecord> &frame);
+void IntegrationsUpdate(IntegrationsState &io, ServerState &state);
+void IntegrationsReceive(IntegrationsState &io, const ServerState &state);
+void IntegrationsSendTracker(IntegrationsState &io, TrackerOutput &tracker, const TrackerOutputData &data, TimePoint_t time);
+void IntegrationsSendFrame(IntegrationsState &io, ServerState &state, std::shared_ptr<FrameRecord> &frame);
 
 #endif // INTEGRATIONS_H

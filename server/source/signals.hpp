@@ -19,19 +19,28 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef SERVER_SIGNALS_H
 #define SERVER_SIGNALS_H
 
-#include "imu/imu.hpp"
-#include "target/target.hpp"
 #include "util/error.hpp"
+#include "util/eigendef.hpp"
+
+// Forward-declared opaque structs
+struct TargetCalibration3D; // target/target.hpp
+struct IMUIdent; // imu/imu.hpp
+struct IMUCalib; // imu/imu.hpp
+struct FrameRecord; // pipeline/record.hpp
+struct TrackerRecord; // pipeline/record.hpp
+struct TrackerFilter; // tracking/tracking.hpp
+struct TrackerInertial; // tracking/tracking.hpp
 
 /**
  * Signals to Server
  * (from Pipeline, UI can interact directly with Server)
  */
 
-void SignalTrackerDetected(int trackerID);									// Signal: Pipeline -> Server
-void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib);		// Signal: Pipeline -> Server
-void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib);	// Signal: Pipeline -> Server
-void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs);				// Signal: Pipeline -> Server
-void SignalErrorToUser(ErrorMessage error);									// Signal: Pipeline -> Server
+void SignalErrorToUser(ErrorMessage error);
+void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib);
+void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib);
+void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs);
+void SignalTrackerDetected(int trackerID);
+void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial);
 
 #endif // SERVER_SIGNALS_H

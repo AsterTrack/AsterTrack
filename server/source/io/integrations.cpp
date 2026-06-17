@@ -25,13 +25,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigenutil.hpp"
 
 
-void IntegrationsInit(IntegrationsState &state, const GeneralConfig &config)
+void IntegrationsInit(IntegrationsState &state , const GeneralConfig &config)
 {
 	auto io_lock = std::unique_lock(state.mutex);
 	state.vrpn.enabled = config.integrations.vrpn_auto_enable;
 	state.vmc.enabled = config.integrations.vmc_auto_enable;
 	state.lastUpdatedCameras = sclock::now() - std::chrono::seconds(2);
 
+	IntegrationsUpdateNonessentialConfig(state, config);
 	IntegrationsReconfigureVRPN(state, config);
 	IntegrationsReconfigureVMC(state, config);
 }
@@ -44,6 +45,12 @@ void IntegrationsCleanup(IntegrationsState &state, const GeneralConfig &config)
 
 	IntegrationsReconfigureVRPN(state, config);
 	IntegrationsReconfigureVMC(state, config);
+}
+
+void IntegrationsUpdateNonessentialConfig(IntegrationsState &state, const GeneralConfig &config)
+{
+	auto &cfg = config.integrations;
+	state.vrpn.lowLatencySend = cfg.vrpn_low_latency;
 }
 
 void IntegrationsReconfigureVRPN(IntegrationsState &state, const GeneralConfig &config)
@@ -105,6 +112,8 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 					if (io_tracker->second->markedConnected)
 						tracker.connected--;
 					state.vrpn.trackers.erase(io_tracker);
+					if (server.trackerOutput.contains(tracker.id))
+						server.trackerOutput[tracker.id].vrpn = nullptr;
 					ServerUpdateTrackerConditions(server, tracker);
 				}
 				continue;
@@ -113,6 +122,8 @@ void IntegrationsUpdate(IntegrationsState &state, ServerState &server)
 			{
 				LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", tracker.label.c_str());
 				auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker.id, tracker.label.c_str(), state.vrpn.server.get());
+				if (server.trackerOutput.contains(tracker.id))
+					server.trackerOutput[tracker.id].vrpn = vrpn_tracker;
 				io_tracker = state.vrpn.trackers.insert({ tracker.id, std::move(vrpn_tracker) }).first;
 			}
 			if (!io_tracker->second->markedConnected && io_tracker->second->isConnected())
@@ -190,50 +201,86 @@ void IntegrationsReceive(IntegrationsState &state, const ServerState &server)
 	}
 }
 
-void IntegrationsSendFrame(IntegrationsState &state, const ServerState &server, std::shared_ptr<FrameRecord> &frame)
+void IntegrationsSendTracker(IntegrationsState &state, TrackerOutput &tracker, const TrackerOutputData &data, TimePoint_t time)
+{
+	if (!state.vrpn.enabled && !state.vmc.enabled) return;
+
+	auto io_lock = std::unique_lock(state.mutex);
+
+	if (tracker.vrpn && state.vrpn.lowLatencySend)
+	{ // Fast-track output to VRPN
+		// TODO: Not thread-safe?
+		tracker.vrpn->updatePose(0, data.processedTime, data.processedPose);
+		state.vrpn.server->send_pending_reports();
+	}
+
+	// Pose may have been post-processed for realtime output, e.g. with extra filtering
+	// So store pose for any enabled I/O that can't update individual trackers
+
+	// VMC is generally expected to send all trackers in one bundle, and use cases generally aren't as latency sensitive
+	//if (!io.vmc.enabled) return;
+
+	// IntegrationsSendFrame may not always be guaranteed to be called before next frames IntegrationsSendTracker
+	// So need to store pose in a thread-safe manner and associated with the respective frame number
+
+	tracker.processed.push(data);
+}
+
+void IntegrationsSendFrame(IntegrationsState &state, ServerState &server, std::shared_ptr<FrameRecord> &frame)
 {
 	auto io_lock = std::unique_lock(state.mutex);
 
-	if (state.vrpn.enabled)
+	bool vmc_connected = state.vmc.enabled && vmc_is_opened(state.vmc.output);
+	std::vector<vmc_device> vmc_output;
+	if (vmc_connected)
+		vmc_output.reserve(frame->trackers.size());
+
+	/* for (auto &trackRecord : frame->trackers)
 	{
-		for (auto &trackRecord : frame->trackers)
+		if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
+		auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+			[&](auto &t){ return t.id == trackRecord.id; }); */
+	for (auto &outputIt : server.trackerOutput)
+	{
+		TrackerOutput &output = outputIt.second;
+		if (output.processed.empty()) continue;
+		while (output.processed.front().frame < frame->num)
+			output.processed.pop();
+		if (output.processed.front().frame > frame->num)
+			continue;
+		auto &frameOutput = output.processed.front();
+
+		// Already sent via vrpn in IntegrationsSendTracker
+		if (state.vrpn.enabled && !state.vrpn.lowLatencySend)
 		{
-			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
-			auto io_tracker = state.vrpn.trackers.find(trackRecord.id);
-			if (io_tracker == state.vrpn.trackers.end()) continue;
-			// TODO: Send both observed and filtered poses?
-			io_tracker->second->updatePose(0, frame->time, trackRecord.pose.filtered);
+			auto io_tracker = state.vrpn.trackers.find(output.id);
+			if (io_tracker != state.vrpn.trackers.end())
+				io_tracker->second->updatePose(0, frameOutput.processedTime, frameOutput.processedPose);
 		}
 
-		LOG(LIO, LTrace, "Updating server connection to push tracker packets!\n");
-		state.vrpn.server->send_pending_reports();
-		if (!state.vrpn.server->doing_okay())
+		if (vmc_connected)
 		{
-			LOG(LIO, LWarn, "VRPN Connection Error!\n");
+			VMCRole role = VMCRole::Tracker;
+			if (output.role == TrackerConfig::ROLE_HMD) role = VMCRole::HMD;
+			if (output.role == TrackerConfig::ROLE_CONTROLLER) role = VMCRole::Controller;
+			if (output.role == TrackerConfig::ROLE_CAMERA) role = VMCRole::Camera;
+			// TODO: Giving up on processed time, won't predict ahead
+			vmc_output.emplace_back(role, output.label, frameOutput.processedPose);
 		}
-		else
-			LOG(LIO, LTrace, "     Server connection is doing ok!\n");
+		output.processed.pop();
 	}
 
-	if (state.vmc.enabled && vmc_is_opened(state.vmc.output))
+	if (state.vrpn.enabled)
 	{
-		std::vector<vmc_device> trackers;
-		trackers.reserve(frame->trackers.size());
-		for (const auto &trackRecord : frame->trackers)
-		{
-			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
-			auto cfg_tracker = std::find_if(server.trackerConfigs.begin(), server.trackerConfigs.end(),
-					[&](auto &t){ return t.id == trackRecord.id; });
-			if (cfg_tracker == server.trackerConfigs.end()) continue;
-			VMCRole role = VMCRole::Tracker;
-			if (cfg_tracker->role == TrackerConfig::ROLE_HMD) role = VMCRole::HMD;
-			if (cfg_tracker->role == TrackerConfig::ROLE_CONTROLLER) role = VMCRole::Controller;
-			if (cfg_tracker->role == TrackerConfig::ROLE_CAMERA) role = VMCRole::Camera;
-			trackers.emplace_back(role,
-				cfg_tracker->label,
-				trackRecord.pose.filtered
-			);
-		}
-		vmc_send_device_packets(state.vmc.output, trackers, frame->time, dtS(server.lastStreamingStart, frame->time));
+		LOG(LIO, LTrace, "Updating VRPN server connection to push tracker packets!\n");
+		state.vrpn.server->send_pending_reports();
+		if (!state.vrpn.server->doing_okay())
+			LOG(LIO, LDarn, "    A VRPN connection is facing issues!\n");
+	}
+
+	if (vmc_connected)
+	{
+		LOG(LIO, LTrace, "Pushing tracker packets to VMC output port!\n");
+		vmc_send_device_packets(state.vmc.output, vmc_output, frame->time, dtS(server.lastStreamingStart, frame->time));
 	}
 }

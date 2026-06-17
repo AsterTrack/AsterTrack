@@ -36,21 +36,24 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	if (ImGui::CollapsingHeader("Exposed Trackers", ImGuiTreeNodeFlags_DefaultOpen))
+	ImVec2 btnSize = SizeWidthFull();
+	btnSize.x -= ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
+	if (SaveButton("Save Config", btnSize, state.generalConfigDirty))
 	{
-		for (auto &tracker : state.trackerConfigs)
-		{
-			ImGui::PushID(tracker.id);
-			ImGui::AlignTextToFramePadding();
-			ImGui::Text("Tracker %d: %s", tracker.id, tracker.label.c_str());
-			SameLineTrailing(ImGui::GetFrameHeight());
-			if (!tracker.exposed && ImGui::ArrowButton("Expose", ImGuiDir_Right))
-				tracker.exposed = true;
-			else if (tracker.exposed && CrossButton("Expose"))
-				tracker.exposed = false;
-			ImGui::PopID();
-		}
+		auto error = storeGeneralConfigFile(persistentConfigFolder + "/general_config.json", state.config);
+		if (error) SignalErrorToUser(error.value());
+		else state.generalConfigDirty = false;
 	}
+	ImGui::SameLine();
+	if (RetryButton("cfg"))
+	{
+		auto error = parseGeneralConfigFile(persistentConfigFolder + "/general_config.json", state.config);
+		if (error) SignalErrorToUser(error.value());
+		else state.generalConfigDirty = false;
+	}
+
+	bool configChanged = false;
+	bool realtimeChanged = false;
 
 	bool vrpnEnabled = state.io.vrpn.enabled;
 	if (ImGui::CollapsingHeader(vrpnEnabled? "VRPN (enabled)###vrpnHdr" : "VRPN (disabled)###vrpnHdr", ImGuiTreeNodeFlags_DefaultOpen))
@@ -58,13 +61,15 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 		ImGui::BeginDisabled(vrpnEnabled);
 
 		std::string defaultHost = "";
-		TextProperty("VRPN Host", &state.config.integrations.vrpn_host, &defaultHost);
+		configChanged |= TextProperty("VRPN Host", &state.config.integrations.vrpn_host, &defaultHost);
 		int defaultPort = vrpn_DEFAULT_LISTEN_PORT_NO;
-		ScalarProperty<int>("VRPN Port", nullptr, &state.config.integrations.vrpn_port, &defaultPort, 1024, 65535, 0);
+		configChanged |= ScalarProperty<int>("VRPN Port", nullptr, &state.config.integrations.vrpn_port, &defaultPort, 1024, 65535, 0);
 
 		ImGui::EndDisabled();
 
-		BooleanProperty("Auto-Enable VRPN", &state.config.integrations.vrpn_auto_enable, nullptr);
+		realtimeChanged |= BooleanProperty("Low-Latency Output", &state.config.integrations.vrpn_low_latency, nullptr);
+
+		configChanged |= BooleanProperty("Auto-Enable VRPN", &state.config.integrations.vrpn_auto_enable, nullptr);
 
 		if (BooleanProperty("Enable VRPN Server", &vrpnEnabled, nullptr))
 		{
@@ -83,6 +88,7 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 			else
 				ImGui::Text("'%s': Has connected clients.", state.io.vrpn.host.c_str());
 
+			ImGui::AlignTextToFramePadding();
 			if (ImGui::TreeNodeEx("Exposed Connections"))
 			{ // These may not all be real trackers, but also e.g. cameras
 				for (auto &tracker : state.io.vrpn.trackers)
@@ -110,13 +116,13 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 		ImGui::BeginDisabled(vmcEnabled);
 
 		std::string defaultHost = "";
-		TextProperty("VMC Host", &state.config.integrations.vmc_host, &defaultHost);
+		configChanged |= TextProperty("VMC Host", &state.config.integrations.vmc_host, &defaultHost);
 		int defaultPort = vmc_DEFAULT_PERFORMER_PORT_NO;
-		ScalarProperty<int>("VMC Port", nullptr, &state.config.integrations.vmc_port, &defaultPort, 1024, 65535, 0);
+		configChanged |= ScalarProperty<int>("VMC Port", nullptr, &state.config.integrations.vmc_port, &defaultPort, 1024, 65535, 0);
 
 		ImGui::EndDisabled();
 
-		BooleanProperty("Auto-Enable VMC", &state.config.integrations.vmc_auto_enable, nullptr);
+		configChanged |= BooleanProperty("Auto-Enable VMC", &state.config.integrations.vmc_auto_enable, nullptr);
 
 		if (BooleanProperty("Enable VMC Server", &vmcEnabled, nullptr))
 		{
@@ -135,6 +141,36 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 				ImGui::Text("Trying to reach '%s'...", state.io.vmc.host.c_str());
 			else
 				ImGui::Text("Sending to '%s'.", state.io.vmc.host.c_str());
+		}
+	}
+
+	if (realtimeChanged)
+	{
+		configChanged |= true;
+		std::unique_lock io_lock(state.io.mutex);
+		IntegrationsUpdateNonessentialConfig(state.io, state.config);
+	}
+
+	if (configChanged)
+	{
+		state.generalConfigDirty = true;
+	}
+
+	if (ImGui::CollapsingHeader("Trackers", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		for (auto &tracker : state.trackerConfigs)
+		{
+			ImGui::PushID(tracker.id);
+			ImGui::AlignTextToFramePadding();
+			ImGui::Text("Tracker %d: %s", tracker.id, tracker.label.c_str());
+			SameLineTrailing(ImGui::GetFrameHeight());
+			ImGui::BeginDisabled(!state.isStreaming);
+			if (!tracker.exposed && ImGui::ArrowButton("Expose", ImGuiDir_Right))
+				tracker.exposed = true;
+			else if (tracker.exposed && CrossButton("Expose"))
+				tracker.exposed = false;
+			ImGui::EndDisabled();
+			ImGui::PopID();
 		}
 	}
 

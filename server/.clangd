@@ -1,0 +1,2 @@
+CompileFlags:
+    Remove: [-fopenmp, -fopenmp=libomp, -fopenmp=libgomp]

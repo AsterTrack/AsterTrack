@@ -478,7 +478,7 @@ void linuxSignalHandler(int signum, siginfo_t* siginfo, void* context)
 	pid_t pid = crashConfig.heapSafeFork? fork() : 0;
 	if (pid == 0)
 	{
-		if (mkdir(crashConfig.dumpFolder.c_str(), 0755) < 0)
+		if (mkdir(crashConfig.dumpFolder.c_str(), 0755) < 0 && errno != EEXIST)
 			printf("Failed to mkdir %s, errno %d\n", crashConfig.dumpFolder.c_str(), errno);
 
 		writeCrashLogLinux(logPath, timestamp, signum, siginfo, context);

@@ -67,7 +67,7 @@ float calculateCluster2DOverlap(const Cluster2DStats clusterA, const CameraCalib
 
 
 std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<Cluster2DStats>> clusterStats,
-	const std::vector<CameraCalib> &calibs, const ClusteringParameters &params)
+	const std::vector<CameraCalib> &calibs, int cameraCount, const ClusteringParameters &params)
 {
 	LOG(LCluster, LDebug, "Checking cluster overlaps:");
 	std::vector<Cluster2DTri3D> clusterTri;
@@ -79,7 +79,7 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 		blobContainer[c].resize(1);		 // Used to store a single blob for each camera involved with a point
 		points2D[c] = &blobContainer[c]; // Just interfacing
 	}
-	TriangulatedPoint triPoint(Eigen::Vector3f::Zero(), 0, 10, calibs.size());
+	TriangulatedPoint triPoint(Eigen::Vector3f::Zero(), 0, 10, cameraCount);
 
 	for (int c = 0; c < clusterStats.size(); c++)
 	{
@@ -201,7 +201,7 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 				for (int c = 0; c < cluster.camClusters.size(); c++)
 				{
 					bool gotCluster = cluster.camClusters[c] >= 0;
-					triPoint.blobs[c] = gotCluster? 0 : InvalidBlob;
+					triPoint.blobs[calibs[c].index] = gotCluster? 0 : InvalidBlob;
 					if (gotCluster)
 						blobContainer[c][0] = clusterStats[c][cluster.camClusters[c]].center;
 				}

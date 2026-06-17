@@ -64,7 +64,7 @@ thread_local std::vector<std::vector<RayIxCnt>> rayIxCnt;
  */
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
-	std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
+	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
 {
 	ScopedLogCategory scopedLogCategory(LTriangulation);
 
@@ -74,17 +74,21 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 
 	#define IXNUM(ix) (int)(ix == NULL? -1 : (((intptr_t)ix-(intptr_t)intersections.data())/(sizeof(Intersection))))
 
+	// NOTE: This is the subset camera count, full cameraCount will only be expanded to for output
 	int camCount = cameras.size();
 	//maxError = maxError/100; // Error at one meter distance
 
 	// Prepare allocated memory, cast rays
 	intersections.clear();
 	mergedIntersections.clear();
-	rayGroups.resize(camCount);
-	rayIxCnt.resize(camCount);
+	if (rayGroups.size() < camCount)
+		rayGroups.resize(camCount);
+	if (rayIxCnt.size() < camCount)
+		rayIxCnt.resize(camCount);
 	for (int c = 0; c < camCount; c++)
 	{
-		rayIxCnt[c].resize(points2D[c]->size());
+		rayIxCnt[c].clear();
+		rayIxCnt[c].resize(points2D[c]->size(), 0);
 		rayGroups[c].resize(points2D[c]->size());
 		for (int p : *relevantPoints2D[c])
 		{
@@ -130,7 +134,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	LOGC(LDebug, "Got %d 2-intersections!\n", (int)intersections.size());
 
 	// Have to reserve to prevent reallocation, since it relies on pointers to merged intersections
-	mergedIntersections.reserve(intersections.size()/3);
+	mergedIntersections.reserve(intersections.size()/2+1);
 	int ixCnt = intersections.size();
 
 	// Merge possible intersections between three rays
@@ -267,6 +271,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 
 			// Merge
+			assert(mergedIntersections.size()+1 < mergedIntersections.capacity()); // Otherwise, reserve metric failed
 			mergedIntersections.emplace_back(Eigen::Vector3f::Zero(), 0.0f, camCount);
 			Intersection *ixm = &mergedIntersections.back();
 			for (int i = 0; i < mergers.size(); i++)
@@ -312,17 +317,19 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	points3D.reserve(ixCnt);
 	auto handlePoints = [&](Intersection *ix) {
 		int c = 0, nc = 0;
+		std::vector<BlobIndex> expandedBlobs(cameraCount, InvalidBlob);
 		for (int j = 0; j < camCount; j++)
 		{
 			int r = ix->blobs[j];
 			if (r == InvalidBlob) continue;
 			if (rayIxCnt[j][r] == 1) nc++;
 			else c++;
+			expandedBlobs[cameras[j].index] = r;
 		}
 //		float confidence = (nc*nc)/(c+1);
 		float confidence = nc*nc*2 + c;
 		points3D.emplace_back(ix->center, ix->error, confidence);
-		points3D.back().blobs.swap(ix->blobs);
+		points3D.back().blobs = std::move(expandedBlobs);
 	};
 	for (int i = 0; i < mergedIntersections.size(); i++)
 	{
@@ -340,7 +347,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
  * Leaves points3D in a semi-sorted order, highest confidence (sec. error) first
  * Uses state from triangulation to optimise
  */
-void resolveTriangulationConflicts(std::vector<TriangulatedPoint> &points3D, float maxError)
+void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError)
 {
 	// Sort by confidence and, secondarily, error (can also be used to punish high errors more severely)
 	std::sort(points3D.begin(), points3D.end(), [maxError](const TriangulatedPoint &a, const TriangulatedPoint &b){ 
@@ -351,9 +358,10 @@ void resolveTriangulationConflicts(std::vector<TriangulatedPoint> &points3D, flo
 	for (int i = 0; i < points3D.size(); i++)
 	{
 		int nc = 0, c = 0;
-		for (int j = 0; j < points3D[i].blobs.size(); j++)
+		for (int j = 0; j < cameras.size(); j++)
 		{
-			int r = points3D[i].blobs[j];
+			int c = cameras[j].index;
+			int r = points3D[i].blobs[c];
 			if (r != InvalidBlob)
 			{
 				if (rayIxCnt[j][r] == (RayIxCnt)-1)
@@ -401,20 +409,22 @@ void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vec
  * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar>
-Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups, 
+Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D)
 {
 	Eigen::Matrix<Scalar,3,1> center = Eigen::Matrix<Scalar,3,1>::Zero();
 	int centerCnt = 0;
-	for (int r = 0; r < pointGroups.size(); r++)
+	for (int c1 = 0; c1 < cameras.size(); c1++)
 	{
-		if (point3D.blobs[r] == InvalidBlob) continue;
-		for (int s = r+1; s < pointGroups.size(); s++)
+		BlobIndex blob1 = point3D.blobs[cameras[c1].index];
+		if (blob1 == InvalidBlob) continue;
+		for (int c2 = c1+1; c2 < cameras.size(); c2++)
 		{
-			if (point3D.blobs[s] == InvalidBlob) continue;
+			BlobIndex blob2 = point3D.blobs[cameras[c2].index];
+			if (blob2 == InvalidBlob) continue;
 			Scalar sec1, sec2;
-			Ray3_t<Scalar> ray1 = castRay<Scalar>(pointGroups[r]->at(point3D.blobs[r]), cameras[r]);
-			Ray3_t<Scalar> ray2 = castRay<Scalar>(pointGroups[s]->at(point3D.blobs[s]), cameras[s]);
+			Ray3_t<Scalar> ray1 = castRay<Scalar>(points2D[c1]->at(blob1), cameras[c1]);
+			Ray3_t<Scalar> ray2 = castRay<Scalar>(points2D[c2]->at(blob2), cameras[c2]);
 			getRayIntersect(ray1, ray2, &sec1, &sec2);
 			center += (ray1.pos + ray1.dir*sec1 + ray2.pos + ray2.dir*sec2) / 2;
 			centerCnt++;
@@ -430,7 +440,7 @@ Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar, typename TriScalar>
-Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups, 
+Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint_t<TriScalar> &point3D, int maxIterations, float threshold3D)
 {
 	typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> MatrixX;
@@ -440,16 +450,17 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 	// Get involved cameras
 	int camCount = 0;
 	for (int c = 0; c < cameras.size(); c++)
-		camCount += (point3D.blobs[c] != InvalidBlob);
+		camCount += (point3D.blobs[cameras[c].index] != InvalidBlob);
 	// Build base data matrix as well as row-vectors for weights
 	MatrixX triSolveBase = MatrixX(camCount*2, 4);
 	MatrixX thirdRow = MatrixX(camCount, 4);
 	int camIndex = 0;
 	for (int c = 0; c < cameras.size(); c++)
 	{
-		if (point3D.blobs[c] == InvalidBlob) continue;
+		BlobIndex blob = point3D.blobs[cameras[c].index];
+		if (blob == InvalidBlob) continue;
 		auto camMat = cameras[c].camera.matrix().template cast<Scalar>();
-		auto point = pointGroups[c]->at(point3D.blobs[c]).template cast<Scalar>();
+		auto point = points2D[c]->at(blob).template cast<Scalar>();
 		triSolveBase.row(camIndex*2+0) = point.x() * camMat.row(2) - camMat.row(0);
 		triSolveBase.row(camIndex*2+1) = point.y() * camMat.row(2) - camMat.row(1);
 		thirdRow.row(camIndex) = camMat.row(2);
@@ -497,39 +508,39 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar>
-Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups, 
+Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D)
 {
-	return refineTriangulationIterative<Scalar>(pointGroups, cameras, point3D, 0, 0); // Not refining iterations
+	return refineTriangulationIterative<Scalar>(points2D, cameras, point3D, 0, 0); // Not refining iterations
 }
 
 // Generate specific implementations
 
-template Eigen::Vector3f triangulatePoint(const std::vector<std::vector<Eigen::Vector2f> const *> &pointGroups, 
+template Eigen::Vector3f triangulatePoint(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
 
-template Eigen::Vector3f refineTriangulation(const std::vector<std::vector<Eigen::Vector2f> const *> &pointGroups, 
+template Eigen::Vector3f refineTriangulation(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
-template Eigen::Vector3d refineTriangulation(const std::vector<std::vector<Eigen::Vector2d> const *> &pointGroups, 
+template Eigen::Vector3d refineTriangulation(const std::vector<std::vector<Eigen::Vector2d> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
 
-template Eigen::Vector3f refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2f> const *> &pointGroups, 
+template Eigen::Vector3f refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<float> &point3D, int maxIterations, float threshold3D);
-template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &pointGroups, 
+template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<float> &point3D, int maxIterations, float threshold3D);
-template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &pointGroups, 
+template Eigen::Vector3d refineTriangulationIterative(const std::vector<std::vector<Eigen::Vector2d> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint_t<double> &point3D, int maxIterations, float threshold3D);
 
 #ifdef OPT_AUTODIFF
 // For AutoDiff used in optimisation/optimisation.hpp ()
 typedef Eigen::AutoDiffScalar<VectorX<float>> ActiveScalarf;
 typedef Eigen::AutoDiffScalar<VectorX<double>> ActiveScalard;
-template Vector3<ActiveScalarf> refineTriangulation(const std::vector<std::vector<Vector2<ActiveScalarf>> const *> &pointGroups, 
+template Vector3<ActiveScalarf> refineTriangulation(const std::vector<std::vector<Vector2<ActiveScalarf>> const *> &points2D, 
 	const std::vector<CameraCalib_t<ActiveScalarf>> &cameras, TriangulatedPoint &point3D);
-template Vector3<ActiveScalard> refineTriangulation(const std::vector<std::vector<Vector2<ActiveScalard>> const *> &pointGroups, 
+template Vector3<ActiveScalard> refineTriangulation(const std::vector<std::vector<Vector2<ActiveScalard>> const *> &points2D, 
 	const std::vector<CameraCalib_t<ActiveScalard>> &cameras, TriangulatedPoint &point3D);
-template Vector3<ActiveScalarf> refineTriangulationIterative(const std::vector<std::vector<Vector2<ActiveScalarf>> const *> &pointGroups, 
+template Vector3<ActiveScalarf> refineTriangulationIterative(const std::vector<std::vector<Vector2<ActiveScalarf>> const *> &points2D, 
 	const std::vector<CameraCalib_t<ActiveScalarf>> &cameras, TriangulatedPoint &point3D, int maxIterations, float threshold3D);
-template Vector3<ActiveScalard> refineTriangulationIterative(const std::vector<std::vector<Vector2<ActiveScalard>> const *> &pointGroups, 
+template Vector3<ActiveScalard> refineTriangulationIterative(const std::vector<std::vector<Vector2<ActiveScalard>> const *> &points2D, 
 	const std::vector<CameraCalib_t<ActiveScalard>> &cameras, TriangulatedPoint &point3D, int maxIterations, float threshold3D);
 #endif

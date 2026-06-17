@@ -790,14 +790,14 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tri0 = pclock::now();
 
 		// Find potential point correspondences as TriangulatedPoints
-		triangulateRayIntersections(calibs, points2D, relevantPoints2D, track.triangulations3D,
+		triangulateRayIntersections(calibs, points2D, relevantPoints2D, camCount, track.triangulations3D,
 			params.maxIntersectError, params.minIntersectError);
 
 		tri1 = pclock::now();
 
 		// Resolve conflicts by assigning points based on confidences and reevaluating confidences
 		// Note this uses internal data from triangulateRayIntersections to help resolve
-		resolveTriangulationConflicts(track.triangulations3D, params.maxIntersectError);
+		resolveTriangulationConflicts(calibs, track.triangulations3D, params.maxIntersectError);
 
 		// Remove the least confident points
 		filterTriangulatedPoints(track.triangulations3D, track.discarded3D,
@@ -1025,10 +1025,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	// Match those 2D clusters to potential 3D clusters using triangulation
-	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, clustering);
+	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, camCount, clustering);
 	std::sort(clusters2DTri.begin(), clusters2DTri.end(), [](auto &a, auto &b){ return a.score > b.score; });
 
 	// TODO: Track clusters in 3D (1/2)
+	// NOTE: Keep in min clusters2DTri.camClusters is currently indexed with subset of cameras (calibs)
 	std::vector<Cluster3D> trackedClusters3D;
 	trackedClusters3D.reserve(clusters2DTri.size());
 	for (auto &clusterTri : clusters2DTri)

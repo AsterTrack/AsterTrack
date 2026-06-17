@@ -68,14 +68,14 @@ typedef TriangulatedPoint_t<float> TriangulatedPoint;
  */
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
-	std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
+	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
 
 /**
  * Pick best points for each ray conflict and reevaluate point confidences based on it
  * Leaves points3D in a semi-sorted order, highest confidence (and secondarily lowest error) first
  * Requires internally stored intersection data from previous triangulateRayIntersections call
  */
-void resolveTriangulationConflicts(std::vector<TriangulatedPoint> &points3D, float maxError);
+void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError);
 
 /**
  * Filter out points below the confidence threshold into the discarded3D list
@@ -86,21 +86,21 @@ void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vec
  * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar>
-Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups,
+Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D);
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar>
-Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups,
+Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D);
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar, typename TriScalar = float>
-Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &pointGroups,
+Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
 	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint_t<TriScalar> &point3D, int maxIterations = 20, float threshold3D = 0.000001f);
 
 #endif // POINT_TRIANGULATION_H

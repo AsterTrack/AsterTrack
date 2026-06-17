@@ -73,7 +73,7 @@ static Cluster2DStats calculateClusterStats2D(const std::vector<int> &cluster, c
 float calculateCluster2DOverlap(const Cluster2DStats clusterA, const CameraCalib &camA, const Cluster2DStats clusterB, const CameraCalib &camB);
 
 std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<Cluster2DStats>> clusterStats,
-	const std::vector<CameraCalib> &calibs, const ClusteringParameters &params);
+	const std::vector<CameraCalib> &calibs, int cameraCount, const ClusteringParameters &params);
 
 
 #endif // TRACKING_CLUSTER_H

@@ -81,6 +81,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			config.exposure = exposure;
 		}
 		{
+			updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
 			float fac = 8.0f/3.0f, offLen = fac; // Experimentally determined with Oscilloscope
 			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + offLen;
 			ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
@@ -174,7 +175,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 		BeginSection("Blob Refinement");
 		{
-			updateProc |= ScalarInput<int>("Refinement Threshold", "", &proc.classification.blobRefinementThreshold, 1, 10000);
+			updateProc |= ScalarInput<int>("Refinement Threshold", "", &proc.classification.blobRefinementThreshold, 10, 10000);
 			updateProc |= SliderInput<int>("Refining Edge Target Value", &proc.refinement.targetEdgeVal, 0, 255);
 			updateProc |= SliderInput<float>("Max Edge Offset [px]", &proc.refinement.maxEdgeOffsetPX, 0.0f, 10.0f);
 		}

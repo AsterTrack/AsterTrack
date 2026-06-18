@@ -180,7 +180,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 
 	{ // Shortcut controls for individual cameras
-		bool takeKeyInput = viewFocused || viewHovered;
+		bool takeKeyInput = viewHovered;
 		if (takeKeyInput)
 			ImGui::SetNextFrameWantCaptureKeyboard(true);
 		if (takeKeyInput) // !io.WantCaptureKeyboard
@@ -194,12 +194,12 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 				else if (device && state.isStreaming)
 				{
 					view.camera->config.imageStreaming.enabled = !view.camera->config.imageStreaming.enabled;
+					view.vis.imageVis.show = view.camera->config.imageStreaming.enabled;
 					updateImageStreaming = true;
 				}
 				RequestUpdates();
 			}
 		}
-
 	}
 
 	/**
@@ -407,6 +407,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		else if (device && state.isStreaming)
 		{
 			view.camera->config.imageStreaming.enabled = !view.camera->config.imageStreaming.enabled;
+			view.vis.imageVis.show = view.camera->config.imageStreaming.enabled;
 			updateImageStreaming = true;
 		}
 		RequestUpdates();
@@ -472,6 +473,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		{
 			updateImageStreaming |= ImGui::MenuItem("Stream Camera Images", nullptr,
 				&view.camera->config.imageStreaming.enabled, device && state.isStreaming);
+			if (updateImageStreaming)
+				view.vis.imageVis.show = view.camera->config.imageStreaming.enabled;
 		}
 
 		if (ImGui::MenuItem("Emulate Blob Detection", nullptr, &view.vis.emulation.enabled, view.vis.imageVis.show))
@@ -494,7 +497,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		auto &request = stream.request;
 		auto &vis = view.vis.imageVis;
 		auto &mode = view.camera->pipeline->mode;
-		vis.show = true;
+		assert(vis.show == true);
 
 		BeginViewToolbar();
 		ImGui::PushID("IMG");
@@ -622,6 +625,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (CrossButton("Discard"))
 		{
 			view.camera->config.imageStreaming.enabled = false;
+			view.vis.imageVis.show = false;
 			updateImageStreaming = true;
 		}
 
@@ -654,15 +658,11 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (CrossButton("Discard"))
 		{
-			vis.show = false;
+			view.vis.imageVis.show = false;
 		}
 
 		ImGui::PopID();
 		EndViewToolbar();
-	}
-	else
-	{
-		view.vis.imageVis.show = false;
 	}
 
 	if (bgCalib)
@@ -1061,6 +1061,11 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		{
 			errorVis.hasMap = false;
 		}
+	}
+
+	if (!camFrame.received)
+	{
+		return;
 	}
 
 	/**

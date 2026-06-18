@@ -52,7 +52,7 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 	server.callbacks.userData1 = &state;
 	server.callbacks.onIdentify = [](ClientCommState &client) { // Find or setup camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
-		LOG(LServer, LInfo, "Established server connection to camera with id %d!\n", client.otherIdent.id);
+		LOG(LServer, LInfo, "Established server connection to camera #%u!\n", client.otherIdent.id);
 		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(50));
 		if (!dev_lock.owns_lock())
 		{ // Likely StopDeviceMode waiting on us to stop thread
@@ -109,7 +109,7 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 			if (client.callbacks.userData2.use_count() == 1)
 				LOG(LServer, LWarn, "Disconnecting camera was already erased from devices!\n");
 			camera.client = NULL;
-			LOG(LServer, LInfo, "Camera with id %d lost server connection!\n", camera.id);
+			LOG(LServer, LInfo, "Camera #%u lost server connection!\n", camera.id);
 			// If camera is now unreachable, DeviceSupervisorThread will wait for it to reconnect before removing it entirely
 			client.callbacks.userData2 = nullptr;
 		}

@@ -58,7 +58,7 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 		}
 	}
 	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
-	snapshot.hasCamera = snapshot.hasFrame && focusCamera >= 0 && focusCamera < snapshot.frameIt->get()->cameras.size() && snapshot.frameIt->get()->cameras[focusCamera].received;
+	snapshot.hasCamera = snapshot.hasFrame && focusCamera >= 0 && focusCamera < snapshot.frameIt->get()->cameras.size();
 	return snapshot;
 }
 

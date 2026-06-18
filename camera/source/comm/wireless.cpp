@@ -28,6 +28,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <thread>
 #include <fstream>
 #include <filesystem>
+#include <unistd.h>
+
 
 static const std::filesystem::path configPath("/mnt/mmcblk0p2/config");
 

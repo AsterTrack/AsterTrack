@@ -4,7 +4,7 @@
 	"configurations": [
 		{
 			"absThreshold": 100,
-			"edgeThreshold": 10,
+			"edgeThreshold": 15,
 			"enableStrobe": true,
 			"filter": 0,
 			"framerate": 120,

@@ -217,7 +217,8 @@ static const char *ErrorTag_String[ERROR_MAX] =
 	"Camera program exception (bus error)",
 	"Camera program exception (floating point error)",
 	"Camera program exception (segfault)",
-	"Camera program exception (pipe)"
+	"Camera program exception (pipe)",
+	"Camera program exception (abort)"
 };
 
 enum CommMedium

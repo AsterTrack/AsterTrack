@@ -1,9 +1,8 @@
 #!/bin/sh
 
-cd /home/tc
-
 ARCH=$(uname -m)
 LOGPATH=/home/tc/trcam.log
+LOGPERM=/mnt/mmcblk0p2/trcam.log
 
 while :
 do
@@ -15,8 +14,9 @@ do
         echo "Tracking Program exited, restarting" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
         if [[ -f /mnt/mmcblk0p2/config/log ]]; then
-                [ -f /mnt/mmcblk0p2/trcam.log  ] && sudo mv /mnt/mmcblk0p2/trcam.log /mnt/mmcblk0p2/trcam.log.last
-                sudo mv $LOGPATH /mnt/mmcblk0p2/trcam.log
+                cp $LOGPATH $LOGPATH.last
+                [ -f $LOGPERM ] && sudo mv $LOGPERM $LOGPERM.last
+                sudo mv $LOGPATH $LOGPERM
                 sync
         fi
         sleep 1s

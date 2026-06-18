@@ -57,22 +57,22 @@ const int minPtCnt = 2;
 // Tile in blob mask
 typedef uint32_t MaskTile;
 // Tile as used for processing
-typedef struct
+struct Tile
 { // This should be packed by default
 	uint8_t x, y;
 	TileID t, l, r, b;
 	MaskTile bytes;
 	CompID compMap[8][4];
-} Tile;
+};
 // Additional data for components
-typedef struct
+struct Comp
 {
 	uint32_t x, y;
 	uint16_t ptCnt;
 #ifdef CALCULATE_BOUNDS_EARLY
 	Bounds2<uint16_t> bounds = {};
 #endif
-} Comp;
+};
 
 /* Variables */
 

@@ -125,20 +125,20 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 				stream.jpegQuality = data[10];
 				stream.frame = data[11];
 
-				/* if (oneshot)
+				if (oneshot)
 				{
 					printf("Requested image of frame %d in rect (%d,%d)x(%d,%d) subsampled %d at %d quality\n",
 						stream.frame,
-						stream.bounds.minX, stream.bounds.minY, stream.bounds.maxX, stream.bounds.maxY,
+						stream.bounds.min.x(), stream.bounds.min.y(), stream.bounds.max.x(), stream.bounds.max.y(),
 						stream.subsampling, stream.jpegQuality);
 				}
-				else
+				else if (!state.streaming.enabled)
 				{
 					printf("Requested streaming every %d frames in rect (%d,%d)x(%d,%d) subsampled %d at %d quality\n",
 						stream.frame,
-						stream.bounds.minX, stream.bounds.minY, stream.bounds.maxX, stream.bounds.maxY,
+						stream.bounds.min.x(), stream.bounds.min.y(), stream.bounds.max.x(), stream.bounds.max.y(),
 						stream.subsampling, stream.jpegQuality);
-				} */
+				}
 			}
 			else
 				printf("Frame streaming disabled!\n");

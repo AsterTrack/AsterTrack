@@ -24,10 +24,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <string>
 #include <math.h>
 #include <sched.h>
-#include <fstream>
 #include <execinfo.h>
 #include <signal.h>
-#include <filesystem>
 
 // Console and UART
 #include <termios.h>
@@ -164,7 +162,7 @@ static void LeaveStreamingState()
 	state.imageRequests = {};
 }
 
-bool handleError(ErrorTag error, bool serious = true, std::string backtrace = "")
+bool handleError(ErrorTag error, bool serious = true, const char* reportBuf = nullptr, int reportLen = 0)
 {
 	if (error < ERROR_MAX)
 		fprintf(stderr, "Encountered Error %d: %s!\n", (int)error, ErrorTag_String[(int)error]);
@@ -181,11 +179,12 @@ bool handleError(ErrorTag error, bool serious = true, std::string backtrace = ""
 			printf("    Failed to interject comms %d in error handling!\n", comm->medium);
 			continue;
 		}
-		if (comm_packet(comm, PacketHeader(PACKET_ERROR, 2+backtrace.size())))
+		if (comm_packet(comm, PacketHeader(PACKET_ERROR, 2+reportLen)))
 		{ // Send notification of error over this comm medium
 			comm_write(comm, (uint8_t*)&error, 1);
 			comm_write(comm, (uint8_t*)&serious, 1);
-			comm_write(comm, (uint8_t*)backtrace.data(), backtrace.size());
+			if (reportBuf && reportLen > 0)
+				comm_write(comm, (uint8_t*)reportBuf, reportLen);
 			comm_submit(comm);
 			printf("    Sent error packet via comm medium %d!\n", comm->medium);
 		}
@@ -199,28 +198,10 @@ bool handleError(ErrorTag error, bool serious = true, std::string backtrace = ""
 	return serious;
 }
 
-void crash_handler(int signal)
+bool EnableCrashHandler();
+
+void CrashHandler(int signal, const char* reportBuf, int reportLen = 0)
 {
-	int thread_id = syscall(SYS_gettid);
-	char thread_name[16] = {0 };
-	prctl(PR_GET_NAME, thread_name);
-	fprintf(stderr, "Error Signal %d in thread '%s':\n", signal, thread_name);
-	// Fetch backtrace
-	void *array[32];
-	size_t size = backtrace(array, 32);
-	backtrace_symbols_fd(array, size, STDERR_FILENO);
-	char **btcharr = backtrace_symbols(array, size);
-	// This is not displaying line number, only functions.
-	// TODO: Use libbacktrace for perfect backtrace
-	std::string btstr = thread_name;
-	btstr.append(":\0");
-	for (int i = 0; i < size; i++)
-	{
-		fprintf(stderr, "%s\n", btcharr[i]);
-		btstr.append(btcharr[i]);
-		btstr.push_back('\0');
-	}
-	free(btcharr);
 	ErrorTag error;
 	switch(signal)
 	{
@@ -246,8 +227,7 @@ void crash_handler(int signal)
 			error = ERROR_EXCEPTION_UNKNOWN;
 			break;
 	}
-	handleError(error, true, btstr);
-	exit(error);
+	handleError(error, true, reportBuf, reportLen);
 }
 
 int main(int argc, char **argv)
@@ -262,15 +242,7 @@ int main(int argc, char **argv)
 
 	prctl(PR_SET_NAME, "Thread_CPU");
 
-	// Setup handler to catch segfaults
-	struct sigaction action;
-	action.sa_handler = crash_handler;
-	sigaction(SIGILL, &action, NULL);
-	sigaction(SIGBUS, &action, NULL);
-	sigaction(SIGFPE, &action, NULL);
-	sigaction(SIGSEGV, &action, NULL);
-	sigaction(SIGPIPE, &action, NULL);
-	sigaction(SIGABRT, &action, NULL);
+	EnableCrashHandler();
 
 	// Read and validate arguments
 	if (!options_read(state, argc, argv))

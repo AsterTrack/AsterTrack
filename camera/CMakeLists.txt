@@ -50,6 +50,7 @@ set(SOURCES
 	source/visualisation.cpp
 	source/processing/masking.cpp
 	source/processing/framesync.cpp
+	source/processing/processing.cpp
 	source/version.cpp
 	source/state.cpp
 	source/main.cpp

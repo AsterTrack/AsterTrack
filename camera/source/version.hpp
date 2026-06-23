@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define VERSION_H
 
 #include "comm/packet.h"
-#include "mcu/mcu.hpp"
+#include "mcu/serial.hpp"
 
 #include <string>
 

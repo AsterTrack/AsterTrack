@@ -36,6 +36,7 @@ CPP="-std=c++20 -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-u
 /usr/bin/g++ $SHARED $CPP -o build-env/visualisation.cpp.o -c source/visualisation.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/processing/framesync.cpp.o -c source/processing/framesync.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/processing/masking.cpp.o -c source/processing/masking.cpp
+/usr/bin/g++ $SHARED $CPP -o build-env/processing/processing.cpp.o -c source/processing/processing.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/version.cpp.o -c source/version.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/state.cpp.o -c source/state.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/main.cpp.o -c source/main.cpp

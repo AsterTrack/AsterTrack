@@ -725,15 +725,26 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
 				{ // Reset current mask (and temp mask)
-					printf("Resetting stored Background Calibration!\n");
-					detect.resetBackgroundCalibration();
+					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
+					{
+						printf("Resetting Background Calibration!\n");
+						detect.resetBackgroundCalibration();
+					}
+				}
+				else if (newMode.opt == TRCAM_OPT_BGCALIB_RETRY)
+				{ // Reset current mask (and temp mask)
+					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
+					{
+						printf("Resetting ongoing Background Calibration!\n");
+						detect.retryBackgroundCalibration();
+					}
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_DISCARD)
 				{ // Accept temp mask as current mask
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Discarding Background Calibration!\n");
-						detect.resetBackgroundCalibration();
+						detect.discardBackgroundCalibration();
 					}
 					newMode.mode = TRCAM_MODE_BLOB;
 					newMode.opt = TRCAM_OPT_NONE;

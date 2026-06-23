@@ -81,7 +81,7 @@ struct TrackingCameraState
 	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
 	void recvModeSet(uint8_t mode);
 
-	enum BackgroundCalibOpt { BG_CALIB, BG_RESET, BG_ACCEPT, BG_DISCARD };
+	enum BackgroundCalibOpt { BG_CALIB, BG_RESET, BG_RETRY, BG_ACCEPT, BG_DISCARD };
 	bool updateBackgroundCalib(BackgroundCalibOpt opt);
 
 	/**

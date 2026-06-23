@@ -660,16 +660,24 @@ void BlobDetection::initBackgroundCalibration()
 	tempBackgroundMask.reset();
 	backgroundMask = &tempBackgroundMask;
 }
+void BlobDetection::resetBackgroundCalibration()
+{
+	tempBackgroundMask.reset();
+	storedBackgroundMask.reset();
+	backgroundMask = &storedBackgroundMask;
+}
+void BlobDetection::retryBackgroundCalibration()
+{
+	tempBackgroundMask.reset();
+}
 void BlobDetection::acceptBackgroundCalibration()
 {
 	storedBackgroundMask = tempBackgroundMask;
 	tempBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 }
-void BlobDetection::resetBackgroundCalibration()
+void BlobDetection::discardBackgroundCalibration()
 {
-	tempBackgroundMask.reset();
-	storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 }
 void BlobDetection::updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)

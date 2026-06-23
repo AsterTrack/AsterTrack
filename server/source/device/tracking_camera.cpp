@@ -145,6 +145,9 @@ bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
 		case BG_RESET:
 			receiving.background.contextualLock()->tiles.clear();
 			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
+		case BG_RETRY:
+			receiving.background.contextualLock()->tiles.clear();
+			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RETRY);
 		case BG_ACCEPT:
 			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT);
 		case BG_DISCARD:

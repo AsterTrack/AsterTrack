@@ -678,13 +678,16 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		}
 		SameLineTrailing(GetBarWidth(ImGui::GetFrameHeight(), 3));
 		if (RetryButton("Retry"))
-			view.camera->updateBackgroundCalib(TrackingCameraState::BG_RESET);
+			view.camera->updateBackgroundCalib(TrackingCameraState::BG_RETRY);
+		ImGui::SetItemTooltip("Reset newly calibrated background to try again.\nDoes not clear previously calibrated background.")
 		ImGui::SameLine();
 		if (CheckButton("Accept"))
 			view.camera->updateBackgroundCalib(TrackingCameraState::BG_ACCEPT);
+		ImGui::SetItemTooltip("Apply newly calibrated background, replacing any previously calibrated background.")
 		ImGui::SameLine();
 		if (CrossButton("Discard"))
 			view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
+		ImGui::SetItemTooltip("Discard newly calibrated background, keep previously calibrated background.")
 
 		ImGui::PopID();
 		EndViewToolbar();

@@ -77,8 +77,10 @@ struct BlobDetection
 
 	/* Background Calibration */
 	void initBackgroundCalibration();
-	void acceptBackgroundCalibration();
 	void resetBackgroundCalibration();
+	void retryBackgroundCalibration();
+	void acceptBackgroundCalibration();
+	void discardBackgroundCalibration();
 	void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles);
 	std::vector<uint8_t> getTempBGTiles();
 };

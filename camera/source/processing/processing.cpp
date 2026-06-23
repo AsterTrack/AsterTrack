@@ -126,7 +126,7 @@ inline static void printIncidents(StatPacket::Incidents::Stat &stat, const char 
 	if (stat.occurences) printf("%dx %s %dus, max %dus; ", stat.occurences, label, stat.avg, stat.max);
 }
 
-bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
+bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 {
 	TimePoint_t time_start = sclock::now();
 	TimePoint_t time_lastStatCheck = sclock::now();
@@ -164,7 +164,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 #ifdef EMUL_VCSM
 	VCSM_BUFFER camEmulBuf[emulBufCnt];
 #else
-	QPU_BUFFER camEmulBuf[emulBufCnt];
+	VC_BUFFER camEmulBuf[emulBufCnt];
 #endif
 #endif
 
@@ -232,11 +232,11 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 #else
 	for (int i = 0; i < emulBufCnt; i++)
 	{ // Allocate only grayscale buffer
-		int ret = qpu_allocBuffer(&camEmulBuf[i], &base, srcStride*state.camera.height, 4096);
+		int ret = vc_allocBuffer(&camEmulBuf[i], &base, srcStride*state.camera.height, 4096);
 		if (!ret) continue;
 		printf("Failed to allocate buffer %d for emulation: %d!\n", i, ret);
 		for (int j = i-1; j >= 0; j--)
-			qpu_releaseBuffer(&camEmulBuf[j]);
+			vc_releaseBuffer(&camEmulBuf[j]);
 		return false;
 	}
 #endif
@@ -252,7 +252,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 		}
 		uint8_t *YUVFrameData = (uint8_t*)camEmulBuf[i].mem;
 #else
-		qpu_lockBuffer(&camEmulBuf[i]);
+		vc_lockBuffer(&camEmulBuf[i]);
 		uint8_t *YUVFrameData = (uint8_t*)camEmulBuf[i].ptr.arm.vptr;
 #endif
 		for (int y = 0; y < state.camera.height; y++)
@@ -288,7 +288,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 #ifdef EMUL_VCSM
 		vcsm_unlock(camEmulBuf[i]);
 #else
-		qpu_unlockBuffer(&camEmulBuf[i]);
+		vc_unlockBuffer(&camEmulBuf[i]);
 #endif
 	}
 #endif
@@ -592,10 +592,10 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 			uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
 			uint32_t framePtrVC = frameBuffer.VCMem; 
 	#else
-			QPU_BUFFER &frameBuffer = camEmulBuf[qpu_it%emulBufCnt];
+			VC_BUFFER &frameBuffer = camEmulBuf[qpu_it%emulBufCnt];
 
 			// Lock QPU buffer (needed?)
-			qpu_lockBuffer(&frameBuffer);
+			vc_lockBuffer(&frameBuffer);
 			uint8_t *framePtrARM = (uint8_t*)frameBuffer.ptr.arm.cptr;
 			uint32_t framePtrVC = frameBuffer.ptr.vc;
 	#endif
@@ -606,7 +606,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 			// ---- Masking on QPU ----
 
 			int code = masking.Execute(base, qpu.perf, srcStride, framePtrVC);
-			QPU_BUFFER &bitmskBuf = masking.bitmskBuffer[masking.bitmskSwitch];
+			VC_BUFFER &bitmskBuf = masking.bitmskBuffer[masking.bitmskSwitch];
 
 #ifdef LOG_QPU	// Only relevant during development of QPU programs
 			qpu_logErrors(&base);
@@ -631,7 +631,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 			//vcsm_unlock(frameBuffer);
 			//mem_unlock(base.mb, frameBuffer.VCHandle);
 	#else
-			qpu_unlockBuffer(&frameBuffer);
+			vc_unlockBuffer(&frameBuffer);
 	#endif
 #endif
 
@@ -869,13 +869,13 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 			TimePoint_t t0 = sclock::now();
 
 			// Lock bitmask buffer
-			//qpu_lockBuffer(curFrame->bitmsk);
+			//vc_lockBuffer(curFrame->bitmsk);
 
 			// Extract regions with blobs
 			detect.fetchRegions(curFrame->bitmsk->ptr.arm.uptr);
 
 			// Unlock bitmask buffer
-			//qpu_unlockBuffer(curFrame->bitmsk);
+			//vc_unlockBuffer(curFrame->bitmsk);
 
 			TimePoint_t t1 = sclock::now();
 
@@ -1344,7 +1344,7 @@ bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base)
 		vcsm_free(camEmulBuf[i]);
 #else
 	for (int i = 0; i < emulBufCnt; i++)
-		qpu_releaseBuffer(&camEmulBuf[i]);
+		vc_releaseBuffer(&camEmulBuf[i]);
 #endif
 #endif
 

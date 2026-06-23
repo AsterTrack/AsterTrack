@@ -1,6 +1,6 @@
 #!/bin/bash
 
-mkdir -p build-env/qpu
+mkdir -p build-env/videocore
 mkdir -p build-env/util
 mkdir -p build-env/comm
 mkdir -p build-env/mcu
@@ -17,10 +17,10 @@ popd
 SHARED="-DARMV7 -Ienv/include -I../shared -Idependencies -Isource -g -rdynamic -fno-omit-frame-pointer -Wall"
 CPP="-std=c++20 -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -O1"
 
-/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/qpu/mailbox.c.o -c source/qpu/mailbox.c
-/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/qpu/qpu_base.c.o -c source/qpu/qpu_base.c
-/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/qpu/qpu_program.c.o -c source/qpu/qpu_program.c
-/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/qpu/qpu_info.c.o -c source/qpu/qpu_info.c
+/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/mailbox.c.o -c source/videocore/mailbox.c
+/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/vc_base.c.o -c source/videocore/vc_base.c
+/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/qpu_program.c.o -c source/videocore/qpu_program.c
+/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/qpu_info.c.o -c source/videocore/qpu_info.c
 /usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/util/fbUtil.c.o -c source/util/fbUtil.c
 /usr/bin/g++ $SHARED $CPP -o build-env/camera/gcs_v4l2.cpp.o -c source/camera/gcs_v4l2.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/vcsm/vcsm.cpp.o -c source/vcsm/vcsm.cpp

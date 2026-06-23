@@ -33,7 +33,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "qpu_base.h"
+#include "vc_base.h"
 
 /* QPU Info and Debugging
 	Functions to read out QPU state and information and handle interrupts
@@ -79,29 +79,29 @@ typedef struct QPU_Performance {
 	uint64_t numL2CHits, numL2CMiss;
 } QPU_Performance;
 
-void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, QPU_BASE *base);
-void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, QPU_BASE *base);
-bool qpu_getL2CacheState(QPU_BASE *base);
+void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, VC_BASE *base);
+void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, VC_BASE *base);
+bool qpu_getL2CacheState(VC_BASE *base);
 
-int qpu_getQPUInterruptFlags(QPU_BASE *base);
-void qpu_resetQPUInterruptFlags(QPU_BASE *base);
-void qpu_get3DInterrupts(QPU_3DInterrupts *info, QPU_BASE *base);
+int qpu_getQPUInterruptFlags(VC_BASE *base);
+void qpu_resetQPUInterruptFlags(VC_BASE *base);
+void qpu_get3DInterrupts(QPU_3DInterrupts *info, VC_BASE *base);
 
-void qpu_getHWIdent(QPU_HWIdent *debug, QPU_BASE *base);
-void qpu_getHWConfiguration(QPU_HWConfiguration *info, QPU_BASE *base);
-void qpu_debugHW(QPU_BASE *base);
+void qpu_getHWIdent(QPU_HWIdent *debug, VC_BASE *base);
+void qpu_getHWConfiguration(QPU_HWConfiguration *info, VC_BASE *base);
+void qpu_debugHW(VC_BASE *base);
 
-int qpu_getReservationSetting(QPU_BASE *base, int qpu);
-void qpu_setReservationSetting(QPU_BASE *base, int qpu, int set);
-void qpu_logReservationSettings(QPU_BASE *base);
+int qpu_getReservationSetting(VC_BASE *base, int qpu);
+void qpu_setReservationSetting(VC_BASE *base, int qpu, int set);
+void qpu_logReservationSettings(VC_BASE *base);
 
-void qpu_setupPerformanceCounters(QPU_BASE *base, QPU_PerformanceState *state);
-void qpu_updatePerformance(QPU_BASE *base, QPU_PerformanceState *state);
+void qpu_setupPerformanceCounters(VC_BASE *base, QPU_PerformanceState *state);
+void qpu_updatePerformance(VC_BASE *base, QPU_PerformanceState *state);
 void qpu_readPerformanceState(uint64_t *perfData, QPU_Performance *perf);
 void qpu_logPerformance (QPU_PerformanceState *state);
 
-int qpu_logErrors(QPU_BASE *base);
-int qpu_logStalls(QPU_BASE *base);
+int qpu_logErrors(VC_BASE *base);
+int qpu_logStalls(VC_BASE *base);
 
 #ifdef __cplusplus
 }

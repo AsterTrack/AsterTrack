@@ -18,10 +18,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "masking.hpp"
 
-#include "qpu/mailbox.h"
-#include "qpu/qpu_registers.h"
+#include "videocore/mailbox.h"
+#include "videocore/qpu_registers.h"
 
-MaskingProgram::MaskingProgram(QPU_BASE &base, ProgramLayout layout, const std::string &codeFile)
+MaskingProgram::MaskingProgram(VC_BASE &base, ProgramLayout layout, const std::string &codeFile)
 	: layout(layout)
 {
 	initialised = false;
@@ -29,10 +29,10 @@ MaskingProgram::MaskingProgram(QPU_BASE &base, ProgramLayout layout, const std::
 	// Set up bit target, one bit per pixel
 	for (int i = 0; i < BitmaskCount; i++)
 	{
-		if (qpu_allocBuffer(&bitmskBuffer[i], &base, layout.maskSize.prod()/8, 4096))
+		if (vc_allocBuffer(&bitmskBuffer[i], &base, layout.maskSize.prod()/8, 4096))
 		{
 			for (int j = i-1; j >= 0; j--)
-				qpu_releaseBuffer(&bitmskBuffer[j]);
+				vc_releaseBuffer(&bitmskBuffer[j]);
 			return;
 		}
 	}
@@ -45,7 +45,7 @@ MaskingProgram::MaskingProgram(QPU_BASE &base, ProgramLayout layout, const std::
 	}))
 	{
 		for (int i = 0; i < BitmaskCount; i++)
-			qpu_releaseBuffer(&bitmskBuffer[i]);
+			vc_releaseBuffer(&bitmskBuffer[i]);
 		return;
 	}
 
@@ -53,14 +53,14 @@ MaskingProgram::MaskingProgram(QPU_BASE &base, ProgramLayout layout, const std::
 	{
 		qpu_destroyProgram(&blobProgram);
 		for (int i = 0; i < BitmaskCount; i++)
-			qpu_releaseBuffer(&bitmskBuffer[i]);
+			vc_releaseBuffer(&bitmskBuffer[i]);
 		return;
 	}
 
 	initialised = true;
 
 	// Set up uniforms of the blob QPU program
-	qpu_lockBuffer(&blobProgram.progmem_buffer);
+	vc_lockBuffer(&blobProgram.progmem_buffer);
 	uint32_t *uniforms = blobProgram.progmem.uniforms.arm.uptr;
 	uint32_t tgtLineStride = layout.maskSize.x()/8;
 	uint32_t tgtBlockStride = tgtLineStride * blockLines;
@@ -79,7 +79,7 @@ MaskingProgram::MaskingProgram(QPU_BASE &base, ProgramLayout layout, const std::
 			uniforms[baseUnif + 6] = 255; // difference threshold
 		}
 	}
-	qpu_unlockBuffer(&blobProgram.progmem_buffer);
+	vc_unlockBuffer(&blobProgram.progmem_buffer);
 }
 
 MaskingProgram::~MaskingProgram()
@@ -87,13 +87,13 @@ MaskingProgram::~MaskingProgram()
 	if (!initialised) return;
 	qpu_destroyProgram(&blobProgram);
 	for (int i = 0; i < BitmaskCount; i++)
-		qpu_releaseBuffer(&bitmskBuffer[i]);
+		vc_releaseBuffer(&bitmskBuffer[i]);
 	printf("-- QPU Cleaned --\n");
 }
 
 void MaskingProgram::SetParameters(uint8_t thresholdCO, uint8_t diffCO)
 {
-	qpu_lockBuffer(&blobProgram.progmem_buffer);
+	vc_lockBuffer(&blobProgram.progmem_buffer);
 	uint32_t *uniforms = blobProgram.progmem.uniforms.arm.uptr;
 	for (int c = 0; c < layout.columns; c++)
 	{
@@ -107,16 +107,16 @@ void MaskingProgram::SetParameters(uint8_t thresholdCO, uint8_t diffCO)
 			uniforms[baseUnif + 6] = diffCO;
 		}
 	}
-	qpu_unlockBuffer(&blobProgram.progmem_buffer);
+	vc_unlockBuffer(&blobProgram.progmem_buffer);
 }
 
-unsigned int MaskingProgram::Execute(QPU_BASE &base, QPU_PerformanceState &perfState, uint32_t srcStride, uint32_t sourcePtrVC)
+unsigned int MaskingProgram::Execute(VC_BASE &base, QPU_PerformanceState &perfState, uint32_t srcStride, uint32_t sourcePtrVC)
 {
-	QPU_BUFFER &bitmskBuf = bitmskBuffer[bitmskSwitch];
+	VC_BUFFER &bitmskBuf = bitmskBuffer[bitmskSwitch];
 
 	// ---- Uniform preparation ----
 
-	qpu_lockBuffer(&blobProgram.progmem_buffer);
+	vc_lockBuffer(&blobProgram.progmem_buffer);
 	uint32_t *uniforms = blobProgram.progmem.uniforms.arm.uptr;
 	uint32_t tgtLineStride = layout.maskSize.x()/8;
 	// Set up individual source pointer for each program instance
@@ -135,22 +135,22 @@ unsigned int MaskingProgram::Execute(QPU_BASE &base, QPU_PerformanceState &perfS
 			uniforms[baseUnif + 2] = srcStride;
 		}
 	}
-	qpu_unlockBuffer(&blobProgram.progmem_buffer);
+	vc_unlockBuffer(&blobProgram.progmem_buffer);
 
 	// ---- Program execution ----
 
 	// Lock bitmask buffer
-	//qpu_lockBuffer(&bitmskBuf);
+	//vc_lockBuffer(&bitmskBuf);
 
 	unsigned int code = qpu_executeProgramDirect(&blobProgram, &base, layout.instances, numUnif, numUnif, &perfState);
 
 	// Unlock bitmask buffer
-	//qpu_unlockBuffer(&bitmskBuf);
+	//vc_unlockBuffer(&bitmskBuf);
 
 	return code;
 }
 
-ExclusiveQPU::ExclusiveQPU(QPU_BASE &base, const QPUCoreMasking &cores, int numThreads, bool log)
+ExclusiveQPU::ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numThreads, bool log)
 	: base(base)
 {
 	// Enable QPU - this locks the QPU for our use and prevents other use (e.g. camera AWB, OpenGL ES)

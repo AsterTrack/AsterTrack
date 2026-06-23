@@ -31,7 +31,7 @@ SOFTWARE.
 #include "qpu_registers.h"
 #include "mailbox.h"
 
-void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, QPU_BASE *base)
+void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, VC_BASE *base)
 {
 	uint32_t srqcs = base->peripherals[V3D_SRQCS];
 	info->QPURQCC = (srqcs >> 16) & 0xFF;
@@ -41,7 +41,7 @@ void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, QPU_BASE *base)
 	info->VPMURSV = (base->peripherals[V3D_VPMBASE] >> 0) & 0x1F;
 	info->VPMURSV_V = info->VPMURSV * 4;
 }
-void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, QPU_BASE *base)
+void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, VC_BASE *base)
 {
 	uint32_t pcs = base->peripherals[V3D_PCS];
 	info->BMOOM = (pcs >> 8) & 1;
@@ -52,21 +52,21 @@ void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, QPU_BASE *base)
 	info->BMFCT = (base->peripherals[V3D_BFC] >> 0) & 0xFF;
 	info->RMFCT = (base->peripherals[V3D_RFC] >> 0) & 0xFF;
 }
-bool qpu_getL2CacheState(QPU_BASE *base)
+bool qpu_getL2CacheState(VC_BASE *base)
 {
 	return (base->peripherals[V3D_L2CACTL] >> 0) & 1;
 }
 
-int qpu_getQPUInterruptFlags(QPU_BASE *base)
+int qpu_getQPUInterruptFlags(VC_BASE *base)
 {
 	return (base->peripherals[V3D_DBQITC] >> 0) & 0xFFFF;
 }
-void qpu_resetQPUInterruptFlags(QPU_BASE *base)
+void qpu_resetQPUInterruptFlags(VC_BASE *base)
 {
 	base->peripherals[V3D_DBQITC] |= 0xFFFF;
 
 }
-void qpu_get3DInterrupts(QPU_3DInterrupts *info, QPU_BASE *base)
+void qpu_get3DInterrupts(QPU_3DInterrupts *info, VC_BASE *base)
 {
 	uint32_t intctl = base->peripherals[V3D_INTCTL];
 	info->INT_SPILLUSE = (intctl >> 3) & 1;
@@ -75,7 +75,7 @@ void qpu_get3DInterrupts(QPU_3DInterrupts *info, QPU_BASE *base)
 	info->INT_FRDONE = (intctl >> 0) & 1;
 }
 
-void qpu_getHWIdent(QPU_HWIdent *info, QPU_BASE *base)
+void qpu_getHWIdent(QPU_HWIdent *info, VC_BASE *base)
 {
 	uint32_t ident0 = base->peripherals[V3D_IDENT0];
 	info->TVER = (ident0 >> 24) & 0xFF;
@@ -84,7 +84,7 @@ void qpu_getHWIdent(QPU_HWIdent *info, QPU_BASE *base)
 	info->IDSTR[2] = (ident0 >> 16) & 0xFF;
 	info->IDSTR[3] = 0;
 }
-void qpu_getHWConfiguration(QPU_HWConfiguration *info, QPU_BASE *base)
+void qpu_getHWConfiguration(QPU_HWConfiguration *info, VC_BASE *base)
 {
 	uint32_t ident1 = base->peripherals[V3D_IDENT1];
 	uint32_t ident2 = base->peripherals[V3D_IDENT2];
@@ -105,7 +105,7 @@ void qpu_getHWConfiguration(QPU_HWConfiguration *info, QPU_BASE *base)
 	info->TLB_Y = info->TLBSZ == 2? 64 : 32;
 	info->VRISZ = (ident2 >> 0) & 0xF;
 }
-void qpu_debugHW(QPU_BASE *base)
+void qpu_debugHW(VC_BASE *base)
 {
 	QPU_HWIdent id;
 	qpu_getHWIdent(&id, base);
@@ -115,18 +115,18 @@ void qpu_debugHW(QPU_BASE *base)
 		id.IDSTR, hw.VPMSZ, hw.VPMSZ_V, hw.NSLC, hw.TUPS, hw.QUPS, hw.TLB_X, hw.TLB_Y);
 }
 
-int qpu_getReservationSetting(QPU_BASE *base, int qpu)
+int qpu_getReservationSetting(VC_BASE *base, int qpu)
 {
 	return (base->peripherals[qpu > 7? V3D_SQRSV1 : V3D_SQRSV0] >> (4*(qpu%8))) & 0xF;
 }
-void qpu_setReservationSetting(QPU_BASE *base, int qpu, int set)
+void qpu_setReservationSetting(VC_BASE *base, int qpu, int set)
 {
 	base->peripherals[qpu > 7? V3D_SQRSV1 : V3D_SQRSV0]
 		&= ~(0xF << (4*(qpu%8)));
 	base->peripherals[qpu > 7? V3D_SQRSV1 : V3D_SQRSV0]
 		|= (set & 0xF) << (4*(qpu%8));
 }
-void qpu_logReservationSettings(QPU_BASE *base)
+void qpu_logReservationSettings(VC_BASE *base)
 {
 	int res[12];
 	for(int i = 0; i < 12; i++)
@@ -141,7 +141,7 @@ void qpu_logReservationSettings(QPU_BASE *base)
 //	printf("QPU 9:%d, 10:%d, 11:%d, 12:%d");
 }
 
-void qpu_setupPerformanceCounters(QPU_BASE *base, QPU_PerformanceState *state)
+void qpu_setupPerformanceCounters(VC_BASE *base, QPU_PerformanceState *state)
 {
 	base->peripherals[V3D_PCTRC] = 0xFFFF;
 	base->peripherals[V3D_PCTRE] = 0x80000000 | 0xFFFF; // Only need first 11
@@ -167,7 +167,7 @@ void qpu_setupPerformanceCounters(QPU_BASE *base, QPU_PerformanceState *state)
 	}
 	state->clockRateMin = state->clockRateMax = 0;
 }
-void qpu_updatePerformance(QPU_BASE *base, QPU_PerformanceState *state)
+void qpu_updatePerformance(VC_BASE *base, QPU_PerformanceState *state)
 {
 	#pragma GCC unroll 11
 	for (int i = 0; i < 11; i++)
@@ -282,7 +282,7 @@ const char* pseErrors[] =
 	"IPD2_FPDUSED: error_ipd2_fpdused in PSE!\n",
 };
 
-int qpu_logErrors(QPU_BASE *base)
+int qpu_logErrors(VC_BASE *base)
 {
 	int hadError = 0;
 
@@ -324,7 +324,7 @@ int qpu_logErrors(QPU_BASE *base)
 	return hadError;
 }
 
-/*int qpu_logStalls(QPU_BASE *base)
+/*int qpu_logStalls(VC_BASE *base)
 {
 	int hadStalls = 0;
 

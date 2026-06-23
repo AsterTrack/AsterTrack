@@ -43,16 +43,16 @@ SOFTWARE.
 /* Initializes QPU program using base. Provide progmem size requirements through memsize.
  * If program is a general purpose program, messageSize should be > 2 to accommodate for code and uniforms.
  * Else messageSize should be 0 as QPU V3D registers are used for execution instead of a mailbox message. */
-int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem)
+int qpu_initProgram(QPU_PROGRAM *program, VC_BASE *base, QPU_PROGMEM progmem)
 {
 	// Allocate GPU memory for progmem (code, uniforms, control lists, etc)
 	uint32_t progmemSize = progmem.codeSize + progmem.uniformsSize * 4 + progmem.messageSize * 4;
-	int status = qpu_allocBuffer(&program->progmem_buffer, base, progmemSize, 4096);
+	int status = vc_allocBuffer(&program->progmem_buffer, base, progmemSize, 4096);
 	if (status != 0) return status;
 	// Although not currently locked, addresses are already valid and will stay the same
 
 	// Store ARM and VC side addresses
-	QPU_PTR pmstart = program->progmem.start = program->progmem_buffer.ptr;
+	VC_PTR pmstart = program->progmem.start = program->progmem_buffer.ptr;
 	program->progmem.code = pmstart;
 	program->progmem.codeSize = progmem.codeSize;
 	program->progmem.uniforms.vc = pmstart.vc + progmem.codeSize;
@@ -63,7 +63,7 @@ int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem)
 	program->progmem.messageSize = progmem.messageSize;
 
 	// Lock progmem buffer to make base->progmem accessible
-	qpu_lockBuffer(&program->progmem_buffer);
+	vc_lockBuffer(&program->progmem_buffer);
 
 	// Reset progmem to all zeros
 	memset(program->progmem.start.arm.vptr, 0x0, program->progmem_buffer.size);
@@ -75,7 +75,7 @@ int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem)
 	}
 
 	// Unlock progmem - base->progmem can't be accessed anymore
-	qpu_unlockBuffer(&program->progmem_buffer);
+	vc_unlockBuffer(&program->progmem_buffer);
 
 	return 0;
 }
@@ -84,28 +84,28 @@ int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem)
 void qpu_destroyProgram (QPU_PROGRAM *program)
 {
 	// Destroy progmem in GPU memory
-	qpu_releaseBuffer(&program->progmem_buffer);
+	vc_releaseBuffer(&program->progmem_buffer);
 }
 
-static inline uint8_t qpu_getUserProgramsCompleted(QPU_BASE *base)
+static inline uint8_t qpu_getUserProgramsCompleted(VC_BASE *base)
 { // QPURQCC
 	return (base->peripherals[V3D_SRQCS] >> 16) & 0xFF;
 }
-static inline uint8_t qpu_getUserProgramsRequested(QPU_BASE *base)
+static inline uint8_t qpu_getUserProgramsRequested(VC_BASE *base)
 { // QPURQCM
 	return (base->peripherals[V3D_SRQCS] >> 8) & 0xFF;
 }
-static inline uint8_t qpu_getUserProgramsQueued(QPU_BASE *base)
+static inline uint8_t qpu_getUserProgramsQueued(VC_BASE *base)
 { // QPURQL
 	return (base->peripherals[V3D_SRQCS] >> 0) & 0x3F;
 }
-static inline bool qpu_getUserProgramsQueueError(QPU_BASE *base)
+static inline bool qpu_getUserProgramsQueueError(VC_BASE *base)
 { // QPURQERR
 	return (base->peripherals[V3D_SRQCS] >> 7) & 0b1;
 }
 
 /* QPU execute program using direct access to QPU V3D registers. */
-unsigned int qpu_executeProgramDirect (QPU_PROGRAM *program, QPU_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState)
+unsigned int qpu_executeProgramDirect (QPU_PROGRAM *program, VC_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState)
 {
 	base->peripherals[V3D_DBCFG] = 0; // Disallow IRQ
 	base->peripherals[V3D_DBQITE] = 0; // Disable IRQ
@@ -242,12 +242,12 @@ retry:
 }
 
 /* QPU execute general purpose program using mailbox. */
-unsigned int qpu_executeProgramMailbox (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
+unsigned int qpu_executeProgramMailbox (QPU_PROGRAM *program, VC_BASE *base, int numQPUs)
 {
-	return execute_qpu(base->mb, numQPUs, program->progmem.message.vc, QPU_NO_FLUSH, QPU_TIMEOUT);
+	return execute_qpu(base->mb, numQPUs, program->progmem.message.vc, 1, 2000);
 }
 
-unsigned int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
+unsigned int qpu_executeProgram (QPU_PROGRAM *program, VC_BASE *base, int numQPUs)
 {
 	unsigned int retCode;
 	if (program->progmem.messageSize < 2)
@@ -261,9 +261,9 @@ unsigned int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numQP
 /* Copies code from supplied buffer into program memory. */
 void qpu_setProgramCode(QPU_PROGRAM *program, const char *code, unsigned int length)
 {
-	qpu_lockBuffer(&program->progmem_buffer);
+	vc_lockBuffer(&program->progmem_buffer);
 	memcpy(&program->progmem.code.arm.cptr, code, length);
-	qpu_unlockBuffer(&program->progmem_buffer);
+	vc_unlockBuffer(&program->progmem_buffer);
 }
 
 /* Loads code from the file directly into program memory. */
@@ -285,9 +285,9 @@ int qpu_loadProgramCode(QPU_PROGRAM *program, const char *filename)
 	}
 	rewind(file);
 
-	qpu_lockBuffer(&program->progmem_buffer);
+	vc_lockBuffer(&program->progmem_buffer);
 	fread(program->progmem.code.arm.cptr, fileLength, 1, file);
-	qpu_unlockBuffer(&program->progmem_buffer);
+	vc_unlockBuffer(&program->progmem_buffer);
 	fclose(file);
 	return 0;
 }

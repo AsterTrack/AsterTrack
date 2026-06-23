@@ -25,24 +25,11 @@ SOFTWARE.
 
 #include <stdio.h>
 
-#include "qpu_base.h"
+#include "vc_base.h"
 
 #include "mailbox.h"
 
-/* QPU Access Base
-	Provides easy access to all functionality of the QPU.
-
-	Create a QPU access base using QPU_initBase and QPU_destroyBase.
-	It provides direct access to the QPU V3D registers using the peripheral map.
-	It also contains required information about the host.
-
-	Contains a GPU buffer implementation for passing information buffers to the QPU.
-
-	Requires sudo privileges for memmap (mailbox.h)
-*/
-
-/* Allocate the buffer of desired size in GPU memory */
-int qpu_allocBuffer(QPU_BUFFER *buffer, QPU_BASE *base, uint32_t size, uint32_t align)
+int vc_allocBuffer(VC_BUFFER *buffer, VC_BASE *base, uint32_t size, uint32_t align)
 {
 	buffer->mb = base->mb;
 	if (size > 50000000 || size == 0)
@@ -71,21 +58,18 @@ int qpu_allocBuffer(QPU_BUFFER *buffer, QPU_BASE *base, uint32_t size, uint32_t 
 	return 0;
 }
 
-/* Lock buffer to make buffer->ptr->arm.*ptr accessible */
-void qpu_lockBuffer(QPU_BUFFER *buffer)
+void vc_lockBuffer(VC_BUFFER *buffer)
 {
 	//buffer->ptr.vc == mem_lock(buffer->mb, buffer->handle));
 	mem_lock(buffer->mb, buffer->handle);
 }
 
-/* Unlock buffer to make buffer->ptr->arm.*ptr inaccessible */
-void qpu_unlockBuffer(QPU_BUFFER *buffer)
+void vc_unlockBuffer(VC_BUFFER *buffer)
 {
 	mem_unlock(buffer->mb, buffer->handle);
 }
 
-/* Unmap buffer from ARM side and release buffer in GPU memory */
-void qpu_releaseBuffer(QPU_BUFFER *buffer)
+void vc_releaseBuffer(VC_BUFFER *buffer)
 {
 	// Unmap ARM memory
 	unmapmem(buffer->ptr.arm.vptr, buffer->size);
@@ -94,13 +78,12 @@ void qpu_releaseBuffer(QPU_BUFFER *buffer)
 }
 
 
-/* Initializes QPU access base */
-int qpu_initBase(QPU_BASE *base)
+int vc_initBase(VC_BASE *base)
 {
 	// Get host information (peripheral adresses, etc)
-	if (qpu_getHostInformation(&base->host)) return -1;
+	if (vc_getHostInformation(&base->host)) return -1;
 
-	// Map peripheral registers for direct QPU access
+	// Map peripheral registers for direct VideoCore access
 	base->peripherals = (volatile uint32_t *)mapmem(base->host.peri_addr, base->host.peri_size);
 	if (!base->peripherals) return -2;
 
@@ -114,8 +97,7 @@ int qpu_initBase(QPU_BASE *base)
 	return 0;
 }
 
-/* Destroy QPU access base and clean up resources */
-void qpu_destroyBase (QPU_BASE *base)
+void vc_destroyBase (VC_BASE *base)
 {
 	// Unmap peripheral registers
     unmapmem((void*)base->peripherals, base->host.peri_size);
@@ -136,8 +118,7 @@ static unsigned get_dt_ranges(const char *filename, unsigned offset)
 	return address;
 }
 
-/* Get board-specific information about the QPU host integration */
-int qpu_getHostInformation(QPU_HOST *host)
+int vc_getHostInformation(VC_HOST *host)
 {
 	/*
 	Copyright (c) 2015, Andrew Holme.
@@ -170,8 +151,8 @@ int qpu_getHostInformation(QPU_HOST *host)
 	// Pi 1 defaults
 	host->peri_addr = 0x20000000;
 	host->peri_size = 0x01000000;
-	host->mem_flg = QPU_USE_VC4_L2_CACHE? 0xC : 0x4;
-	host->mem_map = QPU_USE_VC4_L2_CACHE? 0x0 : 0x20000000; // Pi 1 only
+	host->mem_flg = VC_USE_VC4_L2_CACHE? 0xC : 0x4;
+	host->mem_map = VC_USE_VC4_L2_CACHE? 0x0 : 0x20000000; // Pi 1 only
 
 	unsigned sdram_addr = get_dt_ranges("/proc/device-tree/axi/vc_mem/reg", 8);
 	if (sdram_addr == ~0)

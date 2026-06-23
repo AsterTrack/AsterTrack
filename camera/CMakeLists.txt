@@ -31,10 +31,10 @@ set(INCLUDES
 	../shared
 )
 set(SOURCES
-	source/qpu/mailbox.c
-	source/qpu/qpu_base.c
-	source/qpu/qpu_program.c
-	source/qpu/qpu_info.c
+	source/videocore/mailbox.c
+	source/videocore/vc_base.c
+	source/videocore/qpu_program.c
+	source/videocore/qpu_info.c
 	source/util/fbUtil.c
 	source/camera/gcs_v4l2.cpp
 	source/vcsm/vcsm.cpp

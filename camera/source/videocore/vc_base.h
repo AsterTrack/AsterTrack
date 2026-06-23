@@ -23,8 +23,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef QPU_BASE_H
-#define QPU_BASE_H
+#ifndef VC_BASE_H
+#define VC_BASE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,26 +32,24 @@ extern "C" {
 
 #include <inttypes.h>
 
-/* QPU Access Base
-	Provides easy access to all functionality of the QPU.
+/* VideoCore Access Base
+	Provides easy access to all functionality of the VideoCore IV.
 	
-	Create a QPU access base using QPU_initBase and QPU_destroyBase.
+	Create a VideoCore access base using vc_initBase and vc_destroyBase.
 	It provides direct access to the QPU V3D registers using the peripheral map.
 	It also contains required information about the host.
 	
-	Contains a GPU buffer implementation for passing information buffers to the QPU.
+	Contains a buffer implementation for passing information buffers to the VideoCore hardware.
 	
 	Requires sudo privileges for memmap (mailbox.h)
 */
 
 #define BUS_TO_PHYS(x) ((x)&~0xC0000000)
 
-#define QPU_USE_VC4_L2_CACHE	1				// Use L2 Cache or not
-#define QPU_NO_FLUSH			1
-#define QPU_TIMEOUT				2000 // ms
+#define VC_USE_VC4_L2_CACHE	1				// Use L2 Cache or not
 
 /* Dual pointer representation in VideoCore and ARM space */
-typedef struct QPU_PTR {
+typedef struct VC_PTR {
 	uint32_t vc;
 	union {
 		void *vptr;
@@ -59,47 +57,47 @@ typedef struct QPU_PTR {
 		float *fptr;
 		uint32_t *uptr;
 	} arm;
-} QPU_PTR;
+} VC_PTR;
 
-/* Host information about QPU which can vary between RaspberryPi models */
-typedef struct QPU_HOST {
+/* Host information about the VideoCore host which can vary between RaspberryPi models */
+typedef struct VC_HOST {
 	uint32_t mem_flg;
 	uint32_t mem_map;
 	uint32_t peri_addr;
 	uint32_t peri_size;
-} QPU_HOST;
+} VC_HOST;
 
 /* Generic buffer in GPU memory, allocated through mailbox */
-typedef struct QPU_BUFFER {
+typedef struct VC_BUFFER {
 	uint32_t mb; // mailbox handle
 	uint32_t handle;
 	uint32_t size;
-	QPU_PTR ptr;
-} QPU_BUFFER;
+	VC_PTR ptr;
+} VC_BUFFER;
 
-/* QPU interface containing host information and direct QPU access through peripheral registers */
-typedef struct QPU_BASE {
-	QPU_HOST host;
-	volatile uint32_t *peripherals; // Registers of peripherals for direct QPU register access
+/* VideoCore interface containing host information and direct VideoCore access through peripheral registers */
+typedef struct VC_BASE {
+	VC_HOST host;
+	volatile uint32_t *peripherals; // Registers of peripherals for direct VideoCore register access
 	uint32_t mb;
-} QPU_BASE;
+} VC_BASE;
 
-/* Get board-specific information about the QPU host integration */
-int qpu_getHostInformation(QPU_HOST *host);
+/* Get board-specific information about the VideoCore host integration */
+int vc_getHostInformation(VC_HOST *host);
 
 /* Allocate the buffer of desired size in GPU memory */
-int qpu_allocBuffer(QPU_BUFFER *buffer, QPU_BASE *base, uint32_t size, uint32_t align);
+int vc_allocBuffer(VC_BUFFER *buffer, VC_BASE *base, uint32_t size, uint32_t align);
 /* Lock buffer to make buffer->ptr->arm.*ptr accessible */
-void qpu_lockBuffer(QPU_BUFFER *buffer);
+void vc_lockBuffer(VC_BUFFER *buffer);
 /* Unlock buffer to make buffer->ptr->arm.*ptr inaccessible */
-void qpu_unlockBuffer(QPU_BUFFER *buffer);
+void vc_unlockBuffer(VC_BUFFER *buffer);
 /* Unmap buffer from ARM side and release buffer in GPU memory */
-void qpu_releaseBuffer(QPU_BUFFER *buffer);
+void vc_releaseBuffer(VC_BUFFER *buffer);
 
-/* Initializes QPU access base */
-int qpu_initBase(QPU_BASE *base);
-/* Destroy QPU access base and clean up resources */
-void qpu_destroyBase (QPU_BASE *base);
+/* Initializes VideoCore access base */
+int vc_initBase(VC_BASE *base);
+/* Destroy VideoCore access base and clean up resources */
+void vc_destroyBase (VC_BASE *base);
 
 
 #ifdef __cplusplus

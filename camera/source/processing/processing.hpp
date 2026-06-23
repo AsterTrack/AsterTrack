@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef PROCESSING_H
 #define PROCESSING_H
 
-#include "qpu/qpu_base.h"
+#include "videocore/vc_base.h"
 #include "comm/packet.hpp"
 #include "util/util.hpp"
 
@@ -28,7 +28,7 @@ struct FrameBuffer
 	void* header = nullptr;
 	uint8_t* memory = nullptr;
 	uint16_t stride;
-	QPU_BUFFER *bitmsk = nullptr;
+	VC_BUFFER *bitmsk = nullptr;
 	uint32_t ID = 0;
 	TimePoint_t SOF, rcv;
 	uint32_t time_qpu;
@@ -51,6 +51,6 @@ int getInterleavedQueuedBytes();
 int sendInterleavedQueuedPackets(int commTimeUS);
 
 // Defined in processing.cpp
-bool ProcessingStage(TrackingCameraState &state, QPU_BASE &base);
+bool ProcessingStage(TrackingCameraState &state, VC_BASE &base);
 
 #endif // PROCESSING_H

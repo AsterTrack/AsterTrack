@@ -46,7 +46,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "version.hpp"
 
 #include "vcsm/vcsm.hpp"
-#include "qpu/mailbox.h"
+#include "videocore/mailbox.h"
 
 // Terminal Output and Input
 bool isConsole;
@@ -57,7 +57,7 @@ static char getConsoleChar();
 
 // Static initialised members (for atexit)
 TrackingCameraState state = {};
-static QPU_BASE base;
+static VC_BASE base;
 GCS *gcs = NULL;
 ErrorTag errorCode = ERROR_NONE;
 CommState uartComms = {};
@@ -175,14 +175,14 @@ int main(int argc, char **argv)
 	}
 	atexit(vcsm_exit);
 
-	// Init QPU Base (basic information to work with QPU), e.g. VCHIQ mailbox
-	if (int errCode = qpu_initBase(&base) != 0)
+	// Init VideoCore Base (basic information to work with the VideoCore IV), e.g. VCHIQ mailbox
+	if (int errCode = vc_initBase(&base) != 0)
 	{ // More a dev error, should not happen on a deployed system
 		printf("Failed to init QPU Base! %d\n", errCode);
 		return -1;
 	}
 	atexit([]{ // Close at exit
-		qpu_destroyBase(&base);
+		vc_destroyBase(&base);
 	});
 
 	// TODO: Proper Thread Core distribution

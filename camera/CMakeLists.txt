@@ -35,6 +35,7 @@ set(SOURCES
 	source/videocore/vc_base.c
 	source/videocore/qpu_program.c
 	source/videocore/qpu_info.c
+	source/videocore/vpu_program.c
 	source/util/fbUtil.c
 	source/camera/gcs_v4l2.cpp
 	source/vcsm/vcsm.cpp
@@ -111,6 +112,21 @@ foreach (file ${QPU_PROGRAM_SOURCES})
 	add_dependencies(qpu_programs ${file_name})
 endforeach()
 
+# Compile all VPU source files with vc4-toolchain
+set(VPU_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vpu_programs)
+set(VPU_PROGRAM_SOURCES
+	${VPU_SRC_DIR}/crt0.S
+	${VPU_SRC_DIR}/routines.S
+	${VPU_SRC_DIR}/entry.c
+)
+add_custom_command(
+	OUTPUT vpu_programs.bin
+	DEPENDS ${VPU_PROGRAM_SOURCES}
+	COMMAND vc4-elf-gcc -o ${CMAKE_CURRENT_BINARY_DIR}/vpu_programs.elf -O3 -T ${VPU_SRC_DIR}/vc4-simple.ld -nostartfiles -fPIC -static ${VPU_PROGRAM_SOURCES}
+	COMMAND vc4-elf-objcopy -O binary vpu_programs.elf vpu_programs.bin
+)
+add_custom_target(vpu_programs DEPENDS vpu_programs.bin)
+
 # Create target for program blobs
 add_custom_target(TrackingCamera_programs)
-add_dependencies(TrackingCamera_programs qpu_programs)
+add_dependencies(TrackingCamera_programs qpu_programs vpu_programs)

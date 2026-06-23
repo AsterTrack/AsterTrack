@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "videocore/mailbox.h"
 #include "videocore/qpu_registers.h"
+#include "blob/vpu_find_active_tiles.hpp"
 
 MaskingProgram::MaskingProgram(VC_BASE &base, ProgramLayout layout, const std::string &codeFile)
 	: layout(layout)
@@ -198,4 +199,77 @@ ExclusiveQPU::~ExclusiveQPU()
 		printf("-- QPU Disable Failed --\n");
 	else
 		printf("-- QPU Disabled --\n");
+}
+
+FetchingProgram::FetchingProgram(VC_BASE &base, Vector2<int> maskSize, const std::string &codeFile)
+	: maskSize(maskSize)
+{
+	initialised = false;
+
+	tileCount = maskSize.prod()/32;
+	if (ROUND_DOWN(tileCount, 5*VPU_INDEX_TILES) != tileCount)
+	{ // VPU expects it to be divisible by 16*5. Layout should ensure that
+		printf("Specific blocking expected by VPU program is not met!\n");
+		return;
+	}
+	unsigned int ret;
+
+	// Setup main blob detection program with specified progmem sizes
+	ret = vpu_initProgram(&vpuProgram, &base, vpu_getCodeSize(codeFile.c_str()));
+	if (ret)
+	{
+		printf("Failed to init program: %d\n", ret);
+		return;
+	}
+	ret = vpu_loadProgramCode(&vpuProgram, codeFile.c_str());
+	if (ret)
+	{
+		printf("Failed to load program code: %d\n", ret);
+		vpu_destroyProgram(&vpuProgram);
+		return;
+	}
+
+	// Indices of active regions into blob bitmask, size according to worst case of full bitmask
+	maskIndexSize = getVPUMaskIndexBufferSize(maskSize.prod());
+	ret = vc_allocBuffer(&maskIndexBuffer, &base, maskIndexSize, 4096);
+	if (ret)
+	{
+		printf("Failed to allocate maskIndexBuffer: %d\n", ret);
+		vpu_destroyProgram(&vpuProgram);
+		return;
+	}
+	maskIndexBuffer.ptr.arm.cptr[maskIndexSize-1] = 0xFF;
+	maskIndexBuffer.ptr.arm.cptr[maskIndexSize-2] = 0xFF;
+	maskIndexBuffer.ptr.arm.cptr[maskIndexSize-3] = 0xFF;
+	maskIndexBuffer.ptr.arm.cptr[maskIndexSize-4] = 0xFF;
+
+	// Bitmask for background masking corresponding to exact size of blob bitmask 
+	ret = vc_allocBuffer(&bgBitmaskBuffer, &base, maskSize.prod()/8, 4096);
+	if (ret)
+	{
+		printf("Failed to allocate bgBitmaskBuffer: %d\n", ret);
+		vc_releaseBuffer(&maskIndexBuffer);
+		vpu_destroyProgram(&vpuProgram);
+		return;
+	}
+	memset(bgBitmaskBuffer.ptr.arm.cptr, 0xFF, maskSize.prod()/8);
+
+	initialised = true;
+	printf("-- VPU Program Setup --\n");
+}
+
+FetchingProgram::~FetchingProgram()
+{
+	if (!initialised) return;
+	vc_releaseBuffer(&bgBitmaskBuffer);
+	vc_releaseBuffer(&maskIndexBuffer);
+	vpu_destroyProgram(&vpuProgram);
+	printf("-- VPU Cleaned --\n");
+}
+
+unsigned int FetchingProgram::Execute(VC_BASE &base, uint32_t bitmaskPtrVC)
+{
+	int fetchMaskProgram = 1;
+	return vpu_executeProgramMailbox(&vpuProgram, &base, fetchMaskProgram,
+		bitmaskPtrVC, bgBitmaskBuffer.ptr.vc, maskIndexBuffer.ptr.vc, tileCount, 0);
 }

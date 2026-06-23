@@ -21,6 +21,7 @@ CPP="-std=c++20 -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-u
 /usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/vc_base.c.o -c source/videocore/vc_base.c
 /usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/qpu_program.c.o -c source/videocore/qpu_program.c
 /usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/qpu_info.c.o -c source/videocore/qpu_info.c
+/usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/videocore/vpu_program.c.o -c source/videocore/vpu_program.c
 /usr/bin/gcc $SHARED -std=gnu17 -O1 -o build-env/util/fbUtil.c.o -c source/util/fbUtil.c
 /usr/bin/g++ $SHARED $CPP -o build-env/camera/gcs_v4l2.cpp.o -c source/camera/gcs_v4l2.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/vcsm/vcsm.cpp.o -c source/vcsm/vcsm.cpp

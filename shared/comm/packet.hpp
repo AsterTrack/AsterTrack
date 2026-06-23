@@ -413,10 +413,10 @@ struct StatPacket
 		uint8_t skipTrigger, skipQPU, skipCPU, resvEvent;
 	} header;
 	union Times {
-		uint16_t data[15];
+		uint16_t data[16];
 		struct {
 			uint16_t processing, latency;
-			uint16_t qpu, cpu, fetch, ccl, post, blur, maxima, local, iter, check, reseg, refine, send;
+			uint16_t qpu, cpu, find, fetch, ccl, post, blur, maxima, local, iter, check, reseg, refine, send;
 		};
 	} times;
 	union Incidents 
@@ -431,7 +431,7 @@ struct StatPacket
 	} incidents;
 };
 #define STAT_PACKET_HEADER			20
-#define STAT_PACKET_SIZE			(STAT_PACKET_HEADER+30+54)
+#define STAT_PACKET_SIZE			(STAT_PACKET_HEADER+32+54)
 
 static inline struct StatPacket parseStatPacketHeader(const uint8_t data[STAT_PACKET_HEADER])
 { // Header has padding, so need to manually copy

@@ -18,6 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "detection.hpp"
 
+#include "blob/vpu_find_active_tiles.hpp"
+
 #include <cstring>
 #include <cassert>
 #include <algorithm>
@@ -57,7 +59,7 @@ typedef uint32_t MaskTile;
 // Tile as used for processing
 struct Tile
 { // This should be packed by default
-	uint8_t x, y;
+	uint16_t x, y;
 	TileID t, l, r, b;
 	MaskTile bytes;
 	CompID compMap[8][4];
@@ -76,11 +78,13 @@ BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int
 {
 	initialised = (storedBackgroundMask.size() >= (maskSize.x()/8*maskSize.y()/8));
 	if (!initialised) return;
+	maskIndexSize = getVPUMaskIndexBufferSize(maskSize.prod());
 
-	// Tile is 8x4 pixels
+	bitmaskSize = maskSize;
+	// Tile is 4x8 pixels
 	tileW = maskSize.x() / 8;
 	tileH = maskSize.y() / 4;
-	// Block is 1x5 tiles, or 8x20 pixels (for BLK_TILES=5)
+	// Block is 5x1 tiles, or 20x8 pixels (for BLK_TILES=5)
 	blkW = tileW;
 	blkH = tileH / BLK_TILES;
 	// Number of tiles in a row of blocks (BLK_TILES rows of tiles interlaced)
@@ -102,6 +106,8 @@ BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int
 	blobMerge = new CompID[MaxCompID+1];
 	//storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
+	// Already allocate backup bitmask for background calibration
+	backupBGBitmask.resize(bitmaskSize.prod());
 }
 
 BlobDetection::~BlobDetection()
@@ -118,81 +124,82 @@ BlobDetection::~BlobDetection()
 
 static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID);
 
-/*
- * Reads back blobMap from the QPU into the specified buffer, ready for analysis on the CPU
- */
-void BlobDetection::fetchRegions(uint32_t *mask)
+template<bool BG>
+void BlobDetection::registerBlobTile(const uint32_t *bitmask, uint32_t tileID)
 {
-//	int xMin = 0, xMax = tileW, yMin = 0, yMax = blkH;
-
-	blobTiles.clear();
-	MaskTile *maskTiles = (MaskTile*)mask;
-
-	// Read map and extract mask tiles with dots (1s) as blob tiles and enter them in a list
-	auto registerBlobTile = [this, &maskTiles](MaskTile *ptr)
+	MaskTile *maskTiles = (MaskTile*)bitmask;
+	const MaskTile *ptr = maskTiles + tileID;
+	uint32_t blkID = tileID / BLK_TILES;
+	uint_fast8_t blkRow = tileID % BLK_TILES;
+	uint_fast16_t blkX = blkID % blkW;
+	uint_fast16_t blkY = blkID / blkW;
+	uint16_t x = blkX;
+	uint16_t y = blkY*BLK_TILES + blkRow;
+	auto test_bg = [&](std::size_t index)
 	{
-		TileID tileID = ptr-maskTiles;
-		uint_fast16_t blkID = tileID / BLK_TILES;
-		uint_fast8_t blkRow = tileID % BLK_TILES;
-		uint_fast8_t blkX = blkID % blkW;
-		uint_fast8_t blkY = blkID / blkW;
-		uint_fast8_t x = blkX;
-		uint_fast8_t y = blkY*BLK_TILES + blkRow;
-		int bgIndex = (y>>1)*tileW + x;
-		if (backgroundMask->test(bgIndex))
-			return;
-		TileID t = MaxTileCount;
-		TileID l = MaxTileCount;
-		// Now find any tiles to the top or left quickly
-		if (blkRow > 0)
-		{ // Quick way of finding top tile (bounded by 1)
-			if (*(ptr-1) && !backgroundMask->test(bgIndex-(y&1? 0 : tileW)))
-				t = blobTiles.size()-1;
-		}
-		else if (blkY > 0)
-		{ // Very slow way, have to go to top row of blocks (bounded by blkTileW, 400 for 480p)
-			TileID topTileID = tileID-blkTileW+BLK_TILES-1;
-			if (*(ptr-blkTileW+BLK_TILES-1) && !backgroundMask->test(bgIndex-(y&1? 0 : tileW)))
-			{ // Have a top tile
-				int max = blobTiles.size()-1;
-				for (int i = 0; i < blkTileW; i++)
-				{
-					if (blobTiles[max-i].x == x && blobTiles[max-i].y == y-1)
-					{
-						t = max-i;
-						break;
-					}
-				}
-			}
-		}
-		if (blkX > 0)
-		{ // Relatively fast way of finding left region (bounded by BLK_TILES)
-			TileID leftTileID = tileID-BLK_TILES;
-			if (*(ptr-BLK_TILES) && !backgroundMask->test(bgIndex-1))
-			{ // Have a left tile
-				int max = blobTiles.size()-1;
-				for (int i = 0; i < BLK_TILES; i++)
-				{
-					if (blobTiles[max-i].y == y && blobTiles[max-i].x == x-1)
-					{
-						l = max-i;
-						break;
-					}
-				}
-			}
-		}
-#ifdef BLOB_TRACE
-		printf("  Added region %d (%d, %d) with top %d and left %d\n", bgIndex, x, y, t, l);
-#endif
-		blobTiles.push_back({ x, y, t, l, MaxTileCount, MaxTileCount, *ptr });
+		if constexpr (!BG) return true;
+		return !backgroundMask->test(index);
 	};
+	uint32_t bgIndex = (y>>1)*tileW + x;
+	if (!test_bg(bgIndex))
+		return;
+	TileID t = MaxTileCount;
+	TileID l = MaxTileCount;
+	// Now find any tiles to the top or left quickly
+	if (blkRow > 0)
+	{ // Quick way of finding top tile (bounded by 1)
+		if (*(ptr-1) && test_bg(bgIndex-(y&1? 0 : tileW)))
+			t = blobTiles.size()-1;
+	}
+	else if (blkY > 0)
+	{ // Very slow way, have to go to top row of blocks (bounded by blkTileW, 400 for 480p)
+		TileID topTileID = tileID-blkTileW+BLK_TILES-1;
+		if (*(ptr-blkTileW+BLK_TILES-1) && test_bg(bgIndex-(y&1? 0 : tileW)))
+		{ // Have a top tile
+			int max = blobTiles.size()-1;
+			for (int i = 0; i < blkTileW; i++)
+			{
+				if (blobTiles[max-i].x == x && blobTiles[max-i].y == y-1)
+				{
+					t = max-i;
+					break;
+				}
+			}
+		}
+	}
+	if (blkX > 0)
+	{ // Relatively fast way of finding left region (bounded by BLK_TILES)
+		TileID leftTileID = tileID-BLK_TILES;
+		if (*(ptr-BLK_TILES) && test_bg(bgIndex-1))
+		{ // Have a left tile
+			int max = blobTiles.size()-1;
+			for (int i = 0; i < BLK_TILES; i++)
+			{
+				if (blobTiles[max-i].y == y && blobTiles[max-i].x == x-1)
+				{
+					l = max-i;
+					break;
+				}
+			}
+		}
+	}
+#ifdef BLOB_TRACE
+	printf("  Added region %d (%d, %d) with top %d and left %d\n", bgIndex, x, y, t, l);
+#endif
+	blobTiles.push_back({ x, y, t, l, MaxTileCount, MaxTileCount, *ptr });
+}
+
+/*
+ * Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU
+ */
+void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
+{
+	MaskTile *maskTiles = (MaskTile*)bitmask;
+	blobTiles.clear();
 
 	// This loop is the most critical part of the performance.
 	// It is expected to discard on the *ptr check the majority of the time
 	// And yet, even with nothing on the image (empty loop), it takes 2ms on a Zero 2 (single core)
-
-	// TODO: Move this fetching step to the VPU
-	// see "Frappe: fast fiducial detection on low cost hardware" by S. Jones and S. Hauert
 
 	uint64_t *max = (uint64_t*)(maskTiles+(tileW*tileH));
 	uint64_t *ptr = (uint64_t*)__builtin_assume_aligned(maskTiles, 128); // Not sure if this helps much
@@ -202,17 +209,77 @@ void BlobDetection::fetchRegions(uint32_t *mask)
 		{ // Found dots in 64-Bit region, check each 32-Bit tile individually
 			MaskTile *tile = (MaskTile*)ptr;
 			if (*(tile+0))
-				registerBlobTile(tile+0);
+				registerBlobTile(maskTiles, (tile+0)-maskTiles);
 			if (*(tile+1))
-				registerBlobTile(tile+1);
+				registerBlobTile(maskTiles, (tile+1)-maskTiles);
 			if (blobTiles.size()+2 > MaxTileCount)
 				break;
 		}
 	}
 
 #ifdef BLOB_DEBUG
-		printf("Found %d regions with blobs!\n", blobTiles.size());
+	printf("CPU fetched %d regions with blobs!\n", blobTiles.size());
 #endif
+}
+
+/*
+ * Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU
+ */
+void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex)
+{
+	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
+	blobTiles.clear();
+
+	int indexEntries = 0;
+	for (VPU_MASK_INDEX *ptr = (VPU_MASK_INDEX*)vpuMaskIndex; *ptr != VPU_INDEX_TERM; ptr++)
+	{
+		indexEntries++;
+		assert(indexEntries < maskIndexSize);
+		uint32_t entry = *ptr;
+		assert((entry+1) * VPU_INDEX_TILES <= tileW*tileH);
+		for (int i = 0; i < VPU_INDEX_TILES; i++)
+		{
+			uint32_t tileIndex = entry * VPU_INDEX_TILES + i;
+			if (maskTiles[tileIndex])
+				registerBlobTile<false>(maskTiles, tileIndex);
+		}
+		if (blobTiles.size()+1 > MaxTileCount)
+			break;
+	}
+#ifdef BLOB_DEBUG
+	printf("VPU fetched %d regions from %d index entries!\n", (int)blobTiles.size(), indexEntries);
+#endif
+}
+
+/*
+ * Reads back blobMap from the QPU into the specified buffer, ready for analysis on the CPU
+ */
+void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const void *vpuMaskIndex)
+{
+	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
+
+	uint32_t maxIndexEntry = (tileW*tileH) / VPU_INDEX_TILES;
+	VPU_MASK_INDEX *ptr = (VPU_MASK_INDEX*)vpuMaskIndex;
+	for (uint32_t entry = 0; entry < maxIndexEntry; entry++)
+	{
+		bool vpuMarkedLine = *ptr == entry;
+		int found = 0;
+		for (int i = 0; i < VPU_INDEX_TILES; i++)
+		{
+			uint32_t tileIndex = entry * VPU_INDEX_TILES + i;
+			if (maskTiles[tileIndex])
+				found++;
+		}
+		if (found != 0)
+		{
+			if (!vpuMarkedLine)
+				printf("VPU did NOT mark line %d but found %d tiles!\n", entry, found);
+		}
+		else if (vpuMarkedLine)
+			printf("VPU marked line %d but found nothing!\n", entry);
+		if (vpuMarkedLine && *ptr != VPU_INDEX_TERM)
+			ptr++;
+	}
 }
 
 /*
@@ -655,33 +722,68 @@ static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID)
 
 /* Background Calibration */
 
-void BlobDetection::initBackgroundCalibration()
+void BlobDetection::initBackgroundCalibration(uint32_t *bgBitmask)
 {
 	tempBackgroundMask.reset();
 	backgroundMask = &tempBackgroundMask;
+
+	if (bgBitmask)
+	{ // Backup existing VPU-side background bitmask, then reset it
+		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod());
+		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+	}
 }
-void BlobDetection::resetBackgroundCalibration()
+void BlobDetection::resetBackgroundCalibration(uint32_t *bgBitmask)
 {
 	tempBackgroundMask.reset();
 	storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
+
+	if (bgBitmask)
+	{ // Reset both VPU-side background bitmasks
+		memset(backupBGBitmask.data(), 0xFF, bitmaskSize.prod());
+		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+	}
 }
-void BlobDetection::retryBackgroundCalibration()
+void BlobDetection::retryBackgroundCalibration(uint32_t *bgBitmask)
 {
 	tempBackgroundMask.reset();
+
+	if (bgBitmask)
+	{ // Reset used VPU-side background bitmask, but not backup
+		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+	}
 }
-void BlobDetection::acceptBackgroundCalibration()
+void BlobDetection::acceptBackgroundCalibration(uint32_t *bgBitmask)
 {
 	storedBackgroundMask = tempBackgroundMask;
 	tempBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
+
+	if (bgBitmask)
+	{ // Copy as backup of VPU-side background bitmask
+		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod());
+	}
 }
-void BlobDetection::discardBackgroundCalibration()
+void BlobDetection::discardBackgroundCalibration(uint32_t *bgBitmask)
 {
 	backgroundMask = &storedBackgroundMask;
+
+	if (bgBitmask)
+	{ // Restore backed up VPU-side background bitmask
+		memcpy(bgBitmask, backupBGBitmask.data(), bitmaskSize.prod());
+	}
 }
-void BlobDetection::updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
+void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector<uint8_t> &bgTiles)
 { // Add all tiles that had a blob on them to the background mask
+	auto getTileIndex = [this](uint16_t x, uint16_t y)
+	{
+		uint16_t blkX = x;
+		uint16_t blkY = y / BLK_TILES;
+		uint16_t blkRow = y % BLK_TILES;
+		uint32_t blkID = blkY * blkW + blkX;
+		return blkID * BLK_TILES + blkRow;
+	};
 	for (int i = 0; i < blobTiles.size(); i++)
 	{
 		int bgIndex = (blobTiles[i].y/2)*tileW + blobTiles[i].x;
@@ -691,6 +793,18 @@ void BlobDetection::updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
 			bgTiles.push_back(blobTiles[i].x);
 			bgTiles.push_back(blobTiles[i].y/2);
 		}
+		if (bgBitmask)
+		{ // NOTE: Emulating current behaviour
+			int tileIndexLo = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+0);
+			int tileIndexHi = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+1);
+			bgBitmask[tileIndexLo] = 0; // Remove entire block from bitmask
+			bgBitmask[tileIndexHi] = 0; // Remove entire block from bitmask
+		}
+		/* if (bgBitmask)
+		{ // NOTE: Potential future behaviour
+			int tileIndex = getTileIndex(blobTiles[i].x, blobTiles[i].y);
+			bgBitmask[tileIndex] &= ~blobTiles[i].bytes; // Remove bits from bitmask
+		} */
 	}
 }
 std::vector<uint8_t> BlobDetection::getTempBGTiles()

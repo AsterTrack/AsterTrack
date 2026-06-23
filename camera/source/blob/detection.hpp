@@ -44,6 +44,8 @@ struct BlobDetection
 	bool initialised;
 
 	// Sizes
+	uint32_t maskIndexSize;
+	Vector2<int> bitmaskSize;
 	int tileW, tileH, blkW, blkH, blkTileW;
 	// Blob offset to compensate for processing margins
 	Vector2<int> blobOffset;
@@ -59,29 +61,35 @@ struct BlobDetection
 	BGBitset storedBackgroundMask;
 	BGBitset tempBackgroundMask;
 	BGBitset *backgroundMask;
+	std::vector<uint32_t> backupBGBitmask;
 
 	BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores);
 	~BlobDetection();
 
 	inline operator bool() { return initialised; }
 
-	/*
-	* Initialize resources required for blob detection
-	*/
-	void fetchRegions(uint32_t *mask);
+	/* Read map and extract mask tiles with dots (1s) as blob tiles and enter them in a list */
+	template<bool BG = true>
+	void registerBlobTile(const uint32_t *bitmask, uint32_t tileID);
+	/* Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU */
+	void fetchMaskRegionsCPU(const uint32_t *bitmask);
+	/* Estimate maximum size needed for VPU output buffer. */
+	uint32_t getRegionBufferSize();
+	/* Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU */
+	void fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
+	/* Fetches entirely on CPU and with VPU index side-by-side to verify correctness */
+	void verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
 
-	/*
-	* Analyses the regions detected in the last GPU step and outputs detected blobs into target array
-	*/
+	/* Analyses the regions detected in the last GPU step and outputs detected blobs into target array */
 	void performCCL(std::vector<Cluster> &blobs);
 
 	/* Background Calibration */
-	void initBackgroundCalibration();
-	void resetBackgroundCalibration();
-	void retryBackgroundCalibration();
-	void acceptBackgroundCalibration();
-	void discardBackgroundCalibration();
-	void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles);
+	void initBackgroundCalibration(uint32_t *bgBitmask);
+	void resetBackgroundCalibration(uint32_t *bgBitmask);
+	void retryBackgroundCalibration(uint32_t *bgBitmask);
+	void acceptBackgroundCalibration(uint32_t *bgBitmask);
+	void discardBackgroundCalibration(uint32_t *bgBitmask);
+	void updateBackgroundCalibration(uint32_t *bgBitmask, std::vector<uint8_t> &bgTiles);
 	std::vector<uint8_t> getTempBGTiles();
 };
 

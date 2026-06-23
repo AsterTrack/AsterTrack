@@ -58,6 +58,15 @@ unsigned setClockRate(int file_desc, unsigned clock_id, unsigned clock_freq);
 unsigned getClockRate(int file_desc, unsigned clock_id);
 unsigned getMaxClockRate(int file_desc, unsigned clock_id);
 
+#define MEM_FLAG_DISCARDABLE      (1 << 0)
+#define MEM_FLAG_NORMAL           (0 << 2)
+#define MEM_FLAG_DIRECT           (1 << 2)
+#define MEM_FLAG_COHERENT         (2 << 2)
+#define MEM_FLAG_L1_NONALLOCATING (MEM_FLAG_DIRECT | MEM_FLAG_COHERENT)
+#define MEM_FLAG_ZERO             (1 << 4)
+#define MEM_FLAG_NO_INIT          (1 << 5)
+#define MEM_FLAG_HINT_PERMALOCK   (1 << 6)
+
 #ifdef __cplusplus
 }
 #endif

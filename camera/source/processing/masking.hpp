@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "videocore/vc_base.h"
 #include "videocore/qpu_info.h"
 #include "videocore/qpu_program.h"
+#include "videocore/vpu_program.h"
 
 
 struct ExclusiveQPU
@@ -64,6 +65,28 @@ struct MaskingProgram
 	void SetParameters(uint8_t thresholdCO, uint8_t diffCO);
 
 	unsigned int Execute(VC_BASE &base, QPU_PerformanceState &perfState, uint32_t srcStride, uint32_t sourcePtrVC);
+
+	inline operator bool() { return initialised; }
+};
+
+struct FetchingProgram
+{
+	bool initialised;
+	Vector2<int> maskSize;
+	uint32_t tileCount;
+	uint32_t maskIndexSize;
+
+	VPU_PROGRAM vpuProgram;
+	VC_BUFFER maskIndexBuffer, bgBitmaskBuffer;
+
+	FetchingProgram() : initialised(false) {}
+	FetchingProgram(VC_BASE &base, Vector2<int> maskSize, const std::string &codeFile);
+	~FetchingProgram();
+
+	FetchingProgram(const FetchingProgram&) = delete;
+	FetchingProgram& operator= (const FetchingProgram&) = delete;
+
+	unsigned int Execute(VC_BASE &base, uint32_t bitmaskPtrVC);
 
 	inline operator bool() { return initialised; }
 };

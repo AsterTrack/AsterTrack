@@ -62,6 +62,8 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"nocomms",			no_argument,		0,	24 },	
 		{"nomcu",				no_argument,		0,	25 },
 		{"probe",				no_argument,		0,	26 },
+		{"novpu",				no_argument,		0,	27 },
+		{"verify-vpu",			no_argument,		0,	28 },
 		{0,						0,					0,	0 }
 	};
 
@@ -138,7 +140,7 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 12:
 				if (optarg && *optarg)
-					state.codeFile = std::string(optarg);
+					state.qpuProgBin = std::string(optarg);
 				break;
 			case 13:
 				for (int i = 0; i < 12 && i < strlen(optarg); i++)
@@ -187,6 +189,12 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 			case 26:
 				state.probeMode = true;
 				break;
+			case 27:
+				state.noVPU = true;
+				break;
+			case 28:
+				state.verifyVPU = true;
+				break;
 			case 1:
 			default:
 				printf("Invalid option %d!", c);
@@ -202,12 +210,19 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 
 	// ---- Checks ----
 
-	if (FILE *file = fopen(state.codeFile.c_str(), "r"))
+	if (FILE *file = fopen(state.qpuProgBin.c_str(), "r"))
 		fclose(file);
 	else
 	{
-		printf("Main code file %s does not exist!\n", state.codeFile.c_str());
+		printf("QPU Program binary '%s' does not exist!\n", state.qpuProgBin.c_str());
 		return false;
+	}
+	if (FILE *file = fopen(state.vpuProgBin.c_str(), "r"))
+		fclose(file);
+	else
+	{
+		printf("VPU program binary '%s' does not exist! Will fall back to CPU!\n", state.vpuProgBin.c_str());
+		//return false;
 	}
 	return true;
 }

@@ -9,7 +9,7 @@ do
         echo "===================================" | tee $LOGPATH
         echo "Tracking Program for $ARCH" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
-        sudo /home/tc/TrackingCamera/TrackingCamera_$ARCH --program /home/tc/TrackingCamera/qpu_blob_tiled_min.bin --nostatlog -u 2>&1 | tee $LOGPATH
+        sudo /home/tc/TrackingCamera/TrackingCamera_$ARCH --nostatlog -u 2>&1 | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
         echo "Tracking Program exited, restarting" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH

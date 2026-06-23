@@ -109,8 +109,8 @@ inline static void addDeltaTimes(StatPacket::Times &base, StatPacket::Times &sam
 }
 inline static void printDeltaTimes(StatPacket::Times &time)
 {
-	printf("Latency %.2fms (qpu %.2f, fetch %.2f, CCL %.2f, post %.2f, TX %.2f)",
-		time.latency/1000.0f, time.qpu/1000.0f, time.fetch/1000.0f, time.ccl/1000.0f, time.post/1000.0f, time.send/1000.0f);
+	printf("Latency %.2fms (qpu %.2f, find %.2f, fetch %.2f, CCL %.2f, post %.2f, TX %.2f)",
+		time.latency/1000.0f, time.qpu/1000.0f, time.find/1000.0f, time.fetch/1000.0f, time.ccl/1000.0f, time.post/1000.0f, time.send/1000.0f);
 }
 // Stats for occurences
 inline static void recordIncident(StatPacket::Incidents::Stat &stat, uint16_t value)
@@ -182,7 +182,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			return false;
 	}
 
-	MaskingProgram masking(base, layout, state.codeFile);
+	MaskingProgram masking(base, layout, state.qpuProgBin);
 	if (!masking)
 	{
 		printf("-- Failed to setup QPU masking program! --\n");
@@ -198,6 +198,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		if (handleError(ERROR_QPU_ENABLE))
 			return false;
 	}
+
+	FetchingProgram fetching = {};
+	if (!state.noVPU) // Construct in-place
+		new (&fetching) FetchingProgram(base, layout.maskSize, state.vpuProgBin);
+	uint32_t *bgBitmask = fetching? fetching.bgBitmaskBuffer.ptr.arm.uptr : nullptr;
+	if (!state.noVPU && !fetching)
+		printf("-- Failed to setup VPU fetching program! Falling back to CPU only! --\n");
 
 #ifdef RUN_CAMERA
 	uint32_t srcStride = state.camera.stride;
@@ -674,7 +681,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 	{
 		if (state.curMode.opt == TRCAM_OPT_NONE)
-			detect.initBackgroundCalibration();
+			detect.initBackgroundCalibration(bgBitmask);
 	}
 
 
@@ -721,14 +728,14 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				if (newMode.opt == TRCAM_OPT_NONE)
 				{ // Reset temp mask
 					printf("Init Background Calibration!\n");
-					detect.initBackgroundCalibration();
+					detect.initBackgroundCalibration(bgBitmask);
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
 				{ // Reset current mask (and temp mask)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Resetting Background Calibration!\n");
-						detect.resetBackgroundCalibration();
+						detect.resetBackgroundCalibration(bgBitmask);
 					}
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_RETRY)
@@ -736,7 +743,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Resetting ongoing Background Calibration!\n");
-						detect.retryBackgroundCalibration();
+						detect.retryBackgroundCalibration(bgBitmask);
 					}
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_DISCARD)
@@ -744,7 +751,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Discarding Background Calibration!\n");
-						detect.discardBackgroundCalibration();
+						detect.discardBackgroundCalibration(bgBitmask);
 					}
 					newMode.mode = TRCAM_MODE_BLOB;
 					newMode.opt = TRCAM_OPT_NONE;
@@ -754,7 +761,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Accepting Background Calibration!\n");
-						detect.acceptBackgroundCalibration();
+						detect.acceptBackgroundCalibration(bgBitmask);
 					}
 					newMode.mode = TRCAM_MODE_BLOB;
 					newMode.opt = TRCAM_OPT_NONE;
@@ -866,13 +873,40 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		}
 		else if (state.curMode.mode != TRCAM_MODE_IDLE)
 		{ // Perform blob detection on bitmask
-			TimePoint_t t0 = sclock::now();
 
 			// Lock bitmask buffer
 			//vc_lockBuffer(curFrame->bitmsk);
 
 			// Extract regions with blobs
-			detect.fetchRegions(curFrame->bitmsk->ptr.arm.uptr);
+			if (fetching)
+			{
+				//vc_lockBuffer(&fetching.maskIndexBuffer);
+
+				TimePoint_t t11 = sclock::now();
+				fetching.Execute(base, curFrame->bitmsk->ptr.vc);
+				TimePoint_t t12 = sclock::now();
+				curTimes.find = dtUS(t11, t12);
+
+				TimePoint_t t21 = sclock::now();
+				detect.fetchMaskRegionsVPU(curFrame->bitmsk->ptr.arm.uptr, fetching.maskIndexBuffer.ptr.arm.vptr);
+				TimePoint_t t22 = sclock::now();
+				curTimes.fetch = dtUS(t21, t22);
+
+				//vc_unlockBuffer(&fetching.maskIndexBuffer);
+
+				if (state.verifyVPU)
+				{ // Test for correctness by double-checking on CPU (very slow)
+					detect.verifyMaskRegionsFetchVPU(curFrame->bitmsk->ptr.arm.uptr, fetching.maskIndexBuffer.ptr.arm.vptr);
+				}
+			}
+			else
+			{ // CPU-fallback without VPU. Much slower so don't use
+				TimePoint_t t0 = sclock::now();
+				detect.fetchMaskRegionsCPU(curFrame->bitmsk->ptr.arm.uptr);
+				TimePoint_t t1 = sclock::now();
+				curTimes.find = 0;
+				curTimes.fetch = dtUS(t0, t1);
+			}
 
 			// Unlock bitmask buffer
 			//vc_unlockBuffer(curFrame->bitmsk);
@@ -884,7 +918,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			detect.performCCL(clusters);
 
 			// Update timing
-			curTimes.fetch = dtUS(t0, t1);
 			curTimes.ccl = dtUS(t1, sclock::now());
 		}
 
@@ -957,7 +990,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			std::vector<uint8_t> bgTiles(2);
 			bgTiles[0] = extends.x();
 			bgTiles[1] = extends.y();
-			detect.updateBackgroundCalibration(bgTiles);
+			detect.updateBackgroundCalibration(bgBitmask, bgTiles);
 			if (bgTiles.size() > 2)
 			{
 				//printf("Added %d new tiles to the background mask!\n", bgTiles.size()/2-1));

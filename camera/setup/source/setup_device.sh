@@ -257,6 +257,7 @@ cp -r $TRCAM_PATH/camera/source $BUILD_PATH/sources/camera/
 cp -r $TRCAM_PATH/camera/dependencies $BUILD_PATH/sources/camera/
 cp -r $TRCAM_PATH/shared $BUILD_PATH/sources/
 cp -r $TRCAM_PATH/camera/qpu_programs $BUILD_PATH/sources/camera/
+cp -r $TRCAM_PATH/camera/vpu_programs $BUILD_PATH/sources/camera/
 cp -r $TRCAM_PATH/camera/licenses $BUILD_PATH/sources/camera/
 cp $TRCAM_PATH/camera/LICENSE $BUILD_PATH/sources/camera/
 cp $TRCAM_PATH/camera/README.md $BUILD_PATH/sources/camera/

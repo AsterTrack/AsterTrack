@@ -70,8 +70,12 @@ struct TrackingCameraState
 		.strobeLength = 10
 	};
 	// QPU options
-	std::string codeFile = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
+	std::string qpuProgBin = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
 	QPUCoreMasking qpuCores = {};
+	// VPU options
+	std::string vpuProgBin = "/home/tc/TrackingCamera/vpu_programs.bin";
+	bool noVPU = false;
+	bool verifyVPU = false;
 	// CPU options
 	ThresholdingParameters thresholds; // Copy separate for QPU thread
 	BlobProcessingParameters blobParams;

@@ -30,6 +30,8 @@ SOFTWARE.
 
 #include "qpu_program.h"
 #include "qpu_info.h"
+#include "qpu_registers.h"
+#include "mailbox.h"
 
 /* QPU Program
 	Simple interface for a General purpose program
@@ -75,7 +77,7 @@ int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem)
 	// Unlock progmem - base->progmem can't be accessed anymore
 	qpu_unlockBuffer(&program->progmem_buffer);
 
-	return 1;
+	return 0;
 }
 
 /* Destroy QPU program and clean up resources */
@@ -85,8 +87,25 @@ void qpu_destroyProgram (QPU_PROGRAM *program)
 	qpu_releaseBuffer(&program->progmem_buffer);
 }
 
+static inline uint8_t qpu_getUserProgramsCompleted(QPU_BASE *base)
+{ // QPURQCC
+	return (base->peripherals[V3D_SRQCS] >> 16) & 0xFF;
+}
+static inline uint8_t qpu_getUserProgramsRequested(QPU_BASE *base)
+{ // QPURQCM
+	return (base->peripherals[V3D_SRQCS] >> 8) & 0xFF;
+}
+static inline uint8_t qpu_getUserProgramsQueued(QPU_BASE *base)
+{ // QPURQL
+	return (base->peripherals[V3D_SRQCS] >> 0) & 0x3F;
+}
+static inline bool qpu_getUserProgramsQueueError(QPU_BASE *base)
+{ // QPURQERR
+	return (base->peripherals[V3D_SRQCS] >> 7) & 0b1;
+}
+
 /* QPU execute program using direct access to QPU V3D registers. */
-int qpu_executeProgramDirect (QPU_PROGRAM *program, QPU_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState)
+unsigned int qpu_executeProgramDirect (QPU_PROGRAM *program, QPU_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState)
 {
 	base->peripherals[V3D_DBCFG] = 0; // Disallow IRQ
 	base->peripherals[V3D_DBQITE] = 0; // Disable IRQ
@@ -223,14 +242,14 @@ retry:
 }
 
 /* QPU execute general purpose program using mailbox. */
-int qpu_executeProgramMailbox (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
+unsigned int qpu_executeProgramMailbox (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
 {
 	return execute_qpu(base->mb, numQPUs, program->progmem.message.vc, QPU_NO_FLUSH, QPU_TIMEOUT);
 }
 
-int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
+unsigned int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs)
 {
-	int retCode;
+	unsigned int retCode;
 	if (program->progmem.messageSize < 2)
 		retCode = qpu_executeProgramDirect(program, base, numQPUs, program->progmem.uniformsSize, 0, NULL);
 	else
@@ -251,6 +270,11 @@ void qpu_setProgramCode(QPU_PROGRAM *program, const char *code, unsigned int len
 int qpu_loadProgramCode(QPU_PROGRAM *program, const char *filename)
 {
 	FILE *file = fopen(filename, "rb");
+	if (!file)
+	{
+		printf("Could not find source file '%s'!", filename);
+		return -2;
+	}
 	fseek(file, 0, SEEK_END);
 	unsigned int fileLength = ftell(file);
 	if (fileLength > program->progmem.codeSize)
@@ -272,6 +296,8 @@ int qpu_loadProgramCode(QPU_PROGRAM *program, const char *filename)
 unsigned int qpu_getCodeSize(const char *filename)
 {
 	FILE *file = fopen(filename, "rb");
+	if (!file)
+		return 0;
 	fseek(file, 0, SEEK_END);
 	unsigned int fileLength = ftell(file);
 	fclose(file);

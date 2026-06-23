@@ -20,19 +20,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #define QPU_BLOB_TILED_H
 
 #include "util/eigendef.hpp"
-#include "util/log.hpp"
 
 #include <stdint.h>
-#include <algorithm>
 #include <vector>
 #include <cassert>
 
 
 #define ROUND_DOWN(VAL, ROUND) (VAL)/(ROUND)*(ROUND)
-//#define ROUND_DOWN(VAL, ROUND) (VAL) - (VAL)%(ROUND)
-
 #define ROUND_UP(VAL, ROUND) ((VAL)+(ROUND-1))/(ROUND)*(ROUND)
-//#define ROUND_UP(VAL, ROUND) (VAL) + (ROUND) - (VAL)%(ROUND)
 
 
 struct ProgramLineSpans
@@ -207,6 +202,7 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 	layout.validMaskRect.max.x() = layout.validMaskRect.min.x() + validWidth;
 	layout.validMaskRect.max.y() = layout.validMaskRect.min.y() + validLines;
 
+#ifdef LOG
 	if (debug)
 	{
 		LOG(LCameraBlob, LInfo,
@@ -214,64 +210,10 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 			layout.instances, splitCols, validWidth, validLines,
 			droppedColumns, droppedLines, layout.validMaskRect.min.x(), layout.validMaskRect.min.y());
 	}
+#endif
 	// With this, a 1280x800 image becomes 1152x798 of effectively processed pixels. Not optimal but fastest way
 
 	return layout;
-}
-
-static inline void SetupProgramUniforms(ProgramLayout &layout, uint32_t *uniforms, uint32_t srcStride)
-{
-	uint32_t tgtLineStride = layout.maskSize.x()/8;
-	uint32_t tgtBlockStride = tgtLineStride * blockLines;
-	for (int c = 0; c < layout.columns; c++)
-	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
-		{ // Set up each program instance with their column
-			ProgramLineSpans &lines = layout.rows[r];
-			uniforms[(r*layout.columns+c)*numUnif + 0] = 0; // Enter source pointer each frame
-			uniforms[(r*layout.columns+c)*numUnif + 1] = 0; // Enter target pointer each frame
-			uniforms[(r*layout.columns+c)*numUnif + 2] = srcStride;
-			uniforms[(r*layout.columns+c)*numUnif + 3] = tgtBlockStride;
-			uniforms[(r*layout.columns+c)*numUnif + 4] = lines.inCount/blockLines; // Block count to process
-			uniforms[(r*layout.columns+c)*numUnif + 5] = 255; // absolute threshold
-			uniforms[(r*layout.columns+c)*numUnif + 6] = 255; // difference threshold
-		}
-	}
-}
-
-static void SetupProgramSettings(ProgramLayout &layout, uint32_t *uniforms, uint8_t thresholdCO, uint8_t diffCO)
-{
-	for (int c = 0; c < layout.columns; c++)
-	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
-		{ // Set up each program instance with their column
-			// TODO: Allow for thresholds to be calibrated per-tile and pass as chain of uniforms
-			// Would differ based on LED coverage and lens vignetting / relative illumination
-			// Would likely be very useful to have, but would need some kind of automatic calibration as well
-			uniforms[(r*layout.columns+c)*numUnif + 5] = thresholdCO;
-			uniforms[(r*layout.columns+c)*numUnif + 6] = diffCO;
-		}
-	}
-}
-
-static inline void SetupProgramBuffers(ProgramLayout &layout, uint32_t *uniforms, uint32_t srcStride, uint32_t sourcePtrVC, uint32_t targetPtrVC)
-{
-	uint32_t tgtLineStride = layout.maskSize.x()/8;
-	
-	// Set up individual source pointer for each program instance
-	for (int c = 0; c < layout.columns; c++)
-	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
-		{ // Set up each program instance with their column
-			ProgramLineSpans &lines = layout.rows[r];
-			uint32_t srcX = layout.srcOffset.x() + c*qpuCoreWidth;
-			uint32_t srcY = layout.srcOffset.y() + lines.inStart;
-			uniforms[(r*layout.columns+c)*numUnif + 0] = sourcePtrVC + srcX + srcY*srcStride;
-			uint32_t tgtX = c*(qpuThreadCount*blockMaskBytes);
-			uint32_t tgtY = lines.inStart; // Is aligned to blockLines
-			uniforms[(r*layout.columns+c)*numUnif + 1] = targetPtrVC + tgtX + tgtY*tgtLineStride;
-		}
-	}
 }
 
 #endif // QPU_BLOB_TILED_H

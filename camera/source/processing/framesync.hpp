@@ -16,15 +16,24 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef EMULATION_VIS_H
-#define EMULATION_VIS_H
+#ifndef FRAMESYNC_H
+#define FRAMESYNC_H
 
-#include "ui/ui.hpp"
+#include "util/util.hpp"
+#include "util/stats.hpp"
 
+#include <mutex>
+#include <queue>
 
-void updateEmulationVisUI(CameraVisState &visCamera);
+struct FrameSync
+{
+	std::queue<std::pair<uint8_t, TimePoint_t>> frameSOFs;
+	StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
+	std::mutex access;
+};
 
-void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize);
+extern FrameSync framesync;
 
+uint32_t correctFromFrameSync(FrameSync &framesync, TimePoint_t frameRecv, uint32_t frameID, uint32_t obsAdvance, uint32_t expAdvance, bool likelyDropped);
 
-#endif // EMULATION_VIS_H
+#endif // FRAMESYNC_H

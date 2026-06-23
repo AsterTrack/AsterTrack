@@ -27,6 +27,8 @@ SOFTWARE.
 
 #include "qpu_base.h"
 
+#include "mailbox.h"
+
 /* QPU Access Base
 	Provides easy access to all functionality of the QPU.
 

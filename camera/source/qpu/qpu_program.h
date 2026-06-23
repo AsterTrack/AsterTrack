@@ -70,13 +70,13 @@ int qpu_initProgram(QPU_PROGRAM *program, QPU_BASE *base, QPU_PROGMEM progmem);
 void qpu_destroyProgram (QPU_PROGRAM *program);
 
 /* QPU execute program depending on how it was initialized. */
-int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numInst);
+unsigned int qpu_executeProgram (QPU_PROGRAM *program, QPU_BASE *base, int numInst);
 
 /* QPU execute program using direct access to QPU V3D registers. */
-int qpu_executeProgramDirect (QPU_PROGRAM *program, QPU_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState);
+unsigned int qpu_executeProgramDirect (QPU_PROGRAM *program, QPU_BASE *base, int numInst, int unifLength, int unifStride, QPU_PerformanceState *perfState);
 
 /* QPU execute general purpose program using mailbox. */
-int qpu_executeProgramMailbox (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs);
+unsigned int qpu_executeProgramMailbox (QPU_PROGRAM *program, QPU_BASE *base, int numQPUs);
 
 /* Copies code from supplied buffer into program memory. */
 void qpu_setProgramCode(QPU_PROGRAM *program, const char *code, unsigned int length);

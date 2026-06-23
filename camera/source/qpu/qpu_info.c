@@ -28,6 +28,8 @@ SOFTWARE.
 #include <string.h>
 
 #include "qpu_info.h"
+#include "qpu_registers.h"
+#include "mailbox.h"
 
 void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, QPU_BASE *base)
 {

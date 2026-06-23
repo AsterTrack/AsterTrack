@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "state.hpp"
 #include "parsing.hpp"
 #include "version.hpp"
+#include "processing/framesync.hpp"
 
 #include "comm/uart.h"
 #include "mcu/mcu.hpp"

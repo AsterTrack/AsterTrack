@@ -142,7 +142,7 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 13:
 				for (int i = 0; i < 12 && i < strlen(optarg); i++)
-					state.enableQPU[i] = optarg[i] == '1';
+					state.qpuCores.enabled[i] = optarg[i] == '1';
 				break;
 			case 16:
 				state.visualisation.enabled = true;

@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "blob/parameters.hpp" // Parameters for all blob detection algorithms
 #include "blob/blob.hpp" // Exact copy of the blob refinement subsystem
 #include "blob/qpu_blob_tiled.hpp" // To re-evaluate blob detection program layout and coverage
+#include "blob/qpu_blob_tiled.inl" // To re-evaluate blob detection program layout and coverage
 #include "blob/resegmentation.hpp" // Resegmenting clusters to make sure only peaks are included
 
 #include "server/server.hpp"

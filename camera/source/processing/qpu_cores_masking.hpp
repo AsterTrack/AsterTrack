@@ -16,15 +16,25 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef EMULATION_VIS_H
-#define EMULATION_VIS_H
-
-#include "ui/ui.hpp"
+#ifndef QPU_CORE_MASKING_H
+#define QPU_CORE_MASKING_H
 
 
-void updateEmulationVisUI(CameraVisState &visCamera);
+struct QPUCoreMasking
+{
+	bool enabled[12] = { 1,1,1,0, 1,1,0,1, 1,0,1,0 };
+	// TODO: Some QPUs do not work with this qpu code (bug), disable them
+	// Do not waste too much time on this, I already did. These cores don't work with this specific code
+	// Feel free to scour https://github.com/Seneral/VC4CV for more info / debugging, not sure there is much
+	// As far as I remember, the VPM writes seem to write wrong output on just these cores
 
-void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize);
+	inline int getUsed() const
+	{
+		int qpuCoresUsed = 0;
+		for (int i = 0; i < 12; i++)
+			qpuCoresUsed += enabled[i]? 1 : 0;
+		return qpuCoresUsed;
+	}
+};
 
-
-#endif // EMULATION_VIS_H
+#endif // QPU_CORE_MASKING_H

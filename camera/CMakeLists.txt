@@ -48,6 +48,8 @@ set(SOURCES
 	source/mcu/stm32_bootloader.cpp
 	source/blob/detection.cpp
 	source/visualisation.cpp
+	source/processing/masking.cpp
+	source/processing/framesync.cpp
 	source/version.cpp
 	source/state.cpp
 	source/main.cpp

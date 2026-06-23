@@ -32,9 +32,6 @@ extern "C" {
 
 #include <inttypes.h>
 
-#include "mailbox.h"
-#include "qpu_registers.h"
-
 /* QPU Access Base
 	Provides easy access to all functionality of the QPU.
 	

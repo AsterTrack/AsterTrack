@@ -18,13 +18,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "mcu.hpp"
 #include "util/timesync.hpp"
+#include "processing/framesync.hpp"
 #include "comm/commands.h"
 #include "comm/parsing.hpp"
 #include "comm/comm.hpp"
 #include "comm/firmware.inl"
 #include "stm32_bootloader.hpp"
 #include "version.hpp"
-#include "state.hpp" // framesync
 
 #include "util/util.hpp"
 

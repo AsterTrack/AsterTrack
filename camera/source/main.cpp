@@ -32,8 +32,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Native threads
 #include <sys/prctl.h>
 
-#include "qpu/qpu_program.h"
-#include "qpu/qpu_info.h"
 #include "camera/gcs.hpp"
 #include "blob/blob.hpp"
 #include "blob/detection.hpp"
@@ -41,6 +39,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 #include "visualisation.hpp"
+#include "processing/masking.hpp"
+#include "processing/framesync.hpp"
 
 #include "mcu/mcu.hpp"
 
@@ -57,6 +57,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "version.hpp"
 
 #include "vcsm/vcsm.hpp"
+#include "qpu/mailbox.h"
 
 #define RUN_CAMERA	// Have the camera supply frames (else: emulate camera buffers)
 //#define EMUL_VCSM	// Use VCSM for Emulation buffers instead of Mailbox allocated QPU buffers
@@ -76,7 +77,6 @@ static char getConsoleChar();
 
 // Static initialised members (for atexit)
 TrackingCameraState state = {};
-FrameSync framesync = {};
 static QPU_BASE base;
 GCS *gcs = NULL;
 ErrorTag errorCode = ERROR_NONE;
@@ -582,13 +582,8 @@ int main(int argc, char **argv)
 
 		// ---- Generate tiling setup ----
 
-		// QPU core usage
-		int qpuCoresUsed = 0;
-		for (int i = 0; i < 12; i++)
-			qpuCoresUsed += state.enableQPU[i]? 1 : 0;
-
 		// Layout QPU program instances across camera frame according to cores used
-		ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, qpuCoresUsed);
+		ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, state.qpuCores.getUsed());
 
 #ifdef RUN_CAMERA
 		uint32_t srcStride = state.camera.stride;
@@ -619,92 +614,26 @@ int main(int argc, char **argv)
 		};
 
 
-		// ---- Setup QPU resources ----
-
-		// Set up bit target, one bit per pixel
-		const int bitmskCount = 2;
-		QPU_BUFFER bitmskBuffer[bitmskCount];
-		int bitmskSwitch = 0;
-		qpu_allocBuffer(bitmskBuffer+0, &base, layout.maskSize.prod()/8, 4096);
-		qpu_allocBuffer(bitmskBuffer+1, &base, layout.maskSize.prod()/8, 4096);
-
-		// Setup main blob detection program with specified progmem sizes
-		QPU_PROGRAM blobProgram;
-		qpu_initProgram(&blobProgram, &base, (QPU_PROGMEM){
-			.codeSize = qpu_getCodeSize(state.codeFile.c_str()),
-			.uniformsSize = (uint32_t)layout.instances*numUnif,
-			.messageSize = 2
-		});
-		qpu_loadProgramCode(&blobProgram, state.codeFile.c_str());
-
-		// Set up uniforms of the blob QPU program
-		qpu_lockBuffer(&blobProgram.progmem_buffer);
-		SetupProgramUniforms(layout, blobProgram.progmem.uniforms.arm.uptr, srcStride);
-		SetupProgramSettings(layout, blobProgram.progmem.uniforms.arm.uptr, state.thresholds.absolute, state.thresholds.edge);
-		qpu_unlockBuffer(&blobProgram.progmem_buffer);
-
-		auto cleanup_qpu_resources = [&]()
+		MaskingProgram masking(base, layout, state.codeFile);
+		if (!masking)
 		{
-			qpu_destroyProgram(&blobProgram);
-			qpu_releaseBuffer(bitmskBuffer+0);
-			qpu_releaseBuffer(bitmskBuffer+1);
+			printf("-- Failed to setup QPU masking program! --\n");
+			cleanup_blob_detect();
+			cleanup_camera();
+			if (handleError(ERROR_INIT_BD))
+				break;
+		}
+		masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
 
-			printf("-- QPU Cleaned --\n");
-		};
-
-
-		// ---- Enable QPU ----
-
-		// Enable QPU - this locks the QPU for our use and prevents other use (e.g. camera AWB, OpenGL ES)
-		// We could do this setup on every frame and then disable/release the QPU after we are done
-		// See https://github.com/raspberrypi/firmware/issues/793
-		if (qpu_enable(base.mb, 1))
+		ExclusiveQPU qpu(base, state.qpuCores, layout.instances, !state.writeStatLogs);
+		if (!qpu)
 		{
 			printf("QPU enable failed!\n");
-			cleanup_qpu_resources();
 			cleanup_blob_detect();
 			cleanup_camera();
 			if (handleError(ERROR_QPU_ENABLE))
 				break;
 		}
-		printf("-- QPU Enabled --\n");
-
-		// QPU scheduler reservation
-	//	for (int i = 0; i < 12; i++) // Enable only QPUs selected as parameter, disable others completely
-	//		qpu_setReservationSetting(&base, i, state.enableQPU[i]? 0b1110 : 0b1111);
-		for (int i = 0; i < 12; i++) // Enable only QPUs selected as parameter, allow GL shaders on others
-			qpu_setReservationSetting(&base, i, state.enableQPU[i]? 0b1110 : 0b0001);
-#ifdef LOG_QPU
-		qpu_logReservationSettings(&base);
-
-		// Debug QPU Hardware
-		qpu_debugHW(&base);
-
-		// VPM memory reservation
-		base.peripherals[V3D_VPMBASE] = 16; // times 4 to get number of vectors; Default: 8 (32/4), Max: 16 (64/4)
-		QPU_HWConfiguration hwConfig;
-		qpu_getHWConfiguration(&hwConfig, &base);
-		QPU_UserProgramInfo upInfo;
-		qpu_getUserProgramInfo(&upInfo, &base);
-		printf("Reserved %d / %d vectors of VPM memory for user programs!\n", upInfo.VPMURSV_V, hwConfig.VPMSZ_V);
-#endif
-
-		// Setup performance monitoring
-		QPU_PerformanceState perfState;
-		qpu_setupPerformanceCounters(&base, &perfState);
-		perfState.qpusUsed = std::min(layout.instances, qpuCoresUsed);
-
-		auto cleanup_qpu_enable = [&]()
-		{
-			for (int i = 0; i < 12; i++) // Reset all QPUs to be freely sheduled
-				qpu_setReservationSetting(&base, i, 0b0000);
-
-			// Disable QPU
-			if (qpu_enable(base.mb, 0))
-				printf("-- QPU Disable Failed --\n");
-			else
-				printf("-- QPU Disabled --\n");
-		};
 
 
 		// ---- Start camera stream ----
@@ -715,8 +644,6 @@ int main(int argc, char **argv)
 		{
 			printf("-- Failed to start camera stream! --\n");
 			gcs_readErrorFlag(gcs); // Reset error flag
-			cleanup_qpu_enable();
-			cleanup_qpu_resources();
 			cleanup_blob_detect();
 			cleanup_camera();
 			if (handleError(ERROR_GCS_START))
@@ -858,9 +785,7 @@ int main(int argc, char **argv)
 				#endif
 
 					// Update QPU parameters in uniform memory
-					qpu_lockBuffer(&blobProgram.progmem_buffer);
-					SetupProgramSettings(layout, blobProgram.progmem.uniforms.arm.uptr, state.thresholds.absolute, state.thresholds.edge);
-					qpu_unlockBuffer(&blobProgram.progmem_buffer);
+					masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
 				}
 
 #ifdef RUN_CAMERA
@@ -912,7 +837,7 @@ int main(int argc, char **argv)
 					cumulFrameNoTrigger = 0;
 					cumulFramePassedQPU = 0;
 					cumulFramePassedCPU = 0;
-					bitmskSwitch = (bitmskSwitch+1)%bitmskCount;
+					masking.bitmskSwitch = (masking.bitmskSwitch+1) % masking.BitmaskCount;
 				}
 
 				TimePoint_t t1 = sclock::now();
@@ -976,115 +901,22 @@ int main(int argc, char **argv)
 					newInterval = dtMS(time_frameRecv, time_cur);
 				} */
 
-#ifdef LOG_TIMING
-				const char *space = "";
-	#define DEBUG_TIME(str, ...) {\
-		printf("%s" str, space, __VA_ARGS__);\
-		space = "    ";\
-	}
-	#define HAS_LOGGED() (space[0] != '\0')
-#else
-	#define DEBUG_TIME(...) {}
-	#define HAS_LOGGED() false
-#endif
-
 				// Update frameID with advanced frames
 				float expFrameIntervals = newInterval / expInterval;
-				int expAdvance = (int)(expFrameIntervals+0.2f);
+				int expAdvance = std::max(1, (int)(expFrameIntervals+0.2f));
 				bool likelyDropped = std::abs(expFrameIntervals - obsAdvance) > 1;
 				if (likelyDropped)
 				{
-					DEBUG_TIME("May have dropped frames! %.1f frame times passed, but only got %d new frames!\n", expFrameIntervals, obsAdvance);
+					printf("May have dropped frames! %.1f frame times passed, but only got %d new frames!\n", expFrameIntervals, obsAdvance);
 				}
 
 				if ((uartComms.ready || mcu_active) && state.camera.extTrig)
 				{ // Match current frame with frame SOFs from PACKET_SOF - can be assumed to be continuous
-
-					std::unique_lock lock(framesync.access);
-					
-					// 7000us at least from trigger signal to a frame being received in the camera
-					// Usually 7150us, with early timesync 7080us - just to be safe from timesync wonkyness, lower
-					const unsigned int MIN_TRIGGER_TO_FRAME = 6800;
-
-					uint32_t frameIDObs = frameID + obsAdvance;
-					uint32_t frameIDExp = frameID + expAdvance;
-					bool continualFrameSync = false; // If framesync is expected to be continual
-
-					uint32_t frameIDNext = frameIDObs;
-					long frameTimeUSNext = 0;
-
-					while (!framesync.frameSOFs.empty())
-					{
-						auto SOF = framesync.frameSOFs.front();
-						uint32_t sofFrameIDObs = frameIDObs + shortDiff<uint16_t, int>(frameIDObs&0xFF, SOF.first, 5, 0xFF);
-						uint32_t sofFrameIDExp = frameIDExp + shortDiff<uint16_t, int>(frameIDExp&0xFF, SOF.first, 5, 0xFF);
-						uint32_t SOFID = continualFrameSync? sofFrameIDExp : sofFrameIDObs;
-						long frameTimeUS = dtUS(SOF.second, time_cur);
-						if (sofFrameIDExp != sofFrameIDObs)
-						{ // Drop of frame sync longer than 255-bias frames
-							DEBUG_TIME("Encountered large drop of frame sync - cannot recover frameID from last %u, with next either obs %u or exp %u, SOF either obs %u or exp %u\n",
-								frameID, frameIDObs, frameIDExp, sofFrameIDObs, sofFrameIDExp);
-						}
-						else if (HAS_LOGGED())
-						{
-							DEBUG_TIME("Handling SOF %u with frame time %ldus, with current adjusted frame ID of %d!\n",
-								SOFID, frameTimeUS, frameIDNext);
-						}
-
-						if (frameTimeUS <= MIN_TRIGGER_TO_FRAME && SOFID > frameIDObs)
-						{ // Very likely a future SOF, take current frame ID
-							DEBUG_TIME("Skipping future frame SOF %d (current observed %d), with frame time %ldus\n", SOFID, frameIDObs, frameTimeUS);
-							break;
-						}
-	
-						if (SOFID < frameIDObs)
-						{ // Likely didn't receive SOF in time, so it wasn't accounted for before
-							if (frameTimeUS > MIN_TRIGGER_TO_FRAME+MIN_TRIGGER_TO_FRAME)
-							{ // This really should not be the current frame
-								DEBUG_TIME("Only handling past SOF %d from %ldus ago now when expecting frame %d, with latest frame interval %.2fms!\n", SOFID, frameTimeUS, frameIDObs, newInterval);
-								framesync.frameSOFs.pop();
-								if (framesync.frameSOFs.empty())
-									DEBUG_TIME("Expected obs frame ID %d has no SOF yet!\n", frameIDObs);
-								continue;
-							}
-							DEBUG_TIME("Older SOF %d might actually be for current frame %d (frametime %ldus < %d) - adopting and then trying newer SOF!\n",
-								SOFID, frameIDObs, frameTimeUS, MIN_TRIGGER_TO_FRAME+MIN_TRIGGER_TO_FRAME);
-
-							framesync.frameSOFs.pop();
-							frameIDNext = SOFID;
-							frameTimeUSNext = frameTimeUS;
-							continue;
-						}
-
-						// Consume this SOF, may take it or a future one
-						framesync.frameSOFs.pop();
-						frameIDNext = SOFID;
-						frameTimeUSNext = frameTimeUS;
-
-						// Check delay model of trigger to receiving the frame through V4L2
-						if (!framesync.frameSOFs.empty() && frameTimeUS > framesync.SOF2RecvDelay.avg + framesync.SOF2RecvDelay.stdDev()*2)
-						{ // Check next frame if it could be our SOF instead
-							DEBUG_TIME("SOF %d (obs %d) is a bit old, frametime %ldus - adopting and then trying newer SOF!\n",
-								SOFID, frameIDObs, frameTimeUS);
-							continue;
-						}
-
-						// Take this SOF as reference
-						break;
-					}
-
-					if (HAS_LOGGED())
-					{
-						int noTriggerFrames = frameIDNext - frameIDObs;
-						DEBUG_TIME("-> Ended up with SOF %d, with %d frames passed and %d without trigger!\n", frameIDNext, advanceFrames + noTriggerFrames, noTriggerFrames);
-					}
-
-					if (frameTimeUSNext > 0)
-						framesync.SOF2RecvDelay.update(frameTimeUSNext);
-
+					uint32_t frameIDNext = correctFromFrameSync(framesync, time_cur, frameID, obsAdvance, expAdvance, likelyDropped);
+					int unexpectedDiff = frameIDNext - (frameID + obsAdvance);
 					cumulFramePassedQPU += obsAdvance-1;
-					cumulFrameNoTrigger += frameIDNext - frameIDObs;
-					advanceFrames += frameIDNext - frameIDObs;
+					cumulFrameNoTrigger += unexpectedDiff;
+					advanceFrames += unexpectedDiff;
 					frameID = frameIDNext;
 				}
 				else
@@ -1094,7 +926,7 @@ int main(int argc, char **argv)
 						cumulFramePassedQPU += obsAdvance-1;
 						cumulFrameNoTrigger += expAdvance - obsAdvance;
 						advanceFrames = expAdvance;
-						DEBUG_TIME("Determined to likely have skipped %d frames with no trigger!\n", advanceFrames);
+						printf("    Determined to likely have skipped %d frames with no trigger!\n", advanceFrames);
 					}
 					frameID += advanceFrames;
 				}
@@ -1188,30 +1020,15 @@ int main(int argc, char **argv)
 
 				TimePoint_t t3 = sclock::now();
 
-				// ---- Uniform preparation ----
+				// ---- Masking on QPU ----
 
-				// Set source buffer pointer in progmem uniforms
-				QPU_BUFFER &bitmskBuf = bitmskBuffer[bitmskSwitch];
-				qpu_lockBuffer(&blobProgram.progmem_buffer);
-				SetupProgramBuffers(layout, blobProgram.progmem.uniforms.arm.uptr, srcStride, framePtrVC, bitmskBuf.ptr.vc);
-				qpu_unlockBuffer(&blobProgram.progmem_buffer);
-
-				// ---- Program execution ----
-
-				// Lock bitmask buffer
-				//qpu_lockBuffer(&bitmskBuf);
-
-				// Execute layout.instances programs each with their own set of uniforms
-				int code = qpu_executeProgramDirect(&blobProgram, &base, layout.instances, numUnif, numUnif, &perfState);
-
-				// Unlock bitmask buffer
-				//qpu_unlockBuffer(&bitmskBuf);
+				int code = masking.Execute(base, qpu.perf, srcStride, framePtrVC);
+				QPU_BUFFER &bitmskBuf = masking.bitmskBuffer[masking.bitmskSwitch];
 
 #ifdef LOG_QPU	// Only relevant during development of QPU programs
 				qpu_logErrors(&base);
 #endif
 
-				// Process frame to bitmask
 				if (code != 0)
 				{
 					printf("== %.2fms: QPU: Failed to process frame! ==\n", dtMS(time_start, sclock::now()));
@@ -1850,7 +1667,7 @@ int main(int argc, char **argv)
 #ifdef LOG_QPU
 				if (numFrames % 10 == 0)
 				{ // Detailed QPU performance gathering (every 10th frame to handle QPU performance register overflows)
-					qpu_updatePerformance(&base, &perfState);
+					qpu_updatePerformance(&base, &qpu.perf);
 				}
 #endif
 			}
@@ -1919,7 +1736,7 @@ int main(int argc, char **argv)
 						printf("\n");
 					}
 #ifdef LOG_QPU // Log QPU performance
-					qpu_logPerformance(&perfState);
+					qpu_logPerformance(&qpu.perf);
 					fflush(stdout);
 #endif
 				}
@@ -1978,8 +1795,6 @@ int main(int argc, char **argv)
 	#endif
 #endif
 
-		cleanup_qpu_enable();
-		cleanup_qpu_resources();
 		cleanup_blob_detect();
 		cleanup_camera();
 

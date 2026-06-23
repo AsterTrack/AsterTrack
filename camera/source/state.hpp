@@ -25,13 +25,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <atomic>
 
 #include "visualisation.hpp"
+#include "processing/qpu_cores_masking.hpp"
 #include "util/eigendef.hpp"
 #include "camera/gcs.hpp"
 #include "comm/packet.hpp"
 #include "comm/firmware.hpp"
 #include "comm/wireless.hpp"
 #include "blob/parameters.hpp"
-#include "util/stats.hpp"
 
 struct TrackingCameraMode 
 {
@@ -71,11 +71,7 @@ struct TrackingCameraState
 	};
 	// QPU options
 	std::string codeFile = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
-	bool enableQPU[12] = { 1,1,1,0, 1,1,0,1, 1,0,1,0 };
-	// TODO: Some QPUs do not work with this qpu code (bug), disable them
-	// Do not waste too much time on this, I already did. These cores don't work with this specific code
-	// Feel free to scour https://github.com/Seneral/VC4CV for more info / debugging, not sure there is much
-	// As far as I remember, the VPM writes seem to write wrong output on just these cores
+	QPUCoreMasking qpuCores = {};
 	// CPU options
 	ThresholdingParameters thresholds; // Copy separate for QPU thread
 	BlobProcessingParameters blobParams;
@@ -108,15 +104,8 @@ struct TrackingCameraState
 	ConfigPacket newConfigPacket;
 };
 
-struct FrameSync
-{
-	std::queue<std::pair<uint8_t, TimePoint_t>> frameSOFs;
-	StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
-	std::mutex access;
-};
 
 extern TrackingCameraState state;
-extern FrameSync framesync;
 
 bool options_read(TrackingCameraState &state, int argc, char **argv);
 void acceptCPUConfig(TrackingCameraState &state);

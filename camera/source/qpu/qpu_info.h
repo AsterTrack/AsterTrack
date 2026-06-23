@@ -79,23 +79,6 @@ typedef struct QPU_Performance {
 	uint64_t numL2CHits, numL2CMiss;
 } QPU_Performance;
 
-static inline uint8_t qpu_getUserProgramsCompleted(QPU_BASE *base)
-{ // QPURQCC
-	return (base->peripherals[V3D_SRQCS] >> 16) & 0xFF;
-}
-static inline uint8_t qpu_getUserProgramsRequested(QPU_BASE *base)
-{ // QPURQCM
-	return (base->peripherals[V3D_SRQCS] >> 8) & 0xFF;
-}
-static inline uint8_t qpu_getUserProgramsQueued(QPU_BASE *base)
-{ // QPURQL
-	return (base->peripherals[V3D_SRQCS] >> 0) & 0x3F;
-}
-static inline bool qpu_getUserProgramsQueueError(QPU_BASE *base)
-{ // QPURQERR
-	return (base->peripherals[V3D_SRQCS] >> 7) & 0b1;
-}
-
 void qpu_getUserProgramInfo(QPU_UserProgramInfo *info, QPU_BASE *base);
 void qpu_get3DPipelineInfo(QPU_3DPipelineInfo *info, QPU_BASE *base);
 bool qpu_getL2CacheState(QPU_BASE *base);

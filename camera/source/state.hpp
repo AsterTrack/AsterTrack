@@ -23,11 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <cstdint>
 #include <queue>
 #include <atomic>
-#include <mutex>
 
-#include <linux/fb.h>
-
-#include "util/util.hpp"
+#include "visualisation.hpp"
 #include "util/eigendef.hpp"
 #include "camera/gcs.hpp"
 #include "comm/packet.hpp"
@@ -41,19 +38,6 @@ struct TrackingCameraMode
 	bool streaming = false;
 	TrCamMode mode = TRCAM_STANDBY;
 	uint8_t opt = TRCAM_OPT_NONE;
-};
-
-struct VisualisationState
-{
-	bool initialised = false;
-	bool enabled = false;
-	int fbfd = -1;
-	struct fb_var_screeninfo vinfo;
-	struct fb_fix_screeninfo finfo;
-	bool displayBlobs = false;
-	bool displayFrame = false;
-	int width = 640, height = 480;
-	int interval = 10;
 };
 
 struct ImageStreamState
@@ -103,6 +87,7 @@ struct TrackingCameraState
 	// Logging options
 	bool writeStatLogs = true;
 	// MCU control
+	bool noMCU = false;
 	bool probeMode = false;
 	// Unique ID stored on-device (generated on first boot)
 	CameraID id = 0;
@@ -132,5 +117,9 @@ struct FrameSync
 
 extern TrackingCameraState state;
 extern FrameSync framesync;
+
+bool options_read(TrackingCameraState &state, int argc, char **argv);
+void acceptCPUConfig(TrackingCameraState &state);
+void acceptQPUConfig(TrackingCameraState &state);
 
 #endif // STATE_H

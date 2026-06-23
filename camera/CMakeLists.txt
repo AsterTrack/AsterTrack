@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 project(TrackingCamera)
 
 # Assure either debug or release is set
@@ -47,7 +47,9 @@ set(SOURCES
 	source/mcu/mcu.cpp
 	source/mcu/stm32_bootloader.cpp
 	source/blob/detection.cpp
+	source/visualisation.cpp
 	source/version.cpp
+	source/state.cpp
 	source/main.cpp
 	source/util/crash_handler.cpp
 	../shared/util/image.cpp
@@ -80,12 +82,18 @@ target_compile_options(TrackingCamera_armv7l PUBLIC -mcpu=cortex-a53)
 target_compile_definitions(TrackingCamera_armv7l PUBLIC ARMV7)
 target_link_options(TrackingCamera_armv7l PUBLIC ${LINK_FLAGS})
 
-# All ASM source files to build
+# Force rebuild of version which includes a build indentifier
+add_custom_target(
+	recompile_info
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/source/version.sh
+)
+add_dependencies(TrackingCamera_armv6l recompile_info)
+add_dependencies(TrackingCamera_armv7l recompile_info)
+
+# Assemble all QPU assembly files with vc4asm
 set(QPU_PROGRAM_SOURCES
 	qpu_programs/qpu_blob_tiled_min.asm
 )
-
-# Setup VC4ASM build target to compile all ASM source files
 add_custom_target(qpu_programs)
 foreach (file ${QPU_PROGRAM_SOURCES})
 	get_filename_component(file_name ${file} NAME_WE)
@@ -100,12 +108,6 @@ foreach (file ${QPU_PROGRAM_SOURCES})
 	add_dependencies(qpu_programs ${file_name})
 endforeach()
 
-# Force rebuild of version which includes a build indentifier
-add_custom_target(
-	recompile_info
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/source/version.sh
-)
-
-# Add custom targets as dependencies
-add_dependencies(TrackingCamera_armv6l qpu_programs recompile_info)
-add_dependencies(TrackingCamera_armv7l qpu_programs recompile_info)
+# Create target for program blobs
+add_custom_target(TrackingCamera_programs)
+add_dependencies(TrackingCamera_programs qpu_programs)

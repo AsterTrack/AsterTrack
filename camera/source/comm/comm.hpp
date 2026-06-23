@@ -19,11 +19,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef COMM_H
 #define COMM_H
 
-#include "state.hpp"
+#include "comm/packet.h"
 #include "comm/protocol_stream.hpp"
+#include "hash/crc32.hpp"
 
 #include <cstdint>
+#include <array>
 #include <vector>
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <cassert>
 
 // Sending a packet:
 // comm_packet (claims mutex)
@@ -32,6 +38,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Optionally, comm_flush (wait for write)
 // OR:
 // comm_send
+
+struct TrackingCameraState; // state.hpp
 
 struct CommPacket
 {

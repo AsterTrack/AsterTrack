@@ -16,9 +16,6 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef OPTIONS_H
-#define OPTIONS_H
-
 #include <getopt.h>
 #include <unistd.h>
 #include <string>
@@ -27,43 +24,44 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 
-static bool options_read(TrackingCameraState &state, int argc, char **argv)
+bool options_read(TrackingCameraState &state, int argc, char **argv)
 {
 	const struct option long_options[] = {
-		{"h",					no_argument,		0,	'h' },
-		{"help",				no_argument,		0,	'h' },
-		{"r",					required_argument,	0,	'r' },
-		{"res",					required_argument,	0,	'r' },
-		{"f",					required_argument,	0,	'f' },
-		{"fps",					required_argument,	0,	'f' },
-		{"ss",					required_argument,	0,	's' },
-		{"shutter-speed",		required_argument,	0,	's' },
-		{"g",					required_argument,	0,	'g' },
-		{"gain",				required_argument,	0,	'g' },
-		{"dg",					required_argument,	0,	'm' },
-		{"digital-gain",		required_argument,	0,	'm' },
-		{"ct",					required_argument,	0,	'c' },
-		{"center-threshold",	required_argument,	0,	'c' },
-		{"et",					required_argument,	0,	'e' },
-		{"edge-threshold",		required_argument,	0,	'e' },
-		{"db",					no_argument,		0,	'b' },
-		{"display-blobs",		no_argument,		0,	'b' },
-		{"df",					no_argument,		0,	'd' },
-		{"display-frame",		no_argument,		0,	'd' },
-		{"display",				required_argument,	0,	'v' },
-		{"id",					required_argument,	0,	'i' },
-		{"u",					optional_argument,	0,	'u' },
-		{"uart",				optional_argument,	0,	'u' },
-		{"server-host",			required_argument,	0,	'y' }, // Dev only
-		{"server-port",			required_argument,	0,	'z' }, // Dev only
-		{"nocomms",			no_argument,		0,	'n' }, // Dev only	
-		{"s",					no_argument,		0,	'x' },
-		{"sync",				no_argument,		0,	'x' },
-		{"nostrobe",			no_argument,		0,	'o' },
-		{"nostatlog",			no_argument,		0,	'l' },
-		{"qpu",					required_argument,	0,	'q' }, // Dev only
-		{"program",				required_argument,	0,	'p' }, // Dev only
-		{"probe",				no_argument,		0,	'j' }, // Dev only
+		{"h",					no_argument,		0,	1 },
+		{"help",				no_argument,		0,	1 },
+		{"r",					required_argument,	0,	2 },
+		{"res",					required_argument,	0,	2 },
+		{"f",					required_argument,	0,	3 },
+		{"fps",					required_argument,	0,	3 },
+		{"ss",					required_argument,	0,	4 },
+		{"shutter-speed",		required_argument,	0,	4 },
+		{"g",					required_argument,	0,	5 },
+		{"gain",				required_argument,	0,	5 },
+		{"dg",					required_argument,	0,	6 },
+		{"digital-gain",		required_argument,	0,	6 },
+		{"nostrobe",			no_argument,		0,	7 },
+		{"s",					no_argument,		0,	8 },
+		{"sync",				no_argument,		0,	8 },
+		{"ct",					required_argument,	0,	10 },
+		{"center-threshold",	required_argument,	0,	10 },
+		{"et",					required_argument,	0,	11 },
+		{"edge-threshold",		required_argument,	0,	11 },
+		{"program",				required_argument,	0,	12 },
+		{"qpu",					required_argument,	0,	13 },
+		{"db",					no_argument,		0,	16 },
+		{"display-blobs",		no_argument,		0,	16 },
+		{"df",					no_argument,		0,	17 },
+		{"display-frame",		no_argument,		0,	17 },
+		{"display",				required_argument,	0,	18 },
+		{"nostatlog",			no_argument,		0,	19 },
+		{"id",					required_argument,	0,	20 },
+		{"u",					optional_argument,	0,	21 },
+		{"uart",				optional_argument,	0,	21 },
+		{"server-host",			required_argument,	0,	22 },
+		{"server-port",			required_argument,	0,	23 },
+		{"nocomms",			no_argument,		0,	24 },	
+		{"nomcu",				no_argument,		0,	25 },
+		{"probe",				no_argument,		0,	26 },
 		{0,						0,					0,	0 }
 	};
 
@@ -76,9 +74,9 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 "    -h, --help                   Display this help message\n"
 "    -r,  --res WxH               Sets camera resolution (1280x800)\n"
 "    -f,  --fps fps               Sets target camera framerate in Hz (144)\n"
-"    -ss, --shutter-speed ss      Sets the camera shutter speed in ns, [7-904] (100)\n"
+"    -ss, --shutter-speed ss      Sets the camera shutter speed in ns, [10-904] (100)\n"
 "    -g,  --gain ag               Sets the analogue gain, [1-16] (1)\n"
-"    -ct, --center-threshold ct   Sets the absolute threshold for blob centers [0.0-1.0] (0.9)\n"
+"    -ct, --center-threshold ct   Sets the absolute threshold for blob centers [0.0-1.0] (0.16)\n"
 "    -et, --edge-threshold et     Sets the relative threshold for blob edges [0.0-1.0] (1.0)\n"
 "    -db, --display-blobs         Set to display blobs on screen\n"
 "    -df, --display-frame         Set to display frame on screen\n"
@@ -99,11 +97,8 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 	{
 		switch (c)
 		{
-			case 'p':
-				if (optarg && *optarg)
-					state.codeFile = std::string(optarg);
-				break;
-			case 'r':
+			case 2:
+			{
 				int width, height;
 				sscanf(optarg, "%dx%d", &width, &height);
 				if (width <= 2000 && width >= 64 && height <= 2000 && height >= 64)
@@ -116,61 +111,63 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 					printf("Invalid format '%s' for resolution! Expecting WxH", optarg);
 				}
 				break;
-			case 'f':
+			}
+			case 3:
 				state.camera.fps = std::stoi(optarg);
 				break;
-			case 's':
+			case 4:
 				state.camera.shutterSpeed = std::stoi(optarg);
 				break;
-			case 'g':
+			case 5:
 				state.camera.analogGain = std::stoi(optarg);
 				break;
-			case 'm':
+			case 6:
 				state.camera.digitalGain = std::stoi(optarg);
 				break;
-			case 'c':
+			case 7:
+				state.camera.strobe = false;
+				break;
+			case 8:
+				state.camera.extTrig = 1;
+				break;
+			case 10:
 				state.thresholds.absolute = 255*std::stof(optarg);
 				break;
-			case 'e':
+			case 11:
 				state.thresholds.edge = 255*std::stof(optarg);
 				break;
-			case 'q':
+			case 12:
+				if (optarg && *optarg)
+					state.codeFile = std::string(optarg);
+				break;
+			case 13:
 				for (int i = 0; i < 12 && i < strlen(optarg); i++)
 					state.enableQPU[i] = optarg[i] == '1';
 				break;
-			case 'b':
+			case 16:
 				state.visualisation.enabled = true;
 				state.visualisation.displayBlobs = true;
 				break;
-			case 'd':
+			case 17:
 				state.visualisation.enabled = true;
 				state.visualisation.displayFrame = true;
 				break;
-			case 'v':
+			case 18:
 				if (optarg && *optarg)
 					sscanf(optarg, "%dx%dx%d", &state.visualisation.width, &state.visualisation.height, &state.visualisation.interval);
 				break;
-			case 'i':
+			case 19:
+				state.writeStatLogs = false;
+				break;
+			case 20:
 				state.id = std::stoi(optarg);
 				break;
-			case 'u':
+			case 21:
 				state.enableUART = true;
 				if (optarg && *optarg)
 					state.serialName = std::string(optarg);
 				break;
-			case 'x':
-				state.camera.extTrig = 1;
-				break;
-			case 'o':
-				state.camera.strobe = false;
-				break;
-			case 'l':
-				state.writeStatLogs = false;
-				break;
-			case 'j':
-				state.probeMode = true;
-				break;
-			case 'y':
+			case 22:
 				state.server_host = std::string(optarg);
 				if (!state.server_host.empty())
 				{ // If there's a wifi connection setup, this will start the server
@@ -178,14 +175,21 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 					state.wireless.changed = (WirelessConfig)(state.wireless.changed | WIRELESS_CONFIG_SERVER);
 				}
 				break;
-			case 'z':
+			case 23:
 				state.server_port = std::string(optarg);
 				break;
-			case 'n':
+			case 24:
 				state.noComms = true;
 				break;
-			case 'h':
+			case 25:
+				state.noMCU = true;
+				break;
+			case 26:
+				state.probeMode = true;
+				break;
+			case 1:
 			default:
+				printf("Invalid option %d!", c);
 				print_help(argv[0]);
 				return false;
 		}
@@ -208,12 +212,12 @@ static bool options_read(TrackingCameraState &state, int argc, char **argv)
 	return true;
 }
 
-static void acceptCPUConfig(TrackingCameraState &state)
+void acceptCPUConfig(TrackingCameraState &state)
 {
 	ConfigPacket &setupPacket = state.newConfigPacket;
 	state.blobParams = setupPacket.blobProc;
 }
-static void acceptQPUConfig(TrackingCameraState &state)
+void acceptQPUConfig(TrackingCameraState &state)
 {
 	ConfigPacket &setupPacket = state.newConfigPacket;
 	if (!state.curMode.streaming)
@@ -230,5 +234,3 @@ static void acceptQPUConfig(TrackingCameraState &state)
 	state.camera.strobeOffset = setupPacket.strobeOffset;
 	state.camera.strobeLength = setupPacket.strobeLength;
 }
-
-#endif // OPTIONS_H

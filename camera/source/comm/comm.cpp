@@ -17,18 +17,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "comm.hpp"
-#include "comm/protocol_stream.hpp"
-#include "util/timesync.hpp"
+
+#include "state.hpp"
 #include "parsing.hpp"
-#include "comm/uart.h"
-#include "mcu/mcu.hpp"
 #include "version.hpp"
 
+#include "comm/uart.h"
+#include "mcu/mcu.hpp"
+#include "util/timesync.hpp"
 #include "util/util.hpp"
 
-#include <thread>
 #include <chrono>
-#include <cstdint>
 #include <cstdio>
 #include <unistd.h>
 #include <sys/prctl.h>

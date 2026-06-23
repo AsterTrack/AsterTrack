@@ -29,7 +29,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Console and UART
 #include <termios.h>
-#include "util/fbUtil.h"
 // Native threads
 #include <sys/prctl.h>
 
@@ -37,10 +36,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "qpu/qpu_info.h"
 #include "camera/gcs.hpp"
 #include "blob/blob.hpp"
+#include "blob/detection.hpp"
 #include "blob/qpu_blob_tiled.hpp"
 
 #include "state.hpp"
-#include "options.hpp"
 #include "visualisation.hpp"
 
 #include "mcu/mcu.hpp"
@@ -258,9 +257,11 @@ int main(int argc, char **argv)
 	// Gather information about the firmware and hardware on this camera
 	gatherInfo(state.id);
 
-	// Init, detect, recover, connect with, and monitor MCU
-	mcu_initial_connect(state.probeMode);
-	atexit(mcu_cleanup);
+	if (!state.noMCU)
+	{ // Init, detect, recover, connect with, and monitor MCU
+		mcu_initial_connect(state.probeMode);
+		atexit(mcu_cleanup);
+	}
 
 	// Init VCSM
 	if (!vcsm_init())
@@ -269,16 +270,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	atexit(vcsm_exit);
-
-	// Init visualisation resources
-	state.visualisation.fbfd = setupFrameBuffer(&state.visualisation.vinfo, &state.visualisation.finfo, false);
-	state.visualisation.initialised = state.visualisation.fbfd >= 0;
-	if (!state.visualisation.initialised)
-		printf("Failed to initialise visualisation with framebuffer!\n");
-	atexit([]{ // Close at exit
-		if (state.visualisation.fbfd >= 0)
-			close(state.visualisation.fbfd);
-	});
 
 	// Init QPU Base (basic information to work with QPU), e.g. VCHIQ mailbox
 	if (int errCode = qpu_initBase(&base) != 0)
@@ -413,75 +404,91 @@ int main(int argc, char **argv)
 			if (isConsole)
 			{ // Check input
 				char cin = getConsoleChar();
-				if (cin)
+				if (cin == 'q')
+				{ // Complete stop of program requested
+					return EXIT_SUCCESS;
+				}
+				if (cin && !state.noMCU)
 				{
-					if (cin == 'q')
-					{ // Complete stop of program requested
-						return EXIT_SUCCESS;
-					}
-					else if (cin == 'e')
+					switch (cin)
+					{
+					case 'e':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_reconnect();
+						break;
 					}
-					else if (cin == 'b')
+					case 'b':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_switch_bootloader();
+						break;
 					}
-					else if (cin == 'f')
+					case 'f':
 					{
 						std::unique_lock lock(mcu_mutex);
 						if (!mcu_probe_bootloader())
 							printf("MCU is not in bootloader!\n");
 						else
 						 	mcu_flash_program(mcu_firmware_path);
+						break;
 					}
-					else if (cin == 'v')
+					case 'v':
 					{
 						std::unique_lock lock(mcu_mutex);
 						if (!mcu_probe_bootloader())
 							printf("MCU is not in bootloader!\n");
 						else
 						 	mcu_verify_program(mcu_firmware_path);
+						break;
 					}
-					else if (cin == 's')
+					case 's':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_sync_info();
+						break;
 					}
-					else if (cin == 'd')
+					case 'd':
 					{
 						std::unique_lock lock(mcu_mutex);
 						CameraStoredInfo info;
 						CameraStoredConfig config;
 						if (mcu_fetch_info(info, config))
 							receivedInfoFromMCU(std::move(info));
+						break;
 					}
-					else if (cin == 'g')
+					case 'g':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_get_status();
+						break;
 					}
-					else if (cin == 'u')
+					case 'u':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_update_id(cameraID);
+						break;
 					}
-					else if (cin == 'i')
+					case 'i':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_update_id(35236462);
+						break;
 					}
-					else if (cin == 'x')
+					case 'x':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_disable();
+						break;
 					}
-					else if (cin == 'c')
+					case 'c':
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_check_disabled();
+						break;
+					}
+					default:
+						break;
 					}
 				}
 			}
@@ -1302,12 +1309,12 @@ int main(int argc, char **argv)
 					{ // Reset/Restart, stop current blob detection and start again
 						break;
 					}
-					else if (cin == 'e')
+					else if (cin == 'e' && !state.noMCU)
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_reconnect();
 					}
-					else if (cin == 'd')
+					else if (cin == 'd' && !state.noMCU)
 					{
 						std::unique_lock lock(mcu_mutex);
 						CameraStoredInfo info;
@@ -1315,7 +1322,7 @@ int main(int argc, char **argv)
 						if (mcu_fetch_info(info, config))
 							receivedInfoFromMCU(std::move(info));
 					}
-					else if (cin == 'g')
+					else if (cin == 'g' && !state.noMCU)
 					{
 						std::unique_lock lock(mcu_mutex);
 						mcu_get_status();
@@ -1761,7 +1768,7 @@ int main(int argc, char **argv)
 						nice(20); // Low priority
 						TimePoint_t t0 = sclock::now();
 
-						vis_visualise(state.visualisation, curBlobs, pastBlobs, frame->memory, state.camera.width, state.camera.height, srcStride);
+						state.visualisation.visualise(curBlobs, pastBlobs, frame->memory, state.camera.width, state.camera.height, srcStride);
 						pastBlobs.swap(curBlobs);
 
 						recordIncident(incidents.vis, dtUS(t0, sclock::now()));

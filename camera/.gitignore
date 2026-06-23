@@ -5,6 +5,9 @@ compile_commands.json
 
 # Build systems
 build/
+build-env/
+source/version.h
+shared/
 
 # Setup scripts
 setup/*.img

@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
-#include "../build/version.h"
+#include "version.h"
 
 CameraID cameraID = 0;
 bool isStored = false, isOverwritten = false;

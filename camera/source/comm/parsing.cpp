@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "parsing.hpp"
 
+#include "state.hpp"
 #include "wireless.hpp"
 #include "firmware.hpp"
 #include "version.hpp"

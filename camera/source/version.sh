@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 version=$(cat ../source/version | head -n 1 )
 desc=$(cat ../source/version | tail -n +2)
@@ -10,7 +10,7 @@ echo -e \
 "#define FW_MAJOR $(echo $version | cut -d '.' -f "1")\\n"\
 "#define FW_MINOR $(echo $version | cut -d '.' -f "2")\\n"\
 "#define FW_PATCH $(echo $version | cut -d '.' -f "3")\\n"\
-"#define FW_BUILD ${build}" > version.h
+"#define FW_BUILD ${build}" > ../source/version.h
 
 # Clear firmware tag
 tag=tag.bin

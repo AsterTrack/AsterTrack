@@ -111,6 +111,36 @@ struct FrameBuffer
 #endif
 	}
 };
+struct GCSWrapper
+{
+	GCSWrapper(GCS_CameraParams *cameraParams)
+	{
+		gcs = gcs_create(cameraParams);
+	}
+	~GCSWrapper()
+	{
+		std::unique_lock lock(frameAccess);
+		gcs_destroy(gcs);
+		gcs = nullptr;
+		printf("-- Camera Stream Cleaned --\n");
+	}
+	operator bool() { return gcs != nullptr; }
+};
+struct StreamingState
+{
+	StreamingState()
+	{
+		printf("== Entering camera streaming mode! ==\n");
+		std::unique_lock lock(framesync.access);
+		framesync.frameSOFs = {};
+		framesync.SOF2RecvDelay.reset();
+	}
+	~StreamingState()
+	{
+		printf("== Left camera streaming mode! ==\n");
+		state.imageRequests = {};
+	}
+};
 
 // Stats for continuous operation
 inline static void addDeltaTimes(StatPacket::Times &base, StatPacket::Times &sample, uint16_t avgNum)
@@ -146,20 +176,6 @@ static bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamSta
 static int sendInterleavedQueuedPackets(TrackingCameraState &state, int commTimeUS);
 
 /* Functions */
-
-static void EnterStreamingState()
-{
-	printf("== Entering camera streaming mode! ==\n");
-	std::unique_lock lock(framesync.access);
-	framesync.frameSOFs = {};
-	framesync.SOF2RecvDelay.reset();
-}
-
-static void LeaveStreamingState()
-{
-	printf("== Left camera streaming mode! ==\n");
-	state.imageRequests = {};
-}
 
 bool handleError(ErrorTag error, bool serious = true, const char* reportBuf = nullptr, int reportLen = 0)
 {
@@ -533,7 +549,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		EnterStreamingState();
+		StreamingState enterStreaming = {};
 
 		// ---- Setup camera stream ----
 
@@ -554,8 +570,9 @@ int main(int argc, char **argv)
 				break;
 		}
 
-		gcs = gcs_create(&state.camera);
-		if (gcs == NULL)
+		// Create GCS (static) in RAII. Not nice, but ensures deconstruction in-order
+		GCSWrapper camera(&state.camera);
+		if (!camera)
 		{
 			printf("Failed to initialise camera!\n");
 			if (handleError(ERROR_GCS_CREATE))
@@ -569,57 +586,24 @@ int main(int argc, char **argv)
 	#endif
 #endif
 
-		auto cleanup_camera = [&]()
-		{
-#ifdef RUN_CAMERA
-			std::unique_lock lock(frameAccess);
-			gcs_destroy(gcs);
-			gcs = NULL;
-			printf("-- Camera Stream Cleaned --\n");
-#endif
-		};
 
-
-		// ---- Generate tiling setup ----
+		// ---- Setup blob processing ----
 
 		// Layout QPU program instances across camera frame according to cores used
 		ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, state.qpuCores.getUsed());
 
-#ifdef RUN_CAMERA
-		uint32_t srcStride = state.camera.stride;
-#else // Camera emulation buffers
-		uint32_t srcStride = ROUND_UP(state.camera.width, 32);
-#endif
-
-
-		// ---- Setup blob detection ----
-
-		if (!initBlobDetection(layout.maskSize, layout.maskOffset, numCPUCores))
+		BlobDetection detect(layout.maskSize, layout.maskOffset, numCPUCores);
+		if (!detect)
 		{ // Shouldn't actually fail, just basic init
 			printf("-- Failed to initialize blob detection! --\n");
-			cleanup_camera();
 			if (handleError(ERROR_INIT_BD))
 				break;
 		}
-		if (state.curMode.mode == TRCAM_MODE_BGCALIB)
-		{
-			if (state.curMode.opt == TRCAM_OPT_NONE)
-				initBackgroundCalibration();
-		}
-
-		auto cleanup_blob_detect = []()
-		{
-			cleanBlobDetection();
-			printf("-- Blob Detection Cleaned --\n");
-		};
-
 
 		MaskingProgram masking(base, layout, state.codeFile);
 		if (!masking)
 		{
 			printf("-- Failed to setup QPU masking program! --\n");
-			cleanup_blob_detect();
-			cleanup_camera();
 			if (handleError(ERROR_INIT_BD))
 				break;
 		}
@@ -629,12 +613,15 @@ int main(int argc, char **argv)
 		if (!qpu)
 		{
 			printf("QPU enable failed!\n");
-			cleanup_blob_detect();
-			cleanup_camera();
 			if (handleError(ERROR_QPU_ENABLE))
 				break;
 		}
 
+#ifdef RUN_CAMERA
+		uint32_t srcStride = state.camera.stride;
+#else // Camera emulation buffers
+		uint32_t srcStride = (state.camera.width+31)/32*32;
+#endif
 
 		// ---- Start camera stream ----
 
@@ -643,9 +630,6 @@ int main(int argc, char **argv)
 		if (gcs_start(gcs) != 0)
 		{
 			printf("-- Failed to start camera stream! --\n");
-			gcs_readErrorFlag(gcs); // Reset error flag
-			cleanup_blob_detect();
-			cleanup_camera();
 			if (handleError(ERROR_GCS_START))
 				break;
 		}
@@ -657,16 +641,21 @@ int main(int argc, char **argv)
 		for (int i = 0; i < emulBufCnt; i++)
 		{ // Allocate only grayscale buffer
 			camEmulBuf[i] = vcsm_malloc(srcStride*state.camera.height);
-			if (camEmulBuf[i].fd < 0)
-			{
-				printf("Failed to allocate vcsm buffer!\n");
-				return -1;
-			}
+			if (camEmulBuf[i].fd >= 0) continue;
+			printf("Failed to allocate vcsm buffer!\n");
+			for (int j = i-1; j >= 0; j--)
+				vcsm_free(camEmulBuf[j]);
+			return false;
 		}
 	#else
 		for (int i = 0; i < emulBufCnt; i++)
 		{ // Allocate only grayscale buffer
-			qpu_allocBuffer(&camEmulBuf[i], &base, srcStride*state.camera.height, 4096);
+			int ret = qpu_allocBuffer(&camEmulBuf[i], &base, srcStride*state.camera.height, 4096);
+			if (!ret) continue;
+			printf("Failed to allocate buffer %d for emulation: %d!\n", i, ret);
+			for (int j = i-1; j >= 0; j--)
+				qpu_releaseBuffer(&camEmulBuf[j]);
+			return false;
 		}
 	#endif
 
@@ -990,6 +979,15 @@ int main(int argc, char **argv)
 				TimePoint_t t1 = sclock::now();
 				TimePoint_t t2 = sclock::now();
 
+				if (frameReady.try_lock())
+				{ // Return previous frame if it wasn't claimed already
+					std::shared_ptr<FrameBuffer> pastFrame = std::move(frameExchange);
+				}
+				else
+				{ // CPU accepted last frame
+					masking.bitmskSwitch = (masking.bitmskSwitch+1) % masking.BitmaskCount;
+				}
+
 				void *frameHeader = NULL;
 
 				// Use prepared testing frames
@@ -1011,9 +1009,11 @@ int main(int argc, char **argv)
 				uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
 				uint32_t framePtrVC = frameBuffer.VCMem; 
 		#else
+				QPU_BUFFER &frameBuffer = camEmulBuf[qpu_it%emulBufCnt];
+
 				// Lock QPU buffer (needed?)
 				qpu_lockBuffer(&frameBuffer);
-				uint8_t *framePtrARM = frameBuffer.ptr.arm.cptr;
+				uint8_t *framePtrARM = (uint8_t*)frameBuffer.ptr.arm.cptr;
 				uint32_t framePtrVC = frameBuffer.ptr.vc;
 		#endif
 #endif
@@ -1048,7 +1048,7 @@ int main(int argc, char **argv)
 				//vcsm_unlock(frameBuffer);
 				//mem_unlock(base.mb, frameBuffer.VCHandle);
 		#else
-				qpu_unlockBuffer(&camEmulBuf[qpu_it%emulBufCnt]);
+				qpu_unlockBuffer(&frameBuffer);
 		#endif
 	#endif
 
@@ -1084,6 +1084,15 @@ int main(int argc, char **argv)
 			static_cast<void>(frameReady.try_lock());
 			frameReady.unlock();
 		});
+
+
+		// ---- Init Initial Mode ----
+
+		if (state.curMode.mode == TRCAM_MODE_BGCALIB)
+		{
+			if (state.curMode.opt == TRCAM_OPT_NONE)
+				detect.initBackgroundCalibration();
+		}
 
 
 		// ---- Processing Loop ----
@@ -1160,19 +1169,19 @@ int main(int argc, char **argv)
 					if (newMode.opt == TRCAM_OPT_NONE)
 					{ // Reset temp mask
 						printf("Init Background Calibration!\n");
-						initBackgroundCalibration();
+						detect.initBackgroundCalibration();
 					}
 					else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
 					{ // Reset current mask (and temp mask)
 						printf("Resetting stored Background Calibration!\n");
-						resetBackgroundCalibration();
+						detect.resetBackgroundCalibration();
 					}
 					else if (newMode.opt == TRCAM_OPT_BGCALIB_DISCARD)
 					{ // Accept temp mask as current mask
 						if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 						{
 							printf("Discarding Background Calibration!\n");
-							resetBackgroundCalibration();
+							detect.resetBackgroundCalibration();
 						}
 						newMode.mode = TRCAM_MODE_BLOB;
 						newMode.opt = TRCAM_OPT_NONE;
@@ -1182,7 +1191,7 @@ int main(int argc, char **argv)
 						if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 						{
 							printf("Accepting Background Calibration!\n");
-							acceptBackgroundCalibration();
+							detect.acceptBackgroundCalibration();
 						}
 						newMode.mode = TRCAM_MODE_BLOB;
 						newMode.opt = TRCAM_OPT_NONE;
@@ -1300,7 +1309,7 @@ int main(int argc, char **argv)
 				//qpu_lockBuffer(curFrame->bitmsk);
 
 				// Extract regions with blobs
-				performBlobDetectionRegionsFetch(curFrame->bitmsk->ptr.arm.uptr);
+				detect.fetchRegions(curFrame->bitmsk->ptr.arm.uptr);
 
 				// Unlock bitmask buffer
 				//qpu_unlockBuffer(curFrame->bitmsk);
@@ -1309,7 +1318,7 @@ int main(int argc, char **argv)
 
 				// Perform Connected Component Labelling on regions
 				clusters.clear();
-				performBlobDetectionCPU(clusters);
+				detect.performCCL(clusters);
 
 				// Update timing
 				curTimes.fetch = dtUS(t0, t1);
@@ -1397,7 +1406,7 @@ int main(int argc, char **argv)
 				std::vector<uint8_t> bgTiles(2);
 				bgTiles[0] = extends.x();
 				bgTiles[1] = extends.y();
-				updateBackgroundCalibration(bgTiles);
+				detect.updateBackgroundCalibration(bgTiles);
 				if (bgTiles.size() > 2)
 				{
 					//printf("Added %d new tiles to the background mask!\n", bgTiles.size()/2-1));
@@ -1794,11 +1803,6 @@ int main(int argc, char **argv)
 			qpu_releaseBuffer(&camEmulBuf[i]);
 	#endif
 #endif
-
-		cleanup_blob_detect();
-		cleanup_camera();
-
-		LeaveStreamingState();
 
 		nice(0); // Normal priority
 

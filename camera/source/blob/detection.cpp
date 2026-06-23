@@ -18,11 +18,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "detection.hpp"
 
-#include <cmath>
 #include <cstring>
 #include <cassert>
 #include <algorithm>
-#include <bitset>
 #include <unistd.h>
 
 //#define BLOB_DEBUG
@@ -74,40 +72,10 @@ struct Comp
 #endif
 };
 
-/* Variables */
-
-// Sizes
-static int tileW, tileH, blkW, blkH, blkTileW;
-// Blob offset to compensate for processing margins
-static Vector2<int> blobOffset;
-// Dynamic buffer for all 8x4 tiles that are part of a blob
-static std::vector<Tile> blobTiles;
-// Shared buffer serving as a map from initial component ID to merged component ID
-static CompID *blobCompMerge;
-// Shared buffer serving as a data accumulator while components are processed, used in conjunction with merge map
-static Comp *blobCompData;
-// Map from initial blob to merged blob index
-static CompID *blobMerge;
-// Temporary cluster list
-static std::vector<Cluster> tempBlobs;
-// Background mask
-typedef std::bitset<16384> BGBitset; // 1280/8 x 800/8 = 16000, rounded up for higher performance
-BGBitset storedBackgroundMask;
-BGBitset tempBackgroundMask; 
-BGBitset *backgroundMask;
-
-
-/* Local Functions */
-
-static inline CompID resolveComponentMerge(CompID compID);
-
-/*
- * Initialize resources required for blob detection
- */
-bool initBlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores)
+BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores)
 {
-	if (storedBackgroundMask.size() < (maskSize.x()/8*maskSize.y()/8))
-		return false;
+	initialised = (storedBackgroundMask.size() >= (maskSize.x()/8*maskSize.y()/8));
+	if (!initialised) return;
 
 	// Tile is 8x4 pixels
 	tileW = maskSize.x() / 8;
@@ -134,16 +102,26 @@ bool initBlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCo
 	blobMerge = new CompID[MaxCompID+1];
 	//storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
-
-	return true;
 }
 
+BlobDetection::~BlobDetection()
+{
+	if (!initialised) return;
+	delete[](blobCompMerge);
+	delete[](blobCompData);
+	delete[](blobMerge);
+	printf("-- Blob Detection Cleaned --\n");
+}
+
+
 /* Blob Detection */
+
+static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID);
 
 /*
  * Reads back blobMap from the QPU into the specified buffer, ready for analysis on the CPU
  */
-void performBlobDetectionRegionsFetch(uint32_t *mask)
+void BlobDetection::fetchRegions(uint32_t *mask)
 {
 //	int xMin = 0, xMax = tileW, yMin = 0, yMax = blkH;
 
@@ -151,7 +129,7 @@ void performBlobDetectionRegionsFetch(uint32_t *mask)
 	MaskTile *maskTiles = (MaskTile*)mask;
 
 	// Read map and extract mask tiles with dots (1s) as blob tiles and enter them in a list
-	auto registerBlobTile = [&maskTiles](MaskTile *ptr)
+	auto registerBlobTile = [this, &maskTiles](MaskTile *ptr)
 	{
 		TileID tileID = ptr-maskTiles;
 		uint_fast16_t blkID = tileID / BLK_TILES;
@@ -240,7 +218,7 @@ void performBlobDetectionRegionsFetch(uint32_t *mask)
 /*
  * Analyses the regions detected in the last QPU step and outputs detected blobs into target array
  */
-void performBlobDetectionCPU(std::vector<Cluster> &blobs)
+void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 {
 	blobCompMerge[0] = 0; // Setup 'No Component' ID
 
@@ -274,10 +252,10 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 
 		if (tile->bytes == 0xFFFFFFFF)
 		{ // Optimization on large blobs
-			auto updateComp = [&compNum](CompID compID, CompID comp)
+			auto updateComp = [this, &compNum](CompID compID, CompID comp)
 			{ // Update compID with comp and merge to smallest if needed
 				if (comp == 0) return compID;
-				comp = resolveComponentMerge(comp);
+				comp = resolveComponentMerge(blobCompMerge, comp);
 				if (compID == 0) compID = comp;
 				else if (comp < compID)
 				{ // Merge compID with comp
@@ -356,8 +334,8 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 
 					if (top != 0 && left != 0)
 					{ // Two connected dots, assign and make sure both are merged
-						CompID topComp = resolveComponentMerge(top);
-						CompID leftComp = resolveComponentMerge(left);
+						CompID topComp = resolveComponentMerge(blobCompMerge, top);
+						CompID leftComp = resolveComponentMerge(blobCompMerge, left);
 						compID = topComp;
 
 						if (leftComp != topComp)
@@ -387,7 +365,7 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 					}
 					else
 					{ // One connected component to assign to
-						compID = resolveComponentMerge(top | left);
+						compID = resolveComponentMerge(blobCompMerge, top | left);
 					}
 					// Update component data with new dot
 					uint16_t dotX = tile->x * 8 + x, dotY = tile->y * 4 + y;
@@ -410,6 +388,8 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 	// Compile clusters for merged components
 	// Assumption: blobCompMerge[i] <= i -- e.g. the true ID comes before the merged IDs
 	int clusterID = 0;
+	// Temporary cluster list
+	static std::vector<Cluster> tempBlobs;
 	tempBlobs.clear();
 	tempBlobs.reserve(compNum);
 	for (int i = 1; i < compIndex+1; i++)
@@ -653,17 +633,7 @@ void performBlobDetectionCPU(std::vector<Cluster> &blobs)
 #endif
 }
 
-/*
- * Destroys resources used for blob detection
- */
-void cleanBlobDetection()
-{
-	delete[](blobCompMerge);
-	delete[](blobCompData);
-	delete[](blobMerge);
-}
-
-static inline CompID resolveComponentMerge(CompID compID)
+static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID)
 {
 	CompID id = blobCompMerge[compID];
 	if (id != blobCompMerge[id])
@@ -685,24 +655,24 @@ static inline CompID resolveComponentMerge(CompID compID)
 
 /* Background Calibration */
 
-void initBackgroundCalibration()
+void BlobDetection::initBackgroundCalibration()
 {
 	tempBackgroundMask.reset();
 	backgroundMask = &tempBackgroundMask;
 }
-void acceptBackgroundCalibration()
+void BlobDetection::acceptBackgroundCalibration()
 {
 	storedBackgroundMask = tempBackgroundMask;
 	tempBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 }
-void resetBackgroundCalibration()
+void BlobDetection::resetBackgroundCalibration()
 {
 	tempBackgroundMask.reset();
 	storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 }
-void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
+void BlobDetection::updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
 { // Add all tiles that had a blob on them to the background mask
 	for (int i = 0; i < blobTiles.size(); i++)
 	{
@@ -715,7 +685,7 @@ void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles)
 		}
 	}
 }
-std::vector<uint8_t> getTempBGTiles()
+std::vector<uint8_t> BlobDetection::getTempBGTiles()
 {
 	std::vector<uint8_t> bgList;
 	std::size_t pos = tempBackgroundMask._Find_first();

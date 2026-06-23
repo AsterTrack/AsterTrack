@@ -24,6 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 
 #include <vector>
+#include <bitset>
 
 /*
  * Blob Detection
@@ -33,31 +34,53 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-/*
- * Initialize resources required for blob detection
- */
-bool initBlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores);
+typedef uint8_t CompID;
+struct Comp;
+struct Tile;
+typedef std::bitset<16384> BGBitset; // 1280/8 x 800/8 = 16000, rounded up for higher performance
 
-/*
- * Reads back blobMap from the GPU into the specified buffer, ready for analysation on the CPU
- */
-void performBlobDetectionRegionsFetch(uint32_t *mask);
+struct BlobDetection
+{
+	bool initialised;
 
-/*
- * Analyses the regions detected in the last GPU step and outputs detected blobs into target array
- */
-void performBlobDetectionCPU(std::vector<Cluster> &blobs);
+	// Sizes
+	int tileW, tileH, blkW, blkH, blkTileW;
+	// Blob offset to compensate for processing margins
+	Vector2<int> blobOffset;
+	// Dynamic buffer for all 8x4 tiles that are part of a blob
+	std::vector<Tile> blobTiles;
+	// Shared buffer serving as a map from initial component ID to merged component ID
+	CompID *blobCompMerge;
+	// Shared buffer serving as a data accumulator while components are processed, used in conjunction with merge map
+	Comp *blobCompData;
+	// Map from initial blob to merged blob index
+	CompID *blobMerge;
+	// Background mask
+	BGBitset storedBackgroundMask;
+	BGBitset tempBackgroundMask;
+	BGBitset *backgroundMask;
 
-/*
- * Destroys resources used for blob detection
- */
-void cleanBlobDetection();
+	BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores);
+	~BlobDetection();
 
-/* Background Calibration */
-void initBackgroundCalibration();
-void acceptBackgroundCalibration();
-void resetBackgroundCalibration();
-void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles);
-std::vector<uint8_t> getTempBGTiles();
+	inline operator bool() { return initialised; }
+
+	/*
+	* Initialize resources required for blob detection
+	*/
+	void fetchRegions(uint32_t *mask);
+
+	/*
+	* Analyses the regions detected in the last GPU step and outputs detected blobs into target array
+	*/
+	void performCCL(std::vector<Cluster> &blobs);
+
+	/* Background Calibration */
+	void initBackgroundCalibration();
+	void acceptBackgroundCalibration();
+	void resetBackgroundCalibration();
+	void updateBackgroundCalibration(std::vector<uint8_t> &bgTiles);
+	std::vector<uint8_t> getTempBGTiles();
+};
 
 #endif // BLOB_DETECTION_H

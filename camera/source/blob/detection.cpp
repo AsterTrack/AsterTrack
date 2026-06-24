@@ -47,7 +47,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Component data config
 typedef uint8_t CompID; // Lower -> significantly better performance (cache size?), but limits MaxCompID
 const CompID MaxCompID = 255; // Max intermediate component ID - higher than final merged component count, 0 is reserved for none
-typedef uint16_t TileID; // Lower->better performance (cache size?), but limits MaxTileCount
+typedef uint32_t TileIndex; // Index into all tiles of an image, 16bit may not be enough for high resolutions
+typedef uint16_t TileID; // ID for stored tiles, limits MaxTileCount. Lower->better performance (cache size?)
+TileID InvalidTile = (TileID)-1;
 TileID MaxTileCount = 1024; // Max regarded tile count, reserved for none - set later to model-dependant number
 
 const int minPtCnt = 2;
@@ -124,42 +126,46 @@ BlobDetection::~BlobDetection()
 
 static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID);
 
+#define TILE_PARAMS(tileIndex) \
+	uint32_t blkID = tileIndex / BLK_TILES; \
+	uint_fast8_t blkRow = tileIndex % BLK_TILES; \
+	uint_fast16_t blkX = blkID % blkW; \
+	uint_fast16_t blkY = blkID / blkW; \
+	uint16_t tX = blkX; \
+	uint16_t tY = blkY*BLK_TILES + blkRow;
+
 template<bool BG>
-void BlobDetection::registerBlobTile(const uint32_t *bitmask, uint32_t tileID)
+void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
 {
 	MaskTile *maskTiles = (MaskTile*)bitmask;
-	const MaskTile *ptr = maskTiles + tileID;
-	uint32_t blkID = tileID / BLK_TILES;
-	uint_fast8_t blkRow = tileID % BLK_TILES;
-	uint_fast16_t blkX = blkID % blkW;
-	uint_fast16_t blkY = blkID / blkW;
-	uint16_t x = blkX;
-	uint16_t y = blkY*BLK_TILES + blkRow;
+	TILE_PARAMS(tile)
+
 	auto test_bg = [&](std::size_t index)
 	{
 		if constexpr (!BG) return true;
 		return !backgroundMask->test(index);
 	};
-	uint32_t bgIndex = (y>>1)*tileW + x;
+	uint32_t bgIndex = (tY>>1)*tileW + tX;
 	if (!test_bg(bgIndex))
 		return;
-	TileID t = MaxTileCount;
-	TileID l = MaxTileCount;
+
+	TileID t = InvalidTile;
+	TileID l = InvalidTile;
 	// Now find any tiles to the top or left quickly
 	if (blkRow > 0)
 	{ // Quick way of finding top tile (bounded by 1)
-		if (*(ptr-1) && test_bg(bgIndex-(y&1? 0 : tileW)))
+		if (maskTiles[tile-1] && test_bg(bgIndex-(tY&1? 0 : tileW)))
 			t = blobTiles.size()-1;
 	}
 	else if (blkY > 0)
 	{ // Very slow way, have to go to top row of blocks (bounded by blkTileW, 400 for 480p)
-		TileID topTileID = tileID-blkTileW+BLK_TILES-1;
-		if (*(ptr-blkTileW+BLK_TILES-1) && test_bg(bgIndex-(y&1? 0 : tileW)))
+		TileIndex topTile = tile-blkTileW+BLK_TILES-1;
+		if (maskTiles[topTile] && test_bg(bgIndex-(tY&1? 0 : tileW)))
 		{ // Have a top tile
-			int max = blobTiles.size()-1;
+			TileID max = blobTiles.size()-1;
 			for (int i = 0; i < blkTileW; i++)
 			{
-				if (blobTiles[max-i].x == x && blobTiles[max-i].y == y-1)
+				if (blobTiles[max-i].x == tX && blobTiles[max-i].y == tY-1)
 				{
 					t = max-i;
 					break;
@@ -169,13 +175,13 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, uint32_t tileID)
 	}
 	if (blkX > 0)
 	{ // Relatively fast way of finding left region (bounded by BLK_TILES)
-		TileID leftTileID = tileID-BLK_TILES;
-		if (*(ptr-BLK_TILES) && test_bg(bgIndex-1))
+		TileIndex leftTile = tile-BLK_TILES;
+		if (maskTiles[leftTile] && test_bg(bgIndex-1))
 		{ // Have a left tile
-			int max = blobTiles.size()-1;
+			TileID max = blobTiles.size()-1;
 			for (int i = 0; i < BLK_TILES; i++)
 			{
-				if (blobTiles[max-i].y == y && blobTiles[max-i].x == x-1)
+				if (blobTiles[max-i].y == tY && blobTiles[max-i].x == tX-1)
 				{
 					l = max-i;
 					break;
@@ -186,12 +192,9 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, uint32_t tileID)
 #ifdef BLOB_TRACE
 	printf("  Added region %d (%d, %d) with top %d and left %d\n", bgIndex, x, y, t, l);
 #endif
-	blobTiles.push_back({ x, y, t, l, MaxTileCount, MaxTileCount, *ptr });
+	blobTiles.emplace_back(tX, tY, t, l, InvalidTile, InvalidTile, maskTiles[tile]);
 }
 
-/*
- * Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU
- */
 void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
 {
 	MaskTile *maskTiles = (MaskTile*)bitmask;
@@ -222,9 +225,6 @@ void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
 #endif
 }
 
-/*
- * Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU
- */
 void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex)
 {
 	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
@@ -239,7 +239,7 @@ void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpu
 		assert((entry+1) * VPU_INDEX_TILES <= tileW*tileH);
 		for (int i = 0; i < VPU_INDEX_TILES; i++)
 		{
-			uint32_t tileIndex = entry * VPU_INDEX_TILES + i;
+			TileIndex tileIndex = entry * VPU_INDEX_TILES + i;
 			if (maskTiles[tileIndex])
 				registerBlobTile<false>(maskTiles, tileIndex);
 		}
@@ -251,9 +251,6 @@ void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpu
 #endif
 }
 
-/*
- * Reads back blobMap from the QPU into the specified buffer, ready for analysis on the CPU
- */
 void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const void *vpuMaskIndex)
 {
 	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
@@ -266,7 +263,7 @@ void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const voi
 		int found = 0;
 		for (int i = 0; i < VPU_INDEX_TILES; i++)
 		{
-			uint32_t tileIndex = entry * VPU_INDEX_TILES + i;
+			TileIndex tileIndex = entry * VPU_INDEX_TILES + i;
 			if (maskTiles[tileIndex])
 				found++;
 		}
@@ -282,9 +279,6 @@ void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const voi
 	}
 }
 
-/*
- * Analyses the regions detected in the last QPU step and outputs detected blobs into target array
- */
 void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 {
 	blobCompMerge[0] = 0; // Setup 'No Component' ID
@@ -297,12 +291,12 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 	{
 		Tile *tile = &blobTiles[i];
 		Tile *topTile = NULL, *leftTile = NULL;
-		if (tile->t != MaxTileCount)
+		if (tile->t != InvalidTile)
 		{
 			topTile = &blobTiles[tile->t];
 			topTile->b = i;
 		}
-		if (tile->l != MaxTileCount)
+		if (tile->l != InvalidTile)
 		{
 			leftTile = &blobTiles[tile->l];
 			leftTile->r = i;
@@ -664,22 +658,22 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 				bool isEdge = false;
 				if (!isEdge)
 				{
-					if (x == 0) isEdge = (tile->l == MaxTileCount) || (!blobTiles[tile->l].compMap[7][y]);
+					if (x == 0) isEdge = (tile->l == InvalidTile) || (!blobTiles[tile->l].compMap[7][y]);
 					else isEdge = !tile->compMap[x-1][y];
 				}
 				if (!isEdge)
 				{
-					if (x == 7) isEdge = (tile->r == MaxTileCount) || (!blobTiles[tile->r].compMap[0][y]);
+					if (x == 7) isEdge = (tile->r == InvalidTile) || (!blobTiles[tile->r].compMap[0][y]);
 					else isEdge = !tile->compMap[x+1][y];
 				}
 				if (!isEdge)
 				{
-					if (y == 0) isEdge = (tile->t == MaxTileCount) || (!blobTiles[tile->t].compMap[x][3]);
+					if (y == 0) isEdge = (tile->t == InvalidTile) || (!blobTiles[tile->t].compMap[x][3]);
 					else isEdge = !tile->compMap[x][y-1];
 				}
 				if (!isEdge)
 				{
-					if (y == 3) isEdge = (tile->b == MaxTileCount) || (!blobTiles[tile->b].compMap[x][0]);
+					if (y == 3) isEdge = (tile->b == InvalidTile) || (!blobTiles[tile->b].compMap[x][0]);
 					else isEdge = !tile->compMap[x][y+1];
 				}
 				if (isEdge)
@@ -776,7 +770,7 @@ void BlobDetection::discardBackgroundCalibration(uint32_t *bgBitmask)
 }
 void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector<uint8_t> &bgTiles)
 { // Add all tiles that had a blob on them to the background mask
-	auto getTileIndex = [this](uint16_t x, uint16_t y)
+	auto getTileIndex = [this](uint16_t x, uint16_t y) -> TileIndex
 	{
 		uint16_t blkX = x;
 		uint16_t blkY = y / BLK_TILES;
@@ -795,14 +789,14 @@ void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector
 		}
 		if (bgBitmask)
 		{ // NOTE: Emulating current behaviour
-			int tileIndexLo = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+0);
-			int tileIndexHi = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+1);
+			TileIndex tileIndexLo = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+0);
+			TileIndex tileIndexHi = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+1);
 			bgBitmask[tileIndexLo] = 0; // Remove entire block from bitmask
 			bgBitmask[tileIndexHi] = 0; // Remove entire block from bitmask
 		}
 		/* if (bgBitmask)
 		{ // NOTE: Potential future behaviour
-			int tileIndex = getTileIndex(blobTiles[i].x, blobTiles[i].y);
+			TileIndex tileIndex = getTileIndex(blobTiles[i].x, blobTiles[i].y);
 			bgBitmask[tileIndex] &= ~blobTiles[i].bytes; // Remove bits from bitmask
 		} */
 	}

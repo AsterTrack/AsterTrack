@@ -10,7 +10,12 @@
                 "--output", "compile_commands.json", "--",
                 "env/build_commands.sh",
             ],
-            "runOptions": { "reevaluateOnRerun": false }
+        },
+        {
+            "label": "Build VC4 Programs (QPU & VPU) with Docker",
+            "type": "shell",
+            "group": "build",
+            "command": "${workspaceFolder}/env/build_vc4_vpu_qpu.sh",
         },
     ]
 }

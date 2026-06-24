@@ -41,6 +41,11 @@ if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then
 	/home/tc/build_release.sh 1> /mnt/mmcblk0p4/build.log 2> /mnt/mmcblk0p4/build.err
 fi
 
+if [[ ! -f "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin" ]]; then
+	# QPU program blob wasn't installed, assume we are equipped to build
+	/home/tc/build_qpu.sh 1> /mnt/mmcblk0p4/build.log 2> /mnt/mmcblk0p4/build.err
+fi
+
 if [[ ! -f /home/tc/drivers/ov9281.ko ]]; then
 	/home/tc/drivers_auto_build.sh 1> /mnt/mmcblk0p4/build_drivers.log 2> /mnt/mmcblk0p4/build_drivers.err
 fi

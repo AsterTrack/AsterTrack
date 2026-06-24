@@ -6,12 +6,16 @@ if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Set build flags for debug and release
-set(SYMBOLS_FLAGS "-g -fno-omit-frame-pointer -ffunction-sections")
-# Broken on piCore 14 and 15, ld can't find libasan_preinit.o but it's in /usr/local/lib
+# Broken on piCore 14-16, can't find /usr/local/lib/libasan_preinit.o
+# CAN fix it with "sudo ln -s /usr/local/lib/libasan_preinit.o /usr/lib/"
+# Or with Environment Variable "LIBRARY_PATH=$LIBRARY_PATH:/usr/local/lib"
+# BUT Adress Sanitizer seems to cause severe system crashes anyway
+# Perhaps because it tries to instrument VC_BUFFERs which are externally allocated?
 #set(SAN "-fsanitize=address")
 set(SAN "")
-set(LINK_FLAGS "")
+
+# Set build flags for debug and release
+set(SYMBOLS_FLAGS "-g -fno-omit-frame-pointer -ffunction-sections")
 set(LINK_FLAGS_DEBUG "${SAN}")
 set(LINK_FLAGS_RELEASE "")
 set(CMAKE_C_FLAGS "${SYMBOLS_FLAGS} -Werror -Wall -std=gnu17")
@@ -126,6 +130,10 @@ add_custom_command(
 	COMMAND vc4-elf-objcopy -O binary vpu_programs.elf vpu_programs.bin
 )
 add_custom_target(vpu_programs DEPENDS vpu_programs.bin)
+
+# Create target for program binary
+add_custom_target(TrackingCamera_binaries)
+add_dependencies(TrackingCamera_binaries TrackingCamera_armv6l TrackingCamera_armv7l)
 
 # Create target for program blobs
 add_custom_target(TrackingCamera_programs)

@@ -1,0 +1,49 @@
+FROM debian:12
+
+# Install all build dependencies
+RUN apt-get update -y
+RUN apt-get install -y git gcc g++ cmake
+RUN apt-get install -y texinfo guile-2.2 libgmp-dev libmpc-dev libmpfr-dev flex bison
+
+# Create all folders and switch to non-root user
+RUN mkdir /build && chown 1000 /build
+RUN mkdir /data && chown 1000 /data
+USER 1000:1000
+
+# vc4-toolchain
+WORKDIR /build
+RUN git clone --depth 1 --recursive https://github.com/itszor/vc4-toolchain.git
+WORKDIR vc4-toolchain
+RUN sed -i "s/-j 2/-j 8/" build-all.sh
+RUN ./build-all.sh
+
+# vc4asm
+WORKDIR /build
+RUN git clone https://github.com/maazl/vc4asm.git
+WORKDIR vc4asm/build
+# Get lots of "dangerous relocation: unsupported relocation" without
+# the extra -fPIC compiler flag
+RUN CXXFLAGS="-fPIC" cmake ..
+RUN make -j8
+
+# Install toolchains
+USER root
+RUN rm -f /usr/local/bin/vc4asm
+RUN ln -s /build/vc4asm/build/vc4asm /usr/local/bin/vc4asm
+RUN rm -f /usr/local/bin/vc4-elf-gcc
+RUN rm -f /usr/local/bin/vc4-elf-objcopy
+RUN ln -s /build/vc4-toolchain/prefix/bin/vc4-elf-gcc /usr/local/bin/vc4-elf-gcc
+RUN ln -s /build/vc4-toolchain/prefix/bin/vc4-elf-objcopy /usr/local/bin/vc4-elf-objcopy
+USER 1000:1000
+
+# Add auto-build script
+WORKDIR /build
+RUN echo "#!/bin/bash\n" \
+         "mkdir -p build && cd build\n" \
+         "cmake ..\n" \
+         "make TrackingCamera_programs\n" > build_programs.sh
+RUN chmod +x build_programs.sh
+
+# Run auto-build script in data folder by default
+WORKDIR /data
+ENTRYPOINT ["/build/build_programs.sh"]

@@ -32,6 +32,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * Clusters are connected sets of pixels in screen space
  */
 
+struct VisualisationLock; // visualisation.hpp
+
 /* Functions */
 
 typedef uint8_t CompID;
@@ -79,6 +81,12 @@ struct BlobDetection
 	void fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
 	/* Fetches entirely on CPU and with VPU index side-by-side to verify correctness */
 	void verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
+
+	/* Manually mask image on CPU, used for verification only */
+	void manualMasking(const uint8_t *image, uint32_t stride, uint32_t width, uint32_t height,
+		uint32_t *bitmask, uint8_t thresholdCO, uint8_t diffCO, VisualisationLock vis);
+	/* Compare mask from QPU and CPU and mark differences as blobTiles, for verification only */
+	void compareMasks(const uint32_t *bitmaskQPU, const uint32_t *bitmaskCPU, bool diffAsTiles);
 
 	/* Analyses the regions detected in the last GPU step and outputs detected blobs into target array */
 	void performCCL(std::vector<Cluster> &blobs);

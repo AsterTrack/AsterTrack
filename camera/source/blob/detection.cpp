@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "detection.hpp"
-
+#include "visualisation.hpp"
 #include "blob/vpu_find_active_tiles.hpp"
 
 #include <cstring>
@@ -279,6 +279,73 @@ void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const voi
 	}
 }
 
+void BlobDetection::manualMasking(const uint8_t *image, uint32_t stride, uint32_t width, uint32_t height,
+	uint32_t *bitmask, uint8_t thresholdCO, uint8_t diffCO, VisualisationLock vis)
+{
+	auto TestPixel = [&](int x, int y)
+	{
+		if (y < 0) return false; // May happen on first row
+		uint8_t val = image[y*stride+x];
+		if (val >= thresholdCO)
+			return true; // Do edge test anyway for edgeMask
+		if (val < diffCO)
+			return false;
+		// Check 5x5 minimum
+		uint8_t min55 = val;
+		for (int yy = std::max(0, y-2); yy < std::min<int>(height, y+3); yy++)
+			for (int xx = std::max(0, x-2); xx < std::min<int>(width, x+3); xx++)
+				min55 = std::min(min55, image[yy*stride+xx]);
+		return ((val-min55) >= diffCO);
+	};
+
+	for (TileIndex tile = 0; tile < tileW*tileH; tile++)
+	{
+		TILE_PARAMS(tile)
+		int pX = tX*8 + blobOffset.x();
+		int pY = tY*4 + blobOffset.y();
+
+		bitmask[tile] = 0;
+		for (int x = 0; x < 8; x++)
+		{
+			for (int y = 0; y < 4; y++)
+			{
+				if (TestPixel(pX+x, pY+y))
+				{
+					bitmask[tile] |= 1 << DOTID(x,y);
+					vis.write(pX+x, pY+y, 0xFF0000FF);
+				}
+			}
+		}
+	}
+}
+
+void BlobDetection::compareMasks(const uint32_t *bitmaskQPU, const uint32_t *bitmaskCPU, bool diffAsTiles)
+{
+	MaskTile *maskTilesQPU = (MaskTile*)__builtin_assume_aligned(bitmaskQPU, 128); // Not sure if this helps much
+	MaskTile *maskTilesCPU = (MaskTile*)__builtin_assume_aligned(bitmaskCPU, 128); // Not sure if this helps much
+
+	int differCnt = 0;
+	int diffExpected = 0;
+	int diffUnexpected = 0;
+	for (TileIndex tile = 0; tile < tileW*tileH; tile++)
+	{
+		if (maskTilesCPU[tile] == maskTilesQPU[tile])
+			continue;
+		TILE_PARAMS(tile)
+
+		bool expected = tY == 0 && maskTilesQPU[tile] == 0x0F0F0F0F;
+		differCnt++;
+		if (expected) diffExpected++;
+		else diffUnexpected++;
+		if (!expected && diffUnexpected < 20)
+			printf("    Tile %d x %d differs! %u on cpu vs %u on qpu\n", tX, tY, maskTilesCPU[tile], maskTilesQPU[tile]);
+
+		// No need for top or left tiles
+		blobTiles.emplace_back(tX, tY, InvalidTile, InvalidTile, InvalidTile, InvalidTile, maskTilesCPU[tile] ^ maskTilesQPU[tile]);
+	}
+	printf("In total, %d tiles differed, of those %d expected and %d unexpected!\n", differCnt, diffExpected, diffUnexpected);
+}
+
 void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 {
 	blobCompMerge[0] = 0; // Setup 'No Component' ID
@@ -382,9 +449,9 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 		// Do connected component labelling within 8x4 tile using connected components from top and left tiles
 		for (int x = 0; x < 8; x++)
 		{
-			CompID top = dropTop? 0 : (topTile? topTile->compMap[x][3] : 0);
+			CompID top = topTile? topTile->compMap[x][3] : 0;
 
-			for (int y = yStart; y < 4; y++)
+			for (int y = 0; y < 4; y++)
 			{
 				CompID compID = 0;
 				if (DOT(tile->bytes, x, y))

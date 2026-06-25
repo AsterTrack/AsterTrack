@@ -132,6 +132,8 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 		}
 		else
 		{ // Not resegmenting, handle normally
+			if (cluster.dots.size() <= params.filtering.minContributingPixels)
+				return subClusters;
 			if (handleClusterSingle(cluster, frame, stride, params))
 			{ // Refined, and passed filter
 				subClusters.push_back(std::move(cluster));
@@ -195,8 +197,6 @@ bool handleClusterSingle(Cluster &blob, const uint8_t *frame, uint32_t stride, c
 		blob.centroid += dot.cast<float>()*weight;
 		totalWeight += weight;
 	}
-	if (blob.dots.size() < params.filtering.minContributingPixels)
-		return false; // Not enough unconflicted pixels to support this subCluster accurately
 	float contrast = maxValue-minValue;
 	if (contrast < params.filtering.minContrastValue)
 		return false; // Probably just insignificant peak in bright area - ignore

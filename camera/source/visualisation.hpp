@@ -24,6 +24,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // Forward-declared opaque structs
 struct VisualisationImpl;
 
+struct VisualisationLock
+{
+	void *lock;
+	uint8_t *display;
+	uint32_t length;
+	uint32_t strideX, strideY;
+
+	void write(uint16_t x, uint16_t y, uint32_t val)
+	{
+		if (!display) return;
+		uint8_t *px = display + y*strideY + x*strideX;
+		*(uint32_t*)px = val;
+	}
+
+	~VisualisationLock();
+};
+
 struct VisualisationState
 {
 	bool initialised = false;
@@ -38,6 +55,8 @@ struct VisualisationState
 	~VisualisationState();
 
 	void visualise(const std::vector<Cluster> &blobs, const std::vector<Cluster> &pastBlobs, uint8_t *srcBuf, int srcWidth, int srcHeight, int srcStride);
+
+	VisualisationLock lockWrite();
 };
 
 #endif // VISUALISATION_H

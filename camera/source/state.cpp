@@ -62,8 +62,12 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"nocomms",			no_argument,		0,	24 },	
 		{"nomcu",				no_argument,		0,	25 },
 		{"probe",				no_argument,		0,	26 },
-		{"novpu",				no_argument,		0,	27 },
-		{"verify-vpu",			no_argument,		0,	28 },
+		{"noqpu",				no_argument,		0,	27 },
+		{"verify-qpu",			no_argument,		0,	28 },
+		{"novpu",				no_argument,		0,	29 },
+		{"verify-vpu",			no_argument,		0,	30 },
+		{"nopost",			no_argument,		0,	31 },
+		{"dmask",			no_argument,		0,	32 },
 		{0,						0,					0,	0 }
 	};
 
@@ -190,10 +194,28 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				state.probeMode = true;
 				break;
 			case 27:
-				state.noVPU = true;
+				state.noQPU = true;
 				break;
 			case 28:
+				state.verifyQPU = true;
+				break;
+			case 29:
+				state.noVPU = true;
+				break;
+			case 30:
 				state.verifyVPU = true;
+				break;
+			case 31:
+				state.blobParams.classification.resegmentSingleClusters = false;
+				state.blobParams.classification.resegmentationThreshold = 0;
+				state.blobParams.classification.blobRefinementThreshold = 100000000;
+				state.blobParams.classification.blobTinyThreshold = 1;
+				// Also means don't filter clusters that otherwise might not have been
+				state.blobParams.filtering.minContributingPixels = 1;
+				state.blobParams.filtering.minContrastValue = 0;
+				break;
+			case 32:
+				state.displayVerifyMask = true;
 				break;
 			case 1:
 			default:

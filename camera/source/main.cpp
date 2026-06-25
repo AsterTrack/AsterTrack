@@ -140,6 +140,12 @@ int main(int argc, char **argv)
 
 	// ---- Init Application ----
 
+	if (geteuid() != 0)
+	{
+		printf("Require superuser privileges!\n");
+		return 0;
+	}
+
 	//srand(1111110);
 	srand(time(0)); // Sufficient to get new random values every time
 

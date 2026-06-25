@@ -191,6 +191,10 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	}
 	masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
 
+	std::vector<uint32_t> verifyBitmaskBuffer;
+	if (state.verifyQPU || state.noQPU)
+		verifyBitmaskBuffer.resize(layout.maskSize.prod()/32);
+
 	ExclusiveQPU qpu(base, state.qpuCores, layout.instances, !state.writeStatLogs);
 	if (!qpu)
 	{
@@ -365,7 +369,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			#endif
 
 				// Update QPU parameters in uniform memory
-				masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
+				if (!state.noQPU)
+					masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
 			}
 
 #ifdef RUN_CAMERA
@@ -612,7 +617,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 			// ---- Masking on QPU ----
 
-			int code = masking.Execute(base, qpu.perf, srcStride, framePtrVC);
+			int code = 0;
+			if (!state.noQPU)
+				code = masking.Execute(base, qpu.perf, srcStride, framePtrVC);
 			VC_BUFFER &bitmskBuf = masking.bitmskBuffer[masking.bitmskSwitch];
 
 #ifdef LOG_QPU	// Only relevant during development of QPU programs
@@ -875,11 +882,40 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		{ // Perform blob detection on bitmask
 
 			// Lock bitmask buffer
-			//vc_lockBuffer(curFrame->bitmsk);
+			//if (!state.noQPU) vc_lockBuffer(curFrame->bitmsk);
 
-			// Extract regions with blobs
-			if (fetching)
+			if (state.noQPU)
 			{
+				TimePoint_t t11 = sclock::now();
+				auto visLock = state.displayVerifyMask? state.visualisation.lockWrite() : VisualisationLock{};
+				detect.manualMasking(curFrame->memory, srcStride, state.camera.width, state.camera.height,
+					verifyBitmaskBuffer.data(), state.thresholds.absolute, state.thresholds.edge, visLock);
+				TimePoint_t t12 = sclock::now();
+				curFrame->time_qpu = dtUS(t11, t12);
+
+				TimePoint_t t0 = sclock::now();
+				detect.fetchMaskRegionsCPU(verifyBitmaskBuffer.data());
+				TimePoint_t t1 = sclock::now();
+				curTimes.find = 0;
+				curTimes.fetch = dtUS(t0, t1);
+			}
+			else if (state.verifyQPU)
+			{
+				TimePoint_t t11 = sclock::now();
+				auto visLock = state.displayVerifyMask? state.visualisation.lockWrite() : VisualisationLock{};
+				detect.manualMasking(curFrame->memory, srcStride, state.camera.width, state.camera.height,
+					verifyBitmaskBuffer.data(), state.thresholds.absolute, state.thresholds.edge, visLock);
+				TimePoint_t t12 = sclock::now();
+				curTimes.find = dtUS(t11, t12);
+
+				TimePoint_t t21 = sclock::now();
+				detect.compareMasks(curFrame->bitmsk->ptr.arm.uptr, verifyBitmaskBuffer.data(), !state.displayVerifyMask);
+				TimePoint_t t22 = sclock::now();
+				curTimes.fetch = dtUS(t21, t22);
+			}
+			else if (fetching)
+			{ // Extract regions with blobs with help from VPU
+
 				//vc_lockBuffer(&fetching.maskIndexBuffer);
 
 				TimePoint_t t11 = sclock::now();
@@ -909,7 +945,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			}
 
 			// Unlock bitmask buffer
-			//vc_unlockBuffer(curFrame->bitmsk);
+			//if (!state.noQPU) vc_unlockBuffer(curFrame->bitmsk);
 
 			TimePoint_t t1 = sclock::now();
 
@@ -921,7 +957,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			curTimes.ccl = dtUS(t1, sclock::now());
 		}
 
-		if (state.curMode.mode == TRCAM_MODE_BLOB)
+		if (state.curMode.mode == TRCAM_MODE_BLOB && !state.verifyQPU)
 		{ // Blob Refinement
 			TimePoint_t t0 = sclock::now();
 			curTimes.blur = 0;

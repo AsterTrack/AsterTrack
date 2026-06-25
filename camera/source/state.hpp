@@ -72,13 +72,22 @@ struct TrackingCameraState
 	// QPU options
 	std::string qpuProgBin = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";
 	QPUCoreMasking qpuCores = {};
+	bool noQPU = false;
+	bool verifyQPU = false;
+	bool displayVerifyMask = false;
 	// VPU options
 	std::string vpuProgBin = "/home/tc/TrackingCamera/vpu_programs.bin";
 	bool noVPU = false;
 	bool verifyVPU = false;
 	// CPU options
 	ThresholdingParameters thresholds; // Copy separate for QPU thread
-	BlobProcessingParameters blobParams;
+	BlobProcessingParameters blobParams = {
+		// Set default parameters when run interactively
+		.classification = {
+			.resegmentSingleClusters = false,
+			.blobRefinementThreshold = 100000000,
+		}
+	};
 	// Visualisation options
 	VisualisationState visualisation = {};
 	// Frame streaming state

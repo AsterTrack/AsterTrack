@@ -14,7 +14,7 @@
 .set tgtPtr, ra1
 .set srcStride, rb0
 .set tgtStride, rb1
-.set blockIter, ra2			# Iterator over blocks (16 lines)
+.set blockIter, ra2			# Iterator over blocks (20 lines)
 .set thresholdCO8, rb4
 .set diffCO8, ra4
 mov srcPtr, unif;
@@ -27,7 +27,7 @@ mov diffCO8.8888i, unif;
 mov thresholdCO8, ra5;
 
 # Variables
-.set mskAccum, ra3
+.set mskAccum, r3
 
 # Memory Setup Constants
 .set vpmSetup, rb2
@@ -56,11 +56,16 @@ mov thresholdCO8, ra5;
 # minReg stores the column-wise minimum of 12 columns
 # Such that minReg(2,x) is the minimum of this and the last row
 # And minReg(5,x) is the minimum of all last 5 rows
+# For convenience minReg(1,x) is mapped to valReg(1,x), but it is in another register file!
 # Uses 12 registers from rb20 to rb32
 .func minReg(n, x)
-	.assert n <= 5  && n >= 2
+	.assert n <= 5  && n >= 1
 	.assert x <= 2 && x >= 0
-	rb20 + ((n-2) * 3 + x)
+	.if n == 1
+		valReg(n, x)
+	.else
+		rb20 + ((n-2) * 3 + x)
+	.endif
 .endf
 
 # For each row, the mask is calculated for the central 8 columns of the 12 columns
@@ -120,6 +125,54 @@ mov valReg(0,0), r0;	mov minReg(2,2), r1;
 # Initiate mask accumulator for first iteration
 mov mskAccum, 0;
 
+.macro processHalf, b, l, cl, cr, ic, in0
+	# b: block index, l: line index
+	# cl: column left, cr: column right
+	.assert cl <= 2 && cl >= 0
+	.assert cr <= 2 && cr >= 0
+	# ic: interleaving column (with n fixed as 2 & 3)
+	#     relies on r4 still being populated from last load
+	# in0: n of interleaving column 0, either 2 or 3
+	#     will read the value from register valReg(0,0)
+
+	# Calculate 5x5 min for given four pixels
+										shl r1, minReg(5,cr), sh3;
+										shr r0, minReg(5,cl), sh1;
+	v8adds r0, r0, r1; 					shl r1, minReg(5,cr), sh2;
+	v8min r2, r0, minReg(5,cl);			shr r0, minReg(5,cl), sh2;
+	v8adds r0, r0, r1; 					shl r1, minReg(5,cr), sh1;
+	v8min r2, r0, r2;					shr r0, minReg(5,cl), sh3;
+	v8adds r0, r0, r1; 					v8min r2, r2, minReg(5,cr);
+	v8min r2, r0, r2;
+
+	# Compute mask for 4 pixels at once
+	# 0 if value < min+diff and value < threshold
+										;shr r1, valReg(2,cl), sh2B;
+										shl r0, valReg(2,cr), sh2B;
+	v8adds r2, r2, diffCO8;
+		; v8min minReg(3,ic), minReg(2,ic), r4;
+	v8min r2, r2, thresholdCO8; 		v8adds r0, r0, r1;
+	v8subs r2, r0, r2;
+		; v8min minReg(2,ic), minReg(1,ic), r4;
+
+	# Write bit 0 to mask iff r2 accum byte is 0
+	v8min r2, r2, bitMax;
+		; mov r0, valReg(0,0);
+	shl r2, r2, l*2+cl; # Mask Pos from 0-7
+		# This reads from either ra or rb and thus MAY conflict with above small immediate and not merge
+		; v8min minReg(in0,0), minReg(in0-1,0), r0;
+
+.endm
+
+.macro loadQueueMinBlock, pos, stride
+	# Wait for load of current column (pos) values and start next queued load (stride)
+	# Update column-wise minimum values for the relevant 4 columns
+	# Two of those done here, the other two interleaved in processHalf
+	; add srcPtr, srcPtr, stride; ldtmu0
+	mov valReg(0,pos), r4;				v8min minReg(5,pos), minReg(4,pos), r4;
+	mov t0s, srcPtr;					v8min minReg(4,pos), minReg(3,pos), r4;
+.endm
+
 :blockIter # Loop over blocks
 
 	# Initiate VPM write and make sure last VDW finished
@@ -129,83 +182,31 @@ mov mskAccum, 0;
 
 		.rep l, 4 # 4 Lines of 8Bits each
 
-			# Wait for current load and start next
-			# Update column-wise minimum values for the first 4 columns
-			add srcPtr, srcPtr, num4; ldtmu0
-			mov valReg(0,0), r4;	v8min minReg(5,0), minReg(4,0), r4;
-			mov t0s, srcPtr;		v8min minReg(4,0), minReg(3,0), r4;
+			# Each loadQueueMinBlock updates minReg 4 & 5 of its column, but not 2 & 3
+			# So 3 columns with 2 minRegs need to be interleaved in remaining code
+			# Column 2 & 3 are interleaved in processHalf right after their load, with r4 still populated
+			# Column 0 is split up into both and needs to load the value from valReg(0,0) again
+			# Last two parameters of processHalf concerns that interleaving (ic, in0)
 
-			# Finish updating column-wise minimum for next iteration
-#			v8min minReg(3,0), minReg(2,0), r4;
-#			v8min minReg(2,0), valReg(1,0), r4;
-			# Interleaved at the end of the loop accessing valReg(0,0) instead of r4
+			# Load for column 0, queue current line column 2
+			loadQueueMinBlock 0, num4
 
-			# Wait for current load and start next
-			# Update column-wise minimum values for the middle 4 columns
-			add srcPtr, srcPtr, srcStride; ldtmu0
-			mov valReg(0,1), r4;				v8min minReg(5,1), minReg(4,1), r4;
-			mov t0s, srcPtr;					v8min minReg(4,1), minReg(3,1), r4;
-			# Rest interleaved in next mask computation
+			# Load for column 1, queue next line column 0
+			loadQueueMinBlock 1, srcStride
 
-			# Calculate 5x5 min for first four pixels
-												shl r1, minReg(5,1), sh3;
-												shr r0, minReg(5,0), sh1;
-			v8adds r0, r0, r1; 					shl r1, minReg(5,1), sh2;
-			v8min r2, r0, minReg(5,0);			shr r0, minReg(5,0), sh2;
-			v8adds r0, r0, r1; 					shl r1, minReg(5,1), sh1;
-			v8min r2, r0, r2;					shr r0, minReg(5,0), sh3;
-			v8adds r0, r0, r1; 					v8min r2, r2, minReg(5,1);
-			v8min r2, r0, r2;
+			# Processes left 4 pixels covering column 0 and 1
+			# Interleaves minReg update 3 for col 0 and both 3&2 for col 1 (last load)
+			processHalf b, l,   0, 1,   1, 3
 
-			# Compute mask for 4 pixels at once
-			# 0 if value < min+diff and value < threshold
-												;shr r1, valReg(2,0), sh2B;
-												shl r0, valReg(2,1), sh2B;
-			v8adds r2, r2, diffCO8
-				; v8min minReg(3,1), minReg(2,1), r4;
-			v8min r2, r2, thresholdCO8; 		v8adds r0, r0, r1;
-			v8subs r2, r0, r2
-				; v8min minReg(2,1), valReg(1,1), r4;
-
-			# Write bit 0 to mask iff r2 accum byte is 0
-			v8min r2, r2, bitMax;
-			shl r2, r2, l*2+0; # Mask Pos from 0-7
-				; mov r0, valReg(0,0);
+			# Accumulate mask
 			v8adds mskAccum, mskAccum, r2;
-				; v8min minReg(3,0), minReg(2,0), r0;
 
-			# Wait for current load and start next
-			# Update column-wise minimum values for the last 4 columns
-			add srcPtr, srcPtr, num4; ldtmu0
-			mov valReg(0,2), r4;				v8min minReg(5,2), minReg(4,2), r4;
-			mov t0s, srcPtr;					v8min minReg(4,2), minReg(3,2), r4;
-			# Rest interleaved in next mask computation
+			# Load for column 2, queue next line column 1
+			loadQueueMinBlock 2, num4
 
-			# Calculate 5x5 min for last four pixels
-												shl r1, minReg(5,2), sh3;
-												shr r0, minReg(5,1), sh1;
-			v8adds r0, r0, r1; 					shl r1, minReg(5,2), sh2;
-			v8min r2, r0, minReg(5,1);			shr r0, minReg(5,1), sh2;
-			v8adds r0, r0, r1; 					shl r1, minReg(5,2), sh1;
-			v8min r2, r0, r2;					shr r0, minReg(5,1), sh3;
-			v8adds r0, r0, r1; 					v8min r2, r2, minReg(5,2);
-			v8min r2, r0, r2;
-
-			# Compute mask for 4 pixels at once
-			# 0 if value < min+diff and value < threshold
-												;shr r1, valReg(2,1), sh2B;
-												shl r0, valReg(2,2), sh2B;
-			v8adds r2, r2, diffCO8
-				; v8min minReg(3,2), minReg(2,2), r4;
-			v8min r2, r2, thresholdCO8; 		v8adds r0, r0, r1;
-			v8subs r2, r0, r2
-				; v8min minReg(2,2), valReg(1,2), r4;
-
-			# Write bit 0 to mask iff r2 accum byte is 0
-			v8min r2, r2, bitMax;
-				; mov r0, valReg(0,0);
-			shl r2, r2, l*2+1; # Mask Pos from 0-7
-				; v8min minReg(2,0), valReg(1,0), r0;
+			# Processes right 4 pixels covering column 1 and 2
+			# Interleaves minReg update 2 for col 0 and both 3&2 for col 2 (last load)
+			processHalf b, l,   1, 2,   2, 2
 
 			.if l == 3 # Write to VPM
 				v8adds vpm, mskAccum, r2; mov mskAccum, 0;
@@ -227,7 +228,7 @@ mov mskAccum, 0;
 
 	# Line loop :blockIter
 	sub.setf blockIter, blockIter, 1;
-	brr.anynn -, :blockIter
+	brr.allnz -, :blockIter
 	nop
 	nop
 	nop

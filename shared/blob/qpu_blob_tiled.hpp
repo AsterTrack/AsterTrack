@@ -32,15 +32,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 struct ProgramLineSpans
 {
-	// Lines input into the program
-	// Since the same number are witten to mask, inCount has to be a multiple of blockLines
-	uint_fast16_t inStart, inCount;
-	// Lines this program is intended to handle
-	// Might write more valid lines before this as an overlap
-	uint_fast16_t outStart, outCount;
+	// Lines handled by the program
+	// lineCount is a multiple of blockLines
+	uint_fast16_t lineStart, lineCount;
 	// All lines are mapped to mask and image as follows:
-	// - Map to mask with line + maskTop
-	// - Map to image with line + layout.srcOffset.y()
+	// - Map to mask with line + maskOffset.y()
+	// - Map to image with line + srcOffset.y()
 };
 
 struct ProgramLayout
@@ -56,61 +53,52 @@ struct ProgramLayout
 };
 
 // Constant properties of the QPU blob detection program
-const int numUnif = 7;
+const int numUnif = 8;
 
 // QPU program does a 5x5min calculation for 8pixels on a 12pixels wide input line
-// It cannot deal with out-of-bounds pixels there, so we need to add horizontal padding
-// In total, 2 pixels on each horizontal side are implicitly consumed
-constexpr uint32_t paddingX = 2;
-
-// Similarly, the first two rows written are invalid in order to initialise the 5x5 minimum calculation
-// The next two rows have a valid center pixels, but the 5x5min calculation is not fully done
-// Sadly, it's going to be near impossible to prevent writing of those first 2 or 4 rows, so we have to deal with that
-// In more detail, the first rows processed by a program are as follows:
-	// Row 0: Build 5x5min (1), write invalid row -2	(center value 0, incomplete 5x5min)
-	// Row 1: Build 5x5min (2), write invalid row -1	(center value 0, incomplete 5x5min)
-	// Row 2: Build 5x5min (3), write incomplete row 0	(incomplete 5x5min)
-	// Row 3: Build 5x5min (4), write incomplete row 1	(incomplete 5x5min)
-	// Row 4: Build 5x5min (5), write valid row 2
-// The program handles out-of-bound pixels at the top of the image as follows:
-// Row 0&1 are invalid (usually 1 in bitmask) and need special handling to ignore them and offset the mask
-// If row 2&3 are the top edge of the image, then the incomplete 5x5 min doesn't matter and they can be safely used
-constexpr uint32_t maskInvalidTop = 2;
-constexpr uint32_t maskIncompleteTop = 4;
-// The program cannot deal with out of bounds pixels at the bottom edge though
-// The last two lines are only used for the 5x5min calculation up to the third to last line:
-	// Row n-3: Build 5x5min, write row n-5
-	// Row n-2: Build 5x5min, write row n-4
-	// Row n-1: Build 5x5min, write row n-3
-// So the last two image rows are never written to the mask, the last row written is the third to last image row and it is valid
-constexpr uint32_t maskMissingBottom = 2;
-// Finally, since columns are split vertically, programs may start or end within the image, complicating things
-// When Line a to b are processed:
-// - Lines a-2 to b-2 are written
-// - Lines a+2 to b-2 are valid (a to b-2 only when at the very top)
-// As such, a certain internal overlap is required (maskIncompleteTop and maskMissingBottom)
+// It cannot deal with out-of-bounds pixels on the sides, so horizontal padding is required
+// Since image address needs to be 4-byte aligned, this constrains where that padding ends up being
+constexpr uint32_t mskPaddingX = 2;
 
 // Each QPU thread operates on 8 central pixel columns (12 columns total for the 5x5min calculation)
-constexpr uint32_t blockWidth = 8;
+constexpr uint32_t mskBlockWidth = 8;
 
 // Each QPU Core is 16-way, so 16 such threads operate in lockstep
 constexpr uint32_t qpuThreadCount = 16;
 
 // Currently, the QPU program can not mask a thread to prevent it from writing
-// So the total width in pixels that we process needs to be multiples of this
-constexpr uint32_t qpuCoreWidth = blockWidth*qpuThreadCount;
+// So the total width in pixels that we process is a multiple of this
+constexpr uint32_t mskColumnWidth = mskBlockWidth*qpuThreadCount;
 // TODO: Allow for masking of qpu threads so we don't need to throw remaining horizontal pixels away
 // However, currently the main limit is that only 9 QPUs can run this program, so a 10th wouldn't help much anyway
 // But if we DID have 10 available, masking would allow for 1272 width instead of current 1152 (1276 max since we need 2 padding on each side)
 // But arguably, the extra width doesn't add FoV where we really need more anyway, so not super useful
 
-// Internally, each program is an unrolled loop that processes 20 lines at once
-// Currently, the QPU program can not mask any of the lines
-// So the total height in pixels that we process needs to be multiples of this
-constexpr uint32_t blockLines = 20; // 4*BLK_TILES
+// The program is an unrolled loop that processes 20 lines at once, related to the looping dynamics of the registers
+// Internally, each such block is made up of 5 32-bit tiles, each in turn made up of 4 8-bit lines
+constexpr uint32_t mskBlockTiles = 5;
+// Since it can not mask any lines, the total height that is process is a multiple of this
+constexpr uint32_t mskBlockLines = mskBlockTiles * 4;
 
 // The mask is written block-by-block, with each pixel of the block being one bit
-constexpr uint32_t blockMaskBytes = blockWidth*blockLines/8;
+constexpr uint32_t mskBlockBytes = mskBlockWidth*mskBlockLines/8;
+
+// Accessors for 8x4 tile encoded in 32bit integer
+#define DOTID(X, Y) ((((X)%4)*8)+(((X)>>2)&1)+((Y)*2))
+#define DOT(BYTES, X, Y) (uint8_t)(((BYTES) >> DOTID(X,Y)) & 1)
+
+
+// Additionally, the processing may be split vertically
+// So program may start and end on lines within the image
+// But due to the 5x5 mask, when the program processes a line, it actually writes the line two lines above
+
+// These are the relevant considerations for correctness:
+// For the first two rows of the image, the program outputs a valid mask with incomplete 5x5min (2 rows outside are assumed to be 0xFF)
+// For programs started in the middle of the image, it preloads 2 rows above the source address (triggered by lookBehind uniform)
+// This allows it to output a valid mask from the very first line in any scenario
+// For the last two rows of each program, it implicitly reads beyond the intended source range
+// This implies the image needs to be padded with two trailing rows of 0xFF for a valid mask in the last two rows of an image
+// For programs ending within in the image, this implicitly results in a valid mask if those pixels are already available
 
 static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, uint32_t cores, bool debug = true)
 {
@@ -121,10 +109,11 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 	*/
 
 	// Split image in columns that a single QPU core can process
-	layout.columns = (width - paddingX*2) / qpuCoreWidth;
+	layout.columns = (width - mskPaddingX*2) / mskColumnWidth;
+	// TODO: Allow processing of full width and just mark padding in mask as invalid
 
 	// Calculate processed pixels in the output mask
-	layout.maskSize = Vector2<int>(layout.columns*qpuCoreWidth, ROUND_DOWN(height, blockLines));
+	layout.maskSize = Vector2<int>(layout.columns*mskColumnWidth, ROUND_DOWN(height, mskBlockLines));
 
 	/**
 	* Vertical distribution
@@ -134,70 +123,57 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 	int splitCols = 1;
 	while (layout.columns * (splitCols+1) <= cores)
 		splitCols++;
+	// TODO: Allow deliberate splitting to minimize latencies
 	layout.instances = layout.columns * splitCols;
 
 	// Calculate line spans fed into of each row of QPU programs so that the lines in the output masks are all valid
 	// This is purposefully verbose to allow verification of mapping
 	layout.rows.resize(splitCols);
-	uint32_t startLine = 0;
+	uint32_t lineCount = 0;
 	for (int i = 0; i < splitCols; i++)
 	{ // Accumulatively split up columns vertically
 		ProgramLineSpans &prog = layout.rows[i];
 		// Determine lines input to program (valid will be inStart to inStart+inCount-2)
-		uint32_t clipTop = i > 0? maskIncompleteTop : 0;
-		prog.inStart = ROUND_DOWN(startLine - clipTop, blockLines);
+		prog.lineStart = lineCount;
 		uint32_t progRemaining = splitCols - i;
-		uint32_t linesRemaining = height - prog.inStart;
-		prog.inCount = ROUND_DOWN(linesRemaining/progRemaining, blockLines);
-		// Determine the lines handled by the program (without overlap that was already handled) 
-		prog.outStart = startLine;
-		// Alternate form 1:
-		uint32_t topOverlap = startLine - prog.inStart;
-		prog.outCount = prog.inCount - topOverlap - maskMissingBottom;
-		// Alternate form 2 (equally valid):
-		//uint32_t validEnd = prog.inStart+prog.inCount - maskMissingBottom;
-		//prog.outCount = validEnd - prog.outStart;
-		startLine += prog.outCount;
+		uint32_t linesRemaining = height - prog.lineStart;
+		prog.lineCount = ROUND_DOWN(linesRemaining/progRemaining, mskBlockLines);
+		lineCount += prog.lineCount;
 	}
+	assert(layout.maskSize.y() == lineCount);
 
-	// The strategy to ensure a continuous mask relies on the column to be calculated bottom-to-top
-	// Since the first 2-4 rows written by a program are garbage, but the last 2 rows written are good
-	// So in order to get correct values in the vertical overlap, the bottom program has to execute first
-	// This is achieved by iterating over the split columns like this:
-	// for (int r = splitCols-1; r >= 0; r--)
-
-	// Calculate lines input to the program (with some invalid in the output)
-	uint32_t maskLines = layout.rows.back().inStart+layout.rows.back().inCount;
-	assert(layout.maskSize.y() == maskLines);
-	// Calculate lines actually processed and available later
-	uint32_t validLines = layout.rows.back().outStart+layout.rows.back().outCount;
-	assert(layout.maskSize.y() == validLines+maskMissingBottom);
-	uint32_t validWidth = layout.maskSize.x();
+	// Denote pixels actually processed and available later
+	uint32_t validWidth = layout.maskSize.x(); // TODO: May not hold when padding is allowed outside of image bounds
+	uint32_t validLines = layout.maskSize.y();
 
 	/**
 	* Aligning & Centering
 	*/
 
-	// Due to restrictions, some pixels will have been dropped on the edges
+	// Due to restrictions, some pixels may have been dropped on the edges
 	uint32_t droppedColumns = width - validWidth;
 	uint32_t droppedLines = height - validLines;
-	assert(droppedColumns >= paddingX*2);
-	assert(droppedLines >= maskMissingBottom);
+	assert(droppedColumns >= mskPaddingX*2);
+	assert(droppedLines == 0); // Should not be necessary anymore
 	
 	// The QPU address (without the implicit paddingX) needs to be 4-byte aligned
-	layout.srcOffset.x() = ROUND_DOWN(droppedColumns/2 - paddingX, 4);
-	layout.maskOffset.x() = layout.srcOffset.x() + paddingX;
+	// With droppedColumns == 0, paddingX == 2 the alignment of 4 forces us to drop 4 columns anyway
+	// We can choose whether these happen on the left (srcOffset.x == -4) or right (srcOffset.x == 0)
+	// Either way, after dropping them, the valid mask rect IS centered with two columns on each side missing
+	layout.srcOffset.x() = ROUND_DOWN(std::max<int>(0, droppedColumns/2 - mskPaddingX), 4);
+	layout.maskOffset.x() = layout.srcOffset.x() + mskPaddingX;
 
 	// Center valid lines vertically
 	layout.srcOffset.y() = std::min(droppedLines/2, height - layout.maskSize.y());
-	layout.maskOffset.y() = layout.srcOffset.y() - maskInvalidTop;
+	layout.maskOffset.y() = layout.srcOffset.y();
 
 	/**
 	* Debug output
 	*/
 
 	// Determine the image space rect for which a valid mask exists
-	layout.validMaskRect.min.x() = layout.srcOffset.x() + paddingX;
+	// As of now, this should be equal to maskOffset, but validWidth may be lower in the future
+	layout.validMaskRect.min.x() = layout.srcOffset.x() + mskPaddingX;
 	layout.validMaskRect.min.y() = layout.srcOffset.y();
 	layout.validMaskRect.max.x() = layout.validMaskRect.min.x() + validWidth;
 	layout.validMaskRect.max.y() = layout.validMaskRect.min.y() + validLines;
@@ -211,7 +187,7 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 			droppedColumns, droppedLines, layout.validMaskRect.min.x(), layout.validMaskRect.min.y());
 	}
 #endif
-	// With this, a 1280x800 image becomes 1152x798 of effectively processed pixels. Not optimal but fastest way
+	// With this, a 1280x800 image becomes 1152x800 of effectively processed pixels. Not optimal but fastest way
 
 	return layout;
 }

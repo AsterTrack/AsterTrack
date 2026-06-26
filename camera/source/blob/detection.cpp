@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "detection.hpp"
 #include "visualisation.hpp"
+#include "blob/qpu_blob_tiled.hpp"
 #include "blob/vpu_find_active_tiles.hpp"
 
 #include <cstring>
@@ -35,14 +36,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #if !defined(BLOB_POST_PASS) && !defined(CALCULATE_BOUNDS_EARLY)
 #error "If bounds aren't calculated as blobs are built, and there's no post-pass on all dots, no bounds will be generated!"
 #endif
-
-
-// Accessors for 8x4 tile encoded in 32bit integer
-#define DOTID(X, Y) ((((X)%4)*8)+(((X)>>2)&1)+((Y)*2))
-#define DOT(BYTES, X, Y) (uint8_t)(((BYTES) >> DOTID(X,Y)) & 1)
-// Loops are unrolled and numbers hardcoded, so no optimisation possible here
-
-#define BLK_TILES 5 // Required by the QPU program, related to 5x5 min calculations
 
 // Component data config
 typedef uint8_t CompID; // Lower -> significantly better performance (cache size?), but limits MaxCompID
@@ -86,11 +79,11 @@ BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int
 	// Tile is 4x8 pixels
 	tileW = maskSize.x() / 8;
 	tileH = maskSize.y() / 4;
-	// Block is 5x1 tiles, or 20x8 pixels (for BLK_TILES=5)
+	// Block is 5x1 tiles, or 20x8 pixels (for blockTiles=5)
 	blkW = tileW;
-	blkH = tileH / BLK_TILES;
-	// Number of tiles in a row of blocks (BLK_TILES rows of tiles interlaced)
-	blkTileW = blkW*BLK_TILES;
+	blkH = tileH / mskBlockTiles;
+	// Number of tiles in a row of blocks (blockTiles rows of tiles interlaced)
+	blkTileW = blkW*mskBlockTiles;
 
 	// Mask doesn't span the full image due to processing margins, offset blob output into image space
 	blobOffset = maskOffset;
@@ -127,12 +120,12 @@ BlobDetection::~BlobDetection()
 static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID);
 
 #define TILE_PARAMS(tileIndex) \
-	uint32_t blkID = tileIndex / BLK_TILES; \
-	uint_fast8_t blkRow = tileIndex % BLK_TILES; \
+	uint32_t blkID = tileIndex / mskBlockTiles; \
+	uint_fast8_t blkRow = tileIndex % mskBlockTiles; \
 	uint_fast16_t blkX = blkID % blkW; \
 	uint_fast16_t blkY = blkID / blkW; \
 	uint16_t tX = blkX; \
-	uint16_t tY = blkY*BLK_TILES + blkRow;
+	uint16_t tY = blkY*mskBlockTiles + blkRow;
 
 template<bool BG>
 void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
@@ -159,7 +152,7 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
 	}
 	else if (blkY > 0)
 	{ // Very slow way, have to go to top row of blocks (bounded by blkTileW, 400 for 480p)
-		TileIndex topTile = tile-blkTileW+BLK_TILES-1;
+		TileIndex topTile = tile-blkTileW+mskBlockTiles-1;
 		if (maskTiles[topTile] && test_bg(bgIndex-(tY&1? 0 : tileW)))
 		{ // Have a top tile
 			TileID max = blobTiles.size()-1;
@@ -174,12 +167,12 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
 		}
 	}
 	if (blkX > 0)
-	{ // Relatively fast way of finding left region (bounded by BLK_TILES)
-		TileIndex leftTile = tile-BLK_TILES;
+	{ // Relatively fast way of finding left region (bounded by blockTiles)
+		TileIndex leftTile = tile-mskBlockTiles;
 		if (maskTiles[leftTile] && test_bg(bgIndex-1))
 		{ // Have a left tile
 			TileID max = blobTiles.size()-1;
-			for (int i = 0; i < BLK_TILES; i++)
+			for (int i = 0; i < mskBlockTiles; i++)
 			{
 				if (blobTiles[max-i].y == tY && blobTiles[max-i].x == tX-1)
 				{
@@ -373,11 +366,6 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 		printf("Tile %d / %d: T?%c, L?%c! -- State: %d(%d) components!\n", tile->x, tile->y, topTile? 'y' : 'n', leftTile? 'y' : 'n', compNum, compIndex);
 #endif
 
-		bool dropTop = tile->y == 0;
-		int yStart = 0;
-		if (dropTop)
-			yStart = -blobOffset.y();
-
 		if (tile->bytes == 0xFFFFFFFF)
 		{ // Optimization on large blobs
 			auto updateComp = [this, &compNum](CompID compID, CompID comp)
@@ -422,18 +410,7 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 #endif
 			}
 			// Apply merged component to all cells
-			if (dropTop)
-			{
-				for (int x = 0; x < 8; x++)
-				{
-					for (int y = 0; y < yStart; y++)
-						tile->compMap[x][y] = 0;
-					for (int y = yStart; y < 4; y++)
-						tile->compMap[x][y] = compID;
-				}
-			}
-			else
-				memset(tile->compMap, compID, 4*8);
+			memset(tile->compMap, compID, 4*8);
 			// Update component data with new dots
 			Comp *comp = &blobCompData[compID];
 			comp->x += (tile->x*8*8 + 28)*4;
@@ -840,10 +817,10 @@ void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector
 	auto getTileIndex = [this](uint16_t x, uint16_t y) -> TileIndex
 	{
 		uint16_t blkX = x;
-		uint16_t blkY = y / BLK_TILES;
-		uint16_t blkRow = y % BLK_TILES;
+		uint16_t blkY = y / mskBlockTiles;
+		uint16_t blkRow = y % mskBlockTiles;
 		uint32_t blkID = blkY * blkW + blkX;
-		return blkID * BLK_TILES + blkRow;
+		return blkID * mskBlockTiles + blkRow;
 	};
 	for (int i = 0; i < blobTiles.size(); i++)
 	{

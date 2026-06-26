@@ -64,10 +64,10 @@ MaskingProgram::MaskingProgram(VC_BASE &base, ProgramLayout layout, const std::s
 	vc_lockBuffer(&blobProgram.progmem_buffer);
 	uint32_t *uniforms = blobProgram.progmem.uniforms.arm.uptr;
 	uint32_t tgtLineStride = layout.maskSize.x()/8;
-	uint32_t tgtBlockStride = tgtLineStride * blockLines;
+	uint32_t tgtBlockStride = tgtLineStride * mskBlockLines;
 	for (int c = 0; c < layout.columns; c++)
 	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
+		for (int r = 0; r < layout.rows.size(); r++)
 		{ // Set up each program instance with their column
 			int baseUnif = (r*layout.columns+c)*numUnif;
 			ProgramLineSpans &lines = layout.rows[r];
@@ -75,9 +75,10 @@ MaskingProgram::MaskingProgram(VC_BASE &base, ProgramLayout layout, const std::s
 			uniforms[baseUnif + 1] = 0; // Enter target pointer each frame
 			uniforms[baseUnif + 2] = 0; // Enter source stride each frame
 			uniforms[baseUnif + 3] = tgtBlockStride;
-			uniforms[baseUnif + 4] = lines.inCount/blockLines; // Block count to process
+			uniforms[baseUnif + 4] = lines.lineCount/mskBlockLines; // Block count to process
 			uniforms[baseUnif + 5] = 255; // absolute threshold
 			uniforms[baseUnif + 6] = 255; // difference threshold
+			uniforms[baseUnif + 7] = r != 0; // read 2 lines before source for complete 5x5min within image
 		}
 	}
 	vc_unlockBuffer(&blobProgram.progmem_buffer);
@@ -98,7 +99,7 @@ void MaskingProgram::SetParameters(uint8_t thresholdCO, uint8_t diffCO)
 	uint32_t *uniforms = blobProgram.progmem.uniforms.arm.uptr;
 	for (int c = 0; c < layout.columns; c++)
 	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
+		for (int r = 0; r < layout.rows.size(); r++)
 		{ // Set up each program instance with their column
 			// TODO: Allow for thresholds to be calibrated per-tile and pass as chain of uniforms
 			// Would differ based on LED coverage and lens vignetting / relative illumination
@@ -123,15 +124,15 @@ unsigned int MaskingProgram::Execute(VC_BASE &base, QPU_PerformanceState &perfSt
 	// Set up individual source pointer for each program instance
 	for (int c = 0; c < layout.columns; c++)
 	{
-		for (int r = layout.rows.size()-1; r >= 0; r--)
+		for (int r = 0; r < layout.rows.size(); r++)
 		{ // Set up each program instance with their column
 			int baseUnif = (r*layout.columns+c)*numUnif;
 			ProgramLineSpans &lines = layout.rows[r];
-			uint32_t srcX = layout.srcOffset.x() + c*qpuCoreWidth;
-			uint32_t srcY = layout.srcOffset.y() + lines.inStart;
+			uint32_t srcX = layout.srcOffset.x() + c*mskColumnWidth;
+			uint32_t srcY = layout.srcOffset.y() + lines.lineStart;
 			uniforms[baseUnif + 0] = sourcePtrVC + srcX + srcY*srcStride;
-			uint32_t tgtX = c*(qpuThreadCount*blockMaskBytes);
-			uint32_t tgtY = lines.inStart; // Is aligned to blockLines
+			uint32_t tgtX = c*(qpuThreadCount*mskBlockBytes);
+			uint32_t tgtY = lines.lineStart; // Is aligned to blockLines
 			uniforms[baseUnif + 1] = bitmskBuf.ptr.vc + tgtX + tgtY*tgtLineStride;
 			uniforms[baseUnif + 2] = srcStride;
 		}

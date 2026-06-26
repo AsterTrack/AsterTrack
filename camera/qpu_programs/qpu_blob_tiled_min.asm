@@ -15,6 +15,7 @@
 .set srcStride, rb0
 .set tgtStride, rb1
 .set blockIter, ra2			# Iterator over blocks (20 lines)
+.set lookBehind, ra3
 .set thresholdCO8, rb4
 .set diffCO8, ra4
 mov srcPtr, unif;
@@ -25,6 +26,7 @@ mov blockIter, unif;			# block count
 mov ra5.8888i, unif;
 mov diffCO8.8888i, unif;
 mov thresholdCO8, ra5;
+mov lookBehind, unif;			# whether to include two lines before srcPtr in minimums
 
 # Variables
 .set mskAccum, r3
@@ -79,6 +81,11 @@ mov thresholdCO8, ra5;
 mul24 r0, elem_num, 8;
 add srcPtr, srcPtr, r0;
 
+# Look behind 2 lines if desired (to preload 4, not 2, for proper 5x5min on first line)
+									; mov r0, srcStride;
+and.setf -, lookBehind, lookBehind	; mul24 r0, r0, 2;
+sub.ifzc srcPtr, srcPtr, r0;
+
 # Set mask constants
 ldi sh2, 16;
 ldi sh3, 24;
@@ -92,7 +99,7 @@ nop;
 mov t0s, srcPtr;
 
 # Create VPM Setup
-;mov r1, 5;
+; mov r1, 5;
 mul24 r1, qpu_num, r1;
 ldi r0, vpm_setup(0, 1, h32(0));
 add vpmSetup, r0, r1;
@@ -103,27 +110,25 @@ ldi r0, vdw_setup_0(16, 5, dma_v32(0, 0));
 add vdwSetup, r0, r1;
 
 # Adjust values
-mov r0, 8;
+; mov r0, 8;
 sub srcStride, srcStride, r0; # Remove 2 x 4bytes read in each iteration before jumping to the next line
 
-# Init defaults
-.lset b, 0
-.lset l, 0
-#mov r0, thresholdCO8; # Max <= threshold for val
-mov r0, -1; # Max for val as well, can't reliably prevent 1 in mask in first two lines either way (Why? Idk)
-mov r1, -1; # Max for min
-mov valReg(2,0), r0;	mov minReg(4,0), r1;
-mov valReg(2,1), r0;	mov minReg(4,1), r1;
-mov valReg(2,2), r0;	mov minReg(4,2), r1;
-mov valReg(1,0), r0;	mov minReg(3,0), r1;
-mov valReg(1,1), r0;	mov minReg(3,1), r1;
-mov valReg(1,2), r0;	mov minReg(3,2), r1;
-mov valReg(0,0), r0;	mov minReg(2,0), r1;
-mov valReg(0,0), r0;	mov minReg(2,1), r1;
-mov valReg(0,0), r0;	mov minReg(2,2), r1;
+# Init defaults - ONLY needed if lookBehind is not used (so 2 preloaded lines, not all 4)
+.lset b, 4 # Set block used in preload loop (5 ensures first real loop with b=0 accesses the right registers)
+.lset l, 2 # Set first line used in non-lookBehind preload loop which is the only one this is needed for
+mov r0, -1; # Max for min AND val to ensure 5x5min stays max and thus inert
+mov valReg(1,0), r0;
+mov valReg(1,1), r0;
+mov valReg(1,2), r0;
 
-# Initiate mask accumulator for first iteration
-mov mskAccum, 0;
+# Jump if only preloading two lines, not looking back for 2 more
+; and.setf -, lookBehind, lookBehind;
+brr.anyz -, :skipLinePreload
+
+# Finish initialisation during the 3 branching delay slots
+mov valReg(0,0), r0;	mov minReg(2,0), r0;
+mov valReg(0,0), r0;	mov minReg(2,1), r0;
+mov valReg(0,0), r0;	mov minReg(2,2), r0;
 
 .macro processHalf, b, l, cl, cr, ic, in0
 	# b: block index, l: line index
@@ -173,6 +178,38 @@ mov mskAccum, 0;
 	mov t0s, srcPtr;					v8min minReg(4,pos), minReg(3,pos), r4;
 .endm
 
+# Emulate END of full loop to use the right registers backing minReg and valReg (they loop)
+.lset b, 4
+.rep l, 4 # First 4 Lines of 8Bits each
+	# Handled separately to ensure first line written is actually valid
+	# Since it needs the full 5x5 min, program writes mask of pixels loaded two lines ago
+	# So at the top of the image, just pre-load the first two lines and calculate minimum values
+	# IF we are in the middle of the image, we may load two previous lines, too
+	# This is controlled by a uniform, and it may jump here to only load two:
+	.if l == 2
+		:skipLinePreload
+	.endif
+
+	# Load for column 0, queue current line column 2
+	loadQueueMinBlock 0, num4
+	v8min minReg(3,0), minReg(2,0), r4;
+	v8min minReg(2,0), minReg(1,0), r4;
+
+	# Load for column 1, queue next line column 0
+	loadQueueMinBlock 1, srcStride
+	v8min minReg(3,1), minReg(2,1), r4;
+	v8min minReg(2,1), minReg(1,1), r4;
+
+	# Load for column 2, queue next line column 1
+	loadQueueMinBlock 2, num4
+	v8min minReg(3,2), minReg(2,2), r4;
+	v8min minReg(2,2), minReg(1,2), r4;
+
+.endr
+
+# Initiate mask accumulator for first iteration
+mov mskAccum, 0;
+
 :blockIter # Loop over blocks
 
 	# Initiate VPM write and make sure last VDW finished
@@ -182,7 +219,7 @@ mov mskAccum, 0;
 
 		.rep l, 4 # 4 Lines of 8Bits each
 
-			# Each loadQueueMinBlock updates minReg 4 & 5 of its column, but not 2 & 3
+			# Each loadQueueMinBlock updates minReg 4 & 5 of its column, but not 2 & 3 (see above)
 			# So 3 columns with 2 minRegs need to be interleaved in remaining code
 			# Column 2 & 3 are interleaved in processHalf right after their load, with r4 still populated
 			# Column 0 is split up into both and needs to load the value from valReg(0,0) again

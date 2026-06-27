@@ -4,17 +4,25 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Ensure Board",
+			"type": "shell",
+			"group": "build",
+			"command": "mkdir -p build && [ -z $(cat build/rev 2&>/dev/null) ] && echo V1_0 > build/rev; echo Selected Board Rev: $(cat build/rev)",
+			"hide": true
+		},
+		{
+			"label": "Select Board (clangd)",
+			"type": "shell",
+			"group": "build",
+			"command": "rm -rf build && mkdir -p build && bear --output build/compile_commands.json -- make REV='${input:boardRev}' DEVICE='STM32G030' -j $(nproc --ignore=2)",
+		},
+		{
 			"label": "Build",
 			"type": "shell",
 			"group": "build",
-			"command": "mkdir",
-			"args": [
-				"-p", "build", "&",
-				"make", "DEVICE='STM32G030'", "-j", "$(nproc", "--ignore=2)",
-			],
+			"command": "mkdir -p build && make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 			"windows": {
-				"command": "mkdir -p build & make DEVICE='STM32G030' -j $(nproc --ignore=2)",
-				"args": [],
+				"command": "mkdir -p build & make REV='$(cat build/rev)' DEVICE='STM32G030' -j $(nproc --ignore=2)",
 				"options": {
 					"env": { "CHERE_INVOKING": "1" },
 					"shell": { // Can use either MSYS2 or Cygwin
@@ -24,20 +32,14 @@
 					}
 				}
 			},
-			"runOptions": { "reevaluateOnRerun": false }
+			"dependsOn": [ "Ensure Board" ]
 		},
 		{
 			"label": "Build (clangd)",
 			"type": "shell",
 			"group": "build",
-			"command": "mkdir",
-			"args": [
-				"-p", "build", "&",
-				"bear", "--output", "build/compile_commands.json", "--append", "--",
-				"make", "DEVICE='STM32G030'", "-j", "$(nproc", "--ignore=2)",
-				// Sadly, "make --dry-run", does not work, it intercepts commands
-			],
-			"runOptions": { "reevaluateOnRerun": false }
+			"command": "mkdir -p build && bear --output build/compile_commands.json --append -- make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"dependsOn": [ "Ensure Board" ]
 		},
 		{
 			"label": "Flash (OpenOCD)",
@@ -64,6 +66,15 @@
 				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/TrackingCameraMCU.elf" // For serial programmer, pick correct COM port
 			},
 			"dependsOn": [ "Build" ]
+		},
+	],
+	"inputs": [
+		{
+			"id": "boardRev",
+			"description": "Board Revision:",
+			"default": "V1_0",
+			"type": "pickString",
+			"options": [ "V0_3", "V0_4", "V1_0" ]
 		},
 	]
 }

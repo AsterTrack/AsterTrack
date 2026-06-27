@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
 	{ // UART 1
-	#if defined(BOARD_OLD)
+	#if BOARD_REV == V0_3
 		.uart = USART2,
 	#else
 		.uart = USART1,
@@ -42,7 +42,7 @@ const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
 		.DMA = DMA1,
 		.DMA_CH_RX = DMA_CHANNEL_2,
 		.DMA_CH_TX = DMA_CHANNEL_3,
-	#if defined(BOARD_OLD)
+	#if BOARD_REV == V0_3
 		.uartIRQ_RX = USART2_IRQn,
 	#else
 		.uartIRQ_RX = USART1_IRQn,
@@ -82,17 +82,17 @@ void uart_driver_init(uint32_t baudrate)
 
 	// DMA & UART Peripheral clock enable
 	LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
-#if defined(STM32G030xx) && defined(BOARD_OLD)
+#if defined(STM32G030xx) && BOARD_REV == V0_3
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USART2);
 	// USART2 on G030/G050 is always PCLK1
-#elif defined(STM32G0) && !defined(BOARD_OLD)
+#elif defined(STM32G0) && BOARD_REV != V0_3
 	LL_RCC_SetUSARTClockSource(LL_RCC_USART1_CLKSOURCE_PCLK1);
 	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_USART1);
 #endif
 	int i = 0;
 	struct UART_DMA_Setup u = UART[i];
 
-#if defined(STM32G0) && defined(BOARD_OLD)
+#if defined(STM32G0) && BOARD_REV == V0_3
 	// AFIO
 	LL_GPIO_SetAFPin_8_15(GPIOA, GPIO_PIN_15, LL_GPIO_AF_1);
 
@@ -101,10 +101,12 @@ void uart_driver_init(uint32_t baudrate)
 	LL_GPIO_SetPinMode(GPIOA, GPIO_PIN_15, LL_GPIO_MODE_ALTERNATE);
 	LL_GPIO_SetPinPull(GPIOA, GPIO_PIN_15, LL_GPIO_PULL_NO);
 
-#elif defined(STM32G0) && !defined(BOARD_OLD)
+#elif defined(STM32G0)
 	// AFIO
+#if BOARD_REV == V1_0
 	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SYSCFG);
 	LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA11 | LL_SYSCFG_PIN_RMP_PA12);
+#endif
 	LL_GPIO_SetAFPin_8_15(GPIOA, GPIO_PIN_9, LL_GPIO_AF_1);
 	LL_GPIO_SetAFPin_8_15(GPIOA, GPIO_PIN_10, LL_GPIO_AF_1);
 
@@ -151,9 +153,9 @@ void uart_driver_init(uint32_t baudrate)
 	LL_USART_EnableDMAReq_RX(u.uart);
 
 	// Setup DMAMUX found on STM32G0 series
-#if defined(STM32G0) && defined(BOARD_OLD)
+#if defined(STM32G0) && BOARD_REV == V0_3
 	LL_DMA_SetPeriphRequest(u.DMA, u.DMA_CH_RX, LL_DMAMUX_REQ_USART2_RX);
-#elif defined(STM32G0) && !defined(BOARD_OLD)
+#elif defined(STM32G0) && BOARD_REV != V0_3
 	//assert(u.uart == USART1);
 	LL_DMA_SetPeriphRequest(u.DMA, u.DMA_CH_RX, LL_DMAMUX_REQ_USART1_RX);
 	LL_DMA_SetPeriphRequest(u.DMA, u.DMA_CH_TX, LL_DMAMUX_REQ_USART1_TX);
@@ -204,7 +206,7 @@ void uart_driver_init(uint32_t baudrate)
 	LL_USART_Enable(u.uart);
 
 	while(!LL_USART_IsActiveFlag_REACK(u.uart)
-#if !defined(BOARD_OLD)
+#if BOARD_REV != V0_3
 		|| !LL_USART_IsActiveFlag_TEACK(u.uart)
 #endif
 	){}

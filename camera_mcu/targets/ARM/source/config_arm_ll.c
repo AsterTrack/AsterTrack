@@ -23,8 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "stm32g0xx_ll_gpio.h"
 #include "stm32g0xx_ll_wwdg.h"
 //#include "stm32g0xx_ll_pwr.h"
-//#include "stm32g0xx_ll_exti.h"
 //#include "stm32g0xx_ll_tim.h"
+#include "stm32g0xx_ll_exti.h"
 #endif
 
 #include "config_impl.h"
@@ -171,14 +171,14 @@ void Setup_Peripherals()
 	LL_GPIO_SetPinSpeed(SYNC_GPIO_X, SYNC_PIN, LL_GPIO_SPEED_FREQ_HIGH);
 
 	// Camera FSIN output
-	LL_GPIO_SetPinMode(FSIN_GPIO_X, CAMERA_FSIN_PIN, LL_GPIO_MODE_OUTPUT);
-	LL_GPIO_SetPinOutputType(FSIN_GPIO_X, CAMERA_FSIN_PIN, LL_GPIO_OUTPUT_PUSHPULL);
-	LL_GPIO_SetPinSpeed(FSIN_GPIO_X, CAMERA_FSIN_PIN, LL_GPIO_SPEED_FREQ_HIGH);
+	LL_GPIO_SetPinMode(FSIN_GPIO_X, FSIN_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(FSIN_GPIO_X, FSIN_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(FSIN_GPIO_X, FSIN_PIN, LL_GPIO_SPEED_FREQ_HIGH);
 
 	// Camera STROBE input
-	LL_GPIO_SetPinMode(STROBE_GPIO_X, CAMERA_STROBE_PIN, LL_GPIO_MODE_INPUT);
-	LL_GPIO_SetPinPull(STROBE_GPIO_X, CAMERA_STROBE_PIN, LL_GPIO_PULL_DOWN);
-	LL_GPIO_SetPinSpeed(STROBE_GPIO_X, CAMERA_STROBE_PIN, LL_GPIO_SPEED_FREQ_HIGH);
+	LL_GPIO_SetPinMode(STROBE_GPIO_X, STROBE_PIN, LL_GPIO_MODE_INPUT);
+	LL_GPIO_SetPinPull(STROBE_GPIO_X, STROBE_PIN, LL_GPIO_PULL_DOWN);
+	LL_GPIO_SetPinSpeed(STROBE_GPIO_X, STROBE_PIN, LL_GPIO_SPEED_FREQ_HIGH);
 
 	// I2C/General SBC INT output
 	LL_GPIO_SetPinMode(I2C_INT_GPIO_X, I2C_INT_PIN, LL_GPIO_MODE_OUTPUT);
@@ -228,7 +228,7 @@ void Setup_Peripherals()
 
 	// -- EXTI --
 
-#if defined(BOARD_OLD)
+#if BOARD_REV == V0_3
 	if (SYNC_PIN == GPIO_PIN_9 && SYNC_GPIO_X == GPIOB)
 	{
 		// Setup NVIC interrupt handler for EXTI line 9
@@ -312,14 +312,14 @@ extern TimePoint lastFrameSync;
 void EXTI4_15_IRQHandler(void) __IRQ;
 void EXTI4_15_IRQHandler()
 {
-#if defined(BOARD_OLD)
+#if BOARD_REV == V0_3
 	if (EXTI->RPR1 & LL_EXTI_LINE_9)
 	{ // Interrupt pending
 
 		lastFrameSync = GetTimePoint();
-		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		GPIO_SET(FSIN_GPIO_X, FSIN_PIN);
 		delayUS(FSIN_PULSE_WIDTH_US);
-		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		GPIO_RESET(FSIN_GPIO_X, FSIN_PIN);
 
 		// Reset IRQ flag
 		EXTI->RPR1 = LL_EXTI_LINE_9;

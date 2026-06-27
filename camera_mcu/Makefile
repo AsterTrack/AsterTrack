@@ -82,9 +82,7 @@ C_DEFS_STM32G030 = \
 -DSTM32 \
 -DARM_LL \
 -DSTM32G0 \
--DSTM32G030xx \
--DUSE_UART \
--DUSE_I2C
+-DSTM32G030xx
 
 C_DEFS = $(C_DEFS_$(DEVICE))
 
@@ -126,6 +124,14 @@ else
 	MCU =
 endif
 
+ifeq ($(REV), V0_3)
+	BOARD = -DBOARD_REV=1 -DUSE_UART -DUSE_I2C
+else ifeq ($(REV), V0_4)
+	BOARD = -DBOARD_REV=2 -DUSE_UART -DUSE_I2C
+else ifeq ($(REV), V1_0)
+	BOARD = -DBOARD_REV=2 -DUSE_UART -DUSE_I2C
+endif
+
 COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char -ffast-math
 #COMMON_FLAGS += -flto=auto
 COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
@@ -141,8 +147,8 @@ DFLAGS += $(LOG_FLAGS)
 DEPEND_FLAGS = -MMD -MP -MF"$(@:%.o=%.d)"
 
 # Compiler flags
-ASFLAGS = $(MCU) $(OPT) $(COMMON_FLAGS)
-COPTIONS = $(MCU) $(DFLAGS) $(OPT) $(COMMON_FLAGS)
+ASFLAGS = $(MCU) $(BOARD) $(OPT) $(COMMON_FLAGS)
+COPTIONS = $(MCU) $(BOARD) $(DFLAGS) $(OPT) $(COMMON_FLAGS)
 CFLAGS = $(COPTIONS) $(C_DEFS) $(C_INCLUDES) $(DEPEND_FLAGS)
 
 # Linker flags
@@ -157,7 +163,7 @@ LDFLAGS = $(COPTIONS) \
 #######################################
 
 # Force rebuild of version which includes a build indentifier
-$(shell ./source/version.sh)
+$(shell ./source/version.sh $(REV))
 
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 

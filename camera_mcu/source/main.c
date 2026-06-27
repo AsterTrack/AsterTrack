@@ -37,9 +37,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Defines */
 
-#define FSIN_PULSE_WIDTH_US		10
-#define FILTER_SWITCHER_COIL_PULSE_MS	100
-
 typedef enum
 {
 	UART_None,
@@ -149,7 +146,7 @@ int main(void)
 
 	// Initialise
 	startup = GetTimePoint();
-	GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+	GPIO_RESET(FSIN_GPIO_X, FSIN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
 	GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 	lastUARTActivity = GetTimePoint();
@@ -515,8 +512,8 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{ // Received packet indicating an immediate Start of Frame
 		lastMarker = GetTimePoint();
 
-#if !defined(BOARD_OLD)
-		GPIO_SET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+#if BOARD_REV != V0_3
+		GPIO_SET(FSIN_GPIO_X, FSIN_PIN);
 		lastFrameSync = GetTimePoint();
 #endif
 
@@ -683,10 +680,10 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		// Tell SBC to fetch status packet with new frame ID
 		GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 		// Reset FSIN after desired pulse width
-#if !defined(BOARD_OLD)
+#if BOARD_REV != V0_3
 		TimePoint frameSyncEnd = lastFrameSync + FSIN_PULSE_WIDTH_US * TICKS_PER_US;
 		while (GetTimePoint() < frameSyncEnd);
-		GPIO_RESET(FSIN_GPIO_X, CAMERA_FSIN_PIN);
+		GPIO_RESET(FSIN_GPIO_X, FSIN_PIN);
 #endif
 		return uartd_accept;
 	}

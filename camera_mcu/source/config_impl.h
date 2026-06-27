@@ -31,8 +31,11 @@ extern "C"
 
 #include "comm/packet.h"
 
+#define V0_3 1
+#define V0_4 2
+#define V1_0 2
 
-#ifdef BOARD_OLD
+#if BOARD_REV == V0_3 // using hardware sync line over Cat5e
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOA
@@ -45,7 +48,7 @@ extern "C"
 
 // UART Select Pin
 #define UARTSEL_GPIO_X GPIOA
-#define UARTSEL_PIN 0
+#define UARTSEL_PIN 0 // N/A
 
 // Filter Switcher Actuator Pins
 #define FILTERSW_GPIO_X GPIOB
@@ -59,11 +62,11 @@ extern "C"
 
 // Camera FSIN pin
 #define FSIN_GPIO_X GPIOA
-#define CAMERA_FSIN_PIN GPIO_PIN_8
+#define FSIN_PIN GPIO_PIN_8
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
-#define CAMERA_STROBE_PIN 0
+#define STROBE_PIN 0 // N/A
 
 // Button input pins
 #define BUTTONS_GPIO_X GPIOA
@@ -83,7 +86,7 @@ extern "C"
 
 #define WWDG_TIMEOUT 0x7F
 
-#else
+#else // using UART sync
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOB
@@ -102,20 +105,20 @@ extern "C"
 #define FILTERSW_GPIO_X GPIOA
 #define FILTERSW_INFRARED_PIN GPIO_PIN_6
 #define FILTERSW_VISIBLE_PIN GPIO_PIN_7
-#define FILTERSW_PIN_SLEEP 0
+#define FILTERSW_PIN_SLEEP 0 // N/A
 
 // Sync Input pin
 #define SYNC_GPIO_X GPIOB
 #define SYNC_GPIO_IDX 0x01  // EXTI Port Index
-#define SYNC_PIN 0
+#define SYNC_PIN 0 // N/A
 
 // Camera FSIN pin
 #define FSIN_GPIO_X GPIOA
-#define CAMERA_FSIN_PIN GPIO_PIN_4
+#define FSIN_PIN GPIO_PIN_4
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
-#define CAMERA_STROBE_PIN GPIO_PIN_9
+#define STROBE_PIN GPIO_PIN_9
 
 // Button input pins
 #define BUTTONS_GPIO_X GPIOA
@@ -136,6 +139,11 @@ extern "C"
 #define WWDG_TIMEOUT 0x7F
 
 #endif
+
+// Shared Defines
+
+#define FSIN_PULSE_WIDTH_US		10
+#define FILTER_SWITCHER_COIL_PULSE_MS	100
 
 // Detected Hardware Features
 

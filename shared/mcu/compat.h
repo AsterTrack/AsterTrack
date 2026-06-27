@@ -136,7 +136,7 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 
 #else
 
-#if defined(STM32F1xx_LL_GPIO_H) | defined(__STM32F3xx_LL_GPIO_H) | defined(STM32G0xx_LL_GPIO_H)
+#if defined(STM32)
 
 // Used only in LL_ functions for STM32
 #define GPIO_PIN_0			LL_GPIO_PIN_0
@@ -160,9 +160,6 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 #define GPIO_RESET(GPIO, PINS) LL_GPIO_ResetOutputPin(GPIO, PINS)
 #define GPIO_READ(GPIO, PINS) (LL_GPIO_ReadInputPort(GPIO)&(PINS))
 
-#endif
-
-#if defined(STM32F1xx_LL_DMA_H) | defined(__STM32F3xx_LL_DMA_H) | defined(STM32G0xx_LL_DMA_H)
 
 // Same as LL_config for STM32, used only in custom access for CH32V
 #define DMA_CHANNEL_1		LL_DMA_CHANNEL_1
@@ -187,6 +184,7 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 
 #endif
 
+
 #if defined(GD32F303R)
 // From above headers, can't include because headers clash with STM32 ones (conflicting definitions because of different naming scheme)
 //#include "gd32f30x.h"
@@ -201,6 +199,7 @@ static inline __attribute__((always_inline)) void GPIO_CFG(GPIO_TypeDef *GPIOx, 
 //#include "gd32f30x_usart.h"
 #define UART4	((USART_TypeDef *)(USART3_BASE + 0x0400U))
 #endif
+
 
 #if defined(__CH32V30x_H)
 
@@ -219,7 +218,7 @@ static inline void StopTimer(TIM_TypeDef *TIM)
 	TIM->CTLR1 &= ~TIM_CEN;
 }
 
-#elif defined(STM32F1xx_LL_TIM_H) | defined(__STM32F3xx_LL_TIM_H) | defined(STM32G0xx_LL_TIM_H)
+#elif defined(STM32)
 
 #define TIM_SR(TIM) TIM->SR
 #define TIM_UIF TIM_SR_UIF
@@ -236,6 +235,17 @@ static inline void StopTimer(TIM_TypeDef *TIM)
 {
 	TIM->CR1 &= ~TIM_CR1_CEN;
 }
+
+#endif
+
+
+#if defined(__CH32V30x_H)
+
+#define RESET_WWDG() WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+
+#elif defined(STM32)
+
+#define RESET_WWDG() LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 #endif
 

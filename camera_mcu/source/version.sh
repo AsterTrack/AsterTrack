@@ -1,7 +1,20 @@
 #!/bin/sh
 
+rev=$1
+
+# Ensure complete rebuild when board revision changes
+# tasks.json may have already handled this if we use bear, otherwise, do here
+if [[ -f "build/rev" ]]; then
+	if [[ $(cat build/rev) != $rev ]]; then
+		rm -r build
+	fi
+fi
+# Update with current version
+mkdir -p build
+echo "$rev" > build/rev
+
 version=$(cat source/version | head -n 1 )
-desc=$(cat source/version | tail -n +2)
+desc="$(cat source/version | tail -n +2) (rev $rev)"
 IFS='.' read -r -a ver <<< "$version"
 
 build=$(($RANDOM % 255))

@@ -52,6 +52,11 @@ struct GCS_CameraParams
 	uint8_t strobe;
 	int32_t strobeOffset;
 	uint32_t strobeLength;
+
+	// Padding control
+	//uint32_t padL, padR, padT; // TODO: Possible to implement horizontal padding?
+	uint32_t padB;
+	uint32_t padValue;
 };
 
 enum SENSOR_NUM

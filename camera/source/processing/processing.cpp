@@ -617,6 +617,19 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 			// ---- Masking on QPU ----
 
+			{ // Verify trailing 2 lines are still 0xFF as initially set up by gcs
+				// This should never NOT be the case but verifying is cheap
+				uint8_t *ptr = (uint8_t*)frameBuffer.mem;
+				bool diffFront = ptr[state.camera.height * srcStride] != 0xFF;
+				bool diffBack = ptr[(state.camera.height+2) * srcStride - 1] != 0xFF;
+				if (diffFront || diffBack)
+				{
+					if (diffFront) printf("Begin of 2 trailing padded lines is not 0xFF!\n");
+					if (diffBack) printf("End of 2 trailing padded lines is not 0xFF!\n");
+					memset(ptr + state.camera.height * srcStride, 0xFF, 2 * srcStride);
+				}
+			}
+
 			int code = 0;
 			if (!state.noQPU)
 				code = masking.Execute(base, qpu.perf, srcStride, framePtrVC);

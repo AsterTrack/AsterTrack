@@ -293,10 +293,20 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 
 		gcs->buffers[i].index = i;
 
-		gcs->buffers[i].vcsm = vcsm_malloc(buffer.length);
+		uint32_t desiredBufferSize = (gcs->cameraParams->height+gcs->cameraParams->padB) * gcs->usedStride;
+		gcs->buffers[i].vcsm = vcsm_malloc(std::max(buffer.length, desiredBufferSize));
 		CHECK_STATUS(gcs->buffers[i].vcsm.fd < 0, "Failed to allocate vcsm memory!", error_bufmalloc);
 
 		gcs->buffers[i].DMAFD = dup(gcs->buffers[i].vcsm.fd);
+	}
+
+	for (int j = 0; j < gcs->bufferCount; j++)
+	{
+		vcsm_lock(gcs->buffers[j].vcsm);
+		uint8_t *ptr = (uint8_t*)gcs->buffers[j].vcsm.mem;
+		memset(ptr + gcs->cameraParams->height * gcs->usedStride, gcs->cameraParams->padValue, gcs->cameraParams->padB * gcs->usedStride);
+		vcsm_unlock(gcs->buffers[j].vcsm);
+//		printf("Deallocate %d. \n", gcs->buffers[j].vcsm.fd);
 	}
 
 	gcs->sensor = gcs_findCamera();
@@ -305,16 +315,17 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 
 	return gcs;
 
-error_bufimport:
-error_bufexport:
-	o = 1;
 error_bufmalloc:
-	for (int j = 0; j < i+o; j++)
-	{
-		vcsm_free(gcs->buffers[i].vcsm);
-//		printf("Deallocate %d. \n", gcs->buffers[i].vcsm.fd);
-	}
 error_bufquery:
+	// Free already allocated VC memory buffers
+	for (int j = 0; j < i; j++)
+	{
+		// Close the exported DMABUF FD
+		close(gcs->buffers[i].DMAFD);
+		// Free the VCSM memory (closes the original VCSM FD)
+		vcsm_free(gcs->buffers[i].vcsm);
+		// With both DMABUF and VCSM FD freed, memory will be deallocated
+	}
 	reqBuf.count = 0;
 //	printf("IOCTL %d: MSG: %d VIDIOC_REQBUFS, CONTENT: %dcnt, %dtype, %dmem\n", gcs->fd, VIDIOC_REQBUFS, reqBuf.count, reqBuf.type, reqBuf.memory);
 	status = ioctl(gcs->fd, VIDIOC_REQBUFS, &reqBuf);

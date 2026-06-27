@@ -67,7 +67,10 @@ struct TrackingCameraState
 		.extTrig = 0,
 		.strobe = 1,
 		.strobeOffset = 0,
-		.strobeLength = 10
+		.strobeLength = 10,
+		// Required for QPU masking:
+		.padB = 2, 
+		.padValue = 0xFF,
 	};
 	// QPU options
 	std::string qpuProgBin = "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin";

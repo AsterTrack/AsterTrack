@@ -6,8 +6,11 @@ RUN apt-get install -y git gcc g++ cmake
 RUN apt-get install -y texinfo guile-2.2 libgmp-dev libmpc-dev libmpfr-dev flex bison
 
 # Create all folders and switch to non-root user
-RUN mkdir /build && chown 1000 /build
-RUN mkdir /data && chown 1000 /data
+RUN mkdir -p /build && chown 1000 /build
+RUN mkdir -p /sources && chown 1000 /sources
+RUN mkdir -p /sources/camera && chown 1000 /sources/camera
+RUN mkdir -p /sources/shared && chown 1000 /sources/shared
+RUN mkdir -p /tmp && chmod a=rwx,o+t /tmp
 USER 1000:1000
 
 # vc4-toolchain
@@ -15,6 +18,7 @@ WORKDIR /build
 RUN git clone --depth 1 --recursive https://github.com/itszor/vc4-toolchain.git
 WORKDIR vc4-toolchain
 RUN sed -i "s/-j 2/-j 8/" build-all.sh
+RUN sed -i "s/WITHCXX=true/WITHCXX=false/" build-all.sh
 RUN ./build-all.sh
 
 # vc4asm
@@ -39,11 +43,11 @@ USER 1000:1000
 # Add auto-build script
 WORKDIR /build
 RUN echo "#!/bin/bash\n" \
-         "mkdir -p build && cd build\n" \
+         "mkdir -p build-vc4 && cd build-vc4\n" \
          "cmake ..\n" \
          "make TrackingCamera_programs\n" > build_programs.sh
 RUN chmod +x build_programs.sh
 
-# Run auto-build script in data folder by default
-WORKDIR /data
+# Run auto-build script in the camera sources folder by default
+WORKDIR /sources/camera
 ENTRYPOINT ["/build/build_programs.sh"]

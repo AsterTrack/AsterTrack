@@ -5,6 +5,7 @@ compile_commands.json
 
 # Build systems
 build/
+build-vc4/
 build-env/
 source/version.h
 shared/

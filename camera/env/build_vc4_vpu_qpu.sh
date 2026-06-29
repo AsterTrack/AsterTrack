@@ -7,8 +7,8 @@ if [[ -z $(sudo docker image list | grep vc4-vpu-qpu) ]]; then
 fi
 
 # Run auto-build script in source folder
-sudo docker run --rm -v $PWD:/data vc4-vpu-qpu
+sudo docker run --rm -v $PWD:/sources/camera -v $PWD/../shared:/sources/shared vc4-vpu-qpu
 
 # Copy resulting binaries into storage for setup
 mkdir -p setup/storage/TrackingCamera
-cp build/qpu_blob_tiled_min.bin build/vpu_programs.bin setup/storage/TrackingCamera/
+cp build-vc4/qpu_blob_tiled_min.bin build-vc4/vpu_programs.bin setup/storage/TrackingCamera/

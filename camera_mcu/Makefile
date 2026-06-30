@@ -48,6 +48,7 @@ source/rgbled.c \
 source/rgbled_anims.c \
 source/version.c \
 source/otp.c \
+source/nrf_sync.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c \
 targets/ARM/source/i2c_arm_ll.c \

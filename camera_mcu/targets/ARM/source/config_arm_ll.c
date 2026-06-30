@@ -381,6 +381,8 @@ void ADC1_IRQHandler()
 }
 
 extern TimePoint lastFrameSync;
+void nrf_handle_interrupt();
+
 void EXTI4_15_IRQHandler(void) __IRQ;
 void EXTI4_15_IRQHandler()
 {
@@ -411,6 +413,7 @@ void EXTI4_15_IRQHandler()
 #ifdef USE_SPI_NRF_SYNC
 	if (EXTI->FPR1 & LL_EXTI_LINE_15)
 	{ // nRF sent an interrupt
+		nrf_handle_interrupt();
 		EXTI->FPR1 = LL_EXTI_LINE_15;
 	}
 #endif

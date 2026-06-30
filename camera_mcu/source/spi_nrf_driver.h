@@ -62,6 +62,7 @@ extern "C"
 
 void spid_receive_status(uint8_t command, uint8_t status);
 void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len);
+void spid_transfers_idle();
 
 void spi_driver_init();
 

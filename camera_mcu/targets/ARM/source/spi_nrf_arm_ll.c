@@ -245,6 +245,10 @@ void SPI1_IRQHandler(void)
 				spid_receive_response(currentCommand, receiveBuffer, length);
 			}
 			if (!spi_sending)
+			{ // If there's no follow-up transfer, give chance to do any pending jobs
+				spid_transfers_idle();
+			}
+			if (!spi_sending)
 			{ // If neither triggered a follow-up transfer, exit
 #if !defined(STM32G0) // No preemption anyway
 				__disable_irq();

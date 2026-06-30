@@ -51,6 +51,7 @@ source/otp.c \
 targets/ARM/source/config_arm_ll.c \
 targets/ARM/source/uart_arm_ll.c \
 targets/ARM/source/i2c_arm_ll.c \
+targets/ARM/source/spi_nrf_arm_ll.c \
 targets/ARM/source/rgbled_arm_ll.c
 
 C_SOURCES_STM32G030 = $(C_SOURCES_ARM_LL)
@@ -130,6 +131,8 @@ else ifeq ($(REV), V0_4)
 	BOARD = -DBOARD_REV=2 -DUSE_UART -DUSE_I2C
 else ifeq ($(REV), V1_0)
 	BOARD = -DBOARD_REV=2 -DUSE_UART -DUSE_I2C
+else ifeq ($(REV), V1_1)
+	BOARD = -DBOARD_REV=3 -DUSE_UART -DUSE_I2C -DUSE_SPI_NRF_SYNC
 endif
 
 COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char -ffast-math

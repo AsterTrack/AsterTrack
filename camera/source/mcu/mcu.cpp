@@ -53,7 +53,7 @@ unsigned int i2c_fd = -1;
 
 const char *gpio_chipname = "/dev/gpiochip0";
 unsigned int PIN_BOOT0 = 27;
-unsigned int PIN_NRST = 18;
+unsigned int PIN_RESET = 18;
 unsigned int PIN_INT = 17;
 
 gpiod_chip *gpio_chip;
@@ -436,7 +436,7 @@ void mcu_disable()
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 	if (gpiod_line_request_get_values(line_request_out, values_reset))
-		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+		printf("Failed to check output of GPIO! %d: %s\n", errno, strerror(errno));
 	if (values_reset[1] != GPIOD_LINE_VALUE_ACTIVE)
 		printf("Failed keep MCU under reset - checked a bit later and reset is low!");
 }
@@ -448,7 +448,7 @@ void mcu_check_disabled()
 	// BOOT0, RESET
 	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
 	if (gpiod_line_request_get_values(line_request_out, values_reset))
-		printf("Failed to get output of GPIO! %d: %s\n", errno, strerror(errno));
+		printf("Failed to check output of GPIO! %d: %s\n", errno, strerror(errno));
 
 	bool is_disabled = values_reset[1] == GPIOD_LINE_VALUE_ACTIVE;
 	if (mcu_disabled != is_disabled)
@@ -1055,7 +1055,7 @@ bool mcu_get_status()
 	uint16_t powerMV = (packet[2] << 8) | packet[3];
 	supplyVoltage.update(powerMV/1000.0f);
 	floatingSupplyVoltageMV = supplyVoltage.floating*1000;
-	if (powerMV < 10000 || powerMV > 22000)
+	if (std::abs(powerMV/1000.0f - supplyVoltage.floating) > supplyVoltage.stdDev()*3)
 	{
 		printf("Voltage extreme of %.4fV (avg %.3fV +- %.3fV)!\n", powerMV/1000.0f, supplyVoltage.floating, supplyVoltage.stdDev()*3);
 	}
@@ -1230,22 +1230,29 @@ static bool gpio_init()
 		return false;
 	}
 
+	// NOTE: open-source drive is not supported in hardware by RPis, but emulated via input by gpio kernel driver
+	// https://www.kernel.org/doc/html/latest/driver-api/gpio/driver.html#gpio-lines-with-open-drain-source-support
+
+	// Boot0 output directly drives BOOT0 on STM32, with external pull-down
+	// But SWD also uses this exact line as SWClk, so open-source is required to not interfere
 	gpiod_line_settings_set_direction(line_boot0, GPIOD_LINE_DIRECTION_OUTPUT);
-	gpiod_line_settings_set_drive(line_boot0, GPIOD_LINE_DRIVE_PUSH_PULL);
+	gpiod_line_settings_set_drive(line_boot0, GPIOD_LINE_DRIVE_OPEN_SOURCE);
 	gpiod_line_settings_set_active_low(line_boot0, false);
 	gpiod_line_settings_set_output_value(line_boot0, GPIOD_LINE_VALUE_INACTIVE);
 
+	// Reset drives NRST on STM32 via a transistor, and has an external pull-down, so either push-pull or open-source is fine 
 	gpiod_line_settings_set_direction(line_reset, GPIOD_LINE_DIRECTION_OUTPUT);
-	gpiod_line_settings_set_drive(line_reset, GPIOD_LINE_DRIVE_PUSH_PULL);
+	gpiod_line_settings_set_drive(line_reset, GPIOD_LINE_DRIVE_OPEN_SOURCE);
 	gpiod_line_settings_set_active_low(line_reset, false);
 	gpiod_line_settings_set_output_value(line_reset, GPIOD_LINE_VALUE_INACTIVE);
 
+	// Signalling/Interrupt line from STM32 with external pull-up
 	gpiod_line_settings_set_direction(line_int, GPIOD_LINE_DIRECTION_INPUT);
-	gpiod_line_settings_set_bias(line_int, GPIOD_LINE_BIAS_PULL_UP); // Technically we already have a pull-up in hardware
+	gpiod_line_settings_set_bias(line_int, GPIOD_LINE_BIAS_DISABLED);
 	gpiod_line_settings_set_edge_detection(line_int, GPIOD_LINE_EDGE_FALLING);
 
 	if (gpiod_line_config_add_line_settings(line_config_out, &PIN_BOOT0, 1, line_boot0) ||
-		gpiod_line_config_add_line_settings(line_config_out, &PIN_NRST, 1, line_reset) ||
+		gpiod_line_config_add_line_settings(line_config_out, &PIN_RESET, 1, line_reset) ||
 		gpiod_line_config_add_line_settings(line_config_in, &PIN_INT, 1, line_int))
 	{
 		printf("Failed to add line setting to GPIO line config! %d: %s\n", errno, strerror(errno));
@@ -1278,12 +1285,24 @@ static bool gpio_init()
 	return true;
 }
 
+static void gpio_set_floating(gpiod_line_request *request, gpiod_line_settings *settings, gpiod_line_config *config)
+{
+	if (!request) return;
+	gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_INPUT);
+	gpiod_line_settings_set_bias(settings, GPIOD_LINE_BIAS_DISABLED);
+	if (gpiod_line_config_add_line_settings(config, &PIN_INT, 1, settings)) return;
+	gpiod_line_request_reconfigure_lines(request, config);
+}
+
 static void gpio_cleanup()
 {
-	// Disable GPIO output, otherwise they might be active until next boot
-	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-	if (gpiod_line_request_set_values(line_request_out, values_normal))
-		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+	{ // Reset both Boot0 and Reset to floating (via input mode, default state RPis start with)
+		gpiod_line_settings_set_direction(line_boot0, GPIOD_LINE_DIRECTION_INPUT);
+		gpiod_line_settings_set_bias(line_boot0, GPIOD_LINE_BIAS_DISABLED);
+		if (gpiod_line_config_add_line_settings(line_config_out, &PIN_BOOT0, 1, line_boot0)) return;
+		if (gpiod_line_config_add_line_settings(line_config_out, &PIN_RESET, 1, line_boot0)) return;
+		gpiod_line_request_reconfigure_lines(line_request_out, line_config_out);
+	}
 
 	if (edge_events) gpiod_edge_event_buffer_free(edge_events);
 

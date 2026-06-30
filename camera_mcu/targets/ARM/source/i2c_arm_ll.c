@@ -62,7 +62,7 @@ void i2c_driver_init()
 
 	// GPIO Clocks are already active
 
-	// DMA & UART Peripheral clock enable
+	// DMA & I2C Peripheral clock enable
 	LL_RCC_SetI2CClockSource(LL_RCC_I2C1_CLKSOURCE_PCLK1);
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_I2C1);
 	LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
@@ -103,7 +103,7 @@ void i2c_driver_init()
 	//LL_I2C_EnableGeneralCall(I2C1);
 	LL_I2C_SetMode(I2C1, LL_I2C_MODE_I2C);
 
-	// Enable UART DMA TX & RX
+	// Enable DMA TX & RX
 	LL_I2C_EnableDMAReq_TX(I2C1);
 	LL_I2C_EnableDMAReq_RX(I2C1);
 
@@ -113,10 +113,10 @@ void i2c_driver_init()
 	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_RX, LL_DMAMUX_REQ_I2C1_RX);
 	LL_DMA_SetPeriphRequest(DMA1, DMA_CH_TX, LL_DMAMUX_REQ_I2C1_TX);
 	LL_DMA_EnableIT_TC(DMA1, DMA_CH_TX);
-	NVIC_SetPriority(I2C1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 3, 0));
+	NVIC_SetPriority(DMA1_Ch4_5_DMAMUX1_OVR_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 2, 0));
 	NVIC_EnableIRQ(DMA1_Ch4_5_DMAMUX1_OVR_IRQn);
 
-	// Setup respective DMA Channel for UART RX
+	// Setup respective DMA Channel for RX
 	LL_DMA_SetDataTransferDirection(DMA1, DMA_CH_RX, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
 	LL_DMA_SetChannelPriorityLevel(DMA1, DMA_CH_RX, LL_DMA_PRIORITY_HIGH);
 	LL_DMA_SetMode(DMA1, DMA_CH_RX, LL_DMA_MODE_NORMAL);
@@ -128,7 +128,7 @@ void i2c_driver_init()
 	LL_DMA_SetMemoryAddress(DMA1, DMA_CH_RX, (uint32_t)receiveBuffer);
 	LL_DMA_SetDataLength(DMA1, DMA_CH_RX, sizeof(receiveBuffer));
 
-	// Setup respective DMA Channel for UART TX
+	// Setup respective DMA Channel for TX
 	LL_DMA_SetDataTransferDirection(DMA1, DMA_CH_TX, LL_DMA_DIRECTION_MEMORY_TO_PERIPH);
 	LL_DMA_SetChannelPriorityLevel(DMA1, DMA_CH_TX, LL_DMA_PRIORITY_HIGH);
 	LL_DMA_SetMode(DMA1, DMA_CH_TX, LL_DMA_MODE_NORMAL);

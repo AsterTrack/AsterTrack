@@ -7,7 +7,7 @@
 			"label": "Ensure Board",
 			"type": "shell",
 			"group": "build",
-			"command": "mkdir -p build && [ -z $(cat build/rev 2&>/dev/null) ] && echo V1_0 > build/rev; echo Selected Board Rev: $(cat build/rev)",
+			"command": "mkdir -p build && [ -z $(cat build/rev 2&>/dev/null) ] && echo V1_1 > build/rev; echo Selected Board Rev: $(cat build/rev)",
 			"hide": true
 		},
 		{
@@ -72,9 +72,9 @@
 		{
 			"id": "boardRev",
 			"description": "Board Revision:",
-			"default": "V1_0",
+			"default": "V1_1",
 			"type": "pickString",
-			"options": [ "V0_3", "V0_4", "V1_0" ]
+			"options": [ "V0_3", "V0_4", "V1_0", "V1_1" ]
 		},
 	]
 }

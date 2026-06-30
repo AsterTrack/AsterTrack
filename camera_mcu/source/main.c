@@ -31,9 +31,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "comm/commands.h"
 #include "config_impl.h"
 #include "i2c_driver.h"
+#include "spi_nrf_driver.h"
 #include "otp.h"
 #include "mcu/timesync.h"
 
+#include <string.h>
 
 /* Defines */
 
@@ -81,6 +83,7 @@ volatile bool piIsStreaming = false;
 volatile enum FilterSwitchCommand filterSwitcherState;
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 volatile CameraID cameraIDToWrite = 0;
+bool onUSBPower = false;
 
 // Frame and Time sync
 struct time_sync timesync;	// Current estimate of controller-MCU-time relationship
@@ -151,7 +154,9 @@ int main(void)
 	GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 	lastUARTActivity = GetTimePoint();
 	uartState = UART_None;
-	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN); // Route UART to MCU
+	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_TX_PIN); // Take control of UART
+	GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_RX_PIN); // Prevent UART RX on SBC
+	GPIO_RESET(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN); // Allow Pi to be powered via 5V
 	GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN); // Disable Interrupt
 
 	// Init LEDs to default state
@@ -198,24 +203,33 @@ int main(void)
 #endif
 
 #if !defined(USE_UART) || !defined(USE_I2C)
-	// Route UART to Pi
-	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+	// Give UART control to SBC
+	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_TX_PIN);
+	GPIO_SET(UARTSEL_GPIO_X, UARTSEL_RX_PIN);
 	uartState = UART_CamPi;
 #endif
+
+	// Start watchdog
+	EnableWatchdog();
+
+	{ // Start continuously measuring power supply voltage
+		onUSBPower = IsUsingUSBPower();
+		StartADCMonitor(onUSBPower);
+	}
+
+	// Bring filter switcher into default position
+	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
 
 #if defined(USE_I2C)
 	// Init I2C device
 	i2c_driver_init();
 #endif
 
-	// Start continuously measuring power supply voltage
-	EnableADC();
+#if defined(USE_SPI_NRF_SYNC)
+	spi_driver_init();
 
-	// Bring filter switcher into default position
-	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
-
-	// Start watchdog
-	EnableWatchdog();
+	//spi_read(0xFF, 0);
+#endif
 
 	// Start of main loop
 	TimePoint lastLoopIT = GetTimePoint();
@@ -240,8 +254,9 @@ int main(void)
 		{
 			// Signal status on LEDs
 			rgbled_transition(LED_BOOTLOADER, 0);
-			// Route UART to MCU
-			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			// Take control of UART
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_TX_PIN);
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_RX_PIN);
 			delayUS(100);
 			// Force NAK controller so it won't accidentally send 0x7F to trigger UART in bootloader
 			EnterUARTPortZone(0); // Mostly for the debug
@@ -288,9 +303,9 @@ int main(void)
 		{
 			// Allow switching of filter via buttons
 			enum FilterSwitchCommand target = FILTER_KEEP;
-			if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+			if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
 				target = FILTER_SWITCH_INFRARED;
-			else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+			else if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
 				target = FILTER_SWITCH_VISIBLE;
 
 			// Update status of filter and LEDs showing status
@@ -318,12 +333,12 @@ int main(void)
 			}
 		}
 
-		/* if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && brightness > 0.01f)
+		/* if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && brightness > 0.01f)
 		{
 			brightness = brightness * 0.8;
 			ReturnToDefaultLED();
 		}
-		else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && brightness < 0.8)
+		else if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && brightness < 0.8)
 		{
 			brightness = brightness * 1.25f;
 			ReturnToDefaultLED();
@@ -351,6 +366,13 @@ int main(void)
 			continue;
 		lastTimeCheck = now;
 		// Check all kinds of timeouts >= 50 ms
+
+		bool usbPower = IsUsingUSBPower();
+		if (usbPower != onUSBPower)
+		{ // Check change in voltage source here instead of in interrupt
+			onUSBPower = usbPower;
+			StartADCMonitor(onUSBPower);
+		}
 
 #if defined(USE_UART)
 		// Check identification send timeout
@@ -390,8 +412,9 @@ int main(void)
 			EnterUARTPortZone(0);
 			uartState = UART_None;
 
-			// Grab UART control from SBC, and notify SBC
-			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			// Take UART control from SBC, and notify SBC
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_TX_PIN);
+			GPIO_RESET(UARTSEL_GPIO_X, UARTSEL_RX_PIN);
 			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 			delayUS(100);
@@ -421,7 +444,8 @@ int main(void)
 			SafeDelayMS(1);
 
 			// Pass UART control to SBC during reset timeout, and notify SBC
-			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_PIN);
+			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_TX_PIN);
+			GPIO_SET(UARTSEL_GPIO_X, UARTSEL_RX_PIN);
 			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 
@@ -907,6 +931,23 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 }
 
 
+/* ------ SPI NRF Behaviour ------ */
+
+#ifdef USE_SPI_NRF_SYNC
+
+void spid_receive_status(uint8_t command, uint8_t status)
+{
+	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+}
+
+void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
+{
+	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+}
+
+#endif
+
+
 /* ------ Functional Behaviour ------ */
 
 void ReturnToDefaultLEDState(int timeMS)
@@ -966,22 +1007,22 @@ static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 static enum CameraMCUFlashConfig InterpretUserFlashConfiguration()
 {
 	TimePoint check = GetTimePoint();
-	if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+	if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && !BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
 	{
 		rgbled_animation(&LED_ANIM_FLASH_CHARGE_BOT_DEBUG_SWD);
-		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
-		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
+		while (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
+		if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
 			return MCU_FLASH_USER_ABORTED; // A button is (still) pressed after check concluded
 		if (GetTimeSinceMS(check) < CHARGE_TIME_MIN_MS)
 			return MCU_FLASH_USER_ABORTED; // Button was pressed too short - be very conservative here
 		rgbled_transition(LED_FLASH_DEBUG_SWD, 50);
 		return MCU_FLASH_DEBUG_SWD;
 	}
-	else if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+	else if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && !BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
 	{
 		rgbled_animation(&LED_ANIM_FLASH_CHARGE_TOP_BOOT0_PI);
-		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
-		if (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
+		while (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) && GetTimeSinceMS(check) < CHARGE_TIME_MAX_MS);
+		if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN) || BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
 			return MCU_FLASH_USER_ABORTED; // A button is (still) pressed after check concluded
 		if (GetTimeSinceMS(check) < CHARGE_TIME_MIN_MS)
 			return MCU_FLASH_USER_ABORTED; // Button was pressed too short - be very conservative here
@@ -997,7 +1038,7 @@ static bool ApplyUserFlashConfiguration()
 	if (config == MCU_FLASH_USER_ABORTED)
 	{
 		rgbled_animation(&LED_ANIM_FLASH_BAD);
-		while (!GPIO_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || !GPIO_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN));
+		while (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) || BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN));
 	}
 	else if (config != MCU_FLASH_KEEP)
 	{

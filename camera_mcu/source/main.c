@@ -32,6 +32,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "config_impl.h"
 #include "i2c_driver.h"
 #include "spi_nrf_driver.h"
+#include "nrf_sync.h"
 #include "otp.h"
 #include "mcu/timesync.h"
 
@@ -228,7 +229,25 @@ int main(void)
 #if defined(USE_SPI_NRF_SYNC)
 	spi_driver_init();
 
-	//spi_read(0xFF, 0);
+#if 1 // Test RX
+	uint8_t cameraAddress[] = { 0xE9, 0x4C, 0x39 };
+	nrf_configure_rx(cameraAddress);
+
+	nrf_start_rx();
+
+#else // Test TX
+	nrf_configure_tx();
+
+	nrf_tx_powerup();
+	SafeDelayMS(5); // Should only take 1.5ms to start up, but waiting 2ms is not enough
+
+	uint8_t syncPacket[NRF_SYNC_BROADCAST_LEN] = { 0xFF, 0xAA, 0xCC, 0x33, 0xFF, 0xAA, 0xCC, 0x33 };
+	if (nrf_prepare_broadcast_sync(syncPacket))
+	{ // Trigger ASAP or with delay (packet is being queued)
+		nrf_tx_trigger();
+	}
+#endif
+
 #endif
 
 	// Start of main loop
@@ -935,12 +954,12 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 
 #ifdef USE_SPI_NRF_SYNC
 
-void spid_receive_status(uint8_t command, uint8_t status)
+void nrfd_receive_sync_packet(uint8_t sync[NRF_SYNC_BROADCAST_LEN], TimePoint time)
 {
 	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 }
 
-void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
+void nrfd_receive_camera_packet(uint8_t *data, uint8_t len, TimePoint time)
 {
 	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 }

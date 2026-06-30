@@ -46,7 +46,7 @@ void Setup_Peripherals()
 	// -- Interrupt Controller --
 
 	// System interrupt init
-	// Only 2 bits of preempt priority, no sub-priorities, so PriorityGrouping doesn't matter (== 0)
+	// Only 2 bits of priority with no preempting, so PriorityGrouping doesn't matter (== 0)
 	NVIC_SetPriority(SVCall_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
 	NVIC_SetPriority(PendSV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 0, 0));
 
@@ -139,6 +139,7 @@ void Setup_Peripherals()
 #if defined(STM32G0)
 	LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
 	LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOB);
+	LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOC);
 #endif
 
 	// RJ45 LEDs
@@ -149,10 +150,13 @@ void Setup_Peripherals()
 	LL_GPIO_SetPinOutputType(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_OUTPUT_PUSHPULL);
 	LL_GPIO_SetPinSpeed(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_SPEED_FREQ_LOW);
 
-	// UART Select Output
-	LL_GPIO_SetPinMode(UARTSEL_GPIO_X, UARTSEL_PIN, LL_GPIO_MODE_OUTPUT);
-	LL_GPIO_SetPinOutputType(UARTSEL_GPIO_X, UARTSEL_PIN, LL_GPIO_OUTPUT_PUSHPULL);
-	LL_GPIO_SetPinSpeed(UARTSEL_GPIO_X, UARTSEL_PIN, LL_GPIO_SPEED_FREQ_LOW);
+	// UART Select Outputs
+	LL_GPIO_SetPinMode(UARTSEL_GPIO_X, UARTSEL_TX_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(UARTSEL_GPIO_X, UARTSEL_TX_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(UARTSEL_GPIO_X, UARTSEL_TX_PIN, LL_GPIO_SPEED_FREQ_LOW);
+	LL_GPIO_SetPinMode(UARTSEL_GPIO_X, UARTSEL_RX_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(UARTSEL_GPIO_X, UARTSEL_RX_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(UARTSEL_GPIO_X, UARTSEL_RX_PIN, LL_GPIO_SPEED_FREQ_LOW);
 
 	// Filter Switcher Actuators
 	LL_GPIO_SetPinMode(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN, LL_GPIO_MODE_OUTPUT);
@@ -186,15 +190,48 @@ void Setup_Peripherals()
 	LL_GPIO_SetPinSpeed(I2C_INT_GPIO_X, I2C_INT_PIN, LL_GPIO_SPEED_FREQ_LOW);
 
 	// Button Inputs
+	// NOTE: Buttons have pullups on BOARD_REV <= V1_, pulldowns on BOARD_REV >= V1_1
 	LL_GPIO_SetPinMode(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_MODE_INPUT);
-	LL_GPIO_SetPinPull(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_PULL_UP);
+	LL_GPIO_SetPinPull(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_PULL_NO);
 	LL_GPIO_SetPinSpeed(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_SPEED_FREQ_LOW);
 	LL_GPIO_SetPinMode(BUTTONS_GPIO_X, BUTTON_TOP_PIN, LL_GPIO_MODE_INPUT);
-	LL_GPIO_SetPinPull(BUTTONS_GPIO_X, BUTTON_TOP_PIN, LL_GPIO_PULL_UP);
+	LL_GPIO_SetPinPull(BUTTONS_GPIO_X, BUTTON_TOP_PIN, LL_GPIO_PULL_NO);
 	LL_GPIO_SetPinSpeed(BUTTONS_GPIO_X, BUTTON_TOP_PIN, LL_GPIO_SPEED_FREQ_LOW);
 
 	// VSense ADC Pin
-	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_ADC_PIN, LL_GPIO_MODE_ANALOG);
+	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_VCC_PIN, LL_GPIO_MODE_ANALOG);
+	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_USB_PIN, LL_GPIO_MODE_ANALOG);
+
+#if BOARD_REV >= V1_1
+
+	// Camera VSource Selected input
+	LL_GPIO_SetPinMode(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN, LL_GPIO_MODE_INPUT);
+	LL_GPIO_SetPinPull(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN, LL_GPIO_PULL_NO); // Has external pullup
+	LL_GPIO_SetPinSpeed(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	// Camera VSource 5V Disable output
+	LL_GPIO_SetPinMode(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	// nRF IRQ input
+	LL_GPIO_SetPinMode(NRF_IRQ_GPIO_X, NRF_IRQ_PIN, LL_GPIO_MODE_INPUT);
+	LL_GPIO_SetPinPull(NRF_IRQ_GPIO_X, NRF_IRQ_PIN, LL_GPIO_PULL_UP);
+	LL_GPIO_SetPinSpeed(NRF_IRQ_GPIO_X, NRF_IRQ_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	// nRF Control CSN output
+	LL_GPIO_SetPinMode(NRF_CTRL_GPIO_X, NRF_CTRL_CSN_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(NRF_CTRL_GPIO_X, NRF_CTRL_CSN_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(NRF_CTRL_GPIO_X, NRF_CTRL_CSN_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	// nRF Control CE output
+	LL_GPIO_SetPinMode(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	// nRF SPI is set up separately
+
+#endif
 
 
 	// -- ADC --
@@ -211,14 +248,12 @@ void Setup_Peripherals()
 	// Configure ADC
 	ADC1->CFGR1 = ADC_CFGR1_CONT | ADC_CFGR1_OVRMOD; // Enable continuous conversion, writing the latest value in the data register
 	ADC1->CFGR2 = 0;
-
-	// Configure ADC channels
 	ADC1->SMPR = 0b100 << ADC_SMPR_SMP1_Pos; // Select 12.5+19.5 ADCCLK Sample Time
+	// -> Timings result in ADC sampling every 4us (12.5+19.5 CLK @ 8Mhz)
+
+	// Assert ADC channels match GPIO
 	static_assert(VSENSE_GPIO_X == GPIOA);
 	static_assert(GPIO_PIN_0 == ADC_CHSELR_CHSEL0 && GPIO_PIN_2 == ADC_CHSELR_CHSEL2);
-	ADC1->CHSELR = ADC_CHSELR_CHSEL2;
-	while (ADC1->ISR & ADC_ISR_CCRDY);
-	// -> Timings result in ADC sampling every 4us (12.5+19.5 CLK @ 8Mhz)
 
 	// Enable IRQ for ADC for Analog Watchdog
 	// High priority since it might be a spike in voltage that requires quickly cutting power
@@ -229,44 +264,72 @@ void Setup_Peripherals()
 	// -- EXTI --
 
 #if BOARD_REV == V0_3
-	if (SYNC_PIN == GPIO_PIN_9 && SYNC_GPIO_X == GPIOB)
-	{
-		// Setup NVIC interrupt handler for EXTI line 9
-		NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
-		NVIC_EnableIRQ(EXTI4_15_IRQn);
 
-		// Select PB (0x01) for EXTI Line 9 - so PB9
-		EXTI->EXTICR[2] = (EXTI->EXTICR[2] & ~EXTI_EXTICR3_EXTI9_Msk) | (0x01 << EXTI_EXTICR3_EXTI9_Pos);
+	// Setup NVIC interrupt handler for EXTI lines 4-15
+	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
+	NVIC_EnableIRQ(EXTI4_15_IRQn);
 
-		// Setup interrupts for EXTI line 9
-		EXTI->RTSR1 |= LL_EXTI_LINE_9; // Set to trigger on rising edge
-		EXTI->IMR1 |= LL_EXTI_LINE_9; // Enable interrupt generation
-	}
+	// Setup PB9 for External Sync In
+	static_assert(SYNC_GPIO_X == GPIOB && SYNC_PIN == GPIO_PIN_9);
+	EXTI->EXTICR[2] = (EXTI->EXTICR[2] & ~EXTI_EXTICR3_EXTI9_Msk) | (0x01 << EXTI_EXTICR3_EXTI9_Pos);
+	EXTI->RTSR1 |= LL_EXTI_LINE_9; // Set to trigger on rising edge
+	EXTI->IMR1 |= LL_EXTI_LINE_9; // Enable interrupt generation
+#endif
+
+#if BOARD_REV >= V1_1
+
+	// Setup NVIC interrupt handler for EXTI lines 4-15
+	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
+	NVIC_EnableIRQ(EXTI4_15_IRQn);
+
+	// Setup PC6 for VSource Selected changing
+	// DISABLED: Too unimportant, do in mainloop
+	/* static_assert(VSOURCE_SELECTED_GPIO_X == GPIOC && VSOURCE_SELECTED_PIN == GPIO_PIN_6);
+	EXTI->EXTICR[1] = (EXTI->EXTICR[1] & ~EXTI_EXTICR2_EXTI6_Msk) | (0x02 << EXTI_EXTICR2_EXTI6_Pos);
+	EXTI->RTSR1 |= LL_EXTI_LINE_6; // Set to trigger on rising edge
+	EXTI->FTSR1 |= LL_EXTI_LINE_6; // Set to trigger on falling edge
+	EXTI->IMR1 |= LL_EXTI_LINE_6; // Enable interrupt generation */
+
+#ifdef USE_SPI_NRF_SYNC
+	// Setup PA15 for nRF IRQ
+	static_assert(NRF_IRQ_GPIO_X == GPIOA && NRF_IRQ_PIN == GPIO_PIN_15);
+	EXTI->EXTICR[3] = (EXTI->EXTICR[3] & ~EXTI_EXTICR4_EXTI15_Msk) | (0x00 << EXTI_EXTICR4_EXTI15_Pos);
+	EXTI->FTSR1 |= LL_EXTI_LINE_15; // Set to trigger on falling edge
+	EXTI->IMR1 |= LL_EXTI_LINE_15; // Enable interrupt generation
+#endif
 #endif
 }
 
 void EnableADC()
 {
+	// Enable Internal Voltage Regulator
+	ADC1->CR = ADC_CR_ADVREGEN;
+	delayUS(20);
+
+	// Start ADC Calibration
+	ADC1->CR |= ADC_CR_ADCAL;
+	while (ADC1->CR & ADC_CR_ADCAL);
+
+	// Enable ADC
+	ADC1->ISR |= ADC_ISR_ADRDY; // Clear ready
+	ADC1->CR |= ADC_CR_ADEN;
+	while (!(ADC1->ISR & ADC_ISR_ADRDY));
+}
+
+void StartADCMonitor(bool monitorVUSB)
+{
 	if (!(ADC1->CR & ADC_CR_ADEN))
-	{
-		// Enable Internal Voltage Regulator
-		ADC1->CR = ADC_CR_ADVREGEN;
-		delayUS(20);
+		EnableADC();
+	else
+		StopADCMonitor();
 
-		// Start ADC Calibration
-		ADC1->CR |= ADC_CR_ADCAL;
-		while (ADC1->CR & ADC_CR_ADCAL);
+	// Configure channel to use
+	ADC1->ISR = ADC_ISR_CCRDY;
+	ADC1->CHSELR = monitorVUSB? VSENSE_USB_PIN : VSENSE_VCC_PIN;
+	while (!(ADC1->ISR & ADC_ISR_CCRDY));
 
-		// Enable ADC
-		ADC1->ISR |= ADC_ISR_ADRDY; // Clear ready
-		ADC1->CR |= ADC_CR_ADEN;
-		while (!(ADC1->ISR & ADC_ISR_ADRDY));
-	}
-
-	if (!(ADC1->CR & ADC_CR_ADSTART))
-	{ // Start continuous conversion
-		ADC1->CR |= ADC_CR_ADSTART;
-	}
+	// Start continuous conversion
+	ADC1->CR |= ADC_CR_ADSTART;
 
 	// Setup Analog Watchdog
 	ADC1->CFGR1 |= ADC_CFGR1_AWD1EN | ADC_CFGR1_AWD1SGL | (0 << ADC_CFGR1_AWD1CH_Pos);
@@ -275,15 +338,22 @@ void EnableADC()
 	ADC1->AWD1TR = ((21000 * 4095 / (23 * 3300)) << ADC_AWD1TR_HT1_Pos) | ((9000 * 4095 / (23 * 3300)) << ADC_AWD1TR_LT1_Pos);
 }
 
-void DisableADC()
+void StopADCMonitor()
 {
 	// Disable Analog Watchdog
 	ADC1->CFGR1 &= ~(ADC_CFGR1_AWD1EN | ADC_CFGR1_AWD1SGL | ADC_CFGR1_AWD1CH_Msk);
 	ADC1->IER &= ~ADC_IER_AWD1IE;
 
-	// Stop current conversion
-	ADC1->CR |= ADC_CR_ADSTP;
-	while (ADC1->CR & ADC_CR_ADSTP);
+	if (ADC1->CR & ADC_CR_ADSTART)
+	{ // Stop current conversion
+		ADC1->CR |= ADC_CR_ADSTP;
+		while (ADC1->CR & ADC_CR_ADSTP);
+	}
+}
+
+void DisableADC()
+{
+	StopADCMonitor();
 
 	// Place ADC in power-down mode
 	ADC1->CR |= ADC_CR_ADDIS;
@@ -324,6 +394,43 @@ void EXTI4_15_IRQHandler()
 		// Reset IRQ flag
 		EXTI->RPR1 = LL_EXTI_LINE_9;
 	}
+#endif
+#if BOARD_REV >= V1_1
+	if (EXTI->RPR1 & LL_EXTI_LINE_6)
+	{ // Selected Voltage Source changed to USB
+		StartADCMonitor(true);
+		EXTI->RPR1 = LL_EXTI_LINE_6;
+	}
+	if (EXTI->FPR1 & LL_EXTI_LINE_6)
+	{ // Selected Voltage Source changed to RJ45
+		StartADCMonitor(false);
+		EXTI->FPR1 = LL_EXTI_LINE_6;
+	}
+#ifdef USE_SPI_NRF_SYNC
+	if (EXTI->FPR1 & LL_EXTI_LINE_15)
+	{ // nRF sent an interrupt
+		EXTI->FPR1 = LL_EXTI_LINE_15;
+	}
+#endif
+#endif
+}
+
+bool IsUsingUSBPower()
+{
+#if BOARD_REV >= V1_1
+	return GPIO_READ(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN);
+#else
+	return false;
+#endif
+}
+
+void SetUSBPowerEnabled(bool enable)
+{
+#if BOARD_REV >= V1_1
+	if (enable)
+		GPIO_RESET(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN);
+	else
+		GPIO_SET(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN);
 #endif
 }
 

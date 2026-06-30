@@ -34,6 +34,7 @@ extern "C"
 #define V0_3 1
 #define V0_4 2
 #define V1_0 2
+#define V1_1 3
 
 #if BOARD_REV == V0_3 // using hardware sync line over Cat5e
 
@@ -48,7 +49,8 @@ extern "C"
 
 // UART Select Pin
 #define UARTSEL_GPIO_X GPIOA
-#define UARTSEL_PIN 0 // N/A
+#define UARTSEL_TX_PIN 0 // N/A
+#define UARTSEL_RX_PIN 0 // N/A
 
 // Filter Switcher Actuator Pins
 #define FILTERSW_GPIO_X GPIOB
@@ -72,10 +74,12 @@ extern "C"
 #define BUTTONS_GPIO_X GPIOA
 #define BUTTON_BOTTOM_PIN GPIO_PIN_1
 #define BUTTON_TOP_PIN GPIO_PIN_2
+#define BUTTON_READ(GPIOX, PIN) (!GPIO_READ(GPIOX, PIN))
 
-// VSense ADC pin
+// VSense ADC pins
 #define VSENSE_GPIO_X GPIOA
-#define VSENSE_ADC_PIN GPIO_PIN_0
+#define VSENSE_USB_PIN 0 // N/A
+#define VSENSE_VCC_PIN GPIO_PIN_0
 
 // Pi I2C pins
 #define I2C_SXX_GPIO_X GPIOB
@@ -86,7 +90,9 @@ extern "C"
 
 #define WWDG_TIMEOUT 0x7F
 
-#else // using UART sync
+#else
+// BOARD_REV == V1_0 (also V0.4.x) using UART sync
+// BOARD_REV == V1_1 using UART or nRF sync
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOB
@@ -97,9 +103,15 @@ extern "C"
 #define WS2812_GPIO_X GPIOB
 #define WS2812_PIN GPIO_PIN_8
 
-// UART Select Pin
+// UART Select Pins
 #define UARTSEL_GPIO_X GPIOA
-#define UARTSEL_PIN GPIO_PIN_3
+#if BOARD_REV == V1_0
+#define UARTSEL_TX_PIN GPIO_PIN_3
+#define UARTSEL_RX_PIN GPIO_PIN_3
+#elif BOARD_REV >= V1_1
+#define UARTSEL_TX_PIN GPIO_PIN_11
+#define UARTSEL_RX_PIN GPIO_PIN_12
+#endif
 
 // Filter Switcher Actuator Pins
 #define FILTERSW_GPIO_X GPIOA
@@ -118,16 +130,31 @@ extern "C"
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
+#if BOARD_REV == V1_0
 #define STROBE_PIN GPIO_PIN_9
+#elif BOARD_REV >= V1_1
+#define STROBE_PIN 0 // N/A
+#endif
 
 // Button input pins
 #define BUTTONS_GPIO_X GPIOA
 #define BUTTON_BOTTOM_PIN GPIO_PIN_0
 #define BUTTON_TOP_PIN GPIO_PIN_1
+#if BOARD_REV == V1_0
+#define BUTTON_READ(GPIOX, PIN) (!GPIO_READ(GPIOX, PIN))
+#elif BOARD_REV >= V1_1
+#define BUTTON_READ(GPIOX, PIN) GPIO_READ(GPIOX, PIN)
+#endif
 
-// VSense ADC pin
+// VSense ADC pins
 #define VSENSE_GPIO_X GPIOA
-#define VSENSE_ADC_PIN GPIO_PIN_2
+#if BOARD_REV == V1_0
+#define VSENSE_USB_PIN 0 // N/A
+#define VSENSE_VCC_PIN GPIO_PIN_2
+#elif BOARD_REV >= V1_1
+#define VSENSE_USB_PIN GPIO_PIN_2
+#define VSENSE_VCC_PIN GPIO_PIN_3
+#endif
 
 // Pi I2C pins
 #define I2C_SXX_GPIO_X GPIOB
@@ -137,6 +164,39 @@ extern "C"
 #define I2C_INT_PIN GPIO_PIN_8
 
 #define WWDG_TIMEOUT 0x7F
+
+#endif
+
+#if BOARD_REV >= V1_1
+
+// Voltage Source Control pins
+#define VSOURCE_DISABLE_5V_GPIO_X GPIOA
+#define VSOURCE_DISABLE_5V_PIN GPIO_PIN_5
+#define VSOURCE_SELECTED_GPIO_X GPIOC
+#define VSOURCE_SELECTED_PIN GPIO_PIN_6
+
+// nRF SPI pins
+#define SPI_GPIO_X GPIOB
+#define SPI_SCK_PIN GPIO_PIN_3
+#define SPI_MISO_PIN GPIO_PIN_4
+#define SPI_MOSI_PIN GPIO_PIN_5
+
+// nRF Control pins
+#define NRF_CTRL_GPIO_X GPIOB
+#define NRF_CTRL_CE_PIN GPIO_PIN_2
+#define NRF_CTRL_CSN_PIN GPIO_PIN_9
+
+// nRF IRQ pin
+#define NRF_IRQ_GPIO_X GPIOA
+#define NRF_IRQ_PIN GPIO_PIN_15
+
+#else
+
+// Voltage Source Control pins
+#define VSOURCE_DISABLE_5V_GPIO_X GPIOA
+#define VSOURCE_DISABLE_5V_PIN 0 // N/A
+#define VSOURCE_SELECTED_GPIO_X GPIOC
+#define VSOURCE_SELECTED_PIN 0 // N/A
 
 #endif
 
@@ -155,7 +215,11 @@ void Setup_Peripherals();
 
 void EnableADC();
 void DisableADC();
+void StartADCMonitor(bool monitorVUSB);
+void StopADCMonitor();
 uint32_t GetMillivolts();
+bool IsUsingUSBPower();
+void SetUSBPowerEnabled(bool enable);
 
 enum CameraMCUFlashConfig ReadFlashConfiguration();
 enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config);

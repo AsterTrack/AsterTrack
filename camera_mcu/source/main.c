@@ -232,14 +232,14 @@ int main(void)
 	spi_driver_init();
 
 #ifdef NRF_TX_TEST
-	nrf_configure_tx();
+	nrf_setup_sync_base();
 	nrf_tx_powerup();
 	SafeDelayMS(5); // Should only take 1.5ms to start up, but waiting 2ms is not enough
 #else
 	// TODO: Generate address when flashing config and read it here
 	uint8_t cameraAddress[] = { 0xE9, 0x4C, 0x39 };
-	nrf_configure_rx(cameraAddress);
-	nrf_start_rx();
+	nrf_setup_camera(cameraAddress);
+	nrf_rx_powerup();
 #endif
 
 #endif
@@ -976,6 +976,11 @@ void nrfd_receive_sync_packet(uint8_t sync[NRF_SYNC_BROADCAST_LEN], TimePoint ti
 {
 	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 	lastRecvSync = GetTimePoint();
+}
+
+void nrfd_receive_trig_packet(uint8_t sync[NRF_TRIG_BROADCAST_LEN], TimePoint time)
+{
+	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 }
 
 void nrfd_receive_camera_packet(uint8_t *data, uint8_t len, TimePoint time)

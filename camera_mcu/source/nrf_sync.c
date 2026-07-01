@@ -35,8 +35,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <string.h>
 
-uint8_t ADDR_BROADCAST_SYNC[] = { 0x25, 0x7E, 0xA5 }; // LSB First
-uint8_t ADDR_SYNC_CONTROLLER[] = { 0x2C, 0x7E, 0xA5 }; // LSB First
+/* Some fixed and base addresses LSB First */
+// Address of sync base / controller of current RF channel
+uint8_t ADDR_SYNC_CONTROLLER[] = { 0x2C, 0x7E, 0xA5 };
+// Sub-Addresses of cameras (sharing the same 2 MSBs at the end, with variable LSB first)
+uint8_t ADDR_BROADCAST_META[] = { 0x25, 0x7E, 0xA3 };
+uint8_t ADDR_BROADCAST_SYNC[] = { 0x25, 0x7E, 0xA5 };
+uint8_t ADDR_BROADCAST_TRIG[] = { 0x25, 0x7E, 0xA7 }; // TODO: Use number of slots beyond that for trigger channels?
+
+bool resetToOwnRxAddress;
+uint8_t ownRxAddress[3];
+
+uint8_t Base_DYNPD;
+uint8_t Base_EN_AA;
+bool DP0_ESB_RX, DP0_ESB;
 
 static uint8_t lastStatus;
 
@@ -50,16 +62,8 @@ static uint8_t rxPipe;
 static TimePoint rxTime;
 static TimePoint commandTime;
 
-void nrf_configure_rx(uint8_t cameraAddress[3])
+void nrf_setup_camera(uint8_t cameraAddress[3])
 {
-	// Disable automatic acknowledgement for sync broadcast
-	uint8_t EN_AA = 0b111101;
-	spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1);
-
-	// Enable data pipes 0 and 1 (default)
-	uint8_t EN_RXADDR = 0b000011;
-	spi_write_sync(0x02 | NRF_SPI_WRITE_REG, &EN_RXADDR, 1);
-
 	// Setup address width to 3bytes
 	uint8_t SETUP_AW = 0b01;
 	spi_write_sync(0x03 | NRF_SPI_WRITE_REG, &SETUP_AW, 1);
@@ -76,25 +80,6 @@ void nrf_configure_rx(uint8_t cameraAddress[3])
 	// uint8_t RF_SETUP = 0b01011; // 2Mbps, highest gain
 	// spi_write_sync(0x06 | NRF_SPI_WRITE_REG, &RF_SETUP, 1);
 
-	static_assert(NRF_CAMERA_SPECIFIC_PIPE == 0);
-	static_assert(NRF_SYNC_BROADCAST_PIPE == 1);
-
-	// Setup unique RX address for data pipe 0 (LSB first)
-	uint8_t *RX_ADDR_P0 = cameraAddress;
-	spi_write_sync(0x0A | NRF_SPI_WRITE_REG, RX_ADDR_P0, 3);
-
-	// Setup data pipe 1 as first broadcast (sync)
-	uint8_t *RX_ADDR_P1 = ADDR_BROADCAST_SYNC;
-	spi_write_sync(0x0B | NRF_SPI_WRITE_REG, RX_ADDR_P1, 3);
-
-	// Setup fixed size of sync broadcast on data pipe 1
-	uint8_t RX_PW_P1 = NRF_SYNC_BROADCAST_LEN;
-	spi_write_sync(0x12 | NRF_SPI_WRITE_REG, &RX_PW_P1, 1);
-
-	// Setup dynamic payload size for data pipe 0
-	uint8_t DYNPD = 0b000001;
-	spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1);
-
 	// Select desired feature flags
 	uint8_t FEATURE = 0b100;
 	spi_write_sync(0x1D | NRF_SPI_WRITE_REG, &FEATURE, 1);
@@ -102,28 +87,48 @@ void nrf_configure_rx(uint8_t cameraAddress[3])
 	// Request to apply selected features
 	uint8_t ACTIVATE = 0x73;
 	spi_write_sync(NRF_SPI_ACTIVATE, &ACTIVATE, 1);
+
+	static_assert(NRF_DIRECT_PIPE == 0);
+	static_assert(NRF_META_BROADCAST_PIPE == 1);
+	static_assert(NRF_SYNC_BROADCAST_PIPE == 2);
+	static_assert(NRF_TRIG_BROADCAST_PIPE == 3);
+
+	// Unique RX address in data pipe 0, so will have to be after every TX with Auto-ACk (just do in RX start)
+	resetToOwnRxAddress = true;
+	memcpy(ownRxAddress, cameraAddress, 3);
+
+	// Setup camera sub-addresses data pipes
+	uint8_t *RX_ADDR_P1 = ADDR_BROADCAST_META;
+	spi_write_sync(0x0B | NRF_SPI_WRITE_REG, RX_ADDR_P1, 3);
+	uint8_t *RX_ADDR_P2 = ADDR_BROADCAST_SYNC;
+	spi_write_sync(0x0C | NRF_SPI_WRITE_REG, RX_ADDR_P2, 3);
+	uint8_t *RX_ADDR_P3 = ADDR_BROADCAST_TRIG;
+	spi_write_sync(0x0D | NRF_SPI_WRITE_REG, RX_ADDR_P3, 3);
+
+	// Setup data pipes with fixed payload sizes
+	uint8_t RX_PW_P2 = NRF_SYNC_BROADCAST_LEN;
+	spi_write_sync(0x13 | NRF_SPI_WRITE_REG, &RX_PW_P2, 1);
+	uint8_t RX_PW_P3 = NRF_TRIG_BROADCAST_LEN;
+	spi_write_sync(0x14 | NRF_SPI_WRITE_REG, &RX_PW_P3, 1);
+
+	// Setup data pipes with dynamic payload sizes
+	Base_DYNPD = 0b000011;
+	spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &Base_DYNPD, 1);
+
+	// Setup data pipes with automatic acknowledgement
+	Base_EN_AA = 0b110011;
+	spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &Base_EN_AA, 1);
+
+	// Data Pipe 0 might get switched between basic ShockBurst and ESB, so keep track of state
+	DP0_ESB_RX = DP0_ESB = (Base_DYNPD&1) && (Base_EN_AA&1);
+
+	// Enable desired data pipes
+	uint8_t EN_RXADDR = 0b001111;
+	spi_write_sync(0x02 | NRF_SPI_WRITE_REG, &EN_RXADDR, 1);
 }
 
-void nrf_start_rx()
+void nrf_setup_sync_base()
 {
-	// Write config to start up and enter RX mode
-	uint8_t CONFIG = 0b00001011;
-	spi_write_sync(0x00 | NRF_SPI_WRITE_REG, &CONFIG, 1);
-
-	// Enable RF (Receive)
-	GPIO_SET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
-}
-
-void nrf_configure_tx()
-{
-	// Enable automatic acknowledgement for static controller address
-	uint8_t EN_AA = 0b111111;
-	spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1);
-
-	// Enable data pipes 0 and 1 (default)
-	// uint8_t EN_RXADDR = 0b000011;
-	// spi_write_sync(0x02 | NRF_SPI_WRITE_REG, &EN_RXADDR, 1);
-
 	// Setup address width to 3bytes
 	uint8_t SETUP_AW = 0b01;
 	spi_write_sync(0x03 | NRF_SPI_WRITE_REG, &SETUP_AW, 1);
@@ -140,19 +145,6 @@ void nrf_configure_tx()
 	// uint8_t RF_SETUP = 0b01011; // 2Mbps, highest gain
 	// spi_write_sync(0x06 | NRF_SPI_WRITE_REG, &RF_SETUP, 1);
 
-	// Data pipe 0 is used to receive any ACKs only
-	// RX Address is configured as TX address when ACK is expected
-	// DYNPD is kept off for now, for ACKs without payload
-	// But ALSO need to disable Auto-ACK on pipe 0 if sending legacy ShockBurst packets!
-
-	// Setup data pipe 1 as static controller address
-	uint8_t *RX_ADDR_P1 = ADDR_SYNC_CONTROLLER;
-	spi_write_sync(0x0B | NRF_SPI_WRITE_REG, RX_ADDR_P1, 3);
-
-	// Setup dynamic payload size for data pipe 1
-	uint8_t DYNPD = 0b000010;
-	spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1);
-
 	// Select desired feature flags
 	uint8_t FEATURE = 0b100;
 	spi_write_sync(0x1D | NRF_SPI_WRITE_REG, &FEATURE, 1);
@@ -160,6 +152,53 @@ void nrf_configure_tx()
 	// Request to apply selected features
 	uint8_t ACTIVATE = 0x73;
 	spi_write_sync(NRF_SPI_ACTIVATE, &ACTIVATE, 1);
+
+	// Data pipe 0 is used to receive any ACKs only
+	// RX Address is configured as TX address when ACK is expected
+	// DYNPD is kept off for now, for ACKs without payload
+	// But ALSO need to disable Auto-ACK on pipe 0 if sending legacy ShockBurst packets!
+
+	// Setup static sync base / controller address on data pipe 1
+	uint8_t *RX_ADDR_P1 = ADDR_SYNC_CONTROLLER;
+	spi_write_sync(0x0B | NRF_SPI_WRITE_REG, RX_ADDR_P1, 3);
+
+	// Setup data pipes with dynamic payload sizes
+	Base_DYNPD = 0b000010;
+	spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &Base_DYNPD, 1);
+
+	// Setup data pipes with automatic acknowledgement
+	Base_EN_AA = 0b111110;
+	spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &Base_EN_AA, 1);
+
+	// Data Pipe 0 might get switched between basic ShockBurst and ESB, so keep track of state
+	DP0_ESB_RX = DP0_ESB = (Base_DYNPD&1) && (Base_EN_AA&1);
+
+	// Enable desired data pipes
+	uint8_t EN_RXADDR = 0b000011;
+	spi_write_sync(0x02 | NRF_SPI_WRITE_REG, &EN_RXADDR, 1);
+}
+
+void nrf_rx_powerup()
+{
+	if (resetToOwnRxAddress)
+	{ // Setup unique RX address for data pipe 0 (LSB first)
+		uint8_t *RX_ADDR_P0 = ownRxAddress;
+		spi_write_sync(0x0A | NRF_SPI_WRITE_REG, RX_ADDR_P0, 3);
+	}
+
+	if (DP0_ESB != DP0_ESB_RX)
+	{ // Data Pipe was switched between Enhanced and normal ShockBurst, return to default
+		DP0_ESB = DP0_ESB_RX;
+		spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &Base_DYNPD, 1);
+		spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &Base_EN_AA, 1);
+	}
+
+	// Write config to start up and enter RX mode
+	uint8_t CONFIG = 0b00001011;
+	spi_write_sync(0x00 | NRF_SPI_WRITE_REG, &CONFIG, 1);
+
+	// Enable RF (Receive)
+	GPIO_SET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
 }
 
 void nrf_tx_powerup()
@@ -169,22 +208,27 @@ void nrf_tx_powerup()
 	spi_write_sync(0x00 | NRF_SPI_WRITE_REG, &CONFIG, 1);
 }
 
-bool nrf_tx_camera(uint8_t cameraAddress[3], uint8_t *data, uint8_t length)
+bool nrf_tx_general(uint8_t address[3], uint8_t *data, uint8_t length)
 {
 	// Check for pending TX that's still awaiting a trigger
 	if (preloadedTX) return false;
 
-	// Setup camera address for TX
-	uint8_t *TX_ADDR = cameraAddress;
+	// Setup target address for TX
+	uint8_t *TX_ADDR = address;
 	if (!spi_write_sync(0x10 | NRF_SPI_WRITE_REG, TX_ADDR, 3)) return false;
 
-	// Enable Auto-Acknowledgement for pipe 0 for transmitting
-	uint8_t EN_AA = 0b1111101;
-	if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
-
-	// Setup camera address as RX Address for data pipe 0 for ACKs
-	uint8_t *RX_ADDR_P0 = cameraAddress;
+	// Setup target address as RX Address for data pipe 0 for ACKs
+	uint8_t *RX_ADDR_P0 = address;
 	if (!spi_write_sync(0x0A | NRF_SPI_WRITE_REG, RX_ADDR_P0, 3)) return false;
+
+	if (!DP0_ESB)
+	{ // Switch data pipe 0 to ESB for general transfer
+		DP0_ESB = true;
+		uint8_t DYNPD = Base_DYNPD | 1;
+		uint8_t EN_AA = Base_EN_AA | 1;
+		if (!spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1)) return false;
+		if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+	}
 
 	// Write payload but don't wait, just pull CE high
 	if (!spi_send(NRF_SPI_W_TX_PAYLOAD, data, length, true)) return false;
@@ -196,7 +240,7 @@ bool nrf_tx_camera(uint8_t cameraAddress[3], uint8_t *data, uint8_t length)
 	return true;
 }
 
-bool nrf_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN])
+bool nrf_tx_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN])
 {
 	// Wait for any existing transfer
 	RESET_WWDG();
@@ -212,6 +256,15 @@ bool nrf_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN])
 		// Disable Auto-Acknowledgement for pipe 0 for transmitting
 		uint8_t EN_AA = 0b111110;
 		if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+
+		if (DP0_ESB)
+		{ // Switch data pipe 0 to normal ShockBurst for sync broadcast
+			DP0_ESB = false;
+			uint8_t DYNPD = Base_DYNPD & ~1;
+			uint8_t EN_AA = Base_EN_AA & ~1;
+			if (!spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1)) return false;
+			if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+		}
 
 		lastSentSync = true;
 	}
@@ -302,7 +355,7 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 	{ // Read RX payload, handle
 		if (rxPipe == NRF_SYNC_BROADCAST_PIPE)
 			nrfd_receive_sync_packet(data, rxTime);
-		else if (rxPipe == NRF_CAMERA_SPECIFIC_PIPE)
+		else if (rxPipe == NRF_DIRECT_PIPE)
 			nrfd_receive_camera_packet(data, len, rxTime);
 		return;
 	}

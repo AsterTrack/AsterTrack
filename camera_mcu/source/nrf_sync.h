@@ -35,24 +35,57 @@ extern "C"
 // They are all synchronous with busy waiting for the SPI to transfer
 // And interrupts are non-preeemptive on the STM32G030
 
-// Pipe number is local to receiver, but unified
-#define NRF_CAMERA_SPECIFIC_PIPE	0
-#define NRF_SYNC_BROADCAST_PIPE		1
-#define NRF_SYNC_BROADCAST_LEN		8
+/*
+Dual-use Camera->Controller and (if required) Controller->Camera pipe
+Uses Auto-ACK, may use ACK-Payloads to eliminate dual-use in the future
+No Specific use case in mind yet, but only pipe 0 has an independent fully-qualified RX address
+*/
+#define NRF_DIRECT_PIPE             0
 
-void nrf_configure_rx(uint8_t cameraAddress[3]);
-void nrf_start_rx();
+/*
+Meta Broadcast:
+General packets for cameras, using dynamic length, but no ACK (broadcast)
+May include initial setup information without requiring a cable
+Or wakeup request to trigger camera SBC startup from standby
+*/
+#define NRF_META_BROADCAST_PIPE		1
 
-void nrf_configure_tx();
+/*
+Sync Broadcast:
+Fixed rate packets with 32-bit counter, with camera MCU acting as a PLL
+Division factor and offset for frame captures are configured per camera
+Allows multiple sync groups with same alignment to share the RF channel
+Since it triggers a frame capture indirectly, packet drops are no issue
+The main reason to send 32-Bit and not 8-Bit is subdivision consistency
+Otherwise, any receiver joining later will have an invalid 32-Bit count
+*/
+#define NRF_SYNC_BROADCAST_PIPE		2
+#define NRF_SYNC_BROADCAST_LEN		4
+
+/*
+Trig Broadcast:
+Camera MCU will immediately trigger frame capture upon RX on this pipe
+Pipe may use one of multiple sub-addresses reserved for trig packets
+Content is the 8-bit truncated frame ID
+*/
+#define NRF_TRIG_BROADCAST_PIPE		3
+#define NRF_TRIG_BROADCAST_LEN		1
+
+void nrf_setup_camera(uint8_t cameraAddress[3]);
+void nrf_setup_sync_base();
+
+void nrf_rx_powerup();
+
 void nrf_tx_powerup();
-bool nrf_tx_camera(uint8_t cameraAddress[3], uint8_t *data, uint8_t length);
-bool nrf_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN]);
+bool nrf_tx_general(uint8_t cameraAddress[3], uint8_t *data, uint8_t length);
+bool nrf_tx_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN]);
 void nrf_tx_trigger();
 
 void nrf_handle_interrupt();
 
 // External
 void nrfd_receive_sync_packet(uint8_t sync[NRF_SYNC_BROADCAST_LEN], TimePoint time);
+void nrfd_receive_trig_packet(uint8_t sync[NRF_TRIG_BROADCAST_LEN], TimePoint time);
 void nrfd_receive_camera_packet(uint8_t *data, uint8_t len, TimePoint time);
 
 #endif

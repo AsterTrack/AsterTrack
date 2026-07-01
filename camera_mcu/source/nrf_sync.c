@@ -50,17 +50,21 @@ uint8_t Base_DYNPD;
 uint8_t Base_EN_AA;
 bool DP0_ESB_RX, DP0_ESB;
 
-static uint8_t lastStatus;
+bool resetToOwnRxAddress;
+uint8_t ownRxAddress[3];
+
+static uint8_t statusLast;
+static TimePoint statusTime;
+
+static volatile uint8_t irqHandling = false;
+static volatile bool irqPending = false;
+static TimePoint irqHandlingTime;
+static TimePoint irqTime;
+static uint8_t rxPipe;
 
 static volatile bool lastSentSync = false;
-
-static volatile bool preloadedTX = false;
+static volatile bool pendingTX = false;
 static volatile bool preloadingTX = false;
-
-static volatile bool handlingRX = false;
-static uint8_t rxPipe;
-static TimePoint rxTime;
-static TimePoint commandTime;
 
 void nrf_setup_camera(uint8_t cameraAddress[3])
 {
@@ -211,30 +215,34 @@ void nrf_tx_powerup()
 bool nrf_tx_general(uint8_t address[3], uint8_t *data, uint8_t length)
 {
 	// Check for pending TX that's still awaiting a trigger
-	if (preloadedTX) return false;
+	if (pendingTX)
+	{ // Easiest to disallow, otherwise preloaded trigger would need to also handle trigger for this packet
+		BREAK();
+		return false;
+	}
 
 	// Setup target address for TX
 	uint8_t *TX_ADDR = address;
-	if (!spi_write_sync(0x10 | NRF_SPI_WRITE_REG, TX_ADDR, 3)) return false;
+	spi_write_sync(0x10 | NRF_SPI_WRITE_REG, TX_ADDR, 3);
 
 	// Setup target address as RX Address for data pipe 0 for ACKs
 	uint8_t *RX_ADDR_P0 = address;
-	if (!spi_write_sync(0x0A | NRF_SPI_WRITE_REG, RX_ADDR_P0, 3)) return false;
+	spi_write_sync(0x0A | NRF_SPI_WRITE_REG, RX_ADDR_P0, 3);
 
 	if (!DP0_ESB)
 	{ // Switch data pipe 0 to ESB for general transfer
 		DP0_ESB = true;
 		uint8_t DYNPD = Base_DYNPD | 1;
 		uint8_t EN_AA = Base_EN_AA | 1;
-		if (!spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1)) return false;
-		if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+		spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1);
+		spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1);
 	}
 
-	// Write payload but don't wait, just pull CE high
-	if (!spi_send(NRF_SPI_W_TX_PAYLOAD, data, length, true)) return false;
+	// Write payload
+	spi_write_sync(NRF_SPI_W_TX_PAYLOAD, data, length);
 
-	// Enable RF, will transmit as soon as payload is transferred
-	GPIO_SET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
+	// Trigger with minimum pulse width of 10us, and transmit after payload is transferred
+	nrf_tx_trigger();
 
 	lastSentSync = false;
 	return true;
@@ -242,52 +250,59 @@ bool nrf_tx_general(uint8_t address[3], uint8_t *data, uint8_t length)
 
 bool nrf_tx_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN])
 {
-	// Wait for any existing transfer
-	RESET_WWDG();
-	while (spi_nrf_lock);
-	RESET_WWDG();
+	// Check for pending TX that's still awaiting a trigger
+	if (pendingTX)
+	{ // Easiest to disallow, otherwise preloaded trigger would need to also handle trigger for this packet
+		BREAK();
+		return false;
+	}
+	pendingTX = true;
 
 	if (!lastSentSync)
 	{
 		// Setup camera address for TX
 		uint8_t *TX_ADDR = ADDR_BROADCAST_SYNC;
-		if (!spi_write_sync(0x10 | NRF_SPI_WRITE_REG, TX_ADDR, 3)) return false;
+		spi_write_sync(0x10 | NRF_SPI_WRITE_REG, TX_ADDR, 3);
 
 		// Disable Auto-Acknowledgement for pipe 0 for transmitting
 		uint8_t EN_AA = 0b111110;
-		if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+		spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1);
 
 		if (DP0_ESB)
 		{ // Switch data pipe 0 to normal ShockBurst for sync broadcast
 			DP0_ESB = false;
 			uint8_t DYNPD = Base_DYNPD & ~1;
 			uint8_t EN_AA = Base_EN_AA & ~1;
-			if (!spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1)) return false;
-			if (!spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1)) return false;
+			spi_write_sync(0x1C | NRF_SPI_WRITE_REG, &DYNPD, 1);
+			spi_write_sync(0x01 | NRF_SPI_WRITE_REG, &EN_AA, 1);
 		}
 
 		lastSentSync = true;
 	}
 
+	// Write payload
 	preloadingTX = true;
-	preloadedTX = true;
+	spi_write_sync(NRF_SPI_W_TX_PAYLOAD, data, NRF_SYNC_BROADCAST_LEN);
 
-	// Write payload but don't wait, just pull CE high
-	return spi_send(NRF_SPI_W_TX_PAYLOAD, data, NRF_SYNC_BROADCAST_LEN, true);
+	// We COULD just return here immediately without syncing
+	// But docs say CE should start after TX transfer, so this serves as an easy way to ensure that
 }
 
 void nrf_tx_trigger()
 {
 	// Enable RF, will transmit as soon as payload is transferred
 	GPIO_SET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
-	delayUS(12);
-	// Then if TX was already preloaded, disable again, nRF knows to send it from pulse
+
+	// Wait minimum pulse width
+	delayUS(10);
+
+	// Handle end of CE pulse, here or once preloading is done
 	__disable_irq();
-	if (!preloadingTX)
+	if (!preloadingTX) // Already preloaded, so keep CE pulse at minimum
 		GPIO_RESET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
-	else // Triggered already, ensure CE is cleared when payload is loaded and transmitting
+	else // Still preloading, keep CE high, CE is cleared once payload is loaded and transmitting
 	 	preloadingTX = false;
-	preloadedTX = false;
+	pendingTX = false;
 	__enable_irq();
 }
 
@@ -296,67 +311,136 @@ void nrf_tx_trigger()
 
 void spid_receive_status(uint8_t command, uint8_t status)
 {
-	commandTime = GetTimePoint();
-	lastStatus = status;
-	if (command == (0x07 | NRF_SPI_WRITE_REG))
-	{
-		if (lastStatus & NRF_STATUS_RX_DR)
-		{
-			handlingRX = true;
-			rxTime = commandTime;
-			rxPipe = (lastStatus & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
-			//if (rxPipe == NRF_SYNC_BROADCAST_PIPE)
-			// TODO: Got new sync packet, this is the earliest point we know
-			// But we don't know the contents yet, so may not be useful
-		}
-		if (lastStatus & NRF_STATUS_TX_DS)
-		{
-			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
-		}
-		if (lastStatus & NRF_STATUS_MAX_RT)
-		{
-			//GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+	statusTime = GetTimePoint();
+	statusLast = status;
+	if (command == NRF_STATUS_CLEAR_REG && (statusLast & NRF_STATUS_IRQ_MASK))
+	{ // Cleared IRQ in response to interrupt, adopt as IRQ to handle
+		rxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
+		if (rxPipe == NRF_TRIG_BROADCAST_PIPE && (statusLast & NRF_STATUS_RX_DR))
+		{ // Trigger, react as fast as possible
+			// TODO: Implement external trigger over nRF Sync
 		}
 	}
+}
+
+static inline void spid_query_rx()
+{
+	if (rxPipe == NRF_SYNC_BROADCAST_PIPE) // Receive sync packet, fetch directly
+		spi_read_int(NRF_SPI_R_RX_PAYLOAD, NRF_SYNC_BROADCAST_LEN);
+	else if (rxPipe == NRF_TRIG_BROADCAST_PIPE) // Receive trig packet, fetch directly
+		spi_read_int(NRF_SPI_R_RX_PAYLOAD, NRF_TRIG_BROADCAST_LEN);
+	else // Read dynamic payload length first
+		spi_read_int(NRF_SPI_R_RX_PL_WID, 1);
+}
+
+static inline void spid_handle_rx(uint8_t *data, uint8_t len)
+{
+	if (rxPipe == NRF_SYNC_BROADCAST_PIPE)
+		nrfd_receive_sync_packet(data, irqHandlingTime);
+	else if (rxPipe == NRF_TRIG_BROADCAST_PIPE)
+		nrfd_receive_trig_packet(data, irqHandlingTime);
+	else if (rxPipe == NRF_DIRECT_PIPE)
+		nrfd_receive_camera_packet(data, len, irqHandlingTime);
+}
+
+static inline void spid_handle_irq(TimePoint time)
+{
+	irqPending = false;
+	irqHandling = statusLast;
+	irqHandlingTime = time;
+	// Implicitly read and explicitly clear STATUS
+	uint8_t STATUS = NRF_STATUS_IRQ_MASK;
+	spi_send_int(NRF_STATUS_CLEAR_REG, &STATUS, 1, true);
+}
+
+static inline bool nrfd_check_pending_irq()
+{
+	if (irqPending)
+	{ // Received IRQ but SPI was busy with this transfer, handle IRQ now
+		spid_handle_irq(irqTime);
+		return true;
+	}
+	else if (statusLast & NRF_STATUS_IRQ_MASK)
+	{ // Must have missed the IRQ somehow
+		BREAK();
+		spid_handle_irq(GetTimePoint());
+		return true;
+	}
+	return false;
 }
 
 void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 {
 	switch (command)
 	{
-	case NRF_SPI_W_TX_PAYLOAD:
-	{ // Fully transmitted payload, nRF knows to send it off, so disable CE again
-		__disable_irq();
-		if (!preloadingTX) // Was already triggered, 
-			GPIO_RESET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
-		else // Done preloading, ensure trigger is a pulse
-		 	preloadingTX = false;
-		__enable_irq();
-		return;
-	}
-	case (0x07 | NRF_SPI_WRITE_REG):
-	{ // Cleared STATUS after IRQ, now handle according to status
-		if (handlingRX)
-		{
-			if (rxPipe == NRF_SYNC_BROADCAST_PIPE) // Receive sync packet
-				spi_read(NRF_SPI_R_RX_PAYLOAD, NRF_SYNC_BROADCAST_LEN);
-			else // Read dynamic payload length
-				spi_read(NRF_SPI_R_RX_PL_WID, 1);
+	case NRF_STATUS_CLEAR_REG:
+	{ // Cleared STATUS after IRQ, now handle
+		if (irqHandling & NRF_STATUS_TX_DS)
+		{ // Sent last packet, don't know which one
+			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+		}
+		if (irqHandling & NRF_STATUS_MAX_RT)
+		{ // Max Retries reached, failed to send last packet. Already cleared IRQ.
+			//GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+		}
+		if (irqHandling & NRF_STATUS_RX_DR)
+		{ // Received at least one packet
+			spid_query_rx();
+		}
+		else
+		{ // Done handling this IRQ, but may have missed an RX IRQ
+			// Time window is tiny, from receiving status to clearing status in a two-byte transfer
+			// So about 8us at 2Mbits SPI, or 2us at 8Mbits SPI
+			// But this IRQ may also have been triggered during RX Handling, where that previous IRQ had two RX packets
+			// Then there'd be a RX FIFO entry waiting for quite a while already, so just double check
+			spi_read_int(NRF_FIFO_STATUS_REG, 1);
 		}
 		return;
 	}
 	case NRF_SPI_R_RX_PL_WID:
-	{ // Read RX payload length after IRQ for RX
-		// Continue fetching actual payload
-		spi_read(NRF_SPI_R_RX_PAYLOAD, data[0]);
+	{ // Read RX payload length, continue fetching actual payload
+		spi_read_int(NRF_SPI_R_RX_PAYLOAD, data[0]);
 		return;
 	}
 	case NRF_SPI_R_RX_PAYLOAD:
 	{ // Read RX payload, handle
-		if (rxPipe == NRF_SYNC_BROADCAST_PIPE)
-			nrfd_receive_sync_packet(data, rxTime);
-		else if (rxPipe == NRF_DIRECT_PIPE)
-			nrfd_receive_camera_packet(data, len, rxTime);
+		spid_handle_rx(data, len);
+		irqHandling = 0; // Done with that IRQ
+
+		// Check if a newer IRQ has been received during RX handling
+		// NOTE: This would be done in spid_complete_transfer anyway, but we need to check FIFO_STATUS JUST here
+		if (!nrfd_check_pending_irq())
+		{ // No pending IRQ, but may have received another packet between IRQ signal to clearing status, so check FIFO
+			spi_read_int(NRF_FIFO_STATUS_REG, 1);
+		}
+		return;
+	}
+	case NRF_SPI_W_TX_PAYLOAD:
+	{ // Fully transmitted payload, nRF knows to send it off, so disable CE again
+		__disable_irq();
+		if (!preloadingTX) // Was already triggered but left high to wait for preloading, clear here
+			GPIO_RESET(NRF_CTRL_GPIO_X, NRF_CTRL_CE_PIN);
+		else // Done preloading before trigger should be cleared, notify to make it a short pulse
+		 	preloadingTX = false;
+		__enable_irq();
+		return;
+	}
+	case NRF_FIFO_STATUS_REG:
+	{ // Double checking for any further RX packets after IRQ handling
+		if (data[0] & NRF_FIFO_STATUS_RX_EMPTY)
+		{ // No further RX waiting, finally done with IRQ handling
+			return; // spid_complete_transfer will again check for any new pending IRQs
+		}
+		if (irqPending || (statusLast & NRF_STATUS_IRQ_MASK))
+		{ // Got a new IRQ (RX or not), and a RX in FIFO, but no way to know for sure if it's old or from this IRQ
+			statusLast |= NRF_STATUS_RX_DR; // In case IRQ was non-RX, ensure RX is handled anyway
+			spid_handle_irq(irqHandlingTime); // Use old time, wrongly using newer is devastating for timesync
+		}
+		else
+		{ // No IRQ pending, so there is another RX waiting in FIFO from last IRQ, handle it directly with known old timestamp
+			rxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
+			spid_query_rx();
+		}
 		return;
 	}
 	default:
@@ -364,11 +448,20 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 	}
 }
 
+void spid_transfers_idle()
+{
+	nrfd_check_pending_irq();
+}
+
 void nrf_handle_interrupt()
 {
-	// Implicitly read and explicitly clear STATUS
-	uint8_t STATUS = NRF_STATUS_CLEAR_MASK;
-	spi_send(0x07 | NRF_SPI_WRITE_REG, &STATUS, 1, true);
+	irqTime = GetTimePoint();
+	irqPending = true;
+	if (!irqHandling && spi_lock())
+	{ // No other SPI transfer ongoing, can handle now
+		spid_handle_irq(irqTime);
+	}
+	// Else handle after current transfers complete
 }
 
 #endif // USE_SPI_NRF_SYNC

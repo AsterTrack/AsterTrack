@@ -33,7 +33,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <string.h>
 
 
-volatile bool spi_nrf_lock;
 static bool enabledReceiveCallback;
 static uint8_t currentCommand;
 static uint8_t length, txRem, rxPos;
@@ -44,6 +43,31 @@ static uint8_t *transmitPtr;
 
 
 /* Driver Functions */
+
+/*
+ SPI TX Synchronisation:
+ TX methods lock mutex, interrupts that complete TX transfers unlock mutex
+ 
+ */
+volatile bool spi_mutex, spi_region;
+volatile bool spi_sending;
+inline bool spi_lock()
+{
+	if (spi_mutex) return false;
+	__disable_irq();
+	if (!spi_mutex)
+	{
+		spi_mutex = true;
+		__enable_irq();
+		return true;
+	}
+	__enable_irq();
+	return false;
+}
+inline bool spi_is_sending()
+{
+	return spi_sending;
+}
 
 void spi_driver_init()
 {
@@ -99,13 +123,11 @@ void spi_driver_init()
 	LL_SPI_Enable(SPI1);
 }
 
-inline bool spi_send(uint8_t command, uint8_t *data, uint8_t len, bool callback)
+inline void spi_send_int(uint8_t command, uint8_t *data, uint8_t len, bool callback)
 {
-	if (spi_nrf_lock)
-		return false;
-	spi_nrf_lock = true;
 	// Notify nRF of upcoming read
 	GPIO_RESET(NRF_CTRL_GPIO_X, NRF_CTRL_CSN_PIN);
+	spi_sending = true;
 	currentCommand = command;
 	enabledReceiveCallback = callback;
 	status = 0xFF;
@@ -119,35 +141,76 @@ inline bool spi_send(uint8_t command, uint8_t *data, uint8_t len, bool callback)
 		LL_SPI_TransmitData8(SPI1, *transmitPtr++);
 	if (txRem)
 		LL_SPI_EnableIT_TXE(SPI1);
+}
+
+bool spi_send(uint8_t command, uint8_t *data, uint8_t len, bool callback)
+{
+	if (!spi_lock()) return false;
+	spi_send_int(command, data, len, callback);
 	return true;
+}
+
+inline void spi_write_int(uint8_t command, uint8_t *data, uint8_t len)
+{
+	memcpy(transmitBuffer, data, len);
+	spi_send_int(command, transmitBuffer, len, false);
 }
 
 bool spi_write(uint8_t command, uint8_t *data, uint8_t len)
 {
-	if (spi_nrf_lock)
-		return false;
-	memcpy(transmitBuffer, data, len);
-	return spi_send(command, transmitBuffer, len, false);
+	if (!spi_lock()) return false;
+	spi_write_int(command, transmitBuffer, len);
+	return true;
 }
 
-bool spi_write_sync(uint8_t command, uint8_t *data, uint8_t len)
+inline void spi_read_int(uint8_t command, uint8_t len)
 {
-	if (!spi_write(command, data, len))
-		return false;
-	RESET_WWDG();
-	while (spi_nrf_lock);
-	RESET_WWDG();
-	return true;
+	memset(transmitBuffer, 0xFF, len);
+	spi_send_int(command, transmitBuffer, len, true);
 }
 
 bool spi_read(uint8_t command, uint8_t len)
 {
-	if (spi_nrf_lock)
-		return false;
-	memset(transmitBuffer, 0xFF, len);
-	return spi_send(command, transmitBuffer, len, true);
+	if (!spi_lock()) return false;
+	spi_read_int(command, len);
+	return true;
 }
 
+inline void spi_sync()
+{
+	RESET_WWDG();
+	while (spi_sending);
+	RESET_WWDG();
+}
+
+inline void spi_begin()
+{
+	RESET_WWDG();
+	while (!spi_lock());
+	spi_region = true;
+	RESET_WWDG();
+}
+
+inline void spi_end()
+{
+	spi_region = false;
+}
+
+void spi_write_sync(uint8_t command, uint8_t *data, uint8_t len)
+{
+	spi_begin();
+	spi_write_int(command, data, len);
+	spi_end();
+	spi_sync();
+}
+
+void spi_read_sync(uint8_t command, uint8_t len)
+{
+	spi_begin();
+	spi_read_int(command, len);
+	spi_end();
+	spi_sync();
+}
 
 /** SPI global interrupt handler */
 
@@ -175,10 +238,26 @@ void SPI1_IRQHandler(void)
 			GPIO_SET(NRF_CTRL_GPIO_X, NRF_CTRL_CSN_PIN);
 			// CSN needs to stay high for at least 50ns before next command starts
 			// That's around 3 clock cycles at 64Mhz, so no extra handling required
-			spi_nrf_lock = false; // Mark end of command, ready for next
-			// Handle received data (excluding status)
+			spi_sending = false; // Mark end of transfer
 			if (enabledReceiveCallback)
+			{ // Handle received data (excluding status)
 				spid_receive_response(currentCommand, receiveBuffer, length);
+			}
+			if (!spi_sending)
+			{ // If there's no follow-up transfer, give chance to do any pending jobs
+				spid_transfers_idle();
+			}
+			if (!spi_sending)
+			{ // If neither triggered a follow-up transfer, exit
+#if !defined(STM32G0) // No preemption anyway
+				__disable_irq();
+#endif
+					if (!spi_region)
+						spi_mutex = false;
+#if !defined(STM32G0) // No preemption anyway
+				__enable_irq();
+#endif
+			}
 		}
 	}
 	if (LL_SPI_IsActiveFlag_TXE(SPI1) && txRem)

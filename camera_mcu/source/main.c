@@ -47,6 +47,8 @@ typedef enum
 	UART_CamPi
 } UART_STATE;
 
+//#define NRF_TX_TEST
+TimePoint lastRecvSync;
 
 /* Variables */
 
@@ -229,23 +231,15 @@ int main(void)
 #if defined(USE_SPI_NRF_SYNC)
 	spi_driver_init();
 
-#if 1 // Test RX
-	uint8_t cameraAddress[] = { 0xE9, 0x4C, 0x39 };
-	nrf_configure_rx(cameraAddress);
-
-	nrf_start_rx();
-
-#else // Test TX
+#ifdef NRF_TX_TEST
 	nrf_configure_tx();
-
 	nrf_tx_powerup();
 	SafeDelayMS(5); // Should only take 1.5ms to start up, but waiting 2ms is not enough
-
-	uint8_t syncPacket[NRF_SYNC_BROADCAST_LEN] = { 0xFF, 0xAA, 0xCC, 0x33, 0xFF, 0xAA, 0xCC, 0x33 };
-	if (nrf_prepare_broadcast_sync(syncPacket))
-	{ // Trigger ASAP or with delay (packet is being queued)
-		nrf_tx_trigger();
-	}
+#else
+	// TODO: Generate address when flashing config and read it here
+	uint8_t cameraAddress[] = { 0xE9, 0x4C, 0x39 };
+	nrf_configure_rx(cameraAddress);
+	nrf_start_rx();
 #endif
 
 #endif
@@ -470,6 +464,30 @@ int main(void)
 
 			ReturnToDefaultLEDState(100);
 		}
+#endif
+
+#ifdef USE_SPI_NRF_SYNC
+#ifdef NRF_TX_TEST
+		static TimePoint lastTXSend = 0;
+		if (GetTimeSpanMS(lastTXSend, now) > 100)
+		{
+			uint8_t syncPacket[NRF_SYNC_BROADCAST_LEN] = { 0xFF, 0xAA, 0xCC, 0x33, 0xFF, 0xAA, 0xCC, 0x33 };
+			if (nrf_prepare_broadcast_sync(syncPacket))
+			{ // Trigger ASAP or with delay (packet is being queued)
+				nrf_tx_trigger();
+				lastTXSend = GetTimePoint(); // Technically LED is enabled in TX_DS callback only
+			}
+		}
+		else if (GetTimeSpanMS(lastTXSend, now) > 40)
+		{
+			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+		}
+#else
+		if (GetTimeSpanMS(lastRecvSync, now) > 40)
+		{
+			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+		}
+#endif
 #endif
 	}
 }
@@ -957,6 +975,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 void nrfd_receive_sync_packet(uint8_t sync[NRF_SYNC_BROADCAST_LEN], TimePoint time)
 {
 	GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+	lastRecvSync = GetTimePoint();
 }
 
 void nrfd_receive_camera_packet(uint8_t *data, uint8_t len, TimePoint time)

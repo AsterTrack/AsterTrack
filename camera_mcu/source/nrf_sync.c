@@ -35,6 +35,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <string.h>
 
+#define SPI_BYTE_TRANSFER_TIME_US	4 // For 2MBaud. 1/2 us/Baud * 8 Baud with Baud = Bit
+
 /* Some fixed and base addresses LSB First */
 // Address of sync base / controller of current RF channel
 uint8_t ADDR_SYNC_CONTROLLER[] = { 0x2C, 0x7E, 0xA5 };
@@ -56,11 +58,11 @@ uint8_t ownRxAddress[3];
 static uint8_t statusLast;
 static TimePoint statusTime;
 
-static volatile uint8_t irqHandling = false;
 static volatile bool irqPending = false;
+static volatile bool irqNewRxStatus = false;
 static TimePoint irqHandlingTime;
 static TimePoint irqTime;
-static uint8_t rxPipe;
+static uint8_t irqHandlingRxPipe;
 
 static volatile bool lastSentSync = false;
 static volatile bool pendingTX = false;
@@ -309,25 +311,19 @@ void nrf_tx_trigger()
 
 /* ------ SPI NRF Behaviour ------ */
 
-void spid_receive_status(uint8_t command, uint8_t status)
-{
-	statusTime = GetTimePoint();
-	statusLast = status;
-	if (command == NRF_STATUS_CLEAR_REG && (statusLast & NRF_STATUS_IRQ_MASK))
-	{ // Cleared IRQ in response to interrupt, adopt as IRQ to handle
-		rxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
-		if (rxPipe == NRF_TRIG_BROADCAST_PIPE && (statusLast & NRF_STATUS_RX_DR))
-		{ // Trigger, react as fast as possible
-			// TODO: Implement external trigger over nRF Sync
-		}
+static inline void spid_rx_on_pipe(uint8_t pipe)
+{ // Earliest point at which we know a pipe received an RX
+	if (pipe == NRF_TRIG_BROADCAST_PIPE)
+	{ // Trigger, react as fast as possible
+		// TODO: Implement external trigger over nRF Sync
 	}
 }
 
 static inline void spid_query_rx()
 {
-	if (rxPipe == NRF_SYNC_BROADCAST_PIPE) // Receive sync packet, fetch directly
+	if (irqHandlingRxPipe == NRF_SYNC_BROADCAST_PIPE) // Receive sync packet, fetch directly
 		spi_read_int(NRF_SPI_R_RX_PAYLOAD, NRF_SYNC_BROADCAST_LEN);
-	else if (rxPipe == NRF_TRIG_BROADCAST_PIPE) // Receive trig packet, fetch directly
+	else if (irqHandlingRxPipe == NRF_TRIG_BROADCAST_PIPE) // Receive trig packet, fetch directly
 		spi_read_int(NRF_SPI_R_RX_PAYLOAD, NRF_TRIG_BROADCAST_LEN);
 	else // Read dynamic payload length first
 		spi_read_int(NRF_SPI_R_RX_PL_WID, 1);
@@ -335,38 +331,35 @@ static inline void spid_query_rx()
 
 static inline void spid_handle_rx(uint8_t *data, uint8_t len)
 {
-	if (rxPipe == NRF_SYNC_BROADCAST_PIPE)
+	if (irqHandlingRxPipe == NRF_SYNC_BROADCAST_PIPE)
 		nrfd_receive_sync_packet(data, irqHandlingTime);
-	else if (rxPipe == NRF_TRIG_BROADCAST_PIPE)
+	else if (irqHandlingRxPipe == NRF_TRIG_BROADCAST_PIPE)
 		nrfd_receive_trig_packet(data, irqHandlingTime);
-	else if (rxPipe == NRF_DIRECT_PIPE)
+	else if (irqHandlingRxPipe == NRF_DIRECT_PIPE)
 		nrfd_receive_camera_packet(data, len, irqHandlingTime);
 }
 
-static inline void spid_handle_irq(TimePoint time)
+static inline void spid_handle_irq()
 {
 	irqPending = false;
-	irqHandling = statusLast;
-	irqHandlingTime = time;
+	irqHandlingTime = irqTime;
 	// Implicitly read and explicitly clear STATUS
 	uint8_t STATUS = NRF_STATUS_IRQ_MASK;
 	spi_send_int(NRF_STATUS_CLEAR_REG, &STATUS, 1, true);
 }
 
-static inline bool nrfd_check_pending_irq()
+void spid_receive_status(uint8_t command, uint8_t status)
 {
-	if (irqPending)
-	{ // Received IRQ but SPI was busy with this transfer, handle IRQ now
-		spid_handle_irq(irqTime);
-		return true;
+	statusTime = GetTimePoint();
+	statusLast = status;
+
+	if (irqNewRxStatus)
+	{ // Cleared IRQ in response to interrupt, adopt as IRQ to handle
+		irqNewRxStatus = false;
+		uint8_t rxPipe = statusLast & NRF_STATUS_RX_P_NO_MASK;
+		if (rxPipe != NRF_STATUS_RX_EMPTY)
+			spid_rx_on_pipe(rxPipe >> NRF_STATUS_RX_P_NO_POS);		
 	}
-	else if (statusLast & NRF_STATUS_IRQ_MASK)
-	{ // Must have missed the IRQ somehow
-		BREAK();
-		spid_handle_irq(GetTimePoint());
-		return true;
-	}
-	return false;
 }
 
 void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
@@ -374,26 +367,30 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 	switch (command)
 	{
 	case NRF_STATUS_CLEAR_REG:
-	{ // Cleared STATUS after IRQ, now handle
-		if (irqHandling & NRF_STATUS_TX_DS)
+	{ // Read or cleared STATUS after IRQ, now handle
+		if (statusLast & NRF_STATUS_TX_DS)
 		{ // Sent last packet, don't know which one
 			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		}
-		if (irqHandling & NRF_STATUS_MAX_RT)
+		if (statusLast & NRF_STATUS_MAX_RT)
 		{ // Max Retries reached, failed to send last packet. Already cleared IRQ.
 			//GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
 		}
-		if (irqHandling & NRF_STATUS_RX_DR)
-		{ // Received at least one packet
+		if ((statusLast & NRF_STATUS_RX_DR) || (statusLast & NRF_STATUS_RX_P_NO_MASK) != NRF_STATUS_RX_EMPTY)
+		{ // Received at least one packet, even if not an IRX - see NOTE: IRQ for multiple RX FIFO
+			irqHandlingRxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
 			spid_query_rx();
 		}
 		else
-		{ // Done handling this IRQ, but may have missed an RX IRQ
-			// Time window is tiny, from receiving status to clearing status in a two-byte transfer
-			// So about 8us at 2Mbits SPI, or 2us at 8Mbits SPI
-			// But this IRQ may also have been triggered during RX Handling, where that previous IRQ had two RX packets
-			// Then there'd be a RX FIFO entry waiting for quite a while already, so just double check
-			spi_read_int(NRF_FIFO_STATUS_REG, 1);
+		{
+			// NOTE: Missed IRQ during NRF_STATUS_CLEAR_REG
+			// NRF_STATUS_CLEAR_REG may loose IRQs if they happen between status read and status clear
+			// Time window is the two byte transfer length, so about 8us at 2Mbits SPI, or 2us at 8Mbits SPI
+			// We can only hope to recover a RX_DR IRQ, since that shows up in RX_P_NO - see NOTE: IRQ for multiple RX FIFO
+			// So once more update status with NOP and check RX_P_NO
+			if (!irqPending)
+				spi_read_int(NRF_SPI_NOP, 0);
+			irqNewRxStatus = true; // Either way, if there is an RX in that status, it is new
 		}
 		return;
 	}
@@ -405,14 +402,15 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 	case NRF_SPI_R_RX_PAYLOAD:
 	{ // Read RX payload, handle
 		spid_handle_rx(data, len);
-		irqHandling = 0; // Done with that IRQ
-
-		// Check if a newer IRQ has been received during RX handling
-		// NOTE: This would be done in spid_complete_transfer anyway, but we need to check FIFO_STATUS JUST here
-		if (!nrfd_check_pending_irq())
-		{ // No pending IRQ, but may have received another packet between IRQ signal to clearing status, so check FIFO
-			spi_read_int(NRF_FIFO_STATUS_REG, 1);
-		}
+		
+		// NOTE: IRQ for multiple RX FIFO
+		// If an RX packet was received right after another, before that first RX_DR was cleared, it may not get it's own RX_DR IRQ
+		// So after handling any RX IRQ and reading it's RX FIFO entry, the fifo has to be checked again
+		// Documentation recommends reading FIFO_STATUS, but a NOP reading status is faster AND has more information (RX_P_NO)
+		// If there is not already another transfer queued, separately update status with NOP and check RX_P_NO
+		if (!irqPending && !spi_is_sending())
+			spi_read_int(NRF_SPI_NOP, 0);
+		irqNewRxStatus = true; // Either way, if there is an RX in that status, it is new
 		return;
 	}
 	case NRF_SPI_W_TX_PAYLOAD:
@@ -425,24 +423,10 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 		__enable_irq();
 		return;
 	}
-	case NRF_FIFO_STATUS_REG:
-	{ // Double checking for any further RX packets after IRQ handling
-		if (data[0] & NRF_FIFO_STATUS_RX_EMPTY)
-		{ // No further RX waiting, finally done with IRQ handling
-			return; // spid_complete_transfer will again check for any new pending IRQs
-		}
-		if (irqPending || (statusLast & NRF_STATUS_IRQ_MASK))
-		{ // Got a new IRQ (RX or not), and a RX in FIFO, but no way to know for sure if it's old or from this IRQ
-			statusLast |= NRF_STATUS_RX_DR; // In case IRQ was non-RX, ensure RX is handled anyway
-			spid_handle_irq(irqHandlingTime); // Use old time, wrongly using newer is devastating for timesync
-		}
-		else
-		{ // No IRQ pending, so there is another RX waiting in FIFO from last IRQ, handle it directly with known old timestamp
-			rxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
-			spid_query_rx();
-		}
+	case NRF_SPI_NOP:
+		// See NOTE: Missed IRQ during NRF_STATUS_CLEAR_REG
+		// See NOTE: IRQ for multiple RX FIFO
 		return;
-	}
 	default:
 		return;
 	}
@@ -450,18 +434,32 @@ void spid_receive_response(uint8_t command, uint8_t *data, uint8_t len)
 
 void spid_transfers_idle()
 {
-	nrfd_check_pending_irq();
+	// Done with transfor (or IRQ handling), check if there is a (new) IRQ pending
+	// Last command should have been NRF_SPI_NOP or NRF_SPI_W_TX_PAYLOAD
+	if (irqPending)
+	{ // Received new IRQ while SPI was busy, handle it now
+		spid_handle_irq();
+	}
+	else if ((statusLast & NRF_STATUS_RX_P_NO_MASK) != NRF_STATUS_RX_EMPTY)
+	{ // No pending IRQ, but still RX in FIFO, handle directly
+		// See NOTE: Missed IRQ during NRF_STATUS_CLEAR_REG
+		// See NOTE: IRQ for multiple RX FIFO
+		irqHandlingTime = statusTime - SPI_BYTE_TRANSFER_TIME_US*TICKS_PER_US;
+		irqHandlingRxPipe = (statusLast & NRF_STATUS_RX_P_NO_MASK) >> NRF_STATUS_RX_P_NO_POS;
+		spid_query_rx();
+	}
 }
 
 void nrf_handle_interrupt()
 {
 	irqTime = GetTimePoint();
 	irqPending = true;
-	if (!irqHandling && spi_lock())
+	irqNewRxStatus = true;
+	if (spi_lock())
 	{ // No other SPI transfer ongoing, can handle now
-		spid_handle_irq(irqTime);
+		spid_handle_irq();
 	}
-	// Else handle after current transfers complete
+	// Else handle in spid_complete_transfer later
 }
 
 #endif // USE_SPI_NRF_SYNC

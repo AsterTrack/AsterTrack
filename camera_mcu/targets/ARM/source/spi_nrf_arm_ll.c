@@ -134,9 +134,9 @@ bool spi_write_sync(uint8_t command, uint8_t *data, uint8_t len)
 {
 	if (!spi_write(command, data, len))
 		return false;
-	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	RESET_WWDG();
 	while (spi_nrf_lock);
-	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	RESET_WWDG();
 	return true;
 }
 

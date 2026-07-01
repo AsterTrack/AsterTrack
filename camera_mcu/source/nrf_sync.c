@@ -199,9 +199,9 @@ bool nrf_tx_camera(uint8_t cameraAddress[3], uint8_t *data, uint8_t length)
 bool nrf_prepare_broadcast_sync(uint8_t data[NRF_SYNC_BROADCAST_LEN])
 {
 	// Wait for any existing transfer
-	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	RESET_WWDG();
 	while (spi_nrf_lock);
-	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	RESET_WWDG();
 
 	if (!lastSentSync)
 	{

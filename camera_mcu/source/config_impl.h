@@ -88,8 +88,6 @@ extern "C"
 #define I2C_INT_GPIO_X GPIOB
 #define I2C_INT_PIN GPIO_PIN_8
 
-#define WWDG_TIMEOUT 0x7F
-
 #else
 // BOARD_REV == V1_0 (also V0.4.x) using UART sync
 // BOARD_REV == V1_1 using UART or nRF sync
@@ -163,8 +161,6 @@ extern "C"
 #define I2C_INT_GPIO_X GPIOA
 #define I2C_INT_PIN GPIO_PIN_8
 
-#define WWDG_TIMEOUT 0x7F
-
 #endif
 
 #if BOARD_REV >= V1_1
@@ -201,6 +197,8 @@ extern "C"
 #endif
 
 // Shared Defines
+
+#define WWDG_TIMEOUT 0x7F
 
 #define FSIN_PULSE_WIDTH_US		10
 #define FILTER_SWITCHER_COIL_PULSE_MS	100

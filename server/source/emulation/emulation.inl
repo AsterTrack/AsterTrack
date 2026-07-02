@@ -24,7 +24,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "blob/parameters.hpp" // Parameters for all blob detection algorithms
 #include "blob/blob.hpp" // Exact copy of the blob refinement subsystem
 #include "blob/qpu_blob_tiled.hpp" // To re-evaluate blob detection program layout and coverage
-#include "blob/qpu_blob_tiled.inl" // To re-evaluate blob detection program layout and coverage
 #include "blob/resegmentation.hpp" // Resegmenting clusters to make sure only peaks are included
 
 #include "server/server.hpp"
@@ -34,6 +33,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/eigendef.hpp"
 #include "util/eigenutil.hpp"
+#include "util/log.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -71,66 +71,6 @@ struct BlobEmulationResults
 	std::vector<std::vector<Eigen::Vector3f>> maximaHintStages;
 	std::vector<Eigen::Vector3f> peripheralCenters;
 };
-
-// Cached GL resources for visualisation of emulated blob detection
-struct BlobEmulationVis
-{
-	unsigned int maskVBO, maskSize;
-	unsigned int maskCenterVBO, maskCenterSize;
-	unsigned int maskEdgeVBO, maskEdgeSize;
-	unsigned int edgeRefinedVBO, edgeRefinedCount;
-	struct BlobEmulTexture
-	{
-		unsigned int texID;
-		std::string label;
-		bool show;
-	};
-	std::vector<BlobEmulTexture> baseImages;
-	std::vector<BlobEmulTexture> ssrImages;
-	std::vector<BlobEmulTexture> floodfillStages;
-	std::vector<BlobEmulTexture> resegmentationMasks;
-};
-
-static void updateEmulationVis(std::shared_ptr<BlobEmulationVis> &vis, const std::shared_ptr<BlobEmulationResults> &result)
-{
-	if (!vis)
-		vis = std::make_shared<BlobEmulationVis>();
-
-	// Update mask and point VBOs
-	updatePointsVBO(vis->maskVBO, result->maskVerts);
-	vis->maskSize = result->maskVerts.size();
-	updatePointsVBO(vis->maskCenterVBO, result->maskCenterVerts);
-	vis->maskCenterSize = result->maskCenterVerts.size();
-	updatePointsVBO(vis->maskEdgeVBO, result->maskEdgeVerts);
-	vis->maskEdgeSize = result->maskEdgeVerts.size();
-	updatePointsVBO(vis->edgeRefinedVBO, result->edgeRefinedVerts);
-	vis->edgeRefinedCount = result->edgeRefinedVerts.size();
-
-	// Update image textures
-	vis->baseImages.resize(result->tempImages.size());
-	for (int i = 0; i < result->tempImages.size(); i++)
-	{
-		loadGrayscaleFrame(vis->baseImages[i].texID, result->tempImages[i].image.data(), result->width, result->height);
-		vis->baseImages[i].label = result->tempImages[i].label;
-	}
-	vis->ssrImages.resize(result->ssrImages.size());
-	for (int i = 0; i < result->ssrImages.size(); i++)
-	{
-		loadGrayscaleFrame(vis->ssrImages[i].texID, result->ssrImages[i].image.data(), result->width, result->height);
-		vis->ssrImages[i].label = result->ssrImages[i].label;
-	}
-	vis->floodfillStages.resize(result->floodfillStages.size());
-	for (int i = 0; i < result->floodfillStages.size(); i++)
-	{
-		loadGrayscaleFrame(vis->floodfillStages[i].texID, result->floodfillStages[i].image.data(), result->width, result->height);
-		vis->floodfillStages[i].label = result->floodfillStages[i].label;
-	}
-	vis->resegmentationMasks.resize(result->resegmentationMasks.size());
-	for (int i = 0; i < result->resegmentationMasks.size(); i++)
-	{
-		loadGrayscaleFrame(vis->resegmentationMasks[i].texID, result->resegmentationMasks[i].image.data(), result->width, result->height);
-	}
-}
 
 // Base emulation-only parameters
 static float baseSigma = 0.3f;

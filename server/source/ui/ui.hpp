@@ -582,6 +582,7 @@ struct CameraVisState
 		std::shared_ptr<BlobEmulationVis> vis;
 		std::shared_ptr<BlobEmulationResults> result;
 		std::shared_ptr<BlobEmulationResults> newResults;
+		std::vector<SceneLabel> labels;
 	} emulation = {};
 
 	struct {

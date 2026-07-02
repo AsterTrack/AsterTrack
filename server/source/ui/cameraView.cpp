@@ -272,12 +272,12 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		if (result)// && vis.image && result->frameID == vis.image->frameID)
 		{
 			view.vis.emulation.result = std::move(result);
-			updateEmulationVis(view.vis.emulation.vis, view.vis.emulation.result);
+			updateEmulationVis(view.vis.emulation.vis, view.vis.emulation.result, view.vis.emulation.labels);
 		}
 
 		if (view.vis.emulation.result && view.vis.emulation.options.labels)
 		{
-			displaySceneLabels(view.vis.emulation.result->labels);
+			displaySceneLabels(view.vis.emulation.labels);
 		}
 	}
 	if (visState.showMarkerTrails)
@@ -679,15 +679,15 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		SameLineTrailing(GetBarWidth(ImGui::GetFrameHeight(), 3));
 		if (RetryButton("Retry"))
 			view.camera->updateBackgroundCalib(TrackingCameraState::BG_RETRY);
-		ImGui::SetItemTooltip("Reset newly calibrated background to try again.\nDoes not clear previously calibrated background.")
+		ImGui::SetItemTooltip("Reset newly calibrated background to try again.\nDoes not clear previously calibrated background.");
 		ImGui::SameLine();
 		if (CheckButton("Accept"))
 			view.camera->updateBackgroundCalib(TrackingCameraState::BG_ACCEPT);
-		ImGui::SetItemTooltip("Apply newly calibrated background, replacing any previously calibrated background.")
+		ImGui::SetItemTooltip("Apply newly calibrated background, replacing any previously calibrated background.");
 		ImGui::SameLine();
 		if (CrossButton("Discard"))
 			view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
-		ImGui::SetItemTooltip("Discard newly calibrated background, keep previously calibrated background.")
+		ImGui::SetItemTooltip("Discard newly calibrated background, keep previously calibrated background.");
 
 		ImGui::PopID();
 		EndViewToolbar();
@@ -1542,9 +1542,9 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 	float correction = calib.fInv/calibHost.fInv;
 
 	// Calculate rect actually used for blob detection
-	ProgramLayout layout = SetupProgramLayout(mode.widthPx, mode.heightPx, 8, false);
-	Eigen::Vector2f tl = layout.validMaskRect.min.cast<float>() * 2.0f / mode.widthPx;
-	Eigen::Vector2f br = layout.validMaskRect.max.cast<float>() * 2.0f / mode.widthPx;
+	Bounds2i validMaskRect = getValidMaskRect(mode.widthPx, mode.heightPx);
+	Eigen::Vector2f tl = validMaskRect.min.cast<float>() * 2.0f / mode.widthPx;
+	Eigen::Vector2f br = validMaskRect.max.cast<float>() * 2.0f / mode.widthPx;
 	tl = Eigen::Vector2f(tl.x()-1, mode.aspect-tl.y());
 	br = Eigen::Vector2f(br.x()-1, mode.aspect-br.y());
 

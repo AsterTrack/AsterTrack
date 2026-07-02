@@ -254,7 +254,7 @@ INTERFACE_CPP = \
 	ui/gl/mesh.cpp ui/gl/shader.cpp \
 	ui/imgui/imgui_custom.cpp ui/imgui/imgui_onDemand.cpp \
 	ui/util/nfd.cpp \
-	emulation/detection.cpp
+	emulation/detection.cpp emulation/integration.cpp
 
 INTERFACE_SHARED_CPP = blob/blob.cpp blob/refinement.cpp
 INTERFACE_SHARED_C =

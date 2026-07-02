@@ -16,15 +16,19 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef EMULATION_VIS_H
-#define EMULATION_VIS_H
+#ifndef INTEGRATION_H
+#define INTEGRATION_H
 
 #include "ui/ui.hpp"
 
+
+void updateEmulationVis(std::shared_ptr<BlobEmulationVis> &vis, const std::shared_ptr<BlobEmulationResults> &result, std::vector<SceneLabel> &labels);
 
 void updateEmulationVisUI(CameraVisState &visCamera);
 
 void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize);
 
+Bounds2i getValidMaskRect(uint32_t width, uint32_t height);
 
-#endif // EMULATION_VIS_H
+
+#endif // INTEGRATION_H

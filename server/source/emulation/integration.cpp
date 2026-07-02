@@ -16,13 +16,10 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef EMULATION_VIS_H
-#define EMULATION_VIS_H
-
 #include "integration.hpp"
 
 #include "ui/system/vis.hpp"
-#include "emulation/emulation.hpp"
+#include "emulation/emulation.inl"
 
 // Solely for ImPlotColormap
 #include "implot/implot.h"
@@ -32,7 +29,69 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 extern ctpl::thread_pool threadPool;
 
 
-static void updateEmulationVisUI(CameraVisState &visCamera)
+// Cached GL resources for visualisation of emulated blob detection
+struct BlobEmulationVis
+{
+	unsigned int maskVBO, maskSize;
+	unsigned int maskCenterVBO, maskCenterSize;
+	unsigned int maskEdgeVBO, maskEdgeSize;
+	unsigned int edgeRefinedVBO, edgeRefinedCount;
+	struct BlobEmulTexture
+	{
+		unsigned int texID;
+		std::string label;
+		bool show;
+	};
+	std::vector<BlobEmulTexture> baseImages;
+	std::vector<BlobEmulTexture> ssrImages;
+	std::vector<BlobEmulTexture> floodfillStages;
+	std::vector<BlobEmulTexture> resegmentationMasks;
+};
+
+void updateEmulationVis(std::shared_ptr<BlobEmulationVis> &vis, const std::shared_ptr<BlobEmulationResults> &result, std::vector<SceneLabel> &labels)
+{
+	labels = result->labels;
+
+	if (!vis)
+		vis = std::make_shared<BlobEmulationVis>();
+
+	// Update mask and point VBOs
+	updatePointsVBO(vis->maskVBO, result->maskVerts);
+	vis->maskSize = result->maskVerts.size();
+	updatePointsVBO(vis->maskCenterVBO, result->maskCenterVerts);
+	vis->maskCenterSize = result->maskCenterVerts.size();
+	updatePointsVBO(vis->maskEdgeVBO, result->maskEdgeVerts);
+	vis->maskEdgeSize = result->maskEdgeVerts.size();
+	updatePointsVBO(vis->edgeRefinedVBO, result->edgeRefinedVerts);
+	vis->edgeRefinedCount = result->edgeRefinedVerts.size();
+
+	// Update image textures
+	vis->baseImages.resize(result->tempImages.size());
+	for (int i = 0; i < result->tempImages.size(); i++)
+	{
+		loadGrayscaleFrame(vis->baseImages[i].texID, result->tempImages[i].image.data(), result->width, result->height);
+		vis->baseImages[i].label = result->tempImages[i].label;
+	}
+	vis->ssrImages.resize(result->ssrImages.size());
+	for (int i = 0; i < result->ssrImages.size(); i++)
+	{
+		loadGrayscaleFrame(vis->ssrImages[i].texID, result->ssrImages[i].image.data(), result->width, result->height);
+		vis->ssrImages[i].label = result->ssrImages[i].label;
+	}
+	vis->floodfillStages.resize(result->floodfillStages.size());
+	for (int i = 0; i < result->floodfillStages.size(); i++)
+	{
+		loadGrayscaleFrame(vis->floodfillStages[i].texID, result->floodfillStages[i].image.data(), result->width, result->height);
+		vis->floodfillStages[i].label = result->floodfillStages[i].label;
+	}
+	vis->resegmentationMasks.resize(result->resegmentationMasks.size());
+	for (int i = 0; i < result->resegmentationMasks.size(); i++)
+	{
+		loadGrayscaleFrame(vis->resegmentationMasks[i].texID, result->resegmentationMasks[i].image.data(), result->width, result->height);
+	}
+}
+
+void updateEmulationVisUI(CameraVisState &visCamera)
 {
 	auto &emul = visCamera.emulation;
 	auto &opt = emul.options;
@@ -117,7 +176,7 @@ static void updateEmulationVisUI(CameraVisState &visCamera)
 	}
 }
 
-static void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize)
+void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize)
 {
 	CameraMode mode = camera.pipeline->mode;
 	float PixelSize = (float)viewSize.x() / mode.widthPx;
@@ -241,5 +300,8 @@ static void updateEmulationVisualisation(const TrackingCameraState &camera, Came
 	}
 }
 
-
-#endif // EMULATION_VIS_H
+Bounds2i getValidMaskRect(uint32_t width, uint32_t height)
+{
+	ProgramLayout layout = SetupProgramLayout(width, height, 8, false);
+	return layout.validMaskRect;
+}

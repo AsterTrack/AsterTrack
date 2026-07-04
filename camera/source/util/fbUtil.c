@@ -67,11 +67,21 @@ void debug_fb_hex(void *fbp, int pxPos, int pxCount)
 	}
 	printf("\n");
 }
+void debug_fb_info(
+	struct fb_var_screeninfo * const vinfo,
+	struct fb_fix_screeninfo * const finfo)
+{
+	printf("FrameBuffer: %s; %dx%d, %d bpp, %d bytes, Line Length %d!\n",
+		finfo->id, vinfo->xres, vinfo->yres, vinfo->bits_per_pixel, finfo->smem_len, finfo->line_length);
+	printf("   Type: %s, Visual: %s, Mode: %s!\n",
+		typeLUT[finfo->type], visualLUT[finfo->visual], modeLUT[(vinfo->vmode&0b111) + 1]);
+	printf("   Pixel Format: R: %d << %d; G: %d << %d; B: %d << %d! \n",
+		vinfo->red.length, vinfo->red.offset, vinfo->green.length, vinfo->green.offset, vinfo->blue.length, vinfo->blue.offset);
+}
 
 int setupFrameBuffer(
 	struct fb_var_screeninfo *vinfo,
-	struct fb_fix_screeninfo *finfo,
-	bool debugFB)
+	struct fb_fix_screeninfo *finfo)
 {
 	// Open the file for reading and writing
 	int fbfd = open("/dev/fb0", O_RDWR);
@@ -104,16 +114,6 @@ int setupFrameBuffer(
 	{
 		printf("Error reading fixed FrameBuffer information.\n");
 		goto fberror;
-	}
-
-	if (debugFB)
-	{
-		printf("FrameBuffer: %s; %dx%d, %d bpp, %d bytes, Line Length %d!\n",
-			finfo->id, vinfo->xres, vinfo->yres, vinfo->bits_per_pixel, finfo->smem_len, finfo->line_length);
-		printf("   Type: %s, Visual: %s, Mode: %s!\n",
-			typeLUT[finfo->type], visualLUT[finfo->visual], modeLUT[(vinfo->vmode&0b111) + 1]);
-		printf("   Pixel Format: R: %d << %d; G: %d << %d; B: %d << %d! \n",
-			vinfo->red.length, vinfo->red.offset, vinfo->green.length, vinfo->green.offset, vinfo->blue.length, vinfo->blue.offset);
 	}
 
 	return fbfd;

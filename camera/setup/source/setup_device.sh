@@ -26,14 +26,13 @@ fi
 # Ensure required folders exist
 mkdir -p $DOWNLOAD_PATH
 
-IMAGE_NAME="piCore-$VERSION_SPECIFIC.img.gz"
 IMAGE_PATH="$DOWNLOAD_PATH/$IMAGE_NAME"
 if [[ ! -f "$IMAGE_PATH" ]]; then
 	echo "Downloading OS image..."
 	# Download
-	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/release/RPi/$IMAGE_NAME"
+	wget -N -q -P $DOWNLOAD_PATH --show-progress "$REPO_URL/$CHANNEL/RPi/$IMAGE_NAME"
 	if [[ ! -f "$IMAGE_PATH" ]]; then
-		echo "Failed to download piCore image $REPO_URL/release/RPi/$IMAGE_NAME!"
+		echo "Failed to download piCore image $REPO_URL/$CHANNEL/RPi/$IMAGE_NAME!"
 		return 1
 	fi
 fi

@@ -54,6 +54,8 @@ struct VisualisationState
 	VisualisationState();
 	~VisualisationState();
 
+	bool ensureInit();
+
 	void visualise(const std::vector<Cluster> &blobs, const std::vector<Cluster> &pastBlobs, uint8_t *srcBuf, int srcWidth, int srcHeight, int srcStride);
 
 	VisualisationLock lockWrite();

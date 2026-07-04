@@ -37,7 +37,7 @@ struct ExclusiveQPU
 	QPU_PerformanceState perf;
 	int qpuCoresUsed;
 
-	ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numThreads, bool log);
+	ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numThreads, bool claim, bool log);
 	~ExclusiveQPU();
 
 	inline operator bool() { return enabled; }

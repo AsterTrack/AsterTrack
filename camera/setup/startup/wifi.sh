@@ -23,5 +23,12 @@ fi
 ntpd --help >> /dev/null 2>&1
 if [[ $? == 0 ]]; then
 	# Start ntp daemon to ensure timesync (even if we connect only later)
-	ntpd --panicgate pool.ntp.org
+	ntpd --panicgate pool.ntp.org &
+fi
+
+if [[ -f /usr/local/etc/init.d/avahi ]]; then
+	# Start dbus and avahi for zeroconf (broadcasting hostname)
+	/usr/local/etc/init.d/dbus start
+	/usr/local/etc/init.d/avahi start
+	sed -i 's|files dns$|files mdns4_minimal [NOTFOUND=return] dns|' '/etc/nsswitch.conf'
 fi

@@ -5,8 +5,10 @@
 MIRROR_URL=http://www.tinycorelinux.net
 VERSION="16.x"
 VERSION_SPECIFIC="16.0.0"
+IMAGE_NAME="piCore-$VERSION_SPECIFIC.img.gz"
 KERNEL="6.12.25-piCore"
 ARCHS=("" "-v7") # blank is v6 for Pi Zero 1, v7 for Pi Zero 2
+CHANNEL="release"
 REPO_URL="$MIRROR_URL/$VERSION/armhf"
 OVERLAY_PACKAGES=""
 

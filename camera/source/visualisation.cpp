@@ -29,13 +29,19 @@ struct VisualisationImpl
 	struct fb_fix_screeninfo finfo;
 };
 
-VisualisationState::VisualisationState()
+VisualisationState::VisualisationState() {}
+
+bool VisualisationState::ensureInit()
 {
+	if (initialised) return true;
 	impl = new VisualisationImpl();
-	impl->fbfd = setupFrameBuffer(&impl->vinfo, &impl->finfo, false);
+	impl->fbfd = setupFrameBuffer(&impl->vinfo, &impl->finfo);
 	initialised = impl->fbfd >= 0;
 	if (!initialised)
 		printf("Failed to initialise visualisation with framebuffer!\n");
+	else
+		debug_fb_info(&impl->vinfo, &impl->finfo);
+	return initialised;
 }
 
 VisualisationState::~VisualisationState()
@@ -46,7 +52,7 @@ VisualisationState::~VisualisationState()
 
 void VisualisationState::visualise(const std::vector<Cluster> &blobs, const std::vector<Cluster> &pastBlobs, uint8_t *srcBuf, int srcWidth, int srcHeight, int srcStride)
 {
-	if (impl->fbfd < 0)
+	if (!initialised)
 		return;
 	void *fbp = lock_fb(impl->fbfd, impl->finfo.smem_len);
 	if ((intptr_t)fbp == -1)
@@ -117,7 +123,7 @@ void VisualisationState::visualise(const std::vector<Cluster> &blobs, const std:
 VisualisationLock VisualisationState::lockWrite()
 {
 	VisualisationLock lock = {};
-	if (impl->fbfd < 0)
+	if (!initialised)
 		return lock;
 	lock.lock = lock_fb(impl->fbfd, impl->finfo.smem_len);
 	if ((intptr_t)lock.lock == -1)

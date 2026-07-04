@@ -158,16 +158,25 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 					state.qpuCores.enabled[i] = optarg[i] == '1';
 				break;
 			case 16:
-				state.visualisation.enabled = true;
-				state.visualisation.displayBlobs = true;
+				if (state.visualisation.ensureInit())
+				{
+					state.visualisation.enabled = true;
+					state.visualisation.displayBlobs = true;
+				}
 				break;
 			case 17:
-				state.visualisation.enabled = true;
-				state.visualisation.displayFrame = true;
+				if (state.visualisation.ensureInit())
+				{
+					state.visualisation.enabled = true;
+					state.visualisation.displayFrame = true;
+				}
 				break;
 			case 18:
 				if (optarg && *optarg)
+				{
 					sscanf(optarg, "%dx%dx%d", &state.visualisation.width, &state.visualisation.height, &state.visualisation.interval);
+					state.visualisation.ensureInit();
+				}
 				break;
 			case 19:
 				state.writeStatLogs = false;

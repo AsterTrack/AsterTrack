@@ -183,7 +183,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	}
 
 	MaskingProgram masking(base, layout, state.qpuProgBin);
-	if (!masking)
+	if (!masking && !state.noQPU)
 	{
 		printf("-- Failed to setup QPU masking program! --\n");
 		if (handleError(ERROR_INIT_BD))
@@ -195,8 +195,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (state.verifyQPU || state.noQPU)
 		verifyBitmaskBuffer.resize(layout.maskSize.prod()/32);
 
-	ExclusiveQPU qpu(base, state.qpuCores, layout.instances, !state.writeStatLogs);
-	if (!qpu)
+	ExclusiveQPU qpu(base, state.qpuCores, layout.instances, !state.noQPU, !state.writeStatLogs);
+	if (!qpu && !state.noQPU)
 	{
 		printf("QPU enable failed!\n");
 		if (handleError(ERROR_QPU_ENABLE))
@@ -233,7 +233,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 #ifdef EMUL_VCSM
 	for (int i = 0; i < emulBufCnt; i++)
 	{ // Allocate only grayscale buffer
-		camEmulBuf[i] = vcsm_malloc(srcStride*state.camera.height);
+		camEmulBuf[i] = vcsm_malloc(srcStride*(state.camera.height+2));
 		if (camEmulBuf[i].fd >= 0) continue;
 		printf("Failed to allocate vcsm buffer!\n");
 		for (int j = i-1; j >= 0; j--)
@@ -243,7 +243,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 #else
 	for (int i = 0; i < emulBufCnt; i++)
 	{ // Allocate only grayscale buffer
-		int ret = vc_allocBuffer(&camEmulBuf[i], &base, srcStride*state.camera.height, 4096);
+		int ret = vc_allocBuffer(&camEmulBuf[i], &base, srcStride*(state.camera.height+2), 4096);
 		if (!ret) continue;
 		printf("Failed to allocate buffer %d for emulation: %d!\n", i, ret);
 		for (int j = i-1; j >= 0; j--)
@@ -269,6 +269,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		for (int y = 0; y < state.camera.height; y++)
 			for (int x = 0; x < state.camera.width; x++)
 				YUVFrameData[srcStride*state.camera.height*0 + y*srcStride + x] = 0;
+		for (int y = state.camera.height; y < state.camera.height+2; y++)
+			for (int x = 0; x < state.camera.width; x++)
+				YUVFrameData[srcStride*state.camera.height*0 + y*srcStride + x] = 0xFF;
 		// Write test blobs
 		for (int c = 0; c < 5; c++)
 		{
@@ -619,14 +622,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 			{ // Verify trailing 2 lines are still 0xFF as initially set up by gcs
 				// This should never NOT be the case but verifying is cheap
-				uint8_t *ptr = (uint8_t*)frameBuffer.mem;
-				bool diffFront = ptr[state.camera.height * srcStride] != 0xFF;
-				bool diffBack = ptr[(state.camera.height+2) * srcStride - 1] != 0xFF;
+				bool diffFront = framePtrARM[state.camera.height * srcStride] != 0xFF;
+				bool diffBack = framePtrARM[(state.camera.height+2) * srcStride - 1] != 0xFF;
 				if (diffFront || diffBack)
 				{
 					if (diffFront) printf("Begin of 2 trailing padded lines is not 0xFF!\n");
 					if (diffBack) printf("End of 2 trailing padded lines is not 0xFF!\n");
-					memset(ptr + state.camera.height * srcStride, 0xFF, 2 * srcStride);
+					memset(framePtrARM + state.camera.height * srcStride, 0xFF, 2 * srcStride);
 				}
 			}
 

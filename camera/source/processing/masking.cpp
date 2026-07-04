@@ -152,9 +152,10 @@ unsigned int MaskingProgram::Execute(VC_BASE &base, QPU_PerformanceState &perfSt
 	return code;
 }
 
-ExclusiveQPU::ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numThreads, bool log)
-	: base(base)
+ExclusiveQPU::ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numThreads, bool claim, bool log)
+	: enabled(false), base(base)
 {
+	if (!claim) return;
 	// Enable QPU - this locks the QPU for our use and prevents other use (e.g. camera AWB, OpenGL ES)
 	// We could do this setup on every frame and then disable/release the QPU after we are done
 	// See https://github.com/raspberrypi/firmware/issues/793

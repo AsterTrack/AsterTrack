@@ -38,11 +38,13 @@ void unlock_fb(void *fbp, long int fbsz);
 
 void debug_fb_color(void *fbp, struct fb_var_screeninfo *vinfo, int pxPos, int pxCount);
 void debug_fb_hex(void *fbp, int pxPos, int pxCount);
+void debug_fb_info(
+	struct fb_var_screeninfo * const vinfo,
+	struct fb_fix_screeninfo * const finfo);
 
 int setupFrameBuffer(
 	struct fb_var_screeninfo *vinfo,
-	struct fb_fix_screeninfo *finfo,
-	bool debugFB);
+	struct fb_fix_screeninfo *finfo);
 
 #ifdef __cplusplus
 }

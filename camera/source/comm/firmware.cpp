@@ -118,7 +118,10 @@ static FirmwareTXStatus CheckFirmwareTransfer(FirmwareTransferState &transfer)
 static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 {
 	if (firmware.appliedUpdate)
-		return firmware.appliedUpdateIssues? FW_STATUS_ISSUE : FW_STATUS_UPDATED;
+		return FW_STATUS_UPDATED;
+
+	if (firmware.issueApplyingUpdate)
+		return FW_STATUS_ISSUE;
 
 	if (firmware.applyingUpdate)
 		return FW_STATUS_UPDATING;
@@ -313,8 +316,73 @@ bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, co
 	// In the meantime, no firmware comms may edit anything while applyingUpdate
 	state.firmware.applyingUpdate = true;
 	state.firmware.appliedUpdate = false;
+	state.firmware.issueApplyingUpdate = false;
 	state.firmware.applyTime = sclock::now();
 	return true;
+}
+
+static bool AttemptFlashMCU(std::string updated, std::string backup)
+{
+	std::unique_lock lock(mcu_mutex);
+
+	bool flashed = true;
+	bool preConnected = mcu_active;
+	if (mcu_switch_bootloader())
+	{
+		if (!mcu_verify_program(updated))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			flashed = mcu_flash_program(updated);
+			if (!flashed)
+			{
+				printf("Failed to flash MCU with new firmware, trying again!\n");
+				flashed = mcu_flash_program(updated);
+			}
+			if (flashed)
+				printf("Successfully flashed MCU with new firmware!\n");
+			else
+				printf("Failed to flash MCU with the firmware!\n");
+		}
+		else printf("Will not flash MCU, already flashed with firmware!\n");
+	}
+	else
+	{
+		printf("Cannot flash MCU, failed to switch to the bootloader!\n");
+		flashed = false;
+	}
+
+	// Reset and probe
+	if (!mcu_reconnect())
+	{
+		flashed = false;
+		if (preConnected && !(state.firmware.flags & FW_REQUIRE_REBOOT) && std::filesystem::exists(backup))
+		{ // Expected to work without reboot, but doesn't, and we have a prior known-good firmware
+			printf("Reverting to old firmware!\n");
+			if (mcu_switch_bootloader())
+			{
+				if (mcu_flash_program(backup))
+				{
+					printf("Successfully flashed MCU with old firmware! Reverting firmware update!\n");
+				}
+				else
+					printf("Failed to flash MCU with the old firmware!\n");
+			}
+			else
+				printf("Cannot flash MCU, failed to switch to the bootloader!\n");
+
+			if (!mcu_reconnect())
+			{ // Just disable MCU for now to allow for communication
+				printf("Disabling MCU to ensure communication channel to controller!\n");
+				mcu_disable();
+			}
+		}
+		else
+		{ // Just disable MCU for now to allow for communication
+			printf("Disabling MCU to ensure communication channel to controller!\n");
+			mcu_disable();
+		}
+	}
+	return flashed;
 }
 
 bool ApplyFirmwareUpdate(TrackingCameraState &state)
@@ -386,16 +454,54 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		printf("Applying firmware update was (safely) aborted due to I/O error!\n");
 		for (auto file : files)
 			std::filesystem::remove(file.updated);
+		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		state.firmware.applyingUpdate = false;
 		SendUpdateStatus(state, comm, state.firmware.abortedUpdate? FW_STATUS_ABORT : FW_STATUS_ERROR);
-		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		return false;
 	}
 
 	// Sync to ensure files are written to disk before renaming them.
 	sync();
+	printf("Written all firmware update files!\n");
 
-	printf("Written all firmware update files, swapping!\n");
+	if (state.firmware.flags & FW_FLASH_MCU)
+	{
+		// Copy updated firmware file into RAM for use during update
+		std::string mcu_firmware_updated = mcu_firmware_copy + ".updated";
+		std::filesystem::copy(mcu_firmware_path, mcu_firmware_updated, std::filesystem::copy_options::overwrite_existing);
+
+		// Unmount firmware partition while flashing MCU, just in case a malfunction cuts power
+		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
+
+		bool preConnected = mcu_active;
+		bool flashed = AttemptFlashMCU(mcu_firmware_updated, mcu_firmware_copy);
+		if (flashed)
+		{
+			// Update current firmware tag
+			mcu_read_firmware_tag(mcu_firmware_updated, mcu_firmware_tag);
+
+			// Update RAM-copy of MCU firmware if flashing succeeded
+			std::filesystem::copy(mcu_firmware_updated, mcu_firmware_copy, std::filesystem::copy_options::overwrite_existing);
+		}
+		std::filesystem::remove(mcu_firmware_updated);
+
+		// Mount firmware partition again to finalise update after trying to flash MCU
+		std::system(asprintf_s("mount %s", firmwareMount.c_str()).c_str());
+
+		if (preConnected && !flashed)
+		{
+			printf("Applying firmware update was (safely) aborted due to flashing error!\n");
+			for (auto file : files)
+				std::filesystem::remove(file.updated);
+			std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
+			state.firmware.applyingUpdate = false;
+			state.firmware.issueApplyingUpdate = true;
+			SendUpdateStatus(state, comm, FW_STATUS_ISSUE);
+			return false;
+		}
+	}
+
+	printf("Swapping all firmware files to apply update!\n");
 	std::error_code err;
 	int f;
 	for (f = 0; f < files.size(); f++)
@@ -420,94 +526,25 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	{ // Failure during renaming - highly unlikely, but try to recover
 		for (int b = 0; b < f; b++)
 		{
+			std::filesystem::rename(files[b].target, files[b].updated, err);
+			if (err) printf("Encountered error moving out updated file %s: %s (%d)\n", files[b].target.c_str(), strerror(err.value()), err.value());
 			std::filesystem::rename(files[b].backup, files[b].target, err);
-			if (err)
-				printf("Encountered error restoring file %s: %s (%d)\n", files[b].target.c_str(), strerror(err.value()), err.value());
+			if (err) printf("Encountered error restoring previous file %s: %s (%d)\n", files[b].backup.c_str(), strerror(err.value()), err.value());
 		}
 		printf("Recovered from update failure (hopefully safely)!\n");
 		for (auto file : files)
 			std::filesystem::remove(file.updated);
+		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		state.firmware.applyingUpdate = false;
 		SendUpdateStatus(state, comm, FW_STATUS_ERROR);
-		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		return false;
 	}
 
 	// Sync to ensure renames are written to disk.
 	sync();
-
 	printf("Successfully updated files (hopefully)!\n");
 
-	bool postApplyGood = true;
-	if (state.firmware.flags & FW_FLASH_MCU)
-	{
-		std::unique_lock lock(mcu_mutex);
-
-		// Update current firmware tag
-		mcu_read_firmware_tag(mcu_firmware_path, mcu_firmware_tag);
-
-		bool preConnected = mcu_active;
-		if (mcu_switch_bootloader())
-		{
-			if (!mcu_verify_program(mcu_firmware_path))
-			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-				postApplyGood = mcu_flash_program(mcu_firmware_path);
-				if (!postApplyGood)
-				{
-					printf("Failed to flash MCU with new firmware, trying again!\n");
-					postApplyGood = mcu_flash_program(mcu_firmware_path);
-				}
-				if (postApplyGood)
-					printf("Successfully flashed MCU with new firmware!\n");
-				else
-					printf("Failed to flash MCU with the firmware!\n");
-			}
-			else printf("Will not flash MCU, already flashed with firmware!\n");
-		}
-		else
-		{
-			printf("Cannot flash MCU, failed to switch to the bootloader!\n");
-			postApplyGood = false;
-		}
-
-		// Reset and probe
-		if (!mcu_reconnect())
-		{
-			postApplyGood = false;
-			if (preConnected && !(state.firmware.flags & FW_REQUIRE_REBOOT) && std::filesystem::exists(mcu_firmware_path + ".backup"))
-			{ // Expected to work without reboot, but doesn't, and we have a prior known-good firmware
-				printf("Reverting to old firmware!\n");
-				if (mcu_switch_bootloader())
-				{
-					if (mcu_flash_program(mcu_firmware_path + ".backup"))
-					{
-						printf("Successfully flashed MCU with old firmware!\n");
-						std::filesystem::rename(mcu_firmware_path, mcu_firmware_path + ".updated", err);
-						if (err) printf("Encountered error moving new firmware file out!\n");
-						std::filesystem::rename(mcu_firmware_path + ".backup", mcu_firmware_path, err);
-						if (err) printf("Encountered error restoring old firmware file!\n");
-					}
-					else
-						printf("Failed to flash MCU with the old firmware!\n");
-				}
-				else
-					printf("Cannot flash MCU, failed to switch to the bootloader!\n");
-
-				if (!mcu_reconnect())
-				{ // Just disable MCU for now to allow for communication
-					printf("Disabling MCU to ensure communication channel to controller!\n");
-					mcu_disable();
-				}
-			}
-			else
-			{ // Just disable MCU for now to allow for communication
-				printf("Disabling MCU to ensure communication channel to controller!\n");
-				mcu_disable();
-			}
-		}
-	}
-
+	// Remove backup and updated copy
 	for (auto file : files)
 	{
 		if (std::filesystem::exists(file.backup))
@@ -518,18 +555,15 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 
 	// Sync to ensure no IO operations after this (umount would also make sure of that).
 	sync();
-
-	// Copy firmware file, whether updated or not, into RAM, before unmounting firmware
-	std::filesystem::copy(mcu_firmware_path, mcu_firmware_copy);
+	printf("Finished applying firmware update successfully!\n");
 
 	// Unmount firmware partition again, not used
 	std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 
-	printf("Finished applying firmware update %s!\n", postApplyGood? "successfully" : "incompletely");
 	state.firmware.applyingUpdate = false;
 	state.firmware.appliedUpdate = true;
-	state.firmware.appliedUpdateIssues = !postApplyGood;
-	SendUpdateStatus(state, comm, postApplyGood? FW_STATUS_UPDATED : FW_STATUS_ISSUE);
+	state.firmware.issueApplyingUpdate = false;
+	SendUpdateStatus(state, comm, FW_STATUS_UPDATED);
 	return true;
 }
 

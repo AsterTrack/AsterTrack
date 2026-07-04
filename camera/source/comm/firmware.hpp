@@ -62,7 +62,7 @@ struct FirmwareUpdateState
 	CommState *mainComm;
 	bool applyingUpdate;
 	TimePoint_t applyTime;
-	bool appliedUpdateIssues;
+	bool issueApplyingUpdate;
 	bool appliedUpdate;
 	bool abortedUpdate;
 

@@ -223,6 +223,11 @@ cp $STARTUP_PATH/* "$DATA_PATH/opt/"
 # Copy scripts for program interaction and building
 cp $SCRIPTS_PATH/* "$BUILD_PATH/"
 
+# Auto-load packages only used in ssh sessions
+echo "" >> "$HOME_PATH/.ashrc"
+echo "sudo mount /mnt/mmcblk0p2 >/dev/null 2&>/dev/null" >> "$HOME_PATH/.ashrc"
+echo "tce-load -li \$(cat /mnt/mmcblk0p2/tce/onsession.lst) >/dev/null" >> "$HOME_PATH/.ashrc"
+
 
 echo "Copying program and sources..."
 
@@ -339,9 +344,16 @@ fi
 
 echo "Installing dependencies..."
 
-# Enter direct dependencies into onboot.lst
-for pkg in $DEPENDENCIES; do
-	echo $pkg >> $TCE_PATH/onboot.lst
+# All packages are loaded manually, so we're using non-standard .lst files
+echo $pkg > $TCE_PATH/onboot.lst
+for pkg in $STARTUP_PKG; do
+	echo $pkg >> $TCE_PATH/onstartup.lst
+done
+for pkg in $COMPILE_PKG; do
+	echo $pkg >> $TCE_PATH/oncompile.lst
+done
+for pkg in $SESSION_PKG; do
+	echo $pkg >> $TCE_PATH/onsession.lst
 done
 
 pushd $DOWNLOAD_PATH > /dev/null
@@ -399,9 +411,53 @@ install_package()
 	cp "$pkg.md5.txt" $PKG_PATH/
 	cp "$pkg.dep" $PKG_PATH/
 
+	if [[ ! -z $COPY2FS ]]; then
+		echo "$pkg" >> $TCE_PATH/copy2fs.lst
+	fi
+
 	# Record dependencies to be handled in the next iteration
 	DEPENDENCIES="$DEPENDENCIES $(cat "$pkg.dep")"
 	return 0
+}
+
+install_dependencies()
+{
+	DEPENDENCIES=$1
+	COPY2FS=$2
+	# Recursively download, verify, and install dependencies
+	while [[ -n "$DEPENDENCIES" ]]; do
+		PACKAGES=$DEPENDENCIES
+		DEPENDENCIES=
+
+		for pkgname in $PACKAGES; do
+
+			# Check if already installed
+			if [[ -f $PKG_PATH/$pkgname ]]; then
+				continue
+			fi
+
+			# If package name contains KERNEL keyword, replace with our kernel (or any other)
+			if [[ $(grep -c "^$pkgname$" "repo.txt") != 1 ]]; then
+				for arch in "${ARCHS[@]}"; do
+					pkg_k=$(echo $pkgname | sed s/KERNEL/$KERNEL$arch/)
+					pkg_r=$(grep "$pkg_k$" "repo.txt")
+					if [[ "$pkg_r" = "" ]]; then
+						echo "WARNING: Found no $pkg_k package in repository!"
+					else
+						install_package $pkg_r "$REPO_URL/tcz/$pkg_r"
+						if [[ $? -ne 0 ]]; then
+							return 1
+						fi
+					fi
+				done
+			else
+				install_package $pkgname "$REPO_URL/tcz/$pkgname"
+				if [[ $? -ne 0 ]]; then
+					return 1
+				fi
+			fi
+		done
+	done
 }
 
 # Remove all preinstalled packages - they might be out of date
@@ -409,47 +465,30 @@ install_package()
 # So without deleting them, they'll be out of date - a potential security issue
 rm $PKG_PATH/*
 
-# Recursively download, verify, and install dependencies
-while [[ -n "$DEPENDENCIES" ]]; do
-	PACKAGES=$DEPENDENCIES
-	DEPENDENCIES=
+# Copy auto-loaded dependencies in RAM to ensure TCE partition can be unmounted
+# Any other dependencies are both too large AND might need free RAM to compile, so mount them normally
+# Requires fully-qualified name of all packages and their dependencies in copy2fs.lst, so need to use existing tooling
+touch $TCE_PATH/copy2fs.lst
 
-	for pkgname in $PACKAGES; do
+if [[ $RAM_ONLY == "True" ]]; then
+	touch $TCE_PATH/copy2fs.flg
+fi
 
-		# Check if already installed
-		if [[ -f $PKG_PATH/$pkgname ]]; then
-			continue
-		fi
+# Startup extensions and their dependencies in copy2fs.lst to copy to RAM
+# But currently that is not actually used, since bootup doesn't respect it
+# So we're loading them manually in bootsync.sh with copy-mode forced
+install_dependencies "$STARTUP_PKG" "copy2fs.lst"
 
-		# If package name contains KERNEL keyword, replace with our kernel (or any other)
-		if [[ $(grep -c "^$pkgname$" "repo.txt") != 1 ]]; then
-			for arch in "${ARCHS[@]}"; do
-				pkg_k=$(echo $pkgname | sed s/KERNEL/$KERNEL$arch/)
-				pkg_r=$(grep "$pkg_k$" "repo.txt")
-				if [[ "$pkg_r" = "" ]]; then
-					echo "WARNING: Found no $pkg_k package in repository!"
-				else
-					install_package $pkg_r "$REPO_URL/tcz/$pkg_r"
-					if [[ $? -ne 0 ]]; then
-						return 1
-					fi
-				fi
-			done
-		else
-			install_package $pkgname "$REPO_URL/tcz/$pkgname"
-			if [[ $? -ne 0 ]]; then
-				return 1
-			fi
-		fi
-	done
-done
+install_dependencies "$COMPILE_PKG" ""
+
+install_dependencies "$SESSION_PKG" ""
 
 popd > /dev/null
 
 for pkgname in $OVERLAY_PACKAGES; do
 	echo "Installing overlay package $pkgname into $PKG_PATH!"
 	cp "$pkgname" $PKG_PATH/
-	echo $pkgname >> $TCE_PATH/onboot.lst
+	echo $pkgname >> $TCE_PATH/onstartup.lst
 done
 
 echo "Setup and configured piCore!"

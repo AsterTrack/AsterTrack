@@ -15,6 +15,7 @@ VC4ASM_URL=https://github.com/maazl/vc4asm/archive/dfc77f020fd7eb050fc57b482a673
 
 # Device config
 GPU_MEM_SIZE=32M		                    # Need GPU memory for blob detection (~12MB)
+RAM_ONLY=False
 
 # Mount config
 MOUNT_BOOT=/mnt/TRCAM_BOOT					# Mounting point of boot partition

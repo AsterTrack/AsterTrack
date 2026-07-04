@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 version=$(cat ../source/version | head -n 1 )
 desc=$(cat ../source/version | tail -n +2)

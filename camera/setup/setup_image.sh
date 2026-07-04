@@ -32,31 +32,41 @@ if [[ $MODE = "compile" ]]; then
 	FORCE_BUILD=True
 	AUTOCONNECT_WIFI=True
 	ENABLE_LOGGING=True
-	DEPENDENCIES="$RUNTIME_DEP $COMPILE_DEP $DEV_DEP"
+	STARTUP_PKG="$RUNTIME_DEP"
+	COMPILE_PKG="$COMPILE_DEP"
+	SESSION_PKG="$DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_compile.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
 elif [[ $MODE = "dev-single" || $MODE = "dev_single" ]]; then
 # Dev image that auto-connects to wifi, intended for one main dev camera
 	AUTOCONNECT_WIFI=True
 	ENABLE_LOGGING=True
-	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP $ZEROCONF_DEP $COMPILE_DEP $DEV_DEP"
+	STARTUP_PKG="$RUNTIME_DEP $WIRELESS_DEP $ZEROCONF_DEP"
+	COMPILE_PKG="$COMPILE_DEP"
+	SESSION_PKG="$DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_dev_single.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
 elif [[ $MODE = "dev" ]]; then
 # Dev image that can be used as a normal camera, but allows compilation and dev work via SSH when desired, and logs to SD card for later analysis
 	ENABLE_LOGGING=True
-	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP $COMPILE_DEP $DEV_DEP"
+	STARTUP_PKG="$RUNTIME_DEP $WIRELESS_DEP"
+	COMPILE_PKG="$COMPILE_DEP"
+	SESSION_PKG="$DEV_DEP"
 	DEFAULT_IMAGE_FILE="image_dev.img"
 	TOTAL_IMAGE_SIZE=300M	# Size needed for dev dependencies
 elif [[ $MODE = "wifi" ]]; then
 # Normal camera image that has wifi and SSH support enabled when setup via host software - e.g. to read logs, for a future server, etc.
-	DEPENDENCIES="$RUNTIME_DEP $WIRELESS_DEP"
+	STARTUP_PKG="$RUNTIME_DEP $WIRELESS_DEP"
+	COMPILE_PKG=""
+	SESSION_PKG=""
 	DEFAULT_IMAGE_FILE="image_wifi.img"
 	TOTAL_IMAGE_SIZE=150M
 elif [[ $MODE = "" || $MODE = "minimal" || $MODE = "normal" ]]; then
 # Normal camera image, as small and quick as can be, no wifi support
 	PRUNE_STARTUP=True
-	DEPENDENCIES="$RUNTIME_DEP"
+	STARTUP_PKG="$RUNTIME_DEP"
+	COMPILE_PKG=""
+	SESSION_PKG=""
 	DEFAULT_IMAGE_FILE="image_minimal.img"
 	TOTAL_IMAGE_SIZE=130M
 else

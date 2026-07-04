@@ -1,5 +1,7 @@
 #!/bin/sh
 
+tce-load -li $(cat /mnt/mmcblk0p2/tce/oncompile.lst) >/dev/null
+
 cd /home/tc
 
 ./vc4asm >> /dev/null 2>&1

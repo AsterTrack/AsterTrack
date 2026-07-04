@@ -1,5 +1,7 @@
 #!/bin/sh
 
+tce-load -li $(cat /mnt/mmcblk0p2/tce/oncompile.lst) >/dev/null 
+
 if [[ ! -f /mnt/mmcblk0p4/kernel/source/complete_unpack ]]; then
     /home/tc/kernel_fetch_sources.sh || exit 1
 fi

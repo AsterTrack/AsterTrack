@@ -3,6 +3,9 @@
 # Ensure setup of swap and storage partitions (requires reboot after first creation)
 /opt/part.sh
 
+# Update any data stores
+/opt/data.sh
+
 # Setup and connect wifi if configured
 /opt/wifi.sh &
 
@@ -26,7 +29,7 @@ echo -1 > /proc/sys/kernel/sched_rt_runtime_us
 /sbin/modprobe i2c-dev
 
 # Make sure we have a valid ID
-IDPATH=/mnt/mmcblk0p2/config/id
+IDPATH=/mnt/mmcblk0p4/config/id
 if [[ "$(<$IDPATH wc -c)" != 4 ]]; then
 	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
 	sync
@@ -36,19 +39,23 @@ while [ "$(cat $IDPATH | od -N 4 -A n -t d4)" == 0 ]; do
 	sync
 done
 
+# Do any compilation required
+STORAGE=/mnt/mmcblk0p4
 if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then
 	# Program binary wasn't installed, assume we are equipped to build
-	/home/tc/build_release.sh 1> /mnt/mmcblk0p4/build.log 2> /mnt/mmcblk0p4/build.err
+	/home/tc/build_release.sh 1> $STORAGE/build.log 2> $STORAGE/build.err
 fi
-
 if [[ ! -f "/home/tc/TrackingCamera/qpu_blob_tiled_min.bin" ]]; then
 	# QPU program blob wasn't installed, assume we are equipped to build
-	/home/tc/build_qpu.sh 1> /mnt/mmcblk0p4/build.log 2> /mnt/mmcblk0p4/build.err
+	/home/tc/build_qpu.sh 1> $STORAGE/build.log 2> $STORAGE/build.err
+fi
+if [[ ! -d /home/tc/drivers ]]; then
+	# No existing camera drivers, try to built (requires internet and build dependencies)
+	/home/tc/drivers_auto_build.sh 1> $STORAGE/build_drivers.log 2> $STORAGE/build_drivers.err
 fi
 
-if [[ ! -f /home/tc/drivers/ov9281.ko ]]; then
-	/home/tc/drivers_auto_build.sh 1> /mnt/mmcblk0p4/build_drivers.log 2> /mnt/mmcblk0p4/build_drivers.err
-fi
+# Try to unmount, works only if all loaded TCEs were configured with copy2fs
+sudo umount /mnt/mmcblk0p2
 
 /home/tc/drivers_load_modules.sh
 

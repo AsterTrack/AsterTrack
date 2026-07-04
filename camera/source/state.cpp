@@ -24,6 +24,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 
+std::string id_file = "/mnt/mmcblk0p4/config/id";
+std::string configFolder = "/mnt/mmcblk0p4/config";
+std::string firmwareMount = "/mnt/mmcblk0p2";
+std::string sbc_firmware_path = firmwareMount + "/tce/mydata.tgz";
+std::string mcu_firmware_path = firmwareMount + "/tce/TrackingCameraMCU.bin";
+std::string mcu_firmware_copy = "/tmp/TrackingCameraMCU.bin";
+
 bool options_read(TrackingCameraState &state, int argc, char **argv)
 {
 	const struct option long_options[] = {

@@ -2,7 +2,8 @@
 
 ARCH=$(uname -m)
 LOGPATH=/home/tc/trcam.log
-LOGPERM=/mnt/mmcblk0p2/trcam.log
+STORAGE=/mnt/mmcblk0p4/trcam.log
+CONFIG=/mnt/mmcblk0p4/config
 
 while :
 do
@@ -13,7 +14,7 @@ do
         echo "===================================" | tee $LOGPATH
         echo "Tracking Program exited, restarting" | tee $LOGPATH
         echo "===================================" | tee $LOGPATH
-        if [[ -f /mnt/mmcblk0p2/config/log ]]; then
+        if [[ -f $CONFIG/log ]]; then
                 cp $LOGPATH $LOGPATH.last
                 [ -f $LOGPERM ] && sudo mv $LOGPERM $LOGPERM.last
                 sudo mv $LOGPATH $LOGPERM

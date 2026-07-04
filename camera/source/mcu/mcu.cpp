@@ -63,7 +63,6 @@ gpiod_line_settings *line_boot0, *line_reset, *line_int;
 gpiod_line_request *line_request_out, *line_request_in;
 gpiod_edge_event_buffer *edge_events;
 
-std::string mcu_firmware_path = "/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin";
 FirmwareTagHeader mcu_firmware_tag;
 bool mcu_firmware_version_known = false;
 VersionDesc mcu_firmware_version;
@@ -139,7 +138,7 @@ void mcu_cleanup()
 #endif
 }
 
-bool mcu_initial_connect(bool probe_attached)
+bool mcu_initial_connect(bool probe_attached, std::string mcu_firmware_path)
 {
 	if (!mcu_init())
 		return false;

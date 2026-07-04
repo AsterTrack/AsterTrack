@@ -35,7 +35,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 CameraID cameraID = 0;
 bool isStored = false, isOverwritten = false;
-std::string id_file = "/mnt/mmcblk0p2/config/id";
 
 // Version and build number
 const VersionDesc sbcFWVersion(FW_MAJOR, FW_MINOR, FW_PATCH, FW_BUILD);

@@ -169,7 +169,7 @@ int main(int argc, char **argv)
 
 	if (!state.noMCU)
 	{ // Init, detect, recover, connect with, and monitor MCU
-		mcu_initial_connect(state.probeMode);
+		mcu_initial_connect(state.probeMode, mcu_firmware_path);
 		atexit(mcu_cleanup);
 	}
 

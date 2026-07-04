@@ -26,7 +26,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <mutex>
 #include <atomic>
 
-extern std::string mcu_firmware_path;
 extern FirmwareTagHeader mcu_firmware_tag;
 
 extern std::mutex mcu_mutex;
@@ -45,7 +44,7 @@ struct MCUForwardedPacket
 extern std::mutex mcu_packet_mutex;
 extern std::vector<MCUForwardedPacket> mcu_packet_queue;
 
-bool mcu_initial_connect(bool probe_attached);
+bool mcu_initial_connect(bool probe_attached, std::string mcu_firmware_path);
 bool mcu_init();
 bool mcu_probe();
 bool mcu_reconnect();

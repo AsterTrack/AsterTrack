@@ -26,8 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <fstream>
 #include <filesystem>
 #include <thread>
-
-std::string sbc_firmware_path = "/mnt/mmcblk0p2/tce/mydata.tgz";
+#include <unistd.h>
 
 static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm, uint8_t type, uint8_t status, uint8_t transfer = 0, uint16_t block = 0)
 {
@@ -339,6 +338,9 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	// Should be protected by applyingUpdate, but copy anyway to be safe
 	auto transfers = state.firmware.transfers;
 
+	// Mount firmware partition (TCE) if not already
+	std::system(asprintf_s("mount %s", firmwareMount.c_str()).c_str());
+
 	struct FileSwap
 	{
 		std::filesystem::path target;
@@ -355,9 +357,9 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		if (transfer.type == FW_TX_TYPE_FILE)
 			target = transfer.file.path;
 		else if (transfer.type == FW_TX_TYPE_SBC_PKG)
-			target = mcu_firmware_path;
-		else if (transfer.type == FW_TX_TYPE_MCU_BIN)
 			target = sbc_firmware_path;
+		else if (transfer.type == FW_TX_TYPE_MCU_BIN)
+			target = mcu_firmware_path;
 		else continue;
 		files.emplace_back(FileSwap{
 			target,
@@ -386,8 +388,12 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 		state.firmware.applyingUpdate = false;
 		SendUpdateStatus(state, comm, state.firmware.abortedUpdate? FW_STATUS_ABORT : FW_STATUS_ERROR);
+		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		return false;
 	}
+
+	// Sync to ensure files are written to disk before renaming them.
+	sync();
 
 	printf("Written all firmware update files, swapping!\n");
 	std::error_code err;
@@ -396,7 +402,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	{
 		std::filesystem::rename(files[f].target, files[f].backup, err);
 		if (err)
-		{ // Should always have an existing MCU FW, but also not critical
+		{ // Should always have an existing file, but also not critical
 			printf("Encountered error backing up file %s: %s (%d)\n", files[f].target.c_str(), strerror(err.value()), err.value());
 		}
 		std::filesystem::rename(files[f].updated, files[f].target, err);
@@ -423,8 +429,12 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 		state.firmware.applyingUpdate = false;
 		SendUpdateStatus(state, comm, FW_STATUS_ERROR);
+		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		return false;
 	}
+
+	// Sync to ensure renames are written to disk.
+	sync();
 
 	printf("Successfully updated files (hopefully)!\n");
 
@@ -505,6 +515,15 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		if (std::filesystem::exists(file.updated))
 			std::filesystem::remove(file.updated);
 	}
+
+	// Sync to ensure no IO operations after this (umount would also make sure of that).
+	sync();
+
+	// Copy firmware file, whether updated or not, into RAM, before unmounting firmware
+	std::filesystem::copy(mcu_firmware_path, mcu_firmware_copy);
+
+	// Unmount firmware partition again, not used
+	std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 
 	printf("Finished applying firmware update %s!\n", postApplyGood? "successfully" : "incompletely");
 	state.firmware.applyingUpdate = false;

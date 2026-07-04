@@ -75,8 +75,6 @@ struct FirmwareUpdateState
 	}
 };
 
-extern std::string sbc_firmware_path;
-
 bool SetupFirmwareUpdate(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);
 bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length, bool erroneous);
 bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, const uint8_t *data, uint16_t length);

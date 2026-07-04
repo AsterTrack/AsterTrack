@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 
-static const std::filesystem::path configPath("/mnt/mmcblk0p2/config");
+static std::filesystem::path configPath;
 
 extern CommState serverComms;
 
@@ -189,6 +189,7 @@ void stopWirelessMonitor(TrackingCameraState &state)
 
 void initWirelessMonitor(TrackingCameraState &state)
 {
+	configPath = configFolder;
 	state.wireless.config = WIRELESS_CONFIG_NONE;
 	state.wireless.wifi = WIRELESS_STATUS_NONE;
 	state.wireless.ssh = WIRELESS_STATUS_NONE;

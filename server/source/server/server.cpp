@@ -481,8 +481,7 @@ std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID i
 	auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.cameras.end())
 		return *cam;
-	std::shared_ptr<TrackingCameraState> camera = std::make_shared<TrackingCameraState>();
-	camera->id = id;
+	std::shared_ptr<TrackingCameraState> camera = std::make_shared<TrackingCameraState>(id);
 	camera->pipeline = EnsureCameraPipeline(state, id);
 	camera->state.contextualLock()->lastDeviceChange = sclock::now();
 	state.cameras.push_back(camera); // new shared_ptr

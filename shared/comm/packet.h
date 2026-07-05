@@ -426,7 +426,7 @@ union VersionDesc
 	uint32_t num;
 
 #ifdef __cplusplus
-	VersionDesc() {}
+	VersionDesc() : num(0) {}
 	VersionDesc(uint8_t verMajor, uint8_t verMinor, uint8_t verPatch) : major(verMajor), minor(verMinor), patch(verPatch)
 	{
 		build = (uint8_t)(HashStrConst(__DATE__ __TIME__, val_const)%256);

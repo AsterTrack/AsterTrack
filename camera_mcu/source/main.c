@@ -62,6 +62,11 @@ TimePoint startup = 0;
 static struct IdentPacket ownIdent;
 static uint8_t ownIdentPacket[UART_PACKET_OVERHEAD_SEND+IDENT_PACKET_SIZE];
 
+// Static allocation for MCU Info UART packet, aligned so that fillInfoPacket gets a 4-byte aligned pointer
+#define MCU_INFO_PRE_ALIGN_4	((UART_PRE_OVERHEAD_SEND+3)/4*4)
+uint8_t infoPacketBuffer[MCU_INFO_PRE_ALIGN_4 + MCU_INFO_MAX_LENGTH + MAX_SUBPART_SIZE + UART_POST_OVERHEAD_SEND];
+UARTPacketRef *infoPacket = (UARTPacketRef*)(infoPacketBuffer + (MCU_INFO_PRE_ALIGN_4-UART_PRE_OVERHEAD_SEND));
+
 // UART receive state
 PortState * const state = &portStates[0];
 struct {
@@ -482,6 +487,10 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{ // Received sync packet
 		return uartd_accept;
 	}
+	else if (state->header.tag == PACKET_READ_MCU_INFO)
+	{ // Received request to read mcu info
+		return uartd_accept;
+	}
 
 	if (uartState == UART_CamMCU)
 	{
@@ -689,6 +698,46 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 #endif
 		return uartd_accept;
 	}
+	else if (state->header.tag == PACKET_READ_MCU_INFO)
+	{ // Received request to read mcu info from OTP
+		if (receive.packetSize < 1) return uartd_reset_nak;
+		// To avoid having to allocate one huge buffer and copy all data
+		// Packet is split in main data and additional data, written one after another
+
+		// Prepare main data in infoPacket
+		uint16_t infoSize = fillInfoPacket(infoPacket->data, receive.packetBuffer[0]);
+		otp_get_subparts((uint32_t*)(infoPacket->data+infoSize));
+		uint16_t mainPacketSize = infoSize + OTP_NumSubParts*sizeof(uint64_t);
+		uint8_t *mainPacketEnd = infoPacket->data + mainPacketSize;
+		// Calculate total size with additional data
+		uint8_t *OTP_HWStringPtr = OTP_HwStringData + OTP_HW_STRING_PREPEND;
+		uint16_t totalPacketSize = mainPacketSize + OTP_HwStringLength + firmwareDescriptorLength;
+
+		// Prepare packet headers including additional data
+		writeUARTPacketHeader(infoPacket, (struct PacketHeader){ .tag = PACKET_READ_MCU_INFO, .length = totalPacketSize});
+		{ // Calculate checksum manually using all data buffers
+			static_assert(PACKET_CHECKSUM_SIZE == 4);
+			uint16_t accum1 = 0, accum2 = 0;
+			updateDirectPacketChecksum(infoPacket->data, mainPacketSize, &accum1, &accum2);
+			updateDirectPacketChecksum(OTP_HWStringPtr, OTP_HwStringLength, &accum1, &accum2);
+			updateDirectPacketChecksum((uint8_t*)firmwareDescriptor, firmwareDescriptorLength, &accum1, &accum2);
+			writeDirectPacketChecksum(mainPacketEnd, &accum1, &accum2);
+		}
+		writeUARTPacketEnd(infoPacket, mainPacketSize+PACKET_CHECKSUM_SIZE);
+
+		// Ensure all packet parts are send/enqueued together in correct order
+		EnterUARTPortZone(port);
+		NVIC_DisableIRQ(I2C1_IRQn);
+		uartd_send_int(port, infoPacket, UART_PRE_OVERHEAD_SEND+mainPacketSize, true);
+		if (OTP_HwStringLength)
+			uartd_send_int(port, OTP_HWStringPtr, OTP_HwStringLength, true);
+		if (firmwareDescriptorLength)
+			uartd_send_int(port, firmwareDescriptor, firmwareDescriptorLength, true);
+		uartd_send_int(port, mainPacketEnd, UART_POST_OVERHEAD_SEND, true);
+		NVIC_EnableIRQ(I2C1_IRQn);
+		LeaveUARTPortZone(port);
+		return uartd_accept;
+	}
 
 	// Shouldn't happen
 	return uartd_unknown;
@@ -783,6 +832,7 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 	if (requestedVersion != 0 && requestedVersion < Packet_Version)
 		Packet_Version = requestedVersion;
 	// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
+	// IF new data is added to OTP, update PACKET_READ_MCU_INFO and PACKET_WRITE_MCU_INFO, too!
 
 	// Write packet header
 	response[0] = Packet_Version;		// Fetch Info packet version

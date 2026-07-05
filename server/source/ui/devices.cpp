@@ -105,17 +105,26 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		// Information Popup
 		const ImGuiID infoPopupID = ImGui::GetID("##InfoPopup");
 		if (InlineIconButton(ICON_LA_INFO_CIRCLE))
+		{
+			if (!camera.storage.receivedInfo && !camera.storage.receivedMCUInfo)
+			{ // Request info from MCU on explicit user action (may have a non-booting SBC)
+				CameraRequestMCUInfo(camera);
+			}
 			ImGui::OpenPopup(infoPopupID);
+		}
 		if (ImGui::BeginComboPopup(infoPopupID, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()),
 			ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge))
 		{
+			bool haveStats = false;
 			float supplyVoltage, temperature;
 			{
 				auto stats = camera.receiving.statistics.contextualRLock();
+				haveStats = stats->header.deltaUS > 0;
 				supplyVoltage = stats->header.voltage / 1000.0f;
 				temperature = stats->header.tempSOC / 100.0f;
 			}
-			ImGui::Text("SoC Temperature: %.1f\u00B0C, Supply Voltage %.2fV", temperature, supplyVoltage);
+			if (haveStats)
+				ImGui::Text("SoC Temperature: %.1f\u00B0C, Supply Voltage %.2fV", temperature, supplyVoltage);
 
 			auto desc = describeCameraInfo(info);
 			if (desc.empty())

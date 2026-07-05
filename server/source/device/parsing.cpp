@@ -442,6 +442,9 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		ControllerPortStatus portStatus = (ControllerPortStatus)portState[1];
 		uint8_t reserved = portState[2];
 
+		if ((portComms&COMM_READY) != COMM_READY)
+			controller.cameras[i]->storage.receivedInfo = controller.cameras[i]->storage.receivedMCUInfo = false;
+
 		auto camState = controller.cameras[i]->state.contextualLock();
 		if (portComms == COMM_SBC_READY)
 		{ // Clear any possible error state
@@ -1007,7 +1010,7 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	if (erroneous) return false;
 	if (length < CAMERA_INFO_BASE_LENGTH) return false;
 
-	CameraStoredInfo info;
+	CameraStoredInfo info = {};
 	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
 
 	uint8_t packetVersion = data[0];
@@ -1115,10 +1118,15 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 
 	if (info.mcuHWDescriptor.size() > 0)
 	{
-		std::string descPart;
-		std::stringstream stream(info.mcuHWDescriptor);
-		while (std::getline(stream, descPart, MCU_MULTI_TEXT_SEP))
-			info.mcuHWDescriptorParts.push_back(std::move(descPart));
+		int last = 0;
+		for (int i = 0; i < info.mcuHWDescriptor.size(); i++)
+		{
+			if (info.mcuHWDescriptor[i] != MCU_MULTI_TEXT_SEP) continue;
+			info.mcuHWDescriptorParts.emplace_back(info.mcuHWDescriptor.data()+last, info.mcuHWDescriptor.data()+i);
+			last = i+1;
+		}
+		if (last < info.mcuHWDescriptor.size())
+			info.mcuHWDescriptorParts.emplace_back(info.mcuHWDescriptor.data()+last, info.mcuHWDescriptor.data()+info.mcuHWDescriptor.size());
 	}
 
 	LOG(LParsing, LInfo, "Camera #%u sent information:", camera.id);
@@ -1127,6 +1135,67 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 
 	camera.storage.info = std::move(info);
 	camera.storage.receivedInfo = true;
+	return true;
+}
+
+bool ReadCameraMCUInfoPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
+{
+	if (erroneous) return false;
+	if (length == 0) return false;
+
+	CameraStoredInfo info = {};
+	CameraStoredConfig config = {};
+	uint32_t infoSize = parseMCUInfoPacket(info, config, data, length);
+	if (!infoSize)
+	{
+		LOG(LParsing, LWarn, "Camera MCU #%u sent info packet but failed to parse header, length %d!", camera.id, length);
+		return false;
+	}
+	if (config.cameraID != camera.id)
+	{ // Very unusual, should not happen
+		LOG(LParsing, LWarn, "Camera MCU with previously reported ID #%u sent info packet with ID #%u!", camera.id, config.cameraID);
+		return false;
+	}
+	if (length != infoSize+info.subpartSerials.size()*sizeof(uint64_t)+info.mcuHWDescriptor.size()+info.mcuFWDescriptor.size())
+	{
+		LOG(LParsing, LWarn, "Camera MCU #%u sent info packet of size %d != %d + %d + %d + %d!", camera.id, length, infoSize,
+			(int)(info.subpartSerials.size()*sizeof(uint64_t)), (int)info.mcuHWDescriptor.size(), (int)info.mcuFWDescriptor.size());
+		return false;
+	}
+	const uint8_t *ptr = data + infoSize;
+
+	memcpy(info.mcuHWDescriptor.data(), ptr, info.mcuHWDescriptor.size());
+	ptr += info.mcuHWDescriptor.size();
+	memcpy(info.mcuFWDescriptor.data(), ptr, info.mcuFWDescriptor.size());
+	ptr += info.mcuFWDescriptor.size();
+	if (info.subpartSerials.size() > 0)
+	{
+		memcpy(info.subpartSerials.data(), ptr, info.subpartSerials.size()*sizeof(uint64_t));
+		ptr += info.subpartSerials.size()*sizeof(uint64_t);
+	}
+
+	if (info.mcuHWDescriptor.size() > 0)
+	{
+		int last = 0;
+		for (int i = 0; i < info.mcuHWDescriptor.size(); i++)
+		{
+			if (!std::isalnum(info.mcuHWDescriptor[i]) && info.mcuHWDescriptor[i] != ' ' && info.mcuHWDescriptor[i] != '.')
+				LOG(LParsing, LInfo, "Found char '%c' / %.2x at pos %d!", info.mcuHWDescriptor[i], info.mcuHWDescriptor[i], i);
+			if (info.mcuHWDescriptor[i] != MCU_MULTI_TEXT_SEP) continue;
+			info.mcuHWDescriptorParts.emplace_back(info.mcuHWDescriptor.data()+last, info.mcuHWDescriptor.data()+i);
+			last = i+1;
+		}
+		if (last < info.mcuHWDescriptor.size())
+			info.mcuHWDescriptorParts.emplace_back(info.mcuHWDescriptor.data()+last, info.mcuHWDescriptor.data()+info.mcuHWDescriptor.size());
+	}
+
+	LOG(LParsing, LInfo, "Camera MCU #%u sent information from OTP version %d:", camera.id, info.mcuOTPVersion);
+	for (std::string &str : describeCameraInfo(info))
+		LOG(LParsing, LInfo, "    %s", str.c_str());
+
+	camera.storage.info = std::move(info);
+	camera.storage.receivedMCUInfo = true; // Only a subset of the full info
+	camera.storage.receivedInfo = false; // Ensure full info is refetched when SBC is available
 	return true;
 }
 
@@ -1180,8 +1249,13 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 		break;
 	}
 	case PACKET_CAMERA_INFO:
-	{
+	{ // Received combined SBC+MCU info from SBC
 		ReadCameraInfoPacket(camera, header, data, length, erroneous);
+		break;
+	}
+	case PACKET_READ_MCU_INFO:
+	{ // Received MCU info directly from MCU as requested
+		ReadCameraMCUInfoPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	default:

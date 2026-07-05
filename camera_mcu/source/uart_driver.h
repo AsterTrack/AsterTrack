@@ -47,13 +47,13 @@ struct UART_DMA_Setup {
 	IRQn_Type dmaIRQ_RX;
 	IRQn_Type dmaIRQ_TX;
 };
-const static int SZ_TX_QUEUE = 5;
+const static int SZ_TX_QUEUE = 6;
 struct UART_IO_State {
 	struct {
 		bool valid;
 		uint32_t addr;
 		uint32_t len;
-	} tx_queue[5];
+	} tx_queue[6];
 	int tx_queue_pos;
 	bool uart_tx;
 	uint8_t rx_alloc[UART_HEADROOM+UART_RX_BUFFER_SIZE];

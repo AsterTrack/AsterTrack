@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/usb.hpp"
 #include "comm/uart.h"
+#include "comm/commands.h"
 
 #include "ui/shared.hpp" // Signals
 
@@ -405,4 +406,11 @@ void CameraUpdateVis(TrackingCameraState &device)
 		vis[7] = config.displayBlobs;
 	}
 	device.sendPacket(PACKET_CFG_VIS, vis.data(), vis.size());
+}
+
+void CameraRequestMCUInfo(TrackingCameraState &device)
+{
+	std::vector<uint8_t> request(1);
+	request[0] = MCU_INFO_VERSION; // Requested version of leading MCU_FETCH_INFO packet
+	device.sendPacket(PACKET_READ_MCU_INFO, request.data(), request.size());
 }

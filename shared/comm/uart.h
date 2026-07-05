@@ -94,17 +94,27 @@ static inline bool verifyHeaderChecksum(uint8_t header[PACKET_HEADER_SIZE+HEADER
     return true;
 }
 
+static inline void updateDirectPacketChecksum(const uint8_t *data, uint16_t length, uint16_t *accum1, uint16_t *accum2)
+{ // Fletcher-32 - derived
+	for (int i = 0; i < length; i++)
+		*accum2 += *accum1 += data[i];
+}
+
+static inline void writeDirectPacketChecksum(uint8_t checksum[PACKET_CHECKSUM_SIZE], uint16_t *accum1, uint16_t *accum2)
+{
+	checksum[0] = *accum1 & 0xFF;
+	checksum[1] = *accum1 >> 8;
+	checksum[2] = *accum2 & 0xFF;
+	checksum[3] = *accum2 >> 8;
+}
+
 static inline void calculateDirectPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
 {
 	if (PACKET_CHECKSUM_SIZE == 4)
-	{ // Fletcher-32 - derived
+	{
 		uint16_t accum1 = 0, accum2 = 0;
-		for (int i = 0; i < length; i++)
-			accum2 += accum1 += data[i];
-		checksum[0] = accum1 & 0xFF;
-		checksum[1] = accum1 >> 8;
-		checksum[2] = accum2 & 0xFF;
-		checksum[3] = accum2 >> 8;
+		updateDirectPacketChecksum(data, length, &accum1, &accum2);
+		writeDirectPacketChecksum(checksum, &accum1, &accum2);
 	}
 }
 

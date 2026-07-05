@@ -48,7 +48,7 @@ struct ImageRequest
 
 struct TrackingCameraState
 {
-	CameraID id = CAMERA_ID_NONE;
+	const CameraID id;
 	std::string label;
 
 	// Pipeline State
@@ -60,7 +60,7 @@ struct TrackingCameraState
 	// Direct communication channel over TCP
 	ClientCommState *client = NULL;
 
-	// Realtime streaming state 
+	// Realtime streaming state
 	std::shared_ptr<Synchronised<SyncGroup>> sync;
 	int syncIndex;
 
@@ -127,7 +127,7 @@ struct TrackingCameraState
 	struct
 	{
 		TimePoint_t lastFetchTime;
-		bool receivedInfo;
+		bool receivedInfo, receivedMCUInfo;
 		CameraStoredInfo info = {};
 		CameraStoredConfig config = {};
 	} storage = {};
@@ -217,5 +217,6 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
 bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action = WIRELESS_ACTION_NONE);
 void CameraUpdateStream(TrackingCameraState &device);
 void CameraUpdateVis(TrackingCameraState &device);
+void CameraRequestMCUInfo(TrackingCameraState &device);
 
 #endif // TRACKING_CAMERA_H

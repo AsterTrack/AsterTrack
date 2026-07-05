@@ -40,13 +40,15 @@ bool TrackingCameraState::hasComms()
 bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int length)
 {
 	auto camState = *state.contextualRLock();
-	if (camState.error.encountered)
+	if (camState.error.encountered && tag >= PACKET_HOST_SBC)
 	{
 		LOG(LCameraDevice, LError, "Cannot send packets to Camera %u because it is still recovering from an error!", id);
 		return false; // Cannot handle packet at this time, waiting for recovery
 	}
 	CommMedium medium = COMM_MEDIUM_UART;
-	if (client && client->ready && length > 100)
+	if (tag < PACKET_HOST_SBC)
+		medium = COMM_MEDIUM_UART; // Force UART if sending to MCU - TODO: Support nRF in the future
+	else if (client && client->ready && length > 100)
 		medium = COMM_MEDIUM_WIFI; // Prefer wireless for "larger" packets
 	else if (controller && (camState.commState == COMM_SBC_READY || dtMS(camState.lastConnected, sclock::now()) < 300))
 		medium = COMM_MEDIUM_UART; // Prefer UART for small packets
@@ -61,9 +63,9 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 	{
 		if (length == 0) return;
 		memcpy(buffer, data, length);
-		if (tag >= PACKET_HOST_COMM)
+		if (tag >= PACKET_HOST_SBC)
 			calculateForwardPacketChecksum(buffer, length, buffer+length);
-		else // We should not be sending these packets, but do allow for it
+		else
 			calculateDirectPacketChecksum(buffer, length, buffer+length);
 		LOG(LCameraDevice, LTrace, "Sending packet to camera with checksum %.8x!\n", *(uint32_t*)(buffer+length));
 	};

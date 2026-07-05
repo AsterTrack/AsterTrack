@@ -170,9 +170,9 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 				int checksum = length > 0? PACKET_CHECKSUM_SIZE : 0;
 				if (checksum)
 				{
-					if (tag >= PACKET_HOST_COMM)
+					if (tag >= PACKET_HOST_SBC)
 						calculateForwardPacketChecksum(packet->data, length, packet->data+length);
-					else // We should not be sending these packets, but do allow for it
+					else
 						calculateDirectPacketChecksum(packet->data, length, packet->data+length);
 				}
 				writeUARTPacketEnd(packet, length + checksum);

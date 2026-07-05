@@ -1407,7 +1407,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		}
 	}
 
-	if (state->header.tag >= PACKET_HOST_COMM)
+	if (state->header.tag >= PACKET_HOST_MCU)
 	{ // Packet designated for Host
 		/* TEMP_CHARR('<', INT9_TO_CHARR(port), 'R', 'C', 'V',
 			'+', INT99_TO_CHARR(state->header.tag), ':', INT9999_TO_CHARR(state->header.length),
@@ -1479,7 +1479,7 @@ uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t s
 	PortState *state = &portStates[port];
 	CameraState *cam = &camStates[port];
 	TimePoint now = GetTimePoint();
-	if (state->header.tag >= PACKET_HOST_COMM)
+	if (state->header.tag >= PACKET_HOST_MCU)
 	{ // Packet designated for Host
 		if (GetTimeSpanMS(lastUSBPacket, now) > 2000)
 		{ // Packet for host, but host doesn't seem to be connected
@@ -1543,10 +1543,10 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 	CameraState *cam = &camStates[port];
 	TimePoint now = GetTimePoint();
 
-	if (state->header.tag >= PACKET_HOST_COMM)
+	if (state->header.tag >= PACKET_HOST_MCU)
 	{ 
 		if (state->header.length == 0)
-		{ // Header was not sent yet
+		{ // Header was not forwarded yet
 			uint16_t remSize = PACKET_HEADER_SIZE;
 			handleSourceData(&packetHub, &packetHub.sources[port], state->headerRaw, &remSize);
 			if (remSize != 0)

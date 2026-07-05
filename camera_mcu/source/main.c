@@ -442,7 +442,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	if (state->header.tag >= PACKET_MAX_ID_POSSIBLE)
 		return uartd_ignore;
 
-	if (state->header.tag < PACKET_HOST_COMM)
+	if (state->header.tag < PACKET_HOST_SBC)
 	{
 		if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF)
 		{ // Should not happen since header checksum is validated
@@ -476,7 +476,14 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 			return uartd_reset_nak;
 		}
 	}
-	else if (uartState == UART_CamMCU)
+
+	// Packets always received, whether SBC or MCU has UART control
+	if (state->header.tag == PACKET_SYNC)
+	{ // Received sync packet
+		return uartd_accept;
+	}
+
+	if (uartState == UART_CamMCU)
 	{
 		if (state->header.tag == PACKET_PING)
 		{ // Answer ping to notify of existence
@@ -494,10 +501,6 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 			WARN_CHARR('/', 'I', 'R', 'D');
 			return uartd_reset_nak;
 		}
-		else if (state->header.tag == PACKET_SYNC)
-		{ // Received sync packet
-			return uartd_accept;
-		}
 		return uartd_unknown;
 	}
 	// else assert(uartState == UART_CamPi);
@@ -506,10 +509,6 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{ // Pi will answer ping to notify of existence
 		lastMarker = GetTimePoint();
 		return uartd_ignore;
-	}
-	else if (state->header.tag == PACKET_SYNC)
-	{ // Received sync packet
-		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_SOF)
 	{ // Received packet indicating an immediate Start of Frame
@@ -522,7 +521,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 		return uartd_accept;
 	}
-	else if (state->header.tag >= PACKET_HOST_COMM)
+	else if (state->header.tag >= PACKET_HOST_SBC)
 	{
 		if (!piIsBooted)
 		{ // Only bother queueing packets if SBC is there to fetch them
@@ -557,7 +556,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 
 uartd_respond uartd_handle_data(uint_fast8_t port, uint8_t* ptr, uint_fast16_t size)
 {
-	if (state->header.tag >= PACKET_HOST_COMM)
+	if (state->header.tag >= PACKET_HOST_SBC)
 	{
 		if (PACKET_HEADER_SIZE+state->dataPos+size > SBCPacketQueue[SBCWritingPacket].size)
 		{ // Should never happen, implies UART parsing failed
@@ -582,7 +581,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 {
 	PortState *state = &portStates[port];
 
-	if (state->header.tag >= PACKET_HOST_COMM)
+	if (state->header.tag >= PACKET_HOST_SBC)
 	{
 		// Cannot easily check checksum here, uses CRC32
 		SBCPacketQueue[SBCWritingPacket].available = true;

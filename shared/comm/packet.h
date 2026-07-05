@@ -57,20 +57,23 @@ enum TrCamMode
 
 enum PacketTag
 {
-	// All below are for (direct) Cam<->Controller comm
+	// All below are for Camera <-> Controller comms, using fletcher32 checksum
 	PACKET_ACK = 1,			// Acknowledge identification
 	PACKET_NAK,				// Interrupt all communication
 	PACKET_IDENT,			// Identification packet with version
 	PACKET_PING,			// NOP packet that must be returned
 	PACKET_SYNC,			// Timestamped packet for TimeSync
 	PACKET_SOF,				// Timestamped packet signaling SOF for frameID
-	PACKET_READ_MCU_INFO,	// Request to read serial number and related info from MCU OTP
-	PACKET_WRITE_MCU_INFO,	// Request to program serial number and related info to MCU OTP
 	PACKET_RATE_CONFIG,		// Request to switch baudrate
 	PACKET_RATE_VERIFY,		// Verification data with checksums to test baudrate
 
-	// All below are for (forwarded) Cam<->Host comm
-	PACKET_HOST_COMM = 24,
+	// All below are for Camera MCU <-> Host comms, using fletcher32 checksum
+	PACKET_HOST_MCU = 16,
+	PACKET_READ_MCU_INFO,	// Request to read serial number and related info from MCU OTP
+	PACKET_WRITE_MCU_INFO,	// Request to program serial number and related info to MCU OTP
+
+	// All below are for Camera SBC <-> Host comm, using CRC32 checksum
+	PACKET_HOST_SBC = 24,
 	PACKET_CFG_SETUP = 24,	// Set base camera configuration
 	PACKET_CFG_MODE,		// Set mode/status configuration - response PACKET_CONFIG, toggles
 	PACKET_CFG_WIFI,		// Set wireless configuration & state - response PACKET_WIRELESS

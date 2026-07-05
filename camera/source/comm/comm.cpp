@@ -98,7 +98,7 @@ bool comm_packet(CommState *commPtr, PacketHeader header)
 {
 	if (!commPtr || !commPtr->ready || commPtr->error) return false;
 	CommState &comm = *commPtr;
-	if (header.tag < PACKET_HOST_COMM)
+	if (header.tag < PACKET_HOST_SBC)
 	{
 		printf("Attempting to send packet %d to Controller using methods intended for Host comm!\n", header.tag);
 		return false;

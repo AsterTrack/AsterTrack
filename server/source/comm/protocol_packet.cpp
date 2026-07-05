@@ -21,6 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "protocol_packet.hpp"
 
 #include "comm/packet.hpp"
+#include "comm/uart.h"
 #include "util/util.hpp" // shortDiff, printBuffer
 #include "util/log.hpp"
 
@@ -295,7 +296,10 @@ bool VerifyChecksum(const PacketBlocks &packet)
 		return false;
 	}
 	uint8_t checksum[PACKET_CHECKSUM_SIZE];
-	calculateForwardPacketChecksum(packet.data.data(), packet.data.size(), checksum);
+	if (packet.header.tag >= PACKET_HOST_SBC)
+		calculateForwardPacketChecksum(packet.data.data(), packet.data.size(), checksum);
+	else
+		calculateDirectPacketChecksum(packet.data.data(), packet.data.size(), checksum);
 	for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 	{
 		if (checksum[i] != packet.checksumBuf[i])

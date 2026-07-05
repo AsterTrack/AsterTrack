@@ -292,10 +292,10 @@ bool proto_fetchCmd(ProtocolState &comm)
 		{ // Verify packet checksum
 			uint8_t *packetChecksum = comm.rcvBuf.data()+comm.cmdPos+comm.cmdSz;
 			uint8_t checksum[PACKET_CHECKSUM_SIZE];
-			if (comm.header.tag < PACKET_HOST_COMM)
-				calculateDirectPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
-			else
+			if (comm.header.tag >= PACKET_HOST_SBC)
 				calculateForwardPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
+			else
+				calculateDirectPacketChecksum(comm.rcvBuf.data()+comm.cmdPos, comm.cmdSz, checksum);
 			for (int i = 0; i < PACKET_CHECKSUM_SIZE; i++)
 			{
 				if (checksum[i] != packetChecksum[i])

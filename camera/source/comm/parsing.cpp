@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 {
-	if (header.tag < PACKET_HOST_COMM)
+	if (header.tag < PACKET_HOST_SBC)
 		return false;
 	switch (header.tag)
 	{
@@ -64,7 +64,7 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 
 bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
-	if (header.tag < PACKET_HOST_COMM)
+	if (header.tag < PACKET_HOST_SBC)
 		return false;
 	if (erroneous && header.tag != PACKET_FW_BLOCK)
 		return false;

@@ -176,7 +176,7 @@ void sendInfoPacket(CommMedium medium)
 	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts);
 	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
 
-	infoPacket[0] = 1; // Packet version
+	infoPacket[0] = SBC_INFO_VERSION; // Packet version
 	infoPacket[1] = storedInfo.mcuOTPVersion;
 	infoPacket[2] = storedInfo.mcuHWDetection;
 	infoPacket[3] = 0; // Reserved

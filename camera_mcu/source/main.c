@@ -267,7 +267,7 @@ int main(void)
 			SafeDelayMS(100);
 			// Write config
 			uint32_t config[] = { cameraIDWrite, 0 };
-			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint32_t));
+			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint64_t));
 			// Signal result
 			if (error == 1)
 				rgbled_transition(LED_UART_ERROR, 0);
@@ -776,8 +776,10 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 
 static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 {
+	response = __builtin_assume_aligned(response, 4);
+
 	// This is a critical packet, so make sure misinterpretations can not happen
-	uint8_t Packet_Version = 1;
+	uint8_t Packet_Version = MCU_INFO_VERSION;
 	if (requestedVersion != 0 && requestedVersion < Packet_Version)
 		Packet_Version = requestedVersion;
 	// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
@@ -786,7 +788,7 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 	response[0] = Packet_Version;		// Fetch Info packet version
 	response[1] = OTP_Version; 			// OTP Format Version
 	response[2] = OTP_NumSubParts; 		// Sub-Part Count
-	response[3] = 0					// Detected Hardware Features
+	response[3] = 0						// Detected Hardware Features
 		| (hasHSEClock? MCU_HW_HAS_HSE : 0);
 
 	// Write string lengths for separate request
@@ -813,7 +815,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 {
 	lastPiComm = GetTimePoint();
 	piIsBooted = true;
-	uint8_t *response = *responsePtr; // Maximum size: I2C_TRANSMIT_BUFFER_LEN
+	uint8_t *response = __builtin_assume_aligned(*responsePtr, 8); // Maximum size: I2C_TRANSMIT_BUFFER_LEN
 	// WARNING: If responsePtr is changed to an external buffer, it needs to have space for I2C_PREPENDED_BYTES in front of it!
 
 	switch (command)
@@ -861,11 +863,12 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		{
 			// We assume OTP has already been read - otherwise, the Pi would not know the length to read
 			// And it's more complex to read anyway. Advantage: We can just DMA from memory
-			uint16_t pos = OTP_HW_STRING_PREPEND-2;
-			*responsePtr = OTP_HwStringData+pos;
+			static_assert(OTP_HW_STRING_PREPEND >= MCU_LEADING_BYTES+2);
+			uint8_t *OTP_HWStringPtr = OTP_HwStringData + OTP_HW_STRING_PREPEND;
+			*responsePtr = OTP_HWStringPtr-2;
 			response = *responsePtr;
-			response[pos+0] = OTP_HwStringLength >> 8;
-			response[pos+1] = OTP_HwStringLength & 0xFF;
+			response[0] = OTP_HwStringLength >> 8;
+			response[1] = OTP_HwStringLength & 0xFF;
 			return 2 + OTP_HwStringLength;
 		}
 		case MCU_GET_FW_STR:

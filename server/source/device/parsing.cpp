@@ -26,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "camera_firmware.hpp"
 
 #include "comm/usb.hpp"
+#include "comm/commands.h"
 
 #include "util/eigenutil.hpp"
 #include "util/log.hpp"
@@ -1010,8 +1011,8 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
 
 	uint8_t packetVersion = data[0];
-	if (packetVersion != 1)
-	{
+	if (packetVersion != SBC_INFO_VERSION)
+	{ // Keep support for older versions in here!
 		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
 		camera.storage.receivedInfo = true;
 		return false;
@@ -1116,12 +1117,12 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	{
 		std::string descPart;
 		std::stringstream stream(info.mcuHWDescriptor);
-		while (std::getline(stream, descPart, HW_DESC_SEP))
+		while (std::getline(stream, descPart, MCU_MULTI_TEXT_SEP))
 			info.mcuHWDescriptorParts.push_back(std::move(descPart));
 	}
 
 	LOG(LParsing, LInfo, "Camera #%u sent information:", camera.id);
-	for (std::string &str : CameraDescribeInfo(info))
+	for (std::string &str : describeCameraInfo(info))
 		LOG(LParsing, LInfo, "    %s", str.c_str());
 
 	camera.storage.info = std::move(info);

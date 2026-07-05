@@ -26,7 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <vector>
 
 
-#define HW_DESC_SEP		'\2' // Unicode Text Start
+#define SBC_INFO_VERSION		1
 
 union HardwareSerial
 {
@@ -138,5 +138,10 @@ struct CameraStoredConfig
 	CameraID cameraID; // Camera ID (32bit), stored in MCU Flash, used for unique ID in software
 	// May add further config here, stored either on the MCU Flash or in the SBC storage
 };
+
+
+uint32_t parseMCUInfoPacket(CameraStoredInfo &info, CameraStoredConfig &config, const uint8_t *packet, uint32_t length);
+std::string describeHardwareSerial(HardwareSerial hwSerial);
+std::vector<std::string> describeCameraInfo(const CameraStoredInfo &info);
 
 #endif // SERIAL_H

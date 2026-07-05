@@ -154,8 +154,8 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 
 bool IsOTPEmpty();
 uint16_t EraseFlashPage(uint16_t page);
-uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length);
-uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length);
+uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64);
+uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64);
 
 void SwitchToBootloader();
 void EnableWatchdog();

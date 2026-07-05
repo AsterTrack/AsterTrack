@@ -62,6 +62,7 @@ set(SOURCES
 	source/util/crash_handler.cpp
 	../shared/util/image.cpp
 	../shared/util/timesync.cpp
+	../shared/comm/serial.cpp
 	../shared/comm/protocol_stream.cpp
 	../shared/blob/refinement.cpp
 	../shared/blob/blob.cpp

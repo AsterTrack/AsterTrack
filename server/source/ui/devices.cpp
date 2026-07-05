@@ -117,7 +117,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			}
 			ImGui::Text("SoC Temperature: %.1f\u00B0C, Supply Voltage %.2fV", temperature, supplyVoltage);
 
-			auto desc = CameraDescribeInfo(info);
+			auto desc = describeCameraInfo(info);
 			if (desc.empty())
 				ImGui::TextUnformatted("Camera has not sent info yet!");
 			else

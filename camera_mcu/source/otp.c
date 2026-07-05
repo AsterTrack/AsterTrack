@@ -27,36 +27,47 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "compat.h"
 
-uint8_t OTP_Version; // Assume OTP not written, disable parsing
+const uint8_t OTP_Version_Latest = 1;
+const uint8_t OTP_Version_NotRead = 0x00;
+const uint8_t OTP_Version_NotWritten = 0xFF;
+uint8_t OTP_Version = OTP_Version_NotRead; // Assume OTP not written, disable parsing
 uint8_t OTP_LenMainData, OTP_MaxSubParts, OTP_MaxHWString; // Lengths in 64Bit blocks
-#define MAX_HW_STRING_BLOCKS 100
-uint8_t OTP_HwStringData[OTP_HW_STRING_PREPEND+MAX_HW_STRING_BLOCKS*8];
+uint8_t OTP_HwStringData[HW_STRING_BUFFER_SIZE];
 uint16_t OTP_HwStringLength;
 uint8_t OTP_NumSubParts;
 
-void otp_read()
+static bool otp_parse_header(uint64_t OTP_HEADER)
 {
-	uint64_t OTP_HEADER = ((uint64_t)OTP[0] << 32) | OTP[1];
 	if (OTP_HEADER != (uint64_t)-1)
 	{ // OTP Header has been written
 		OTP_Version = OTP_HEADER >> 56; // Version Format of OTP
 		// Remaining 56bit header reserved for future format info
 	}
-	else OTP_Version = 0;
+	else OTP_Version = OTP_Version_NotWritten;
 
 	switch (OTP_Version)
 	{
-		case 1:
-			OTP_LenMainData = 8;	// Header, HW Serial, 5 Blocks Reserved
-			OTP_MaxSubParts = 8;	// 8 64-Bit Serial Numbers for sub-parts
+		case OTP_Version_Latest:
+			OTP_LenMainData = 8;					// Header, HW Serial, 5 Blocks Reserved
+			OTP_MaxSubParts = MAX_SUBPART_BLOCKS;	// 8 64-Bit Serial Numbers for sub-parts
 			OTP_MaxHWString = MAX_HW_STRING_BLOCKS;	// 100 Blocks maximum for HW Descriptor String
-			break;
+			return true;
+		case OTP_Version_NotWritten:
+		case OTP_Version_NotRead:
 		default: // Unsupported, should not happen, assume 0 sizes and don't parse
 			OTP_LenMainData = 0;
 			OTP_MaxSubParts = 0;
 			OTP_MaxHWString = 0;
-			break;
+			return false;
 	}
+}
+
+bool otp_read()
+{
+	uint64_t OTP_HEADER = ((uint64_t)OTP[0] << 32) | OTP[1];
+	if (!otp_parse_header(OTP_HEADER))
+		return false;
+
 	// assert(sizeof(OTP_HwStringData) >= OTP_HW_STRING_PREPEND+OTP_MaxHWString*8);
 
 	if (OTP_MaxHWString > 0)
@@ -101,9 +112,11 @@ void otp_read()
 		if (!(OTP[otpIndex+0] == (uint32_t)-1 && OTP[otpIndex+1] == (uint32_t)-1))
 			OTP_NumSubParts = s+1; // Update count of explicitly specified sub-parts
 	}
+
+	return true;
 }
 
-uint8_t otp_get_subparts(uint32_t *target)
+void otp_get_subparts(uint32_t *target)
 {
 	// These 64Bit-Blocks are optional sub-part IDs
 	// Need to be continuous, their index is their identifier

@@ -187,7 +187,7 @@ void I2C1_IRQHandler(void)
 
 				// Prepare default TX Buffer
 				uint8_t prepend = (I2C_PREPENDED_BYTES+7)/8*8;
-				uint8_t *transmitPtr = transmitBuffer+prepend;
+				uint8_t *transmitPtr = __builtin_assume_aligned(transmitBuffer+prepend, 8);
 				uint16_t transmitLength = 0;
 
 				if (command == MCU_INITIATE)

@@ -44,6 +44,7 @@ CPP="-std=c++20 -Wno-sign-compare -Wno-pointer-arith -Wno-format-overflow -Wno-u
 /usr/bin/g++ $SHARED $CPP -o build-env/util/crash_handler.cpp.o -c source/util/crash_handler.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/util/image.cpp.o -c ../shared/util/image.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/util/timesync.cpp.o -c ../shared/util/timesync.cpp
+/usr/bin/g++ $SHARED $CPP -o build-env/comm/serial.cpp.o -c ../shared/comm/serial.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/comm/protocol_stream.cpp.o -c ../shared/comm/protocol_stream.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/blob/refinement.cpp.o -c ../shared/blob/refinement.cpp
 /usr/bin/g++ $SHARED $CPP -o build-env/blob/blob.cpp.o -c ../shared/blob/blob.cpp

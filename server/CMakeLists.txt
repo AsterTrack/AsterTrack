@@ -42,6 +42,7 @@ set(SERVER_SHARED
 	util/image.cpp
 	hash/crc32.cpp
 	hash/sha256.cpp
+	comm/serial.cpp
 	comm/protocol_stream.cpp
 )
 set(SERVER_DEP

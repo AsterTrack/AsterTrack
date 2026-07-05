@@ -752,14 +752,13 @@ static bool mcu_send_ping()
 	return true;
 }
 
-static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint16_t length)
+static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID)
 {
 	if (i2c_fd < 0) return false;
-	descriptor.clear();
-	if (length == 0) return true;
+	if (descriptor.size() == 0) return true;
 
 	unsigned char I2C_CMD[] = { stringID };
-	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+length);
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+descriptor.size());
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get descriptor)! %d: %s\n", errno, strerror(errno));
@@ -767,25 +766,22 @@ static bool mcu_fetch_descriptor(std::string &descriptor, uint8_t stringID, uint
 		return false;
 	}
 
-	static_assert(HW_DESC_SEP == MCU_MULTI_TEXT_SEP);
-	// Ensure these are always the same, both camera_mcu and server access their respective versions
-
 	uint16_t received = (packet[0] << 8) | packet[1];
-	if (received != length)
-		printf("Requested string %d of length %d but received string of length %d!\n", stringID, length, received);
-	uint16_t strlen = std::min(received, length);
-	descriptor = std::string((char*)packet+2, strlen);
+	if (received != descriptor.size())
+		printf("Requested string %d of length %d but received string of length %d!\n", stringID, descriptor.size(), received);
+	uint16_t strlen = std::min<uint32_t>(received, descriptor.size());
+	descriptor.resize(strlen);
+	memcpy(descriptor.data(), packet+2, strlen);
 	return true;
 }
 
-static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
+static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts)
 {
 	if (i2c_fd < 0) return false;
-	subparts.clear();
-	if (count == 0) return true;
+	if (subparts.size() == 0) return true;
 
 	unsigned char I2C_CMD[] = { MCU_GET_PARTS };
-	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+count*sizeof(uint64_t));
+	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), 2+subparts.size()*sizeof(uint64_t));
 	if (!packet)
 	{
 		printf("Failed to send I2C message to MCU (get subparts)! %d: %s\n", errno, strerror(errno));
@@ -794,9 +790,9 @@ static bool mcu_fetch_subparts(std::vector<uint64_t> &subparts, uint8_t count)
 	}
 
 	uint8_t received = packet[1];
-	if (received != count)
-		printf("Requested %d subpart serial IDs but received %d!\n", count, received);
-	received = std::min(received, count);
+	if (received != subparts.size())
+		printf("Requested %d subpart serial IDs but received %d!\n", (int)subparts.size(), received);
+	received = std::min<uint32_t>(received, subparts.size());
 	subparts.resize(received);
 	memcpy(subparts.data(), packet+2, received*sizeof(uint64_t));
 	return true;
@@ -806,8 +802,8 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 {
 	if (i2c_fd < 0) return false;
 
-	uint8_t FETCH_VERSION = 1; // Request up to this version, may receive lower version
-	unsigned char I2C_CMD[] = { MCU_FETCH_INFO, FETCH_VERSION };
+	// Request up to version MCU_INFO_VERSION, may receive lower version
+	unsigned char I2C_CMD[] = { MCU_FETCH_INFO, MCU_INFO_VERSION };
 	uint8_t *packet = mcu_read(I2C_CMD, sizeof(I2C_CMD), MCU_INFO_MAX_LENGTH);
 	if (!packet)
 	{
@@ -816,14 +812,9 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 		return false;
 	}
 
-	FETCH_VERSION = packet[0]; // Actually received version
-	if (FETCH_VERSION != 1)
-	{
-		printf("Fetch info packet version %d is unsupported!\n", FETCH_VERSION);
+	if (!parseMCUInfoPacket(info, config, packet, MCU_INFO_MAX_LENGTH))
 		return false;
-	}
-	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
-	info.mcuHWDetection = (CameraHWDetection)packet[3];
+
 	if ((info.mcuHWDetection & MCU_HW_HAS_HSE))
 		timesync.params = TimeSyncParamsForMCU_HSE;
 	else
@@ -831,16 +822,6 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 		printf("Using aggressive timesync parameters to compensate for MCU using HSI!\n");
 		timesync.params = TimeSyncParamsForMCU_HSI;
 	}
-
-	uint8_t *ptr = packet+8;
-	memcpy(&config.cameraID, ptr, sizeof(CameraID));
-	ptr += sizeof(CameraID);
-	memcpy(&info.mcuFWVersion, ptr, sizeof(VersionDesc));
-	ptr += sizeof(VersionDesc);
-	memcpy(&info.hardwareSerial, ptr, sizeof(HardwareSerial));
-	ptr += sizeof(HardwareSerial);
-	memcpy(&info.mcuUniqueID, ptr, 3*sizeof(uint32_t));
-	ptr += 3*sizeof(uint32_t);
 
 	// Copy for future reference
 	mcu_firmware_version_known = true;
@@ -853,16 +834,13 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 			mcu_firmware_version.major, mcu_firmware_version.minor, mcu_firmware_version.patch, mcu_firmware_version.build);
 	}
 
-	uint8_t subpartCount = packet[2];
-	if (!mcu_fetch_subparts(info.subpartSerials, subpartCount))
+	if (!mcu_fetch_subparts(info.subpartSerials))
 		return false;
 
-	uint16_t hwStrLen = (packet[4] << 8) | packet[5];
-	if (!mcu_fetch_descriptor(info.mcuHWDescriptor, MCU_GET_HW_STR, hwStrLen))
+	if (!mcu_fetch_descriptor(info.mcuHWDescriptor, MCU_GET_HW_STR))
 		return false;
 
-	uint16_t fwStrLen = (packet[6] << 8) | packet[7];
-	if (!mcu_fetch_descriptor(info.mcuFWDescriptor, MCU_GET_FW_STR, fwStrLen))
+	if (!mcu_fetch_descriptor(info.mcuFWDescriptor, MCU_GET_FW_STR))
 		return false;
 
 	return true;

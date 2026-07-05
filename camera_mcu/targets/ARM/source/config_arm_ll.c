@@ -476,9 +476,9 @@ uint16_t EraseFlashPage(uint16_t page)
 }
 
 __attribute__((section(".RamFunc"), noinline, optimize("Os")))
-uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
+uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64)
 {
-	if (length == 0 || (length & 1) || length > 256)
+	if (length64 == 0 || length64 > 256)
 		return 10;
 
 	if (!UnlockFlash())
@@ -495,7 +495,7 @@ uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t lengt
 	FLASH->CR |= FLASH_CR_PG;
 
 	uint32_t error = 0;
-	for (int i = 0; i < length/2; i++)
+	for (int i = 0; i < length64; i++)
 	{
 		address[i*2+0] = data[i*2+0];
 		__ISB();
@@ -525,16 +525,16 @@ uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t lengt
 } */
 
 __attribute__((section(".RamFunc"), noinline, optimize("Os")))
-uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length)
+uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64)
 {
-	if (length == 0 || (length & 1) || length > 256)
+	if (length64 == 0 || length64 > 256)
 		return 10;
 
 	if (((uint32_t)address) & 0b111)
 		return 10;
 
 	uint16_t page = ((uint32_t)address - FLASH_BASE) / FLASH_PAGE_SIZE;
-	uint16_t pageEnd = ((uint32_t)(address+length-1) - FLASH_BASE) / FLASH_PAGE_SIZE;
+	uint16_t pageEnd = ((uint32_t)(address+length64*2-1) - FLASH_BASE) / FLASH_PAGE_SIZE;
 	if (page != pageEnd)
 		return 10;
 
@@ -587,7 +587,7 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 	// Enter flash programming mode
 	FLASH->CR |= FLASH_CR_PG;
 
-	for (int i = 0; i < length/2; i++)
+	for (int i = 0; i < length64; i++)
 	{
 		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 

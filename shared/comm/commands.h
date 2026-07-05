@@ -57,7 +57,10 @@ enum CameraMCUCommand
 #define MCU_MAX_LEADING_BYTES	6
 #define MCU_LEADING_BYTES		1 // Can just change, SBC will be notified in initial packet
 
-// Length of MCU_FETCH_INFO (may increase as long as backwards-compatibility is kept)
+// Most recent MCU Info packet version supported
+// ALWAYS update all uses across projects to be backwards compatible
+#define MCU_INFO_VERSION		1
+// Max length of MCU_FETCH_INFO across versions (may only increase)
 #define MCU_INFO_MAX_LENGTH		(10 * sizeof(uint32_t))
 // Non-Zero Separator in strings indicating separate texts
 #define MCU_MULTI_TEXT_SEP		'\2' // Unicode Text Start

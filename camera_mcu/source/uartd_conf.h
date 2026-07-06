@@ -33,11 +33,10 @@ extern "C"
 #define UART_TX_BUFFER_SIZE		1024	// Not used and optimised away with gc-sections
 #define UART_RX_FILL_TIME_US	(UART_RX_BUFFER_SIZE * UART_BAUD_PER_BYTE * 1000 / (UART_BAUD_RATE_MAX/1000))
 
-#define UART_HEADROOM 			0
+#define UART_HEADROOM			0
 
 // Size temporary buffer for receiving packets addressed at the MCU, not the Host
-// Only Ident packet has any meaningful amount of data
-#define UART_TEMP_PACKET_BUF 32
+#define UART_TEMP_PACKET_BUF	256
 
 // UART Timing
 #define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming

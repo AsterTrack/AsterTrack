@@ -27,14 +27,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "compat.h"
 
-const uint8_t OTP_Version_Latest = 1;
+const uint8_t OTP_Version_Latest = 1; // Keep PACKET_WRITE_MCU_INFO used in production tool in sync!
 const uint8_t OTP_Version_NotRead = 0x00;
 const uint8_t OTP_Version_NotWritten = 0xFF;
 uint8_t OTP_Version = OTP_Version_NotRead; // Assume OTP not written, disable parsing
 uint8_t OTP_LenMainData, OTP_MaxSubParts, OTP_MaxHWString; // Lengths in 64Bit blocks
 uint8_t OTP_HwStringData[HW_STRING_BUFFER_SIZE];
 uint16_t OTP_HwStringLength;
-uint8_t OTP_NumSubParts;
+uint8_t OTP_NumSubParts, OTP_NumHWStringBlocks;
 
 static bool otp_parse_header(uint64_t OTP_HEADER)
 {
@@ -79,6 +79,7 @@ bool otp_read()
 		// Upon encountering a block that has not yet been written, string is terminated again
 		uint8_t otpTextStart = (OTP_LenMainData + OTP_MaxSubParts) * 2;
 		OTP_HwStringLength = 0;
+		OTP_NumHWStringBlocks = 0;
 		uint8_t *OTP_HWStringPtr = OTP_HwStringData + OTP_HW_STRING_PREPEND;
 		for (int b = 0; b < OTP_MaxHWString; b++)
 		{
@@ -97,6 +98,7 @@ bool otp_read()
 				OTP_HWStringPtr[OTP_HwStringLength++] = block & 0xFF;
 				block >>= 8;
 			}
+			OTP_NumHWStringBlocks = b+1; // Include any blocks with JUST null-separators
 		}
 		// Clear trailing separator - but retain the separators between individual texts
 		if (OTP_HwStringLength > 0 && OTP_HwStringLength < OTP_MaxHWString*8 && OTP_HWStringPtr[OTP_HwStringLength-1] == MCU_MULTI_TEXT_SEP)
@@ -128,4 +130,73 @@ void otp_get_subparts(uint32_t *target)
 		memcpy(target + s*2 + 0, &a, sizeof(uint32_t));
 		memcpy(target + s*2 + 1, &b, sizeof(uint32_t));
 	}
+}
+
+uint16_t otp_program_main(uint32_t *mainData, uint16_t length)
+{
+	if (length & 0x7)
+		return 1;
+	uint64_t OTP_HEADER = ((uint64_t)mainData[0] << 32) | mainData[1];
+	if (!otp_parse_header(OTP_HEADER))
+		return 5; // Did not receive a valid header
+	uint16_t length64 = length / sizeof(uint64_t);
+	if (length64 > OTP_LenMainData)
+		return 2; // Only allow main data to be written
+	// TODO: Remove FakeOTP
+	//if (OTP_Version != OTP_Version_NotWritten)
+	//	return 3; // Can't overwrite existing header
+	if (OTP_Version != OTP_Version_Latest)
+		return 4; // Don't allow older versions
+
+	uint16_t error;
+
+	// TODO: Remove FakeOTP
+	error = EraseFlashPage(FAKE_OTP_PAGE);
+	if (error) return error + 10;
+
+	error = ProgramFlash(OTP, mainData, length64);
+	if (error) return error + 10;
+
+	return 0;
+}
+
+uint16_t otp_set_subparts(uint32_t *subparts, uint16_t length)
+{
+	if (length & 0x7)
+		return 1;
+	uint16_t length64 = length / sizeof(uint64_t);
+	if (length64 > OTP_MaxSubParts)
+		return 2;
+
+	uint16_t error = ProgramFlash(OTP + (OTP_LenMainData*2), subparts, length64);
+	if (error) return error + 10;
+
+	return 0;
+}
+
+uint16_t otp_append_hw_string(uint32_t *string, uint16_t length)
+{
+	uint16_t length64 = (length+1+7) / sizeof(uint64_t);
+	if (OTP_NumHWStringBlocks+length64 > OTP_MaxHWString)
+		return 2;
+
+	// Ensure it's properly zero-terminated (1+7 above ensures at least one)
+	uint8_t *str = (uint8_t*)string;
+	for (int i = length; i < length64*sizeof(uint64_t); i++)
+		str[i] = 0;
+
+	// Ensure there's no other zero inside the string (disrupts parsing)
+	for (int i = 0; i < length; i++)
+		if (str[i] == 0)
+			return 3;
+
+	// Ensure HW string end is indeed unwritten
+	volatile uint32_t *HWStringEnd = OTP + (OTP_LenMainData+OTP_MaxSubParts+OTP_NumHWStringBlocks)*2;
+	if (HWStringEnd[0] != (uint32_t)-1 || HWStringEnd[1] != (uint32_t)-1)
+		return 4;
+
+	uint16_t error = ProgramFlash(HWStringEnd, string, length64);
+	if (error) return error + 10;
+
+	return 0;
 }

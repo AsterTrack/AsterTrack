@@ -32,9 +32,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 extern uint8_t OTP_Version;
 extern uint8_t OTP_HwStringData[HW_STRING_BUFFER_SIZE];
 extern uint16_t OTP_HwStringLength;
-extern uint8_t OTP_NumSubParts;
+extern uint8_t OTP_NumSubParts, OTP_NumHWStringBlocks;
 
 bool otp_read();
 void otp_get_subparts(uint32_t *target);
+
+uint16_t otp_program_main(uint32_t *mainData, uint16_t length);
+uint16_t otp_set_subparts(uint32_t *subparts, uint16_t length);
+uint16_t otp_append_hw_string(uint32_t *string, uint16_t length);
 
 #endif // OTP_H

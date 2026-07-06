@@ -491,6 +491,10 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{ // Received request to read mcu info
 		return uartd_accept;
 	}
+	else if (state->header.tag == PACKET_WRITE_MCU_INFO)
+	{ // Received request to program mcu info
+		return uartd_accept;
+	}
 
 	if (uartState == UART_CamMCU)
 	{
@@ -699,7 +703,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_READ_MCU_INFO)
-	{ // Received request to read mcu info from OTP
+	{ // Received request to write mcu info into OTP
 		if (receive.packetSize < 1) return uartd_reset_nak;
 		// To avoid having to allocate one huge buffer and copy all data
 		// Packet is split in main data and additional data, written one after another
@@ -736,6 +740,37 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		uartd_send_int(port, mainPacketEnd, UART_POST_OVERHEAD_SEND, true);
 		NVIC_EnableIRQ(I2C1_IRQn);
 		LeaveUARTPortZone(port);
+		return uartd_accept;
+	}
+	else if (state->header.tag == PACKET_WRITE_MCU_INFO)
+	{ // Program OTP with hardware info
+		if (!correctChecksum) // Already gated wrong checksum, but make sure
+			return uartd_ignore;
+		uint8_t request = receive.packetBuffer[0];
+		uint32_t *otpStart = (uint32_t*)(receive.packetBuffer+4);
+		uint16_t errorCode;
+
+		if (request == 1)
+			errorCode = otp_program_main(otpStart, receive.packetSize-4);
+		else if (request == 2)
+			errorCode = otp_set_subparts(otpStart, receive.packetSize-4);
+		else if (request == 3)
+			errorCode = otp_append_hw_string(otpStart, receive.packetSize-4);
+		else
+		 	return uartd_ignore;
+
+		// Re-read even on failure!
+		if (!otp_read() && errorCode == 0)
+			errorCode = 9;
+
+		if (errorCode == 0)
+			rgbled_transition(LED_BOOTLOADER, 0);
+		else if (errorCode <= 0b1111)
+			rgbled_displayError(errorCode);
+		else
+			rgbled_displayError(0b1111);
+
+		ReturnToDefaultLEDState(1000);
 		return uartd_accept;
 	}
 

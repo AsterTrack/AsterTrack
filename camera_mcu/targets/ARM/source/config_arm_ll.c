@@ -443,15 +443,24 @@ enum CameraMCUFlashConfig SetFlashConfiguration(enum CameraMCUFlashConfig config
 
 // Unused, but due to being RamFunc, are not discarded automatically and waste away in RAM:
 
-/* __attribute__((section(".RamFunc"), noinline, optimize("Os")))
+__attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t EraseFlashPage(uint16_t page)
 {
-	if (!UnlockFlash())
-		return 1;
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_8);
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	__disable_irq();
 
-	while (FLASH->SR & FLASH_SR_BSY1);
+	if (!UnlockFlash())
+	{
+		__enable_irq();
+
+		LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+		return 1;
+	}
+
+	while (FLASH->SR & FLASH_SR_BSY1)
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear error status
 	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
@@ -462,7 +471,8 @@ uint16_t EraseFlashPage(uint16_t page)
 	FLASH->CR |= FLASH_CR_STRT;
 
 	// Wait for operation to finish
-	while (FLASH->SR & FLASH_SR_BSY1);
+	while (FLASH->SR & FLASH_SR_BSY1)
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear flash erase flag
 	FLASH->CR &= ~(FLASH_CR_PER | FLASH_CR_PNB_Msk);
@@ -474,23 +484,38 @@ uint16_t EraseFlashPage(uint16_t page)
 	// Lock FLASH->CR again
 	FLASH->CR |= FLASH_CR_LOCK;
 
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+
 	__enable_irq();
 
-	return error;
+	return error? 5 : 0;
 }
 
 __attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64)
 {
 	if (length64 == 0 || length64 > 256)
-		return 10;
+		return 2;
 
-	if (!UnlockFlash())
-		return 1;
+	if (((uint32_t)address) & 0b111)
+		return 3;
+
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_8);
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	__disable_irq();
 
-	while (FLASH->SR & FLASH_SR_BSY1);
+	if (!UnlockFlash())
+	{
+		__enable_irq();
+
+		LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+		return 1;
+	}
+
+	while (FLASH->SR & FLASH_SR_BSY1)
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear error status
 	FLASH->SR |= FLASH_SR_ERRORS | FLASH_SR_EOP;
@@ -501,46 +526,52 @@ uint16_t ProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t lengt
 	uint32_t error = 0;
 	for (int i = 0; i < length64; i++)
 	{
+		LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+
 		address[i*2+0] = data[i*2+0];
 		__ISB();
 		address[i*2+1] = data[i*2+1];
 
 		while (FLASH->SR & FLASH_SR_BSY1);
 
-		// Clear EOP and check errors
-		bool EOP = FLASH->SR & FLASH_SR_EOP;
-		FLASH->SR |= FLASH_SR_EOP;
+		// Clear EOP (if EOPIE, default 0)
+		//bool EOP = FLASH->SR & FLASH_SR_EOP;
+		//FLASH->SR |= FLASH_SR_EOP;
+		//if (!EOP) break;
 		error = FLASH->SR & FLASH_SR_ERRORS;
-		if (!EOP || error) break;
+		if (error) break;
 	}
 
 	// Clear any errors
 	FLASH->SR |= FLASH_SR_ERRORS;
 
-	// Exist flash programming mode
+	// Exit flash programming mode
 	FLASH->CR &= ~FLASH_CR_PG;
 
 	// Lock FLASH->CR again
 	FLASH->CR = FLASH_CR_LOCK;
 
+	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
+
 	__enable_irq();
 
-	return error;
-} */
+	return error? 5 : 0;
+}
 
 __attribute__((section(".RamFunc"), noinline, optimize("Os")))
 uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16_t length64)
 {
 	if (length64 == 0 || length64 > 256)
-		return 10;
+		return 2;
 
 	if (((uint32_t)address) & 0b111)
-		return 10;
+		return 3;
 
 	uint16_t page = ((uint32_t)address - FLASH_BASE) / FLASH_PAGE_SIZE;
 	uint16_t pageEnd = ((uint32_t)(address+length64*2-1) - FLASH_BASE) / FLASH_PAGE_SIZE;
 	if (page != pageEnd)
-		return 10;
+		return 4;
 
 	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_8);
 	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
@@ -585,7 +616,7 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 		__enable_irq();
 
 		LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
-		return error;
+		return 5;
 	}
 
 	// Enter flash programming mode
@@ -599,17 +630,15 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 		__ISB();
 		address[i*2+1] = data[i*2+1];
 
-		while (FLASH->SR & FLASH_SR_BSY1)
-			LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+		while (FLASH->SR & FLASH_SR_BSY1);
 
-		// Clear EOP and check errors
-		bool EOP = FLASH->SR & FLASH_SR_EOP;
-		FLASH->SR |= FLASH_SR_EOP;
+		// Clear EOP (if EOPIE, default 0)
+		//bool EOP = FLASH->SR & FLASH_SR_EOP;
+		//FLASH->SR |= FLASH_SR_EOP;
+		//if (!EOP) break;
 		error = FLASH->SR & FLASH_SR_ERRORS;
-		if (!EOP || error) break;
+		if (error) break;
 	}
-
-	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
 
 	// Clear any errors
 	FLASH->SR |= FLASH_SR_ERRORS;
@@ -621,11 +650,11 @@ uint16_t EraseAndProgramFlash(volatile uint32_t *address, uint32_t *data, uint16
 	FLASH->CR = FLASH_CR_LOCK;
 
 	LL_WWDG_SetCounter(WWDG, WWDG_TIMEOUT);
+	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
 
 	__enable_irq();
 
-	LL_WWDG_SetPrescaler(WWDG, LL_WWDG_PRESCALER_1);
-	return error;
+	return error? 5 : 0;
 }
 
 void SwitchToBootloader()

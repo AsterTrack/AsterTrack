@@ -127,7 +127,7 @@ else
 endif
 
 COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char -ffast-math
-#COMMON_FLAGS += -flto=auto
+COMMON_FLAGS += -flto=auto
 COMMON_FLAGS += $(TOOL_INCLUDE) # Solely for clangd
 
 # Add debug options

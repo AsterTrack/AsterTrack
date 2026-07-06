@@ -67,11 +67,12 @@ extern struct UART_IO_State UART_IO[UART_PORT_COUNT];
 
 // Implemented generally
 void uartd_process_port(uint_fast8_t port, uint_fast16_t tail);
+bool uartd_flush_TX(uint_fast8_t port);
 
 // Implemented specfically
 void uart_driver_init(uint32_t baudrate);
 void uart_send_dma(uint_fast8_t port, const void* data, uint_fast16_t len);
-void uart_configure_baudrate(int port, uint32_t baudrate);
+void uart_configure_baudrate(uint_fast8_t port, uint32_t baudrate);
 
 #ifdef __cplusplus
 }

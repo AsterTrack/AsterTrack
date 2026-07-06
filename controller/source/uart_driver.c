@@ -146,7 +146,7 @@ const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
 
 /* Functions */
 
-void uart_configure_baudrate(int port, uint32_t baudrate)
+void uart_configure_baudrate(uint_fast8_t port, uint32_t baudrate)
 {
 	struct UART_DMA_Setup u = UART[port];
 
@@ -249,36 +249,13 @@ void uart_driver_init(uint32_t baudrate)
 }
 
 /** Send data over UART port */
-inline void uart_send_dma(uint_fast8_t port, const void* data, uint_fast16_t len)
+inline void uart_send_dma(uint_fast8_t port, const void *data, uint_fast16_t len)
 {
 	UART_STR("/TX:");
 	UART_CHARR(UINT999_TO_CHARR(len));
-	//while ((UART[port].uart->STATR & USART_STATR_TC) != USART_STATR_TC);
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->MEM_ADDR = (uint32_t)data;
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->COUNTER = len;
 	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL |= DMA_CFGR1_EN;
-}
-
-static inline bool uart_flush_TX(int port)
-{
-	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CFGR1_EN;
-	//while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL & DMA_CFGR1_EN);
-	__disable_irq();
-	int p = UART_IO[port].tx_queue_pos;
-	UART_IO[port].tx_queue_pos = (p + 1) % SZ_TX_QUEUE;
-	if (UART_IO[port].tx_queue[p].valid)
-	{
-		uart_send_dma(port, (uint8_t*)UART_IO[port].tx_queue[p].addr, UART_IO[port].tx_queue[p].len);
-		UART_STR("!QueueTX:");
-		UART_CHARR(INT9_TO_CHARR(p));
-		UART_IO[port].tx_queue[p].valid = false;
-		UART_IO[port].uart_tx = true;
-		__enable_irq();
-		return true;
-	}
-	UART_IO[port].uart_tx = false;
-	__enable_irq();
-	return false;
 }
 
 /** USART global interrupt handlers */
@@ -357,37 +334,37 @@ void DMA1_Channel2_IRQHandler() __IRQ;
 void DMA1_Channel2_IRQHandler()
 { // UART3 TX Complete
 	DMA1->INTFCR = DMA_GIF2;
-	uart_flush_TX(2);
+	uartd_flush_TX(2);
 }
 void DMA1_Channel4_IRQHandler() __IRQ;
 void DMA1_Channel4_IRQHandler()
 { // UART1 TX Complete
 	DMA1->INTFCR = DMA_GIF4;
-	uart_flush_TX(0);
+	uartd_flush_TX(0);
 }
 void DMA1_Channel7_IRQHandler() __IRQ;
 void DMA1_Channel7_IRQHandler()
 { // UART2 TX Complete
 	DMA1->INTFCR = DMA_GIF7;
-	uart_flush_TX(1);
+	uartd_flush_TX(1);
 }
 void DMA2_Channel4_IRQHandler() __IRQ;
 void DMA2_Channel4_IRQHandler()
 { // UART5 TX Complete
 	DMA2->INTFCR = DMA_GIF4;
-	uart_flush_TX(4);
+	uartd_flush_TX(4);
 }
 void DMA2_Channel5_IRQHandler() __IRQ;
 void DMA2_Channel5_IRQHandler()
 { // UART4 TX Complete
 	DMA2->INTFCR = DMA_GIF5;
-	uart_flush_TX(3);
+	uartd_flush_TX(3);
 }
 void DMA2_Channel6_IRQHandler() __IRQ;
 void DMA2_Channel6_IRQHandler()
 { // UART6 TX Complete
 	DMA2->INTFCR = DMA_GIF6;
-	uart_flush_TX(5);
+	uartd_flush_TX(5);
 }
 // Careful with channel 8,9,10,11 of DMA2
 // Those use a separate status register DMA2_EXTEN (technically 8 is mirrored in DMA2 as well, but the defines can only index into DMA2_EXTEN)
@@ -395,11 +372,11 @@ void DMA2_Channel8_IRQHandler() __IRQ;
 void DMA2_Channel8_IRQHandler()
 { // UART7 TX Complete
 	DMA2_EXTEN->INTFCR = DMA_GIF8;
-	uart_flush_TX(6);
+	uartd_flush_TX(6);
 }
 void DMA2_Channel10_IRQHandler() __IRQ;
 void DMA2_Channel10_IRQHandler()
 { // UART8 TX Complete
 	DMA2_EXTEN->INTFCR = DMA_GIF10;
-	uart_flush_TX(7);
+	uartd_flush_TX(7);
 }

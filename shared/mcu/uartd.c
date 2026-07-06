@@ -114,6 +114,25 @@ void uartd_init()
 
 /** Send data over UART port */
 
+bool uartd_flush_TX(uint_fast8_t port)
+{
+	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
+	//while (DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL & DMA_CONTROL_ENABLE);
+	int p = UART_IO[port].tx_queue_pos;
+	UART_IO[port].tx_queue_pos = (p + 1) % SZ_TX_QUEUE;
+	if (UART_IO[port].tx_queue[p].valid)
+	{
+		uart_send_dma(port, (uint8_t*)UART_IO[port].tx_queue[p].addr, UART_IO[port].tx_queue[p].len);
+		UART_IO[port].tx_queue[p].valid = false;
+		UART_IO[port].uart_tx = true;
+		UART_STR("!QueueTX:");
+		UART_CHARR(INT9_TO_CHARR(p));
+		return true;
+	}
+	UART_IO[port].uart_tx = false;
+	return false;
+}
+
 /**
  * Use from within a UART interrupt or an interrupt that can't be preempted by a UART interrupt
  */
@@ -126,23 +145,21 @@ void uartd_send_int(uint_fast8_t port, const void* data, uint_fast16_t len, bool
 		return;
 	}
 	// Still transferring last presumably, queue packet for sending
-	int p = UART_IO[port].tx_queue_pos;
-	for (int i = 0; i < SZ_TX_QUEUE; i++)
-	{
+	int p;
+	for (p = UART_IO[port].tx_queue_pos; p < SZ_TX_QUEUE; p++)
 		if (!UART_IO[port].tx_queue[p].valid)
-		{
-			UART_IO[port].tx_queue[p].addr = (uint32_t)data;
-			UART_IO[port].tx_queue[p].len = len;
-			UART_IO[port].tx_queue[p].valid = true;
-			UART_STR("+TXQueue");
-			return;
-		}
-		p = (p + 1) % SZ_TX_QUEUE;
-	}
+			goto enqueue;
+	for (p = 0; p < UART_IO[port].tx_queue_pos; p++)
+		if (!UART_IO[port].tx_queue[p].valid)
+			goto enqueue;
 	// Could not queue, loosing packet
 	ERR_STR("#UartTXStall");
-	DMA_CH(UART[port].DMA, UART[port].DMA_CH_TX)->CONTROL &= ~DMA_CONTROL_ENABLE;
-	UART_IO[port].uart_tx = false; // TODO: Leaving without sending anything, that ok?
+	return;
+enqueue:
+	UART_IO[port].tx_queue[p].addr = (uint32_t)data;
+	UART_IO[port].tx_queue[p].len = len;
+	UART_IO[port].tx_queue[p].valid = true;
+	UART_STR("+TXQueue");
 }
 /**
  * Do NOT call from within a UART interrupt

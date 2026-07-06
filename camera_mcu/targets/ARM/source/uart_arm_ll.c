@@ -55,7 +55,7 @@ const struct UART_DMA_Setup UART[UART_PORT_COUNT] = {
 
 /* Functions */
 
-void uart_configure_baudrate(int port, uint32_t baudrate)
+void uart_configure_baudrate(uint_fast8_t port, uint32_t baudrate)
 {
 	struct UART_DMA_Setup u = UART[port];
 
@@ -213,31 +213,11 @@ void uart_driver_init(uint32_t baudrate)
 /** Send data over UART port */
 inline void uart_send_dma(uint_fast8_t port, const void *data, uint_fast16_t len)
 {
-	UART_CHARR('/', 'T', 'X', 'D', 'M', 'A');
-	LL_DMA_SetDataLength(UART[port].DMA, UART[port].DMA_CH_TX, len);
+	UART_STR("/TX:");
+	UART_CHARR(UINT999_TO_CHARR(len));
 	LL_DMA_SetMemoryAddress(UART[port].DMA, UART[port].DMA_CH_TX, (uint32_t)data);
+	LL_DMA_SetDataLength(UART[port].DMA, UART[port].DMA_CH_TX, len);
 	LL_DMA_EnableChannel(UART[port].DMA, UART[port].DMA_CH_TX);
-}
-
-static inline bool uart_flush_TX(int port)
-{
-	LL_DMA_DisableChannel(UART[port].DMA, UART[port].DMA_CH_TX);
-	while (LL_DMA_IsEnabledChannel(UART[port].DMA, UART[port].DMA_CH_TX));
-	__disable_irq();
-	for (int i = 0; i < sizeof(UART_IO[port].tx_queue) / sizeof(UART_IO[port].tx_queue[0]); i++)
-	{
-		if (UART_IO[port].tx_queue[i].valid)
-		{
-			uart_send_dma(port, (uint8_t *)UART_IO[port].tx_queue[i].addr, UART_IO[port].tx_queue[i].len);
-			UART_IO[port].tx_queue[i].valid = false;
-			UART_IO[port].uart_tx = true;
-			__enable_irq();
-			return true;
-		}
-	}
-	UART_IO[port].uart_tx = false;
-	__enable_irq();
-	return false;
 }
 
 /** USART global interrupt handlers */
@@ -300,6 +280,6 @@ void DMA1_Channel2_3_IRQHandler()
 	if (LL_DMA_IsActiveFlag_TC3(DMA1))
 	{ // TX Complete
 		LL_DMA_ClearFlag_TC3(DMA1);
-		uart_flush_TX(0);
+		uartd_flush_TX(0);
 	}
 }

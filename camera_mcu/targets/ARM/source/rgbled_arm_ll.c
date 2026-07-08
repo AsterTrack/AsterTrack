@@ -97,8 +97,8 @@ void rgbled_init_driver()
 		| TIM_CCMR1_OC1FE;						// OC1 Fast enable
 	TIM16->CCER = TIM_CCER_CC1E;				// Enable Active High output
 	TIM16->BDTR = TIM_BDTR_MOE;					// Main Output Enable
-	TIM16->CR1 = TIM_CR1_URS;	// Only generate update on overflow;
-	TIM16->DIER = TIM_DIER_UDE;		// Enable Update DMA Request
+	TIM16->CR1 = TIM_CR1_URS;					// Only generate update on overflow;
+	TIM16->DIER = 0;							// Enable DMA & Update event on demand
 
 	// -- DMA CCR (Compare Register) Reload --
 	// NOTE: We're only driving one chain of 4 LEDs with one CC channel, so the DMA Burst feature (using DCR and DMAR) is not used
@@ -137,17 +137,20 @@ bool rgbled_set_and_delay(uint8_t rgb[RGBLED_COUNT*3], TimePoint earliest)
 	writing = true;
 
 	// Set the PWM data for all RGB LEDs
+	uint8_t *ptr = RGBLED_PWM_BUFFER;
 	for (int l = 0; l < RGBLED_COUNT; l++)
 	{
-		for (int c = 0; c < 3; c++)
-		{
-			const uint8_t map[] = { 1, 0, 2 }; // Map GRB to RGB
-			uint8_t value = rgb[l*3 + map[c]];
-			for (int b = 0; b < 8; b++)
-				RGBLED_PWM_BUFFER[l*24+c*8+b] = (value >> (7-b)) & 1? BIT_HIGH : BIT_LOW;
-		}
+		uint8_t valR = rgb[l*3 + 0];
+		uint8_t valG = rgb[l*3 + 1];
+		uint8_t valB = rgb[l*3 + 2];
+		for (int b = 7; b >= 0; b--)
+			*ptr++ = (valG >> b) & 1? BIT_HIGH : BIT_LOW;
+		for (int b = 7; b >= 0; b--)
+			*ptr++ = (valR >> b) & 1? BIT_HIGH : BIT_LOW;
+		for (int b = 7; b >= 0; b--)
+			*ptr++ = (valB >> b) & 1? BIT_HIGH : BIT_LOW;
 	}
-	RGBLED_PWM_BUFFER[RGBLED_COUNT * 3 * 8] = 0; // Trailing byte to force PWM signal low (and be able to stop timer on TC interrupt)
+	*ptr = 0; // Trailing byte to force PWM signal low (and be able to stop timer on TC interrupt)
 
 	// Trigger Update to preload CCR with 0 (for 0 on PWM)
 	TIM16->CCR1 = 0;
@@ -163,6 +166,8 @@ bool rgbled_set_and_delay(uint8_t rgb[RGBLED_COUNT*3], TimePoint earliest)
 	TIM16->SR = 0;						// Reset Status Register
 	TIM16->PSC = 0;						// Disable prescaler (SYSCLKFRQ Mhz)
 	TIM16->ARR = MAX_TIM_CNT-1;			// Set Auto-Reload to trigger at 800Khz / 1.25us interval
+	TIM16->DIER = TIM_DIER_UDE;			// Enable Update DMA Request
+	TIM16->EGR = TIM_EGR_UG;			// Generate update event to load values
 	TIM16->CR1 |= TIM_CR1_CEN;
 
 	// Set output to PWM from TIM16
@@ -181,12 +186,12 @@ bool rgbled_set(uint8_t rgb[RGBLED_COUNT*3])
 
 static void rgbled_set_ready_timer(TimeSpan time)
 {
-	uint16_t prescaler = 1;
-	unsigned int waitPeriods = time * SYSCLKFRQ / MAX_TIM_CNT / TICKS_PER_US;
+	uint16_t prescaler = SYSCLKFRQ; // Base timer in microseconds
+	uint32_t waitPeriods = time / TICKS_PER_US;
 	while (waitPeriods >= (1 << 16))
-	{ // Need prescaler
-		prescaler *= 10;
-		waitPeriods /= 10;
+	{ // Need more prescaling
+		prescaler *= 4;
+		waitPeriods /= 4;
 	}
 
 	// Configure timer for reset pulse after which we get a callback
@@ -194,7 +199,8 @@ static void rgbled_set_ready_timer(TimeSpan time)
 	TIM16->SR = 0;						// Reset Status Register
 	TIM16->PSC = prescaler-1;			// Set prescaler higher if wait time demands
 	TIM16->ARR = waitPeriods-1;			// Set Auto-Reload to trigger after 40 periods (50us)
-	TIM16->DIER |= TIM_DIER_UIE;		// Generate one update interrupt after reset pulse
+	TIM16->DIER = TIM_DIER_UIE;			// Generate one update interrupt after reset pulse
+	TIM16->EGR = TIM_EGR_UG;			// Generate update event to load values
 	TIM16->CR1 |= TIM_CR1_CEN;
 }
 
@@ -202,7 +208,7 @@ static void rgbled_abort_ready_timer()
 {
 	// Reset timer
 	TIM16->CR1 &= ~TIM_CR1_CEN;		// Disable Counter
-	TIM16->DIER &= ~TIM_DIER_UIE;	// Remove update interrupt enable
+	TIM16->DIER = 0;				// Disable update interrupt
 }
 
 void rgbled_stop()
@@ -213,10 +219,7 @@ void rgbled_stop()
 	rgbled_output_LOW();
 	LL_DMA_DisableChannel(DMA1, DMA_CH);
 	TIM16->CR1 &= ~TIM_CR1_CEN;
-
-	// Update state - ready should already have been false
-	writing = false;
-	ready = false;
+	TIM16->DIER = 0;				// Disable Update DMA Request
 
 	// Set ready timer (potentially with additional delay if no wakeup is required for a while)
 	TimePoint now = GetTimePoint();
@@ -225,6 +228,10 @@ void rgbled_stop()
 		rgbled_set_ready_timer(wakeupEarliest - now);
 	else
 		rgbled_set_ready_timer(readyEarliest - now);
+
+	// Update state - ready should already have been false
+	writing = false;
+	ready = false;
 }
 
 bool rgbled_ready()

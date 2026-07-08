@@ -32,7 +32,7 @@ extern "C"
 #define RGBLED_COUNT 4
 
 // Update interval to use for smooth animations and transitions
-#define RGB_UPDATE_INTERVAL_MS 50
+#define RGB_UPDATE_INTERVAL_MS 10
 
 enum LED_INTERPOLATION {
 	INTER_UNDEFINED = 0,
@@ -54,18 +54,25 @@ struct LED_Animation
 	struct LED_Transition transitions[];
 };
 
-extern float brightness;
+extern uint8_t brightness;
 
 void rgbled_init();
 
+// Specialised rgbled_transition to immediately set LEDs to display a binary error code (0-16) using the 4 LEDs
+void rgbled_displayError(uint8_t code);
+
 // Start a transition to the given state, overwriting any current animation
-void rgbled_transition(uint8_t rgb[RGBLED_COUNT*3], int timeMS);
+void rgbled_transition(uint8_t rgb[RGBLED_COUNT*3], int transitionMS);
 
 // Check if rgbled is currently transitioning to a static state (not animating)
 bool rgbled_transitioning();
 
 // Animate the following animation (until repetitions are reached or until overwritten by transition or animation)
-void rgbled_animation(struct LED_Animation *anim);
+// If transition time is specified, it will be appended before first transition and merged depending on its type
+void rgbled_animation_start(struct LED_Animation *anim, int transitionMS);
+
+// Animate the following animation (until repetitions are reached or until overwritten by transition or animation)
+static inline void rgbled_animation(struct LED_Animation *anim) { return rgbled_animation_start(anim, 0); }
 
 // Check if rgbled is currently animating. If anim != NULL, will check for the given animation specifically
 bool rgbled_animating(struct LED_Animation *anim);
@@ -80,11 +87,6 @@ extern uint8_t LED_INITIALISING[RGBLED_COUNT*3];
 extern uint8_t LED_STANDBY[RGBLED_COUNT*3];
 extern uint8_t LED_CONNECTING[RGBLED_COUNT*3];
 extern uint8_t LED_ACTIVE[RGBLED_COUNT*3];
-extern uint8_t LED_UART_ERROR[RGBLED_COUNT*3];
-extern uint8_t LED_ERROR_1[RGBLED_COUNT*3];
-extern uint8_t LED_ERROR_2[RGBLED_COUNT*3];
-extern uint8_t LED_ERROR_3[RGBLED_COUNT*3];
-extern uint8_t LED_ERROR_4[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_INFRARED[RGBLED_COUNT*3];
 extern uint8_t LED_FILTER_VISIBLE[RGBLED_COUNT*3];
 extern uint8_t LED_FLASH_DEBUG_SWD[RGBLED_COUNT*3];

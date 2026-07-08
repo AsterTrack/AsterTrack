@@ -81,57 +81,20 @@ struct LED_Animation LED_ANIM_BOOTING = {
 		},
 		{
 			.leds = LED_ACTIVE,
-			.time = 450*TICKS_PER_MS,
+			.time = 750*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		},
 		{
 			.leds = LED_ACTIVE,
-			.time = 50*TICKS_PER_MS,
+			.time = 150*TICKS_PER_MS,
 			.mode = INTER_IMMEDIATE
 		},
 		{
 			.leds = LED_STANDBY,
-			.time = 450*TICKS_PER_MS,
+			.time = 750*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}
 	}
-};
-
-#define COL_ERROR 0xFF, 0x00, 0x00
-
-uint8_t LED_UART_ERROR[RGBLED_COUNT*3] = {
-	COL_ERROR,
-	COL_ERROR,
-	COL_ERROR,
-	COL_ERROR,
-};
-
-uint8_t LED_ERROR_1[RGBLED_COUNT*3] = {
-	COL_ERROR,
-	COL_OFF,
-	COL_OFF,
-	COL_OFF,
-};
-
-uint8_t LED_ERROR_2[RGBLED_COUNT*3] = {
-	COL_OFF,
-	COL_ERROR,
-	COL_OFF,
-	COL_OFF,
-};
-
-uint8_t LED_ERROR_3[RGBLED_COUNT*3] = {
-	COL_OFF,
-	COL_OFF,
-	COL_ERROR,
-	COL_OFF,
-};
-
-uint8_t LED_ERROR_4[RGBLED_COUNT*3] = {
-	COL_OFF,
-	COL_OFF,
-	COL_OFF,
-	COL_ERROR,
 };
 
 struct LED_Animation LED_ANIM_STREAMING = {

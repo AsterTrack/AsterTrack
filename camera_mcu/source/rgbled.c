@@ -24,7 +24,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <string.h>
 
-float brightness = 0.1f;
+uint8_t brightness = 25;
 
 static uint8_t buffer_source[RGBLED_COUNT*3];
 static uint8_t buffer_latest[RGBLED_COUNT*3];
@@ -63,53 +63,71 @@ void rgbled_init()
 	rgbled_init_driver();
 }
 
-static void copy(uint8_t *source, uint8_t *output)
+static inline void copy(uint8_t source[RGBLED_COUNT*3], uint8_t output[RGBLED_COUNT*3])
 {
 	for (int i = 0; i < RGBLED_COUNT*3; i++)
 		output[i] = source[i];
 }
 
-static void process(uint8_t *source, uint8_t *output, float factor)
-{
+static inline void process(uint8_t source[RGBLED_COUNT*3], uint8_t output[RGBLED_COUNT*3], uint32_t factor)
+{ // Factor is expected to be <= 256
 	for (int i = 0; i < RGBLED_COUNT*3; i++)
-		output[i] = (int)((float)source[i] * factor);
+		output[i] = (uint8_t)(((uint32_t)source[i] * factor) >> 8);
 }
 
-static void lerp_process(uint8_t *source, uint8_t *target, uint8_t *output, float value, float factor)
-{
-	if (value > 1) value = 1;
-	if (value < 0) value = 0;
+static inline void lerp_process(uint8_t source[RGBLED_COUNT*3], uint8_t target[RGBLED_COUNT*3], uint8_t output[RGBLED_COUNT*3], uint32_t value, uint32_t factor)
+{ // Both value and factor are expected to be <= 256
 	// Some optimisation to ensure -O0 doesn't take even longer
-	float fac1 = (1-value) * factor;
-	float fac2 = value * factor;
+	uint32_t fac1 = ((uint32_t)(256-value) * (uint32_t)factor);
+	uint32_t fac2 = ((uint32_t)value * (uint32_t)factor);
 	for (int i = 0; i < RGBLED_COUNT*3; i++)
-		output[i] = (int)((float)source[i] * fac1 + (float)target[i] * fac2);
-	// TODO: These 26 float multiplications take ~135us in total (~5us per FLOP)
+		output[i] = (uint8_t)(((uint32_t)source[i] * fac1 + (uint32_t)target[i] * fac2) >> 16);
 }
 
-static float get_lerp()
-{
-	return (float)(GetTimePoint()-transition_start) / (float)(transition_end-transition_start);
+static inline uint32_t get_lerp()
+{ // returns 0-255 for in-progress transition and 256 for past transition
+	uint32_t delta = GetTimePoint()-transition_start; // Never negative by design
+	uint32_t span = transition_end-transition_start;
+	if (delta >= span) return 256;
+	return (delta * 256) / span; // Division
 }
 
-static void pickup_from_transition(enum LED_INTERPOLATION prevTransition)
+static inline void pickup_from_transition(enum LED_INTERPOLATION prevTransition)
 {
 	if (prevTransition == INTER_LERP_LINEAR)  // Interrupting a lerp, resample at current time
-		lerp_process(buffer_source, buffer_target, buffer_source, get_lerp(), 1);
+		lerp_process(buffer_source, buffer_target, buffer_source, get_lerp(), 256);
 	else // Start lerp from latest
 		copy(buffer_target, buffer_source);
 }
 
-void rgbled_transition(uint8_t rgb[RGBLED_COUNT*3], int timeMS)
+void rgbled_displayError(uint8_t code)
+{ // Specialised rgbled_transition
+	rgbled_lock();
+
+	current_animation = NULL;
+	transition_start = transition_end = GetTimePoint();
+	transition = INTER_IMMEDIATE;
+
+	memset(buffer_target, 0, RGBLED_COUNT*3);
+	if (code & 0b0001) buffer_target[3*0] = 0xFF;
+	if (code & 0b0010) buffer_target[3*1] = 0xFF;
+	if (code & 0b0100) buffer_target[3*2] = 0xFF;
+	if (code & 0b1000) buffer_target[3*3] = 0xFF;
+
+	if (rgbled_ready() || rgbled_abort_wakeup_waiting())
+		rgbled_ready_callback(); // Can set immediately
+
+	rgbled_unlock();
+}
+
+void rgbled_transition(uint8_t rgb[RGBLED_COUNT*3], int transitionMS)
 {
 	rgbled_lock();
 
 	// Reset state
-	enum LED_INTERPOLATION prevTransition = transition;
 	current_animation = NULL;
-	transition = INTER_UNDEFINED;
 
-	if (timeMS == 0)
+	if (transitionMS == 0)
 	{ // Switch immediately
 		copy(rgb, buffer_target);
 		transition_start = transition_end = GetTimePoint();
@@ -118,10 +136,10 @@ void rgbled_transition(uint8_t rgb[RGBLED_COUNT*3], int timeMS)
 	else
 	{ // Transition over time
 		// Set source for transition as current (potentially interrupted) state
-		pickup_from_transition(prevTransition);
+		pickup_from_transition(transition);
 		copy(rgb, buffer_target);
 		transition_start = GetTimePoint();
-		transition_end = transition_start + timeMS*TICKS_PER_MS;
+		transition_end = transition_start + transitionMS*TICKS_PER_MS;
 		transition = INTER_LERP_LINEAR;
 	}
 
@@ -136,7 +154,7 @@ bool rgbled_transitioning()
 	return current_animation == NULL && transition != INTER_UNDEFINED;
 }
 
-static void set_anim_transition()
+static inline void set_anim_transition()
 {
 	struct LED_Transition *trans = &current_animation->transitions[anim_transition];
 	copy(trans->leds, buffer_target);
@@ -145,7 +163,7 @@ static void set_anim_transition()
 	transition = trans->mode;
 }
 
-void rgbled_animation(struct LED_Animation *anim)
+void rgbled_animation_start(struct LED_Animation *anim, int transitionMS)
 {
 	if (anim->count == 0) return;
 	if (current_animation == anim) return;
@@ -164,6 +182,20 @@ void rgbled_animation(struct LED_Animation *anim)
 	anim_repetitions = 0;
 	current_animation = anim;
 	set_anim_transition();
+
+	if (transitionMS > 0)
+	{
+		if (transition == INTER_LERP_LINEAR)
+		{ // Re-time first transition
+			transition_end += transitionMS*TICKS_PER_MS;
+		}
+		else if (transition == INTER_IMMEDIATE)
+		{ // Transition to initial state first
+			anim_transition = -1;
+			transition_end = transition_start + transitionMS*TICKS_PER_MS;
+			transition = INTER_LERP_LINEAR;
+		}
+	}
 
 	if (rgbled_ready() || rgbled_abort_wakeup_waiting())
 		rgbled_ready_callback(); // Can set immediately
@@ -186,18 +218,11 @@ void rgbled_ready_callback()
 	if (next_update + (RGB_UPDATE_INTERVAL_MS*TICKS_PER_MS)/10 > transition_end)
 	{ // At end of transition
 		struct LED_Animation *anim = current_animation;
-		if (anim == NULL)
-		{ // Finished individual transition
-			transition = INTER_UNDEFINED;
-			process(buffer_target, buffer_latest, brightness);
-		}
 		if (anim && ++anim_transition >= anim->count)
 		{ // Finished animation
 			if (++anim_repetitions >= anim->repetitions && anim->repetitions >= 0)
 			{ // Finished all repetitions
 				anim = current_animation = NULL;
-				transition = INTER_UNDEFINED;
-				process(buffer_target, buffer_latest, brightness);
 			}
 			else
 			{ // Repeat animation
@@ -208,6 +233,11 @@ void rgbled_ready_callback()
 		{ // Continue animation
 			copy(buffer_target, buffer_source);
 			set_anim_transition();
+		}
+		else
+		{ // Finished individual transition
+			transition = INTER_UNDEFINED;
+			process(buffer_target, buffer_latest, brightness);
 		}
 	}
 

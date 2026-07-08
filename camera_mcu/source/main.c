@@ -270,11 +270,11 @@ int main(void)
 			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint64_t));
 			// Signal result
 			if (error == 1)
-				rgbled_transition(LED_UART_ERROR, 0);
+				rgbled_displayError(0b1100);
 			else if (error)
-				rgbled_transition(LED_ERROR_3, 0);
+				rgbled_displayError(3);
 			else if (config[0] != PERSISTENT_CONFIG[0] && config[1] != PERSISTENT_CONFIG[1])
-				rgbled_transition(LED_ERROR_4, 0);
+				rgbled_displayError(4);
 			else
 				rgbled_transition(LED_STANDBY, 0);
 			ReturnToDefaultLEDState(500);
@@ -446,7 +446,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{
 		if (state->header.length+PACKET_CHECKSUM_SIZE > UART_TEMP_PACKET_BUF)
 		{ // Should not happen since header checksum is validated
-			rgbled_transition(LED_ERROR_1, 0);
+			rgbled_displayError(0b1010);
 			ReturnToDefaultLEDState(500);
 			return uartd_ignore;
 		}
@@ -603,7 +603,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 				WARN_STR("!PacketChecksum:");
 				WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(state->header.tag), '+', INT999_TO_CHARR(state->header.length));
 				correctChecksum = false;
-				rgbled_transition(LED_UART_ERROR, 0);
+				rgbled_displayError(0b0101);
 				ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
 				break;
 			}
@@ -698,7 +698,7 @@ void uartd_handle_reset(uint_fast8_t port)
 {
 	if (uartState == UART_CamMCU)
 		uartState = UART_None;
-	rgbled_transition(LED_UART_ERROR, 0);
+	rgbled_displayError(0b1111);
 	ReturnToDefaultLEDState(UART_RESET_TIMEOUT_MS);
 }
 
@@ -746,7 +746,7 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 		{
 			if (len != sizeof(CameraID))
 			{
-				rgbled_transition(LED_ERROR_1, 0);
+				rgbled_displayError(1);
 				ReturnToDefaultLEDState(1000);
 				return false;
 			}
@@ -754,7 +754,7 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 			memcpy(&id, data, sizeof(CameraID));
 			if (id == 0)
 			{
-				rgbled_transition(LED_ERROR_2, 0);
+				rgbled_displayError(2);
 				ReturnToDefaultLEDState(1000);
 				return true;
 			}
@@ -917,11 +917,11 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 void ReturnToDefaultLEDState(int timeMS)
 {
 	if (piIsStreaming) // Implies piHasPower && piIsBooted && uartState == UART_CamPi
-		rgbled_animation(&LED_ANIM_STREAMING);
+		rgbled_animation_start(&LED_ANIM_STREAMING, timeMS);
 	else if (uartState == UART_CamPi) // Implies piHasPower && piIsBooted
 		rgbled_transition(LED_ACTIVE, timeMS);
 	else if (uartState == UART_CamMCU && piHasPower)
-		rgbled_animation(&LED_ANIM_BOOTING);
+		rgbled_animation_start(&LED_ANIM_BOOTING, timeMS);
 	else if (uartState == UART_CamMCU)
 		rgbled_transition(LED_STANDBY, timeMS);
 	else

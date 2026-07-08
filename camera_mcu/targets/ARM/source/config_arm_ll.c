@@ -63,6 +63,10 @@ void Setup_Peripherals()
 	// Set Flash Latency for 64MHz
 	LL_FLASH_SetLatency(LL_FLASH_LATENCY_2);
 
+	// Enable instruction prefetch, not enabled by default
+	// Has separate buffer from instruction cache so should have no downsides
+	LL_FLASH_EnablePrefetch();
+
 	// Attempt to configure HSE
 	LL_RCC_HSE_EnableBypass();
 	if (!LL_RCC_HSE_IsReady())

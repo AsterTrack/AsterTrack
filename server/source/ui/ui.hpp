@@ -119,6 +119,7 @@ enum InterfaceWindows
 
 	WIN_LENS_SELECTION_TOOL,
 	WIN_TESTING_TOOL,
+	WIN_PRODUCTION_TOOL,
 
 	WIN_STYLE_EDITOR,
 	WIN_IMGUI_DEMO,
@@ -512,6 +513,7 @@ public:
 
 	void UpdateLensSelectionTool(InterfaceWindow &window);
 	void UpdateTestingTool(InterfaceWindow &window);
+	void UpdateProductionTool(InterfaceWindow &window);
 
 	void UpdateStyleUI(InterfaceWindow &window);
 	void UpdateImGuiDemoUI(InterfaceWindow &window);

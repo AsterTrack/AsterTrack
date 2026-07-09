@@ -465,6 +465,7 @@ void InterfaceState::ResetWindowLayout()
 
 	ImGui::DockBuilderDockWindow(windows[WIN_LENS_SELECTION_TOOL].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_TESTING_TOOL].title.c_str(), sidePanelID);
+	ImGui::DockBuilderDockWindow(windows[WIN_PRODUCTION_TOOL].title.c_str(), sidePanelID);
 
 	ImGui::DockBuilderDockWindow(windows[WIN_STYLE_EDITOR].title.c_str(), sidePanelID);
 	ImGui::DockBuilderDockWindow(windows[WIN_IMGUI_DEMO].title.c_str(), mainPanelID);
@@ -770,6 +771,7 @@ bool InterfaceState::Init()
 	// Tools
 	windows[WIN_LENS_SELECTION_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Lens Selection", &InterfaceState::UpdateLensSelectionTool, false);
 	windows[WIN_TESTING_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Reliability Testing", &InterfaceState::UpdateTestingTool, false);
+	windows[WIN_PRODUCTION_TOOL] = InterfaceWindow(ICON_LA_TOOLS " Production Tools", &InterfaceState::UpdateProductionTool, false);
 	// Shortcut to ImGui's built-in style editor
 	windows[WIN_STYLE_EDITOR] = InterfaceWindow("Style Editor", &InterfaceState::UpdateStyleUI, false, false);
 	// Useful tool to debug and research UI

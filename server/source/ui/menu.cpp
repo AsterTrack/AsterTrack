@@ -135,6 +135,7 @@ void InterfaceState::UpdateMainMenuBar()
 		{
 			addWindowMenuItem(windows[WIN_LENS_SELECTION_TOOL]);
 			addWindowMenuItem(windows[WIN_TESTING_TOOL]);
+			addWindowMenuItem(windows[WIN_PRODUCTION_TOOL]);
 			ImGui::EndMenu();
 		}
 		ImGui::Separator();

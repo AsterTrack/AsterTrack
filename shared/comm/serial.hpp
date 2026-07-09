@@ -33,8 +33,9 @@ union HardwareSerial
 	enum class Class : uint8_t
     {
 		Controller,
+		SyncBeacon,
 		Camera,
-		Tracker
+		Tracker,
     };
 
     enum class Type : uint8_t
@@ -72,6 +73,7 @@ union HardwareSerial
 	{
 		enum class Interface : uint8_t
 		{
+			USB2HS_RS422,
 			USB2HS_RS422_NRF24
 		};
 	};

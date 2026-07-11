@@ -137,7 +137,7 @@ extern int _bflag;
 uint32_t * const BOOTLOADER_FLAG = (uint32_t*) (&_bflag);
 const uint32_t BOOTLOADER_KEY = 0xB7E283F2;
 
-int main(void)
+void SystemInit(void)
 {
 	if (*BOOTLOADER_FLAG == BOOTLOADER_KEY)
 	{ // Want to switch to bootloader
@@ -148,7 +148,10 @@ int main(void)
 		while (true);
 	}
 	*BOOTLOADER_FLAG = 0;
+}
 
+int main(void)
+{
 	// Base setup
 	Setup_Peripherals();
 
@@ -821,7 +824,6 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 	{
 		case MCU_SWITCH_BOOTLOADER:
 			piWantsBootloader = true;
-			rgbled_transition(LED_BOOTLOADER, 0);
 			return true;
 		case MCU_PING:
 			// Nothing to do

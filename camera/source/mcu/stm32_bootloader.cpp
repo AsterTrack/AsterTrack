@@ -24,8 +24,7 @@
 #define SLAVE_SERIAL_TIMEOUT 15000
 #define SLAVE_SERIAL_TIMEOUT_ERASE 120000
 
-pRESULT sendBytesWithAck(const uint8_t *bytes, int count, int len,
-												 int timeoutInMs);
+pRESULT sendBytesWithAck(const uint8_t *bytes, int count, int len);
 
 /**
  * @brief  address point to the next 0-256 byte block
@@ -68,7 +67,7 @@ pRESULT bootloaderCheckAndErase(void) {
 	//		if(bootloaderExtErase()!=RES_OK){
 	//			return RES_FAIL;
 	//		}
-	platform_delay_ms(1000);
+	platform_delay_ms(10);
 	for (int i = 0; i < eraseLoopNum; i++) {
 		if (bootloaderErasePages(i * sectorsPerLoop + 0, sectorsPerLoop) !=
 				RES_OK) {
@@ -82,7 +81,7 @@ pRESULT bootloaderCheckAndErase(void) {
 pRESULT bootloaderSync(void) {
 	LogDebugInfo(("Slave MCU IAP: start slave MCU IAP"));
 	uint8_t cmd[] = {0x7F};
-	return sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	return sendBytesWithAck(cmd, sizeof(cmd), 1);
 }
 #else
 pRESULT bootloaderSync(void) {
@@ -94,7 +93,7 @@ pRESULT bootloaderGet(void) {
 	LogDebugInfo(("Slave MCU IAP: get device info"));
 	uint8_t cmd[] = {0x00, 0xFF};
 
-	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1);
 	if (res != RES_OK) {
 		LogDebugInfo(("Slave MCU IAP: get device info failed"));
 		return res;
@@ -110,7 +109,7 @@ pRESULT bootloaderGet(void) {
 pRESULT bootloaderVersion(void) {
 	LogDebugInfo(("Slave MCU IAP: GET VERSION "));
 	uint8_t cmd[] = {0x01, 0xFE};
-	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1);
 	if (res != RES_OK) {
 		return res;
 	}
@@ -132,7 +131,7 @@ pRESULT bootloaderVersion(void) {
 pRESULT bootloaderId(void) {
 	LogDebugInfo(("Slave MCU IAP: CHECK ID"));
 	uint8_t cmd[] = {0x02, 0xFD};
-	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	pRESULT res = sendBytesWithAck(cmd, sizeof(cmd), 1);
 	if (res != RES_OK) {
 		return res;
 	}
@@ -151,7 +150,7 @@ pRESULT bootloaderErasePages(uint16_t startPageIdx, uint16_t pageNum) {
 	}
 	LogDebugInfo(("Slave MCU IAP: ERASE MEMORY"));
 	uint8_t cmd[] = {0x44, 0xBB};
-	if (sendBytesWithAck(cmd, sizeof(cmd), 1, 1000) == RES_OK) {
+	if (sendBytesWithAck(cmd, sizeof(cmd), 1) == RES_OK) {
 		uint8_t tmpData[pageNum * 2 + 4];
 		uint16_t tmpN = pageNum - 1; // need to send N-1
 		tmpData[0] = (uint8_t)(tmpN >> 8);
@@ -160,7 +159,7 @@ pRESULT bootloaderErasePages(uint16_t startPageIdx, uint16_t pageNum) {
 		platform_write(tmpData, 2);
 #else
 		tmpData[2] = tmpData[0] ^ tmpData[1];
-		if (sendBytesWithAck(tmpData, 3, 1, 1000) != RES_OK) {
+		if (sendBytesWithAck(tmpData, 3, 1) != RES_OK) {
 			LogDebugInfo(("Slave MCU IAP: Receive NACK while sending page num"));
 			return RES_FAIL;
 		}
@@ -188,14 +187,23 @@ pRESULT bootloaderErasePages(uint16_t startPageIdx, uint16_t pageNum) {
 			res = platform_read(tmpData, 1);
 			if (res == RES_OK) {
 				if (tmpData[0] == ACK) {
-					LogDebugInfo(("Slave MCU IAP: Erase success"));
+					LogDebugInfo(("Slave MCU IAP: Erase Success"));
 					return RES_OK;
-				} else {
-					LogDebugInfo(
-							("Slave MCU IAP: Memory erased although 1F is returned"));
+				} else if (tmpData[0] == BUSY) {
+					LogDebugInfo(("Slave MCU IAP: Busy erasing..."));
+					platform_delay_ms(1);
+				} else if (tmpData[0] == NACK) {
+					LogDebugInfo("Slave MCU IAP: Memory erased although 1F is returned");
 					LogDebugInfoHEX(tmpData[0]);
 					return RES_OK; // Memory erased although 1F is returned"
+				} else {
+					LogDebugInfo(("Slave MCU IAP: Received corrupted status:"));
+					LogDebugInfoHEX(tmpData[0]);
+					return RES_CORR;
 				}
+			} else {
+				LogDebugInfo(("Slave MCU IAP: Read timeout or insefficient length"));
+				return RES_FAIL;
 			}
 			repeater++;
 		}
@@ -208,11 +216,11 @@ pRESULT bootloaderExtErase(void) {
 	LogDebugInfo(("Slave MCU IAP: EXTENDED ERASE MEMORY"));
 	uint8_t cmd[] = {0x44, 0xBB};
 
-	if (sendBytesWithAck(cmd, sizeof(cmd), 1, 1000) == RES_OK) {
+	if (sendBytesWithAck(cmd, sizeof(cmd), 1) == RES_OK) {
 		uint8_t tmpData[] = {0xFF, 0xFF, 0x00};
 
-		if (sendBytesWithAck(tmpData, sizeof(tmpData), 1,
-												 SLAVE_SERIAL_TIMEOUT_ERASE) == RES_OK) {
+		// Will likely not work! Needs No-Stretch Erase to work on the Pi.
+		if (sendBytesWithAck(tmpData, sizeof(tmpData), 1) == RES_OK) {
 			return RES_OK;
 		}
 	}
@@ -226,13 +234,14 @@ pRESULT bootloaderReleaseMemProtect(void) {
 #else
 	uint8_t cmd[] = {0x73, 0x8C};
 #endif
-	if (sendBytesWithAck(cmd, sizeof(cmd), 1, 1000) == RES_FAIL)
-		return RES_FAIL;
+	pRESULT res;
+	res = sendBytesWithAck(cmd, sizeof(cmd), 1);
+	if (res != RES_OK) return res;
 
 	uint8_t tmpData[1];
 	while (true)
 	{
-		pRESULT res = platform_read(tmpData, 1);
+		res = platform_read(tmpData, 1);
 		if (res == RES_OK) {
 			if (tmpData[0] == ACK) {
 				LogDebugInfo(("Slave MCU IAP: Memory Unprotect Success"));
@@ -240,10 +249,13 @@ pRESULT bootloaderReleaseMemProtect(void) {
 			} else if (tmpData[0] == BUSY) {
 				LogDebugInfo(("Slave MCU IAP: Busy unprotecting..."));
 				platform_delay_ms(1);
+			} else if (tmpData[0] == NACK) {
+				LogDebugInfo(("Slave MCU IAP: Memory Unprotect Failure!"));
+				return RES_NACK;
 			} else {
-				LogDebugInfo(("Slave MCU IAP: Memory Unprotect Failure, code:"));
+				LogDebugInfo(("Slave MCU IAP: Received corrupted status:"));
 				LogDebugInfoHEX(tmpData[0]);
-				return RES_FAIL;
+				return RES_CORR;
 			}
 		} else {
 			LogDebugInfo(("Slave MCU IAP: Read timeout or insefficient length"));
@@ -259,14 +271,14 @@ pRESULT bootloaderWrite(void) {
 #else
 	uint8_t cmd[2] = {0x31, 0xCE};
 #endif
-	return sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	return sendBytesWithAck(cmd, sizeof(cmd), 1);
 }
 
 pRESULT bootloaderRead(void) {
 	LogDebugInfo(("Slave MCU IAP: READ MEMORY"));
 	uint8_t cmd[2] = {0x11, 0xEE};
 
-	return sendBytesWithAck(cmd, sizeof(cmd), 1, 1000);
+	return sendBytesWithAck(cmd, sizeof(cmd), 1);
 }
 
 pRESULT loadAddress(const uint8_t *address) {
@@ -274,11 +286,10 @@ pRESULT loadAddress(const uint8_t *address) {
 	memcpy(tmpData, address, 4);
 	tmpData[4] = address[0] ^ address[1] ^ address[2] ^ address[3];
 
-	return sendBytesWithAck(tmpData, sizeof(tmpData), 1, 1000);
+	return sendBytesWithAck(tmpData, sizeof(tmpData), 1);
 }
 
-pRESULT sendBytesWithAck(const uint8_t *bytes, int count, int len,
-												 int timeoutInMs) {
+pRESULT sendBytesWithAck(const uint8_t *bytes, int count, int len) {
 	pRESULT res = platform_write(bytes, count);
 	if (res != RES_OK) {
 		LogDebugInfo(("Slave MCU IAP: failed to send"));
@@ -288,12 +299,15 @@ pRESULT sendBytesWithAck(const uint8_t *bytes, int count, int len,
 	res = platform_read(dataBuf, len);
 	if (res == RES_OK) {
 		if (dataBuf[len - 1] == ACK) {
-			LogDebugInfo(("Slave MCU IAP: Receive ACK"));
+			LogDebugInfo(("Slave MCU IAP: Received ACK"));
 			return RES_OK;
+		} else if (dataBuf[len - 1] == NACK) {
+			LogDebugInfo(("Slave MCU IAP: Received NACK!"));
+			return RES_NACK;
 		} else {
-			LogDebugInfo(("Slave MCU IAP: Receive NACK"));
-			LogDebugInfoHEX(dataBuf[0]);
-			return RES_FAIL;
+			LogDebugInfo(("Slave MCU IAP: Received corrupted status:"));
+			LogDebugInfoHEX(dataBuf[len - 1]);
+			return RES_CORR;
 		}
 	} else {
 		LogDebugInfo(("Slave MCU IAP: failed to receive ACK"));
@@ -337,8 +351,11 @@ pRESULT flashPage(const uint8_t *address, const uint8_t *dataBuf, uint16_t len) 
 		tx_data[writeNum + 2] ^= dataBuf[i];
 	}
 
-	if (bootloaderWrite() == RES_FAIL) return RES_FAIL;
-	if (loadAddress(address) == RES_FAIL) return RES_FAIL;
+	pRESULT res;
+	res = bootloaderWrite();
+	if (res != RES_OK) return res;
+	res = loadAddress(address);
+	if (res != RES_OK) return res;
 
 	platform_write(tx_data, writeNum + 3);
 
@@ -353,10 +370,13 @@ pRESULT flashPage(const uint8_t *address, const uint8_t *dataBuf, uint16_t len) 
 			} else if (tmpData[0] == BUSY) {
 				LogDebugInfo(("Slave MCU IAP: Busy writing..."));
 				platform_delay_ms(1);
+			} else if (tmpData[0] == NACK) {
+				LogDebugInfo(("Slave MCU IAP: Flash Failure!"));
+				return RES_NACK;
 			} else {
-				LogDebugInfo(("Slave MCU IAP: Flash Failure, code:"));
+				LogDebugInfo(("Slave MCU IAP: Received corrupted status:"));
 				LogDebugInfoHEX(tmpData[0]);
-				return RES_FAIL;
+				return RES_CORR;
 			}
 		} else {
 			LogDebugInfo(("Slave MCU IAP: Read timeout or insefficient length"));
@@ -374,7 +394,7 @@ pRESULT verifyPage(const uint8_t *address, const uint8_t *dataBuf, uint16_t len)
 	tx_data[1] = 0xFF ^ readNum;
 	bootloaderRead();
 	loadAddress(address);
-	pRESULT res = sendBytesWithAck(tx_data, 2, 1, 1000);
+	pRESULT res = sendBytesWithAck(tx_data, 2, 1);
 	if (res != RES_OK) {
 		LogDebugInfo(("Slave MCU IAP: sending read len failed"));
 		return RES_FAIL;

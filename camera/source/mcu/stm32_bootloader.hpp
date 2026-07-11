@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-typedef enum pRESULT { RES_OK, RES_FAIL } pRESULT;
+typedef enum pRESULT { RES_OK, RES_FAIL, RES_NACK, RES_CORR } pRESULT;
 
 /**
  * @brief  flash data to STM32
@@ -58,7 +58,10 @@ pRESULT bootloaderId(void);
 pRESULT bootloaderWrite(void);
 pRESULT bootloaderRead(void);
 pRESULT bootloaderReleaseMemProtect(void);
-pRESULT bootloaderExtErase(void); // not verified
+
+// Will likely not work! Needs No-Stretch Erase to work on the Pi.
+pRESULT bootloaderExtErase(void);
+
 /**
  * @brief Erase continuous sectors, in STM32L432, sectors are all in 2K,
  * @param  startPageIdx          start sector/page index

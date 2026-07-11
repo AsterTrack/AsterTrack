@@ -93,6 +93,7 @@ std::vector<MCUForwardedPacket> mcu_packet_queue;
 
 const int MCU_RESET_HOLDTIME_MS = 10;
 const int MCU_RESET_WAITTIME_MS = 80;
+const int MCU_RESET_BOOTWAIT_MS = 20;
 
 static bool i2c_init();
 static void i2c_cleanup();
@@ -251,7 +252,7 @@ bool mcu_reconnect()
 		if (mcu_probe()) return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
-	printf("Failed to reconnect to the MCU!\n");
+	printf("Failed to reconnect to the MCU after reset!\n");
 	if (mcu_probe_bootloader())
 		printf("MCU is still in the bootloader!\n");
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -270,7 +271,7 @@ static void mcu_is_connected()
 {
 	if (!mcu_active)
 	{
-		printf("Connected with MCU!\n");
+		printf("Connected to the MCU!\n");
 		ResetTimeSync(timesync);
 		mcu_active = true;
 		mcu_sync_info();
@@ -322,14 +323,17 @@ static void mcu_thread()
 					continue;
 				lastPing = sclock::now();
 				if (i2c_probe()) // Reconnected
+				{
+					printf("Reconnected to the MCU on random probing!\n");
 					mcu_is_connected();
+				}
 				else if (mcu_probe_bootloader())
 				{ // Since we locked the mutex, no firmware update is ongoing - reset to exit bootloader
 					printf("MCU is in the bootloader, but not being flashed!\n");
 					mcu_reset(); // Should be safe - if a probe initiated this, the I2C bootloader inferface would not respond
 				}
 				else
-					printf("Failed to reconnect with MCU!\n");
+					printf("Failed to reconnect to the MCU!\n");
 			}
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -474,122 +478,182 @@ bool mcu_probe_bootloader()
 	return false;
 }
 
-static bool mcu_connect_bootloader()
+/**
+ * Attempts to communicate with the STM32 bootloader
+ * 0 Indicates success
+ * 1 Indicates simple failure, likely no bootloader
+ * <0 Indicates bootloader might be there, but needs reset
+ * May happen due to Pis I2C Clock-Stretching bug:
+ * https://www.advamation.com/knowhow/raspberrypi/rpi-i2c-bug.html
+ * This in turn may lead to an unresponsive bootloader:
+ * https://community.st.com/stm32-mcus-embedded-software-32/undocumented-10s-reset-time-of-bootloader-on-unexpected-i2c-behaviour-166869
+ */ 
+static int mcu_connect_bootloader()
 {
-	bool found = false;
+	pRESULT res;
 	for (int i = 0; i < 3; i++)
 	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
-		found = bootloaderGet() == RES_OK;
-		if (found) break;
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		res = bootloaderGet();
+		if (res == RES_CORR) return -1;
+		if (res == RES_OK) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
-	if (!found) return false;
+	if (res == RES_FAIL) return 1;
+	if (res != RES_OK) return -2;
 
-	for (int i = 0; i < 3; i++)
-	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
-		found = bootloaderVersion() == RES_OK;
-		if (found) break;
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	if (!found)
+	res = bootloaderVersion();
+	if (res == RES_CORR) return -1;
+	if (res != RES_OK)
 	{
-		printf("Found bootloader but failed to query version via I2C message! %d: %s\n", errno, strerror(errno));
-		return false;
+		printf("Failed to query version via I2C message! %d: %s\n", errno, strerror(errno));
+		return -3;
 	}
 
-	for (int i = 0; i < 3; i++)
-	{ // Bootloader takes a bit to respond, but needs to receive first message over I2C
-		found = bootloaderId() == RES_OK;
-		if (found) break;
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	if (!found)
+	res = bootloaderId();
+	if (res == RES_CORR) return -1;
+	if (res != RES_OK)
 	{
 		printf("Found bootloader but failed to query ID via I2C message! %d: %s\n", errno, strerror(errno));
-		return false;
+		return -4;
 	}
 
-	return true;
+	return 0;
+}
+
+static int mcu_switch_bootloader_i2c();
+static int mcu_switch_bootloader_rst();
+
+static int mcu_switch_bootloader_i2c()
+{
+	printf("Requesting MCU to switch to bootloader...\n");
+	mcu_active = false;
+	mcu_disabled = false;
+	comm_report_uart_interruption();
+
+	unsigned char REG_ID[] = { MCU_SWITCH_BOOTLOADER };
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
+		i2c_handle_error();
+		return 2;
+	}
+
+	int res = mcu_connect_bootloader();
+	if (res == 0)
+	{
+		printf("Successfully switched to and queried the MCUs bootloader!\n");
+		mcu_intentional_bootloader = true;
+		mcu_does_exist();
+	}
+	else
+	{
+		printf("Failed to switch or query the bootloader via I2C message! Point %d, Code %d: %s\n", res, errno, strerror(errno));
+		if (res < 0)
+			printf("Pi I2C Clock Stretching Bug may have struck and resulted in a corrupted exchange with bootloader!\n");
+	}
+	return res;
+}
+
+static int mcu_switch_bootloader_rst()
+{
+	printf("Resetting MCU with BOOT0 high to switch to bootloader...\n");
+	mcu_active = false;
+	mcu_disabled = false;
+	comm_report_uart_interruption();
+
+	// BOOT0, RESET
+	gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_reset))
+	{
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+		return 2;
+	}
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
+
+	// BOOT0, RESET
+	gpiod_line_value values_boot[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_boot))
+	{
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+		return 2;
+	}
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_BOOTWAIT_MS));
+
+	// BOOT0, RESET
+	gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
+	if (gpiod_line_request_set_values(line_request_out, values_normal))
+	{
+		printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
+		return 2;
+	}
+
+	int res = mcu_connect_bootloader();
+	if (res == 0)
+	{
+		printf("Successfully switched to and queried the MCUs bootloader!\n");
+		mcu_intentional_bootloader = true;
+		mcu_does_exist();
+	}
+	else
+	{
+		printf("Failed to switch or query the bootloader via GPIO message! Point %d, Code %d: %s\n", res, errno, strerror(errno));
+		if (res < 0)
+			printf("Pi I2C Clock Stretching Bug may have struck and resulted in a corrupted exchange with bootloader!\n");
+		else
+		 	printf("Perhaps flash configuration (option bytes) were wrong, may need an ST Link to flash it!\n");
+	}
+	return res;
 }
 
 bool mcu_switch_bootloader()
 {
-	if (i2c_fd >= 0)
-	{
-		printf("Requesting MCU to switch to bootloader...\n");
-		mcu_active = false;
-		mcu_disabled = false;
-		comm_report_uart_interruption();
-
-		unsigned char REG_ID[] = { MCU_SWITCH_BOOTLOADER };
-		struct i2c_msg I2C_MSG[] = {
-			{ MCU_I2C_ADDRESS, 0, sizeof(REG_ID), REG_ID },
-		};
-		struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
-		if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
-		{
-			printf("Failed to send I2C message to MCU (MCU_SWITCH_BOOTLOADER)! %d: %s\n", errno, strerror(errno));
-			i2c_handle_error();
-			return false;
-		}
-
-		if (mcu_connect_bootloader())
-		{
-			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			mcu_intentional_bootloader = true;
-			mcu_does_exist();
-			return true;
-		}
-		else
-		{
-			printf("Failed to switch or query the bootloader via I2C message! %d: %s\n", errno, strerror(errno));
-		}
-	}
-	else if (!mcu_active)
+	if (!mcu_active)
 		printf("Can't ask MCU to switch to bootloader, not actively connected...\n");
 	else if (i2c_fd < 0)
 		printf("Can't ask MCU to switch to bootloader, I2C not set up...\n");
+	if (!gpio_chip)
+		printf("Can't reset MCU via RST pin, gpio not set up...\n");
 
-	if (gpio_chip)
+	// This needs to deal with possible I2C errors due to Raspberry Pi clock-stretching bug - see mcu_connect_bootloader
+	int res = 1;
+	if (res != 0 && i2c_fd >= 0)
 	{
-		printf("Resetting MCU with BOOT0 high to switch to bootloader...\n");
-		mcu_active = false;
-		mcu_disabled = false;
-		comm_report_uart_interruption();
-
-		// BOOT0, RESET
-		gpiod_line_value values_reset[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_ACTIVE };
-		if (gpiod_line_request_set_values(line_request_out, values_reset))
-			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(MCU_RESET_HOLDTIME_MS));
-
-		// BOOT0, RESET
-		gpiod_line_value values_boot[] = { GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-		if (gpiod_line_request_set_values(line_request_out, values_boot))
-			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
-		// BOOT0, RESET
-		gpiod_line_value values_normal[] = { GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE };
-		if (gpiod_line_request_set_values(line_request_out, values_normal))
-			printf("Failed to set output of GPIO! %d: %s\n", errno, strerror(errno));
-
-		if (mcu_connect_bootloader())
+		res = mcu_switch_bootloader_i2c();
+		if (res < 0)
 		{
-			printf("Successfully switched to and queried the MCUs bootloader!\n");
-			mcu_intentional_bootloader = true;
-			mcu_does_exist();
-			return true;
-		}
-		else
-		{
-			printf("Failed to switch or query the bootloader via GPIO pins!\n");
-			printf("Perhaps flash configuration (option bytes) were wrong, may need an ST Link to flash it!\n");
+			if (gpio_chip)
+				res = mcu_switch_bootloader_rst();
+			if (res == 1)
+			{ // Failed likely because we can't reset via GPIO with this hardware/configuration, so repeatedly try I2C method
+				for (int j = 0; j < 10 && res != 0; j++)
+				{
+					if (!mcu_probe())
+					{ // Reset just to ask to switch to bootloader
+						mcu_reset();
+						for (int i = 0; i < 20; i++)
+						{ // Reset timer should be enough rn, but may change over time
+							if (i2c_probe()) break;
+							std::this_thread::sleep_for(std::chrono::milliseconds(10));
+						}
+					}
+					res = mcu_switch_bootloader_i2c();
+				}
+			}
 		}
 	}
-	return false;
+	if (res != 0 && gpio_chip)
+	{
+		res = mcu_switch_bootloader_rst();if (res == 1)
+		for (int j = 0; j < 10 && res != 0; j++)
+			res = mcu_switch_bootloader_rst();
+	}
+	return res == 0;
 }
 
 bool mcu_flash_program(const std::string &filename)
@@ -635,12 +699,22 @@ bool mcu_flash_program(const std::string &filename)
 			printf("MCU Flash: Failed to write block %d / %d, size %d!\n", curr_block, (size+sizeof(block)-1) / sizeof(block), bytes_read);
 			break;
 		}
+		if (ret != RES_OK)
+		{
+			printf("MCU Flash: Encountered unexpected error flashing MCU program!\n");
+			return false;
+		}
 
 		ret = verifyPage(loadAddress, block, bytes_read);
 		if (ret == RES_FAIL)
 		{
 			printf("MCU Flash: Failed to verify block %d / %d, size %d!\n", curr_block, (size+sizeof(block)-1) / sizeof(block), bytes_read);
 			break;
+		}
+		if (ret != RES_OK)
+		{
+			printf("MCU Flash: Encountered unexpected error verifying MCU program!\n");
+			return false;
 		}
 
 		incrementAddress(loadAddress, bytes_read);
@@ -676,6 +750,11 @@ bool mcu_verify_program(const std::string &filename)
 		{
 			printf("MCU Flash: Block %d of size %d differs!\n", curr_block, bytes_read);
 			break;
+		}
+		if (ret != RES_OK)
+		{
+			printf("MCU Flash: Encountered unexpected error verifying MCU program!\n");
+			return false;
 		}
 
 		incrementAddress(loadAddress, bytes_read);

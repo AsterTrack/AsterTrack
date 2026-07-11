@@ -37,8 +37,6 @@ bool hasHSEClock = false; // True on anything but first dev boards
 
 #define TIM1_ARR 65000
 
-void SystemInit(void) {}
-
 void Setup_Peripherals()
 {
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
@@ -336,9 +334,9 @@ enum CameraMCUFlashConfig ReadFlashConfiguration()
 	uint32_t optReg = FLASH->OPTR;
 	if (FLASH->SR & FLASH_SR_OPTVERR)
 		return MCU_FLASH_ERROR;
-	else if ((optReg & FLASH_OPTR_nBOOT1) && !(optReg & FLASH_OPTR_nBOOT_SEL))
+	else if (optReg == 0xDEFFE1AA)
 		return MCU_FLASH_BOOT0_PI;
-	else if ((optReg & FLASH_OPTR_nBOOT1) && (optReg & FLASH_OPTR_nBOOT_SEL))
+	else if (optReg == 0xDFFFE1AA)
 		return MCU_FLASH_DEBUG_SWD;
 	else
 		return MCU_FLASH_UNKNOWN;

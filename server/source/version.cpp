@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "version.hpp"
 
-VersionDesc serverVersion(0, 2, 0);
+VersionDesc serverVersion(0, 3, 0);
 
 // Optional text descriptor
 #ifndef FIRMWARE_DESCRIPTOR

@@ -14,7 +14,7 @@ mkdir -p build
 echo "$rev" > build/rev
 
 version=$(cat source/version | head -n 1 )
-desc="$(cat source/version | tail -n +2) (rev $rev)"
+desc="$(cat source/version | tail -n +2) - for HW Rev. $rev"
 IFS='.' read -r -a ver <<< "$version"
 
 build=$(($RANDOM % 255))

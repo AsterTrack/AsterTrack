@@ -1055,7 +1055,8 @@ bool mcu_get_status()
 	uint16_t powerMV = (packet[2] << 8) | packet[3];
 	supplyVoltage.update(powerMV/1000.0f);
 	floatingSupplyVoltageMV = supplyVoltage.floating*1000;
-	if (std::abs(powerMV/1000.0f - supplyVoltage.floating) > supplyVoltage.stdDev()*3)
+	float limit = std::max(0.5f, supplyVoltage.stdDev()*5);
+	if (std::abs(powerMV/1000.0f - supplyVoltage.floating) > limit)
 	{
 		printf("Voltage extreme of %.4fV (avg %.3fV +- %.3fV)!\n", powerMV/1000.0f, supplyVoltage.floating, supplyVoltage.stdDev()*3);
 	}
@@ -1162,7 +1163,7 @@ static bool i2c_probe()
 	if (i2c_fd < 0) return false;
 
 	unsigned char I2C_CMD[] = { MCU_INITIATE };
-	uint8_t MCU_INIT[4]; // 0x00, MCU_I2C_ID, VERSION, MCU_LEADING_BYTES, and may always expand
+	uint8_t MCU_INIT[3+MCU_MAX_LEADING_BYTES]; // 0x00, MCU_I2C_ID, VERSION, MCU_LEADING_BYTES, and may always expand
 	struct i2c_msg I2C_MSG[] = {
 		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
 		{ MCU_I2C_ADDRESS, I2C_M_RD, sizeof(MCU_INIT), MCU_INIT },
@@ -1175,26 +1176,27 @@ static bool i2c_probe()
 		return false;
 	}
 
-	if (MCU_INIT[1] != MCU_I2C_ID)
+	int leading = 0;
+	for (; leading < MCU_MAX_LEADING_BYTES; leading++)
+		if (MCU_INIT[leading] == MCU_I2C_ID)
+			break;
+	if (leading >= MCU_MAX_LEADING_BYTES)
 	{
-		printf("Failed to verify MCU ID %x against expected ID %x!\n", MCU_INIT[1], MCU_I2C_ID);
+		printf("Failed to find MCU ID %x in MCU Init packet!\n", MCU_I2C_ID);
 		return false;
 	}
-	if (MCU_INIT[0] != 0)
+	if (MCU_INIT[leading+1] != 1)
 	{
-		printf("MCU Init packet did not start with 0 but %d!\n", MCU_INIT[0]);
+		printf("MCU Init packet has unsupported version %d!\n", MCU_INIT[leading+1]);
 		return false;
 	}
-	if (MCU_INIT[2] != 1)
-	{
-		printf("MCU Init packet has unsupported version %d!\n", MCU_INIT[2]);
+	mcu_leading_bytes = MCU_INIT[leading+2];
+	if (mcu_leading_bytes != leading)
+		printf("MCU has been compiled to use %d leading bytes, but used %d in init packet, own %d!\n", mcu_leading_bytes, leading, MCU_LEADING_BYTES);
+	if (mcu_leading_bytes != MCU_LEADING_BYTES)
+		printf("MCU has been compiled to use %d leading bytes, different from own %d!\n", mcu_leading_bytes, MCU_LEADING_BYTES);
+	if (mcu_leading_bytes > MCU_MAX_LEADING_BYTES)
 		return false;
-	}
-	if (MCU_INIT[3] != MCU_LEADING_BYTES)
-		printf("MCU has been compiled to use %d leading bytes, different from own %d!\n", MCU_INIT[3], MCU_LEADING_BYTES);
-	if (MCU_INIT[3] > MCU_MAX_LEADING_BYTES)
-		return false;
-	mcu_leading_bytes = MCU_INIT[3];
 	return true;
 }
 

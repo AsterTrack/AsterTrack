@@ -36,7 +36,7 @@ struct ClassificationParameters
 	int resegmentationThreshold = 1000;
 
 	// Classification 2: Whether to refine the cluster or not
-	int blobRefinementThreshold = 200;
+	int blobRefinementThreshold = 100000000; // Effectively disabled
 
 	int blobTinyThreshold = 1;
 };

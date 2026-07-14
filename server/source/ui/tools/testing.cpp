@@ -138,7 +138,10 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 					doNext = false; // Still waiting for comms from last one
 			}
 			if (doNext)
-				GetState().cameraFirmwareUpdate = CamerasFlashFirmwareFile(firmwareUpdateCameras, cameraFWSetup.file);
+			{
+				GetState().cameraFirmwareUpdate = PrepareFirmwareUpdate(cameraFWSetup.file);
+				CamerasUpdateFirmware(firmwareUpdateCameras, GetState().cameraFirmwareUpdate);
+			}
 		}
 	}
 

@@ -19,14 +19,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #ifndef CAMERA_FIRMWARE_H
 #define CAMERA_FIRMWARE_H
 
+#include "comm/packet.hpp"
+
 #include "util/util.hpp"
 #include "util/synchronised.hpp"
 
 #include <vector>
 
 // Forward-declared opaque structs
-enum FirmwareStatus : uint8_t; // comm/packet.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
+struct FirmwareUpdatePlan; // device/camera_firmware.cpp
 
 struct CameraFirmwareUpdateStatus
 {
@@ -43,12 +45,15 @@ struct FirmwareUpdateStatus
 	std::string text;
 	std::stop_source abort;
 	bool concluded;
+	std::string sbc_fw_desc, mcu_fw_desc;
+	std::shared_ptr<FirmwareUpdatePlan> update;
 };
 
 typedef std::shared_ptr<Synchronised<CameraFirmwareUpdateStatus>> CameraFirmwareUpdateRef;
 typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
 
-FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmware);
+FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile);
+bool CamerasUpdateFirmware(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, FirmwareUpdateRef &updateStatus);
 
 bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor);
 

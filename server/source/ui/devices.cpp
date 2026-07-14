@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/util/nfd.hpp"
 
 #include <filesystem>
+#include <set>
 
 
 void InterfaceState::UpdateDevices(InterfaceWindow &window)
@@ -503,13 +504,14 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::AlignTextToFramePadding();
 		ImGui::Text("%s", status->text.c_str());
 		SameLineTrailing(button.x);
+		bool canClose = status->concluded || status->code == FW_STATUS_NONE || status->code == FW_STATUS_ERROR;
 		ImGui::BeginDisabled(status->abort.stop_requested());
-		if (!status->concluded && ImGui::Button("Abort", button))
+		if (!canClose && ImGui::Button("Abort", button))
 		{
 			status->abort.request_stop();
 		}
 		ImGui::EndDisabled();
-		if (status->concluded && ImGui::Button("Close", button))
+		if (canClose && ImGui::Button("Close", button))
 		{
 			for (auto &camera : state.cameras)
 			{
@@ -541,6 +543,9 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::Text("Camera #%u is not part of the firmware update.", camera->id);
 		}
 	}
+	static FirmwareUpdateRef validatingUpdate;
+	static std::set<CameraID> validatedCameras;
+	const ImGuiID validatingPopupID = ImGui::GetID("##Validating");
 	if (showCameraFWUP && !state.cameraFirmwareUpdate)
 	{
 		if (!cameraFWSetup.file.empty() && dtMS(cameraFWSetup.lastCheck, sclock::now()) > 200)
@@ -608,21 +613,81 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::BeginDisabled(!anySelected || !cameraFWSetup.valid);
 		if (ImGui::Button("Flash Cameras", SizeWidthFull()))
 		{
-			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
-			for (auto &camera : state.cameras)
-			{
-				if (camera->selectedForFirmware)
-					firmwareUpdateCameras.push_back(camera); // new shared_ptr
-			}
-			state.cameraFirmwareUpdate = CamerasFlashFirmwareFile(firmwareUpdateCameras, cameraFWSetup.file);
+			validatedCameras.clear();
+			validatingUpdate = PrepareFirmwareUpdate(cameraFWSetup.file);
+			auto updateStatus = validatingUpdate->contextualRLock();
+			bool validUpdate = updateStatus->code != FW_STATUS_ERROR;
+			if (validUpdate)
+				ImGui::OpenPopup(validatingPopupID);
 		}
 		ImGui::EndDisabled();
 	}
+	if (showCameraFWUP && BeginPopup(validatingPopupID))
+	{
+		auto updateStatus = validatingUpdate->contextualRLock();
+		bool validUpdate = true;
+		for (auto &camera : state.cameras)
+		{
+			if (!camera->selectedForFirmware) continue;
+			if (validatedCameras.contains(camera->id)) continue;
+			bool sbcOK = updateStatus->sbc_fw_desc.empty() || updateStatus->sbc_fw_desc == camera->storage.info.sbcFWDescriptor;
+			bool mcuOK = camera->storage.info.mcuFWVersion.num == 0 || updateStatus->mcu_fw_desc.empty() || updateStatus->mcu_fw_desc == camera->storage.info.mcuFWDescriptor;
+			if (camera->storage.receivedInfo && sbcOK && mcuOK)
+			{
+				validatedCameras.insert(camera->id);
+				continue;
+			}
+			// Else, valdiate this camera with user
+			validUpdate = false;
+			ImGui::Text("Potentially Unsafe Update of Camera #%u:", camera->id);
+			if (!camera->storage.receivedInfo)
+				ImGui::Text("Received no info packet to validate compatibility!");
+			else
+			{
+				if (!sbcOK)
+					ImGui::Text("SBC Firmware Descriptor changed from '%s' to '%s'!", camera->storage.info.sbcFWDescriptor.c_str(), updateStatus->sbc_fw_desc.c_str());
+				if (!mcuOK)
+					ImGui::Text("MCU Firmware Descriptor changed from '%s' to '%s'!", camera->storage.info.mcuFWDescriptor.c_str(), updateStatus->mcu_fw_desc.c_str());
+			}
+			ImGui::Text("Flash this camera anyway?");
+			if (ImGui::Button("Flash Anyway", SizeWidthDiv2()))
+				validatedCameras.insert(camera->id);
+			ImGui::SameLine();
+			if (ImGui::Button("Skip For Now", SizeWidthDiv2()))
+				camera->selectedForFirmware = false;
+			break;
+		}
+		updateStatus.unlock();
+
+		if (validUpdate && validatedCameras.empty())
+		{
+			validatingUpdate = nullptr;
+			ImGui::CloseCurrentPopup();
+		}
+		else if (validUpdate)
+		{
+			std::vector<std::shared_ptr<TrackingCameraState>> firmwareUpdateCameras;
+			for (auto &camera : state.cameras)
+			{
+				if (!camera->selectedForFirmware) continue;
+				if (!validatedCameras.contains(camera->id)) continue;
+				firmwareUpdateCameras.push_back(camera); // new shared_ptr
+			}
+			validatedCameras.clear();
+			state.cameraFirmwareUpdate = std::move(validatingUpdate);
+			CamerasUpdateFirmware(firmwareUpdateCameras, state.cameraFirmwareUpdate);
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+	else validatingUpdate = nullptr;
 	if (showCameraFWUP)
 		EndCollapsingRegion();
 
 	// TODO: Ask controller via USB to automatically switch to Bootloader 2/3
 	// So for now, just always show FW update for controllers
+	if (controllerFWUpdateSetup)
+		ImGui::SetNextItemOpen(true);
 	if (BeginCollapsingRegion("Controller Firmware Update"))
 	{
 		// Static, shared between firmware flashing popups

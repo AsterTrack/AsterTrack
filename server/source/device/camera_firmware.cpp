@@ -248,7 +248,6 @@ static bool CameraInitiateFirmwareUpdate(FirmwareUpdatePlan &update, CameraFirmw
 	camState.setupTime = sclock::now();
 	bool success = camState.camera->sendPacket(PACKET_FW_PREPARE, FWPacket.data(), FWPacket.size());
 	auto status = camState.camera->firmware->contextualLock();
-	status->lastActivity = sclock::now();
 	if (success)
 	{
 		LOG(LFirmwareUpdate, LInfo, "Requesting firmware update from camera %u...", camState.camera->id);
@@ -574,7 +573,7 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 	if (!abort)
 	{ // Check for activity timeout
 		abort = true;
-		if (camStatus->code == FW_STATUS_INITIATING && dtMS(camStatus->lastActivity, sclock::now()) > 500)
+		if (camStatus->code == FW_STATUS_INITIATING && dtMS(camStatus->lastActivity, sclock::now()) > 1000)
 			camStatus->text = asprintf_s("Firmware update request timed out!");
 		else if (camStatus->code == FW_STATUS_TRANSFERRING && dtMS(camStatus->lastActivity, sclock::now()) > 1000)
 			camStatus->text = asprintf_s("Firmware update timed out during transfer!");
@@ -854,6 +853,8 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 				sendTime = sclock::now();
 				for (auto &camState : update.cameras)
 				{
+					if (camState.status == FW_STATUS_NONE || camState.status == FW_STATUS_INITIATING)
+						camState.concluded = true;
 					if (camState.concluded) continue;
 					CameraSendFirmwareStatus(update, camState, FW_STATUS_UPDATE, (uint8_t)FW_STATUS_ABORT);
 				}
@@ -868,7 +869,7 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
 				if (!camState.concluded) waiting++;
 			}
 		}
-		while (waiting && dtMS(abortTime, sclock::now()) < 30000);
+		while (waiting && dtMS(abortTime, sclock::now()) < 10000);
 
 		for (auto &camState : update.cameras)
 		{
@@ -935,7 +936,7 @@ static FirmwareTransferType GetFirmwareType(const std::string &firmware, const F
 	return FW_TX_TYPE_UNKNOWN;
 }
 
-FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, std::string firmwareFile)
+FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile)
 {
 	FirmwareUpdateRef updateStatus = std::make_shared<Synchronised<FirmwareUpdateStatus>>();
 
@@ -970,11 +971,12 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 	}
 
 	// Begin to build update plan
-	FirmwareUpdatePlan update = {};
-	update.status = updateStatus;
-	update.abort = updateStatus->contextualLock()->abort.get_token();
-	update.flags = FW_FLAGS_NONE;
+	std::shared_ptr<FirmwareUpdatePlan> update = std::make_shared<FirmwareUpdatePlan>();
+	update->status = updateStatus;
+	update->abort = updateStatus->contextualLock()->abort.get_token();
+	update->flags = FW_FLAGS_NONE;
 
+	std::string sbc_fw_desc, mcu_fw_desc;
 	auto handleFirmwareFile = [&](const std::string &firmwareFile, std::vector<uint8_t> &data)
 	{
 		auto handleFirmwareFile_impl = [&](const std::string &firmwareFile, std::vector<uint8_t> &data, auto &handleFile) -> bool
@@ -995,16 +997,22 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 			switch (type)
 			{
 			case FW_TX_TYPE_SBC_PKG:
-				//update.flags = (FirmwareUpdateFlags)(update.flags | FW_REQUIRE_REBOOT);
+				if (!sbc_fw_desc.empty()) return false; // Two SBC updates in one zip?
+				if (tag.descriptor.empty()) sbc_fw_desc = "Untagged";
+				else sbc_fw_desc = tag.descriptor;
+				update->flags = (FirmwareUpdateFlags)(update->flags | FW_REQUIRE_REBOOT);
 				// Translate to generic file until cameras all support SBC_PKG
-				update.transfers.emplace_back("/mnt/mmcblk0p2/tce/mydata.tgz");
-				//update.transfers.emplace_back(FW_TX_TYPE_SBC_PKG);
+				update->transfers.emplace_back("/mnt/mmcblk0p2/tce/mydata.tgz");
+				//update->transfers.emplace_back(FW_TX_TYPE_SBC_PKG);
 				break;
 			case FW_TX_TYPE_MCU_BIN:
-				update.flags = (FirmwareUpdateFlags)(update.flags | FW_FLASH_MCU);
+				if (!mcu_fw_desc.empty()) return false; // Two MCU updates in one zip? Not currently supported
+				if (tag.descriptor.empty()) mcu_fw_desc = "Untagged";
+				else mcu_fw_desc = tag.descriptor;
+				update->flags = (FirmwareUpdateFlags)(update->flags | FW_FLASH_MCU);
 				// Translate to generic file until cameras all support MCU_BIN
-				update.transfers.emplace_back("/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin");
-				//update.transfers.emplace_back(FW_TX_TYPE_MCU_BIN);
+				update->transfers.emplace_back("/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin");
+				//update->transfers.emplace_back(FW_TX_TYPE_MCU_BIN);
 				break;
 			case FW_TX_TYPE_PACKAGE:
 				ReportFirmwareUpdateError(updateStatus, asprintf_s("Uploading system packages is not yet supported!"));
@@ -1050,7 +1058,8 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 						return false;
 					}
 
-					handleFile(file_stat.m_filename, fileData, handleFile);
+					if (!handleFile(file_stat.m_filename, fileData, handleFile))
+						return false;
 				}
 				mz_zip_reader_end(&zip_archive);
 				return true;
@@ -1061,12 +1070,17 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 				return false;
 			case FW_TX_TYPE_FILE:
 			case FW_TX_TYPE_UNKNOWN:
+				if (firmwareFile.ends_with(".lst") && !firmwareFile.contains("/"))
+				{ // Package list file, for system changes / maintenance
+					update->transfers.emplace_back("/mnt/mmcblk0p2/tce/" + firmwareFile);
+					break;
+				}
 				ReportFirmwareUpdateError(updateStatus, asprintf_s("Cannot upload unidentified file!"));
 				return false;
 			}
 
 			// Finish setting up file transfer
-			FirmwareTransfer &transfer = update.transfers.back();
+			FirmwareTransfer &transfer = update->transfers.back();
 			transfer.data = std::move(data);
 
 			// Calculate SHA256 of file
@@ -1084,8 +1098,28 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		return updateStatus;
 
 	// Check and init update plan
-	if (!InitFirmwareUpdatePlan(update))
+	if (!InitFirmwareUpdatePlan(*update))
 		return updateStatus;
+
+	{
+		auto status = updateStatus->contextualLock();
+		status->text = "Preparing firmware update...";
+		status->code = FW_STATUS_NONE;
+		status->sbc_fw_desc = std::move(sbc_fw_desc);
+		status->mcu_fw_desc = std::move(mcu_fw_desc);
+		status->update = std::move(update);
+	}
+
+	return updateStatus;
+}
+
+bool CamerasUpdateFirmware(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, FirmwareUpdateRef &updateStatus)
+{
+	std::shared_ptr<FirmwareUpdatePlan> update;
+	{
+		auto status = updateStatus->contextualLock();
+		update = std::move(status->update);
+	}
 
 	// Add cameras to update plan
 	for (int i = 0; i < cameras.size(); i++)
@@ -1094,15 +1128,15 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		if (cameras[i]->firmware) continue;
 		cameras[i]->firmware = std::make_shared<Synchronised<CameraFirmwareUpdateStatus>>();
 		auto camStatus = cameras[i]->firmware->contextualLock();
-		camStatus->ID = update.ID;
+		camStatus->ID = update->ID;
 		camStatus->lastActivity = sclock::now();
-		update.cameras.push_back(cameras[i]);
+		update->cameras.push_back(cameras[i]);
 	}
 
-	if (update.cameras.empty())
+	if (update->cameras.empty())
 	{
 		ReportFirmwareUpdateError(updateStatus, asprintf_s("No camera was ready to receive a firmware update!"));
-		return updateStatus;
+		return false;
 	}
 
 	{
@@ -1111,12 +1145,12 @@ FirmwareUpdateRef CamerasFlashFirmwareFile(std::vector<std::shared_ptr<TrackingC
 		status->code = FW_STATUS_INVALID;
 	}
 
-	threadPool.push([](int id, FirmwareUpdatePlan &update)
+	threadPool.push([](int id, std::shared_ptr<FirmwareUpdatePlan> &update)
 	{
-		ExecuteFirmwareUpdatePlan(update);
+		ExecuteFirmwareUpdatePlan(*update);
 	}, std::move(update));
 
-	return updateStatus;
+	return true;
 }
 
 bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor)

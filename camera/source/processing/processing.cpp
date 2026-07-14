@@ -1434,5 +1434,5 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 	nice(0); // Normal priority
 
-	return abortProgram;
+	return !abortProgram;
 }

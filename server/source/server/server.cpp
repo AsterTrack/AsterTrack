@@ -541,6 +541,9 @@ bool StartStreaming(ServerState &state)
 		// Configure sync groups
 		SetupSyncGroups(state);
 
+		// In case no controller is connected, provide virtual sync group for e.g. IMUs
+		SetupVirtualSyncGroup(state);
+
 		// Tell devices (wireless and wired) to start streaming
 		DevicesStartStreaming(state);
 

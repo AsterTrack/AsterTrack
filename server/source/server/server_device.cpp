@@ -753,11 +753,6 @@ void SetupSyncGroups(ServerState &state)
 	// Reset sync group states
 	ResetStreamState(*stream_lock);
 
-	if (state.controllers.empty())
-	{ // In case no controller is connected, provide virtual sync group for e.g. IMUs
-		SetupVirtualSyncGroup(state);
-	}
-
 	// Enter cameras into sync group
 	for (auto &camera : state.cameras)
 	{

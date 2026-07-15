@@ -23,7 +23,9 @@ RUNTIME_DEP="libv4l2.tcz libjpeg-turbo.tcz libgpiod.tcz gcc_libs.tcz" # gcc_libs
 COMPILE_DEP="libjpeg-turbo-dev.tcz libgpiod-dev.tcz cmake.tcz compiletc.tcz bc.tcz"
 WIRELESS_DEP="firmware-brcmwifi.tcz firmware-rpi-wifi.tcz wifi.tcz openssh.tcz ntp.tcz"
 ZEROCONF_DEP="dbus.tcz avahi.tcz nss-mdns.tcz" # so that hostname is announced, else have to use IP
-DEV_DEP="bash.tcz gdb.tcz nano.tcz i2c-tools.tcz gpiod.tcz" # bash only for VS Code remote development
+DEV_DEP="bash.tcz gdb.tcz nano.tcz i2c-tools.tcz gpiod.tcz mpfr.tcz"
+# bash only for VS Code remote development
+# mpfr is dependency of gdb but not specified, typically loaded with gcc but may not happen if SSH connecte without compilation 
 TEST_DEP="v4l2-utils.tcz libv4l2-dev.tcz" # WARNING: Adds 250MB
 # ntp for accurate time, super annoying when cmake rebuilds everything because of different file times
 

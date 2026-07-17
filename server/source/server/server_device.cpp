@@ -388,9 +388,6 @@ void DevicesStartStreaming(ServerState &state)
 			ep.lastReceived = sclock::now();
 	}
 
-	// Give controllers some time to establish a time sync, not strictly needed
-	std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
 	for (auto &cam : state.cameras)
 	{
 		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming
@@ -404,19 +401,6 @@ void DevicesStartStreaming(ServerState &state)
 		CameraUpdateStream(*cam);
 		CameraUpdateVis(*cam);
 	}
-
-	// Give cameras some time to configure themselves
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-	for (auto &cam : state.cameras)
-	{
-		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming)) continue;
-
-		// Communicate with camera to start streaming (startup time is high)
-		cam->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB, false);
-	}
-	TimePoint_t modeSetTime = sclock::now();
-	TimePoint_t modeSetTimeout = sclock::now() + std::chrono::milliseconds(500);
 
 	// Set external sync source for relevant controllers
 	for (auto &controller : state.controllers)
@@ -436,7 +420,27 @@ void DevicesStartStreaming(ServerState &state)
 		}
 	}
 
+	// Communicate with camera to start streaming (startup time is high)
+	for (auto &cam : state.cameras)
+	{
+		if (!cam->client && (!cam->controller || !cam->controller->comm->commStreaming
+			|| cam->state.contextualRLock()->commState != COMM_SBC_READY))
+			continue;
+		cam->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB, false);
+	}
+	TimePoint_t modeSetTime = sclock::now();
+	TimePoint_t modeSetTimeout = sclock::now() + std::chrono::milliseconds(500);
+
 	LOG(LGUI, LInfo, "Setup cameras and sync groups");
+
+	// Setup sync masks for all controllers
+	for (auto &controller : state.controllers)
+	{
+		if (!ControllerUpdateSyncMask(*controller))
+		{
+			LOG(LGUI, LInfo, "Failed to setup controller %d for streaming!", controller->id);
+		}
+	}
 
 	for (auto &cam : state.cameras)
 	{ // Wait for cameras to send mode change packets to signal they are ready to receive frame syncs
@@ -450,15 +454,6 @@ void DevicesStartStreaming(ServerState &state)
 	}
 
 	LOG(LGUI, LInfo, "Waited %fms for cameras to change modes!", dtMS(modeSetTime, sclock::now()));
-
-	// Setup sync masks for all controllers
-	for (auto &controller : state.controllers)
-	{
-		if (!ControllerUpdateSyncMask(*controller))
-		{
-			LOG(LGUI, LInfo, "Failed to setup controller %d for streaming!", controller->id);
-		}
-	}
 
 	// Set generating sync source for relevant controllers
 	for (auto &controller : state.controllers)

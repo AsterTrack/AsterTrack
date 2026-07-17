@@ -260,7 +260,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			PacketState &packetState = *((PacketState*)userData);
 			if (signal == SIGNAL_INVALID)
 			{
-				LOG(LParsing, LTrace, "Skipped invalid block of length %d on endpoint %d\n", length, packetState.endpoint);
+				LOG(LParsing, LTrace, "Controller %d: Skipped invalid block of length %d on endpoint %d\n", packetState.controller->id, length, packetState.endpoint);
 			}
 			else if (signal == SIGNAL_SOF)
 			{
@@ -281,13 +281,13 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (!camera)
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LError, "---- Packet from camera on port %d that has not been set up yet!\n", port);
+				LOG(LStreaming, LError, "---- Packet from camera on port %d-%d that has not been set up yet!\n", packetState.controller->id, port);
 				return;
 			}
 			if (!camera->sync && (packet.header.tag == PACKET_FRAME_SIGNAL || packet.header.isStreamPacket()))
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LTrace, "Camera %u (Port %d) sent a streaming packet but was not set up for streaming!\n", camera->id, port);
+				LOG(LStreaming, LTrace, "Camera %u (Port %d-%d) sent a streaming packet but was not set up for streaming!\n", camera->id, packetState.controller->id, port);
 				return;
 			}
 
@@ -301,7 +301,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				}
 				else
 				{
-					LOG(LStreaming, LTrace, "Camera %u (Port %d) announced packet for frame %d (%d)!\n", camera->id, port, frame->ID, packet.header.frameID&0xFF);
+					LOG(LStreaming, LTrace, "Camera %u (Port %d-%d) announced packet for frame %d (%d)!\n", camera->id, packetState.controller->id, port, frame->ID, packet.header.frameID&0xFF);
 				}
 			}
 			else if (packet.header.isStreamPacket())
@@ -317,7 +317,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (!camera)
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LError, "---- Camera on port %d got removed since packet was first received!\n", port);
+				LOG(LStreaming, LError, "---- Camera on port %d-%d got removed since packet was first received!\n", packetState.controller->id, port);
 				return;
 			}
 
@@ -334,7 +334,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (!camera)
 			{
 				packet.ignored = true;
-				LOG(LStreaming, LError, "---- Camera on port %d got removed since packet was first received!\n", port);
+				LOG(LStreaming, LError, "---- Camera on port %d-%d got removed since packet was first received!\n", packetState.controller->id, port);
 				return;
 			}
 
@@ -358,8 +358,8 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
 				if (frame)
 				{ // Packet existed for frame
-					LOG(LStreaming, LTrace, "Camera %u (Port %d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
-						camera->id, port, packet.header.tag, frame->ID, frame->ID&0xFF, blobCount);
+					LOG(LStreaming, LTrace, "Camera %u (Port %d-%d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",
+						camera->id, packetState.controller->id, port, packet.header.tag, frame->ID, frame->ID&0xFF, blobCount);
 					if (frame->previouslyProcessed)
 					{
 						LOG(LStreaming, LTrace, "---- Camera %u finally transmitted stream packet for frame %d with %d blobs, %.2fms into the frame, %.2fms after processing!\n",
@@ -397,13 +397,13 @@ static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, u
 			float deltaT = dtMS(request.submitted, sclock::now());
 			if (success)
 			{
-				LOG(LUSB, LWarn, "Stalled control transfer %d (%s) completed after %fms",
-					request.transfer.load(), label, deltaT);
+				LOG(LUSB, LWarn, "Controller %d: Stalled control transfer %d (%s) completed after %fms",
+					controller.id, request.transfer.load(), label, deltaT);
 			}
 			else
 			{ // Libusb timeout
-				LOG(LUSB, LWarn, "Stalled control transfer %d (%s) got cancelled after %fms",
-					request.transfer.load(), label, deltaT);
+				LOG(LUSB, LWarn, "Controller %d: Stalled control transfer %d (%s) got cancelled after %fms",
+					controller.id, request.transfer.load(), label, deltaT);
 			}
 			request.stalling = false;
 		}
@@ -478,17 +478,17 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 	ServerState &state = *((ServerState*)userState);
 	if (state.mode != MODE_Device || !state.isStreaming)
 	{ // Not expecting any transfer
-		LOG(LUSB, LDebug, "Unexpected transfer IN while not streaming!\n");
+		LOG(LUSB, LDebug, "Controller %d: Unexpected transfer IN while not streaming!\n", controller.id);
 		return;
 	}
 	if (!controller.comm || !controller.comm->deviceConnected)
 	{
-		LOG(LUSB, LError, "Unexpected transfer after device was disconnected!\n");
+		LOG(LUSB, LError, "Controller %d: Unexpected transfer after device was disconnected!\n", controller.id);
 		return;
 	}
 	if (endpoint >= controller.endpoints.size())
 	{
-		LOG(LUSB, LError, "Unexpected transfer on endpoint %d! Only set up %d\n", endpoint, (int)controller.endpoints.size());
+		LOG(LUSB, LError, "Controller %d: Unexpected transfer on endpoint %d! Only set up %d\n", controller.id, endpoint, (int)controller.endpoints.size());
 		return;
 	}
 
@@ -505,18 +505,18 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 		auto &stats = controller.endpoints[endpoint]; // Assumes all endpoints are continuous, e.g. ep 1, 2, 3, 4
 		if (header.counter != (stats.counter+1)%256)
 		{ // Controller must have thought it send a packet but didn't - this really shouldn't happen
-			LOG(LUSB, LError, "Dropped packet in endpoint %d! Skipped from %d to %d", endpoint, stats.counter, header.counter);
+			LOG(LUSB, LError, "Controller %d: Dropped packet in endpoint %d! Skipped from %d to %d", controller.id, endpoint, stats.counter, header.counter);
 		}
 		else
 		{ // Is continuous, got timestamp that the last packet within the endpoint was sent at for use with time sync
 			float commLag = dtMS(stats.lastReceived, sclock::now());
 			if (commLag > 20)
 			{ // Still fine, but controller should be responsible for sending a packet every ms at least to keep up time sync
-				LOG(LTimesync, LWarn, "Controller comms dropped out for %fms, this is bad for time sync!", commLag);
+				LOG(LTimesync, LWarn, "Controller %d: Comms dropped out for %fms, this is bad for time sync!", controller.id, commLag);
 			}
 			else if (commLag > 5)
 			{ // Still fine, but controller should be responsible for sending a packet every ms at least to keep up time sync
-				LOG(LTimesync, LDarn, "Controller comms dropped out for %fms, this is suboptimal for time sync!", commLag);
+				LOG(LTimesync, LDarn, "Controller %d: Comms dropped out for %fms, this is suboptimal for time sync!", controller.id, commLag);
 			}
 			// Update time sync with the last packet in the endpoint as the newly gathered sample point
 			auto sync_lock = controller.timeSync.contextualLock();
@@ -569,27 +569,27 @@ static void checkControlRequest(TrackingControllerState &controller, TrackingCon
 		request.transfer = comm_submit_control_request(controller.comm, command, 0, 0);
 		if (request.transfer < 0)
 		{
-			LOG(LUSB, LWarn, "Failed to request %s control transfer!\n", label);
+			LOG(LUSB, LWarn, "Controller %d: Failed to request %s control transfer!\n", controller.id, label);
 		}
 		else
 		{
-			LOG(LUSB, LTrace, "Allocated control transfer %d to %s request\n",
-				request.transfer.load(), label);
+			LOG(LUSB, LTrace, "Controller %d: Allocated control transfer %d to %s request\n",
+				controller.id, request.transfer.load(), label);
 		}
 	}
 	else if (request.transfer >= 0 && deltaT > 20)
 	{ // Just waiting longer since it probably indicates an error with the controller and we don't want to spam the log
 		// But libusb will timeout the transfer before anyway
-		LOG(LUSB, LDarn, "Controller didn't respond to control transfer %d (%s) in %fms, cancelling!\n",
-			request.transfer.load(), label, deltaT);
+		LOG(LUSB, LDarn, "Controller %d: No response to control transfer %d (%s) in %fms, cancelling!\n",
+			controller.id, request.transfer.load(), label, deltaT);
 		comm_cancel_control_request(controller.comm, request.transfer);
 		request.transfer = -1;
 		request.stalling = false;
 	}
 	else if (request.transfer >= 0 && deltaT > 10 && !request.stalling)
 	{ // Over 10ms to answer transfer is very odd
-		LOG(LUSB, LDarn, "Controller didn't respond to control transfer %d (%s) in %fms!\n",
-			request.transfer.load(), label, deltaT);
+		LOG(LUSB, LDarn, "Controller %d: No response to control transfer %d (%s) in %fms!\n",
+			controller.id, request.transfer.load(), label, deltaT);
 		request.stalling = true;
 	}
 };
@@ -617,8 +617,8 @@ static void LogUSBStats(TrackingControllerState &controller, dt_t timeUS)
 	for (auto &ep : endpoints)
 	{
 		#define INT_TRANSFER_SIZE 1024 // From usb.cpp
-		LOG(LUSB, LDebug, "    EP %d: %d queues with %d transfers of %d bytes total, %.0f%% fill rate, %.0f%% throughput, %.0f%% transfer rate\n",
-			ep.first, std::get<0>(ep.second), std::get<1>(ep.second), std::get<2>(ep.second),
+		LOG(LUSB, LDebug, "    C %d EP %d: %d queues with %d transfers of %d bytes total, %.0f%% fill rate, %.0f%% throughput, %.0f%% transfer rate\n",
+			controller.id, ep.first, std::get<0>(ep.second), std::get<1>(ep.second), std::get<2>(ep.second),
 			(float)std::get<2>(ep.second)/std::get<1>(ep.second)/INT_TRANSFER_SIZE*100,
 			std::get<2>(ep.second)/(INT_TRANSFER_SIZE*8*timeUS/1000.0f)*100,
 			std::get<1>(ep.second)/(8*timeUS/1000.0f)*100);

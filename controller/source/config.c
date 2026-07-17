@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ch32v30x_gpio.h"
 
 #include "config.h"
+#include "compat.h"
 #include "pd_driver.h"
 #include "power_control.h"
 #include "util.h"
@@ -355,8 +356,9 @@ void SYNC_Input_Init()
 	AFIO->EXTICR[0] = (AFIO->EXTICR[0] & ~AFIO_EXTICR1_EXTI3) | AFIO_EXTICR1_EXTI3_PE;
 
 	// Setup interrupts for EXTI line
-	EXTI->RTENR |= GPIOE_SYNC_EXTI_LINES; // Set to trigger on rising edge
-	EXTI->INTENR |= GPIOE_SYNC_EXTI_LINES; // Enable interrupt generation
+	EXTI->INTFR = EXTI_LINE_3; // Clear pending interrupt
+	EXTI->RTENR |= EXTI_LINE_3; // Set to trigger on rising edge
+	EXTI->INTENR |= EXTI_LINE_3; // Enable interrupt generation
 }
 
 void SYNC_Reset()
@@ -364,8 +366,9 @@ void SYNC_Reset()
 	GPIO_CFG(GPIOE, GPIO_PIN_3, GPIO_FLOATING_IN);
 	NVIC_DisableIRQ(EXTI3_IRQn);
 	// Reset interrupts for EXTI line
-	EXTI->INTENR &= ~GPIOE_SYNC_EXTI_LINES; // Disable interrupt generation
-	EXTI->INTFR = GPIOE_SYNC_EXTI_LINES; // Clear pending interrupt
+	EXTI->RTENR &= ~EXTI_LINE_3; // Disable rising edge trigger
+	EXTI->INTENR &= ~EXTI_LINE_3; // Disable interrupt generation
+	EXTI->INTFR = EXTI_LINE_3; // Clear pending interrupt
 }
 
 

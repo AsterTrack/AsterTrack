@@ -413,11 +413,12 @@ void pdbs_dpm_get_sink_capability(pd_msg *cap, const bool isPD3)
 #define WAIT_FOR_STAR1(FLAG, TIMEOUT_US, MSG) {\
 	TimePoint start = GetTimePoint();\
 	TimePoint limit = start + TIMEOUT_US * TICKS_PER_US;\
-	while (!(I2C1->STAR1&FLAG));\
+	while (!(I2C1->STAR1&FLAG) && GetTimePoint() < limit);\
 	if (GetTimePoint() > limit)\
 	{\
 		ERR_STR(MSG);\
 		ERR_CHARR(':', UINT999999_TO_CHARR(GetTimeSpanUS(start, GetTimePoint())));\
+		return false;\
 	}\
 }
 

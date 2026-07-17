@@ -1425,9 +1425,6 @@ static void CleanSequencePanel()
 const static char* lastControllerTab = nullptr;
 static bool ShowTrackingControllerPanel()
 {
-	if (!ImGui::BeginTabBar("ControllerSelector", ImGuiTabBarFlags_None))
-		return false;
-
 	InterfaceState &ui = GetUI();
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
@@ -1435,16 +1432,49 @@ static bool ShowTrackingControllerPanel()
 	// TODO: Allow exact selection of events, and send them to controller, not as a class of events
 	static std::vector<ControllerEventID> eventSelection;
 	static int eventClassCode = 0;
+	static int controllerSelection = 0;
 
-	// TODO: Allow selection of controller for event viewer
-	auto &controller = state.controllers.front();
-
-	if (controller->eventLog.getView().empty())
+	if (state.controllers.empty())
 	{
-		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(LogLevelHexColors[LWarn]), "Please make sure the controller firmware has been built with Event Logging support! Release builds have not.");
+		ImGui::Text("No Controllers connected.");
+		return false;
+	}
+	std::shared_ptr<TrackingControllerState> controller = nullptr;
+	if (state.controllers.size() == 1)
+	{
+		controller = state.controllers.front();
+		controllerSelection = controller->id;
+	}
+	else 
+	{
+		ImGui::SetNextItemWidth(ImGui::CalcTextSize("Controller XX").x + ImGui::GetFrameHeight());
+		if (ImGui::BeginCombo("##Controller", asprintf_s("Controller %d", controllerSelection).c_str()))
+		{
+			for (auto &c : state.controllers)
+			{
+				ImGui::PushID(c->id);
+				if (ImGui::Selectable(asprintf_s("Controller %d", c->id).c_str(), controllerSelection == c->id))
+					controllerSelection = c->id;
+				ImGui::PopID();
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		for (auto &c : state.controllers)
+		{
+			if (controllerSelection == c->id)
+				controller = c;
+		}
+		if (!controller)
+		{
+			return false;
+		}
 	}
 
 	/* Choose events to view */
+
+	if (!ImGui::BeginTabBar("EventSelector", ImGuiTabBarFlags_None))
+		return false;
 
 	const char* curTab = nullptr;
 	if (ImGui::BeginTabItem("All"))
@@ -1570,7 +1600,17 @@ static bool ShowTrackingControllerPanel()
 			comm_submit_control_data(controller->comm, COMMAND_OUT_EVENTS, 0x00, 0, nullptr, 0);
 	}
 
+	ImGui::EndTabBar();
+
 	/* Show sequencer */
+
+	if (controller->eventLog.getView().empty())
+	{
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(LogLevelHexColors[LWarn]),
+			!ui.seqEventsActive? "Events are disabled. Use the Button in the tab bar." :
+			"No events received. Make sure the controller firmware has been built with Event Logging support!");
+		return false;
+	}
 
 	static int64_t markedFrame = -1;
 	if (markedFrame != ui.seqJumpToPos)
@@ -1591,8 +1631,6 @@ static bool ShowTrackingControllerPanel()
 	{ // Else rendering, and thus PrepareRendering, is skipped
 		ui.seqEvents->PostRenderUpdate();
 	}
-
-	ImGui::EndTabBar();
 	return true;
 }
 static void CleanTrackingControllerPanel()

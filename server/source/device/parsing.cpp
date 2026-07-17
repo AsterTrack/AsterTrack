@@ -44,12 +44,12 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 {
 	if (length != SOF_PACKET_SIZE)
 	{
-		LOG(LSOF, LError, "Received invalid SOF of size %d (!= %d)!\n", length, SOF_PACKET_SIZE);
+		LOG(LSOF, LError, "Controller %d received invalid SOF of size %d (!= %d)!\n", controller.id, length, SOF_PACKET_SIZE);
 		return false;
 	}
 	if (!controller.sync)
 	{
-		LOG(LSOF, LError, "Controller received SOF but wasn't setup for streaming!\n");
+		LOG(LSOF, LError, "Controller %d received SOF but wasn't setup for streaming!\n", controller.id);
 		return false;
 	}
 	SOFPacket sof = parseSOFPacket(data);
@@ -96,21 +96,21 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 	dt_t dT = dtUS(timeSOF, sclock::now());
 	if (dT < -10)
 	{ // Sync supposedly happened in the future, time sync has gone bad
-		LOG(LSOF, LWarn, "Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
-			-dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
+		LOG(LSOF, LWarn, "Controller %d: Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
+			controller.id, -dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
 		// NOTE: This previously happened when USB handlers took longer and longer due to logging slowing it down
 		// If this happens again, check the USB handler times to make sure they don't increase to unsustainable levels where timesync becomes invalid
 		// This is also partially adressed by putting USB packet parsing on a separate thread from the USB callbacks doing the timing
 	}
 
-	LOG(LSOF, LDebug, "SOF packet %d with timestamp %dus was %.2fms ago, with time sync delay "
+	LOG(LSOF, LDebug, "Controller %d: SOF packet %d with timestamp %dus was %.2fms ago, with time sync delay "
 		"avg %dus +- %dus (last timestamp %ldus, %.2fms ago)",
-		sof.frameID, sof.timeUS,
+		controller.id, sof.frameID, sof.timeUS,
 		dtMS(timeSOF, sclock::now()),
 		(int)(timeSync.diff.avg*1000), (int)(timeSync.diff.stdDev()*1000),
 		timeSync.lastTimestamp,
 		dtMS(timeSync.lastTime, sclock::now()));
-	LOG(LSOF, LDebug, "Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
+	LOG(LSOF, LDebug, "         Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
 		"so SOF should be %dus after last timestamp, ""with drift %dus, timesync says %ldus (drift is %.2f%%)\n",
 		sof.timeUS, timeSync.lastTimestamp&0xFFFFFF, sofTimestampUS, timeSync.lastTimestamp,
 		diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS),
@@ -166,7 +166,7 @@ bool ReadDebugPacket(TrackingControllerState &controller, uint8_t *data, int len
 			curLevel = LError;
 
 	}
-	LOG(LControllerDevice, curLevel, "%.*s", length-curPos, (char *)(data+curPos));
+	LOG(LControllerDevice, curLevel, "C %d: %.*s", controller.id, length-curPos, (char *)(data+curPos));
 	//std::stringstream debugHex;
 	//printBuffer(debugHex, data, length);
 	//LOG(LControllerDevice, LTrace, "%s", debugHex.str().c_str());
@@ -224,7 +224,7 @@ bool ReadEventPacket(TrackingControllerState &controller, uint8_t *data, int len
 			{
 				LOG(LControllerDevice, LWarn, "Events not continuous! New event is %" PRId64 "us before last. Might be due to updated time sync", usPassed);
 			}
-			if (lastEvent.timestampUS > event.timestampUS)
+			if (lastEvent.timestampUS > event.timestampUS + (1<<24)/2)
 			{
 				LOG(LParsing, LError, "Event log timestamps overflowed! First has %" PRIu64 ", new one %" PRIu64 "", lastEvent.timestamp, event.timestamp);
 				controller.eventLog.cull_all();

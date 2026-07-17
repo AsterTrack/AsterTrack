@@ -290,7 +290,7 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 				if (state->header.length > 100000)
 				{ // Don't trust packet header, skip to end
 					WARN_STR("!UartHeaderOverLength:");
-					WARN_CHARR(INT99999999_TO_CHARR(state->header.length));
+					WARN_CHARR(UINT99999999_TO_CHARR(state->header.length));
 					skipToEnd(state);
 					continue;
 				}
@@ -300,19 +300,19 @@ static uartd_respond uartd_process_data(uint_fast8_t port, uint_fast16_t begin, 
 				if (resp == uartd_reset)
 				{ // Bad state, reset port
 					WARN_STR("!UartHeaderReset");
-					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
+					WARN_CHARR(':', UINT99_TO_CHARR(state->header.tag), '+', UINT9999_TO_CHARR(state->header.length));
 					break;
 				}
 				else if (resp == uartd_reset_nak)
 				{ // Bad state, reset port
 					WARN_STR("!UartHeaderReject");
-					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
+					WARN_CHARR(':', UINT99_TO_CHARR(state->header.tag), '+', UINT9999_TO_CHARR(state->header.length));
 					break;
 				}
 				else if (resp == uartd_unknown)
 				{ // Don't trust packet header, skip to end
 					WARN_STR("!UartHeaderUnknown");
-					WARN_CHARR(':', INT99_TO_CHARR(state->header.tag), '+', INT9999_TO_CHARR(state->header.length));
+					WARN_CHARR(':', UINT99_TO_CHARR(state->header.tag), '+', UINT9999_TO_CHARR(state->header.length));
 					skipToEnd(state);
 					continue;
 				}

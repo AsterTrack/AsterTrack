@@ -98,7 +98,6 @@ static volatile bool commChannelsOpen; // Stage 1
 static volatile bool enforceTimeSync; // Stage 2
 //	bool PortState::cameraEnabled; // Stage 4
 //	bool PortState::frameSyncEnabled; // Stage 5
-static volatile uint32_t enabledSyncPinsGPIOD; // Stage 5
 
 // Camera state
 typedef struct
@@ -172,7 +171,7 @@ static void intentionalDelayUS(uint32_t us)
 	TimePoint tgt = GetTimePoint();
 	tgt += us * TICKS_PER_US;
 	while (GetTimePoint() < tgt)
-		WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+		RESET_WWDG();
 }
 
 usbd_respond class_impl_setconf(usbd_device *usbd, uint8_t cfg); // usbd.c
@@ -294,7 +293,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			WARN_CHARR('/', 'L', 'A', 'G', INT99999999_TO_CHARR(loopDiff));
 		lastLoopIT = now;
 
-		WWDG->CTLR = (WWDG_TIMEOUT & WWDG_CTLR_T);
+		RESET_WWDG();
 		__enable_irq();
 
 		/* for (int p = 0; p < UART_PORT_COUNT; p++)
@@ -325,9 +324,11 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		if (syncPulseHigh && (GetTimePoint() - cachedSOF) > SYNC_MIN_PULSE_WIDTH_US * TICKS_PER_US)
 		{ // Set camera & output sync pulse low
 			syncPulseHigh = false;
-			GPIO_RESET(GPIOD, enabledSyncPinsGPIOD);
-			if (syncSource != SYNC_CFG_EXT_TRIG)
-				GPIO_RESET(GPIOE, GPIOE_SYNC_IO_PINS);
+			if (syncSource == SYNC_CFG_GEN_RATE || syncSource == SYNC_CFG_GEN_TRIG)
+			{
+				GPIO_RESET(GPIOE, GPIO_PIN_3);
+			}
+			LOG_EVT_STR(CONTROLLER_EVENT_SYNC, false);
 		}
 
 #if defined(ENABLE_LOG) && defined(LOG_USE_SDI)
@@ -530,6 +531,9 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			continue;
 		lastTimeoutCheck = now;
 
+		// Check all kinds of timeouts
+		RESET_WWDG();
+	
 		if (powerInState == POWER_RESETTING && now-startup > 50*TICKS_PER_MS)
 		{ // Try enabling PD power in if PD was already setup and power is good
 			if (EnablePowerPDIn())
@@ -559,8 +563,6 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				'+', 'E', 'x', 't', ':', INT99_TO_CHARR(ExtMV / 1000), '.', INT999_TO_CHARR(ExtMV % 1000), 'V');
 		}
 	#endif
-
-		// Check all kinds of timeouts
 
 		// Check UART timeouts
 		for (uint_fast8_t i = 0; i < UART_PORT_COUNT; i++)
@@ -787,7 +789,6 @@ static void resetSyncStates()
 	// Reset Sync Mask implicitly
 	for (int i = 0; i < UART_PORT_COUNT; i++)
 		camStates[i].status &= ~PORT_SYNC_ENABLED;
-	enabledSyncPinsGPIOD = 0;
 }
 
 
@@ -1174,11 +1175,13 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	else if (req->bRequest == COMMAND_OUT_SYNC_EXTERNAL)
 	{ // Stage 3: Request to setup external sync source
 		CMDD_STR("+SyncExt");
-		SYNC_Reset();
 		if (syncSource == SYNC_CFG_GEN_RATE)
 			StopTimer(TIM3);
+		SYNC_Reset();
 		SYNC_Input_Init();
-		syncSource = SYNC_CFG_EXT_TRIG;
+		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
+		cachedFrameID = 0;
+		syncSource = SYNC_CFG_EXT_RATE; // Still behaving like SYNC_CFG_EXT_TRIG
 		return usbd_ack;
 	}
 	else if (req->bRequest == COMMAND_OUT_SYNC_GENERATE)
@@ -1191,9 +1194,11 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		{ // TODO: This limits fps to be over 15.26fps. Consider changing timer to be less precise (currently 1us steps)
 			frametimeUS = UINT16_MAX;
 		}
-		StartTimer(TIM3, frametimeUS);
+		if (syncSource == SYNC_CFG_GEN_RATE)
+			StopTimer(TIM3);
 		SYNC_Reset();
 		SYNC_Output_Init();
+		StartTimer(TIM3, frametimeUS);
 		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
 		cachedFrameID = 0;
 		syncSource = SYNC_CFG_GEN_RATE;
@@ -1203,14 +1208,10 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	{ // Request to set sync mask for cameras
 		CMDD_STR("+SyncMsk:");
 		CMDD_CHARR(UI8_TO_HEX_ARR(req->wIndex));
-		enabledSyncPinsGPIOD = 0;
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			if ((req->wIndex >> i) & 1)
-			{
 				camStates[i].status |= PORT_SYNC_ENABLED;
-				enabledSyncPinsGPIOD |= GPIOD_SYNC_PIN[i];
-			}
 			else
 				camStates[i].status &= ~PORT_SYNC_ENABLED;
 		}
@@ -1445,7 +1446,6 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Snoop in, and stop streaming already
 			// If the error is serious, camera software will send a NAK and restart anyways, in which case this is not necessary
 			cam->status &= ~(PORT_CAM_STREAMING | PORT_SYNC_ENABLED);
-			enabledSyncPinsGPIOD &= ~(GPIOD_SYNC_PIN[port]);
 		}
 
 		// Set flag on next block header that a new packet starts
@@ -1684,8 +1684,7 @@ void TIM3_IRQHandler()
 	}
 
 	// Generate External Trigger Signal on output and camera pins
-	GPIO_SET(GPIOE, GPIOE_SYNC_IO_PINS);
-	GPIO_SET(GPIOD, enabledSyncPinsGPIOD);
+	GPIO_SET(GPIOE, GPIO_PIN_3);
 
 	// Update Sync SOF
 	curSOF = GetTimePoint();
@@ -1704,11 +1703,8 @@ void EXTI3_IRQHandler(void) __IRQ;
 void EXTI3_IRQHandler()
 {
 	LOG_EVT_INT(CONTROLLER_INTERRUPT_SYNC_INPUT, true);
-	if (EXTI->INTFR & GPIOE_SYNC_EXTI_LINES)
+	if (EXTI->INTFR & EXTI_LINE_3)
 	{ // Interrupt pending
-
-		// Mirror External Trigger Signal
-		GPIO_SET(GPIOD, enabledSyncPinsGPIOD);
 
 		// Update Sync SOF
 		curSOF = GetTimePoint();
@@ -1719,7 +1715,7 @@ void EXTI3_IRQHandler()
 		//sendSOFPackets(curFrameID, curSOF);
 
 		// Reset IRQ flag
-		EXTI->INTFR = GPIOE_SYNC_EXTI_LINES;
+		EXTI->INTFR = EXTI_LINE_3;
 
 		LOG_EVT_STR(CONTROLLER_EVENT_SYNC, true);
 	}

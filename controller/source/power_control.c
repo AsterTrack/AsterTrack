@@ -191,7 +191,9 @@ void ADC1_2_IRQHandler()
 	{
 		if (powerInState == POWER_WAITING)
 		{
-			if (EnablePowerPDIn())
+			if (!IsInInputRange(GetMillivoltsPD()))
+			{}
+			else if (EnablePowerPDIn())
 			{
 				SetAnalogWatchdogPDIn();
 				bool wantExtOut = false;
@@ -225,7 +227,9 @@ void ADC1_2_IRQHandler()
 	{
 		if (powerInState == POWER_WAITING)
 		{
-			if (EnablePowerExtIn())
+			if (!IsInInputRange(GetMillivoltsExt()))
+			{}
+			else if (EnablePowerExtIn())
 			{
 				powerInState = POWER_EXT_IN;
 				SetAnalogWatchdogExtIn();

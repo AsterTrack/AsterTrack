@@ -310,6 +310,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				visSetupProjection(Eigen::Isometry3f::Identity());
 				visualiseCircle<true>(Eigen::Vector2f::Zero(), 0.8f, color);
 			}, (void*)(intptr_t)controller.id);
+			ImGui::SameLine();
+			ImGui::Text("%d", controller.id);
 			ImGui::SameLine(colX);
 			ImGui::Text("Status");
 			ImGui::EndGroup();

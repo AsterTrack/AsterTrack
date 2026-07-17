@@ -50,6 +50,8 @@ enum ControllerSyncConfig
 {
 	SYNC_CFG_NONE = 0,
 	SYNC_CFG_GEN_RATE,
+	SYNC_CFG_EXT_RATE,
+	SYNC_CFG_GEN_TRIG,
 	SYNC_CFG_EXT_TRIG
 	// Potentially many more to come
 };

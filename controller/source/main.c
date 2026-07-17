@@ -155,6 +155,8 @@ volatile PacketRef *packetUSBPacket = NULL;
 volatile PacketRef *lastSOFPacket = NULL;
 volatile TimePoint lastUARTActivity;
 
+extern int _susrstack, _eusrstack;
+
 /* Functions */
 
 static void uart_set_identification()
@@ -668,6 +670,19 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			stats_reset(&packetLatency);
 			stats_reset(&packetDiff);
 		} */
+
+		static TimePoint lastStackReport;
+		if (now-lastStackReport > 1000*TICKS_PER_MS)
+		{ // Check stack usage periodically
+			lastStackReport = now;
+			uint32_t *ptr = (uint32_t*)(&_susrstack);
+			if (*ptr != 0xCDCDCDCD)
+				ERR_STR("#STACK_OVERFLOW");
+			/* while (*(ptr++) == 0xCDCDCDCD);
+			int unused = (intptr_t)(ptr-1) - (intptr_t)&_susrstack;
+			int stacksize = (intptr_t)&_eusrstack - (intptr_t)&_susrstack;
+			TEMP_CHARR('F', 'R', 'E', 'E', ':', INT99999_TO_CHARR(unused), '/', INT99999_TO_CHARR(stacksize)); */
+		}
 	}
 }
 

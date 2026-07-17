@@ -373,6 +373,20 @@ handle_reset:
 	// Loop by skipping one section backward
 
 2:
+	// Load stack start and end addresses
+	la a0, _susrstack
+	la a1, _eusrstack
+	li t0, 0xCDCDCDCD
+	bgeu a0, a1, 2f
+	// Skip two sections forward if there's nothing to clear
+1:
+	// Paint stack section
+	sw t0, (a0)
+	addi a0, a0, 4
+	bltu a0, a1, 1b
+	// Loop by skipping one section backward
+
+2:
 	//csrr t2, 0xbc0 // Reads 0x00000000
 	// Unknown code modifying corecfgr register
 	//csrr a1, 0xbc0

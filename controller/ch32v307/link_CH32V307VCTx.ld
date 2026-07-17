@@ -1,6 +1,6 @@
 ENTRY(_start)
 
-__stack_size = 2048;
+__stack_size = 2048; /* Checked maximum to be 811bytes currently. */
 
 PROVIDE(_stack_size = __stack_size);
 
@@ -91,15 +91,19 @@ SECTIONS
 	PROVIDE( _end = _ebss);
 	PROVIDE( end = . );
 
-	.stack ORIGIN(RAM) + LENGTH(RAM) - __stack_size :
+	/*
+	Occupy memory, but right after data, where heap would usually go
+	Stack is ACTUALLY at end of RAM, but that would make RAM usage always read 100%
+	*/
+	.stack_virtual :
 	{
-		PROVIDE( _heap_end = . );    
 		. = ALIGN(4);
-		PROVIDE(_susrstack = . );
 		. = . + __stack_size;
-		PROVIDE( _eusrstack = .);
 	} >RAM 
 
+    PROVIDE( _eusrstack = ORIGIN(RAM) + LENGTH(RAM));
+    PROVIDE( _susrstack = _eusrstack - __stack_size);
+	PROVIDE( _heap_end = _susrstack );
 }
 
 

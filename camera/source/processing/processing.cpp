@@ -939,7 +939,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				curTimes.find = dtUS(t11, t12);
 
 				TimePoint_t t21 = sclock::now();
-				detect.fetchMaskRegionsVPU(curFrame->bitmsk->ptr.arm.uptr, fetching.maskIndexBuffer.ptr.arm.vptr);
+				detect.fetchMaskRegionsVPU(curFrame->bitmsk->ptr.arm.uptr, bgBitmask, fetching.maskIndexBuffer.ptr.arm.vptr);
 				TimePoint_t t22 = sclock::now();
 				curTimes.fetch = dtUS(t21, t22);
 

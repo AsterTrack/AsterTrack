@@ -102,7 +102,7 @@ BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int
 	//storedBackgroundMask.reset();
 	backgroundMask = &storedBackgroundMask;
 	// Already allocate backup bitmask for background calibration
-	backupBGBitmask.resize(bitmaskSize.prod());
+	backupBGBitmask.resize(bitmaskSize.prod()/32);
 }
 
 BlobDetection::~BlobDetection()
@@ -128,18 +128,21 @@ static inline CompID resolveComponentMerge(CompID *blobCompMerge, CompID compID)
 	uint16_t tY = blkY*mskBlockTiles + blkRow;
 
 template<bool BG>
-void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
+void BlobDetection::registerBlobTile(const uint32_t *bitmask, const uint32_t *bgBitmask, TileIndex tile)
 {
 	MaskTile *maskTiles = (MaskTile*)bitmask;
+	MaskTile *bgMaskTiles = (MaskTile*)bgBitmask;
 	TILE_PARAMS(tile)
 
-	auto test_bg = [&](std::size_t index)
+	auto test_tile = [&](TileIndex bgTile, std::size_t bgIndex)
 	{
-		if constexpr (!BG) return true;
-		return !backgroundMask->test(index);
+		if constexpr (BG)
+			return maskTiles[bgTile] && !backgroundMask->test(bgIndex);
+		else
+			return (maskTiles[bgTile] & bgMaskTiles[bgTile]) != 0;
 	};
 	uint32_t bgIndex = (tY>>1)*tileW + tX;
-	if (!test_bg(bgIndex))
+	if (!test_tile(tile, bgIndex))
 		return;
 
 	TileID t = InvalidTile;
@@ -147,13 +150,12 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
 	// Now find any tiles to the top or left quickly
 	if (blkRow > 0)
 	{ // Quick way of finding top tile (bounded by 1)
-		if (maskTiles[tile-1] && test_bg(bgIndex-(tY&1? 0 : tileW)))
+		if (test_tile(tile-1, bgIndex-(tY&1? 0 : tileW)))
 			t = blobTiles.size()-1;
 	}
 	else if (blkY > 0)
 	{ // Very slow way, have to go to top row of blocks (bounded by blkTileW, 400 for 480p)
-		TileIndex topTile = tile-blkTileW+mskBlockTiles-1;
-		if (maskTiles[topTile] && test_bg(bgIndex-(tY&1? 0 : tileW)))
+		if (test_tile(tile-blkTileW+mskBlockTiles-1, bgIndex-(tY&1? 0 : tileW)))
 		{ // Have a top tile
 			TileID max = blobTiles.size()-1;
 			for (int i = 0; i < blkTileW; i++)
@@ -168,8 +170,7 @@ void BlobDetection::registerBlobTile(const uint32_t *bitmask, TileIndex tile)
 	}
 	if (blkX > 0)
 	{ // Relatively fast way of finding left region (bounded by blockTiles)
-		TileIndex leftTile = tile-mskBlockTiles;
-		if (maskTiles[leftTile] && test_bg(bgIndex-1))
+		if (test_tile(tile-mskBlockTiles, bgIndex-1))
 		{ // Have a left tile
 			TileID max = blobTiles.size()-1;
 			for (int i = 0; i < mskBlockTiles; i++)
@@ -205,9 +206,9 @@ void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
 		{ // Found dots in 64-Bit region, check each 32-Bit tile individually
 			MaskTile *tile = (MaskTile*)ptr;
 			if (*(tile+0))
-				registerBlobTile(maskTiles, (tile+0)-maskTiles);
+				registerBlobTile<true>(maskTiles, nullptr, (tile+0)-maskTiles);
 			if (*(tile+1))
-				registerBlobTile(maskTiles, (tile+1)-maskTiles);
+				registerBlobTile<true>(maskTiles, nullptr, (tile+1)-maskTiles);
 			if (blobTiles.size()+2 > MaxTileCount)
 				break;
 		}
@@ -218,7 +219,7 @@ void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
 #endif
 }
 
-void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex)
+void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const uint32_t *bgBitmask, const void *vpuMaskIndex)
 {
 	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
 	blobTiles.clear();
@@ -234,7 +235,7 @@ void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpu
 		{
 			TileIndex tileIndex = entry * VPU_INDEX_TILES + i;
 			if (maskTiles[tileIndex])
-				registerBlobTile<false>(maskTiles, tileIndex);
+				registerBlobTile<false>(maskTiles, bgBitmask, tileIndex);
 		}
 		if (blobTiles.size()+1 > MaxTileCount)
 			break;
@@ -248,6 +249,7 @@ void BlobDetection::verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const voi
 {
 	MaskTile *maskTiles = (MaskTile*)__builtin_assume_aligned(bitmask, 128); // Not sure if this helps much
 
+	// NOTE: Won't work with background calibration, VPU will mask but CPU will not in this version
 	uint32_t maxIndexEntry = (tileW*tileH) / VPU_INDEX_TILES;
 	VPU_MASK_INDEX *ptr = (VPU_MASK_INDEX*)vpuMaskIndex;
 	for (uint32_t entry = 0; entry < maxIndexEntry; entry++)
@@ -767,8 +769,8 @@ void BlobDetection::initBackgroundCalibration(uint32_t *bgBitmask)
 
 	if (bgBitmask)
 	{ // Backup existing VPU-side background bitmask, then reset it
-		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod());
-		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod()/8);
+		memset(bgBitmask, 0xFF, bitmaskSize.prod()/8);
 	}
 }
 void BlobDetection::resetBackgroundCalibration(uint32_t *bgBitmask)
@@ -779,8 +781,8 @@ void BlobDetection::resetBackgroundCalibration(uint32_t *bgBitmask)
 
 	if (bgBitmask)
 	{ // Reset both VPU-side background bitmasks
-		memset(backupBGBitmask.data(), 0xFF, bitmaskSize.prod());
-		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+		memset(backupBGBitmask.data(), 0xFF, bitmaskSize.prod()/8);
+		memset(bgBitmask, 0xFF, bitmaskSize.prod()/8);
 	}
 }
 void BlobDetection::retryBackgroundCalibration(uint32_t *bgBitmask)
@@ -789,7 +791,7 @@ void BlobDetection::retryBackgroundCalibration(uint32_t *bgBitmask)
 
 	if (bgBitmask)
 	{ // Reset used VPU-side background bitmask, but not backup
-		memset(bgBitmask, 0xFF, bitmaskSize.prod());
+		memset(bgBitmask, 0xFF, bitmaskSize.prod()/8);
 	}
 }
 void BlobDetection::acceptBackgroundCalibration(uint32_t *bgBitmask)
@@ -800,7 +802,7 @@ void BlobDetection::acceptBackgroundCalibration(uint32_t *bgBitmask)
 
 	if (bgBitmask)
 	{ // Copy as backup of VPU-side background bitmask
-		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod());
+		memcpy(backupBGBitmask.data(), bgBitmask, bitmaskSize.prod()/8);
 	}
 }
 void BlobDetection::discardBackgroundCalibration(uint32_t *bgBitmask)
@@ -809,7 +811,7 @@ void BlobDetection::discardBackgroundCalibration(uint32_t *bgBitmask)
 
 	if (bgBitmask)
 	{ // Restore backed up VPU-side background bitmask
-		memcpy(bgBitmask, backupBGBitmask.data(), bitmaskSize.prod());
+		memcpy(bgBitmask, backupBGBitmask.data(), bitmaskSize.prod()/8);
 	}
 }
 void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector<uint8_t> &bgTiles)
@@ -833,8 +835,8 @@ void BlobDetection::updateBackgroundCalibration(uint32_t *bgBitmask, std::vector
 		}
 		if (bgBitmask)
 		{ // NOTE: Emulating current behaviour
-			TileIndex tileIndexLo = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+0);
-			TileIndex tileIndexHi = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)+1);
+			TileIndex tileIndexLo = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)*2+0);
+			TileIndex tileIndexHi = getTileIndex(blobTiles[i].x, (blobTiles[i].y/2)*2+1);
 			bgBitmask[tileIndexLo] = 0; // Remove entire block from bitmask
 			bgBitmask[tileIndexHi] = 0; // Remove entire block from bitmask
 		}

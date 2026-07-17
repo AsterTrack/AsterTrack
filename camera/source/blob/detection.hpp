@@ -72,13 +72,13 @@ struct BlobDetection
 
 	/* Read map and extract mask tiles with dots (1s) as blob tiles and enter them in a list */
 	template<bool BG = true>
-	void registerBlobTile(const uint32_t *bitmask, uint32_t tileID);
+	void registerBlobTile(const uint32_t *bitmask, const uint32_t *bgBitmask, uint32_t tileID);
 	/* Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU */
 	void fetchMaskRegionsCPU(const uint32_t *bitmask);
 	/* Estimate maximum size needed for VPU output buffer. */
 	uint32_t getRegionBufferSize();
 	/* Reads back blobMap from the given QPU bitmask into the internal buffer, ready for analysis on the CPU */
-	void fetchMaskRegionsVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
+	void fetchMaskRegionsVPU(const uint32_t *bitmask, const uint32_t *bgBitmask, const void *vpuMaskIndex);
 	/* Fetches entirely on CPU and with VPU index side-by-side to verify correctness */
 	void verifyMaskRegionsFetchVPU(const uint32_t *bitmask, const void *vpuMaskIndex);
 

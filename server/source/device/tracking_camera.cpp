@@ -263,15 +263,6 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 		return false;
 	}
 
-	// Setup sync group
-	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 3/4
-	// Remove this, should already be set up at this point
-	auto &config = state.cameraConfig.getCameraConfig(camera->id);
-	if (config.synchronised && camera->controller && camera->controller->sync)
-		SetCameraSync(*state.stream.contextualLock(), camera, camera->controller->sync);
-	else
-		SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / config.framerate);
-
 	// Send setup data incase it didn't already happen
 	CameraUpdateSetup(state, *camera);
 
@@ -298,9 +289,9 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 	packet.height = config.height;
 	if (device.sync)
 	{ // Use already set-up sync groups, do not parse config again
-		auto sync_lock = device.sync->contextualRLock();
+		auto sync_lock = device.sync->rlock();
 		packet.fps = 1000.0f / sync_lock->frameIntervalMS;
-		packet.extTrig = sync_lock->source != SYNC_NONE;
+		packet.extTrig = sync_lock->type != SYNC_NONE;
 	}
 	else
 	{ // Should not happen, all cameras should have a sync group

@@ -100,7 +100,8 @@ int DetectNewControllers(ServerState &state)
 		controller->endpoints.resize(1);
 		controller->id = state.controllers.size();
 		// TODO: Make controller IDs persistent, crucial for future persistent setup configurations
-		state.controllers.push_back(std::move(controller));
+		state.controllers.push_back(controller); // new shared_ptr
+		ConfigureControllerSync(state, controller);
 	}
 
 	if (!newControllers.empty())
@@ -119,16 +120,17 @@ void DisconnectController(ServerState &state, TrackingControllerState &controlle
 			continue;
 		controller.cameras[c]->controller = nullptr;
 		controller.cameras[c]->port = -1;
-		CameraCheckDisconnected(state, *controller.cameras[c]);
+		if (!CameraCheckDisconnected(state, *controller.cameras[c]))
+			ConfigureCameraSync(state, controller.cameras[c]);
+		controller.cameras[c] = nullptr;
 	}
+
+	RemoveControllerSync(state, controller);
 
 	// Clean up controller
 	comm_disconnect(controller.comm);
 	controller.sync = nullptr;
-	if (controller.syncGen)
-	{ // Delete sync group
-		DeleteSyncGroup(*state.stream.contextualLock(), std::move(controller.syncGen));
-	}
+	// TODO: If generating source of sync group, compell it to switch to another or disband
 
 	// Remove controller
 	auto c = std::find_if(state.controllers.begin(), state.controllers.end(), [&controller](const auto &c) { return *c == controller; });
@@ -217,7 +219,7 @@ void ParseControllerPackets(ServerState &state, TrackingControllerState &control
 bool ControllerUpdateSyncMask(TrackingControllerState &controller)
 {
 	if (!controller.comm->commStreaming) return false;
-	if (!controller.sync || controller.sync->contextualRLock()->source == SYNC_NONE) return false;
+	if (!controller.sync || controller.sync->rlock()->type == SYNC_NONE) return false;
 
 	// Select cameras that have been setup and chosen for streaming
 	uint16_t portMask = 0;
@@ -293,7 +295,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 
 			if (packet.header.tag == PACKET_FRAME_SIGNAL)
 			{ // Frame is starting to be processed
-				auto sync_lock = camera->sync->contextualLock();
+				auto sync_lock = camera->sync->lock();
 				SyncedFrame *frame = RegisterCameraFrame(*sync_lock, camera->syncIndex, packet.header.frameID);
 				if (!frame)
 				{
@@ -306,7 +308,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			else if (packet.header.isStreamPacket())
 			{ // Register that camera is receiving frame data
-				if (!RegisterStreamPacket(*camera->sync->contextualLock(), camera->syncIndex, packet.header.frameID, packetState.receiveTime))
+				if (!RegisterStreamPacket(*camera->sync->lock(), camera->syncIndex, packet.header.frameID, packetState.receiveTime))
 					packet.ignored = true;
 			}
 		},
@@ -323,7 +325,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 
 			if (packet.header.isStreamPacket())
 			{ // Update statistics of streaming packet
-				if (!RegisterStreamBlock(*camera->sync->contextualLock(), camera->syncIndex, packet.header.frameID))
+				if (!RegisterStreamBlock(*camera->sync->lock(), camera->syncIndex, packet.header.frameID))
 					packet.ignored = true;
 			}
 		},
@@ -344,7 +346,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 					camera->id, packet.header.tag, packet.headerBlockID);
 				if (packet.header.isStreamPacket())
 				{
-					RegisterStreamPacketComplete(*camera->sync->contextualLock(), camera->syncIndex, packet.header.frameID, {}, true);
+					RegisterStreamPacketComplete(*camera->sync->lock(), camera->syncIndex, packet.header.frameID, {}, true);
 				}
 				return;
 			}
@@ -354,7 +356,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			{
 				auto cameraFrame = ReadStreamingPacket(*camera, packet.header, packet.data.data(), packet.data.size(), packet.erroneous);
 				int blobCount = cameraFrame.rawPoints2D.size();
-				auto sync_lock = camera->sync->contextualLock();
+				auto sync_lock = camera->sync->lock();
 				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
 				if (frame)
 				{ // Packet existed for frame

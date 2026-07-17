@@ -172,4 +172,9 @@ void StopReplay(ServerState &state);
 bool StartStreaming(ServerState &state);
 void StopStreaming(ServerState &state);
 
+bool ReassignGeneratingSource(ServerState &state, std::shared_ptr<Synchronised<SyncGroup>> &syncGroup);
+void ConfigureControllerSync(ServerState &state, std::shared_ptr<TrackingControllerState> &controller);
+void RemoveControllerSync(ServerState &state, TrackingControllerState &controller);
+void ConfigureCameraSync(ServerState &state, std::shared_ptr<TrackingCameraState> &camera);
+
 #endif // SERVER_H

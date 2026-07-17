@@ -1588,7 +1588,7 @@ static bool ShowTrackingControllerPanel()
 
 	ImGui::BeginDisabled(!controller->sync);
 	if (ImGui::TabItemButton("Set Frame Interval", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
-		ui.seqEvents->SetViewIntervalUS(controller->sync->contextualRLock()->frameIntervalMS*1000.0f);
+		ui.seqEvents->SetViewIntervalUS(controller->sync->rlock()->frameIntervalMS*1000.0f);
 	ImGui::EndDisabled();
 
 	if (ImGui::TabItemButton(ui.seqEventsActive? "Disable##Toggle" : "Enable##Toggle", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))

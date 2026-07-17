@@ -211,13 +211,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			{
 				auto cfgMap = state.cameraConfig.cameraConfigs.find(camera->id);
 				if (cfgMap->second != configIndex) continue;
-
-				// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 4/4
-				// Adapt and move this to where we update the sync group configuration
-				if (config.synchronised && camera->controller && camera->controller->sync)
-					SetCameraSync(*state.stream.contextualLock(), camera, camera->controller->sync);
-				else
-					SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / config.framerate);
+				ConfigureCameraSync(state, camera);
 			}
 		}
 		if (updateConfig && state.mode == MODE_Device)
@@ -322,19 +316,17 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 	BeginSection("Controller Configuration");
 
-	bool updateFPS = ScalarInput<int>("Framerate", "Hz", &state.controllerConfig.framerate, 20, 144);
-	// Low framerates currently result in an integer overflow in controller because the timer is precise
-
-	// But this will not be handled here in the future anyway, framerate/sync group should be handled by a separate window for device setup
-	if (updateFPS && state.isStreaming)
-	{ // Streaming, have to update FPS across all systems
-		if (state.mode == MODE_Device)
+	// NOTE: Low framerates currently result in an integer overflow in controller because the timer is precise
+	int defaultFramerate = 120;
+	bool updateFramerate = ScalarProperty<int>("Framerate", "Hz", &state.controllerConfig.framerate, &defaultFramerate, 20, 144);
+	if (updateFramerate)
+	{ // Update framerate configuration
+		for (auto &controller : state.controllers)
 		{
-			for (auto &controller : state.controllers)
-			{
-				if (!controller->syncGen) continue;
-				controller->syncGen->contextualLock()->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
-				// TODO: Temp workaround to get any frames at all for free-running cameras
+			if (!controller->sync || !controller->sync->generating) continue;
+			controller->sync->lock()->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
+			if (state.mode == MODE_Device && state.isStreaming)
+			{ // Update devices
 				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, state.controllerConfig.framerate, 0);
 				for (auto &camera : controller->cameras)
 				{

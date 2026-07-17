@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "server.hpp"
 
-void SetupSyncGroups(ServerState &state);
 void SetupVirtualSyncGroup(ServerState &state);
 void DeleteVirtualSyncGroup(ServerState &state);
 

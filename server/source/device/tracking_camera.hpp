@@ -61,8 +61,8 @@ struct TrackingCameraState
 	ClientCommState *client = NULL;
 
 	// Realtime streaming state
-	std::shared_ptr<Synchronised<SyncGroup>> sync;
-	int syncIndex;
+	std::shared_ptr<SyncSource> sync;
+	int syncIndex = -1;
 
 	// Device mode
 	TrCamMode mode = TRCAM_STANDBY;

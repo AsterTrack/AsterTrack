@@ -82,11 +82,10 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 				camState->error.encountered = false;
 			}
 		}
+
 		// Setup stream subsystem
-		if (!camera->sync)
-		{ // Init with internal sync if no controller is known to be connected
-			SetCameraSyncNone(*state.stream.contextualLock(), camera, 1000.0f / 144);
-		}
+		ConfigureCameraSync(state, camera);
+
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 		return true;
 	};
@@ -134,8 +133,8 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		}
 		if (header.tag == PACKET_FRAME_SIGNAL)
 		{ // Frame is starting to be processed
-			auto sync_lock = camera.sync->contextualLock();
-			if (sync_lock->source == SYNC_NONE)
+			auto sync_lock = camera.sync->lock();
+			if (sync_lock->type == SYNC_NONE)
 			{ // No sync, this is only source for SOF timing, estimate actual SOF
 				// Update estimate of SOF (assuming regular SOFs)
 				TimePoint_t timeSOF = receiveTime - std::chrono::microseconds(8000);
@@ -152,7 +151,7 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		}
 		else if (header.isStreamPacket())
 		{
-			if (!RegisterStreamPacket(*camera.sync->contextualLock(), camera.syncIndex, header.frameID, receiveTime))
+			if (!RegisterStreamPacket(*camera.sync->lock(), camera.syncIndex, header.frameID, receiveTime))
 			{
 				LOG(LStreaming, LTrace, "Wireless Camera %u sent a streaming packet but was not set up for streaming!\n", camera.id);
 				return false;
@@ -171,7 +170,7 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		// Update statistics of streaming packet
 		if (header.isStreamPacket())
 		{
-			if (!RegisterStreamBlock(*camera.sync->contextualLock(), camera.syncIndex, header.frameID))
+			if (!RegisterStreamBlock(*camera.sync->lock(), camera.syncIndex, header.frameID))
 			{
 				LOG(LParsing, LError, "---- Received stream block for non-existant frame %d or unregistered stream packet!\n", header.frameID);
 			}
@@ -188,7 +187,7 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		{
 			auto cameraFrame = ReadStreamingPacket(camera, header, data, len, erroneous);
 			int blobCount = cameraFrame.rawPoints2D.size();
-			auto sync_lock = camera.sync->contextualLock();
+			auto sync_lock = camera.sync->lock();
 			SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera.syncIndex, header.frameID, std::move(cameraFrame), erroneous);
 			if (frame)
 			{ // Packet existed for frame

@@ -38,6 +38,7 @@ struct ServerState; // server.hpp
 struct TrackingCameraState; // device/tracking_camera.hpp
 struct USBCommState; // comm/usb.hpp
 struct SyncGroup; // comm/streaming.hpp
+struct SyncSource; // comm/streaming.hpp
 
 const char *getControllerEventName(ControllerEventID event);
 
@@ -93,9 +94,8 @@ struct TrackingControllerState
 	// State of TimeSync between host and this controller
 	SynchronisedS<TimeSync> timeSync = {};
 
-	// Sync Groups this controller belongs to
-	std::shared_ptr<Synchronised<SyncGroup>> sync;
-	std::shared_ptr<Synchronised<SyncGroup>> syncGen; // If set, this controller generates/shares the sync for this group
+	// Sync Source this controller provides
+	std::shared_ptr<SyncSource> sync;
 
 	// Reported device status
 	struct

@@ -119,6 +119,8 @@ void StopDeviceMode(ServerState &state)
 
 	assert(state.controllers.empty());
 	assert(state.cameras.empty());
+	assert(state.stream.contextualRLock()->syncGroups.empty());
+	assert(state.stream.contextualRLock()->syncSources.empty());
 
 	// Reset state
 	ResetPipelineState(state.pipeline);
@@ -406,11 +408,10 @@ void DevicesStartStreaming(ServerState &state)
 	for (auto &controller : state.controllers)
 	{
 		if (!controller->comm->commStreaming) continue;
-
-		if (controller->syncGen && controller->syncGen->contextualRLock()->source == SYNC_INTERNAL)
-			continue; // Start generating last
-		
-		if (controller->sync && controller->sync->contextualRLock()->source != SYNC_NONE)
+		if (!controller->sync || controller->sync->generating) continue;
+ 		// Start generating last
+		auto type = controller->sync->rlock()->type;
+		if (type != SYNC_NONE)
 		{ // Request to copy external sync input
 			comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_EXTERNAL, 0, 0);
 		}
@@ -459,11 +460,10 @@ void DevicesStartStreaming(ServerState &state)
 	for (auto &controller : state.controllers)
 	{
 		if (!controller->comm->commStreaming) continue;
-		if (!controller->syncGen) continue;
+		if (!controller->sync || !controller->sync->generating) continue;
 		// Request to start generating frame signals
-		auto sync_lock = controller->syncGen->contextualRLock();
-		if (sync_lock->source == SYNC_INTERNAL)
-			comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)1000.0f/sync_lock->frameIntervalMS, 0);
+		int framerate = 1000.0f/controller->sync->rlock()->frameIntervalMS;
+		comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)framerate, 0);
 	}
 	LOG(LGUI, LInfo, "Started camera sync");
 }
@@ -706,57 +706,118 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 // Sync Group Setup
 // ----------------------------------------------------------------------------
 
-void SetupSyncGroups(ServerState &state)
+bool ReassignGeneratingSource(ServerState &state, std::shared_ptr<Synchronised<SyncGroup>> &syncGroup)
 {
-	auto stream_lock = state.stream.contextualLock();
-	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 2/4
-	// Adapt this to use more explicit config and set it up in EnsureCamera & during controller setup
+	// Find one source to generate sync for SyncGroup
+	std::shared_ptr<SyncSource> source;
+	// TODO: Prefer any sync adapters in sync group as sync source
+	if (!source)
+	{ // Pick preferred (or existing) controller to generate sync
+		for (auto &controller : state.controllers)
+		{
+			if (!controller->sync || controller->sync->group != syncGroup)
+				continue;
+			if (controller->sync->generating && !source)
+				source = controller->sync; // new shared_ptr
+		}
+	}
+	if (!source)
+	{ // Pick any controller in sync group to generate sync
+		for (auto &controller : state.controllers)
+		{
+			if (!controller->sync || controller->sync->group != syncGroup)
+				continue;
+			source = controller->sync; // new shared_ptr
+			break;
+		}
+	}
+	if (!source)
+		return false;
 
-	// Setup sync groups
-	std::shared_ptr<Synchronised<SyncGroup>> masterSync;
+	// Update controllers
 	for (auto &controller : state.controllers)
 	{
-		// Setup sync group
-		controller->sync = nullptr;
-		if (masterSync && controller->syncGen)
-		{ // Supposed to be synced up with master, not generate own sync
-			DeleteSyncGroup(*stream_lock, std::move(controller->syncGen));
-			controller->syncGen = nullptr;
+		if (!controller->sync || controller->sync->group != syncGroup)
+			continue;
+		if (controller->sync->generating == (controller->sync == source))
+			continue;
+		controller->sync->generating = controller->sync == source;
+		if (state.mode == MODE_Device && state.isStreaming)
+		{ // Update devices
+			if (controller->sync->generating)
+			{
+				int framerate = 1000.0f/controller->sync->rlock()->frameIntervalMS;
+				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)framerate, 0);
+			}
+			else 
+				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_EXTERNAL, 0, 0);
 		}
-		else if (!masterSync && !controller->syncGen)
-		{ // No master and no own sync yet, set up to generate sync
-			controller->syncGen = std::make_shared<Synchronised<SyncGroup>>();
-			stream_lock->syncGroups.push_back(controller->syncGen); // new shared_ptr
-			// TODO: Controller might have external sync source, set to SYNC_EXTERNAL then
-			auto sync_lock = controller->syncGen->contextualLock();
-			sync_lock->source = SYNC_INTERNAL;
-			sync_lock->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
-		}
-		else if (controller->syncGen)
-		{ // Clear existing syncGen
-			ClearSyncGroup(*controller->syncGen->contextualLock());
-		}
-		// TODO: Give control which one generates signal, but not 100% necessary
-		// TODO: Allow for multiple syncGroups (so multiple controllers with syncGen)
-		if (controller->syncGen)
-			masterSync = controller->syncGen; // new shared_ptr
-
-		// Select sync source for controller
-		controller->sync = masterSync? masterSync : controller->syncGen;
-	}
-
-	// Reset sync group states
-	ResetStreamState(*stream_lock);
-
-	// Enter cameras into sync group
-	for (auto &camera : state.cameras)
-	{
-		auto &config = state.cameraConfig.getCameraConfig(camera->id);
-		if (config.synchronised && camera->controller && camera->controller->sync)
-			SetCameraSync(*stream_lock, camera, camera->controller->sync);
+		if (controller->sync->generating)
+			LOG(LStreaming, LInfo, "Established Controller %d as source for its sync group!", controller->id);
 		else
-			SetCameraSyncNone(*stream_lock, camera, 1000.0f / config.framerate);
+			LOG(LStreaming, LInfo, "Demoted Controller %d from source for its sync group!", controller->id);
 	}
+
+	return true;
+}
+
+void ConfigureControllerSync(ServerState &state, std::shared_ptr<TrackingControllerState> &controller)
+{
+	auto stream_lock = state.stream.contextualLock();
+
+	// Find an existing SyncGroup to join, assuming they are wired up together
+	std::shared_ptr<Synchronised<SyncGroup>> syncGroup;
+	for (auto &group : stream_lock->syncGroups)
+	{
+		auto sync_lock = group->contextualRLock(); 
+		if (sync_lock->type == SYNC_NONE) continue;
+		if (sync_lock->type == SYNC_VIRTUAL) continue;
+		syncGroup = group; // new shared_ptr
+	}
+
+	if (!syncGroup)
+	{ // Create new SyncGroup if not existing
+		syncGroup = std::make_shared<Synchronised<SyncGroup>>(std::in_place, SYNC_RATE, 1000.0f / state.controllerConfig.framerate);
+		stream_lock->syncGroups.push_back(syncGroup); // new shared_ptr
+	}
+
+	// Create new SyncSource for the SyncGroup
+	controller->sync = std::make_shared<SyncSource>(syncGroup);
+	stream_lock->syncSources.push_back(controller->sync); // new shared_ptr
+
+	// Redetermine generating SyncSource of this SyncGroup
+	ReassignGeneratingSource(state, syncGroup);
+}
+
+void RemoveControllerSync(ServerState &state, TrackingControllerState &controller)
+{
+	if (!controller.sync) return;
+
+	auto stream_lock = state.stream.contextualLock();
+
+	// Remove SyncSource
+	assert(controller.sync.use_count() == 2);
+	auto sync = std::move(controller.sync);
+	stream_lock->syncSources.erase(std::remove(stream_lock->syncSources.begin(), stream_lock->syncSources.end(), sync));
+
+	// Redetermine generating SyncSource of this SyncGroup
+	if (sync->generating && !ReassignGeneratingSource(state, sync->group))
+	{ // No sources left for this group
+		assert(sync->rlock()->cameras.empty());
+		stream_lock->syncGroups.erase(std::remove(stream_lock->syncGroups.begin(), stream_lock->syncGroups.end(), sync->group));
+	}
+}
+
+void ConfigureCameraSync(ServerState &state, std::shared_ptr<TrackingCameraState> &camera)
+{
+	auto stream_lock = state.stream.contextualLock();
+
+	// Setup default sync source to controller
+	auto &config = state.cameraConfig.getCameraConfig(camera->id);
+	if (config.synchronised && camera->controller && camera->controller->sync)
+		SetCameraSync(*stream_lock, camera, camera->controller->sync);
+	else
+		SetCameraSyncNone(*stream_lock, camera, 1000.0f / config.framerate);
 }
 
 void SetupVirtualSyncGroup(ServerState &state)
@@ -767,7 +828,7 @@ void SetupVirtualSyncGroup(ServerState &state)
 	stream_lock->syncGroups.push_back(std::make_shared<Synchronised<SyncGroup>>()); // new shared_ptr
 	auto sync_lock = stream_lock->syncGroups.back()->contextualLock();
 	ResetSyncGroup(*sync_lock);
-	sync_lock->source = SYNC_VIRTUAL;
+	sync_lock->type = SYNC_VIRTUAL;
 	sync_lock->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
 	// Start with a frame that will be continued
 	SyncedFrame frame = {};
@@ -786,7 +847,7 @@ void DeleteVirtualSyncGroup(ServerState &state)
 	if (stream_lock->syncGroups.empty()) return;
 	for (auto it = stream_lock->syncGroups.begin(); it != stream_lock->syncGroups.end();)
 	{
-		if (it->get()->contextualRLock()->source == SYNC_VIRTUAL)
+		if (it->get()->contextualRLock()->type == SYNC_VIRTUAL)
 			it = stream_lock->syncGroups.erase(it);
 		else it++;
 	}

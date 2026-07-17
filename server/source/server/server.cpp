@@ -485,7 +485,6 @@ std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID i
 	camera->pipeline = EnsureCameraPipeline(state, id);
 	camera->state.contextualLock()->lastDeviceChange = sclock::now();
 	state.cameras.push_back(camera); // new shared_ptr
-	// TODO: Setup sync groups in EnsureCamera (based on prior config, e.g. in UI) 1/4
 	return camera;
 }
 
@@ -537,9 +536,6 @@ bool StartStreaming(ServerState &state)
 	if (state.mode == MODE_Device)
 	{
 		std::shared_lock dev_lock(state.deviceAccessMutex);
-
-		// Configure sync groups
-		SetupSyncGroups(state);
 
 		// In case no controller is connected, provide virtual sync group for e.g. IMUs
 		SetupVirtualSyncGroup(state);

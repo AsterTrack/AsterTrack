@@ -42,12 +42,12 @@ typedef uint8_t TruncFrameID;
 // Forward-declared opaque structs
 struct TrackingCameraState;
 
-enum SyncSource
+enum SyncType
 {
-	SYNC_NONE,		// Implies camera generates signal itself, actual SOF is guessed
+	SYNC_NONE = 0,	// Implies camera generates signal itself, actual SOF is guessed
 	SYNC_VIRTUAL,	// Implies there is no cameras in sync group, generating frames merely for other hardware
-	SYNC_INTERNAL,	// Implies controller generates consistent, trusted signal
-	SYNC_EXTERNAL	// Implies sync timing and frameID is externally supllied and could be inconsistent
+	SYNC_RATE,		// Signifies a steady signal at a known rate
+	SYNC_TRIG		// Signifies an erratic signal to trigger a frame (with optional delay to act as announcing?)
 };
 
 struct SyncedFrame
@@ -80,17 +80,19 @@ struct SyncedFrame
 };
 
 /**
- * A group of cameras synced together and at the same framerate
- * Shared frame ID, SOF, and stats
+ * A group of cameras synced together, sharing the underlying frame SOF
+ * Cameras may be on different controllers (or wireless), and use different truncated Frame IDs 
  */
 struct SyncGroup
 {
-	// Synced cameras in group
-	SyncSource source;
-	std::vector<std::shared_ptr<TrackingCameraState>> cameras;
+	// Type and properties of sync signal
+	SyncType type;
 
 	// Expected frame interval (may be estimated for external sync input)
 	float frameIntervalMS;
+
+	// Synced cameras in group
+	std::vector<std::shared_ptr<TrackingCameraState>> cameras;
 
 	// Tracking frames
 	std::list<SyncedFrame> frames;
@@ -115,23 +117,42 @@ struct SyncGroup
 static bool operator==(const SyncGroup& a, const SyncGroup& b) { return &a == &b; }
 
 /**
+ * A shared sync source (controller, sync beacon) for a subset of cameras in a SyncGroup
+ * Cameras using this SyncSource share not only SOF, but also the same source Frame ID
+ */
+struct SyncSource
+{
+	std::shared_ptr<Synchronised<SyncGroup>> group;
+
+	bool generating;
+
+	SyncSource(std::shared_ptr<Synchronised<SyncGroup>> &group)
+		: group(group), generating(false) { assert(this->group); };
+	SyncSource(std::shared_ptr<Synchronised<SyncGroup>> &&group)
+		: group(std::move(group)), generating(false) { assert(this->group); };
+
+	inline auto rlock() { return group->contextualRLock(); };
+	inline auto lock() { return group->contextualLock(); };
+};
+
+/**
  * State of data streams from multiple cameras ports on multiple controllers
  * Each camera can be grouped in a sync group that shares sync and framerate
  */
 struct StreamState
 {
 	std::vector<std::shared_ptr<Synchronised<SyncGroup>>> syncGroups;
+	std::vector<std::shared_ptr<SyncSource>> syncSources;
 	TimePoint_t lastMaintainTime;
 };
 
 
 /* Functions */
 
-void ClearSyncGroup(SyncGroup &sync);
-void DeleteSyncGroup(StreamState &state, std::shared_ptr<Synchronised<SyncGroup>> &&sync);
+// Manage camera lifetime
 void RemoveCameraSync(StreamState &state, TrackingCameraState &camera);
 void SetCameraSyncNone(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, float frameIntervalMS);
-void SetCameraSync(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, std::shared_ptr<Synchronised<SyncGroup>> &sync);
+void SetCameraSync(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, std::shared_ptr<SyncSource> &sync);
 
 /**
  * Reset frame state for this sync group

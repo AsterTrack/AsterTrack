@@ -40,88 +40,6 @@ extern ctpl::thread_pool threadPool;
 #include <bitset>
 
 
-bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int length, TimePoint_t receiveTime)
-{
-	if (length != SOF_PACKET_SIZE)
-	{
-		LOG(LSOF, LError, "Controller %d received invalid SOF of size %d (!= %d)!\n", controller.id, length, SOF_PACKET_SIZE);
-		return false;
-	}
-	if (!controller.sync)
-	{
-		LOG(LSOF, LError, "Controller %d received SOF but wasn't setup for streaming!\n", controller.id);
-		return false;
-	}
-	SOFPacket sof = parseSOFPacket(data);
-	auto sync_lock = controller.sync->contextualLock();
-
-	// Verify sof.frameID
-	SyncedFrame *lastFrame = sync_lock->frames.empty()? nullptr : &sync_lock->frames.back();
-	FrameID lastSOFID = lastFrame? lastFrame->ID : 0;
-	bool lastApprox = lastFrame? lastFrame->approxSOF : false;
-
-	//sof.frameID = lastSOFID + shortDiff<FrameID, int32_t>(lastSOFID, sof.frameID, (1<<32)/10, 1<<32);
-	// 32Bit doesn't overflow in ~1yr at 144Hz, so not needed until we lower SOF ID bit depth
-	if (sof.frameID < lastSOFID)
-	{
-		if (lastApprox)
-		{
-			ScopedLogContext scopedLogContext(lastSOFID);
-			std::string camerasStr = "";
-			for (int c = 0; c < lastFrame->cameras.size(); c++)
-			{
-				if (lastFrame->cameras[c].announced)
-					camerasStr += asprintf_s(" - %u", sync_lock->cameras[c]->id);
-			}
-			LOG(LSOF, LWarn, "SyncGroup is at frame %d, but some cameras desynced and are at frame %d, likely failed to set up properly!%s", sof.frameID, lastSOFID, camerasStr.c_str());
-		}
-		else
-			LOG(LSOF, LError, "ERROR: Got weird SOF packet with frameID %d < lastSOFID %d\n", sof.frameID, lastSOFID);
-	}
-	if (lastSOFID > 0 && sof.frameID != lastSOFID+1 && sof.frameID != lastSOFID && !lastApprox)
-	{ // TODO: Sometimes called every couple dozen frames with the same lastSOFID, verify it is fixed
-		// Was probably a frame stuck in controller::sync::frames. not observed in a while, but not sure if its properly fixed
-		LOG(LSOF, LWarn, "Skipped %d SOFs from lastSOFID %d to frameID %d!\n", sof.frameID-lastSOFID-1, lastSOFID, sof.frameID);
-		for (auto &frame : sync_lock->frames)
-		{
-			LOG(LSOF, LDebug, "Had SOF %d %fms ago!\n", frame.ID, dtMS(frame.SOF, receiveTime));	
-		}
-	}
-
-	// Get estimated real-time of SOF with time sync
-	TimeSync timeSync = *controller.timeSync.contextualRLock();
-	//TimePoint_t timeSOF = GetTimeSynced(timeSync, sof.timeUS, 1<<24, receiveTime);
-	uint64_t sofTimestampUS = RebaseSourceTimestamp(timeSync, sof.timeUS, 1<<24, receiveTime);
-	TimePoint_t timeSOF = GetTimeSynced(timeSync, sofTimestampUS);
-	dt_t dT = dtUS(timeSOF, sclock::now());
-	if (dT < -10)
-	{ // Sync supposedly happened in the future, time sync has gone bad
-		LOG(LSOF, LWarn, "Controller %d: Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
-			controller.id, -dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
-		// NOTE: This previously happened when USB handlers took longer and longer due to logging slowing it down
-		// If this happens again, check the USB handler times to make sure they don't increase to unsustainable levels where timesync becomes invalid
-		// This is also partially adressed by putting USB packet parsing on a separate thread from the USB callbacks doing the timing
-	}
-
-	LOG(LSOF, LDebug, "Controller %d: SOF packet %d with timestamp %dus was %.2fms ago, with time sync delay "
-		"avg %dus +- %dus (last timestamp %ldus, %.2fms ago)",
-		controller.id, sof.frameID, sof.timeUS,
-		dtMS(timeSOF, sclock::now()),
-		(int)(timeSync.diff.avg*1000), (int)(timeSync.diff.stdDev()*1000),
-		timeSync.lastTimestamp,
-		dtMS(timeSync.lastTime, sclock::now()));
-	LOG(LSOF, LDebug, "         Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
-		"so SOF should be %dus after last timestamp, ""with drift %dus, timesync says %ldus (drift is %.2f%%)\n",
-		sof.timeUS, timeSync.lastTimestamp&0xFFFFFF, sofTimestampUS, timeSync.lastTimestamp,
-		diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS),
-		(int)(diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS)*(1.0+timeSync.drift)), 
-		dtUS(timeSync.lastTime, timeSOF), timeSync.drift*100);
-
-	// Set estimate as SOF for frameID
-	RegisterSOF(*sync_lock, sof.frameID, timeSOF);
-	return true;
-}
-
 bool ReadDebugPacket(TrackingControllerState &controller, uint8_t *data, int length)
 {
 	if (length == 0) return false;
@@ -415,7 +333,10 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", id, i);
 		camera->controller = *contIt;
 		camera->port = i;
-		controller.cameras[i] = std::move(camera);
+		controller.cameras[i] = camera; // new shared_ptr
+
+		// Setup default sync source to controller
+		ConfigureCameraSync(state, camera);
 
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
@@ -467,6 +388,88 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	}
 	if (updatedCameras)
 		SignalServerEvent(EVT_UPDATE_INTERFACE);
+	return true;
+}
+
+bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int length, TimePoint_t receiveTime)
+{
+	if (length != SOF_PACKET_SIZE)
+	{
+		LOG(LSOF, LError, "Controller %d received invalid SOF of size %d (!= %d)!\n", controller.id, length, SOF_PACKET_SIZE);
+		return false;
+	}
+	if (!controller.sync)
+	{
+		LOG(LSOF, LError, "Controller %d received SOF but wasn't setup for streaming!\n", controller.id);
+		return false;
+	}
+	SOFPacket sof = parseSOFPacket(data);
+	auto sync_lock = controller.sync->lock();
+
+	// Verify sof.frameID
+	SyncedFrame *lastFrame = sync_lock->frames.empty()? nullptr : &sync_lock->frames.back();
+	FrameID lastSOFID = lastFrame? lastFrame->ID : 0;
+	bool lastApprox = lastFrame? lastFrame->approxSOF : false;
+
+	//sof.frameID = lastSOFID + shortDiff<FrameID, int32_t>(lastSOFID, sof.frameID, (1<<32)/10, 1<<32);
+	// 32Bit doesn't overflow in ~1yr at 144Hz, so not needed until we lower SOF ID bit depth
+	if (sof.frameID < lastSOFID)
+	{
+		if (lastApprox)
+		{
+			ScopedLogContext scopedLogContext(lastSOFID);
+			std::string camerasStr = "";
+			for (int c = 0; c < lastFrame->cameras.size(); c++)
+			{
+				if (lastFrame->cameras[c].announced)
+					camerasStr += asprintf_s(" - %u", sync_lock->cameras[c]->id);
+			}
+			LOG(LSOF, LWarn, "SyncGroup is at frame %d, but some cameras desynced and are at frame %d, likely failed to set up properly!%s", sof.frameID, lastSOFID, camerasStr.c_str());
+		}
+		else
+			LOG(LSOF, LError, "ERROR: Got weird SOF packet with frameID %d < lastSOFID %d\n", sof.frameID, lastSOFID);
+	}
+	if (lastSOFID > 0 && sof.frameID != lastSOFID+1 && sof.frameID != lastSOFID && !lastApprox)
+	{ // TODO: Sometimes called every couple dozen frames with the same lastSOFID, verify it is fixed
+		// Was probably a frame stuck in controller::sync::frames. not observed in a while, but not sure if its properly fixed
+		LOG(LSOF, LWarn, "Skipped %d SOFs from lastSOFID %d to frameID %d!\n", sof.frameID-lastSOFID-1, lastSOFID, sof.frameID);
+		for (auto &frame : sync_lock->frames)
+		{
+			LOG(LSOF, LDebug, "Had SOF %d %fms ago!\n", frame.ID, dtMS(frame.SOF, receiveTime));	
+		}
+	}
+
+	// Get estimated real-time of SOF with time sync
+	TimeSync timeSync = *controller.timeSync.contextualRLock();
+	//TimePoint_t timeSOF = GetTimeSynced(timeSync, sof.timeUS, 1<<24, receiveTime);
+	uint64_t sofTimestampUS = RebaseSourceTimestamp(timeSync, sof.timeUS, 1<<24, receiveTime);
+	TimePoint_t timeSOF = GetTimeSynced(timeSync, sofTimestampUS);
+	dt_t dT = dtUS(timeSOF, sclock::now());
+	if (dT < -10)
+	{ // Sync supposedly happened in the future, time sync has gone bad
+		LOG(LSOF, LWarn, "Controller %d: Got bad time sync, SOF is %.2fms in the future, last timestamp %.2fms in the past\n",
+			controller.id, -dT/1000.0f, dtMS(timeSync.lastTime, sclock::now()));
+		// NOTE: This previously happened when USB handlers took longer and longer due to logging slowing it down
+		// If this happens again, check the USB handler times to make sure they don't increase to unsustainable levels where timesync becomes invalid
+		// This is also partially adressed by putting USB packet parsing on a separate thread from the USB callbacks doing the timing
+	}
+
+	LOG(LSOF, LDebug, "Controller %d: SOF packet %d with timestamp %dus was %.2fms ago, with time sync delay "
+		"avg %dus +- %dus (last timestamp %ldus, %.2fms ago)",
+		controller.id, sof.frameID, sof.timeUS,
+		dtMS(timeSOF, sclock::now()),
+		(int)(timeSync.diff.avg*1000), (int)(timeSync.diff.stdDev()*1000),
+		timeSync.lastTimestamp,
+		dtMS(timeSync.lastTime, sclock::now()));
+	LOG(LSOF, LDebug, "         Changed SOF timestamp from %u (ref %lu) to %lu (ref %lu), "
+		"so SOF should be %dus after last timestamp, ""with drift %dus, timesync says %ldus (drift is %.2f%%)\n",
+		sof.timeUS, timeSync.lastTimestamp&0xFFFFFF, sofTimestampUS, timeSync.lastTimestamp,
+		diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS),
+		(int)(diffUnsigned<int>(timeSync.lastTimestamp, sofTimestampUS)*(1.0+timeSync.drift)), 
+		dtUS(timeSync.lastTime, timeSOF), timeSync.drift*100);
+
+	// Set estimate as SOF for frameID
+	RegisterSOF(*sync_lock, sof.frameID, timeSOF);
 	return true;
 }
 
@@ -727,7 +730,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 				camera.id, parseImg.received, (int)parseImg.jpeg.size(), parseImg.frameID);
 		}
 
-		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync->contextualLock(), header.frameID) : header.frameID;
+		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync->lock(), header.frameID) : header.frameID;
 		parseImg.received = 0;
 		parseImg.erroneous = erroneous || imageWidth == 0 || imageHeight == 0;
 		parseImg.jpeg.clear();

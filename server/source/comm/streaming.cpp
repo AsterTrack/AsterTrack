@@ -47,80 +47,63 @@ const int keepFramesMin = 2; // To be able to extrapolate SOFs, esp. for externa
 
 /* Sync Group Management */
 
-void ClearSyncGroup(SyncGroup &sync)
-{
-	assert(sync.source != SYNC_NONE);
-	for (auto &c : sync.cameras)
-	{
-		if (!c) continue; // Removed while streaming
-		c->sync = nullptr;
-		c->syncIndex = -1;
-	}
-	sync.cameras.clear();
-	ResetSyncGroup(sync);
-}
-
-void DeleteSyncGroup(StreamState &state, std::shared_ptr<Synchronised<SyncGroup>> &&sync)
-{
-	auto sg = std::find_if(state.syncGroups.begin(), state.syncGroups.end(), [&sync](const auto &sg) { return sg == sync; });
-	state.syncGroups.erase(sg);
-	auto sync_lock = sync->contextualLock();
-	for (auto &c : sync_lock->cameras)
-	{
-		if (!c) continue; // Removed while streaming
-		c->sync = nullptr;
-		c->syncIndex = -1;
-	}
-	// May still exist afterwards if referenced elsewhere, e.g. as another controllers sync, so they should be deleted soon after
-}
-
 void RemoveCameraSync(StreamState &state, TrackingCameraState &camera)
 { // Sync is either external or only for camera, in which case it will be removed, too
-	if (camera.sync)
-	{
-		auto sync_lock = camera.sync->contextualLock();
-		if (sync_lock->source == SYNC_NONE)
-		{ // No other camera in sync group
-			auto sg = std::find_if(state.syncGroups.begin(), state.syncGroups.end(), [&camera](const auto &sg) { return sg == camera.sync; });
-			state.syncGroups.erase(sg);
-		}
-		else
+	if (!camera.sync)
+		return;
+
+	{ // Remove camera from its sync group
+		auto sync_lock = camera.sync->lock();
+		int last = 0;
+		for (int c = 0; c < sync_lock->cameras.size(); c++)
 		{
-			auto c = std::find_if(sync_lock->cameras.begin(), sync_lock->cameras.end(), [&camera](const auto &c) { return c && c->id == camera.id; });
-			if (std::next(c) == sync_lock->cameras.end())
-				sync_lock->cameras.erase(c);
-			else // Don't reorder list so other syncIndices stay valid
-			 	*c = nullptr;
+			if (!sync_lock->cameras[c]) continue;
+			if (sync_lock->cameras[c].get() == &camera)
+				sync_lock->cameras[c] = nullptr;
+			else last = c;
 		}
+		sync_lock->cameras.resize(last);
 	}
+
+	// Remove group and source from StreamState if this was last reference
+	if (camera.sync.use_count() == 2 && camera.sync->group.use_count() == 2)
+		state.syncGroups.erase(std::remove(state.syncGroups.begin(), state.syncGroups.end(), camera.sync->group));
+	if (camera.sync.use_count() == 2)
+		state.syncSources.erase(std::remove(state.syncSources.begin(), state.syncSources.end(), camera.sync));
+
 	camera.sync = nullptr;
 	camera.syncIndex = -1;
 }
 
 void SetCameraSyncNone(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, float frameIntervalMS)
 { // Sync is either external or only for camera, in which case it will be removed, too
-	if (camera->sync && camera->sync->contextualRLock()->source == SYNC_NONE)
+	if (camera->sync && camera->sync->rlock()->type == SYNC_NONE)
 	{ // Already have internal sync
-		camera->sync->contextualLock()->frameIntervalMS = frameIntervalMS;
+		camera->sync->lock()->frameIntervalMS = frameIntervalMS;
 		return;
 	}
 	RemoveCameraSync(state, *camera);
 	// Generate new internal sync
-	camera->sync = std::make_shared<Synchronised<SyncGroup>>();
-	state.syncGroups.push_back(camera->sync); // new shared_ptr
-	auto sync_lock = camera->sync->contextualLock();
-	sync_lock->source = SYNC_NONE;
-	sync_lock->cameras.push_back(camera); // new shared_ptr
-	sync_lock->frameIntervalMS = frameIntervalMS;
+	std::shared_ptr<SyncSource> sync = std::make_shared<SyncSource>(std::make_shared<Synchronised<SyncGroup>>());
+	sync->generating = true;
+	{
+		auto sync_lock = sync->lock();
+		sync_lock->type = SYNC_NONE;
+		sync_lock->frameIntervalMS = frameIntervalMS;
+		sync_lock->cameras.push_back(camera); // new shared_ptr
+	}
+	state.syncGroups.push_back(sync->group); // new shared_ptr
+	state.syncSources.push_back(sync); // new shared_ptr
+	camera->sync = std::move(sync);
 	camera->syncIndex = 0;
 }
 
-void SetCameraSync(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, std::shared_ptr<Synchronised<SyncGroup>> &sync)
+void SetCameraSync(StreamState &state, std::shared_ptr<TrackingCameraState> &camera, std::shared_ptr<SyncSource> &sync)
 { // Sync is either external or only for camera, in which case it will be removed, too
 	if (camera->sync == sync) return; // Already have same external sync
 	RemoveCameraSync(state, *camera);
 	camera->sync = sync; // new shared_ptr
-	auto sync_lock = camera->sync->contextualLock();
+	auto sync_lock = camera->sync->lock();
 	int i = 0; 
 	while (i < sync_lock->cameras.size() && sync_lock->cameras[i]) i++;
 	if (i == sync_lock->cameras.size())
@@ -194,7 +177,7 @@ SyncedFrame *FindSyncedFrame(SyncGroup &sync, TruncFrameID frameID)
 
 static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 {
-	if (sync.source == SYNC_EXTERNAL)
+	if (sync.type == SYNC_TRIG)
 	{ // Try to estimate frame interval first
 		auto frameStart = std::find_if(sync.frames.begin(), sync.frames.end(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
 		auto frameEnd = std::find_if(sync.frames.rbegin(), sync.frames.rend(), [](const SyncedFrame &frame) { return !frame.approxSOF; });
@@ -269,7 +252,7 @@ SyncedFrame *GetSyncedFrame(SyncGroup &sync, TruncFrameID frameID, bool create)
 	}
 	else
 	{
-		LOG(LSOF, LTrace, "Extrapolated frame ID %d (%d) from truncated ID %d with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
+		LOG(LSOF, LDarn, "Extrapolated frame ID %d (%d) from truncated ID %d with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
 	}
 
 	frame.approxSOF = true;
@@ -493,9 +476,17 @@ bool MaintainStreamState(StreamState &state)
 	TimePoint_t now = sclock::now();
 	state.lastMaintainTime = now;
 	bool startedProcessing = false;
+
+	for (int s = 0; s < state.syncSources.size(); s++)
+	{
+		assert(state.syncSources[s].use_count() >= 2);
+	}
+
 	for (int s = 0; s < state.syncGroups.size(); s++)
 	{
 		auto sync = state.syncGroups[s]->contextualLock();
+		assert(state.syncGroups[s].use_count() >= (sync->type == SYNC_VIRTUAL? 1 : 2));
+
 		// Check for old frames
 		auto frame = sync->frames.begin();
 		while (frame != sync->frames.end())
@@ -646,17 +637,17 @@ bool MaintainStreamState(StreamState &state)
 		//	dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS*1.5f)
 		//{ // Either intentionally virtual, or haven't even received a SOF - bridge with empty frame
 		// TODO: Disabled for now, would only be useful to update with IMU samples as there are no new optical samples
-		if (!sync->frames.empty() && sync->source == SYNC_VIRTUAL &&
+		if (!sync->frames.empty() && sync->type == SYNC_VIRTUAL &&
 			dtMS(sync->frames.back().SOF, sclock::now()) > sync->frameIntervalMS)
 		{ // Continue virtual frames
 			SyncedFrame frame = {};
 			frame.cameras.resize(sync->cameras.size());
 			frame.ID = sync->frames.back().ID + 1;
-			frame.approxSOF = sync->source != SYNC_VIRTUAL;
+			frame.approxSOF = sync->type != SYNC_VIRTUAL;
 			frame.SOF = EstimateSOF(*sync, frame.ID);
 			sync->frames.push_back(std::move(frame));
 			sync->frameCount++;
-			if (sync->source != SYNC_VIRTUAL)
+			if (sync->type != SYNC_VIRTUAL)
 				LOG(LStreaming, LDarn, "Replacing completely dropped frame with virtual frame!");
 		}
 	}

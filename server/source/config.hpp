@@ -74,6 +74,7 @@ struct ControllerConfig
 	// E.g. not just whether it takes input, but from where
 	// So syncSource itself is not very helpful alone
 	// Should be configurable in UI in "Devices" window
+	int preferredSyncSource = -1;
 };
 
 struct TrackerOutputConfig

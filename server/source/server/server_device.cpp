@@ -717,7 +717,9 @@ bool ReassignGeneratingSource(ServerState &state, std::shared_ptr<Synchronised<S
 		{
 			if (!controller->sync || controller->sync->group != syncGroup)
 				continue;
-			if (controller->sync->generating && !source)
+			if (controller->id == state.controllerConfig.preferredSyncSource)
+				source = controller->sync; // new shared_ptr
+			else if (controller->sync->generating && !source)
 				source = controller->sync; // new shared_ptr
 		}
 	}

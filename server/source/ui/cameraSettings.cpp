@@ -337,6 +337,17 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		}
 	}
 
+	// TODO: Make selection of current controllers (and don't edit if not connected)?
+	int anySource = -1;
+	bool updateSource = ScalarProperty<int>("Preferred Sync Source", "", &state.controllerConfig.preferredSyncSource, &anySource, -1, 5);
+	ImGui::SetItemTooltip("Preferred source of sync signal. Currently maps to controller IDs.");
+	if (updateSource)
+	{
+		auto stream_lock = state.stream.contextualLock();
+		for (auto &syncGroup : stream_lock->syncGroups)
+			ReassignGeneratingSource(state, syncGroup);
+	}
+
 	EndSection();
 
 	ImGui::End();

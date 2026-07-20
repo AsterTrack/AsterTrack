@@ -270,6 +270,11 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 	CameraUpdateStream(*camera);
 	CameraUpdateVis(*camera);
 
+	if (camera->controller)
+	{ // May not be configured to use it (CameraConfig::synchronised)
+		ControllerUpdateSyncMask(*camera->controller);
+	}
+
 	// Give camera some time to configure itself
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 

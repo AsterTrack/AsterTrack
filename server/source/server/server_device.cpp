@@ -348,7 +348,7 @@ void DevicesStartStreaming(ServerState &state)
 {
 	for (auto &controller : state.controllers)
 	{
-		{
+		{ // Reset timesync
 			auto timeSync = controller->timeSync.contextualLock();
 			timeSync->params = TimeSyncParamsForUSB;
 			ResetTimeSync(*timeSync);
@@ -358,14 +358,14 @@ void DevicesStartStreaming(ServerState &state)
 		if (!comm_startStream(controller->comm))
 		{
 			LOG(LControllerDevice, LError, "Failed to open comm channels to controller %d!\n", controller->id);
+			continue;
 		}
-		else
-		{
-			LOG(LControllerDevice, LInfo, "Opened comm channels to controller %d!\n", controller->id);
-			controller->endpoints.resize(controller->comm->streamingEndpoints.load()+1);
-			for (auto &ep : controller->endpoints)
-				ep.lastReceived = sclock::now();
-		}
+		LOG(LControllerDevice, LInfo, "Opened comm channels to controller %d!\n", controller->id);
+
+		// Setup USB endpoint stats
+		controller->endpoints.resize(controller->comm->streamingEndpoints.load()+1);
+		for (auto &ep : controller->endpoints)
+			ep.lastReceived = sclock::now();
 	}
 
 	// Give controller some time to initialise, not strictly needed
@@ -377,17 +377,9 @@ void DevicesStartStreaming(ServerState &state)
 
 		// Request to start establishing a solid timesync with both the host (this) and the cameras
 		if (comm_submit_control_data(controller->comm, COMMAND_OUT_TIME_SYNC, true, 0) < 0)
-		{
 			LOG(LControllerDevice, LError, "Failed to send time sync request to controller %d!\n", controller->id);
-		}
 		else
-		{
-
 			LOG(LControllerDevice, LInfo, "Requesting to start time sync with controller %d!\n", controller->id);
-		}
-
-		for (auto &ep : controller->endpoints)
-			ep.lastReceived = sclock::now();
 	}
 
 	for (auto &cam : state.cameras)
@@ -404,21 +396,12 @@ void DevicesStartStreaming(ServerState &state)
 		CameraUpdateVis(*cam);
 	}
 
-	// Set external sync source for relevant controllers
+	// Configure controllers for external sync
 	for (auto &controller : state.controllers)
 	{
 		if (!controller->comm->commStreaming) continue;
 		if (!controller->sync || controller->sync->generating) continue;
- 		// Start generating last
-		auto type = controller->sync->rlock()->type;
-		if (type != SYNC_NONE)
-		{ // Request to copy external sync input
-			comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_EXTERNAL, 0, 0);
-		}
-		else
-		{ // Request to not do any sync - cameras will need to be free-running
-			comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_RESET, 0, 0);
-		}
+		ControllerUpdateSyncConfig(*controller);
 	}
 
 	// Communicate with camera to start streaming (startup time is high)
@@ -438,9 +421,7 @@ void DevicesStartStreaming(ServerState &state)
 	for (auto &controller : state.controllers)
 	{
 		if (!ControllerUpdateSyncMask(*controller))
-		{
 			LOG(LGUI, LInfo, "Failed to setup controller %d for streaming!", controller->id);
-		}
 	}
 
 	for (auto &cam : state.cameras)
@@ -453,17 +434,14 @@ void DevicesStartStreaming(ServerState &state)
 		// If this cameras mode hasn't changed yet, it will have to finish configuring it's streaming state later
 		cam->modeSet.handleIndividually = true;
 	}
-
 	LOG(LGUI, LInfo, "Waited %fms for cameras to change modes!", dtMS(modeSetTime, sclock::now()));
 
-	// Set generating sync source for relevant controllers
+	// Configure controllers for generating sync last
 	for (auto &controller : state.controllers)
 	{
 		if (!controller->comm->commStreaming) continue;
 		if (!controller->sync || !controller->sync->generating) continue;
-		// Request to start generating frame signals
-		int framerate = 1000.0f/controller->sync->rlock()->frameIntervalMS;
-		comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)framerate, 0);
+		ControllerUpdateSyncConfig(*controller);
 	}
 	LOG(LGUI, LInfo, "Started camera sync");
 }
@@ -746,13 +724,7 @@ bool ReassignGeneratingSource(ServerState &state, std::shared_ptr<Synchronised<S
 		controller->sync->generating = controller->sync == source;
 		if (state.mode == MODE_Device && state.isStreaming)
 		{ // Update devices
-			if (controller->sync->generating)
-			{
-				int framerate = 1000.0f/controller->sync->rlock()->frameIntervalMS;
-				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, (uint16_t)framerate, 0);
-			}
-			else 
-				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_EXTERNAL, 0, 0);
+			ControllerUpdateSyncConfig(*controller);
 		}
 		if (controller->sync->generating)
 			LOG(LStreaming, LInfo, "Established Controller %d as source for its sync group!", controller->id);

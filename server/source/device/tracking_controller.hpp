@@ -123,6 +123,7 @@ void DisconnectController(ServerState &state, TrackingControllerState &controlle
 void HandleController(ServerState &state, TrackingControllerState &controller);
 void ParseControllerPackets(ServerState &state, TrackingControllerState &controller);
 
+bool ControllerUpdateSyncConfig(TrackingControllerState &controller);
 bool ControllerUpdateSyncMask(TrackingControllerState &controller);
 
 #endif // TRACKING_CONTROLLER_H

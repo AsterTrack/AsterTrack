@@ -327,7 +327,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 			controller->sync->lock()->frameIntervalMS = 1000.0f / state.controllerConfig.framerate;
 			if (state.mode == MODE_Device && state.isStreaming)
 			{ // Update devices
-				comm_submit_control_data(controller->comm, COMMAND_OUT_SYNC_GENERATE, state.controllerConfig.framerate, 0);
+				ControllerUpdateSyncConfig(*controller);
 				for (auto &camera : controller->cameras)
 				{
 					if (camera && camera->sync == controller->sync)

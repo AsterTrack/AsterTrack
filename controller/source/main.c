@@ -789,6 +789,9 @@ static void resetSyncStates()
 	// Reset Sync Mask implicitly
 	for (int i = 0; i < UART_PORT_COUNT; i++)
 		camStates[i].status &= ~PORT_SYNC_ENABLED;
+	// Reset frameID at end of streaming
+	curFrameID = 0;
+	cachedFrameID = 0;
 }
 
 
@@ -1159,52 +1162,60 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 	lastUSBPacket = GetTimePoint();
 	hostConnected = true;
 
-	if (req->bRequest == COMMAND_OUT_TIME_SYNC)
+	switch (req->bRequest)
+	{
+	case COMMAND_OUT_TIME_SYNC:
 	{ // Stage 2; Request to set time sync enforcement
 		CMDD_STR("+TimeSync");
 		CMDD_CHARR(INT9_TO_CHARR(req->wValue));
 		enforceTimeSync = req->wValue != 0;
 		return usbd_ack;
 	}
-	else if (req->bRequest == COMMAND_OUT_SYNC_RESET)
-	{ // Stage 3: Request to disable all sync sources
+	case COMMAND_OUT_SYNC_RESET:
+	{ // Stage 3: Request to disable the sync source
 		CMDD_STR("+SyncRst");
 		resetSyncStates();
 		return usbd_ack;
 	}
-	else if (req->bRequest == COMMAND_OUT_SYNC_EXTERNAL)
-	{ // Stage 3: Request to setup external sync source
-		CMDD_STR("+SyncExt");
+	case COMMAND_OUT_SYNC_CONFIG:
+	{ // Stage 3: Request to setup a sync source
+		SYNC_Reset();
 		if (syncSource == SYNC_CFG_GEN_RATE)
 			StopTimer(TIM3);
-		SYNC_Reset();
-		SYNC_Input_Init();
-		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
-		cachedFrameID = 0;
-		syncSource = SYNC_CFG_EXT_RATE; // Still behaving like SYNC_CFG_EXT_TRIG
-		return usbd_ack;
-	}
-	else if (req->bRequest == COMMAND_OUT_SYNC_GENERATE)
-	{ // Stage 3: Request to setup internal sync source
-		CMDD_STR("+SyncGen:");
-		CMDD_CHARR(INT999_TO_CHARR(req->wValue));
-		framerate = req->wValue;
-		frametimeUS = 1000000/framerate;
-		if (frametimeUS > UINT16_MAX)
-		{ // TODO: This limits fps to be over 15.26fps. Consider changing timer to be less precise (currently 1us steps)
-			frametimeUS = UINT16_MAX;
+
+		switch (req->wIndex)
+		{
+		case SYNC_CFG_NONE:
+			CMDD_STR("+SyncOff");
+			curFrameID = 0;
+			cachedFrameID = 0;
+			break;
+		case SYNC_CFG_EXT_RATE:
+		case SYNC_CFG_EXT_TRIG:
+			CMDD_STR("+SyncExt");
+			SYNC_Input_Init();
+			break;
+		case SYNC_CFG_GEN_RATE:
+		case SYNC_CFG_GEN_TRIG:
+			CMDD_STR("+SyncGen:");
+			CMDD_CHARR(INT999_TO_CHARR(req->wValue));
+			framerate = req->wValue;
+			frametimeUS = 1000000/framerate;
+			if (frametimeUS > UINT16_MAX)
+			{ // TODO: This limits fps to be over 15.26fps. Consider changing timer to be less precise (currently 1us steps)
+				frametimeUS = UINT16_MAX;
+			}
+			SYNC_Output_Init();
+			StartTimer(TIM3, frametimeUS);
+			break;
+		default:
+			syncSource = SYNC_CFG_NONE;
+			return usbd_nak;
 		}
-		if (syncSource == SYNC_CFG_GEN_RATE)
-			StopTimer(TIM3);
-		SYNC_Reset();
-		SYNC_Output_Init();
-		StartTimer(TIM3, frametimeUS);
-		curFrameID = 0; // TODO: Should we really reset frameID every time streaming starts?
-		cachedFrameID = 0;
-		syncSource = SYNC_CFG_GEN_RATE;
+		syncSource = (enum ControllerSyncConfig)req->wIndex;
 		return usbd_ack;
 	}
-	else if (req->bRequest == COMMAND_OUT_SYNC_MASK)
+	case COMMAND_OUT_SYNC_MASK:
 	{ // Request to set sync mask for cameras
 		CMDD_STR("+SyncMsk:");
 		CMDD_CHARR(UI8_TO_HEX_ARR(req->wIndex));
@@ -1217,7 +1228,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		}
 		return usbd_ack;
 	}
-	else if (req->bRequest == COMMAND_OUT_SEND_PACKET)
+	case COMMAND_OUT_SEND_PACKET:
 	{ // Request to send a packet to cameras
 		CMDD_STR("+SendPkt:");
 		CMDD_CHARR(INT99_TO_CHARR(req->wValue), ':', INT99_TO_CHARR(req->wLength));
@@ -1240,7 +1251,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		}
 		return usbd_ack;
 	}
-	else if (req->bRequest == COMMAND_OUT_TEST)
+	case COMMAND_OUT_TEST:
 	{ // Test signals
 		CMDD_STR("+Test");
 		int powerTest = -1;
@@ -1285,7 +1296,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		return usbd_ack;
 	}
 #if defined(ENABLE_EVENTS)
-	else if (req->bRequest == COMMAND_OUT_EVENTS)
+	case COMMAND_OUT_EVENTS:
 	{ // Set events to log
 		CMDD_STR("+EventLog");
 		eventLogClass = req->wIndex;
@@ -1293,6 +1304,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		return usbd_ack;
 	}
 #endif
+	}
 	return usbd_nak;
 }
 

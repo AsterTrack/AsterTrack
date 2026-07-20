@@ -216,6 +216,31 @@ void ParseControllerPackets(ServerState &state, TrackingControllerState &control
 	}
 }
 
+bool ControllerUpdateSyncConfig(TrackingControllerState &controller)
+{
+	if (!controller.comm->commStreaming) return false;
+	if (!controller.sync) return false;
+
+	SyncType type;
+	float intervalMS;
+	{
+		auto sync_lock = controller.sync->rlock();
+		type = sync_lock->type;
+		intervalMS = sync_lock->frameIntervalMS;
+	}
+	if (controller.sync->generating)
+	{
+		ControllerSyncConfig cfg = type == SYNC_RATE? SYNC_CFG_GEN_RATE : (type == SYNC_TRIG? SYNC_CFG_GEN_TRIG : SYNC_CFG_NONE);
+		comm_submit_control_data(controller.comm, COMMAND_OUT_SYNC_CONFIG, 1000.0f / intervalMS, cfg);
+	}
+	else
+	{
+		ControllerSyncConfig cfg = type == SYNC_RATE? SYNC_CFG_EXT_RATE : (type == SYNC_TRIG? SYNC_CFG_EXT_TRIG : SYNC_CFG_NONE);
+		comm_submit_control_data(controller.comm, COMMAND_OUT_SYNC_CONFIG, 0, cfg);
+	}
+	return true;
+}
+
 bool ControllerUpdateSyncMask(TrackingControllerState &controller)
 {
 	if (!controller.comm->commStreaming) return false;
@@ -224,7 +249,7 @@ bool ControllerUpdateSyncMask(TrackingControllerState &controller)
 	// Select cameras that have been setup and chosen for streaming
 	uint16_t portMask = 0;
 	for (auto &camera : controller.cameras)
-	{
+	{ // TODO: Some cameras may be configured to not use this anyway (CameraConfig::synchronised)
 		if (camera && camera->isStreaming())
 			portMask |= 1 << camera->port;
 	}

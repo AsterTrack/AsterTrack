@@ -296,7 +296,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			if (packet.header.tag == PACKET_FRAME_SIGNAL)
 			{ // Frame is starting to be processed
 				auto sync_lock = camera->sync->lock();
-				SyncedFrame *frame = RegisterCameraFrame(*sync_lock, camera->syncIndex, packet.header.frameID);
+				SyncedFrame *frame = RegisterCameraFrame(*camera->sync, *sync_lock, camera->syncIndex, packet.header.frameID);
 				if (!frame)
 				{
 					packet.ignored = true;
@@ -308,7 +308,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 			}
 			else if (packet.header.isStreamPacket())
 			{ // Register that camera is receiving frame data
-				if (!RegisterStreamPacket(*camera->sync->lock(), camera->syncIndex, packet.header.frameID, packetState.receiveTime))
+				if (!RegisterStreamPacket(*camera->sync, *camera->sync->lock(), camera->syncIndex, packet.header.frameID, packetState.receiveTime))
 					packet.ignored = true;
 			}
 		},
@@ -325,7 +325,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 
 			if (packet.header.isStreamPacket())
 			{ // Update statistics of streaming packet
-				if (!RegisterStreamBlock(*camera->sync->lock(), camera->syncIndex, packet.header.frameID))
+				if (!RegisterStreamBlock(*camera->sync, *camera->sync->lock(), camera->syncIndex, packet.header.frameID))
 					packet.ignored = true;
 			}
 		},
@@ -346,7 +346,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 					camera->id, packet.header.tag, packet.headerBlockID);
 				if (packet.header.isStreamPacket())
 				{
-					RegisterStreamPacketComplete(*camera->sync->lock(), camera->syncIndex, packet.header.frameID, {}, true);
+					RegisterStreamPacketComplete(*camera->sync, *camera->sync->lock(), camera->syncIndex, packet.header.frameID, {}, true);
 				}
 				return;
 			}
@@ -357,7 +357,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 				auto cameraFrame = ReadStreamingPacket(*camera, packet.header, packet.data.data(), packet.data.size(), packet.erroneous);
 				int blobCount = cameraFrame.rawPoints2D.size();
 				auto sync_lock = camera->sync->lock();
-				SyncedFrame *frame = RegisterStreamPacketComplete(*sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
+				SyncedFrame *frame = RegisterStreamPacketComplete(*camera->sync, *sync_lock, camera->syncIndex, packet.header.frameID, std::move(cameraFrame), packet.erroneous);
 				if (frame)
 				{ // Packet existed for frame
 					LOG(LStreaming, LTrace, "Camera %u (Port %d-%d) fully transmitted stream packet %d for frame %d (%d) with %d blobs!\n",

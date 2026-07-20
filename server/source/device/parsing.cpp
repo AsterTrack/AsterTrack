@@ -404,40 +404,6 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 		return false;
 	}
 	SOFPacket sof = parseSOFPacket(data);
-	auto sync_lock = controller.sync->lock();
-
-	// Verify sof.frameID
-	SyncedFrame *lastFrame = sync_lock->frames.empty()? nullptr : &sync_lock->frames.back();
-	FrameID lastSOFID = lastFrame? lastFrame->ID : 0;
-	bool lastApprox = lastFrame? lastFrame->approxSOF : false;
-
-	//sof.frameID = lastSOFID + shortDiff<FrameID, int32_t>(lastSOFID, sof.frameID, (1<<32)/10, 1<<32);
-	// 32Bit doesn't overflow in ~1yr at 144Hz, so not needed until we lower SOF ID bit depth
-	if (sof.frameID < lastSOFID)
-	{
-		if (lastApprox)
-		{
-			ScopedLogContext scopedLogContext(lastSOFID);
-			std::string camerasStr = "";
-			for (int c = 0; c < lastFrame->cameras.size(); c++)
-			{
-				if (lastFrame->cameras[c].announced)
-					camerasStr += asprintf_s(" - %u", sync_lock->cameras[c]->id);
-			}
-			LOG(LSOF, LWarn, "SyncGroup is at frame %d, but some cameras desynced and are at frame %d, likely failed to set up properly!%s", sof.frameID, lastSOFID, camerasStr.c_str());
-		}
-		else
-			LOG(LSOF, LError, "ERROR: Got weird SOF packet with frameID %d < lastSOFID %d\n", sof.frameID, lastSOFID);
-	}
-	if (lastSOFID > 0 && sof.frameID != lastSOFID+1 && sof.frameID != lastSOFID && !lastApprox)
-	{ // TODO: Sometimes called every couple dozen frames with the same lastSOFID, verify it is fixed
-		// Was probably a frame stuck in controller::sync::frames. not observed in a while, but not sure if its properly fixed
-		LOG(LSOF, LWarn, "Skipped %d SOFs from lastSOFID %d to frameID %d!\n", sof.frameID-lastSOFID-1, lastSOFID, sof.frameID);
-		for (auto &frame : sync_lock->frames)
-		{
-			LOG(LSOF, LDebug, "Had SOF %d %fms ago!\n", frame.ID, dtMS(frame.SOF, receiveTime));	
-		}
-	}
 
 	// Get estimated real-time of SOF with time sync
 	TimeSync timeSync = *controller.timeSync.contextualRLock();
@@ -469,7 +435,7 @@ bool ReadSOFPacket(TrackingControllerState &controller, uint8_t *data, int lengt
 		dtUS(timeSync.lastTime, timeSOF), timeSync.drift*100);
 
 	// Set estimate as SOF for frameID
-	RegisterSOF(*sync_lock, sof.frameID, timeSOF);
+	RegisterSOF(*controller.sync, *controller.sync->lock(), sof.frameID, timeSOF);
 	return true;
 }
 
@@ -730,7 +696,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 				camera.id, parseImg.received, (int)parseImg.jpeg.size(), parseImg.frameID);
 		}
 
-		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync->lock(), header.frameID) : header.frameID;
+		parseImg.frameID = camera.sync? EstimateFullFrameID(*camera.sync, *camera.sync->rlock(), header.frameID) : header.frameID;
 		parseImg.received = 0;
 		parseImg.erroneous = erroneous || imageWidth == 0 || imageHeight == 0;
 		parseImg.jpeg.clear();

@@ -152,27 +152,22 @@ void ResetStreamState(StreamState &state)
 /* Frame Records Management */
 
 /**
- * Finds the full FrameID of a recent or imminent frame via last frame records
+ * Finds the full FrameID of a recent or imminent frame via past frames of the SyncSource
  */
-FrameID EstimateFullFrameID(const SyncGroup &sync, TruncFrameID frameID)
+FrameID EstimateFullFrameID(const SyncSource &source, const SyncGroup &sync, TruncFrameID frameID)
 {
-	if (sync.frames.empty())
-		return frameID;
-	return sync.frames.back().ID + shortDiff<TruncFrameID, int>(sync.frames.back().ID, frameID, std::numeric_limits<TruncFrameID>::max()/2);
-}
-
-/**
- * Returns the frame record for frameID if it exists or NULL
- */
-SyncedFrame *FindSyncedFrame(SyncGroup &sync, TruncFrameID frameID)
-{
-	for (auto frame = sync.frames.end(); frame != sync.frames.begin();)
-	{ // Search in active frames
-		frame--;
-		if ((frame->ID&0xFF) == frameID)
-			return frame.operator->();
+	FrameID ref;
+	if (source.generating)
+	{
+		if (sync.frames.empty()) return frameID;
+		ref = sync.frames.back().ID;
 	}
-	return NULL;
+	else
+	{
+		if (source.frames.empty()) return frameID;
+		ref = source.frames.back().sourceFrameID;
+	}
+	return ref + shortDiff<TruncFrameID, int>(ref, frameID, std::numeric_limits<TruncFrameID>::max()/2);
 }
 
 static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
@@ -222,45 +217,80 @@ static TimePoint_t EstimateSOF(SyncGroup &sync, FrameID frameID)
 }
 
 /**
- * Get the frame record for frameID or create a new one with approximate SOF time
+ * Attempt to remap the given source frame to a groups SyncedFrame by SOF time
+ * May fail if generating sources SOF was not handled yet (may consistently occur due to USB polling order)
  */
-SyncedFrame *GetSyncedFrame(SyncGroup &sync, TruncFrameID frameID, bool create)
+static SyncedFrame* RemapFrameID(SyncSource &source, SyncGroup &sync, FrameID frameID, TimePoint_t frameSOF)
 {
+	SyncedFrame *matchedFrame = nullptr;
+	float matchedDiffMS = 10000;
 	for (auto frame = sync.frames.rbegin(); frame != sync.frames.rend(); frame++)
-	{ // Search in active frames
-		if ((frame->ID&0xFF) == frameID)
+	{
+		float timeDiffMS = std::abs(dtMS(frame->SOF, frameSOF));
+		if (timeDiffMS > matchedDiffMS) break;
+		matchedFrame = &*frame;
+		matchedDiffMS = timeDiffMS;
+	}
+
+	if (matchedDiffMS > sync.frameIntervalMS/4)
+		return nullptr;
+
+	if (matchedDiffMS > 1)
+		LOG(LStreaming, LDarn, "Frame SOF of secondary SyncSource differs by %.3fms! Did sync propagation fail?", matchedDiffMS);
+
+	matchedFrame->receivedSOFs++;
+	return matchedFrame;
+}
+
+/**
+ * Try to get the synced frame corresponding to the source frameID
+ */
+static SyncedFrame *GetSyncedFrame(SyncSource &source, SyncGroup &sync, TruncFrameID frameID)
+{
+	if (source.generating)
+	{ // Generating SyncSource determines FrameID used for SyncGroup
+		auto frame = std::find_if(sync.frames.rbegin(), sync.frames.rend(),
+			[&](auto &f){ return (f.ID&0xFF) == frameID; });
+		return frame == sync.frames.rend()? nullptr : &*frame;
+	}
+
+	// Other SyncSources FrameID may diverge and needs to be mapped
+	auto frameMap = std::find_if(source.frames.rbegin(), source.frames.rend(),
+		[&](auto &f){ return (f.sourceFrameID&0xFF) == frameID; });
+	if (frameMap == source.frames.rend())
+	{ // SOF of this source was likely dropped or severely delayed somewhere in USB stack
+		// This will result in dropped or missing packets!
+		LOG(LSOF, LDarn, "Attempted to to map secondary frame ID %d to group frame, but no SOF was received!", frameID);
+		return nullptr;
+	}
+
+	if (frameMap->mapped)
+	{ // Already mapped SOF of this source to SOF of generating source
+		auto frame = std::find_if(sync.frames.rbegin(), sync.frames.rend(),
+			[&](auto &f){ return f.ID == frameMap->groupFrameID; });
+		if (frame != sync.frames.rend()) 
 			return &*frame;
+		// Should not happen, frames are only dropped from SyncGroup after they're finally processed
+		LOG(LSOF, LError, "Secondary frame ID %d was mapped to group frame %d but that did not exist anymore!",
+			frameMap->sourceFrameID, frameMap->groupFrameID);
+		return nullptr;
 	}
-	if (!create) return nullptr;
-	
-	FrameID lastSOFID = sync.frames.empty()? 0 : sync.frames.back().ID;
-	if (sync.frames.size() > 1)
-		lastSOFID = std::max(lastSOFID, std::prev(sync.frames.end(), 2)->ID);
 
-	// No SOF was received for this frame yet, create new frame record with estimated SOF
-	SyncedFrame frame = {};
-	frame.cameras.resize(sync.cameras.size());
-	frame.ID = EstimateFullFrameID(sync, frameID);
-
-	if (frame.ID <= lastSOFID)
-	{
-		LOG(LSOF, LWarn, "Somehow extrapolated frame ID %d (%d) from truncated ID %d even with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
-	}
-	else if (frame.ID > lastSOFID+2)
-	{
-		LOG(LSOF, LError, "Tried to extrapolate %d (%d) >> lastSOFID %d\n", frame.ID, frame.ID&0xFF, lastSOFID);
+	// SOF has not been mapped yet, perhaps it arrived before SOF of generating source (very common)
+	SyncedFrame *mappedFrame = RemapFrameID(source, sync, frameMap->sourceFrameID, frameMap->sourceFrameTime);
+	if (mappedFrame)
+	{ // Mapped correctly now that SOF of generating source also arrived
+		LOG(LSOF, LTrace, "Finally remapped pending SOF %d to group frame %d!", frameMap->sourceFrameID, mappedFrame->ID);
+		frameMap->groupFrameID = mappedFrame->ID;
+		frameMap->mapped = true;
 	}
 	else
-	{
-		LOG(LSOF, LDarn, "Extrapolated frame ID %d (%d) from truncated ID %d with past ID %d", frame.ID, frame.ID&0xFF, frameID, lastSOFID);
+	{ // Perhaps time sync of either this or generating source was WAY off
+		// Or SOF of generating source was dropped or severely delayed somewhere in USB stack
+		LOG(LSOF, LWarn, "Pending SOF %d existed but failed to map to group frame AGAIN - %.2fms later!",
+				frameMap->sourceFrameID, dtMS(frameMap->sourceFrameTime, sclock::now()));
 	}
-
-	frame.approxSOF = true;
-	frame.SOF = EstimateSOF(sync, frame.ID);
-	LOG(LStreaming, LDebug, "Extrapolated frame ID from %d to %d (%d) using past frames!\n", frameID, frame.ID, frame.ID&0xFF);
-	sync.frames.push_back(std::move(frame));
-	sync.frameCount++;
-	return &sync.frames.back();
+	return mappedFrame;
 }
 
 
@@ -269,72 +299,57 @@ SyncedFrame *GetSyncedFrame(SyncGroup &sync, TruncFrameID frameID, bool create)
 /**
  * Set start of frame with given ID
  */
-void RegisterSOF(SyncGroup &sync, FrameID frameID, TimePoint_t SOF)
+void RegisterSOF(SyncSource &source, SyncGroup &sync, FrameID frameID, TimePoint_t SOF)
 {
-	// Update or create frame record with SOF time
-	auto frame = sync.frames.begin();
-	while (frame != sync.frames.end())
-	{ // Find existing frame record
-		if (frame->ID == frameID)
-			break;
-		frame++;
-	}
-	if (frame != sync.frames.end())
-	{ // Retroactively update SOF
-		LOG(LSOF, LTrace, "Already recorded frame %d for %fms before this SOF!\n",
-			frame->ID, dtMS(frame->SOF, SOF));
-		if (frame->receivedSOFs > 0)
-		{ // Received SOF from another controller in the same sync group, merge SOF times
-			int diffUS = dtUS(frame->SOF, SOF);
-			if (std::abs(diffUS) > 100)
-			{
-				LOG(LSOF, LDarn, "--------- Additional SOF for frame %d, has a difference of %dus from prior SOF estimate %.2fms ago - likely bad time sync!",
-					frame->ID, diffUS, dtMS(frame->SOF, sclock::now()));
-			}
-			frame->SOF += std::chrono::microseconds(diffUS/(frame->receivedSOFs+1));
+	if (!source.generating)
+	{ // Map this SOF to that of the generating SyncSource by time alone
+		SyncedFrame *mappedFrame = RemapFrameID(source, sync, frameID, SOF);
+		source.frames.push_back({ SOF, frameID, mappedFrame? mappedFrame->ID : 0, mappedFrame != nullptr });
+		if (!mappedFrame)
+		{ // This SOF arrived earlier than the generating SyncSources frame SOF, record for later mapping (very common)
+			LOG(LSOF, LTrace, "Received SOF %d for secondary source but generating source SOF was not handled yet!", frameID);
 		}
-		else
-		{ // Shouldn't happen, SOF should be first packet for frameID
-			LOG(LSOF, LDarn, "--------- SOF wasn't first packet of frame %d with %d prior SOFs and %d blocks, retroactively changed SOF time from %s %.2fms ago to %.2fms ago!",
-				frame->ID, frame->receivedSOFs, frame->blockCounter, frame->approxSOF? "approximately" : "exactly\n", dtMS(frame->SOF, sclock::now()), dtMS(SOF, sclock::now()));
-			frame->SOF = SOF;
-			frame->approxSOF = false;
-		}
+		return;
 	}
-	else
-	{ // Register frame
-		SyncedFrame frame = {};
-		frame.cameras.resize(sync.cameras.size());
-		frame.ID = frameID;
-		frame.SOF = SOF;
-		frame.approxSOF = false;
-		frame.receivedSOFs = 1;
-		LOG(LSOF, LTrace, "Registered SOF %d as new frame!\n", frame.ID);
-		sync.frames.push_back(std::move(frame));
-		sync.frameCount++;
+
+	// Sanity-check for any existing frame record
+	auto frameIt = std::find_if(sync.frames.rbegin(), sync.frames.rend(),
+		[&](auto &f){ return (f.ID&0xFF) == frameID; });
+	if (frameIt != sync.frames.rend())
+	{ // Don't support SOF arriving after a packet of that frame anymore. This should not happen.
+		LOG(LSOF, LError, "Received SOF %d but already had that frame recorded!\n", frameID);
+		return;
 	}
+
+	// Register frame
+	SyncedFrame frame = {};
+	frame.cameras.resize(sync.cameras.size());
+	frame.ID = frameID;
+	frame.SOF = SOF;
+	frame.approxSOF = false;
+	frame.receivedSOFs = 1;
+	LOG(LSOF, LTrace, "Registered SOF %d as new frame!\n", frame.ID);
+	sync.frames.push_back(std::move(frame));
+	sync.frameCount++;
 }
 
 /**
  * Set frame with given ID to expect frame data from camera
  */
-SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameID)
+SyncedFrame *RegisterCameraFrame(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID)
 {
-	// TODO: Keep frames as circular buffer
-	// don't require the first camera to announce the frame to have a Frame Record already existing for it
-	// Because currently, no cameras announcing => no SyncedFrame to... record the frame
-	SyncedFrame *frame = GetSyncedFrame(sync, frameID, true);
+	SyncedFrame *frame = GetSyncedFrame(source, sync, frameID);
 	if (!frame)
 	{ // Missed SOF
-		LOG(LStreaming, LDarn, "Camera %u received streaming packet announcement for frame %d (%d) but frame SOF wasn't registered yet!\n",
-			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID), frameID);
+		LOG(LStreaming, LDarn, "Camera %u received streaming packet announcement for source frame %d (%d) but frame SOF wasn't registered yet!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(source, sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (frame->cameras[index].announced)
 	{ // Duplicate packet from past frame?
 		LOG(LStreaming, LWarn, "Camera %u announced packet for frame %d (SOF %fms ago) but it was already announced and frame is %s processed!\n",
-			sync.cameras[index]->id, frameID, dtMS(frame->SOF, sclock::now()),
+			sync.cameras[index]->id, frame->ID, dtMS(frame->SOF, sclock::now()),
 			frame->finallyProcessed? "finally" : (frame->previouslyProcessed? "partially" : "not"));
 		return nullptr;
 	}
@@ -346,14 +361,13 @@ SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameI
 /**
  * Register the stream packet from camera for frame with given ID
  */
-SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frameID, TimePoint_t packetTime)
+SyncedFrame *RegisterStreamPacket(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID, TimePoint_t packetTime)
 {
-	// Record that frame data is being received
-	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
+	SyncedFrame *frame = GetSyncedFrame(source, sync, frameID);
 	if (!frame)
 	{ // Missed SOF
-		LOG(LStreaming, LDarn, "Camera %u received streaming packet header for frame %d but frame SOF wasn't registered yet!\n",
-			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LDarn, "Camera %u received streaming packet header for source frame %d (%d) but frame SOF wasn't registered yet!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(source, sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
@@ -381,7 +395,7 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 	if (frame->receiving > frame->expecting)
 	{ // Shouldn't happen
 		LOG(LStreaming, LError, "ERROR: Frame %d (%d) has %d packets marked receiving but %d announced!\n",
-			frame->ID, frameID, frame->receiving, frame->expecting);
+			frame->ID, frame->ID&0xFF, frame->receiving, frame->expecting);
 	}
 
 	// Update statistics
@@ -394,32 +408,32 @@ SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frame
 /**
  * Register the stream block from camera for frame with given ID
  */
-SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameID)
+SyncedFrame *RegisterStreamBlock(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID)
 {
-	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
+	SyncedFrame *frame = GetSyncedFrame(source, sync, frameID);
 	if (!frame)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for frame %d(%d) but frame wasn't recorded at all!\n",
-			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID), frameID);
+		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for source frame %d(%d) but frame wasn't recorded at all!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(source, sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
 		LOG(LStreaming, LWarn, "Camera %u, received streaming packet block for frame %d(%d) but it wasn't announced and header wasn't received!\n",
-			sync.cameras[index]->id, frame->ID, frameID);
+			sync.cameras[index]->id, frame->ID, frame->ID&0xFF);
 		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
 		LOG(LStreaming, LWarn, "Camera %u, received streaming packet block for frame %d(%d) but header wasn't received!\n",
-			sync.cameras[index]->id, frame->ID, frameID);
+			sync.cameras[index]->id, frame->ID, frame->ID&0xFF);
 		return nullptr;
 	}
 	if (frame->finallyProcessed)
 	{ // Probably delayed block so frame was processed without this camera
 		LOG(LStreaming, LDarn, "Registering new block for camera %u %.2fms into frame %d(%d) after it was already finally processed %.2fms ago!",
-			sync.cameras[index]->id, dtMS(frame->SOF, sclock::now()), frame->ID, frameID, dtMS(frame->lastProcessed, sclock::now()));
+			sync.cameras[index]->id, dtMS(frame->SOF, sclock::now()), frame->ID, frame->ID&0xFF, dtMS(frame->lastProcessed, sclock::now()));
 	}
 	// TODO: Reenable assert(!frame->finallyProcessed); - it should hold true, but doesn't always
 	frame->lastBlock = sclock::now();
@@ -431,26 +445,26 @@ SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameI
 /**
  * Mark data from camera for frame with given ID as complete
  */
-SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrameID frameID, CameraFrameRecord &&cameraFrame, bool erroneous)
+SyncedFrame *RegisterStreamPacketComplete(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID, CameraFrameRecord &&cameraFrame, bool erroneous)
 {
-	SyncedFrame *frame = GetSyncedFrame(sync, frameID, false);
+	SyncedFrame *frame = GetSyncedFrame(source, sync, frameID);
 	if (!frame)
 	{ // Shouldn't happen
-		LOG(LStreaming, LError, "Camera %u, received complete streaming packet for frame %d but frame wasn't recorded at all!\n",
-			sync.cameras[index]->id, EstimateFullFrameID(sync, frameID));
+		LOG(LStreaming, LError, "Camera %u, received complete streaming packet for source frame %d (%d) but frame wasn't recorded at all!\n",
+			sync.cameras[index]->id, EstimateFullFrameID(source, sync, frameID), frameID);
 		return nullptr;
 	}
 	frame->cameras.resize(sync.cameras.size());
 	if (!frame->cameras[index].announced)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for frame %d but it wasn't announced and header wasn't received!\n",
-			sync.cameras[index]->id, frame->ID);
+		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for frame %d (%d) but it wasn't announced and header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID, frame->ID&0xFF);
 		return nullptr;
 	}
 	if (!frame->cameras[index].receiving)
 	{ // Shouldn't happen
-		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for frame %d but header wasn't received!\n",
-			sync.cameras[index]->id, frame->ID);
+		LOG(LStreaming, LWarn, "Camera %u, received complete streaming packet for frame %d (%d) but header wasn't received!\n",
+			sync.cameras[index]->id, frame->ID, frame->ID&0xFF);
 		return nullptr;
 	}
 	frame->cameras[index].complete = true;
@@ -460,7 +474,7 @@ SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrame
 	if (frame->completed > frame->expecting)
 	{ // Shouldn't happen
 		LOG(LStreaming, LWarn, "ERROR: Frame %d (%d) has %d packets marked completed but %d announced!\n",
-			frame->ID, frameID, frame->completed, frame->expecting);
+			frame->ID, frame->ID&0xFF, frame->completed, frame->expecting);
 	}
 	return frame;
 }

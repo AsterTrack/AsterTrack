@@ -25,6 +25,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/stats.hpp"
 #include "util/synchronised.hpp"
 
+#include "circular_buffer/circular_buffer.hpp"
+
 #include <vector>
 #include <list>
 #include <memory> // shared_ptr
@@ -126,10 +128,19 @@ struct SyncSource
 
 	bool generating;
 
+	struct SourceSyncedFrame
+	{
+		TimePoint_t sourceFrameTime;	// Time as reported by Controller / Sync Beacon. May be slightly different than SyncGroup SOF
+		FrameID sourceFrameID;			// Full FrameID of Controller / Sync Beacon. May diverge from SyncGroup FrameID
+		FrameID groupFrameID;			// Full FrameID of SyncGroup and its SyncedFrames
+		bool mapped;
+	};
+	CircularBuffer<SourceSyncedFrame> frames; // Map key is source TruncFrameID
+
 	SyncSource(std::shared_ptr<Synchronised<SyncGroup>> &group)
-		: group(group), generating(false) { assert(this->group); };
+		: group(group), generating(false), frames(20) { assert(this->group); };
 	SyncSource(std::shared_ptr<Synchronised<SyncGroup>> &&group)
-		: group(std::move(group)), generating(false) { assert(this->group); };
+		: group(std::move(group)), generating(false), frames(20) { assert(this->group); };
 
 	inline auto rlock() { return group->contextualRLock(); };
 	inline auto lock() { return group->contextualLock(); };
@@ -166,39 +177,34 @@ void ResetSyncGroup(SyncGroup &sync);
 void ResetStreamState(StreamState &state);
 
 /**
- * Finds the full FrameID of a recent or imminent frame via last frame records
+ * Finds the full FrameID of a recent or imminent frame via past frames of the SyncSource
  */
-FrameID EstimateFullFrameID(const SyncGroup &sync, TruncFrameID frameID);
-
-/**
- * Returns the frame record for frameID if it exists or NULL
- */
-SyncedFrame *FindSyncedFrame(SyncGroup &sync, TruncFrameID frameID);
+FrameID EstimateFullFrameID(const SyncSource &source, const SyncGroup &sync, TruncFrameID frameID);
 
 /**
  * Set start of frame with given ID
  */
-void RegisterSOF(SyncGroup &sync, FrameID frameID, TimePoint_t SOF);
+void RegisterSOF(SyncSource &source, SyncGroup &sync, FrameID frameID, TimePoint_t SOF);
 
 /**
  * Set frame with given ID to expect frame data from camera
  */
-SyncedFrame *RegisterCameraFrame(SyncGroup &sync, int index, TruncFrameID frameID);
+SyncedFrame *RegisterCameraFrame(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID);
 
 /**
  * Register the stream packet from camera for frame with given ID
  */
-SyncedFrame *RegisterStreamPacket(SyncGroup &sync, int index, TruncFrameID frameID, TimePoint_t packetTime);
+SyncedFrame *RegisterStreamPacket(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID, TimePoint_t packetTime);
 
 /**
  * Mark data from camera for frame with given ID as complete
  */
-SyncedFrame *RegisterStreamBlock(SyncGroup &sync, int index, TruncFrameID frameID);
+SyncedFrame *RegisterStreamBlock(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID);
 
 /**
  * Mark data from camera for frame with given ID as complete
  */
-SyncedFrame *RegisterStreamPacketComplete(SyncGroup &sync, int index, TruncFrameID frameID, CameraFrameRecord &&cameraFrame, bool erroneous);
+SyncedFrame *RegisterStreamPacketComplete(SyncSource &source, SyncGroup &sync, int index, TruncFrameID frameID, CameraFrameRecord &&cameraFrame, bool erroneous);
 
 /**
  * Check all sync groups for delayed and complete frames, and returns true if a new frame was set to process

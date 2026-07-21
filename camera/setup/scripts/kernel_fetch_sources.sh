@@ -6,7 +6,8 @@ cd /mnt/mmcblk0p4/kernel
 
 REPO_URL="http://www.tinycorelinux.net/16.x/armhf"
 KERNEL=6.12.25
-PREFIX=6.12.25-piCore-v7
+PREFIX=$(uname -r)
+CONFIG=config-${PREFIX}
 
 echo "Downloading kernel source and config..."
 if [[ ! -f "rpi-linux-${KERNEL}.tar.xz" ]]; then
@@ -24,20 +25,20 @@ fi
 
 sync
 
-rm -rf source config
+rm -rf source ${CONFIG}
 
 echo "Decompressing and unpacking kernel source..."
 mkdir -p source
 tar -xf "rpi-linux-${KERNEL}.tar.xz" -C source || { echo "rpi-linux source failed to unpack!"; exit 1; }
 
 echo "Unpacking config..."
-mkdir -p config
+mkdir -p ${CONFIG}
 unxz -k "${PREFIX}_.config.xz" || { echo "_.config failed to unpack!"; exit 1; }
-mv "${PREFIX}_.config" "config/.config"
+mv "${PREFIX}_.config" "${CONFIG}/.config"
 unxz -k "${PREFIX}_System.map.xz" || { echo "_System.map failed to unpack!"; exit 1; }
-mv "${PREFIX}_System.map" "config/System.map"
+mv "${PREFIX}_System.map" "${CONFIG}/System.map"
 unxz -k "${PREFIX}_Module.symvers.xz" || { echo "_Module.symvers failed to unpack!"; exit 1; }
-mv "${PREFIX}_Module.symvers" "config/Module.symvers"
+mv "${PREFIX}_Module.symvers" "${CONFIG}/Module.symvers"
 
 sync
 

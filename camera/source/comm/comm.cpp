@@ -39,7 +39,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #define COMM_IDENT_TIMEOUT_MS		50		// Timeout between sending identification and requiring a response
  											// should be << 1ms for UART, < 50ms for wifi
 #define COMM_IDENT_BACKOFF_MS		1000	// Additional backoff interval between failed identifications attempts to not spam log
-#define COMM_INTERVAL_US			500
+#define COMM_INTERVAL_US			2000	// Determines frequency of timeout checks and queued packet sends
 
 /*
  * Reading and parsing is done in CommThread

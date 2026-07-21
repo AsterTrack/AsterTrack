@@ -5,7 +5,7 @@ mkdir -p /mnt/mmcblk0p4/kernel/module
 cd /mnt/mmcblk0p4/kernel/module
 
 wget -q https://raw.githubusercontent.com/raspberrypi/linux/refs/heads/rpi-6.12.y/drivers/media/i2c/ov9282.c || exit 1
-#wget -q https://raw.githubusercontent.com/raspberrypi/linux/refs/heads/rpi-6.1.y/drivers/media/i2c/ov9281.c || exit 1
+wget -q https://raw.githubusercontent.com/raspberrypi/linux/refs/heads/rpi-6.1.y/drivers/media/i2c/ov9281.c || exit 1
 
 # Patch newer ov9282 driver to always use continuous clock
 sed -i -z 's/ov9282->noncontinuous_clock =\n\s*bus_cfg.bus.mipi_csi2.flags & V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK;/ov9282->noncontinuous_clock = false;/g' ov9282.c

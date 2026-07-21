@@ -7,9 +7,9 @@ make -C ../source M=$PWD modules -j 2 || exit 1
 
 sync
 
-mkdir -p /home/tc/drivers
-cp ov9281.ko /home/tc/drivers/
-cp ov9282.ko /home/tc/drivers/
+mkdir -p /home/tc/drivers/$(uname -r)
+cp ov9281.ko /home/tc/drivers/$(uname -r)
+cp ov9282.ko /home/tc/drivers/$(uname -r)
 
 sync
 

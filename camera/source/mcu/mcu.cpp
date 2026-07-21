@@ -1097,8 +1097,8 @@ bool mcu_get_status()
 	else
 	{
 		sendTime = GetTimeSynced(timesync, timestamp);
-		printf("Timing unreliable with roundtrip time of %.2fms, determined send time to be %.2fms ago, with estimation %.2fms\n",
-			roundtripTimeUS/1000.0f, dtMS(sendTime, sclock::now()), dtMS(estSendTime, sclock::now()));
+		//printf("Timing unreliable with roundtrip time of %.2fms, determined send time to be %.2fms ago, with estimation %.2fms\n",
+		//	roundtripTimeUS/1000.0f, dtMS(sendTime, sclock::now()), dtMS(estSendTime, sclock::now()));
 	}
 	long responseTimeUS = dtUS(sendTime, receiveTime);
 
@@ -1113,9 +1113,9 @@ bool mcu_get_status()
 		//printf("Frame ID %d (%d) from %dus ago + %ldus RX - roundtrip of %ldus!\n",
 		//	lastExtrapolatedFrameID, lastFrameID, usSinceFrameID, responseTimeUS, roundtripTimeUS); 
 		TimePoint_t SOF = sendTime - std::chrono::microseconds(usSinceFrameID);
-		if (usSinceFrameID > 1000)
+		if (usSinceFrameID > 5000) // > 1ms is sadly normal for Zero 1
 			printf("Received exceedingly delayed SOF for frame %d from %dus ago!\n", lastFrameID, usSinceFrameID);
-		else if (dtMS(SOF, sclock::now()) > 1.5f)
+		else if (dtMS(SOF, sclock::now()) > 6.0f)
 			printf("Frame %d SOF is reported to be from %dus ago, timesync set it to be %.2fms ago (drift %.5f) with roundtime of %.2fms!\n",
 			lastFrameID, usSinceFrameID, dtMS(SOF, sclock::now()), timesync.drift, roundtripTimeUS/1000.0f);
 		std::unique_lock lock(framesync.access);

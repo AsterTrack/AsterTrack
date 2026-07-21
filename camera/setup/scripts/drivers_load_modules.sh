@@ -1,6 +1,6 @@
 #!/bin/sh
 
-DRIVER_SRC="/home/tc/drivers"
+DRIVER_SRC="/home/tc/drivers/$(uname -r)"
 DRIVER_TGT="/lib/modules/$(uname -r)/kernel/drivers/media/i2c"
 CUSTOM_DRIVERS="ov9282.ko"
 LOAD_DRIVERS="ov9282.ko"

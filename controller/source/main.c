@@ -36,7 +36,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 /* Defines */
 
 // Timing (how often the intervals/timeouts are checked themselves depends on their position within the main loop)
-#define UART_COMM_TIMEOUT		350*TICKS_PER_MS		// Comm timeout at which a camera is considered disconnected
+#define UART_COMM_TIMEOUT		1000*TICKS_PER_MS		// Comm timeout at which a camera is considered disconnected
+														// 350ms ideally, but overloaded Zero 1s (e.g. on firmware update) may miss timeouts
 #define UART_PING_INTERVAL		100*TICKS_PER_MS		// Interval in which Tracking Cameras are pinged when idle
 #define UART_TIME_SYNC_INTERVAL	10*TICKS_PER_MS			// Minimum interval used for time sync with Tracking Cameras (doesn't need to be super accurate)
 

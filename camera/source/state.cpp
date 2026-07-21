@@ -226,10 +226,10 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			case 31:
 				state.blobParams.classification.resegmentSingleClusters = false;
-				state.blobParams.classification.resegmentationThreshold = 0;
-				state.blobParams.classification.blobRefinementThreshold = 100000000;
-				state.blobParams.classification.blobTinyThreshold = 1;
+				state.blobParams.classification.resegmentationUpper = 0;
+				state.blobParams.classification.refinementUpper = 0;
 				// Also means don't filter clusters that otherwise might not have been
+				state.blobParams.filtering.blobTinyThreshold = 1;
 				state.blobParams.filtering.minContributingPixels = 1;
 				state.blobParams.filtering.minContrastValue = 0;
 				break;

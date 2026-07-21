@@ -278,14 +278,14 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	for (int b = 0; b < result->clusters.size(); b++)
 	{
 		const auto &cluster = result->clusters[b];
-		if (cluster.dots.size() <= params.classification.blobTinyThreshold)
+		if (cluster.dots.size() <= params.filtering.blobTinyThreshold)
 		{ // Almost certainly a single, tiny blob
 			continue;
 		}
 
 		TimePoint_t dt0, dt1;
 
-		if (cluster.dots.size() > params.classification.resegmentationThreshold)
+		if (cluster.dots.size() > params.classification.resegmentationUpper)
 		{ // Don't even try to resegment, too large
 			result->resegmentedClusters.push_back(cluster);
 			continue;
@@ -431,7 +431,7 @@ static std::shared_ptr<BlobEmulationResults> performCameraEmulation(const Tracki
 	for (auto it = result->resegmentedClusters.begin(); it != result->resegmentedClusters.end();)
 	{
 		auto &cluster = *it;
-		if (cluster.dots.size() < params.classification.blobRefinementThreshold || cluster.edge.empty())
+		if (cluster.dots.size() <= params.classification.refinementLower || cluster.dots.size() > params.classification.refinementUpper || cluster.edge.empty())
 		{ // Don't refine small cluster, already resegmented and refined using grayscale averaging
 			if (cluster.value == 0)
 			{ // Has not been resegmented

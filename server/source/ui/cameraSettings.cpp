@@ -117,19 +117,41 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		}
 		EndSection();
 
-		BeginSection("Blob Resegmentation");
+		BeginSection("Classification");
 
+		auto limitsUI = [&](auto &limits)
 		{
-			updateProc |= ScalarInput<int>("Discard Cluster Threshold", "", &proc.classification.blobTinyThreshold, 1, 1000);
-			ImGui::SetItemTooltip("Blobs with pixel count below this threshold will be discarded.");
-			updateProc |= ScalarInput<int>("Resegmentation Threshold", "", &proc.classification.resegmentationThreshold, 1, 10000);
-			ImGui::SetItemTooltip("Blobs with pixel count above this threshold may be resegmented\n"
+			updateProc |= ScalarInput<int>("Max Tile Count", "", &limits.maxTileCount, 1, (1<<16)-1);
+			updateProc |= ScalarInput<int>("Resegmentation Upper Threshold", "", &limits.resegmentationUpper, 1, 100000, 10);
+			ImGui::SetItemTooltip("Blobs with pixel count at or below this threshold may be resegmented\n"
 				"using a somewhat expensive iterative floodfilling method to counter merged blobs.");
-			updateProc |= CheckboxInput("Resegment Single Clusters", &proc.classification.resegmentSingleClusters);
+			updateProc |= CheckboxInput("Resegment Single Clusters", &limits.resegmentSingleClusters);
 			ImGui::SetItemTooltip("Always resegment blobs with pixel count above given threshold,\n"
 				"even if metrics indicate they are not merged from two markers.\n"
 				"This may improve accuracy of (feint) blobs, but may strain CPU resources.");
+			updateProc |= ScalarInput<int>("Refinement Lower Threshold", "", &limits.refinementLower, 10, 100000, 10);
+			ImGui::SetItemTooltip("Blobs with pixel count above this threshold may be refined\n"
+				"using an expensive edge-circle-fitting method to counter occlusions.");
+			updateProc |= ScalarInput<int>("Refinement Upper Threshold", "", &limits.refinementUpper, 1, 100000, 10);
+			ImGui::SetItemTooltip("Blobs with pixel count at or below this threshold may be refined\n"
+				"using an expensive edge-circle-fitting method to counter occlusions.");
+		};
+
+		if (BeginCollapsingRegion("Default"))
+		{
+			limitsUI(proc.classification);
+			EndCollapsingRegion();
 		}
+
+		if (BeginCollapsingRegion("Weak SBC"))
+		{
+			limitsUI(config.limitsWeak);
+			EndCollapsingRegion();
+		}
+
+		EndSection();
+
+		BeginSection("Blob Resegmentation");
 
 		if (ImGui::CollapsingHeader("Base Parameters"))
 		{
@@ -170,6 +192,8 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 		if (ImGui::CollapsingHeader("Filtering Parameters"))
 		{
+			updateProc |= ScalarInput<int>("Discard Cluster Threshold", "", &proc.filtering.blobTinyThreshold, 1, 1000);
+			ImGui::SetItemTooltip("Blobs with pixel count below this threshold will be discarded.");
 			updateProc |= SliderInput<int>("Min Unconflicted Pixels", &proc.filtering.minContributingPixels, 1, 50);
 			updateProc |= SliderInput<float>("Min Contrast", &proc.filtering.minContrastValue, 1, 100);
 			// TODO: Parameters for filtering blobs based on shape (e.g. circularity)
@@ -180,9 +204,6 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 
 		BeginSection("Blob Refinement");
 		{
-			updateProc |= ScalarInput<int>("Refinement Threshold", "", &proc.classification.blobRefinementThreshold, 10, 100000000);
-			ImGui::SetItemTooltip("Blobs with pixel count above this threshold may be refined\n"
-				"using an expensive edge-circle-fitting method to counter occlusions.");
 			updateProc |= SliderInput<int>("Refining Edge Target Value", &proc.refinement.targetEdgeVal, 0, 255);
 			updateProc |= SliderInput<float>("Max Edge Offset [px]", &proc.refinement.maxEdgeOffsetPX, 0.0f, 10.0f);
 		}

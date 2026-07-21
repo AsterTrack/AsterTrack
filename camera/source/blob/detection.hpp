@@ -64,10 +64,12 @@ struct BlobDetection
 	BGBitset *backgroundMask;
 	std::vector<uint32_t> backupBGBitmask;
 
-	BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores);
+	BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, ClassificationParameters params);
 	~BlobDetection();
 
 	inline operator bool() { return initialised; }
+
+	void updateParams(ClassificationParameters params);
 
 	/* Read map and extract mask tiles with dots (1s) as blob tiles and enter them in a list */
 	template<bool BG = true>

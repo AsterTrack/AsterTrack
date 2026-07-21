@@ -214,6 +214,8 @@ struct LargePacketHeader
  */
 struct ConfigPacket
 {
+	int version;
+
 	uint16_t width, height;
 	uint16_t fps, shutterSpeed;
 	uint8_t analogGain;
@@ -224,23 +226,30 @@ struct ConfigPacket
 	
 	BlobProcessingParameters blobProc;
 };
-#define CONFIG_PACKET_SIZE			66
+#define CONFIG_PACKET_MIN_SIZE		70
+#define CONFIG_PACKET_SIZE			70
 
-static inline struct ConfigPacket parseConfigPacket(const uint8_t data[CONFIG_PACKET_SIZE])
+static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int length)
 {
 	struct ConfigPacket config;
-	config.width = *(uint16_t*)&data[0];
-	config.height = *(uint16_t*)&data[2];
-	config.fps = *(uint16_t*)&data[4];
-	config.shutterSpeed = *(uint16_t*)&data[6];
-	config.analogGain = *(uint8_t*)&data[8];
-	config.extTrig = *(uint8_t*)&data[9];
-	config.strobe = *(uint8_t*)&data[10];
-	config.strobeOffset = *(int16_t*)&data[11];
-	config.strobeLength = *(uint16_t*)&data[13];
-
 	auto &proc = config.blobProc;
-	int base = 15;
+
+	// Try to keep compatible!
+	config.version = data[0];
+	int base = 1;
+
+	{
+		config.width = *(uint16_t*)&data[base+0];
+		config.height = *(uint16_t*)&data[base+2];
+		config.fps = *(uint16_t*)&data[base+4];
+		config.shutterSpeed = *(uint16_t*)&data[base+6];
+		config.analogGain = *(uint8_t*)&data[base+8];
+		config.extTrig = *(uint8_t*)&data[base+9];
+		config.strobe = *(uint8_t*)&data[base+10];
+		config.strobeOffset = *(int16_t*)&data[base+11];
+		config.strobeLength = *(uint16_t*)&data[base+13];
+	}
+	base += 15;
 
 	{
 		proc.thresholds.absolute = *(uint8_t*)&data[base+0];
@@ -256,20 +265,20 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t data[CONFIG_PA
 	base += 6;
 
 	{
-		proc.classification.resegmentSingleClusters = *(uint8_t*)&data[base+0];
-		proc.classification.blobTinyThreshold = *(uint16_t*)&data[base+1];
-		proc.classification.resegmentationThreshold = *(uint16_t*)&data[base+3];
-		proc.classification.blobRefinementThreshold = *(uint16_t*)&data[base+5];
+		proc.classification.maxTileCount = *(uint16_t*)&data[base+0];
+		proc.classification.refinementLower = *(uint16_t*)&data[base+2];
+		proc.classification.refinementUpper = *(uint16_t*)&data[base+4];
+		proc.classification.resegmentationUpper = *(uint16_t*)&data[base+6];
+		proc.classification.resegmentSingleClusters = *(bool*)&data[base+8];
 	}
-	base += 7;
+	base += 9;
 
 	{
-		auto &ssr = proc.ssr;
-		ssr.sigmaSteps = *(uint8_t*)&data[base+0];
-		ssr.sigmaMin = *(uint8_t*)&data[base+1];
-		ssr.sigmaMax = *(uint8_t*)&data[base+2];
-		ssr.sigmaCurve = *(uint8_t*)&data[base+3];
-		ssr.sigmaTrunc = *(uint8_t*)&data[base+4];
+		proc.ssr.sigmaSteps = *(uint8_t*)&data[base+0];
+		proc.ssr.sigmaMin = *(uint8_t*)&data[base+1];
+		proc.ssr.sigmaMax = *(uint8_t*)&data[base+2];
+		proc.ssr.sigmaCurve = *(uint8_t*)&data[base+3];
+		proc.ssr.sigmaTrunc = *(uint8_t*)&data[base+4];
 	}
 	base += 5;
 
@@ -298,16 +307,18 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t data[CONFIG_PA
 	base += 13;
 
 	{
-		memcpy(&proc.filtering.minContrastValue, &data[base+0], 4);
-		*(uint8_t*)&data[base+4] = proc.filtering.minContributingPixels;
+		proc.filtering.blobTinyThreshold = *(uint8_t*)&data[base+0];
+		proc.filtering.minContributingPixels = *(uint8_t*)&data[base+1];
+		memcpy(&proc.filtering.minContrastValue, &data[base+2], 4);
 	}
-	base += 5;
+	base += 6;
 
 	{
 		proc.refinement.targetEdgeVal = *(uint8_t*)&data[base+0];
 		memcpy(&proc.refinement.maxEdgeOffsetPX, &data[base+1], 4);
 	}
 	base += 5;
+
 	assert(base == CONFIG_PACKET_SIZE);
 
 	return config;
@@ -315,18 +326,23 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t data[CONFIG_PA
 
 static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CONFIG_PACKET_SIZE])
 {
-	*(uint16_t*)&data[0] = config.width;
-	*(uint16_t*)&data[2] = config.height;
-	*(uint16_t*)&data[4] = config.fps;
-	*(uint16_t*)&data[6] = config.shutterSpeed;
-	*(uint8_t*)&data[8] = config.analogGain;
-	*(uint8_t*)&data[9] = config.extTrig;
-	*(uint8_t*)&data[10] = config.strobe;
-	*(int16_t*)&data[11] = config.strobeOffset;
-	*(uint16_t*)&data[13] = config.strobeLength;
-
 	auto &proc = config.blobProc;
-	int base = 15;
+
+	data[0] = 1; // Config version
+	int base = 1;
+
+	{
+		*(uint16_t*)&data[base+0] = config.width;
+		*(uint16_t*)&data[base+2] = config.height;
+		*(uint16_t*)&data[base+4] = config.fps;
+		*(uint16_t*)&data[base+6] = config.shutterSpeed;
+		*(uint8_t*)&data[base+8] = config.analogGain;
+		*(uint8_t*)&data[base+9] = config.extTrig;
+		*(uint8_t*)&data[base+10] = config.strobe;
+		*(int16_t*)&data[base+11] = config.strobeOffset;
+		*(uint16_t*)&data[base+13] = config.strobeLength;
+	}
+	base += 15;
 
 	{
 		*(uint8_t*)&data[base+0] = proc.thresholds.absolute;
@@ -342,12 +358,13 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 	base += 6;
 
 	{
-		*(uint8_t*)&data[base+0] = proc.classification.resegmentSingleClusters;
-		*(uint16_t*)&data[base+1] = proc.classification.blobTinyThreshold;
-		*(uint16_t*)&data[base+3] = proc.classification.resegmentationThreshold;
-		*(uint16_t*)&data[base+5] = proc.classification.blobRefinementThreshold;
+		*(uint16_t*)&data[base+0] = proc.classification.maxTileCount;
+		*(uint16_t*)&data[base+2] = proc.classification.refinementLower;
+		*(uint16_t*)&data[base+4] = proc.classification.refinementUpper;
+		*(uint16_t*)&data[base+6] = proc.classification.resegmentationUpper;
+		*(bool*)&data[base+8] = proc.classification.resegmentSingleClusters;
 	}
-	base += 7;
+	base += 9;
 
 	{
 		auto &ssr = proc.ssr;
@@ -384,16 +401,18 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 	base += 13;
 
 	{
-		memcpy(&data[base+0], &proc.filtering.minContrastValue, 4);
-		*(uint8_t*)&data[base+4] = proc.filtering.minContributingPixels;
+		*(uint8_t*)&data[base+0] = proc.filtering.blobTinyThreshold;
+		*(uint8_t*)&data[base+1] = proc.filtering.minContributingPixels;
+		memcpy(&data[base+2], &proc.filtering.minContrastValue, 4);
 	}
-	base += 5;
+	base += 6;
 
 	{
 		*(uint8_t*)&data[base+0] = proc.refinement.targetEdgeVal;
 		memcpy(&data[base+1], &proc.refinement.maxEdgeOffsetPX, 4);
 	}
 	base += 5;
+
 	assert(base == CONFIG_PACKET_SIZE);
 };
 

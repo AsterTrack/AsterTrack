@@ -28,16 +28,17 @@ struct ThresholdingParameters
 
 struct ClassificationParameters 
 {
+	int maxTileCount = 384;
+
 	// Classification 1: Whether to resegment first, or just accept cluster as-is
 	// Goal: Smaller clusters that might have multiple merged blobs should be resegmented
 	//       Larger ones likely to only contain one blob should not 
 	bool resegmentSingleClusters = true;
-	int resegmentationThreshold = 1000;
+	int resegmentationUpper = 200;
 
 	// Classification 2: Whether to refine the cluster or not
-	int blobRefinementThreshold = 100000000; // Effectively disabled
-
-	int blobTinyThreshold = 1;
+	int refinementLower = 200;
+	int refinementUpper = 0; // Effectively disabled
 };
 
 struct BaseParameters
@@ -85,8 +86,9 @@ struct FloodfillingParameters
 
 struct BlobFilteringParameters 
 {
-	float minContrastValue = 10;
+	int blobTinyThreshold = 1;
 	int minContributingPixels = 5;
+	float minContrastValue = 10;
 };
 
 struct RefinementParameters 

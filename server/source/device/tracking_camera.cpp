@@ -313,11 +313,19 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 	packet.shutterSpeed = config.exposure;
 	packet.analogGain = config.gain;
 	packet.strobe = config.enableStrobe;
-	// TODO: Implement control over filter switcher on both Pi and STM32
-	//packet.filter = 
 	packet.strobeOffset = config.strobeOffset;
 	packet.strobeLength = config.strobeLength;
 	packet.blobProc = config.blobProcessing;
+	if (device.storage.receivedInfo)
+	{ // Adjust limits for performance based on SBC
+		int rev = device.storage.info.sbcRevisionCode;
+		uint16_t model = ((rev >> 23) & 0x1)? ((rev >> 4) & 0xFF) : 0; // RPi: New style revision, model number
+		if (model == 9 || model == 12)
+		{ // Zero 1, Zero 1 W
+			packet.blobProc.classification = config.limitsWeak;
+		}
+	}
+
 	uint8_t setup[CONFIG_PACKET_SIZE];
 	storeConfigPacket(packet, setup);
 	device.sendPacket(PACKET_CFG_SETUP, setup, sizeof(setup));

@@ -436,7 +436,7 @@ static std::vector<ClusterPeakHint> FindMaximaHints(
 			return QueryGaussian(s, pos);
 		};
 
-		// Clear bool array, should be quick
+		// Clear bool array
 		handled.clear();
 		handled.resize(bounds.size());
 
@@ -1030,7 +1030,7 @@ static std::vector<Cluster> ResegmentCluster(
 		blob.weight = state.totalWeight;
 		blob.value = blob.contrast + blob.weight/20;
 		// NOTE: More or less mirrored with blob.cpp;;handleClusterSingle
-		if (blob.ptCnt >= params.classification.blobRefinementThreshold)
+		if (blob.ptCnt >= params.classification.refinementLower && blob.ptCnt < params.classification.refinementUpper)
 		{ // Want to fetch edges
 			fetchArea.include(blob.bounds.cast<int>());
 			indices[i] = resegmentedClusters.size();

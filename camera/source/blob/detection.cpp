@@ -42,7 +42,8 @@ const CompID MaxCompID = 255; // Max intermediate component ID - higher than fin
 typedef uint32_t TileIndex; // Index into all tiles of an image, 16bit may not be enough for high resolutions
 typedef uint16_t TileID; // ID for stored tiles, limits MaxTileCount. Lower->better performance (cache size?)
 TileID InvalidTile = (TileID)-1;
-TileID MaxTileCount = 1024; // Max regarded tile count, reserved for none - set later to model-dependant number
+
+ClassificationParameters limits = {};
 
 const int minPtCnt = 2;
 
@@ -68,7 +69,7 @@ struct Comp
 #endif
 };
 
-BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int cpuCores)
+BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, ClassificationParameters params)
 {
 	initialised = (storedBackgroundMask.size() >= (maskSize.x()/8*maskSize.y()/8));
 	if (!initialised) return;
@@ -87,14 +88,9 @@ BlobDetection::BlobDetection(Vector2<int> maskSize, Vector2<int> maskOffset, int
 	// Mask doesn't span the full image due to processing margins, offset blob output into image space
 	blobOffset = maskOffset;
 
-	// Since CPU has to search for tiles with blobs, we are limited heavily by CPU resources
-	if (cpuCores > 1) // Zero 2
-		MaxTileCount = 1024; // TODO: Adjust with multi-core blob detection
-	else // Zero 1
-		MaxTileCount = 384;
-
 	// Setup resources used during blob detection
-	blobTiles.reserve(MaxTileCount);
+	limits = params;
+	blobTiles.reserve(limits.maxTileCount);
 	blobCompMerge = new CompID[MaxCompID+1];
 	blobCompData = new Comp[MaxCompID+1];
 	blobMerge = new CompID[MaxCompID+1];
@@ -113,6 +109,11 @@ BlobDetection::~BlobDetection()
 	printf("-- Blob Detection Cleaned --\n");
 }
 
+void BlobDetection::updateParams(ClassificationParameters params)
+{
+	limits = params;
+	blobTiles.reserve(limits.maxTileCount);
+}
 
 /* Blob Detection */
 
@@ -208,7 +209,7 @@ void BlobDetection::fetchMaskRegionsCPU(const uint32_t *bitmask)
 				registerBlobTile<true>(maskTiles, nullptr, (tile+0)-maskTiles);
 			if (*(tile+1))
 				registerBlobTile<true>(maskTiles, nullptr, (tile+1)-maskTiles);
-			if (blobTiles.size()+2 > MaxTileCount)
+			if (blobTiles.size()+2 > limits.maxTileCount)
 				break;
 		}
 	}
@@ -236,7 +237,7 @@ void BlobDetection::fetchMaskRegionsVPU(const uint32_t *bitmask, const uint32_t 
 			if (maskTiles[tileIndex])
 				registerBlobTile<false>(maskTiles, bgBitmask, tileIndex);
 		}
-		if (blobTiles.size()+1 > MaxTileCount)
+		if (blobTiles.size()+1 > limits.maxTileCount)
 			break;
 	}
 #ifdef BLOB_DEBUG
@@ -679,8 +680,10 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 	for (Cluster &cluster : blobs)
 	{
 		cluster.dots.reserve(cluster.ptCnt);
-		// Approximation for roughly circular objects, slightly overestimated
-		cluster.edge.reserve(std::min(cluster.ptCnt, cluster.ptCnt/2 + 15));
+		if (cluster.ptCnt >= limits.refinementLower && cluster.ptCnt < limits.refinementUpper)
+		{ // Approximation for roughly circular objects, slightly overestimated
+			cluster.edge.reserve(std::min(cluster.ptCnt, cluster.ptCnt/2 + 15));
+		}
 	}
 	for (int i = 0; i < blobTiles.size(); i++)
 	{
@@ -699,31 +702,33 @@ void BlobDetection::performCCL(std::vector<Cluster> &blobs)
 				Vector2<uint16_t> dot(tile->x * 8 + x + blobOffset.x(), tile->y * 4 + y + blobOffset.y());
 				cluster->dots.push_back(dot);
 
-				// Test for edge case
-				bool isEdge = false;
-				if (!isEdge)
-				{
-					if (x == 0) isEdge = (tile->l == InvalidTile) || (!blobTiles[tile->l].compMap[7][y]);
-					else isEdge = !tile->compMap[x-1][y];
-				}
-				if (!isEdge)
-				{
-					if (x == 7) isEdge = (tile->r == InvalidTile) || (!blobTiles[tile->r].compMap[0][y]);
-					else isEdge = !tile->compMap[x+1][y];
-				}
-				if (!isEdge)
-				{
-					if (y == 0) isEdge = (tile->t == InvalidTile) || (!blobTiles[tile->t].compMap[x][3]);
-					else isEdge = !tile->compMap[x][y-1];
-				}
-				if (!isEdge)
-				{
-					if (y == 3) isEdge = (tile->b == InvalidTile) || (!blobTiles[tile->b].compMap[x][0]);
-					else isEdge = !tile->compMap[x][y+1];
-				}
-				if (isEdge)
-				{ // Add to edges array
-					cluster->edge.push_back(dot);
+				if (cluster->ptCnt >= limits.refinementLower && cluster->ptCnt < limits.refinementUpper)
+				{ // Test for edge case
+					bool isEdge = false;
+					if (!isEdge)
+					{
+						if (x == 0) isEdge = (tile->l == InvalidTile) || (!blobTiles[tile->l].compMap[7][y]);
+						else isEdge = !tile->compMap[x-1][y];
+					}
+					if (!isEdge)
+					{
+						if (x == 7) isEdge = (tile->r == InvalidTile) || (!blobTiles[tile->r].compMap[0][y]);
+						else isEdge = !tile->compMap[x+1][y];
+					}
+					if (!isEdge)
+					{
+						if (y == 0) isEdge = (tile->t == InvalidTile) || (!blobTiles[tile->t].compMap[x][3]);
+						else isEdge = !tile->compMap[x][y-1];
+					}
+					if (!isEdge)
+					{
+						if (y == 3) isEdge = (tile->b == InvalidTile) || (!blobTiles[tile->b].compMap[x][0]);
+						else isEdge = !tile->compMap[x][y+1];
+					}
+					if (isEdge)
+					{ // Add to edges array
+						cluster->edge.push_back(dot);
+					}
 				}
 
 #ifndef CALCULATE_BOUNDS_EARLY

@@ -87,7 +87,7 @@ struct TrackingCameraState
 		// Set default parameters when run interactively
 		.classification = {
 			.resegmentSingleClusters = false,
-			.blobRefinementThreshold = 100000000,
+			.refinementUpper = 0,
 		}
 	};
 	// Visualisation options

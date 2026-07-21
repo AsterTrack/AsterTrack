@@ -40,7 +40,7 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 		case PACKET_SOF:
 			return header.length >= SOF_PACKET_SIZE;
 		case PACKET_CFG_SETUP:
-			return header.length >= CONFIG_PACKET_SIZE;
+			return header.length >= CONFIG_PACKET_MIN_SIZE;
 		case PACKET_CFG_MODE:
 			return header.length >= 1;
 		case PACKET_CFG_WIFI:
@@ -74,7 +74,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 	{
 		case PACKET_CFG_SETUP:
 		{ // Received setup packet
-			ConfigPacket packet = parseConfigPacket(data);
+			ConfigPacket packet = parseConfigPacket(data, length);
 			printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
 				packet.width, packet.height, packet.fps, packet.shutterSpeed,
 				packet.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,

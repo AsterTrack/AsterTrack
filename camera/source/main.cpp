@@ -224,6 +224,12 @@ int main(int argc, char **argv)
 	//setClockRate(base.mb, 3, 1000000000); // 1000Mhz fixed
 	//printf("Set ARM Core clock rate to fixed %dMhz!\n", getClockRate(base.mb, 3)/1000000);
 
+	// Since CPU is the bottleneck and has to process each tile, limiting the tile count is necessary
+	if (numCPUCores > 1) // Zero 2
+		state.blobParams.classification.maxTileCount = 512; // TODO: Adjust with multi-core blob detection
+	else // Zero 1
+		state.blobParams.classification.maxTileCount = 256;
+
 
 	// ----Setup Communications ----
 

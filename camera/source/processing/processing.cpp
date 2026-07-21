@@ -174,7 +174,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	// Layout QPU program instances across camera frame according to cores used
 	ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, state.qpuCores.getUsed());
 
-	BlobDetection detect(layout.maskSize, layout.maskOffset, numCPUCores);
+	BlobDetection detect(layout.maskSize, layout.maskOffset, state.blobParams.classification);
 	if (!detect)
 	{ // Shouldn't actually fail, just basic init
 		printf("-- Failed to initialize blob detection! --\n");
@@ -746,6 +746,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			acceptCPUConfig(state);
 			if (state.blobParams.base.blur)
 				kernels = precomputeKernels(state.blobParams);
+			detect.updateParams(state.blobParams.classification);
 		}
 
 		if (state.updateMode.exchange(false))

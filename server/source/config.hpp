@@ -60,7 +60,9 @@ struct CameraConfig
 	bool enableStrobe = true;
 	int strobeOffset = 0;
 	int strobeLength = 55;
-	
+
+	ClassificationParameters limitsWeak = { 256, false };
+
 	BlobProcessingParameters blobProcessing = {};
 	bool shareBlobProcessing = true;
 };

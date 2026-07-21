@@ -42,14 +42,14 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 {
 	std::vector<Cluster> subClusters;
 
-	if (cluster.dots.size() <= params.classification.blobTinyThreshold)
+	if (cluster.dots.size() <= params.filtering.blobTinyThreshold)
 	{ // Almost certainly a single, tiny blob
 		return subClusters;
 	}
 
 	TimePoint_t dt0, dt1;
 
-	if (cluster.dots.size() <= params.classification.resegmentationThreshold)
+	if (cluster.dots.size() <= params.classification.resegmentationUpper)
 	{
 		const uint8_t *baseImage = frame;
 		Bounds2i baseBounds(0, 0, width, height);
@@ -57,16 +57,17 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 
 		Bounds2i bounds = cluster.bounds.cast<int>();
 		if (bounds.size() < params.filtering.minContributingPixels*2)
+		{ // TODO: This may connect clusters for resegmentation even though they aren't competing, meaning one blob may consume area of another - bad!
 			bounds.extendBy(params.floodfilling.blob.allowBoundsExpansion);
-		// TODO: This may connect clusters for resegmentation even though they aren't competing, meaning one blob may consume area of another - bad!
+		}
+		// Limit bounds by baseBounds, accounting for range
+		bounds.overlapWith(baseBounds.extendedBy(-range));
 
 		dt0 = sclock::now();
 
-		thread_local std::vector<uint8_t> image;
-		thread_local std::vector<uint8_t> temp;
 		if (params.base.blur)
 		{ // Blur base image in bounds of cluster
-			// Make sure to allocate image buffers (once per thread)	
+			thread_local std::vector<uint8_t> image, temp;
 			image.resize(stride*height);
 			temp.resize(stride*height);
 			// Update bounds to be blurred
@@ -75,10 +76,6 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 			applySeparableKernel(frame, image.data(), temp.data(), stride, bounds, kernels.base);
 			baseImage = image.data();
 			bounds.extendBy(-range); // Remove range to make it implicit
-		}
-		else
-		{ // Simply limit bounds by baseBounds, accounting for range
-			bounds.overlapWith(baseBounds.extendedBy(-range));
 		}
 
 		dt1 = sclock::now();
@@ -105,7 +102,6 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 			params.maximaHints,
 			cluster, maximaStages,
 			localMaxTimeUS, maxIterTimeUS, finalCheckTimeUS);
-		
 
 		dt1 = sclock::now();
 		maximaTimeUS += dtUS(dt0, dt1);
@@ -132,17 +128,20 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 		}
 		else
 		{ // Not resegmenting, handle normally
-			if (cluster.dots.size() <= params.filtering.minContributingPixels)
-				return subClusters;
-			if (handleClusterSingle(cluster, frame, stride, params))
-			{ // Refined, and passed filter
+			if (cluster.dots.size() > params.filtering.minContributingPixels &&
+				handleClusterSingle(cluster, frame, stride, params))
 				subClusters.push_back(std::move(cluster));
-			} // else filtered out, return 0 clusters
 			return subClusters;
 		}
 	}
-	else if (cluster.dots.size() < params.classification.blobRefinementThreshold)
+	else if (cluster.dots.size() < params.classification.refinementLower)
 	{ // Too small - refine simply and apply filter
+		if (handleClusterSingle(cluster, frame, stride, params))
+			subClusters.push_back(std::move(cluster));
+		return subClusters;
+	}
+	else if (cluster.dots.size() >= params.classification.refinementUpper)
+	{ // Too big - refine simply and apply filter
 		if (handleClusterSingle(cluster, frame, stride, params))
 		{ // Refined, and passed filter
 			subClusters.push_back(std::move(cluster));
@@ -150,7 +149,7 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 		return subClusters;
 	}
 	else
-	{ // Will refine properly
+	{ // Will refine circle edge
 		subClusters.push_back(std::move(cluster));
 	}
 
@@ -164,7 +163,7 @@ std::vector<Cluster> handleCluster(Cluster &&cluster, const uint8_t *frame, uint
 	thread_local std::vector<bool> edgeOutliers;
 	for (auto &subCluster : subClusters)
 	{
-		if (subCluster.dots.size() < params.classification.blobRefinementThreshold)
+		if (subCluster.dots.size() < params.classification.refinementLower || subCluster.dots.size() > params.classification.refinementUpper)
 		{ // Don't refine small cluster, already resegmented and refined using grayscale averaging
 			continue;
 		}

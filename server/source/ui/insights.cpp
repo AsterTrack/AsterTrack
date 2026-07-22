@@ -684,88 +684,107 @@ static bool ShowTrackingPanel()
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
 
-	static bool comparingTrackers = false;
+	enum Inspecting
+	{
+		Inspect_Trackers,
+		Inspect_CombineTrackers,
+		Inspect_CompareTrackers,
+	};
+	enum InspectingType
+	{
+		Inspect_Targets,
+		Inspect_Virtual,
+	};
+	auto inspectType = [](TrackerConfig::TrackerType type)
+	{
+		return (type == TrackerConfig::TRACKER_VIRTUAL? Inspect_Virtual : Inspect_Targets);
+	};
+
+	static bool inspectExplicit = false;
+	static Inspecting inspecting = Inspect_CombineTrackers;
+	static InspectingType inspectingType;
+	static std::string curTrackerLabel = "All Targets";
+
 	static int compIndexA = -1, compIndexB = -1;
 	static int curTrackerID = 0;
-	static std::string curTrackerLabel = "Combined";
-	static bool curTrackerVirt = false;
-	static bool combinedResults = true;
 	static bool stateDifferences = false;
 	static bool combinedHideProbes = true;
-	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID && curTrackerID >= 0)
+
+	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID && !inspectExplicit)
 	{ // External change
 		for (auto &tracker : state.trackerConfigs)
 		{
+			if (!tracker.triggered) continue;
 			if (tracker.type != TrackerConfig::TRACKER_TARGET && tracker.type != TrackerConfig::TRACKER_VIRTUAL)
 				continue; // TODO: Support marker trackers
-			if (tracker.id == ui.visState.tracking.focusedTrackerID)
-			{
-				comparingTrackers = false;
-				combinedResults = false;
-				curTrackerID = tracker.id;
-				curTrackerLabel = tracker.label;
-				curTrackerVirt = tracker.type == TrackerConfig::TRACKER_VIRTUAL;
-			}
+			if (tracker.id != ui.visState.tracking.focusedTrackerID) continue;
+			inspecting = Inspect_Trackers;
+			inspectingType = inspectType(tracker.type);
+			curTrackerID = tracker.id;
+			curTrackerLabel = tracker.label;
 		}
 	}
-	if (ui.visState.tracking.focusedTrackerID == 0 && curTrackerID > 0)
+	if (ui.visState.tracking.focusedTrackerID == 0 && curTrackerID > 0 && !inspectExplicit)
 	{ // External change
-		comparingTrackers = false;
-		combinedResults = true;
-		curTrackerLabel = "Combined";
+		inspecting = Inspect_CombineTrackers;
+		inspectingType = Inspect_Targets;
+		curTrackerLabel = "All Targets";
 		curTrackerID = 0;
 	}
 	if (ui.visState.tracking.focusTrackerCompare)
-	{
+	{ // External change
 		ui.visState.tracking.focusTrackerCompare = false;
-		comparingTrackers = true;
-		combinedResults = false;
+		inspecting = Inspect_CompareTrackers;
 		curTrackerLabel = "Compare";
 	}
+
 	if (ImGui::BeginCombo("##Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{ // Local change
-		if (ImGui::Selectable("Compare", comparingTrackers) && !comparingTrackers)
+		ImGui::BeginDisabled(state.mode != MODE_Replay);
+		if (ImGui::Selectable("Compare", inspecting == Inspect_CompareTrackers))
 		{
-			comparingTrackers = true;
-			combinedResults = false;
+			inspectExplicit = true; // Allows comparing while focusing other trackers
+			inspecting = Inspect_CompareTrackers;
 			curTrackerLabel = "Compare";
 		}
-		if (ImGui::Selectable("Combined", combinedResults))
+		ImGui::EndDisabled();
+		if (ImGui::Selectable("All Targets", inspecting == Inspect_CombineTrackers))
 		{
-			comparingTrackers = false;
-			combinedResults = true;
-			curTrackerLabel = "Combined";
-			curTrackerID = -1;
-			// Mark as explicitly set, don't update focusedTrackerID
-			// Allows setting to combined while focusing other trackers
+			inspectExplicit = true; // Allows setting to combined while focusing other trackers
+			inspecting = Inspect_CombineTrackers;
+			inspectingType = Inspect_Targets;
+			curTrackerLabel = "All Targets";
 		}
 		for (auto &tracker : state.trackerConfigs)
 		{
+			if (!tracker.triggered) continue;
 			if (tracker.type != TrackerConfig::TRACKER_TARGET && tracker.type != TrackerConfig::TRACKER_VIRTUAL)
 				continue; // TODO: Support marker trackers
 			ImGui::PushID(tracker.id);
-			if (ImGui::Selectable(tracker.label.c_str(), !comparingTrackers && curTrackerID == tracker.id) && (comparingTrackers || curTrackerID != tracker.id))
+			bool selected = inspecting == Inspect_Trackers && curTrackerID == tracker.id;
+			if (ImGui::Selectable(tracker.label.c_str(), selected) && !selected)
 			{
-				comparingTrackers = false;
+				inspectExplicit = false; // Or also fix it?
+				inspecting = Inspect_Trackers;
+				inspectingType = inspectType(tracker.type);
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
-				curTrackerVirt = tracker.type == TrackerConfig::TRACKER_VIRTUAL;
 				ui.visState.tracking.focusedTrackerID = tracker.id;
 			}
 			ImGui::PopID();
 		}
 		ImGui::EndCombo();
 	}
-	if (combinedResults && curTrackerID < 0)
+	if (inspecting == Inspect_CombineTrackers && inspectExplicit)
 	{ // Locked to combined results via explicit selection
 		ImGui::SameLine();
 		if (CircleButton("##Unlock"))
-			curTrackerID = 0; // Next frame might update to focusedTrackerID
+			inspectExplicit = false; // Next frame might update to focusedTrackerID
 		ImGui::SetItemTooltip("Unlock from combined results and follow tracker focus again.");
 	}
 
 	static bool followFrame = true, showCur = true, showRec = true;
-	if (comparingTrackers)
+	if (inspecting == Inspect_CompareTrackers)
 	{
 		ImGui::SameLine();
 		ImGui::Spacing();
@@ -796,8 +815,14 @@ static bool ShowTrackingPanel()
 			ImGui::PopID();
 		}
 
+		if (state.compareTrackers.empty())
+		{
+			ImGui::SameLine();
+			ImGui::Text("Add Tracker Records to compare in \"Tracking Results\" in \"Pipeline/Tracking\" panel");
+		}
+
 		if (compIndexA > 0 && compIndexA < state.compareTrackers.size())
-			curTrackerVirt = state.compareTrackers[compIndexA].type == TrackerConfig::TRACKER_VIRTUAL;
+			inspectingType = inspectType((TrackerConfig::TrackerType)state.compareTrackers[compIndexA].type);
 	}
 	else
 	{
@@ -812,14 +837,14 @@ static bool ShowTrackingPanel()
 			ImGui::SameLine();
 			ImGui::Checkbox("State Diff", &stateDifferences);
 		}
-		if (state.mode == MODE_Replay && combinedResults)
+		if (state.mode == MODE_Replay && inspecting == Inspect_CombineTrackers)
 		{
 			ImGui::SameLine();
 			ImGui::Checkbox("Hide Probes", &combinedHideProbes);
 		}
 	}
 
-	if ((comparingTrackers && compIndexA < 0) || (!comparingTrackers && !combinedResults && curTrackerID == 0))
+	if ((inspecting == Inspect_CompareTrackers && compIndexA < 0) || (inspecting == Inspect_Trackers && curTrackerID == 0))
 		return false;
 
 	auto framesRecord = pipeline.record.frames.getView();
@@ -829,13 +854,16 @@ static bool ShowTrackingPanel()
 		return false;
 
 	// Different ID when different set of axis are used
-	if (!ImPlot::BeginPlot(combinedResults? "##Combined" : (curTrackerVirt? "##Virt" : "##Tracking"), ImVec2(-1, -1)))
+	const char* plotID = 
+		(inspecting == Inspect_CombineTrackers? "##Combine" :
+			(inspectingType == Inspect_Virtual? "##Virtual" : "##Targets"));
+	if (!ImPlot::BeginPlot(plotID, ImVec2(-1, -1)))
 		return false;
 
 	// Update frameRange
 	static ImPlotRange frameRange(0, 1000);
 	int maxOffset = std::max(10.0, frameRange.Size()/6);
-	if (followFrame && !comparingTrackers)
+	if (followFrame && inspecting != Inspect_CompareTrackers)
 	{ // Apply offset due to new recent frame
 		double offset = 0;
 		if (frameRange.Max < frameNum+maxOffset)
@@ -850,7 +878,7 @@ static bool ShowTrackingPanel()
 	// Setup plots
 	ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
 	ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
-	if (curTrackerVirt)
+	if (inspectingType == Inspect_Virtual)
 	{ // Virtual Tracker uses different metrics
 		ImPlot::SetupAxis(ImAxis_Y1, "Trackers",ImPlotAxisFlags_Lock);
 		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 5);
@@ -862,7 +890,7 @@ static bool ShowTrackingPanel()
 	else
 	{ // Normal target tracker
 		ImPlot::SetupAxis(ImAxis_Y1, "Samples",ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, combinedResults? 400 : 100);
+		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, inspecting == Inspect_CombineTrackers? 400 : 100);
 		ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
 		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
 		//if (hasIMU)
@@ -931,7 +959,7 @@ static bool ShowTrackingPanel()
 	static std::map<int, TrackerRecordState> combinedTrackers = {};
 	static std::vector<float> imuSampleTime = {}, imuSampleRate = {};
 
-	if (combinedResults)
+	if (inspecting == Inspect_CombineTrackers)
 	{
 		for (auto &tracker : state.trackerConfigs)
 		{
@@ -1007,7 +1035,7 @@ static bool ShowTrackingPanel()
 		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(), [&](auto &t){ return t.id == trackerID; });
 		if (trackRecord == frame.trackers.end())
 			return;
-		if (curTrackerVirt)
+		if (inspectingType == Inspect_Virtual)
 		{
 			stats.dataNum[index] = trackRecord->virtualError.subtrackers;
 			stats.errors[index] = trackRecord->virtualError.pos * 1000;
@@ -1062,7 +1090,7 @@ static bool ShowTrackingPanel()
 		for (int f = max-1; f >= min; f--, frameIt--)
 		{
 			if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
-			if (combinedResults)
+			if (inspecting == Inspect_CombineTrackers)
 				combineFrameStats(stats, f - visibleMin, *frameIt->get(), isCurrent);
 			else
 				updateFrameStats(stats, f - visibleMin, *frameIt->get(), trackerID);
@@ -1072,7 +1100,7 @@ static bool ShowTrackingPanel()
 	};
 
 	bool hasIMU = false;
-	if (comparingTrackers)
+	if (inspecting == Inspect_CompareTrackers)
 	{
 		if (compIndexA >= 0)
 		{
@@ -1089,7 +1117,7 @@ static bool ShowTrackingPanel()
 	{
 		OptFrameNum curLen = std::min<OptFrameNum>(visibleMax, framesRecord.endIndex()) - visibleMin;
 		OptFrameNum altLen = std::min<OptFrameNum>(visibleMax, framesStored.endIndex()) - visibleMin;
-		if (combinedResults)
+		if (inspecting == Inspect_CombineTrackers)
 			for (auto &tracker : combinedTrackers)
 				tracker.second.setup(curLen, altLen);
 
@@ -1098,10 +1126,10 @@ static bool ShowTrackingPanel()
 		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
 			drawRec = gatherTrackingData(recording, framesStored, curTrackerID, false);
 
-		if (combinedResults && stateDifferences)
+		if (inspecting == Inspect_CombineTrackers && stateDifferences)
 			for (auto &tracker : combinedTrackers)
 				diffTrackerState(tracker.second.stateVis, tracker.second.stateCur, tracker.second.stateAlt);
-		else if (combinedResults)
+		else if (inspecting == Inspect_CombineTrackers)
 			for (auto &tracker : combinedTrackers)
 				copyTrackerState(tracker.second.stateVis, tracker.second.stateCur);
 		else if (stateDifferences)
@@ -1156,7 +1184,7 @@ static bool ShowTrackingPanel()
 	ImPlot::PushColormap(ImPlotColormap_Deep);
 
 	ImPlot::SetAxis(ImAxis_Y1);
-	const char *y1Label = curTrackerVirt? "Trackers" : "Samples";
+	const char *y1Label = inspectingType == Inspect_Virtual? "Trackers" : "Samples";
 	if (drawCur)
 	{ // Draw current
 		ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
@@ -1171,7 +1199,7 @@ static bool ShowTrackingPanel()
 	}
 
 	ImPlot::SetAxis(ImAxis_Y2);
-	const char *y2Label = curTrackerVirt? "Pos Error" : "Errors";
+	const char *y2Label = inspectingType == Inspect_Virtual? "Pos Error" : "Errors";
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(0.87*0.6, 0.52*0.6, 0.32*0.6, 1.0), 2.0);
@@ -1184,22 +1212,22 @@ static bool ShowTrackingPanel()
 	}
 
 	ImPlot::SetAxis(ImAxis_Y4);
-	const char *y4Label = curTrackerVirt? "Rot Error" : "Time";
+	const char *y4Label = inspectingType == Inspect_Virtual? "Rot Error" : "Time";
 	if (drawRec)
 	{ // Draw recorded
-		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
 		ImPlot::PlotLine(y4Label, recording.dataTimeRot.data(), recording.dataTimeRot.size(), 1, frameRange.Min);
 	}
 	if (drawCur)
 	{ // Draw current
-		if (!curTrackerVirt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
 		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
 		ImPlot::PlotLine(y4Label, tracking.dataTimeRot.data(), tracking.dataTimeRot.size(), 1, frameRange.Min);
 	}
 
 	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
-	const char *y2AltLabel = curTrackerVirt? "Pos 3-Sigma" : "Mistrust";
+	const char *y2AltLabel = inspectingType == Inspect_Virtual? "Pos 3-Sigma" : "Mistrust";
 	if (drawRec)
 	{ // Draw recorded
 		ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
@@ -1221,7 +1249,7 @@ static bool ShowTrackingPanel()
 	// Tracking state
 	ImPlot::PushColormap(ImPlotColormap_Dark);
 	
-	if (combinedResults)
+	if (inspecting == Inspect_CombineTrackers)
 	{ // Show states of all currently tracked trackers
 		for (auto &tracker : combinedTrackers)
 		{

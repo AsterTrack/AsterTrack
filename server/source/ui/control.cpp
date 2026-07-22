@@ -81,6 +81,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				{ // Continue freely (-1) or limited steps (positive integers)
 					state.simAdvance = -1;
 					state.simAdvance.notify_all();
+					visState.frame.visFocusedFrame = false;
 				}
 				else
 				{ // Halt
@@ -93,12 +94,14 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			{
 				state.simAdvance = 1;
 				state.simAdvance.notify_all();
+				visState.frame.visFocusedFrame = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("+10", SizeWidthDiv3_Div2()))
 			{
 				state.simAdvance = 10;
 				state.simAdvance.notify_all();
+				visState.frame.visFocusedFrame = false;
 			}
 			ImGui::SameLine();
 			if (state.mode == MODE_Replay)
@@ -107,6 +110,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				{
 					state.simAdvance = -2;
 					state.simAdvance.notify_all();
+					visState.frame.visFocusedFrame = false;
 				}
 			}
 			ImGui::EndDisabled();
@@ -143,7 +147,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				state.simAdvance = 0;
 				state.simWaiting.wait(false);
 				// Jump to frame after last frame has been processed
-				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, frameJumpTarget);
+				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, visState.frame.focusedFrame);
 				if (frame)
 					AdoptFrameRecordState(pipeline, *frame);
 				// Continue advancing
@@ -153,7 +157,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &frameJumpTarget);
+			ImGui::InputScalar("##Frame", ImGuiDataType_U32, &visState.frame.focusedFrame);
 		}
 		ImGui::EndDisabled();
 

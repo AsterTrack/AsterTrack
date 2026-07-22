@@ -912,6 +912,7 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 		case EVT_START_STREAMING:
 			GetUI().recordSections.clear();
 			GetUI().recordSectionStart = -1;
+			GetUI().visState.frame.visFocusedFrame = false;
 			break;
 		case EVT_STOP_STREAMING:
 			// TODO: Might need UI drawing lock, not in UI thread right now

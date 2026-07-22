@@ -26,18 +26,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Functions */
 
-VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool forceRealtime, int focusCamera, bool ignoreTarget) const
+VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, bool focusTarget, bool focusFrame, int focusCamera) const
 {
 	VisFrameLock snapshot = {};
-	if (!ignoreTarget)
+	if (focusTarget) // Allow focus on target
 		snapshot.target = lockVisTarget();
 	snapshot.frames = pipeline.record.frames.getView();
 	if (snapshot.frames.empty())
 		return snapshot;
-	snapshot.frameIt = snapshot.frames.pos(std::max((OptFrameNum)snapshot.frames.beginIndex(),
-		std::min((OptFrameNum)snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
-	assert(snapshot.frameIt.accessible()); // Just checked that frames is not empty
-	if (snapshot.target.hasObs() && !forceRealtime)
+	if (snapshot.target.hasObs())
 	{ // Visualise selected past frame
 		auto frame = snapshot.target.obs->frames[snapshot.target.frameIdx].frame;
 		if (frame >= snapshot.frames.endIndex())
@@ -48,8 +45,15 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 		snapshot.frameIt = snapshot.frames.pos(frame);
 		snapshot.isRealtimeFrame = false;
 	}
+	else if (focusFrame && frame.visFocusedFrame)
+	{ // Visualise focused frame
+		snapshot.frameIt = snapshot.frames.pos(std::max<OptFrameNum>(snapshot.frames.beginIndex(),
+			std::min<OptFrameNum>(snapshot.frames.endIndex()-1, frame.focusedFrame)));
+	}
 	else
 	{ // Visualise most recent frame
+		snapshot.frameIt = snapshot.frames.pos(std::max<OptFrameNum>(snapshot.frames.beginIndex(),
+			std::min<OptFrameNum>(snapshot.frames.endIndex()-1, pipeline.frameNum.load())));
 		for (int i = 0; i < 50; i++)
 		{ // Find latest processed frame
 			if (*snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing) break;

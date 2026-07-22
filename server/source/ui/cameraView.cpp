@@ -888,7 +888,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Prepare frame to visualise
 	 */
-	auto visFrame = visState.lockVisFrame(pipeline, true, camera.pipeline->index);
+	auto visFrame = visState.lockVisFrame(pipeline, false, true, camera.pipeline->index);
 	if (!visFrame.hasFrame || !visFrame.hasCamera)
 	{
 		drawWithoutFrame();

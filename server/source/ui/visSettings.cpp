@@ -81,7 +81,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 			ImGui::SliderFloat("Sample Scaling", &visState.tracking.covSamplesScaling, 0, 100);
 
 			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
-			VisFrameLock visFrame = visState.lockVisFrame(pipeline, true, -1, true);
+			VisFrameLock visFrame = visState.lockVisFrame(pipeline, false, true);
 			if (displayInternalDebug && visFrame)
 			{
 				auto trackRecord = std::find_if(visFrame.frameIt->get()->trackers.begin(), visFrame.frameIt->get()->trackers.end(),

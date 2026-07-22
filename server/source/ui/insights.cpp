@@ -1242,11 +1242,15 @@ static bool ShowTrackingPanel()
 
 	// Current and selected frames
 	double curFrame = frameNum + 0.5;
-	double jumpFrame = (double)ui.frameJumpTarget;
+	double focusFrame = (double)ui.visState.frame.focusedFrame;
 	ImPlot::SetNextLineStyle(ImVec4(0.33, 0.66, 0.4, 1.0), 3);
 	ImPlot::PlotInfLines("CurFrame", &curFrame, 1);
-	if (ImPlot::DragLineX(2, &jumpFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
-		ui.frameJumpTarget = (FrameNum)jumpFrame;
+	if (ImPlot::DragLineX(2, &focusFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
+	{
+		ui.visState.frame.focusedFrame = (FrameNum)std::max(0.0, focusFrame);
+		if (!state.isStreaming || state.simAdvance.load() == 0)
+			ui.visState.frame.visFocusedFrame = true;
+	}
 
 	ImPlot::PopColormap();
 	ImPlot::EndPlot();

@@ -129,13 +129,18 @@ enum InterfaceWindows
 
 struct VisualisationState
 {
-	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool forceRealtime = false, int focusCamera = -1, bool ignoreTarget = false) const;
+	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool focusTarget = true, bool focusFrame = true, int focusCamera = -1) const;
 	Eigen::Vector3f getPreferredTarget(const VisFrameLock &visFrame) const;
 
 	bool showMarkerTrails = false;
 	bool showMarkerRays = false;
 	bool show3DClusters = false;
 	bool show2DClusters = false;
+
+	struct {
+		FrameNum focusedFrame = 0;
+		bool visFocusedFrame = false;
+	} frame;
 
 	struct
 	{
@@ -406,7 +411,6 @@ public:
 	std::vector<RecordedSections> recordSections;
 	OptFrameNum recordSectionStart = -1;
 	bool recordTrackingResults = true;
-	FrameNum frameJumpTarget = 0;
 	bool frameRelevantParametersDirty = false;
 
 	// Sequences state

@@ -32,7 +32,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 typedef uint16_t CamIndex;
 typedef uint16_t BlobIndex;
-const BlobIndex InvalidBlob = (BlobIndex)-1;
 
 /**
  * A triangulated point with reference to the blobs it was triangulated from
@@ -40,20 +39,19 @@ const BlobIndex InvalidBlob = (BlobIndex)-1;
 template<typename Scalar>
 struct TriangulatedPoint_t
 {
-	typedef Eigen::Matrix<Scalar,3,1> Position;
-	Position pos;
+	Vector3<Scalar> pos;
 	Scalar error; // Mean distance to involved rays 
-	Scalar confidence; // Validity score, 2*NC^2+C
+	Scalar confidence; // Validity score
 	Scalar size; // Estimated size in 3D
-	// with C being rays with other intersections, and NC rays that only had this point (very likely to be valid point then)
-	std::vector<BlobIndex> blobs; // blobs[cameraIndex] = blobIndex, -1 = not seen from camera
+	struct TriSample
+	{
+		CamIndex camera;
+		BlobIndex blob;
+	};
+	std::vector<TriSample> samples;
 
 	TriangulatedPoint_t () {}
-	TriangulatedPoint_t (Position Pos, Scalar Error, Scalar Confidence) : pos(Pos), error(Error), confidence(Confidence) {}
-	TriangulatedPoint_t (Position Pos, Scalar Error, Scalar Confidence, int CamCount) : pos(Pos), error(Error), confidence(Confidence)
-	{
-		blobs.resize(CamCount, InvalidBlob);
-	}
+	TriangulatedPoint_t (Vector3<Scalar> pos, Scalar error, Scalar confidence) : pos(pos), error(error), confidence(confidence) {}
 };
 typedef TriangulatedPoint_t<float> TriangulatedPoint;
 
@@ -69,7 +67,7 @@ typedef TriangulatedPoint_t<float> TriangulatedPoint;
  */
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
-	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
+	std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
 
 /**
  * Pick best points for each ray conflict and reevaluate point confidences based on it
@@ -85,6 +83,7 @@ void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vec
 
 /**
  * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar>
 Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
@@ -92,6 +91,7 @@ Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar>
 Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
@@ -99,6 +99,7 @@ Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eige
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar, typename TriScalar = float>
 Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,

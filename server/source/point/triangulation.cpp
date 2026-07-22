@@ -36,11 +36,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* Structures */
 
 typedef uint8_t RayIxCnt; // Limits number of intersections per ray. Theoretically unlimited.
+const BlobIndex InvalidBlob = (BlobIndex)-1;
 
 struct MergedIntersection
 {
 	Eigen::Vector3f center;
 	float error;
+	int merged;
 	std::vector<BlobIndex> blobs; // blobs[cameraIndex] = blobIndex, -1 = not seen from camera
 	MergedIntersection() : center(Eigen::Vector3f::Zero()), error(0.0f) {}
 };
@@ -126,13 +128,13 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
-	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
+	std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
 {
 	ScopedLogCategory scopedLogCategory(LTriangulation);
 
 	#define IXNUM(ix) (int)(ix == NULL? -1 : (((intptr_t)ix-(intptr_t)intersections.data())/(sizeof(TwoIntersection))))
 
-	// NOTE: This is the subset camera count, full cameraCount will only be expanded to for output
+	// NOTE: This is the subset camera count, also used for indexing throughout (may be changed manually for records)
 	int camCount = cameras.size();
 
 	// Find initial set of 2-intersections
@@ -283,6 +285,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		}
 		ixm->center = ixm->center / mergers.size();
 		ixm->error = ixm->error / mergers.size();
+		ixm->merged = mergers.size();
 		ixm->blobs = std::move(ixBlobs);
 
 		// Prepare ixBlobs for next iteration
@@ -295,29 +298,31 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	auto handlePoints = [&](auto *ixm)
 	{
 		int clean = 0, conflict = 0;
-		std::vector<BlobIndex> expandedBlobs(cameraCount, InvalidBlob);
+		std::vector<TriangulatedPoint::TriSample> samples;
 		auto blob = [&](int c, int b)
 		{
 			assert(points2D[c]->size() > b);
 			if (rayIxCnt[c][b] == 1) clean++;
 			else conflict++;
-			expandedBlobs[cameras[c].index] = b;
+			samples.emplace_back(c, b);
 		};
 		if constexpr (std::is_same_v<decltype(ixm), MergedIntersection*>)
 		{ // MergedIntersection
-			for (int j = 0; j < camCount; j++)
-				if (ixm->blobs[j] != InvalidBlob)
-					blob(j, ixm->blobs[j]);
+			samples.reserve(ixm->merged);
+			for (int c = 0; c < camCount; c++)
+				if (ixm->blobs[c] != InvalidBlob)
+					blob(c, ixm->blobs[c]);
 		}
 		else
 		{ // TwoIntersection
+			samples.reserve(2);
 			blob(ixm->c1, ixm->b1);
 			blob(ixm->c2, ixm->b2);
 		}
 //		float confidence = (clean*clean)/(conflict+1);
 		float confidence = clean*clean*2 + conflict;
 		points3D.emplace_back(ixm->center, ixm->error, confidence);
-		points3D.back().blobs = std::move(expandedBlobs);
+		points3D.back().samples = std::move(samples);
 	};
 	for (int i = 0; i < mergedIntersections.size(); i++)
 	{
@@ -344,29 +349,25 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 	});
 	// could get away with no sorting by doing an additional pass over all points, but sorting speeds stuff up down the line anyways
 
-	for (int i = 0; i < points3D.size(); i++)
+	int index = 0;
+	for (auto &tri : points3D)
 	{
-		int nc = 0, c = 0;
-		for (int j = 0; j < cameras.size(); j++)
+		int clean = 0, conflict = 0;
+		for (auto &sample : tri.samples)
 		{
-			int c = cameras[j].index;
-			int r = points3D[i].blobs[c];
-			if (r != InvalidBlob)
-			{
-				if (rayIxCnt[j][r] == (RayIxCnt)-1)
-				{ // Already claimed by a point with higher confidence
-					c++;
-				}
-				else
-				{ // Else claim it (doesn't matter if there's only one intersection on this ray)
-					rayIxCnt[j][r] = (RayIxCnt)-1;
-					nc++;
-				}
+			if (rayIxCnt[sample.camera][sample.blob] == (RayIxCnt)-1)
+			{ // Already claimed by a point with higher confidence
+				conflict++;
+			}
+			else
+			{ // Else claim it (doesn't matter if there's only one intersection on this ray)
+				rayIxCnt[sample.camera][sample.blob] = (RayIxCnt)-1;
+				clean++;
 			}
 		}
 		// Calculate new confidence:
-		points3D[i].confidence = nc*nc*2 + c;
-		LOGC(LTrace, "    Point %d: Error: %f, Confidence: %f, nc=%d, c=%d\n", i, points3D[i].error, points3D[i].confidence, nc, c);
+		tri.confidence = clean*clean*2 + conflict;
+		LOGC(LTrace, "    Point %d: Error: %f, Confidence: %f, nc=%d, c=%d\n", index++, tri.error, tri.confidence, clean, conflict);
 	}
 }
 
@@ -391,11 +392,12 @@ void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vec
 		}
 	}
 	LOG(LTriangulation, LTrace, "%d triangulated points remaining after filtering!", index);
-	points3D.resize(index, TriangulatedPoint(Eigen::Vector3f::Zero(), 0, 0)); // Not used, but no default constructor wanted
+	points3D.resize(index);
 }
 
 /**
  * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar>
 Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
@@ -403,17 +405,15 @@ Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::
 {
 	Eigen::Matrix<Scalar,3,1> center = Eigen::Matrix<Scalar,3,1>::Zero();
 	int centerCnt = 0;
-	for (int c1 = 0; c1 < cameras.size(); c1++)
+	for (int s1 = 0; s1 < point3D.samples.size(); s1++)
 	{
-		BlobIndex blob1 = point3D.blobs[cameras[c1].index];
-		if (blob1 == InvalidBlob) continue;
-		for (int c2 = c1+1; c2 < cameras.size(); c2++)
+		auto &sample1 = point3D.samples[s1];
+		for (int s2 = s1+1; s2 < point3D.samples.size(); s2++)
 		{
-			BlobIndex blob2 = point3D.blobs[cameras[c2].index];
-			if (blob2 == InvalidBlob) continue;
+			auto &sample2 = point3D.samples[s2];
 			Scalar sec1, sec2;
-			Ray3_t<Scalar> ray1 = castRay<Scalar>(points2D[c1]->at(blob1), cameras[c1]);
-			Ray3_t<Scalar> ray2 = castRay<Scalar>(points2D[c2]->at(blob2), cameras[c2]);
+			Ray3_t<Scalar> ray1 = castRay<Scalar>(points2D[sample1.camera]->at(sample1.blob), cameras[sample1.camera]);
+			Ray3_t<Scalar> ray2 = castRay<Scalar>(points2D[sample2.camera]->at(sample2.blob), cameras[sample2.camera]);
 			getRayIntersect(ray1, ray2, &sec1, &sec2);
 			center += (ray1.pos + ray1.dir*sec1 + ray2.pos + ray2.dir*sec2) / 2;
 			centerCnt++;
@@ -427,6 +427,7 @@ Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar, typename TriScalar>
 Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
@@ -436,20 +437,15 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 	typedef Eigen::Matrix<Scalar,4,1> Vector4;
 	typedef Eigen::Matrix<Scalar,3,1> Vector3;
 
-	// Get involved cameras
-	int camCount = 0;
-	for (int c = 0; c < cameras.size(); c++)
-		camCount += (point3D.blobs[cameras[c].index] != InvalidBlob);
 	// Build base data matrix as well as row-vectors for weights
+	int camCount = point3D.samples.size();
 	MatrixX triSolveBase = MatrixX(camCount*2, 4);
 	MatrixX thirdRow = MatrixX(camCount, 4);
 	int camIndex = 0;
-	for (int c = 0; c < cameras.size(); c++)
+	for (auto &sample : point3D.samples)
 	{
-		BlobIndex blob = point3D.blobs[cameras[c].index];
-		if (blob == InvalidBlob) continue;
-		auto camMat = cameras[c].camera.matrix().template cast<Scalar>();
-		auto point = points2D[c]->at(blob).template cast<Scalar>();
+		auto camMat = cameras[sample.camera].camera.matrix().template cast<Scalar>();
+		auto point = points2D[sample.camera]->at(sample.blob).template cast<Scalar>();
 		triSolveBase.row(camIndex*2+0) = point.x() * camMat.row(2) - camMat.row(0);
 		triSolveBase.row(camIndex*2+1) = point.y() * camMat.row(2) - camMat.row(1);
 		thirdRow.row(camIndex) = camMat.row(2);
@@ -495,6 +491,7 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
  */
 template<typename Scalar, typename PointScalar, typename CalibScalar>
 Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 

@@ -566,10 +566,11 @@ struct ReprojectionError
 		std::vector<std::vector<Vector2<ErrorScalar>> const *> points2D(cameras.size());
 		for (int c = 0; c < cameras.size(); c++)
 		{
-			blobContainer[c].resize(1);		 // Used to store a single blob for each camera involved with a point
-			points2D[c] = &blobContainer[c]; // Just interfacing
+			blobContainer[c].resize(1); // Used to store a single blob for each camera involved with a point
+			points2D[c] = &blobContainer[c];
+			assert(cameras[c].index == c); // ObsPointSample::camera indexes into full cameras
 		}
-		TriangulatedPoint triPoint(Eigen::Vector3f::Zero(), 0, 10, cameras.size());
+		TriangulatedPoint triPoint;
 
 		int errorIndex = 0;
 		for (auto &point : m_data->points.points)
@@ -580,18 +581,14 @@ struct ReprojectionError
 					errors(errorIndex++) = 0;
 				continue;
 			}
-			// Reset point
-			for (int c = 0; c < cameras.size(); c++)
-				triPoint.blobs[c] = InvalidBlob;
 			// Fill point with involved blobs
+			triPoint.samples.clear();
 			for (auto &sample : point.samples)
 			{
 				int c = sample.camera;
 				Vector2<ErrorScalar> measurement = sample.point.template cast<ErrorScalar>();
-				// Undistort point
 				blobContainer[c][0] = undistortPoint(cameras[c], measurement);
-				// Register as involved camera and blob
-				triPoint.blobs[c] = 0;
+				triPoint.samples.emplace_back(c, 0);
 			}
 			// Calculate optimal triangulation
 			//Vector3<ErrorScalar> tri = refineTriangulation<ErrorScalar, ErrorScalar, ErrorScalar>(points2D, cameras, triPoint);

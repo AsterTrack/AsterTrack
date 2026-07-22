@@ -851,16 +851,12 @@ static void ShowTrackingResults()
 			float triErrorStored = 0, triErrorCurrent = 0;
 			for (auto &tri : framesStored[f]->triangulations)
 			{
-				for (int c = 0; c < tri.blobs.size(); c++)
-					if (tri.blobs[c] != InvalidBlob)
-						triSamplesStored++;
+				triSamplesStored += tri.samples.size();
 				triErrorStored += tri.error / framesStored[f]->triangulations.size();
 			}
 			for (auto &tri : framesRecord[f]->triangulations)
 			{
-				for (int c = 0; c < tri.blobs.size(); c++)
-					if (tri.blobs[c] != InvalidBlob)
-						triSamplesCurrent++;
+				triSamplesCurrent += tri.samples.size();
 				triErrorCurrent += tri.error / framesRecord[f]->triangulations.size();
 			}
 			updateEventChange(triangulations.count, framesStored[f]->triangulations.size(), framesRecord[f]->triangulations.size());

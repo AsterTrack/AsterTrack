@@ -1138,9 +1138,7 @@ static bool ShowTrackingPanel()
 			stats.errors[index] = 0;
 			for (auto &tri : frame.triangulations)
 			{
-				for (auto &blob : tri.blobs)
-					if (blob != InvalidBlob)
-						stats.dataAux[index] += 1;
+				stats.dataAux[index] += tri.samples.size();
 				stats.errors[index] += tri.error * 100; // In cm - for now
 			}
 			stats.dataAux[index] /= frame.triangulations.size(); // Possible NAN is intended

@@ -1006,10 +1006,11 @@ static std::tuple<int,int,int,int> buildDataTensor(const ObsTarget &target, cons
 		std::vector<std::vector<Eigen::Vector2f> const *> points2D(camCount);
 		for (int c = 0; c < camCount; c++)
 		{
-			blobContainer[c].resize(1);		 // Used to store a single blob for each camera involved with a point
-			points2D[c] = &blobContainer[c]; // Just interfacing
+			blobContainer[c].resize(1); // Used to store a single blob for each camera involved with a point
+			points2D[c] = &blobContainer[c];
+			assert(cameraCalibs[c].index == c); // ObsTargetSample::camera indexes into full cameras
 		}
-		TriangulatedPoint triPoint(Eigen::Vector3f::Zero(), 0, 10, camCount);
+		TriangulatedPoint triPoint;
 
 		int f = 0;
 		for (auto frame = target.frames.begin(); frame != target.frames.end(); frame++, f++)
@@ -1028,16 +1029,14 @@ static std::tuple<int,int,int,int> buildDataTensor(const ObsTarget &target, cons
 				triPointCount++;
 				triSourceCount += tempMarkerObs[m];
 
-				// Reset point
-				for (int c = 0; c < camCount; c++)
-					triPoint.blobs[c] = InvalidBlob;
 				// Enter 2D observations
+				triPoint.samples.clear();
 				for (auto &sample : frame->samples)
 				{
 					if (target.markerMap.at(sample.marker) != m)
 						continue;
 					blobContainer[sample.camera][0] = undistortPoint(cameraCalibs[sample.camera], sample.point);
-					triPoint.blobs[sample.camera] = 0;
+					triPoint.samples.emplace_back(sample.camera, 0);
 				}
 				// Calculate optimal triangulation
 				//Eigen::Vector3f tri = refineTriangulation<float, float, double>(points2D, cameraCalibs, triPoint);
@@ -1054,18 +1053,14 @@ static std::tuple<int,int,int,int> buildDataTensor(const ObsTarget &target, cons
 				obsCount2D[sample.camera]++;
 			}
 
-			// Reset point
-			for (int c = 0; c < camCount; c++)
-				triPoint.blobs[c] = InvalidBlob;
-			int viewCnt = 0;
+			triPoint.samples.clear();
 			for (int c = 0; c < camCount; c++)
 			{
 				if (obsCount2D[c] == 0) continue;
 				blobContainer[c][0] = centerPos2D[c] / obsCount2D[c];
-				triPoint.blobs[c] = 0;
-				viewCnt++;
+				triPoint.samples.emplace_back(c, 0);
 			}
-			if (viewCnt > 1)
+			if (triPoint.samples.size() > 1)
 			{
 				Eigen::Vector3d centerTri = refineTriangulationIterative<float, float, double>(points2D, cameraCalibs, triPoint, 5).cast<double>();
 				for (int c = 0; c < camCount; c++)

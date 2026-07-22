@@ -574,13 +574,14 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			}), remainingPoints2D[i].end());			
 		}
 		// Find and efficiently remove triangulated points if they are occupied
-		triIndices.erase(std::remove_if(triIndices.begin(), triIndices.end(), [&](int p) {
+		triIndices.erase(std::remove_if(triIndices.begin(), triIndices.end(), [&](int p)
+		{
 			auto &tri = track.triangulations3D[p];
-			for (int c = 0; c < calibs.size(); c++)
+			for (auto &sample : tri.samples)
 			{
-				int cam = calibs[c].index;
-				for (auto &match : targetMatch2D.points2D[cam])
-					if (tri.blobs[c] == match.second)
+				// NOTE: Relies on sample.camera indexing into full cameras
+				for (auto &match : targetMatch2D.points2D[sample.camera])
+					if (sample.blob == match.second)
 						return true;
 			}
 			return false;
@@ -794,7 +795,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tri0 = pclock::now();
 
 		// Find potential point correspondences as TriangulatedPoints
-		triangulateRayIntersections(calibs, points2D, relevantPoints2D, camCount, track.triangulations3D,
+		triangulateRayIntersections(calibs, points2D, relevantPoints2D, track.triangulations3D,
 			params.maxIntersectError, params.minIntersectError);
 
 		tri1 = pclock::now();
@@ -812,10 +813,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		// Refine point positions
 		track.points3D.reserve(track.triangulations3D.size());
-		for (int p = 0; p < track.triangulations3D.size(); p++)
+		for (auto &tri : track.triangulations3D)
 		{
-			refineTriangulationIterative<float>(points2D, calibs, track.triangulations3D[p], params.refineIterations);
-			track.points3D.push_back(track.triangulations3D[p].pos);
+			refineTriangulationIterative<float>(points2D, calibs, tri, params.refineIterations);
+			track.points3D.push_back(tri.pos);
 		}
 
 		// TODO: Approximate 3D size of each triangulated point
@@ -831,6 +832,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				//tri.size += record.pointSizes[i];
 			}
 		} */
+
+		// Remap camera indices from current subset to all cameras for storage
+		for (auto &tri : track.triangulations3D)
+			for (auto &sample : tri.samples)
+				sample.camera = calibs[sample.camera].index;
 
 		if (pipeline.isSimulationMode && SHOULD_LOG(LTriangulation, LTrace))
 		{

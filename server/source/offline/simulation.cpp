@@ -246,10 +246,11 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			std::vector<CameraCalib> calibs(pipeline.cameras.size());
 			for (auto &cam : pipeline.cameras)
 			{
-				blobContainer[cam->index].resize(1);		 // Used to store a single blob for each camera involved with a point
-				points2D[cam->index] = &blobContainer[cam->index]; // Just interfacing
+				blobContainer[cam->index].resize(1); // Used to store a single blob for each camera involved with a point
+				points2D[cam->index] = &blobContainer[cam->index];
 				calibs[cam->index] = cam->calib;
 			}
+			TriangulatedPoint triPoint;
 
 			simulation.triangulatedPoints3D = { frameState.num, object.pose, {} };
 			simulation.triangulatedPoints3D.triangulation.reserve(object.target.markers.size());
@@ -262,10 +263,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 				if (SHOULD_LOGC(LTrace))
 				{ // Triangulate the point to double check
-					TriangulatedPoint triPoint(Eigen::Vector3f::Zero(), 0, 10, pipeline.cameras.size());
-					for (int c = 0; c < pipeline.cameras.size(); c++)
-						triPoint.blobs[c] = InvalidBlob;
-					int traceableCnt = 0;
+					triPoint.samples.clear();
 					for (auto &cam : pipeline.cameras)
 					{
 						auto &record = frameState.cameras[cam->index];
@@ -274,12 +272,12 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 							if (record.simulation.points2GTMarker[j] == i)
 							{
 								blobContainer[cam->index][0] = undistortPoint(cam->calib, record.rawPoints2D[j]);
-								triPoint.blobs[cam->index] = 0;
-								traceableCnt++;
+								triPoint.samples.emplace_back(cam->index, 0); // Working with full camera set
+								break;
 							}
 						}
 					}
-					if (traceableCnt >= 2)
+					if (triPoint.samples.size() >= 2)
 					{ // E.g. merged blobs might not be traceable
 						Eigen::Vector3f point3D = refineTriangulationIterative<float>(points2D, calibs, triPoint);
 						LOGC(LTrace, "  Triangulated target point %d (%.4f, %.4f, %.4f) from observations, error %.2fmm with %f error value\n",

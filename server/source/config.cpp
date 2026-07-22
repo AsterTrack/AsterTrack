@@ -1506,7 +1506,7 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 				tri.error = jsTri[3].get<float>();
 				tri.confidence = jsTri[4].get<float>();
 				tri.size = jsTri[5].get<float>();
-				// Somehow include count of samples at least?
+				tri.samples.resize(jsTri[6].get<int>());
 			}
 
 			frame.trackers.clear();
@@ -1602,10 +1602,6 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 		jsFrame["triangulations"] = json::array();
 		for (const auto &tri : frame.triangulations)
 		{
-			int samples = 0;
-			for (auto &blob : tri.blobs)
-				if (blob != InvalidBlob)
-					samples++;
 			jsFrame["triangulations"].emplace_back(json::array({
 				tri.pos.x(),
 				tri.pos.y(),
@@ -1613,7 +1609,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 				tri.error,
 				tri.confidence,
 				tri.size,
-				samples
+				tri.samples.size()
 			}));
 			hasTris = true;
 		}

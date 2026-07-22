@@ -151,15 +151,14 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 					}
 				}
 			}
-			if (!tri.blobs.empty())
+			if (!tri.samples.empty())
 			{
 				point.samples.resize(pipeline.cameras.size(), { 0, Eigen::Vector2d::Zero() });
-				for (int c = 0; c < tri.blobs.size(); c++)
+				for (auto &sample : tri.samples)
 				{
-					if (tri.blobs[c] == InvalidBlob) continue;
-					auto &sample = point.samples[c];
-					sample.second += frame->cameras[c].points2D[tri.blobs[c]].cast<double>();
-					sample.first++;
+					// NOTE: Relies on sample.camera indexing into full cameras
+					point.samples[sample.camera].second += frame->cameras[sample.camera].points2D[sample.blob].cast<double>();
+					point.samples[sample.camera].first++;
 					point.sampleCount++;
 				}
 				point.update(pipeline.getCalibs());
@@ -445,9 +444,12 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	// Copy data
 	auto settings = pipeline->pointCalib.settings;
 	ObsData data = *pipeline->obsDatabase.contextualRLock();
-	std::vector<CameraCalib> calibs(cameras.size());
+	std::vector<CameraCalib> calibs(pipeline->cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
-		calibs[c] = cameras[c]->calib;
+	{ // ObsTargetSample::camera indexes into full cameras
+		int index = cameras[c]->index;
+		calibs[index] = cameras[c]->calib;
+	}
 
 	// Subsample data
 	ObsData subsampled = {};

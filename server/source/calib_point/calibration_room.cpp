@@ -237,14 +237,14 @@ void StaticPointSamples<Scalar>::update(const std::vector<CameraCalib> &calibs)
 	}
 	std::vector<std::vector<Vector2<Scalar>>> samplePoints(calibs.size());
 	std::vector<const std::vector<Vector2<Scalar>>*> samplePointGroups(calibs.size());
-	TriangulatedPoint_t<Scalar> sampleTri(pos, 0, 0, calibs.size());
+	TriangulatedPoint_t<Scalar> sampleTri(pos, 0, 0);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (calibs[c].invalid()) continue;
 		samplePointGroups[c] = &samplePoints[c];
 		int cc = calibs[c].index;
 		if (samples[cc].first == 0) continue;
-		sampleTri.blobs[cc] = 0;
+		sampleTri.samples.emplace_back(c, 0);
 		samplePoints[c].push_back(samples[cc].second / samples[cc].first);
 	}
 	pos = refineTriangulationIterative<Scalar>(samplePointGroups, calibs, sampleTri);

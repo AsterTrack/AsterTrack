@@ -30,6 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
+typedef uint16_t CamIndex;
 typedef uint16_t BlobIndex;
 const BlobIndex InvalidBlob = (BlobIndex)-1;
 

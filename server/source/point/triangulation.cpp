@@ -16,6 +16,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+//#define LOG_MAX_LEVEL LTrace
+
 #include "point/triangulation.hpp"
 #include "util/eigenutil.hpp"
 
@@ -33,18 +35,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
-typedef uint8_t RayIxCnt; // Based on the maximum blob count per camera, currently 254 (-1 is unused)
+typedef uint8_t RayIxCnt; // Limits number of intersections per ray. Theoretically unlimited.
 
-struct Intersection
+struct MergedIntersection
 {
 	Eigen::Vector3f center;
 	float error;
-	Intersection *merge;
 	std::vector<BlobIndex> blobs; // blobs[cameraIndex] = blobIndex, -1 = not seen from camera
-	Intersection (Eigen::Vector3f Center, float Error, int CamCount) : center(Center), error(Error), merge(NULL)
-	{
-		blobs.resize(CamCount, InvalidBlob);
-	}
+	MergedIntersection() : center(Eigen::Vector3f::Zero()), error(0.0f) {}
+};
+
+struct TwoIntersection
+{
+	Eigen::Vector3f center;
+	float error;
+	MergedIntersection *merge;
+	CamIndex c1, c2;
+	BlobIndex b1, b2;
+	TwoIntersection(Eigen::Vector3f center, float error, CamIndex c1, BlobIndex b1, CamIndex c2, BlobIndex b2)
+		: center(center), error(error), merge(nullptr), c1(c1), c2(c2), b1(b1), b2(b2) {}
 };
 
 
@@ -56,31 +65,14 @@ thread_local std::vector<std::vector<RayIxCnt>> rayIxCnt;
 /* Functions */
 
 
-/**
- * Calculate triangulatedPoints as the intersection points between rays of each camera 
- * Calculates mean error of triangulated points to rays and confidence based on rays involved
- * With unconflicted (NC) and conflicted (C) involved rays, point confidence is 2*nc^2 + c
- * Stores intersection data internally for later use in conflict resolving
- */
-void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
+static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
-	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
+	std::vector<TwoIntersection> &intersections, std::vector<std::vector<RayIxCnt>> &rayIxCnt, float maxError, float minError)
 {
-	ScopedLogCategory scopedLogCategory(LTriangulation);
-
-	thread_local std::vector<Intersection> intersections;
-	thread_local std::vector<Intersection> mergedIntersections;
-	thread_local std::vector<std::vector<Ray3f>> rayGroups;
-
-	#define IXNUM(ix) (int)(ix == NULL? -1 : (((intptr_t)ix-(intptr_t)intersections.data())/(sizeof(Intersection))))
-
-	// NOTE: This is the subset camera count, full cameraCount will only be expanded to for output
 	int camCount = cameras.size();
-	//maxError = maxError/100; // Error at one meter distance
 
 	// Prepare allocated memory, cast rays
-	intersections.clear();
-	mergedIntersections.clear();
+	thread_local std::vector<std::vector<Ray3f>> rayGroups;
 	if (rayGroups.size() < camCount)
 		rayGroups.resize(camCount);
 	if (rayIxCnt.size() < camCount)
@@ -123,212 +115,208 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 					rayIxCnt[i][v]++;
 					rayIxCnt[j][w]++;
 					// Register intersection
-					intersections.emplace_back((pos1+pos2)/2, std::max(minError, std::sqrt(errorSq)), camCount);
-					intersections.back().blobs[i] = v;
-					intersections.back().blobs[j] = w;
-					LOGC(LDebug, "2-Intersection with error %f\n", std::sqrt(errorSq));
+					intersections.emplace_back((pos1+pos2)/2, std::max(minError, std::sqrt(errorSq)), i, v, j, w);
+					LOGC(LTrace, "2-Intersection with error %f\n", std::sqrt(errorSq));
 				}
 			}
 		}
 	}
 	LOGC(LDebug, "Got %d 2-intersections!\n", (int)intersections.size());
+}
 
-	// Have to reserve to prevent reallocation, since it relies on pointers to merged intersections
-	mergedIntersections.reserve(intersections.size()/2+1);
+void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
+	int cameraCount, std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
+{
+	ScopedLogCategory scopedLogCategory(LTriangulation);
+
+	#define IXNUM(ix) (int)(ix == NULL? -1 : (((intptr_t)ix-(intptr_t)intersections.data())/(sizeof(TwoIntersection))))
+
+	// NOTE: This is the subset camera count, full cameraCount will only be expanded to for output
+	int camCount = cameras.size();
+
+	// Find initial set of 2-intersections
+	thread_local std::vector<TwoIntersection> intersections;
+	intersections.clear();
+	findInitialRayIntersections(cameras, points2D, relevantPoints2D, intersections, rayIxCnt, maxError, minError);
 	int ixCnt = intersections.size();
 
+	// Have to reserve to prevent reallocation, since it relies on pointers to merged intersections
+	thread_local std::vector<MergedIntersection> mergedIntersections;
+	mergedIntersections.clear();
+	mergedIntersections.reserve(ixCnt/2+1);
+
 	// Merge possible intersections between three rays
-	std::vector<Intersection*> mergers;
-	std::vector<Intersection*> potentialMergers;
+	std::vector<TwoIntersection*> mergers;
+	std::vector<TwoIntersection*> potentialMergers;
 	std::vector<BlobIndex> ixBlobs(camCount, InvalidBlob);
 	for (int i = 0; i < intersections.size(); i++)
 	{
-		Intersection *ix = &intersections[i];
+		TwoIntersection *ix = &intersections[i];
+
 		// Check if it has been merged yet
 		if (ix->merge != NULL)
 		{
-			if (SHOULD_LOGC(LTrace))
-			{
-				std::string blobsStr = "";
-				for (int j = 0; j < camCount; j++)
-					blobsStr += asprintf_s("%d - ", ix->blobs[j]);
-				LOGC(LTrace, "------ Skipping merged intersections %d on rays %s", i, blobsStr.c_str());
-			}
+			//LOGC(LTrace, "------ Skipping merged intersections %d on rays %d and %d", i, ix->c1, ix->c2);
 			continue;
 		}
-		// Find the indices of the two intersecting rays
-		int r1 = 0;
-		while (ix->blobs[r1] == InvalidBlob) r1++;
-		int r2 = r1+1;
-		while (ix->blobs[r2] == InvalidBlob) r2++;
+
+		ixBlobs[ix->c1] = ix->b1;
+		ixBlobs[ix->c2] = ix->b2;
+
 		// Search for other intersections with one common ray and one new ray
-		auto isWithinMargin = [&](Intersection *ixm, int testCam)
+		auto testMerger = [&](TwoIntersection *ixm, int testCam)
 		{
 			float errorSq = (ixm->center - ix->center).squaredNorm()/4;
 			float distSq = (cameras[testCam].transform.translation().cast<float>() - ix->center).squaredNorm();
 			float errorCone = maxError*maxError*distSq*(float)cameras[testCam].f;
-			return errorSq <= errorCone;
+			if (errorSq <= errorCone)
+			{ // Merge intersections, now consisting of three rays intersecting
+				mergers.push_back(ixm);
+				ixBlobs[ixm->c1] = ixm->b1;
+				ixBlobs[ixm->c2] = ixm->b2;
+			}
+			else
+			{ // else two intersections with different ray groups, but distant, so one must be wrong - register conflict
+				potentialMergers.push_back(ixm);
+			}
 		};
+
+		// Find matching intersections
+		mergers.clear();
+		potentialMergers.clear();
 		for (int j = i+1; j < intersections.size(); j++)
 		{
-			Intersection *ixm = &intersections[j];
+			TwoIntersection *ixm = &intersections[j];
 			if (ixm->merge != NULL) continue;
-			// TODO: Problem: This only considers 2-Intersections that share a ray.
-			// This breaks down for even just 3 cameras, though there the remaining 2-intersection is just ignored later on
-			// For 4+ cameras, this will create a full alternative TriangulatedPoint, with lower score, less cameras, essentially garbage
-			// But the main point at least does include all cameras and is correct
-			if (ixm->blobs[r1] == ix->blobs[r1])
-			{ // Intersection on same ray, either merge or create conflict
-				if (ixm->blobs[r2] == InvalidBlob)
-				{ // Intersection is with a different ray group, check proximity to determine if merge or conflict
-					if (isWithinMargin(ixm, r2))
-					{ // Merge intersections, now consisting of three rays intersecting
-						mergers.push_back(ixm);
-						continue;
-					} // else two intersections with different ray groups, but distant, so one must be wrong
-					// Register conflict
-					potentialMergers.push_back(ixm);
-				} // else two intersections with same ray group and definitely a conflict
+
+			if (ixBlobs[ixm->c1] == ixm->b1)
+			{
+				if (ixBlobs[ixm->c2] == InvalidBlob)
+					testMerger(ixm, ixm->c1 == ix->c2? ix->c1 : ix->c2);
+				else if (ixBlobs[ixm->c2] == ixm->b2)
+					mergers.push_back(ixm);
+				// else // Technically, a conflict here COULD be better matching than an intersection already included...
 			}
-			else if (ixm->blobs[r2] == ix->blobs[r2])
-			{ // Intersection on same ray, either merge or create conflict
-				if (ixm->blobs[r1] == InvalidBlob)
-				{ // Intersection is with a different ray group, check proximity to determine if merge of conflict
-					if (isWithinMargin(ixm, r1))
-					{ // Merge intersections, now consisting of three rays intersecting
-						mergers.push_back(ixm);
-						continue;
-					} // else two intersections with different ray groups, but distant, so one must be wrong
-					// Register conflict
-					potentialMergers.push_back(ixm);
-				} // else two intersections with same ray group and definitely a conflict
+			else if (ixBlobs[ixm->c2] == ixm->b2)
+			{
+				if (ixBlobs[ixm->c1] == InvalidBlob)
+					testMerger(ixm, ixm->c2 == ix->c2? ix->c1 : ix->c2);
+				else if (ixBlobs[ixm->c1] == ixm->b1)
+					mergers.push_back(ixm);
+				// else // Technically, a conflict here COULD be better matching than an intersection already included...
 			}
 		}
 
-		if (SHOULD_LOGC(LTrace))
+		LOGC(LTrace, "------ Intersection %d on cameras %d and %d", i, ix->c1, ix->c2);
+		if (SHOULD_LOGC(LTrace) && !potentialMergers.empty())
 		{
 			std::string blobsStr = "";
-			for (int j = 0; j < camCount; j++)
-				blobsStr += asprintf_s("%d - ", ix->blobs[j]);
-			LOGC(LTrace, "------ Intersection %d on rays %s", i, blobsStr.c_str());
-			blobsStr.clear();
 			for (int j = 0; j < potentialMergers.size(); j++)
 				blobsStr += asprintf_s("%d, ", IXNUM(potentialMergers[j]));
 			LOGC(LTrace, "Potentially conflicting/merging intersections: %s", blobsStr.c_str());
 		}
 
 		// Check if merge candidates found (only for 3 rays+)
-		if (mergers.size() > 0)
-		{ // Merge and add new intersection
-			mergers.push_back(ix);
-
-			// In some cases, an intersection of 3 or more rays includes intersections out of error range of the others
-			// They have to be manually added
-
-// Begin OOR fix
-			// Get all rays involved in this intersection (more than 2, else it wouldn't need to merge)
-			for (int i = 0; i < mergers.size(); i++)
-				for (int j = 0; j < camCount; j++)
-					if (mergers[i]->blobs[j] != InvalidBlob)
-						ixBlobs[j] = mergers[i]->blobs[j];
-
-			if (SHOULD_LOGC(LTrace))
-			{
-				std::string blobsStr = "";
-				for (int j = 0; j < camCount; j++)
-					blobsStr += asprintf_s("%d - ", ixBlobs[j]);
-				LOGC(LTrace, "Involved Rays: %s", blobsStr.c_str());
-			}
-
-			// Go through conflicts (other intersections on the two rays of our main intersection ix respectively)
-			// And find those that intersect with any two rays involved in this merging intersection
-			// Then add them to the merge and remove them as conflicts
-			for (int i = 0; i < potentialMergers.size(); i++)
-			{
-				bool match = true;
-				for (int j = 0; j < camCount; j++)
-				{
-					if (potentialMergers[i]->blobs[j] != InvalidBlob && potentialMergers[i]->blobs[j] != ixBlobs[j])
-					{
-						match = false;
-						break;
-					}
-				}
-				if (match)
-				{ // Accept as merger, probably out of error range
-					mergers.push_back(potentialMergers[i]);
-					LOGC(LDebug, "Added intersection %d to merge because of shared rays!\n", IXNUM(potentialMergers[i]));
-				}
-			}
-// End OOR fix
-
-			if (SHOULD_LOGC(LTrace))
-			{
-				std::string blobsStr = "";
-				for (int j = 0; j < mergers.size(); j++)
-					blobsStr += asprintf_s("%d - ", IXNUM(mergers[j]));
-				LOGC(LTrace, "Merging: %s", blobsStr.c_str());
-			}
-
-			// Merge
-			assert(mergedIntersections.size()+1 < mergedIntersections.capacity()); // Otherwise, reserve metric failed
-			mergedIntersections.emplace_back(Eigen::Vector3f::Zero(), 0.0f, camCount);
-			Intersection *ixm = &mergedIntersections.back();
-			for (int i = 0; i < mergers.size(); i++)
-			{
-				// Mark as merged
-				mergers[i]->merge = ixm;
-				// Update merge center
-				ixm->center += mergers[i]->center;
-				// Somehow update error
-				ixm->error += mergers[i]->error;
-				// NOTE: This is not the true center of the merged intersection, just a quick approximation
-				// refineTriangulation/refineTriangulationIterative are used later to improve it
-			}
-			// Average out values
-			ixm->center = ixm->center / mergers.size();
-			ixm->error = ixm->error / mergers.size();
-			// Correct error by number of involved intersections
-			ixm->error = ixm->error * 2 / mergers.size();
-			// Make sure involved rays are accurate
-			for (int j = 0; j < camCount; j++)
-				ixm->blobs[j] = ixBlobs[j];
-
-			// Update intersection counters
-			// Remove mergers
-			for (int i = 0; i < mergers.size(); i++)
-				for (int j = 0; j < camCount; j++)
-					if (mergers[i]->blobs[j] != InvalidBlob)
-						rayIxCnt[j][mergers[i]->blobs[j]]--;
-			// Add merged intersection
-			for (int i = 0; i < camCount; i++)
-				if (ixBlobs[i] != InvalidBlob)
-					rayIxCnt[i][ixBlobs[i]]++;
-			// Update intersection count
-			ixCnt = ixCnt-mergers.size()+1;
-
-			// Reset for next iteration
-			mergers.clear();
+		if (mergers.empty())
+		{ // Clean up
+			ixBlobs[ix->c1] = InvalidBlob;
+			ixBlobs[ix->c2] = InvalidBlob;
+			continue;
 		}
-		potentialMergers.clear();
+
+		// Add original intersection
+		mergers.push_back(ix);
+
+		if (SHOULD_LOGC(LTrace))
+		{
+			std::string blobsStr = "";
+			for (int j = 0; j < camCount; j++)
+				blobsStr += ixBlobs[j] == InvalidBlob? "X - " : asprintf_s("%d - ", ixBlobs[j]);
+			LOGC(LTrace, "Merging Blobs: %s", blobsStr.c_str());
+		}
+
+		// Go through conflicts (other intersections on the two rays of our main intersection ix respectively)
+		// And find those that intersect with any two rays involved in this merging intersection
+		// Then add them to the merge and remove them as conflicts
+		for (int i = 0; i < potentialMergers.size(); i++)
+		{
+			TwoIntersection *ixm = potentialMergers[i];
+			if (ixBlobs[ixm->c1] == ixm->b1 && ixBlobs[ixm->c2] == ixm->b2)
+			{ // Accept as merger, probably out of error range of another set of rays tested against
+				mergers.push_back(potentialMergers[i]);
+				LOGC(LDebug, "Added intersection %d to merge because of shared rays!\n", IXNUM(potentialMergers[i]));
+			}
+		}
+
+		if (SHOULD_LOGC(LDebug))
+		{
+			std::string blobsStr = "";
+			for (int j = 0; j < mergers.size(); j++)
+				blobsStr += asprintf_s("%d, ", IXNUM(mergers[j]));
+			LOGC(LDebug, "Merging Intersections: %s", blobsStr.c_str());
+		}
+
+		// Update intersection metrics rayIxCnt and ixCnt
+		for (int i = 0; i < mergers.size(); i++)
+		{
+			TwoIntersection *ixm = mergers[i];
+			rayIxCnt[ixm->c1][ixm->b1]--;
+			rayIxCnt[ixm->c2][ixm->b2]--;
+		}
+		for (int i = 0; i < camCount; i++)
+			if (ixBlobs[i] != InvalidBlob)
+				rayIxCnt[i][ixBlobs[i]]++;
+		ixCnt = ixCnt - mergers.size() + 1;
+
+		// Merge intersections properly
+		assert(mergedIntersections.size()+1 < mergedIntersections.capacity()); // Otherwise, reserve metric failed
+		mergedIntersections.emplace_back();
+		MergedIntersection *ixm = &mergedIntersections.back();
+		for (int i = 0; i < mergers.size(); i++)
+		{
+			mergers[i]->merge = ixm;
+			ixm->center += mergers[i]->center;
+			ixm->error += mergers[i]->error;
+			// NOTE: This is not the true center of the merged intersection, just a quick approximation
+			// refineTriangulation/refineTriangulationIterative are used later to improve it
+		}
+		ixm->center = ixm->center / mergers.size();
+		ixm->error = ixm->error / mergers.size();
+		ixm->blobs = std::move(ixBlobs);
+
+		// Prepare ixBlobs for next iteration
+		ixBlobs.clear();
+		ixBlobs.resize(camCount, InvalidBlob);
 	}
 
 	// Compile all intersections as triangulated points
 	points3D.reserve(ixCnt);
-	auto handlePoints = [&](Intersection *ix) {
-		int c = 0, nc = 0;
+	auto handlePoints = [&](auto *ixm)
+	{
+		int clean = 0, conflict = 0;
 		std::vector<BlobIndex> expandedBlobs(cameraCount, InvalidBlob);
-		for (int j = 0; j < camCount; j++)
+		auto blob = [&](int c, int b)
 		{
-			int r = ix->blobs[j];
-			if (r == InvalidBlob) continue;
-			if (rayIxCnt[j][r] == 1) nc++;
-			else c++;
-			expandedBlobs[cameras[j].index] = r;
+			assert(points2D[c]->size() > b);
+			if (rayIxCnt[c][b] == 1) clean++;
+			else conflict++;
+			expandedBlobs[cameras[c].index] = b;
+		};
+		if constexpr (std::is_same_v<decltype(ixm), MergedIntersection*>)
+		{ // MergedIntersection
+			for (int j = 0; j < camCount; j++)
+				if (ixm->blobs[j] != InvalidBlob)
+					blob(j, ixm->blobs[j]);
 		}
-//		float confidence = (nc*nc)/(c+1);
-		float confidence = nc*nc*2 + c;
-		points3D.emplace_back(ix->center, ix->error, confidence);
+		else
+		{ // TwoIntersection
+			blob(ixm->c1, ixm->b1);
+			blob(ixm->c2, ixm->b2);
+		}
+//		float confidence = (clean*clean)/(conflict+1);
+		float confidence = clean*clean*2 + conflict;
+		points3D.emplace_back(ixm->center, ixm->error, confidence);
 		points3D.back().blobs = std::move(expandedBlobs);
 	};
 	for (int i = 0; i < mergedIntersections.size(); i++)
@@ -340,6 +328,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		if (intersections[i].merge == NULL)
 			handlePoints(&intersections[i]);
 	}
+	assert(points3D.size() == ixCnt);
 }
 
 /**

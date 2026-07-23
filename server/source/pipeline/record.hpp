@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "imu/imu.hpp"
 #include "tracking/cluster.hpp"
 #include "tracking/virtual.hpp"
+#include "point/triangulation.hpp"
 
 #include "util/trackdef.hpp"
 #include "util/eigendef.hpp"
@@ -308,11 +309,11 @@ struct FrameRecord
 	// TODO: Track individual large markers (4/4)
 	// Either store in tracker record or here in separate records
 
-	// TODO: Properly integrate triangulation records (1/3)
-	std::vector<Eigen::Vector3f> triangulations;
+	std::vector<TriangulatedPoint> triangulations;
 
 	// This is mostly for visualisation
-	std::vector<Cluster3D> cluster2DTri;
+	std::vector<Cluster3DStats> clusterTri3D; // Will mostly capture targets of sphere-markers
+	std::vector<Cluster3DStats> cluster2DTri; // Should capture any target, even flat-markers
 
 	// Points not used for tracking during realtime processing
 	// Useful for retroactive tracking e.g. after a detection

@@ -34,27 +34,33 @@ typedef std::vector<int> Cluster2D; // Indices into a cameras points2D
 // Stat representation of a Cluster2D
 struct Cluster2DStats
 {
+	float score;
 	Eigen::Vector2f center;
 	Eigen::Matrix2f covariance;
-	int points;
+
+	Cluster2DStats() {}
 };
 
 // Association of multiple Cluster2D by way of triangulation into a form of 3D cluster
 struct Cluster2DTri3D
 {
-	std::vector<int> camClusters; // Index into cluster list for each involved camera
 	float score;
 	Eigen::Vector3f center;
+	std::vector<int> camClusters; // Index into cluster list for each involved camera
 
 	Cluster2DTri3D(int cams) : camClusters(cams, -1) {}
 };
 
-// Association of multiple Cluster2D by way of triangulation into a form of 3D cluster
-struct Cluster3D
+// Stat representation of a TriCluster3D or Cluster2DTri3D
+struct Cluster3DStats
 {
+	//int id; // TODO: Track clusters in 3D (1/5)
 	float score;
 	Eigen::Vector3f center;
 	Eigen::Matrix3f covariance;
+
+	Cluster3DStats() {}
+	Cluster3DStats(float score, Eigen::Vector3f center, Eigen::Matrix3f covariance) : score(score), center(center), covariance(covariance) {}
 };
 
 static Cluster2DStats calculateClusterStats2D(const std::vector<int> &cluster, const std::vector<Eigen::Vector2f> &points2D)
@@ -66,7 +72,20 @@ static Cluster2DStats calculateClusterStats2D(const std::vector<int> &cluster, c
 	stats.center = points.colwise().mean();
 	Eigen::MatrixXf centered = points.rowwise() - stats.center.transpose();
 	stats.covariance = (centered.transpose() * centered) / (points.rows() - 1);
-	stats.points = cluster.size();
+	stats.score = cluster.size();
+	return stats;
+}
+
+static Cluster3DStats calculateClusterStats3D(const std::vector<int> &cluster, const std::vector<Eigen::Vector3f> &points3D)
+{
+	Eigen::MatrixXf points(cluster.size(), 3);
+	for (int p = 0; p < cluster.size(); p++)
+		points.row(p) = points3D[cluster[p]];
+	Cluster3DStats stats;
+	stats.center = points.colwise().mean();
+	Eigen::MatrixXf centered = points.rowwise() - stats.center.transpose();
+	stats.covariance = (centered.transpose() * centered) / (points.rows() - 1);
+	stats.score = cluster.size();
 	return stats;
 }
 

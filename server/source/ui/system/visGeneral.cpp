@@ -92,22 +92,36 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 		}
 	}
 
-	if (visFrame && !visFrame.frameIt->get()->trackers.empty())
+	if (!visFrame)
+		return Eigen::Vector3f::Constant(NAN);
+
+	FrameRecord &frame = *visFrame.frameIt->get();
+	if (!frame.trackers.empty())
 	{ // Pose from frame tracking records
-		auto &trackRecords = visFrame.frameIt->get()->trackers;
 		if (tracking.focusedTrackerID >= 0)
 		{
-			auto trackRecord = std::find_if(trackRecords.begin(), trackRecords.end(),
+			auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(),
 				[&](auto &tgt){ return tgt.id == tracking.focusedTrackerID; });
-			if (trackRecord != trackRecords.end())
+			if (trackRecord != frame.trackers.end())
 				return trackRecord->pose.filtered.translation();
 		}
-		return trackRecords.front().pose.filtered.translation();
+		for (auto &tracker : frame.trackers)
+		{
+			if (tracker.result.isProbe()) continue;
+			if (tracker.result.isDetected() || tracker.result.isTracked())
+				return tracker.pose.filtered.translation();
+			return Eigen::Vector3f::Constant(NAN); // Keep last
+		}
 	}
 
-	if (!GetState().pipeline.record.imus.empty())
-	{
-		return Eigen::Vector3f(0,0,1);
+	if (!frame.clusterTri3D.empty())
+	{ // A 3D cluster of triangulated points
+		return std::max_element(frame.clusterTri3D.begin(), frame.clusterTri3D.end(), [](auto &a, auto &b){ return a.score < b.score; })->center;
+	}
+
+	if (!frame.cluster2DTri.empty())
+	{ // A triangulation from 2D clusters
+		return std::max_element(frame.cluster2DTri.begin(), frame.cluster2DTri.end(), [](auto &a, auto &b){ return a.score < b.score; })->center;
 	}
 
 	return Eigen::Vector3f::Constant(NAN);

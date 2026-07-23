@@ -87,12 +87,12 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 
 		for (int i = 0; i < clusterStats[c].size(); i++)
 		{
-			if (clusterStats[c][i].points < params.clusterTri.minFocusClusterPoints)
+			if (clusterStats[c][i].score < params.clusterTri.minFocusClusterPoints)
 				break; // Since they are sorted, can break here
 
 			Cluster2DTri3D cluster(clusterStats.size());
 			cluster.camClusters[c] = i;
-			cluster.score = clusterStats[c][i].points;
+			cluster.score = clusterStats[c][i].score;
 
 			for (int cc = 0; cc < clusterStats.size(); cc++)
 			{
@@ -104,15 +104,15 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 				int bestPoints = 0;
 				for (int j = 0; j < clusterStats[cc].size(); j++)
 				{
-					float overlap = calculateCluster2DOverlap(clusterStats[c].front(), calibs[c], clusterStats[cc][j], calibs[cc]);
+					float overlap = calculateCluster2DOverlap(clusterStats[c][i], calibs[c], clusterStats[cc][j], calibs[cc]);
 					LOG(LCluster, LTrace, "    Cluster %d of camera %u with %d 2D points has overlap of %f with cluster %d of camera %u with %d 2D points!",
-						i, calibs[c].id, (int)clusterStats[c][i].points, overlap, j, calibs[cc].id, (int)clusterStats[cc][j].points);
+						i, calibs[c].id, (int)clusterStats[c][i].score, overlap, j, calibs[cc].id, (int)clusterStats[cc][j].score);
 					if (overlap < params.clusterTri.min2DClusterOverlap) continue;
 					if (overlap > bestOverlap)
 					{
 						best = j;
 						bestOverlap = overlap;
-						bestPoints = clusterStats[cc][j].points;
+						bestPoints = clusterStats[cc][j].score;
 					}
 				}
 				if (best >= 0)
@@ -145,7 +145,7 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 						comp.score = std::max(comp.score, cluster.score);
 						addCluster = false;
 						LOG(LCluster, LTrace, "    Matched 3D cluster of score %f around 2D cluster %d of camera %u with %d 2D points, with new score of %f",
-							cluster.score, i, calibs[c].id, (int)clusterStats[c][i].points, comp.score);
+							cluster.score, i, calibs[c].id, (int)clusterStats[c][i].score, comp.score);
 						break;
 					}
 				}
@@ -163,7 +163,7 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 							if (comp.score > cluster.score)
 							{
 								LOG(LCluster, LDebug, "    Found 3D cluster of score %f around 2D cluster %d of camera %u with %d 2D points, to be competing with existing cluster of score %f",
-									cluster.score, i, calibs[c].id, (int)clusterStats[c][i].points, comp.score);
+									cluster.score, i, calibs[c].id, (int)clusterStats[c][i].score, comp.score);
 								addCluster = false;
 							}
 							break;
@@ -174,7 +174,7 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 				if (foundCompeting && addCluster)
 				{ // Remove other competing clusters
 					LOG(LCluster, LDebug, "    Adopting 3D cluster of score %f around 2D cluster %d of camera %u with %d 2D points, despite competition with other clusters!",
-						cluster.score, i, calibs[c].id, (int)clusterStats[c][i].points);
+						cluster.score, i, calibs[c].id, (int)clusterStats[c][i].score);
 					for (auto compIt = clusterTri.begin(); compIt != clusterTri.end();)
 					{
 						bool isCompeting = false;
@@ -187,13 +187,13 @@ std::vector<Cluster2DTri3D> triangulateClusters2D(const std::vector<std::vector<
 				else if (addCluster)
 				{
 					LOG(LCluster, LDebug, "    Adopting 3D cluster of score %f around 2D cluster %d of camera %u with %d 2D points",
-						cluster.score, i, calibs[c].id, (int)clusterStats[c][i].points);
+						cluster.score, i, calibs[c].id, (int)clusterStats[c][i].score);
 				}
 			}
 			else if (addCluster)
 			{
 				LOG(LCluster, LDebug, "    Adopting 3D cluster of score %f around 2D cluster %d of camera %u with %d 2D points",
-					cluster.score, i, calibs[c].id, (int)clusterStats[c][i].points);
+					cluster.score, i, calibs[c].id, (int)clusterStats[c][i].score);
 			}
 
 			if (addCluster)

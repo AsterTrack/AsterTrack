@@ -655,7 +655,6 @@ static void ShowTrackingResults()
 	{
 		uint32_t loaded, current, added, removed;
 	};
-	static EventChange losses, search2D, detect2D, detect3D, tracked;
 	auto updateEventChange = [](EventChange &event, uint32_t loaded, uint32_t current)
 	{
 		event.loaded += loaded;
@@ -663,17 +662,36 @@ static void ShowTrackingResults()
 		event.added += current > loaded? current - loaded : 0;
 		event.removed += loaded > current? loaded - current : 0;
 	};
-	
+
+	struct StatChange
+	{
+		StatValue<float, StatExtremas | StatDistribution> loaded, current, added, removed;
+	};
+	auto updateStatChange = [](StatChange &stats, float lVal, float cVal, bool lCond, bool cCond, bool gate)
+	{
+		if (lCond) stats.loaded.update(lVal);
+		if (cCond) stats.current.update(cVal);
+		if (gate && !(lCond && cCond)) return;
+		if (cVal > lVal) stats.added.update(cVal-lVal);
+		if (cVal < lVal) stats.removed.update(lVal-cVal);
+	};
+
+	struct TriangulationSamples
+	{
+		EventChange count;
+		StatChange samples, error;
+	};
+	static TriangulationSamples triangulations;
+
 	struct TrackingSamples
 	{
 		std::string label;
 		TrackerConfig::TrackerType type;
 		EventChange tracked;
-		StatValue<float,StatExtremas|StatDistribution> samplesLoaded, samplesCurrent, samplesAdded, samplesRemoved;
-		StatValue<float,StatExtremas|StatDistribution> errorLoaded, errorCurrent, errorAdded, errorRemoved;
-		StatValue<float,StatDistribution> trackTimeLoaded, trackTimeCurrent;
+		StatChange samples, error, time;
 	};
 	static std::map<int, TrackingSamples> trackers;
+	static EventChange losses, search2D, detect2D, detect3D, tracked;
 	static uint32_t coveredFrames; // All following code relies on frame number
 	static bool ignoreVirtualTrackers = true;
 
@@ -777,6 +795,7 @@ static void ShowTrackingResults()
 		for (FrameNum f = start; f < end; f++)
 		{
 			if (!framesRecord[f] || !framesRecord[f]->finishedProcessing) continue;
+			coveredFrames++;
 			// Accumulate results for each tracker for this frame from loaded and current results
 			struct FrameTrackers {
 				uint32_t samplesLoaded = 0, samplesCurrent = 0;
@@ -811,7 +830,6 @@ static void ShowTrackingResults()
 					trkFrame.timeLoaded = trackRecord.procTimeMS;
 			}
 			// Update changes to all relevant tracking events
-			coveredFrames++;
 			updateEventChange(losses, eventsStored.losses, eventsCurrent.losses);
 			updateEventChange(search2D, eventsStored.search2D, eventsCurrent.search2D);
 			updateEventChange(detect2D, eventsStored.detect2D, eventsCurrent.detect2D);
@@ -824,35 +842,36 @@ static void ShowTrackingResults()
 				auto &tracker = trackers[trk.first];
 				auto &trkFrame = trk.second;
 				updateEventChange(tracker.tracked, std::min(1u, trkFrame.samplesLoaded), std::min(1u, trkFrame.samplesCurrent));
-				if (trkFrame.samplesLoaded)
-				{
-					tracker.samplesLoaded.update(trkFrame.samplesLoaded);
-					tracker.errorLoaded.update(trkFrame.errorLoaded);
-					tracker.trackTimeLoaded.update(trkFrame.timeLoaded);
-				}
-				if (trkFrame.samplesCurrent)
-				{
-					tracker.samplesCurrent.update(trkFrame.samplesCurrent);
-					tracker.errorCurrent.update(trkFrame.errorCurrent);
-					tracker.trackTimeCurrent.update(trkFrame.timeCurrent);
-				}
-				if (trkFrame.samplesCurrent > trkFrame.samplesLoaded)
-					tracker.samplesAdded.update(trkFrame.samplesCurrent-trkFrame.samplesLoaded);
-				if (trkFrame.samplesCurrent < trkFrame.samplesLoaded)
-					tracker.samplesRemoved.update(trkFrame.samplesLoaded-trkFrame.samplesCurrent);
-				if (trkFrame.samplesLoaded && trkFrame.samplesCurrent)
-				{
-					if (trkFrame.errorCurrent > trkFrame.errorLoaded)
-						tracker.errorAdded.update(trkFrame.errorCurrent-trkFrame.errorLoaded);
-					if (trkFrame.errorCurrent < trkFrame.errorLoaded)
-						tracker.errorRemoved.update(trkFrame.errorLoaded-trkFrame.errorCurrent);
-				}
+				updateStatChange(tracker.samples, trkFrame.samplesLoaded, trkFrame.samplesCurrent, trkFrame.samplesLoaded, trkFrame.samplesCurrent, false);
+				updateStatChange(tracker.error, trkFrame.errorLoaded, trkFrame.errorCurrent, trkFrame.samplesLoaded, trkFrame.samplesCurrent, true);
+				updateStatChange(tracker.time, trkFrame.timeLoaded, trkFrame.timeCurrent, trkFrame.samplesLoaded, trkFrame.samplesCurrent, true);
 			}
+			// Accumulate and update changes in triangulations
+			uint32_t triSamplesStored = 0, triSamplesCurrent = 0;
+			float triErrorStored = 0, triErrorCurrent = 0;
+			for (auto &tri : framesStored[f]->triangulations)
+			{
+				for (int c = 0; c < tri.blobs.size(); c++)
+					if (tri.blobs[c] != InvalidBlob)
+						triSamplesStored++;
+				triErrorStored += tri.error / framesStored[f]->triangulations.size();
+			}
+			for (auto &tri : framesRecord[f]->triangulations)
+			{
+				for (int c = 0; c < tri.blobs.size(); c++)
+					if (tri.blobs[c] != InvalidBlob)
+						triSamplesCurrent++;
+				triErrorCurrent += tri.error / framesRecord[f]->triangulations.size();
+			}
+			updateEventChange(triangulations.count, framesStored[f]->triangulations.size(), framesRecord[f]->triangulations.size());
+			updateStatChange(triangulations.samples, triSamplesStored, triSamplesCurrent, triSamplesStored, triSamplesCurrent, false);
+			updateStatChange(triangulations.error, triErrorStored, triErrorCurrent, triSamplesStored, triSamplesCurrent, true);
 		}
 	};
 
 	if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 	{
+		triangulations = {};
 		losses = {};
 		search2D = {};
 		detect2D = {};
@@ -910,6 +929,33 @@ static void ShowTrackingResults()
 		ImGui::TreePop();
 	}
 
+	#define FMT_SUM(label, stat, t, fac, fmt) ImGui::Text(label fmt "  [" fmt "]  +" fmt " -" fmt "", (t)stat.current.sum*fac, (t)stat.loaded.sum*fac, (t)stat.added.sum*fac, (t)stat.removed.sum*fac)
+	#define FMT_AVG(label, stat, fac, fmt) ImGui::Text(label fmt " +- " fmt "  [" fmt " +- " fmt "]", stat.current.avg*fac, stat.current.stdDev()*2*fac, stat.loaded.avg*fac, stat.loaded.stdDev()*2*fac)
+	#define FMT_DIF(label, stat, fac, fmt) ImGui::Text(label "+" fmt " (%u) -" fmt " (%u), %u unchanged", stat.added.avg*fac, stat.added.num, stat.removed.avg*fac, stat.removed.num, coveredFrames-(stat.added.num+stat.removed.num))
+	#define FMT_EXT(label, stat, t, fac, fmtMin, fmtMax) ImGui::Text(label fmtMin "/" fmtMax "  [" fmtMin "/" fmtMax "]", (t)stat.current.min*fac, (t)stat.current.max*fac, (t)stat.loaded.min*fac, (t)stat.loaded.max*fac)
+	#define FMT_DIST(stat, tVal, fac, fmtAvg, fmtMin, fmtMax) {\
+		FMT_AVG("     avg: ", stat, fac, fmtAvg);\
+		FMT_DIF("	 diff: ", stat, fac, fmtAvg);\
+		FMT_EXT("      >/<: ", stat, tVal, fac, fmtMin, fmtMax);\
+	}
+
+	if (triangulations.count.current > 0 || triangulations.count.loaded > 0)
+	{
+		ImGui::AlignTextToFramePadding();
+		bool open = ImGui::TreeNodeEx("Triangulations", ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_AllowOverlap);
+		if (open)
+		{
+			ImGui::Text("Points: %u  [%u]  +%u -%u", triangulations.count.current, triangulations.count.loaded, triangulations.count.added, triangulations.count.removed);
+			FMT_SUM("Samples: ", triangulations.samples, uint32_t, 1, "%u");
+			FMT_DIST(triangulations.samples, uint32_t, 1, "%.2f", "%u", "%u");
+			ImGui::Text("Errors :");
+			FMT_DIST(triangulations.error, float, 1000, "%.2fmm", "%.3fmm", "%.2fmm")
+			//ImGui::Text("Times  :");
+			//FMT_DIST(triangulations.time, false, float, 1000, "%.2fms", "%.2fms", "%.3fms", "%.2fms")
+			ImGui::TreePop();
+		}
+	}
+
 	if (trackers.empty())
 		return;
 
@@ -950,26 +996,19 @@ static void ShowTrackingResults()
 			auto &tgt = trackedTarget.second;
 			auto type = trackedTarget.second.type; 
 			ImGui::Text("Frames: %u  [%u]  +%u -%u", tgt.tracked.current, tgt.tracked.loaded, tgt.tracked.added, tgt.tracked.removed);
-			ImGui::Text("Times: %.2fms +- %.2f  [%.2fms +- %.2f]", tgt.trackTimeCurrent.avg, tgt.trackTimeCurrent.stdDev()*2, tgt.trackTimeLoaded.avg, tgt.trackTimeLoaded.stdDev()*2);
-			ImGui::Text(type == TrackerConfig::TRACKER_VIRTUAL? "Trackers:" : "Samples:");
-			ImGui::Text("    sum: %u  [%u]  +%u -%u", (uint32_t)tgt.samplesCurrent.sum, (uint32_t)tgt.samplesLoaded.sum, (uint32_t)tgt.samplesAdded.sum, (uint32_t)tgt.samplesRemoved.sum);
-			ImGui::Text("     avg: %.2f +- %.2f  [%.2f +- %.2f]", tgt.samplesCurrent.avg, tgt.samplesCurrent.stdDev()*2, tgt.samplesLoaded.avg, tgt.samplesLoaded.stdDev()*2);
-			ImGui::Text("	 diff: +%.2f (%u) -%.2f (%u), %u unchanged", tgt.samplesAdded.avg, tgt.samplesAdded.num, tgt.samplesRemoved.avg, tgt.samplesRemoved.num, coveredFrames-(tgt.samplesAdded.num+tgt.samplesRemoved.num));
-			ImGui::Text("      >/<: %u/%u  [%u/%u]", (uint32_t)tgt.samplesCurrent.min, (uint32_t)tgt.samplesCurrent.max, (uint32_t)tgt.samplesLoaded.min, (uint32_t)tgt.samplesLoaded.max);
+			//ImGui::Text("Times: %.2fms +- %.2f  [%.2fms +- %.2f]", tgt.time.current.avg, tgt.time.current.stdDev()*2, tgt.time.loaded.avg, tgt.time.loaded.stdDev()*2);
 			if (type == TrackerConfig::TRACKER_VIRTUAL)
-			{
-				ImGui::Text("Errors :");
-				ImGui::Text("     avg: %.2fmm +- %.2fmm  [%.2fmm +- %.2fmm]", tgt.errorCurrent.avg*1000, tgt.errorCurrent.stdDev()*2*1000, tgt.errorLoaded.avg*1000, tgt.errorLoaded.stdDev()*2*1000);
-				ImGui::Text("	 diff: +%.2fmm (%u) -%.2fmm (%u), %u unchanged", tgt.errorAdded.avg*1000, tgt.errorAdded.num, tgt.errorRemoved.avg*1000, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
-				ImGui::Text("      >/<: %.3fmm/%.2fmm  [%.3fmm/%.2fmm]", tgt.errorCurrent.min*1000, tgt.errorCurrent.max*1000, tgt.errorLoaded.min*1000, tgt.errorLoaded.max*1000);
-			}
+				FMT_SUM("Trackers: ", tgt.samples, uint32_t, 1, "%u");
 			else
-			{
-				ImGui::Text("Errors :");
-				ImGui::Text("     avg: %.2fpx +- %.2fpx  [%.2fpx +- %.2fpx]", tgt.errorCurrent.avg*PixelFactor, tgt.errorCurrent.stdDev()*2*PixelFactor, tgt.errorLoaded.avg*PixelFactor, tgt.errorLoaded.stdDev()*2*PixelFactor);
-				ImGui::Text("	 diff: +%.2fpx (%u) -%.2fpx (%u), %u unchanged", tgt.errorAdded.avg*PixelFactor, tgt.errorAdded.num, tgt.errorRemoved.avg*PixelFactor, tgt.errorRemoved.num, coveredFrames-(tgt.errorAdded.num+tgt.errorRemoved.num));
-				ImGui::Text("      >/<: %.3fpx/%.2fpx  [%.3fpx/%.2fpx]", tgt.errorCurrent.min*PixelFactor, tgt.errorCurrent.max*PixelFactor, tgt.errorLoaded.min*PixelFactor, tgt.errorLoaded.max*PixelFactor);
-			}
+				FMT_SUM("Samples: ", tgt.samples, uint32_t, 1, "%u");
+			FMT_DIST(tgt.samples, uint32_t, 1, "%.2f", "%u", "%u");
+			ImGui::Text("Errors :");
+			if (type == TrackerConfig::TRACKER_VIRTUAL)
+				FMT_DIST(tgt.error, float, 1000, "%.2fmm", "%.3fmm", "%.2fmm")
+			else
+				FMT_DIST(tgt.error, float, PixelFactor, "%.2fpx", "%.3fpx", "%.2fpx")
+			ImGui::Text("Times :");
+			FMT_DIST(tgt.time, float, 1000, "%.2fms", "%.3fms", "%.2fms")
 			ImGui::TreePop();
 		}
 		ImGui::PopID();

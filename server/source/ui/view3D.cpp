@@ -366,8 +366,9 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		sidePanelWidth = ImGui::GetWindowWidth();
 
 		ImGui::Checkbox("Show Marker Rays", &visState.showMarkerRays);
-		ImGui::Checkbox("Show 3D Clusters", &visState.show3DClusters);
-		ImGui::Checkbox("Show 2D Clusters", &visState.show2DClusters);
+		ImGui::Checkbox("Show 3D Tri Clusters in 3D", &visState.showClustersTri3D);
+		ImGui::Checkbox("Show Tri 2D Clusters in 3D", &visState.showClusters2DTri);
+		ImGui::Checkbox("Show 2D Clusters in Camera", &visState.showClusters2D);
 
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget && ImGui::TreeNode("Target Calibration"))
@@ -428,16 +429,29 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			visualiseRays(pipeline.cameras[c]->calib, frame.cameras[c].points2D, Color{ 0.6f, 0.6f, 0.6f, 1.0f });
 	}
 
-	if (visState.show3DClusters && visFrame && visFrame.isRealtimeFrame)
+	if ((visState.showClustersTri3D || visState.showClusters2DTri) && visFrame && visFrame.isRealtimeFrame)
 	{ // Only for realtime frames (e.g. no inspecting frames in target calib later)
 		thread_local std::vector<VisModel> clusters;
 		clusters.clear();
-		for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
+		if (visState.showClustersTri3D)
 		{
-			Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
-			clusters.emplace_back(
-				composeCovarianceTransform(pose, cluster.covariance, 1),
-				Color{ 0.4f, 0.8f, 0.2f, 0.6f });
+			for (auto &cluster : visFrame.frameIt->get()->clusterTri3D)
+			{
+				Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
+				clusters.emplace_back(
+					composeCovarianceTransform(pose, cluster.covariance, 3),
+					Color{ 0.4f, 0.8f, 0.2f, 0.6f });
+			}
+		}
+		if (visState.showClusters2DTri)
+		{
+			for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
+			{
+				Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
+				clusters.emplace_back(
+					composeCovarianceTransform(pose, cluster.covariance, 3),
+					Color{ 0.4f, 0.8f, 0.2f, 0.6f });
+			}
 		}
 		if (!clusters.empty())
 		{
@@ -907,35 +921,27 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		glEnable(GL_DEPTH_TEST);
 	}
 
+	thread_local std::vector<VisPoint> markerPoints;
+	markerPoints.clear();
+
+	Color colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f };
+	for (auto &tri : frame.triangulations)
+		markerPoints.emplace_back(tri.pos, (Color8)(tri.confidence < 4? colorNC : colorC), tri.size);
+
 	if (pipeline.phase == PHASE_Calibration_Point)
-	{ // TODO: Accessing pipeline in vis without lock
-		thread_local std::vector<VisPoint> markerPoints;
-		markerPoints.clear();
-
+	{
+		auto room = pipeline.pointCalib.room.contextualRLock();
+		Color col = { 0.6f, 1.0f, 0.1f, 0.6f };
+		for (auto &pt : room->floorPoints)
 		{
-			auto room = pipeline.pointCalib.room.contextualRLock();
-			Color col = { 0.6f, 1.0f, 0.1f, 0.6f };
-			for (auto &pt : room->floorPoints)
-			{
-				if (pt.sampleCount > 3)
-					markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.02f);
-			}
+			if (pt.sampleCount > 3)
+				markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.02f);
 		}
-
-		Color col = { 0.9f, 0.6f, 1.0f, 0.8f };
-		for (auto &tri : frame.triangulations)
-		{
-			markerPoints.emplace_back(tri.cast<float>(), (Color8)col, 0.015f);
-		}
-
-		visualisePointsSpheres(markerPoints);
 	}
 
 	if (pipeline.isSimulationMode)
 	{
 		auto sim_lock = pipeline.simulation.contextualRLock();
-		thread_local std::vector<VisPoint> markerPoints;
-		markerPoints.clear();
 		Color gtCol = { 1.0f, 0.0f, 0.8f, 0.6f };
 		for (const auto &object : sim_lock->objects)
 		{
@@ -943,8 +949,9 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			for (const auto &pt : object.target.markers)
 				markerPoints.emplace_back(object.pose * pt.pos, (Color8)gtCol, 0.01f*0.5f);
 		}
-		visualisePointsSpheres(markerPoints);
 	}
+
+	visualisePointsSpheresDepthSorted(markerPoints);
 }
 
 static void visualRotationGenAnalysis(const VisualisationState &visState, const RotationGenerationParameters &gen)

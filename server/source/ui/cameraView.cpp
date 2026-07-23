@@ -1123,7 +1123,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 		else if (phase == PHASE_Tracking)
 		{
-			if (visState.show2DClusters)
+			if (visState.showClusters2D)
 			{
 				for (auto &cluster : camFrame.clusters2D)
 				{
@@ -1150,15 +1150,29 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				return;
 			}
 
-			// Display poses in 3D
+			// Display some parts in 3D
 			visSetupCamera(postProjMat, calib);
+
 			for (auto &trackRecord : frame->trackers)
-			{
+			{ // Display tracker poses
 				if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
 				visualisePose(trackRecord.pose.observed, Color{ 0.8, 0.8, 0, 1.0 }, 0.1f, 1.0f);
 			}
 			if (visState.room.showOrigin)
+			{ // Display origin
 				visualiseOrigin(visState.room.origin, 1, 5);
+			}
+			if (!frame->triangulations.empty())
+			{ // Display triangulated points
+				thread_local std::vector<VisPoint> vertices;
+				vertices.clear();
+				Color colorC = Color{ 1.0f, 0.6f, 0.8f, 0.5f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.5f };
+				for (const auto &tri : frame->triangulations)
+					vertices.emplace_back(tri.pos, tri.confidence < 4? colorNC : colorC, tri.size);
+				visualisePointsSpheresDepthSorted(vertices);
+			}
+
+			// Return to 2D projection for the rest
 			visSetupProjection(postProjMat);
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
@@ -1228,16 +1242,6 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 					visualisePoints2D(projected2D, colFiltered, 2.0f);
 				}
 			}
-
-			// Display triangulated points
-			// TODO: Move triangulatedPoint as trackingResult to frameRecords
-			/* static unsigned int triPointVBO = 0;
-			thread_local std::vector<VisPoint> vertices;
-			vertices.clear();
-			Color colorNC = Color{ 1, 0, 0, 0.5f }, colorC = Color{ 0.5f, 0, 1, 0.5f };
-			for (const auto &pt : pipeline.tracking.triangulations3D)
-				vertices.emplace_back(pt.pos, pt.confidence < 4? colorNC : colorC, 4.0f);
-			visualisePointsVBOSprites(triPointVBO, pipeline.tracking.triangulations3D.size(), true); */
 		}
 		else if (phase == PHASE_Calibration_Target)
 		{

@@ -776,7 +776,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tpt1 = pclock::now();
 	} */
 
-	std::vector<TriCluster3D> tri3DClusters;
+	std::vector<TriCluster3D> clustersTri3D;
+	std::vector<Cluster3DStats> trackedClustersTri3D;
 
 	const auto &detect = pipeline.params.detect;
 	const auto &clustering = pipeline.params.cluster;
@@ -870,12 +871,17 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		tri3 = pclock::now();
 
-		// TODO: Split point cloud into groups of nearby points - currently unused
-		tri3DClusters = dbscan<3,float, int>(track.points3D, clustering.tri3DCluster.maxDistance, clustering.tri3DCluster.minPoints);
-		// May also want to consider doing it before resolving conflicts, incase a ray actually passes through two clusters
-		// - in which case, that ray would still be uncertain, I guess
-		LOG(LTracking, LDebug, "Clustered 3D points in %d groups in %d points!", (int)tri3DClusters.size(), (int)track.points3D.size());
-		for (auto &cluster : tri3DClusters)
+		// Clustering triangulated points
+		clustersTri3D = dbscan<3,float, int>(track.points3D, clustering.tri3DCluster.maxDistance, clustering.tri3DCluster.minPoints);
+		trackedClustersTri3D.reserve(clustersTri3D.size());
+		for (auto &cluster : clustersTri3D)
+			trackedClustersTri3D.emplace_back(calculateClusterStats3D(cluster, track.points3D));
+		// TODO: Use for target detection in 3D point cloud
+		// TODO: Track clusters in 3D (2/5) and use for cycling through detections to spread across frames
+		// TODO: Triangulated clusters2D (clusters2DTri) will likely be a superset of this, merge somehow?
+
+		LOG(LTracking, LDebug, "Grouped %d 3D points into %d clusters!", (int)track.points3D.size(), (int)clustersTri3D.size());
+		for (auto &cluster : clustersTri3D)
 			LOG(LTracking, LDebug, "    Cluster has %d 3D points!", (int)cluster.size());
 
 		// Fill triangulated point list to pass to functions
@@ -1036,13 +1042,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, camCount, clustering);
 	std::sort(clusters2DTri.begin(), clusters2DTri.end(), [](auto &a, auto &b){ return a.score > b.score; });
 
-	// TODO: Track clusters in 3D (1/2)
-	// NOTE: Keep in min clusters2DTri.camClusters is currently indexed with subset of cameras (calibs)
-	std::vector<Cluster3D> trackedClusters3D;
-	trackedClusters3D.reserve(clusters2DTri.size());
+	// TODO: Track clusters in 3D (3/5)
+	// NOTE: Keep in mind clusters2DTri.camClusters is currently indexed with subset of cameras (calibs)
+	std::vector<Cluster3DStats> trackedClusters2DTri;
+	trackedClusters2DTri.reserve(clusters2DTri.size());
 	for (auto &clusterTri : clusters2DTri)
 	{
-		trackedClusters3D.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.1f);
+		trackedClusters2DTri.emplace_back(clusterTri.score, clusterTri.center, Eigen::Matrix3f::Identity() * 0.02f);
 	}
 
 	if (trackTargets && !pipeline.tracking.asyncDetection && (!clusters2DTri.empty() || detect.search.allowSingleCamera) && !detect.suspendDetections)
@@ -1076,6 +1082,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				focusPos = clusters2DTri.front().center;
 				clusters = clusters2DTri.front().camClusters;
+				// TODO: Track clusters in 3D (4/5) - would allow nearby points below cluster limit to be used here
 				for (int c = 0; c < calibs.size(); c++)
 				{
 					int cIndex = clusters[c];
@@ -1128,7 +1135,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			{
 				int cIndex = clusters[c];
 				if (cIndex < 0) continue;
-				// TODO: Track clusters in 3D (1/2) - would allow nearby points below cluster limit to be used here
+				// TODO: Track clusters in 3D (5/5) - would allow nearby points below cluster limit to be used here
 				detectionPoints2DAsync[c] = clusters2D[c][cIndex];
 				detectionPoints2DSync[c] = &clusters2D[c][cIndex];
 			}
@@ -1236,9 +1243,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		}
 	}
 
-	// TODO: Properly integrate triangulation records (2/3)
-	frame->triangulations = track.points3D;
-	frame->cluster2DTri = std::move(trackedClusters3D);
+	// Record single-marker and auxiliary tracking artifacts
+	frame->triangulations = track.triangulations3D;
+	frame->cluster2DTri = std::move(trackedClusters2DTri);
+	frame->clusterTri3D = std::move(trackedClustersTri3D);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		int i = calibs[c].index;

@@ -134,8 +134,9 @@ struct VisualisationState
 
 	bool showMarkerTrails = false;
 	bool showMarkerRays = false;
-	bool show3DClusters = false;
-	bool show2DClusters = false;
+	bool showClustersTri3D = false;
+	bool showClusters2DTri = false;
+	bool showClusters2D = false;
 
 	struct {
 		FrameNum focusedFrame = 0;

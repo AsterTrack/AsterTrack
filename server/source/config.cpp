@@ -1479,6 +1479,9 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			if (!jsFrame.contains("targets")) continue;
 			if (!jsFrame["targets"].is_array()) continue;
 			auto &jsTrackers = jsFrame["targets"];
+			if (!jsFrame.contains("triangulations") || !jsFrame["triangulations"].is_array())
+				jsFrame["triangulations"] = json::array();
+			auto &jsTriangulations = jsFrame["triangulations"];
 
 			FrameNum num = jsFrame["num"].get<FrameNum>();
 			if (num-frameOffset < frames.beginIndex()) continue;
@@ -1487,10 +1490,27 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			auto &framePtr = frames[num-frameOffset];
 			if (!framePtr) continue;
 			FrameRecord &frame = *framePtr;
+
 			frame.triangulations.clear();
-			// TODO: Properly integrate triangulation records (3/3)
+			frame.triangulations.reserve(jsTriangulations.size());
+			for (auto &jsTri : jsTriangulations)
+			{
+				if (!jsTri.is_array() || jsTri.size() < 7) continue;
+				frame.triangulations.emplace_back();
+				auto &tri = frame.triangulations.back();
+				tri.pos = Eigen::Vector3f(
+					jsTri[0].get<float>(),
+					jsTri[1].get<float>(),
+					jsTri[2].get<float>()
+				);
+				tri.error = jsTri[3].get<float>();
+				tri.confidence = jsTri[4].get<float>();
+				tri.size = jsTri[5].get<float>();
+				// Somehow include count of samples at least?
+			}
+
 			frame.trackers.clear();
-			frame.finishedProcessing = true; // Just indicates tracker records are filled
+			frame.trackers.reserve(jsTrackers.size());
 			for (auto &jsTarget : jsTrackers)
 			{
 				if (!jsTarget.is_object() || !jsTarget.contains("pose") || !jsTarget["pose"].is_array() || jsTarget["pose"].size() != 4*4) continue;
@@ -1516,6 +1536,8 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 				tracker.error.stdDev = jsTarget.contains("dev")? jsTarget["dev"].get<float>() : 0.0f;
 				tracker.error.max = jsTarget["max"].get<float>();
 			}
+
+			frame.finishedProcessing = true; // Just indicates tracker records are filled
 		}
 	}
 	JSON_PARSE_CATCH_BLOCK
@@ -1542,6 +1564,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 	json file;
 
 	std::set<int> targetIDs;
+	bool hasTris = false;
 
 	// Write observations
 	file["trackingResults"] = json::object();
@@ -1555,6 +1578,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 		json jsFrame;
 		jsFrame["id"] = frame.ID;
 		jsFrame["num"] = frameOffset + frame.num;
+
 		jsFrame["targets"] = json::array();
 		for (const auto &target : frame.trackers)
 		{
@@ -1574,6 +1598,26 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 			jsFrame["targets"].push_back(std::move(jsTarget));
 			targetIDs.insert(target.id);
 		}
+
+		jsFrame["triangulations"] = json::array();
+		for (const auto &tri : frame.triangulations)
+		{
+			int samples = 0;
+			for (auto &blob : tri.blobs)
+				if (blob != InvalidBlob)
+					samples++;
+			jsFrame["triangulations"].emplace_back(json::array({
+				tri.pos.x(),
+				tri.pos.y(),
+				tri.pos.z(),
+				tri.error,
+				tri.confidence,
+				tri.size,
+				samples
+			}));
+			hasTris = true;
+		}
+
 		jsFrames.push_back(std::move(jsFrame));
 	}
 
@@ -1582,7 +1626,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 	for (int tgtID : targetIDs)
 		jsRecords["trackers"].push_back(tgtID);
 
-	if (targetIDs.empty() || jsFrames.empty())
+	if ((!hasTris && targetIDs.empty()) || jsFrames.empty())
 		return std::nullopt; // Nothing to save, no error
 
 	return writeJSON(path, file);

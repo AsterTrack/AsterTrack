@@ -687,6 +687,7 @@ static bool ShowTrackingPanel()
 	enum Inspecting
 	{
 		Inspect_Trackers,
+		Inspect_Triangulations,
 		Inspect_CombineTrackers,
 		Inspect_CompareTrackers,
 	};
@@ -746,6 +747,12 @@ static bool ShowTrackingPanel()
 
 	if (ImGui::BeginCombo("##Tracker", curTrackerLabel.c_str(), ImGuiComboFlags_WidthFitPreview))
 	{ // Local change
+		if (ImGui::Selectable("Triangulations", inspecting == Inspect_Triangulations))
+		{
+			inspectExplicit = true; // Allows watching triangulations while focusing a tracker
+			inspecting = Inspect_Triangulations;
+			curTrackerLabel = "Triangulations";
+		}
 		ImGui::BeginDisabled(state.mode != MODE_Replay);
 		if (ImGui::Selectable("Compare", inspecting == Inspect_CompareTrackers))
 		{
@@ -860,7 +867,7 @@ static bool ShowTrackingPanel()
 		return false;
 
 	// Different ID when different set of axis are used
-	const char* plotID = 
+	const char* plotID = inspecting == Inspect_Triangulations? "##Tri" :
 		(inspecting == Inspect_CombineTrackers? "##Combine" :
 			(inspectingType == Inspect_Virtual? "##Virtual" : "##Targets"));
 	if (!ImPlot::BeginPlot(plotID, ImVec2(-1, -1)))
@@ -884,7 +891,16 @@ static bool ShowTrackingPanel()
 	// Setup plots
 	ImPlot::SetupAxis(ImAxis_X1, "Frames",ImPlotAxisFlags_NoLabel);
 	ImPlot::SetupAxisLimits(ImAxis_X1, 0, framesAxisMax);
-	if (inspectingType == Inspect_Virtual)
+	if (inspecting == Inspect_Triangulations)
+	{
+		ImPlot::SetupAxis(ImAxis_Y1, "Points",ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 20);
+		ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
+		ImPlot::SetupAxis(ImAxis_Y4, "Samples", ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 20);
+	}
+	else if (inspectingType == Inspect_Virtual)
 	{ // Virtual Tracker uses different metrics
 		ImPlot::SetupAxis(ImAxis_Y1, "Trackers",ImPlotAxisFlags_Lock);
 		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 5);
@@ -925,7 +941,7 @@ static bool ShowTrackingPanel()
 	{
 		std::vector<int> dataNum;
 		std::vector<float> errors;
-		std::vector<float> dataTimeRot;
+		std::vector<float> dataAux;
 		std::vector<float> mistrust;
 		std::vector<TrackingResult> state;
 		std::vector<float> stateVis;
@@ -936,8 +952,8 @@ static bool ShowTrackingPanel()
 			dataNum.resize(size, 0);
 			errors.clear();
 			errors.resize(size, NAN);
-			dataTimeRot.clear();
-			dataTimeRot.resize(size, NAN);
+			dataAux.clear();
+			dataAux.resize(size, NAN);
 			mistrust.clear();
 			mistrust.resize(size, NAN);
 			state.clear();
@@ -1045,14 +1061,14 @@ static bool ShowTrackingPanel()
 		{
 			stats.dataNum[index] = trackRecord->virtualError.subtrackers;
 			stats.errors[index] = trackRecord->virtualError.pos * 1000;
-			stats.dataTimeRot[index] = trackRecord->virtualError.rot * 180 / PI;
+			stats.dataAux[index] = trackRecord->virtualError.rot * 180 / PI;
 			stats.mistrust[index] = std::sqrt(trackRecord->virtualError.posVar) * 1000 * 3;
 		}
 		else
 		{
 			stats.dataNum[index] = trackRecord->error.samples;
 			stats.errors[index] = trackRecord->error.mean * PixelFactor;
-			stats.dataTimeRot[index] = trackRecord->procTimeMS;
+			stats.dataAux[index] = trackRecord->procTimeMS;
 			stats.mistrust[index] = trackRecord->mistrust * mistrustScale;
 		}
 		stats.state[index] = trackRecord->result;
@@ -1061,7 +1077,7 @@ static bool ShowTrackingPanel()
 	{
 		stats.dataNum[index] = 0;
 		stats.errors[index] = 0;
-		stats.dataTimeRot[index] = 0;
+		stats.dataAux[index] = 0;
 		int trackerNum = 0;
 		for (auto &trackRecord : frame.trackers)
 		{
@@ -1072,7 +1088,7 @@ static bool ShowTrackingPanel()
 			{
 				stats.dataNum[index] += trackRecord.error.samples;
 				stats.errors[index] += trackRecord.error.samples * trackRecord.error.mean * PixelFactor;
-				stats.dataTimeRot[index] += trackRecord.procTimeMS;
+				stats.dataAux[index] += trackRecord.procTimeMS;
 				trackerNum++;
 			}
 			if (isCurrent)
@@ -1082,7 +1098,7 @@ static bool ShowTrackingPanel()
 			if (!combinedHideProbes || !trackRecord.result.isProbe())
 				tracker->second.frames++;
 		}
-		stats.dataTimeRot[index] /= trackerNum; // Possible NAN is intended
+		stats.dataAux[index] /= trackerNum; // Possible NAN is intended
 		stats.errors[index] /= stats.dataNum[index]; // Possible NAN is intended
 	};
 	auto gatherTrackingData = [&]
@@ -1104,9 +1120,45 @@ static bool ShowTrackingPanel()
 		GetUI().RequestUpdates();
 		return true;
 	};
+	auto gatherTriangulationData = [&]
+		(TrackerRecordGraph &stats, const auto framesRecord, bool isCurrent)
+	{
+		OptFrameNum min = std::max<OptFrameNum>(visibleMin, framesRecord.beginIndex());
+		OptFrameNum max = std::min<OptFrameNum>(visibleMax, framesRecord.endIndex());
+		if (max <= min) return false;
+		stats.setup(max - visibleMin);
+		auto frameIt = framesRecord.pos(max-1);
+		for (int f = max-1; f >= min; f--, frameIt--)
+		{
+			if (!*frameIt || !frameIt->get()->finishedProcessing) continue;
+			FrameNum index = f - visibleMin;
+			FrameRecord &frame = *frameIt->get(); 
+			stats.dataNum[index] = frame.triangulations.size();
+			stats.dataAux[index] = 0;
+			stats.errors[index] = 0;
+			for (auto &tri : frame.triangulations)
+			{
+				for (auto &blob : tri.blobs)
+					if (blob != InvalidBlob)
+						stats.dataAux[index] += 1;
+				stats.errors[index] += tri.error * 100; // In cm - for now
+			}
+			stats.dataAux[index] /= frame.triangulations.size(); // Possible NAN is intended
+			stats.errors[index] /= frame.triangulations.size(); // Possible NAN is intended
+		}
+		GetUI().RequestUpdates();
+		return true;
+	};
 
 	bool hasIMU = false;
-	if (inspecting == Inspect_CompareTrackers)
+	if (inspecting == Inspect_Triangulations)
+	{
+		if (showCur && !framesRecord.empty())
+			drawCur = gatherTriangulationData(tracking, framesRecord, true);
+		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
+			drawRec = gatherTriangulationData(recording, framesStored, false);
+	}
+	else if (inspecting == Inspect_CompareTrackers)
 	{
 		if (compIndexA >= 0)
 		{
@@ -1190,16 +1242,16 @@ static bool ShowTrackingPanel()
 	ImPlot::PushColormap(ImPlotColormap_Deep);
 
 	ImPlot::SetAxis(ImAxis_Y1);
-	const char *y1Label = inspectingType == Inspect_Virtual? "Trackers" : "Samples";
+	const char *y1Label = inspecting == Inspect_Triangulations? "Points" : (inspectingType == Inspect_Virtual? "Trackers" : "Samples");
 	if (drawCur)
 	{ // Draw current
-		ImPlot::SetNextLineStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
+		ImPlot::SetNextLineStyle(ImVec4(), 0);
 		ImPlot::SetNextFillStyle(ImVec4(0.3*1.2, 0.45*1.2, 0.7*1.2, 1.0));
 		ImPlot::PlotBars(y1Label, tracking.dataNum.data(), tracking.dataNum.size(), 0.67f, frameRange.Min);
 	}
 	if (drawRec)
 	{ // Draw recorded
-		ImPlot::SetNextLineStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
+		ImPlot::SetNextLineStyle(ImVec4(), 0);
 		ImPlot::SetNextFillStyle(ImVec4(0.3*0.8, 0.45*0.8, 0.7*0.8, 0.6));
 		ImPlot::PlotBars(y1Label, recording.dataNum.data(), recording.dataNum.size(), 0.67f, frameRange.Min);
 	}
@@ -1213,66 +1265,83 @@ static bool ShowTrackingPanel()
 	}
 	if (drawCur)
 	{ // Draw current
-		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1), 2.0);
+		ImPlot::SetNextLineStyle(ImVec4(0.87, 0.52, 0.32, 1.0), 2.0);
 		ImPlot::PlotLine(y2Label, tracking.errors.data(), tracking.errors.size(), 1, frameRange.Min);
 	}
 
 	ImPlot::SetAxis(ImAxis_Y4);
-	const char *y4Label = inspectingType == Inspect_Virtual? "Rot Error" : "Time";
-	if (drawRec)
-	{ // Draw recorded
-		if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
-		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
-		ImPlot::PlotLine(y4Label, recording.dataTimeRot.data(), recording.dataTimeRot.size(), 1, frameRange.Min);
-	}
-	if (drawCur)
-	{ // Draw current
-		if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
-		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1), 2.0);
-		ImPlot::PlotLine(y4Label, tracking.dataTimeRot.data(), tracking.dataTimeRot.size(), 1, frameRange.Min);
-	}
-
-	ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
-	const char *y2AltLabel = inspectingType == Inspect_Virtual? "Pos 3-Sigma" : "Mistrust";
-	if (drawRec)
-	{ // Draw recorded
-		ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
-		ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameRange.Min);
-	}
-	if (drawCur)
-	{ // Draw current
-		ImPlot::SetNextLineStyle(ImVec4(1.0, 0.2, 0.2, 1), 2.0);
-		ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameRange.Min);
-	}
-
-	if (hasIMU)
-	{ // IMU Update Rate line (current data only)
-		ImPlot::SetAxis(ImAxis_Y3);
-		ImPlot::SetNextMarkerStyle(ImPlotMarker_Diamond, 2, ImVec4(0.87, 0.82, 0.22, 1.0), 0);
-		ImPlot::PlotScatter("IMU", imuSampleTime.data(), imuSampleRate.data(), imuSampleTime.size());
-	}
-
-	// Tracking state
-	ImPlot::PushColormap(ImPlotColormap_Dark);
-	
-	if (inspecting == Inspect_CombineTrackers)
-	{ // Show states of all currently tracked trackers
-		for (auto &tracker : combinedTrackers)
-		{
-			if (tracker.second.frames == 0) continue;
-			ImGui::PushID(tracker.first);
-			ImPlot::PlotDigital("##State", tracker.second.stateVis.data(), tracker.second.stateVis.size(), frameRange.Min-0.5f);
-			ImGui::PopID();
+	if (inspecting == Inspect_Triangulations)
+	{
+		const char *y4Label = "Samples";
+		if (drawCur)
+		{ // Draw current
+			ImPlot::SetNextLineStyle(ImVec4(0.8*1.2, 0.2*1.2, 0.8*1.2, 0.6), 2.0);
+			ImPlot::PlotLine(y4Label, tracking.dataAux.data(), tracking.dataAux.size(), 1, frameRange.Min);
+		}
+		if (drawRec)
+		{ // Draw recorded
+			ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 0.6), 2.0);
+			ImPlot::PlotLine(y4Label, recording.dataAux.data(), recording.dataAux.size(), 1, frameRange.Min);
 		}
 	}
 	else
-	{ // Show states of current and compared trackers
-		if (drawRec && !recording.stateVis.empty())
-			ImPlot::PlotDigital("##TrackingRec", recording.stateVis.data(), recording.stateVis.size(), frameRange.Min-0.5f);
-		if (drawCur && !tracking.stateVis.empty())
-			ImPlot::PlotDigital("##Tracking", tracking.stateVis.data(), tracking.stateVis.size(), frameRange.Min-0.5f);
+	{
+		const char *y4Label = inspectingType == Inspect_Virtual? "Rot Error" : "Time";
+		if (drawRec)
+		{ // Draw recorded
+			if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+			ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
+			ImPlot::PlotLine(y4Label, recording.dataAux.data(), recording.dataAux.size(), 1, frameRange.Min);
+		}
+		if (drawCur)
+		{ // Draw current
+			if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1.0), 2.0);
+			ImPlot::PlotLine(y4Label, tracking.dataAux.data(), tracking.dataAux.size(), 1, frameRange.Min);
+		}
+
+		ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
+		const char *y2AltLabel = inspectingType == Inspect_Virtual? "Pos 3-Sigma" : "Mistrust";
+		if (drawRec)
+		{ // Draw recorded
+			ImPlot::SetNextLineStyle(ImVec4(1.0*0.6, 0.2*0.6, 0.2*0.6, 1.0), 2.0);
+			ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameRange.Min);
+		}
+		if (drawCur)
+		{ // Draw current
+			ImPlot::SetNextLineStyle(ImVec4(1.0, 0.2, 0.2, 1.0), 2.0);
+			ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameRange.Min);
+		}
+
+		if (hasIMU)
+		{ // IMU Update Rate line (current data only)
+			ImPlot::SetAxis(ImAxis_Y3);
+			ImPlot::SetNextMarkerStyle(ImPlotMarker_Diamond, 2, ImVec4(0.87, 0.82, 0.22, 1.0), 0);
+			ImPlot::PlotScatter("IMU", imuSampleTime.data(), imuSampleRate.data(), imuSampleTime.size());
+		}
+
+		// Tracking state
+		ImPlot::PushColormap(ImPlotColormap_Dark);
+
+		if (inspecting == Inspect_CombineTrackers)
+		{ // Show states of all currently tracked trackers
+			for (auto &tracker : combinedTrackers)
+			{
+				if (tracker.second.frames == 0) continue;
+				ImGui::PushID(tracker.first);
+				ImPlot::PlotDigital("##State", tracker.second.stateVis.data(), tracker.second.stateVis.size(), frameRange.Min-0.5f);
+				ImGui::PopID();
+			}
+		}
+		else
+		{ // Show states of current and compared trackers
+			if (drawRec && !recording.stateVis.empty())
+				ImPlot::PlotDigital("##TrackingRec", recording.stateVis.data(), recording.stateVis.size(), frameRange.Min-0.5f);
+			if (drawCur && !tracking.stateVis.empty())
+				ImPlot::PlotDigital("##Tracking", tracking.stateVis.data(), tracking.stateVis.size(), frameRange.Min-0.5f);
+		}
+		ImPlot::PopColormap();
 	}
-	ImPlot::PopColormap();
 
 	// Current and selected frames
 	double curFrame = frameNum + 0.5;

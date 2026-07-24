@@ -35,7 +35,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* Structures */
 
-typedef uint8_t RayIxCnt; // Limits number of intersections per ray. Theoretically unlimited.
+typedef int8_t RayIxCnt; // Limits number of intersections per ray. Theoretically unlimited.
 const BlobIndex InvalidBlob = (BlobIndex)-1;
 
 struct MergedIntersection
@@ -336,13 +336,10 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	assert(points3D.size() == ixCnt);
 }
 
-/**
- * Pick best points for each blob conflict and reevaluate point confidences
- * Leaves points3D in a semi-sorted order, highest confidence (sec. error) first
- * Uses state from triangulation to optimise
- */
-void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError)
+void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError, float confidenceThreshold)
 {
+	ScopedLogCategory scopedLogCategory(LTriangulation);
+
 	// Sort by confidence and, secondarily, error (can also be used to punish high errors more severely)
 	std::sort(points3D.begin(), points3D.end(), [maxError](const TriangulatedPoint &a, const TriangulatedPoint &b){ 
 		return (a.confidence-a.error/maxError) > (b.confidence-b.error/maxError);
@@ -355,43 +352,71 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 		int clean = 0, conflict = 0;
 		for (auto &sample : tri.samples)
 		{
-			if (rayIxCnt[sample.camera][sample.blob] == (RayIxCnt)-1)
+			if (rayIxCnt[sample.camera][sample.blob] < 0)
 			{ // Already claimed by a point with higher confidence
 				conflict++;
 			}
 			else
 			{ // Else claim it (doesn't matter if there's only one intersection on this ray)
-				rayIxCnt[sample.camera][sample.blob] = (RayIxCnt)-1;
+				assert(rayIxCnt[sample.camera][sample.blob] > 0);
+				rayIxCnt[sample.camera][sample.blob] = -rayIxCnt[sample.camera][sample.blob];
 				clean++;
 			}
 		}
 		// Calculate new confidence:
+//		tri.confidence = (clean*clean)/(conflict+1);
 		tri.confidence = clean*clean*2 + conflict;
-		LOGC(LTrace, "    Point %d: Error: %f, Confidence: %f, nc=%d, c=%d\n", index++, tri.error, tri.confidence, clean, conflict);
-	}
-}
+		LOGC(LTrace, "    Point %d: Error: %f, Initial Confidence: %f, nc=%d, c=%d\n", index++, tri.error, tri.confidence, clean, conflict);
 
-/**
- * Filter out points below the confidence threshold
- */
-void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vector<TriangulatedPoint> &discarded3D, float confidenceThreshold)
-{
-	int index = 0;
+		if (tri.confidence < confidenceThreshold)
+		{
+			for (auto &sample : tri.samples)
+			{ // Remove from conflicts (it's negative as it has been claimed)
+				rayIxCnt[sample.camera][sample.blob]++;
+				assert(rayIxCnt[sample.camera][sample.blob] <= 0);
+			}
+		}
+	}
+	index = 0;
 	for (int i = 0; i < points3D.size(); i++)
 	{
-		if (points3D[i].confidence >= confidenceThreshold)
+		auto &tri = points3D[i];
+		if (tri.confidence < confidenceThreshold)
 		{
-			if (index != i)
-				points3D[index++] = std::move(points3D[i]);
-			else 
-				index++;
+			LOGC(LTrace, "    Dropped point %d in first iteration!\n", i);
+			continue;
 		}
-		else 
+		int clean = 0, conflict = 0;
+		for (int s = 0, ss = 0; s < tri.samples.size(); s++)
 		{
-			discarded3D.push_back(std::move(points3D[i]));
+			auto &sample = tri.samples[s];
+			if (rayIxCnt[sample.camera][sample.blob] == -1)
+			{ // No conflict, just this intersections claiming this blob
+				clean++;
+				tri.samples[ss++] = tri.samples[s];
+				continue;
+			}
+			// Another intersection claimed it and prevailed
+			// This ray is likely a merged blob, drop it
+			// TODO: Consider more sophisticated selection method? Blob later down the ray may be fully occluded
+			// Just risky to assume anything based on just observed error
+			assert(rayIxCnt[sample.camera][sample.blob] < -1);
+			conflict++; // Since this DOES still help the confidence
 		}
+		// Calculate new confidence (may be slightly higher if a conflict got resolved cleanly):
+//		tri.confidence = (clean*clean)/(conflict+1);
+		tri.confidence = clean*clean*2 + conflict;
+
+		if (clean >= 2 && tri.confidence >= confidenceThreshold)
+		{ // Can triangulate and is confident, keep
+			if (i != index)
+				std::swap(points3D[index], points3D[i]);
+			index++;
+			LOGC(LTrace, "    Point %d: Error: %f, Confidence: %f, nc=%d, c=%d\n", i, tri.error, tri.confidence, clean, conflict);
+		}
+		else
+			LOGC(LTrace, "    Dropped point %d! Confidence: %f, nc=%d, c=%d\n", i, tri.confidence, clean, conflict);
 	}
-	LOG(LTriangulation, LTrace, "%d triangulated points remaining after filtering!", index);
 	points3D.resize(index);
 }
 

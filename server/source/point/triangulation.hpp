@@ -70,16 +70,12 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
 
 /**
- * Pick best points for each ray conflict and reevaluate point confidences based on it
- * Leaves points3D in a semi-sorted order, highest confidence (and secondarily lowest error) first
+ * Pick best points for each blob conflict and reevaluate point confidences
+ * Drop such blobs and any point that is below the given confidence threshold
+ * Leaves points3D in a semi-sorted order, highest confidence (sec. error) first
  * Requires internally stored intersection data from previous triangulateRayIntersections call
  */
-void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError);
-
-/**
- * Filter out points below the confidence threshold into the discarded3D list
- */
-void filterTriangulatedPoints(std::vector<TriangulatedPoint> &points3D, std::vector<TriangulatedPoint> &discarded3D, float confidenceThreshold);
+void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError, float confidenceThreshold);
 
 /**
  * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections

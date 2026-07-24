@@ -787,7 +787,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		// Clear past frames' triangulations
 		track.triangulations3D.clear();
-		track.discarded3D.clear();
 		track.points3D.clear();
 
 		auto &params = pipeline.params.tri;
@@ -800,13 +799,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		tri1 = pclock::now();
 
-		// Resolve conflicts by assigning points based on confidences and reevaluating confidences
+		// Resolve conflicts between triangulated points by dropping conflicting observations and points below confidence level
 		// Note this uses internal data from triangulateRayIntersections to help resolve
-		resolveTriangulationConflicts(calibs, track.triangulations3D, params.maxIntersectError);
+		resolveTriangulationConflicts(calibs, track.triangulations3D, params.maxIntersectError, params.minIntersectionConfidence);
 
-		// Remove the least confident points
-		filterTriangulatedPoints(track.triangulations3D, track.discarded3D,
-			params.minIntersectionConfidence);
 		LOG(LTracking, LDebug, "%d triangulated points detected", (int)track.triangulations3D.size());
 
 		tri2 = pclock::now();

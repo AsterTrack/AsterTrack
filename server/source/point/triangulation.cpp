@@ -67,6 +67,12 @@ thread_local std::vector<std::vector<RayIxCnt>> rayIxCnt;
 /* Functions */
 
 
+float getTriConfidence(int obsClean, int obsConflicted)
+{
+	//return (float)(obsClean*obsClean)/(obsConflicted+1);
+	return obsClean*obsClean*2 + obsConflicted;
+}
+
 static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
 	std::vector<TwoIntersection> &intersections, std::vector<std::vector<RayIxCnt>> &rayIxCnt, float maxError, float minError)
@@ -123,7 +129,7 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 		}
 	}
-	LOGC(LDebug, "Got %d 2-intersections!\n", (int)intersections.size());
+	LOGC(LDebug, "Triangulations handles %d 2-intersections!\n", (int)intersections.size());
 }
 
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
@@ -137,11 +143,16 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	// NOTE: This is the subset camera count, also used for indexing throughout (may be changed manually for records)
 	int camCount = cameras.size();
 
+	float t_test, t_close = 0, t_merge = 0, t_post, t_total;
+	TimePoint_t t0 = sclock::now();
+
 	// Find initial set of 2-intersections
 	thread_local std::vector<TwoIntersection> intersections;
 	intersections.clear();
 	findInitialRayIntersections(cameras, points2D, relevantPoints2D, intersections, rayIxCnt, maxError, minError);
 	int ixCnt = intersections.size();
+
+	t_test = dtMS(t0, sclock::now());
 
 	// Have to reserve to prevent reallocation, since it relies on pointers to merged intersections
 	thread_local std::vector<MergedIntersection> mergedIntersections;
@@ -156,13 +167,17 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	{
 		TwoIntersection *ix = &intersections[i];
 
-		// Check if it has been merged yet
 		if (ix->merge != NULL)
-		{
-			//LOGC(LTrace, "------ Skipping merged intersections %d on rays %d and %d", i, ix->c1, ix->c2);
+		{ // Already merged into a pior two-intersection
 			continue;
 		}
 
+		if (rayIxCnt[ix->c1][ix->b1] <= 1 || rayIxCnt[ix->c2][ix->b2] <= 1)
+		{ // If any involved ray has no other intersection, it cannot possibly be merged
+			continue;
+		}
+
+		LOGC(LTrace, "------ Intersection %d on cameras %d and %d", i, ix->c1, ix->c2);
 		ixBlobs[ix->c1] = ix->b1;
 		ixBlobs[ix->c2] = ix->b2;
 
@@ -171,7 +186,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		{
 			float errorSq = (ixm->center - ix->center).squaredNorm()/4;
 			float distSq = (cameras[testCam].transform.translation().cast<float>() - ix->center).squaredNorm();
-			float errorCone = maxError*maxError*distSq*(float)cameras[testCam].f;
+			float errorCone = maxError*maxError*distSq*(float)cameras[testCam].f*(float)cameras[testCam].f;
 			if (errorSq <= errorCone)
 			{ // Merge intersections, now consisting of three rays intersecting
 				mergers.push_back(ixm);
@@ -183,6 +198,8 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 				potentialMergers.push_back(ixm);
 			}
 		};
+
+		TimePoint_t t1 = sclock::now();
 
 		// Find matching intersections
 		mergers.clear();
@@ -210,16 +227,16 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			}
 		}
 
-		LOGC(LTrace, "------ Intersection %d on cameras %d and %d", i, ix->c1, ix->c2);
 		if (SHOULD_LOGC(LTrace) && !potentialMergers.empty())
 		{
 			std::string blobsStr = "";
-			for (int j = 0; j < potentialMergers.size(); j++)
-				blobsStr += asprintf_s("%d, ", IXNUM(potentialMergers[j]));
-			LOGC(LTrace, "Potentially conflicting/merging intersections: %s", blobsStr.c_str());
+			for (auto &ixm : potentialMergers)
+				blobsStr += asprintf_s("%d, ", IXNUM(ixm));
+			LOGC(LTrace, "    Potentially conflicting intersections: %s", blobsStr.c_str());
 		}
+		t_merge += dtMS(t1, sclock::now());
 
-		// Check if merge candidates found (only for 3 rays+)
+		// Check if merge candidates found
 		if (mergers.empty())
 		{ // Clean up
 			ixBlobs[ix->c1] = InvalidBlob;
@@ -235,7 +252,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			std::string blobsStr = "";
 			for (int j = 0; j < camCount; j++)
 				blobsStr += ixBlobs[j] == InvalidBlob? "X - " : asprintf_s("%d - ", ixBlobs[j]);
-			LOGC(LTrace, "Merging Blobs: %s", blobsStr.c_str());
+			LOGC(LTrace, "    Merging Blobs: %s", blobsStr.c_str());
 		}
 
 		// Go through conflicts (other intersections on the two rays of our main intersection ix respectively)
@@ -247,22 +264,21 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			if (ixBlobs[ixm->c1] == ixm->b1 && ixBlobs[ixm->c2] == ixm->b2)
 			{ // Accept as merger, probably out of error range of another set of rays tested against
 				mergers.push_back(potentialMergers[i]);
-				LOGC(LDebug, "Added intersection %d to merge because of shared rays!\n", IXNUM(potentialMergers[i]));
+				LOGC(LDarn, "        Added intersection %d to merge because of shared rays!\n", IXNUM(potentialMergers[i]));
 			}
 		}
 
-		if (SHOULD_LOGC(LDebug))
+		if (SHOULD_LOGC(LTrace))
 		{
 			std::string blobsStr = "";
-			for (int j = 0; j < mergers.size(); j++)
-				blobsStr += asprintf_s("%d, ", IXNUM(mergers[j]));
-			LOGC(LDebug, "Merging Intersections: %s", blobsStr.c_str());
+			for (auto &ixm : mergers)
+				blobsStr += asprintf_s("%d, ", IXNUM(ixm));
+			LOGC(LTrace, "    Merging Intersections: %s", blobsStr.c_str());
 		}
 
 		// Update intersection metrics rayIxCnt and ixCnt
-		for (int i = 0; i < mergers.size(); i++)
+		for (auto &ixm : mergers)
 		{
-			TwoIntersection *ixm = mergers[i];
 			rayIxCnt[ixm->c1][ixm->b1]--;
 			rayIxCnt[ixm->c2][ixm->b2]--;
 		}
@@ -274,19 +290,19 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		// Merge intersections properly
 		assert(mergedIntersections.size()+1 < mergedIntersections.capacity()); // Otherwise, reserve metric failed
 		mergedIntersections.emplace_back();
-		MergedIntersection *ixm = &mergedIntersections.back();
-		for (int i = 0; i < mergers.size(); i++)
+		MergedIntersection &mergedIx = mergedIntersections.back();
+		for (auto &ixm : mergers)
 		{
-			mergers[i]->merge = ixm;
-			ixm->center += mergers[i]->center;
-			ixm->error += mergers[i]->error;
+			ixm->merge = &mergedIx;
+			mergedIx.center += ixm->center;
+			mergedIx.error += ixm->error;
 			// NOTE: This is not the true center of the merged intersection, just a quick approximation
 			// refineTriangulation/refineTriangulationIterative are used later to improve it
 		}
-		ixm->center = ixm->center / mergers.size();
-		ixm->error = ixm->error / mergers.size();
-		ixm->merged = mergers.size();
-		ixm->blobs = std::move(ixBlobs);
+		mergedIx.center = mergedIx.center / mergers.size();
+		mergedIx.error = mergedIx.error / mergers.size();
+		mergedIx.merged = mergers.size();
+		mergedIx.blobs = std::move(ixBlobs);
 
 		// Prepare ixBlobs for next iteration
 		ixBlobs.clear();
@@ -294,8 +310,9 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	}
 
 	// Compile all intersections as triangulated points
-	points3D.reserve(ixCnt);
-	auto handlePoints = [&](auto *ixm)
+	TimePoint_t t2 = sclock::now();
+	points3D.reserve(points3D.size() + ixCnt);
+	auto handlePoints = [&](auto &ixm)
 	{
 		int clean = 0, conflict = 0;
 		std::vector<TriangulatedPoint::TriSample> samples;
@@ -306,34 +323,37 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 			else conflict++;
 			samples.emplace_back(c, b);
 		};
-		if constexpr (std::is_same_v<decltype(ixm), MergedIntersection*>)
+		if constexpr (std::is_same_v<decltype(ixm), MergedIntersection&>)
 		{ // MergedIntersection
-			samples.reserve(ixm->merged);
+			samples.reserve(ixm.merged);
 			for (int c = 0; c < camCount; c++)
-				if (ixm->blobs[c] != InvalidBlob)
-					blob(c, ixm->blobs[c]);
+				if (ixm.blobs[c] != InvalidBlob)
+					blob(c, ixm.blobs[c]);
 		}
 		else
 		{ // TwoIntersection
 			samples.reserve(2);
-			blob(ixm->c1, ixm->b1);
-			blob(ixm->c2, ixm->b2);
+			blob(ixm.c1, ixm.b1);
+			blob(ixm.c2, ixm.b2);
 		}
-//		float confidence = (clean*clean)/(conflict+1);
-		float confidence = clean*clean*2 + conflict;
-		points3D.emplace_back(ixm->center, ixm->error, confidence);
+		float confidence = getTriConfidence(clean, conflict);
+		points3D.emplace_back(ixm.center, ixm.error, confidence);
 		points3D.back().samples = std::move(samples);
 	};
-	for (int i = 0; i < mergedIntersections.size(); i++)
+	for (auto &ixm : mergedIntersections)
 	{
-		handlePoints(&mergedIntersections[i]);
+		handlePoints(ixm);
 	}
-	for (int i = 0; i < intersections.size(); i++)
+	for (auto &ix : intersections)
 	{
-		if (intersections[i].merge == NULL)
-			handlePoints(&intersections[i]);
+		if (ix.merge == NULL)
+			handlePoints(ix);
 	}
 	assert(points3D.size() == ixCnt);
+	t_post = dtMS(t2, sclock::now());
+
+	t_total = dtMS(t0, sclock::now());
+	LOG(LTriangulation, LDebug, "Triangulation took %.2fms: %.3fms - [ %.3fms - %.3fms ] - %.3fms", t_total, t_test, t_close, t_merge, t_post);
 }
 
 void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError, float confidenceThreshold)
@@ -364,8 +384,7 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 			}
 		}
 		// Calculate new confidence:
-//		tri.confidence = (clean*clean)/(conflict+1);
-		tri.confidence = clean*clean*2 + conflict;
+		tri.confidence = getTriConfidence(clean, conflict);
 		LOGC(LTrace, "    Point %d: Error: %f, Initial Confidence: %f, nc=%d, c=%d\n", index++, tri.error, tri.confidence, clean, conflict);
 
 		if (tri.confidence < confidenceThreshold)
@@ -404,8 +423,7 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 			conflict++; // Since this DOES still help the confidence
 		}
 		// Calculate new confidence (may be slightly higher if a conflict got resolved cleanly):
-//		tri.confidence = (clean*clean)/(conflict+1);
-		tri.confidence = clean*clean*2 + conflict;
+		tri.confidence = getTriConfidence(clean, conflict);
 
 		if (clean >= 2 && tri.confidence >= confidenceThreshold)
 		{ // Can triangulate and is confident, keep
@@ -418,36 +436,6 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 			LOGC(LTrace, "    Dropped point %d! Confidence: %f, nc=%d, c=%d\n", i, tri.confidence, clean, conflict);
 	}
 	points3D.resize(index);
-}
-
-/**
- * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
- * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
- */
-template<typename Scalar, typename PointScalar, typename CalibScalar>
-Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
-	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D)
-{
-	Eigen::Matrix<Scalar,3,1> center = Eigen::Matrix<Scalar,3,1>::Zero();
-	int centerCnt = 0;
-	for (int s1 = 0; s1 < point3D.samples.size(); s1++)
-	{
-		auto &sample1 = point3D.samples[s1];
-		for (int s2 = s1+1; s2 < point3D.samples.size(); s2++)
-		{
-			auto &sample2 = point3D.samples[s2];
-			Scalar sec1, sec2;
-			Ray3_t<Scalar> ray1 = castRay<Scalar>(points2D[sample1.camera]->at(sample1.blob), cameras[sample1.camera]);
-			Ray3_t<Scalar> ray2 = castRay<Scalar>(points2D[sample2.camera]->at(sample2.blob), cameras[sample2.camera]);
-			getRayIntersect(ray1, ray2, &sec1, &sec2);
-			center += (ray1.pos + ray1.dir*sec1 + ray2.pos + ray2.dir*sec2) / 2;
-			centerCnt++;
-		}
-	}
-	center /= centerCnt;
-	point3D.pos = center.template cast<float>();
-//	point3D.error =  TODO Set Error!
-	return center;
 }
 
 /**
@@ -526,9 +514,6 @@ Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eige
 }
 
 // Generate specific implementations
-
-template Eigen::Vector3f triangulatePoint(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
-	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
 
 template Eigen::Vector3f refineTriangulation(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);

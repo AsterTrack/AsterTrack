@@ -31,7 +31,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 struct TriangulationParameters
 {
 	float minIntersectError = 0.2f/1000;
-	float maxIntersectError = 1.0f/1000;
+	float maxIntersectError = 0.8f/1000;
 	float minIntersectionConfidence = 4.0f;
 	int refineIterations = 2;
 };

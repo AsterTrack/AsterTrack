@@ -59,6 +59,8 @@ typedef TriangulatedPoint_t<float> TriangulatedPoint;
 /* Functions */
 
 
+float getTriConfidence(int obsClean, int obsConflicted);
+
 /**
  * Calculate triangulatedPoints as the intersection points between rays of each camera 
  * Calculates mean error of triangulated points to rays and confidence based on rays involved
@@ -76,14 +78,6 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
  * Requires internally stored intersection data from previous triangulateRayIntersections call
  */
 void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError, float confidenceThreshold);
-
-/**
- * Basic triangulation of point through ray intersection. The same as performed in triangulateRayIntersections
- * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
- */
-template<typename Scalar, typename PointScalar, typename CalibScalar = CVScalar>
-Eigen::Matrix<Scalar,3,1> triangulatePoint(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D,
-	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint &point3D);
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)

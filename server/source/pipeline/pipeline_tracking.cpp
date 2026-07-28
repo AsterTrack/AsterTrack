@@ -844,9 +844,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			std::vector<std::pair<int, Eigen::Vector3f>> gtTris;
 			{ // Copy GT triangulations
 				auto sim_lock = pipeline.simulation.contextualRLock();
-				if (sim_lock->triangulatedPoints3D.frame == frame->num)
+				if (sim_lock->lastFrame.frame == frame->num)
 				{
-					gtTris = sim_lock->triangulatedPoints3D.triangulation;
+					gtTris = sim_lock->lastFrame.triangulation;
 					LOG(LTriangulation, LTrace, "    Simulation generated %d triangulatable points!\n", (int)gtTris.size());
 				}
 			}

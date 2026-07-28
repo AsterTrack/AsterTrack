@@ -46,6 +46,7 @@ struct MotionParameters
 	std::string label;
 	float accT = 0.2f, accR = 0.005f;
 	float centerForce = 0.01f, centerAttenuation = 0.01f;
+	bool centerCorrectOnly = false;
 	float dampT = 0.05f, dampR = 0.1f;
 	float slowT = 0.01f, slowR = 0.05f;
 	float minAcc = 0.05f;
@@ -69,6 +70,23 @@ struct SimulatedObject
 		Eigen::Vector3f RA = Eigen::Vector3f::Zero();
 	} internalMotionState = {};
 	Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+};
+
+struct SimulatedPoint
+{
+	Eigen::Vector3f pos;
+	Eigen::Vector3f vel;
+	Eigen::Vector3f acc;
+};
+
+struct PointSimulation
+{
+	int pointCount = 0;
+	float pointSize = 0.01f;
+	float pointAttraction = 0.00000000005f;
+	float pointDampening = 0.0005;
+	float centerForce = 0.0005f, centerAttenuation = 0.05f;
+	bool centerCorrectOnly = false;
 };
 
 struct ReplacedObject
@@ -96,7 +114,7 @@ struct SimProjectionParameters
 	float expandMarkerViewAngle = -0.04f;
 	float minSourceBlobSize = 0.0f * PixelSize;
 	float blobVisualSizeFlare = 0.5f * PixelSize;
-	float blobVisualSizeFactor = 2.0f;
+	float blobVisualSizeFactor = 1.0f;
 	bool grazingAngleDiminishSize = true;
 	float grazingAngleLower = -expandMarkerViewAngle-0.1f;
 	float grazingAngleUpper = 0.8f;
@@ -109,11 +127,13 @@ struct SimulationState
 	struct FrameInfo
 	{
 		FrameNum frame;
-		Eigen::Isometry3f pose;
 		std::vector<std::pair<int, Eigen::Vector3f>> triangulation;
 	};
 	// Generating custom pose
-	FrameInfo triangulatedPoints3D;
+	FrameInfo lastFrame;
+
+	std::vector<SimulatedPoint> points;
+	PointSimulation pointSim = {};
 
 	std::vector<SimulatedObject> objects;
 	int primaryObject;
@@ -165,9 +185,10 @@ struct SimulationState
 		if (objects.empty())
 		{
 			objects = {
-			SimulatedObject { .id = 0, .label = "Single Marker", .target = PointCalibMarker, .motionPreset = 0 }
+				SimulatedObject { .id = 0, .label = "Single Marker", .target = PointCalibMarker, .motionPreset = 0 }
 		 	};
 		}
+		points.clear();
 		primaryObject = 0;
 		framePoses.clear();
 	}

@@ -37,9 +37,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 const bool recordPoints = true;
 
 std::vector<MotionParameters> motionPresets = {
-	MotionParameters { "Room", 2.0f, 0.0f, 0.00004f, 1.5f, 0.2f, 0.0f, 0.003f, 0.0f, 0.2f },
-	MotionParameters { "Wide", 0.5f, 0.01f, 0.00005f, 1.2f, 0.2f, 0.05f, 0.005f, 0.01f, 0.2f },
-	MotionParameters { "Center", 0.02f, 0.0015f, 0.00005f, 1.0f, 0.5f, 0.05f, 0.01f, 0.005f, 0.1f }
+	MotionParameters { "Room", 2.0f, 0.0f, 0.00004f, 1.5f, true, 0.2f, 0.0f, 0.003f, 0.0f, 0.2f },
+	MotionParameters { "Wide", 0.5f, 0.01f, 0.00005f, 1.2f, false, 0.2f, 0.05f, 0.005f, 0.01f, 0.2f },
+	MotionParameters { "Center", 0.02f, 0.0015f, 0.00005f, 1.0f, false, 0.5f, 0.05f, 0.01f, 0.005f, 0.1f }
 };
 
 
@@ -77,76 +77,22 @@ TargetCalibration3D LineCalibMarker({
 
 /* Functions */
 
-static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params);
-
-static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline> &cameras);
-
+static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState &pipeline);
+static Eigen::Vector3f centeringForce(const PipelineState &pipeline, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly);
 static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object);
 
+static Eigen::Vector2f generateNoise(const SimProjectionParameters &params);
 
-static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object)
-{
-	auto &motion = object.internalMotionState;
-	auto &params = motionPresets[object.motionPreset];
-	// Generate consistent movement (positional acceleration is in mm)
-	motion.TA += Eigen::Vector3f(
-		(rand()%10000 / 10000.0f) * params.accT - params.accT/2,
-		(rand()%10000 / 10000.0f) * params.accT - params.accT/2,
-		(rand()%10000 / 10000.0f) * params.accT - params.accT/2)/1000;
-	motion.RA += Eigen::Vector3f(
-		(rand()%10000 / 10000.0f) * params.accR - params.accR/2,
-		(rand()%10000 / 10000.0f) * params.accR - params.accR/2,
-		(rand()%10000 / 10000.0f) * params.accR - params.accR/2);
-	if (motion.TA.norm() < params.minAcc/1000)
-		motion.TA = motion.TA.normalized() * params.minAcc/1000;
-	// Dampen movement
-	motion.TA *= 1.0-params.dampT;
-	motion.RA *= 1.0-params.dampR;
-	// Correct
-	auto attenuate = [](float val, float att){
-		att = std::pow(std::abs(val), att);
-		return val < 0? -att : att;
-	};
-	for (const auto &cam : pipeline.cameras)
-	{
-		const CameraMode &mode = cam->mode;
-		const CameraCalib &calib = cam->simulation.calib;
-		// Calculate projection of target
-		Eigen::Vector3f viewPos = calib.view.cast<float>() * motion.TGT;
-		Eigen::Vector2f proj = viewPos.hnormalized();
-		// Apply distortion
-		Eigen::Vector2f dist = proj*2;
-		if (proj.squaredNorm() < 1.0)
-			dist = distortPointUnstable(calib, proj, 50);
-		// Calculate 2D force vector to keep target in camera view (weaker horizontally)
-		Eigen::Vector2f forceVec;
-		forceVec.x() = attenuate(dist.x()*mode.factorW, params.centerAttenuation);
-		forceVec.y() = attenuate(dist.y()*mode.factorH, params.centerAttenuation);
-		// Calculate target position in 3D
-		Eigen::Vector2f forceTargetDist = proj - forceVec;
-		Eigen::Vector2f forceTargetImg = undistortPoint(calib, forceTargetDist);
-		Eigen::Vector3f forceTargetView = viewPos.z() * forceTargetImg.homogeneous();
-		Eigen::Vector3f forceTargetWorld = calib.transform.cast<float>() * forceTargetView;
-		// Calculate as 3D force vector
-		Eigen::Vector3f forceDir = (forceTargetWorld-motion.TGT).normalized();
-		// Apply force to correct to center
-		motion.TA += forceDir*params.centerForce;
-	}
-	motion.TA -= motion.TD * params.slowT;
-	motion.RA -= motion.RD * params.slowR;
-	// Apply
-	motion.TGT += motion.TD+motion.TA/2;
-	motion.RGT = motion.RGT * getRotationXYZ(motion.RD+motion.RA/2);;
-	motion.TD += motion.TA;
-	motion.RD += motion.RA;
-	// Finalise
-	return createModelMatrix(motion.TGT, motion.RGT);
-}
+static bool testBlobMerge(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, const SimProjectionParameters &params);
+static void applyMergeMap(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, std::vector<int> &markerMap);
+static void applyMergeMap(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, const std::map<int,int> &mergeMap);
 
-/**
- * Generates simulated data according to config and current phase
- */
+static bool projectMarker(const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose,
+	const SimProjectionParameters &params, const Eigen::Vector3f &mkPoint, float mkSize, Eigen::Vector2f &ptPos, float &ptSize);
+
+static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
+	const TargetCalibration3D &target, const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params);
+
 void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 {
 	ScopedLogCategory optLogCategory(LSimulation);
@@ -155,7 +101,85 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 	frameState.cameras.resize(pipeline.cameras.size());
 
-	LOGC(LTrace, "Generating points for frame %" PRIu64 ":\n", frameState.num);
+	LOGC(LDebug, "Generating points for frame %" PRIu64 ":\n", frameState.num);
+
+	// ----- Generate 3D Point Cloud -----
+
+	simulation.lastFrame.frame = frameState.num;
+	simulation.lastFrame.triangulation.clear();
+	simulation.lastFrame.triangulation.reserve(simulation.points.size());
+
+	{ // Update and project triangulatable points
+		const auto &params = simulation.pointSim;
+
+		int oldCount = simulation.points.size();
+		simulation.points.resize(params.pointCount);
+		for (int i = oldCount; i < params.pointCount; i++)
+		{
+			simulation.points[i].pos = genPoseInTrackingSpace(pipeline).translation();
+			simulation.points[i].vel.setZero();
+		}
+
+		// Motion update, with centering and pseudo-gravity simulation
+		float szSquared = params.pointSize * params.pointSize;
+		for (auto &pt : simulation.points)
+		{
+			pt.acc.setZero();
+			for (auto &at : simulation.points)
+			{
+				auto diff = at.pos - pt.pos;
+				if (diff.isZero()) continue;
+				pt.acc += diff.cwiseSquare().cwiseMax(szSquared).cwiseInverse().cwiseProduct(diff.cwiseSign());
+			}
+			pt.acc *= params.pointAttraction;
+			pt.acc += centeringForce(pipeline, pt.pos, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
+		}
+		for (auto &pt : simulation.points)
+		{
+			pt.pos += pt.vel + pt.acc/2;
+			pt.vel += pt.acc;
+			pt.vel *= 1 - params.pointDampening;
+			simulation.lastFrame.triangulation.emplace_back(-1, pt.pos);
+		}
+
+		std::map<int,int> mergeMap;
+		for (auto &cam : pipeline.cameras)
+		{
+			if (cam->disabled) continue;
+
+			auto &record = frameState.cameras[cam->index];
+			record.received = true;
+
+			mergeMap.clear();
+			for (auto &pt : simulation.points)
+			{
+				// Project marker of given size
+				Eigen::Vector2f ptPos;
+				float ptSize;
+				if (!projectMarker(cam->simulation.calib, cam->mode, Eigen::Isometry3f::Identity(),
+					simulation.projectionParams, pt.pos, 0.01f, ptPos, ptSize))
+					continue;
+
+				// Register marker observation
+				record.rawPoints2D.push_back(ptPos);
+				record.properties.emplace_back(ptSize, 1000);
+
+				// Test if it merges with any previous observation
+				testBlobMerge(record.rawPoints2D, record.properties, mergeMap, simulation.projectionParams);
+			}
+			int originalPts = record.rawPoints2D.size();
+
+			if (!mergeMap.empty())
+			{ // Actually merge with prior observations
+				applyMergeMap(record.rawPoints2D, record.properties, mergeMap);
+			}
+
+			if (mergeMap.empty())
+				LOGC(LDebug, "  Camera %u has %d visible tri points!\n", cam->id, (int)record.rawPoints2D.size());
+			else
+				LOGC(LDebug, "  Camera %u has %d visible tri points, with %d mergers on %d original points!\n", cam->id, (int)record.rawPoints2D.size(), (int)mergeMap.size(), originalPts);
+		}
+	}
 
 	int i = -1;
 	for (auto &object : simulation.objects)
@@ -198,13 +222,13 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			auto &record = frameState.cameras[cam->index];
 			record.received = true;
 
-			// Project marker into camera view (simulated test data)
+			// Project marker into camera view
 			int startPts = record.rawPoints2D.size();
 			std::vector<int> markerMap;
-			createTargetProjection(record.rawPoints2D, record.properties, markerMap, object.target,
-				cam->simulation.calib, cam->mode, object.pose, simulation.projectionParams);
-
-			// Keep track of how many times a point is visible
+			std::map<int,int> mergeMap;
+			createTargetProjection(record.rawPoints2D, record.properties, mergeMap, markerMap,
+				object.target, cam->simulation.calib, cam->mode, object.pose, simulation.projectionParams);
+			applyMergeMap(record.rawPoints2D, record.properties, mergeMap, markerMap);
 
 			if (recordPoints)
 			{ // Invert GTMarkers2Point to points2GTMarker (merged points are not invertible)
@@ -233,10 +257,10 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		// ----- Generate 3D Point Cloud -----
 
-		//if (simulation.recordPoints && i == simulation.primaryObject)
-		{ // Recreate ground truth position of points which could have been triangulatedstd::vector<std::vector<Eigen::Vector2f>*> points2D;
+		{ // Recreate ground truth position of points which could have been triangulated
 
-			simulation.framePoses.ensureAt(frameState.num) = object.pose;
+			if (i == simulation.primaryObject)
+				simulation.framePoses.ensureAt(frameState.num) = object.pose;
 
 			LOGC(LTrace, "Recording GT triangulations:\n");
 
@@ -252,14 +276,12 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			}
 			TriangulatedPoint triPoint;
 
-			simulation.triangulatedPoints3D = { frameState.num, object.pose, {} };
-			simulation.triangulatedPoints3D.triangulation.reserve(object.target.markers.size());
 			for (int i = 0; i < object.target.markers.size(); i++)
 			{
 				if (markerObsCount[i] < 2)
 					continue;
 				Eigen::Vector3f gtPoint = object.pose * object.target.markers[i].pos;
-				simulation.triangulatedPoints3D.triangulation.emplace_back(i, gtPoint);
+				simulation.lastFrame.triangulation.emplace_back(i, gtPoint);
 
 				if (SHOULD_LOGC(LTrace))
 				{ // Triangulate the point to double check
@@ -290,7 +312,7 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 				}
 			}
 			LOGC(LTrace, "Entering %d GT triangulations for frame %" PRIu64 "\n",
-				(int)simulation.triangulatedPoints3D.triangulation.size(), simulation.triangulatedPoints3D.frame);
+				(int)simulation.lastFrame.triangulation.size(), simulation.lastFrame.frame);
 		}
 	}
 }
@@ -382,8 +404,10 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 
 			int preIndex = camRep.rawPoints2D.size();
 			std::vector<int> markerMap;
-			createTargetProjection(camRep.rawPoints2D, camRep.properties, markerMap, replace.tgtCalib,
-				calib, pipeline.cameras[c]->mode, record.pose.observed, simulation.projectionParams);
+			std::map<int,int> mergeMap;
+			createTargetProjection(camRep.rawPoints2D, camRep.properties, mergeMap, markerMap,
+				replace.tgtCalib, calib, pipeline.cameras[c]->mode, record.pose.observed, simulation.projectionParams);
+			applyMergeMap(camRep.rawPoints2D, camRep.properties, mergeMap, markerMap);
 			int replacePoints = camRep.rawPoints2D.size() - preIndex;
 
 			// Remove points likely to be occluded based on actually occluded observations
@@ -444,14 +468,15 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 	}
 }
 
-static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline> &cameras)
+static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState &pipeline)
 {
 	// Min forced on the groundplane
 	Eigen::Vector3f min = Eigen::Vector3f::Zero(), max = Eigen::Vector3f::Zero();
-	for (int c = 0; c < cameras.size(); c++)
+	for (const auto &cam : pipeline.cameras)
 	{
-		min = min.array().min(cameras[c].simulation.calib.transform.translation().cast<float>().array());
-		max = max.array().max(cameras[c].simulation.calib.transform.translation().cast<float>().array());
+		if (cam->disabled) continue;
+		min = min.array().min(cam->simulation.calib.transform.translation().cast<float>().array());
+		max = max.array().max(cam->simulation.calib.transform.translation().cast<float>().array());
 	}
 	Eigen::Vector3f diff = max-min;
 	min += diff*0.2f;
@@ -468,117 +493,128 @@ static Eigen::Isometry3f genPoseInTrackingSpace(const std::vector<CameraPipeline
 	return pose;
 }
 
-/**
- * Projects target into camera view, clipping out-of-view points, merging closeby points, and applying noise
- */
-static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
-	const TargetCalibration3D &target, const CameraCalib &calib,  const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params)
+static Eigen::Vector3f centeringForce(const PipelineState &pipeline, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly)
 {
-	// Create MVP in camera space
-	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
-	Eigen::Projective3f mvp = calib.camera.cast<float>() * pose;
-	// Create random noise generator
-	std::normal_distribution<float> noise(0, params.blobNoiseStdDev);
-	const float maxNoise = params.blobNoiseMaxSigma * params.blobNoiseStdDev;
-	// Reserve space for projected points
-	points2D.reserve(points2D.size() + target.markers.size());
-	properties.reserve(properties.size() + target.markers.size());
-	// Init marker -> pt map
-	markerMap.clear();
-	markerMap.resize(target.markers.size(), -1);
-	std::map<int,int> mergeMap;
-	for (int i = 0; i < target.markers.size(); i++)
+	auto attenuate = [](float val, float att){
+		att = std::pow(std::abs(val), att);
+		return val < 0? -att : att;
+	};
+	Eigen::Vector3f force = Eigen::Vector3f::Zero();
+	for (const auto &cam : pipeline.cameras)
 	{
-		const TargetMarker &markerPt = target.markers[i];
-		Eigen::Vector3f camPoint = mv * markerPt.pos;
-		// Cull back
-		if (camPoint.z() < 0)
-			continue;
-		// Calculate and clip marker points not facing the camera in regards to their field of view
-		Eigen::Vector3f ptNrm = mv.linear() * markerPt.nrm;
-		float facing = -ptNrm.dot(camPoint.normalized());
-		if (facing + params.expandMarkerViewAngle < markerPt.viewAngle)
-			continue;
-		// Project point
-		Eigen::Vector2f proj = applyProjection2D(calib, camPoint);
-		// Apply distortion
-		Eigen::Vector2f projDist = distortPointUnstable<float>(calib, proj.head<2>(), 1000, 0.001f*PixelSize);
-		Eigen::Vector2f check = undistortPoint(calib, projDist);
-		float diff = (proj.head<2>()-check).squaredNorm();
-		if (diff > 1*1*PixelSize*PixelSize)
-			LOGC(LDarn, "Simulated blob distortion is unstable in camera #%u: Error of %.2fpx", calib.id, std::sqrt(diff)*PixelFactor);
-		// Generate noise
-		float noiseX = noise(gen), noiseY = noise(gen); // NOTE: Noise select, first unpredictable, second predictable
-//		float noiseX = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2, noiseY = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2;
-		if (std::abs(noiseX) > maxNoise) noiseX /= std::ceil(std::abs(noiseX)/maxNoise);
-		if (std::abs(noiseY) > maxNoise) noiseY /= std::ceil(std::abs(noiseY)/maxNoise);
-		Eigen::Vector2f ptPos = projDist + Eigen::Vector2f(noiseX, noiseY);
-		// Clip
-		if (ptPos.x() < -mode.sizeW || ptPos.y() < -mode.sizeH || ptPos.x() > mode.sizeW || ptPos.y() > mode.sizeH)
-			continue;
-		// Determine point size
-		//float ptSize = 1.0f + 0.1f/camPoint.z();
-		Eigen::Vector3f camUpVec = calib.transform.matrix().col(2).head<3>().cast<float>();
-		Eigen::Vector3f distVec = markerPt.pos - calib.transform.translation().cast<float>();
-		Eigen::Vector3f sideVec = distVec.cross(camUpVec).normalized() * markerPt.size/2;
-		Eigen::Vector2f sideProj = projectPoint2D(mvp, markerPt.pos + sideVec);
-		Eigen::Vector2f sideDist = distortPointUnstable<float>(calib, sideProj, 1000, 0.001f*PixelSize);
-		// Get point size as radius in -1 to 1 space (or diameter in 0 to 1 space)
-		float ptSize = (sideDist - projDist).norm();
-		if (SHOULD_LOGC(LTrace) && ptSize < 2*PixelFactor)
-		{
-			float ptSizeUndist = (sideProj - proj.head<2>()).norm();
-			float ptDist = (markerPt.pos-calib.transform.translation().cast<float>()).norm();
-			float sideDist = (markerPt.pos+sideVec-calib.transform.translation().cast<float>()).norm();
-			LOGC(LTrace, "        Point size is %.2fpx with %.4fmm source size, f of %f, at distance of %.4fm",
-				ptSize*PixelFactor, markerPt.size*1000, calib.f, ptDist);
-			LOGC(LTrace, "        CamUpVec %f, sideVec %fmm, side point dist diff of %.4fmm, size undist %.2fpx",
-				camUpVec.norm(), sideVec.norm()*1000, (sideDist-ptDist)*1000, ptSizeUndist * PixelFactor);
+		if (cam->disabled) continue;
+		// Calculate corrective target position in 2D camera view
+		Eigen::Vector2f tgt2D = Eigen::Vector2f::Zero();
+		if (correctiveOnly)
+		{ // Project and clamp to view bounds to find corrective target
+			tgt2D = projectPoint2D(cam->simulation.calib.camera, pos);
+			if (!std::isfinite(tgt2D.x()) || !std::isfinite(tgt2D.y()))
+				tgt2D = Eigen::Vector2f::Zero();
+			if (std::abs(tgt2D.x()) > cam->mode.sizeW)
+				tgt2D *= cam->mode.sizeW / std::abs(tgt2D.x());
+			if (std::abs(tgt2D.y()) > cam->mode.sizeH)
+				tgt2D *= cam->mode.sizeH / std::abs(tgt2D.y());
 		}
-		// Adjust by view angle
-		if (params.grazingAngleDiminishSize && markerPt.viewAngle > 0.1)
-		{ // Well below 180° FoV - very likely flat marker that has less light reflected on tight view angles
-			float sizeDiminish = (facing - markerPt.viewAngle - params.grazingAngleLower) / (params.grazingAngleUpper-params.grazingAngleLower);
-			ptSize *= std::max(0.0f, std::min(1.0f, sizeDiminish));
-		}
-		if (ptSize < params.minSourceBlobSize)
+		// Determine closest 3D target
+		Ray3f ray3D = castRay<float>(tgt2D, cam->simulation.calib);
+		Eigen::Vector3f tgt3D = ray3D.pos + ray3D.dir * getRaySection(ray3D, pos);
+		float deviation3D = (tgt3D - pos).norm();
+		if (!std::isfinite(deviation3D))
 			continue;
-		ptSize = ptSize*params.blobVisualSizeFactor + params.blobVisualSizeFlare;
-		// Test if it should be merged with another nearby blob
-		for (int p = 0; p < points2D.size(); p++)
-		{
-			auto &prop = properties[p];
-			float distSq = (points2D[p] - ptPos).squaredNorm();
-			float radius = prop.size + ptSize;
-			if (distSq < radius*radius * params.mergeFactor*params.mergeFactor)
-			{ // Unless they are overlapping really bad, the algorithm could potentially discern them still, so mergeFactor < 1 is fine
-				LOGC(LTrace, "     -> Point merging into %d!", p);
-				LOGC(LDebug, "Merged with point %d at distance %.2fpx with size %.2fpx and %.2fpx\n",
-					p, std::sqrt(distSq)*PixelFactor, prop.size*PixelFactor, ptSize*PixelFactor);
-				LOGC(LTrace, "        While projecting point %d (%f, %f), decided to merge into point %d instead. "
-					"Distance %f, sizes %f and %f, new size %f, pos (%f, %f)\n",
-						(int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p,
-						std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, (radius-ptSize)*PixelFactor,
-						prop.size*PixelFactor, points2D[p].x()*PixelFactor, points2D[p].y()*PixelFactor);
-				mergeMap[points2D.size()] = mergeMap.contains(p)? mergeMap[p] : p;
-				break;
-			}
-			else if (distSq < radius*radius * 2*2)
-			{
-				LOGC(LTrace, "        While projecting point %d (%f, %f), nearly merged into point %d instead. Distance %f, sizes %f and %f\n",
-					(int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p, std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, properties[p].size*PixelFactor);
-			}
-		}
-		// Register projected marker point
-		markerMap[i] = points2D.size();
-		points2D.push_back(ptPos);
-		properties.emplace_back(ptSize, 1000);
-		LOGC(LTrace, "    Camera %u: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
-		
+		if (deviation3D < 0.1)
+			continue;
+		Eigen::Vector3f tgtDir = (tgt3D - pos) / deviation3D;
+		// Apply force to correct to that target position
+		force += tgtDir * centerForce * attenuate(deviation3D, centerAttenuation);
+		assert(!force.hasNaN());
 	}
+	return force;
+}
 
-	if (mergeMap.empty()) return;
+static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object)
+{
+	auto &motion = object.internalMotionState;
+	auto &params = motionPresets[object.motionPreset];
+	// Generate consistent movement (positional acceleration is in mm)
+	motion.TA += Eigen::Vector3f(
+		(rand()%10000 / 10000.0f) * params.accT - params.accT/2,
+		(rand()%10000 / 10000.0f) * params.accT - params.accT/2,
+		(rand()%10000 / 10000.0f) * params.accT - params.accT/2)/1000;
+	motion.RA += Eigen::Vector3f(
+		(rand()%10000 / 10000.0f) * params.accR - params.accR/2,
+		(rand()%10000 / 10000.0f) * params.accR - params.accR/2,
+		(rand()%10000 / 10000.0f) * params.accR - params.accR/2);
+	if (motion.TA.norm() < params.minAcc/1000)
+		motion.TA = motion.TA.normalized() * params.minAcc/1000;
+	// Dampen movement
+	motion.TA *= 1.0-params.dampT;
+	motion.RA *= 1.0-params.dampR;
+	motion.TA -= motion.TD * params.slowT;
+	motion.RA -= motion.RD * params.slowR;
+	// Move towards center
+	motion.TA += centeringForce(pipeline, motion.TGT, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
+	// Apply
+	motion.TGT += motion.TD+motion.TA/2;
+	motion.RGT = motion.RGT * getRotationXYZ(motion.RD+motion.RA/2);;
+	motion.TD += motion.TA;
+	motion.RD += motion.RA;
+	// Finalise
+	return createModelMatrix(motion.TGT, motion.RGT);
+}
 
+static Eigen::Vector2f generateNoise(const SimProjectionParameters &params)
+{
+	// Generate noise
+	std::normal_distribution<float> noise(0, params.blobNoiseStdDev);
+	float noiseX = noise(gen), noiseY = noise(gen); // NOTE: Noise select, first unpredictable, second predictable
+	//float noiseX = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2, noiseY = rand()%10000 / 10000.0f * params.blobNoiseStdDev*2;
+	const float maxNoise = params.blobNoiseMaxSigma * params.blobNoiseStdDev;
+	if (std::abs(noiseX) > maxNoise) noiseX /= std::ceil(std::abs(noiseX)/maxNoise);
+	if (std::abs(noiseY) > maxNoise) noiseY /= std::ceil(std::abs(noiseY)/maxNoise);
+	return Eigen::Vector2f(noiseX, noiseY);
+}
+
+/**
+ * Tests if the latest blob should be merged with another prior nearby blob, and record it in mergeMap
+ */
+static bool testBlobMerge(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, const SimProjectionParameters &params)
+{
+	Eigen::Vector2f ptPos = points2D.back();
+	float ptSize = properties.back().size;
+	for (int p = 0; p < points2D.size()-1; p++)
+	{
+		auto &prop = properties[p];
+		float distSq = (points2D[p] - ptPos).squaredNorm();
+		float radius = prop.size + ptSize;
+		if (distSq < radius*radius * params.mergeFactor*params.mergeFactor)
+		{ // Unless they are overlapping really bad, the algorithm could potentially discern them still, so mergeFactor < 1 is fine
+			LOGC(LTrace, "     -> Point merging into %d!", p);
+			LOGC(LDebug, "Merged with point %d at distance %.2fpx with size %.2fpx and %.2fpx\n",
+				p, std::sqrt(distSq)*PixelFactor, prop.size*PixelFactor, ptSize*PixelFactor);
+			LOGC(LTrace, "        While projecting point %d (%f, %f), decided to merge into point %d instead. "
+				"Distance %f, sizes %f and %f, new size %f, pos (%f, %f)\n",
+					(int)points2D.size()-1, ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p,
+					std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, (radius-ptSize)*PixelFactor,
+					prop.size*PixelFactor, points2D[p].x()*PixelFactor, points2D[p].y()*PixelFactor);
+			mergeMap[points2D.size()-1] = mergeMap.contains(p)? mergeMap[p] : p;
+			return true;
+		}
+		else if (distSq < radius*radius * 2*2)
+		{
+			LOGC(LTrace, "        While projecting point %d (%f, %f), nearly merged into point %d instead. Distance %f, sizes %f and %f\n",
+				(int)points2D.size()-1, ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, p, std::sqrt(distSq)*PixelFactor, ptSize*PixelFactor, properties[p].size*PixelFactor);
+		}
+	}
+	return false;
+}
+
+/**
+ * Apply merges in mergeMap to points2D and properties, as well as a source marker -> blob list
+ */
+static void applyMergeMap(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, std::vector<int> &markerMap)
+{
+	if (mergeMap.empty())
+		return;
 	for (auto &merge : mergeMap)
 	{ // Apply merges, retaining original points to not disturb indices
 		float dist = (points2D[merge.first] - points2D[merge.second]).norm();
@@ -587,13 +623,16 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		properties[merge.second].size = (radius + dist) / 2;
 	}
 
-	int p = 0, pp = 0;
-	for (int i = 0; i < target.markers.size(); i++)
+	int pp = -1;
+	for (int i = 0; i < markerMap.size(); i++)
 	{
 		if (markerMap[i] < 0) continue;
-		if (mergeMap.contains(markerMap[i]))
+		if (pp < 0) pp = markerMap[i];
+		int p = markerMap[i];
+		auto map = mergeMap.find(p);
+		if (map != mergeMap.end())
 		{ // Update markerMap and delete point p, was merged into an earlier one
-			markerMap[i] = mergeMap[markerMap[i]];
+			markerMap[i] = map->second;
 			for (auto &merge : mergeMap)
 			{ // Update indices of mergeMap
 				if (merge.second > p)
@@ -601,7 +640,7 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 			}
 		}
 		else
-		{ // Keep point, move it to new location
+		{ // Keep point p, move it to new location
 			points2D[pp] = points2D[p];
 			properties[pp] = properties[p];
 			markerMap[i] = pp;
@@ -609,6 +648,141 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 		}
 		p++;
 	}
+	if (pp < 0) return;
 	points2D.resize(pp);
 	properties.resize(pp);
+}
+
+/**
+ * Apply merges in mergeMap to points2D and properties
+ */
+static void applyMergeMap(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, const std::map<int,int> &mergeMap)
+{
+	for (auto &merge : mergeMap)
+	{ // Apply merges, retaining original points to not disturb indices
+		float dist = (points2D[merge.first] - points2D[merge.second]).norm();
+		float radius = properties[merge.first].size + properties[merge.second].size;
+		points2D[merge.second] = (properties[merge.first].size*points2D[merge.first] + properties[merge.second].size*points2D[merge.second]) / radius;
+		properties[merge.second].size = (radius + dist) / 2;
+	}
+
+	int pp = mergeMap.begin()->first; // Replace from first merged marker
+	for (int p = pp; p < points2D.size(); p++)
+	{
+		if (!mergeMap.contains(p))
+		{ // Keep point, move it to new location
+			points2D[pp] = points2D[p];
+			properties[pp] = properties[p];
+			pp++;
+		}
+	}
+	points2D.resize(pp);
+	properties.resize(pp);
+}
+
+static bool projectMarker(const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose,
+	const SimProjectionParameters &params, const Eigen::Vector3f &mkPoint, float mkSize, Eigen::Vector2f &ptPos, float &ptSize)
+{
+	// Project point
+	Eigen::Projective3f mvp = calib.camera.cast<float>() * pose;
+	Eigen::Vector4f proj = mvp * mkPoint.homogeneous();
+	if (proj.w() < 0)
+		return false;
+	proj.head<2>() /= proj.w();
+	if (proj.hasNaN())
+		return false;
+	// TODO: This acts as an upper limit to simulated distortion
+	// But it serves to filter before an unstable distortion below
+	if (proj.x() < -mode.sizeW*2 || proj.y() < -mode.sizeH*2 || proj.x() > mode.sizeW*2 || proj.y() > mode.sizeH*2)
+		return false;
+
+	// Apply distortion
+	Eigen::Vector2f projDist = distortPointUnstable<float>(calib, proj.head<2>(), 1000, 0.001f*PixelSize);
+	Eigen::Vector2f check = undistortPoint(calib, projDist);
+	float diff = (proj.head<2>()-check).squaredNorm();
+	if (diff > 1*1*PixelSize*PixelSize)
+		LOGC(LDarn, "Simulated blob distortion is unstable in camera #%u: Error of %.2fpx", calib.id, std::sqrt(diff)*PixelFactor);
+	ptPos = projDist + generateNoise(params);
+
+	// Clip
+	if (ptPos.x() < -mode.sizeW || ptPos.y() < -mode.sizeH || ptPos.x() > mode.sizeW || ptPos.y() > mode.sizeH)
+		return false;
+	if (ptPos.hasNaN())
+		return false;
+
+	// Determine point size (as radius in -1 to 1 space or diameter in 0 to 1 space)
+	//float ptSize = 1.0f + 0.1f/camPoint.z();
+	Eigen::Vector3f camUpVec = calib.transform.matrix().col(2).head<3>().cast<float>();
+	Eigen::Vector3f distVec = mkPoint - calib.transform.translation().cast<float>();
+	Eigen::Vector3f sideVec = distVec.cross(camUpVec).normalized() * mkSize/2;
+	Eigen::Vector2f sideProj = projectPoint2D(mvp, mkPoint + sideVec);
+	Eigen::Vector2f sideDist = distortPointUnstable<float>(calib, sideProj, 1000, 0.001f*PixelSize);
+	ptSize = (sideDist - projDist).norm() * 2;
+	if (SHOULD_LOGC(LTrace) && ptSize < 2*PixelFactor)
+	{
+		float ptSizeUndist = (sideProj - proj.head<2>()).norm();
+		float ptDist = (mkPoint-calib.transform.translation().cast<float>()).norm();
+		float sideDist = (mkPoint+sideVec-calib.transform.translation().cast<float>()).norm();
+		LOGC(LTrace, "        Point size is %.2fpx with %.4fmm source size, f of %f, at distance of %.4fm",
+			ptSize*PixelFactor, mkSize*1000, calib.f, ptDist);
+		LOGC(LTrace, "        CamUpVec %f, sideVec %fmm, side point dist diff of %.4fmm, size undist %.2fpx",
+			camUpVec.norm(), sideVec.norm()*1000, (sideDist-ptDist)*1000, ptSizeUndist * PixelFactor);
+	}
+	return true;
+}
+
+/**
+ * Projects target into camera view, clipping out-of-view points, merging closeby points, and applying noise
+ */
+static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, std::vector<int> &markerMap,
+	const TargetCalibration3D &target, const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params)
+{
+	// Reserve space for projected points
+	int baseMarker = markerMap.size();
+	points2D.reserve(points2D.size() + target.markers.size());
+	properties.reserve(properties.size() + target.markers.size());
+	markerMap.resize(markerMap.size() + target.markers.size(), -1);
+	// Merge from points2D -> points2D
+	Eigen::Isometry3f mv = calib.view.cast<float>() * pose;
+	for (int i = 0; i < target.markers.size(); i++)
+	{
+		const TargetMarker &markerPt = target.markers[i];
+
+		// Cull back
+		Eigen::Vector3f camPoint = mv * markerPt.pos;
+		if (camPoint.z() < 0)
+			continue;
+
+		// Calculate and clip marker points not facing the camera in regards to their field of view
+		Eigen::Vector3f ptNrm = mv.linear() * markerPt.nrm;
+		float facing = -ptNrm.dot(camPoint.normalized());
+		if (facing + params.expandMarkerViewAngle < markerPt.viewAngle)
+			continue;
+
+		// Project marker with given size
+		Eigen::Vector2f ptPos;
+		float ptSize;
+		if (!projectMarker(calib, mode, pose, params, markerPt.pos, markerPt.size, ptPos, ptSize))
+			continue;
+
+		// Adjust size by view angle
+		if (params.grazingAngleDiminishSize && markerPt.viewAngle > 0.1)
+		{ // Well below 180° FoV - very likely flat marker that has less light reflected on tight view angles
+			float sizeDiminish = (facing - markerPt.viewAngle - params.grazingAngleLower) / (params.grazingAngleUpper-params.grazingAngleLower);
+			ptSize *= std::max(0.0f, std::min(1.0f, sizeDiminish));
+		}
+		if (ptSize < params.minSourceBlobSize)
+			continue;
+		ptSize = ptSize*params.blobVisualSizeFactor + params.blobVisualSizeFlare;
+
+		// Register projected marker point
+		markerMap[baseMarker+i] = points2D.size();
+		points2D.push_back(ptPos);
+		properties.emplace_back(ptSize, 1000);
+
+		// Test if it merges with any previous blob
+		testBlobMerge(points2D, properties, mergeMap, params);
+
+		LOGC(LTrace, "    Camera %u: Done projecting point %d (%f, %f), size %f\n", calib.id, (int)points2D.size(), ptPos.x()*PixelFactor, ptPos.y()*PixelFactor, ptSize*PixelFactor);
+	}
 }

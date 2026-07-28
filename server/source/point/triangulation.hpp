@@ -51,7 +51,8 @@ struct TriangulatedPoint_t
 	std::vector<TriSample> samples;
 
 	TriangulatedPoint_t () {}
-	TriangulatedPoint_t (Vector3<Scalar> pos, Scalar error, Scalar confidence) : pos(pos), error(error), confidence(confidence) {}
+	TriangulatedPoint_t (Vector3<Scalar> pos, Scalar error, Scalar confidence, Scalar size = 0.01f)
+		: pos(pos), error(error), confidence(confidence), size(size) {}
 };
 typedef TriangulatedPoint_t<float> TriangulatedPoint;
 

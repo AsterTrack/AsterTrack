@@ -263,6 +263,25 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		if (state.mode == MODE_Simulation && ImGui::CollapsingHeader("Simulated Objects", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			auto sim_lock = pipeline.simulation.contextualLock();
+			
+			static PointSimulation defaultPoint = {};
+
+			ScalarProperty<int>("Point Count", "", &sim_lock->pointSim.pointCount, &defaultPoint.pointCount, 0, 100, 1);
+			ScalarProperty<float>("Point Size", "mm", &sim_lock->pointSim.pointSize, &defaultPoint.pointSize, 0, 100, 1, 1000);
+
+			ImGui::AlignTextToFramePadding();
+			if (ImGui::TreeNode("Point Simulation"))
+			{
+				ImGui::BeginDisabled(sim_lock->points.empty());
+				ScalarProperty<float>("Attraction", "", &sim_lock->pointSim.pointAttraction, &defaultPoint.pointAttraction, 0, 1, 0.005, 1000000000);
+				ScalarProperty<float>("Dampening", "%", &sim_lock->pointSim.pointDampening, &defaultPoint.pointDampening, 0, 1, 0.005, 100);
+				ScalarProperty<float>("Center Force", "", &sim_lock->pointSim.centerForce, &defaultPoint.centerForce, 0, 1, 0.005, 100);
+				ScalarProperty<float>("Center Attenuation", "", &sim_lock->pointSim.centerAttenuation, &defaultPoint.centerAttenuation, 0, 1, 0.005, 1);
+				BooleanProperty("Correct Only", &sim_lock->pointSim.centerCorrectOnly, &defaultPoint.centerCorrectOnly);
+				ImGui::EndDisabled();
+				ImGui::TreePop();
+			}
+
 			for (auto &object : sim_lock->objects)
 			{
 				ImGui::PushID(object.id);

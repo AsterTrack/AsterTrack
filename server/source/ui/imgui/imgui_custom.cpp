@@ -285,7 +285,7 @@ static bool isSame(const Scalar &a, const Scalar &b)
 	if constexpr (std::numeric_limits<Scalar>::is_integer)
 		return a == b;
 	else
-		return std::abs(a - b) <= std::numeric_limits<Scalar>::epsilon() || (std::isnan(a) && std::isnan(b));
+		return std::abs(a - b) <= std::max(std::abs(a), std::abs(b)) * std::numeric_limits<Scalar>::epsilon() || (std::isnan(a) && std::isnan(b));
 }
 
 template<typename Scalar>

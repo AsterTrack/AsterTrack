@@ -5,6 +5,8 @@ if [[ ! -z $1 ]]; then
 	MODE=$1
 fi
 
+set -e
+
 DEPENDENCIES="Eigen glfw libusb vrpn"
 for DEP in $DEPENDENCIES; do
 	pushd buildfiles/$DEP

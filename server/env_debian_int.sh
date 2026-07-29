@@ -2,7 +2,7 @@
 
 rootdir=$1
 if [[ -z $rootdir ]]; then
-	rootdir=debian-external
+	rootdir=debian-internal
 fi
 
 BUILD_TYPE=$2
@@ -25,7 +25,7 @@ fi
 if [[ ! -d $rootdir ]]; then
 	mkdir $rootdir
 	pushd debootstrap
-	DEBOOTSTRAP_DIR=. ./debootstrap --arch amd64 bookworm ../$rootdir
+	sudo DEBOOTSTRAP_DIR=. ./debootstrap --arch amd64 trixie ../$rootdir
 	popd
 fi
 
@@ -52,32 +52,37 @@ apt install -y gcc g++ ninja-build git cmake python3 binutils-dev
 
 git config --global --add remote.origin.fetch '^refs/heads/users/*'
 git config --global --add remote.origin.fetch '^refs/heads/revert-*'
-git clone --depth 1 --branch llvmorg-21.1.7 https://github.com/llvm/llvm-project.git
+
+git clone --depth 1 --branch llvmorg-22.1.8 https://github.com/llvm/llvm-project.git
+
+set -e
+set -x
 
 pushd llvm-project
 
 GCCVER=\$(gcc -dumpversion | cut -f1 -d.)
 cmake -S llvm -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-	-DLLVM_ENABLE_PROJECTS='clang;lld' -DLLVM_ENABLE_RUNTIMES='libcxx;openmp' \
+	-DLLVM_ENABLE_PROJECTS='clang;lld' -DLLVM_ENABLE_RUNTIMES='openmp' \
 	-DLIBCXX_CXX_ABI=libstdc++ \
 	-DLIBCXX_CXX_ABI_INCLUDE_PATHS=\"/usr/include/c++/\$GCCVER/;/usr/include/\$(gcc -dumpmachine)/c++/\$GCCVER/\" \
 	-DLLVM_BINUTILS_INCDIR=/usr/include
 # For other BUILD_TYPES (especially verify/debug ones), other runtimes may be interesting:
 # -DLLVM_ENABLE_RUNTIMES='libcxx;compiler-rt;openmp;libunwind'
 
+#ninja -C build clean
 ninja -C build clang lld install
 ninja -C build runtimes install-runtimes
 
 popd
+
+export CC=/usr/local/bin/clang
+export CXX=/usr/local/bin/clang++
 
 apt install -y autoconf automake libtool unzip wget
 apt install -y libgl1-mesa-dev libglu1-mesa-dev libglew-dev libwayland-dev libxkbcommon-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libudev-dev libdbus-1-dev libturbojpeg0-dev
 
 apt install -y libomp-dev
 cp /usr/lib/llvm-*/lib/clang/*/include/omp.h /usr/include
-
-export CC=/usr/local/bin/clang
-export CXX=/usr/local/bin/clang++
 
 cd AsterTrack/server/
 pushd dependencies

@@ -12,6 +12,8 @@ elif [[ $MODE == "sanitize-address" ]]; then
 	export CXXFLAGS="-fsanitize=address"
 fi
 
+set -e
+
 DEPENDENCIES="Eigen glfw libusb vrpn"
 for DEP in $DEPENDENCIES; do
 	pushd buildfiles/$DEP > /dev/null

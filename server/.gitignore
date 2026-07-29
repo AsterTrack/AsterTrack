@@ -5,8 +5,7 @@ compile_commands.json
 
 # Build systems
 build/
-debian-external/
-debian-internal/
+debian-*
 debootstrap/
 package/
 

@@ -126,7 +126,7 @@ mode = verify-fast
 
 else ifeq ($(BUILD_TYPE), debug-fast)
 # Pretty fast, without any sanitization to not break container inspection, for step-through debug
-cmode = -Og -g -fno-omit-frame-pointer -DEIGEN_NO_DEBUG -DPERF=2
+cmode = -Og -g -fno-omit-frame-pointer -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=2
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 endif
@@ -135,7 +135,7 @@ mode = debug-fast
 
 else ifeq ($(BUILD_TYPE), debug)
 # Slow, without any sanitization to not break container inspection, for step-through debug
-cmode = -O0 -g -fno-omit-frame-pointer -DEIGEN_NO_DEBUG -DPERF=1
+cmode = -O0 -g -fno-omit-frame-pointer -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=1
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 endif
@@ -163,11 +163,10 @@ mode = verify-extensive-fast
 else ifeq ($(BUILD_TYPE), verify-extensive-debug)
 # Super slow (?), for debug with extensive verification
 # Though step-through debug is hampered by verification breaking container inspection
-# Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for clang at least)
-cmode = -Og -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
+# Advanced debug mode of the standard library, may break ABI so might need libraries to be built with it, too (for libcpp at least)
+cmode = -O0 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment -DLOG_MAX_LEVEL_DEFAULT=LTrace -DPERF=0
 lmode = -fsanitize=address -fsanitize=undefined -fno-sanitize=alignment
-ifeq ($(STDLIB), libcpp)
-# requires all libraries to be built with it to work and forces BlockedQueue to be less performant (atomics need to be non-trivially-copyable like on windows)
+ifeq ($(STDLIB), libcpp) # requires all libraries to be built with it to work
 	cmode += -DLIBCXX_ENABLE_ASSERTIONS=ON -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
 else # gccs libstdc++ - may technically already break ABI, but doesn't matter for this project

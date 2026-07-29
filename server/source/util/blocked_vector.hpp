@@ -32,6 +32,7 @@ SOFTWARE.
 #include <array>
 #include <list>
 #include <mutex>
+#include <utility>
 
 // For safe culled block deletion
 #include <thread>

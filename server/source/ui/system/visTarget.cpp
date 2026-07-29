@@ -168,17 +168,25 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 
 	if (visTarget.hasObs() && visTarget.hasPose && visTarget.targetGT && pipelineGT.isSimulationMode)
 	{ // Draw markers of GT target
-		Eigen::Isometry3f pose;
-		int mBase = markerPoints.size();
-		{
-			auto sim_lock = pipelineGT.simulation.contextualRLock();
+		Eigen::Isometry3f pose = tgtPose;
+		{ // Find GT pose if possible
 			auto &frame = visTarget.obs->frames[visTarget.frameIdx];
-			pose = sim_lock->framePoses[frame.frame]; // Have to rely on it being primary object at the time of calibration
-			for (const auto &marker : visTarget.targetGT->markers)
+			auto simFrames = pipelineGT.simulated.frames.getView();
+			if (!(frame.frame < simFrames.beginIndex() || frame.frame >= simFrames.endIndex()))
 			{
-				markerPoints.emplace_back(pose * marker.pos, gtColor, gtSize);
-				markerIndices.push_back(-1);
+				auto &simFrame = simFrames[frame.frame];
+				auto tracker = std::find_if(simFrame->trackers.begin(), simFrame->trackers.end(),
+					[&](auto &t){ return t.id == visTarget.obs->trackerID; });
+				if (tracker != simFrame->trackers.end())
+					pose = tracker->pose.observed;
 			}
+		}
+
+		int mBase = markerPoints.size();
+		for (const auto &marker : visTarget.targetGT->markers)
+		{
+			markerPoints.emplace_back(pose * marker.pos, gtColor, gtSize);
+			markerIndices.push_back(-1);
 		}
 		{
 			auto obs_lock = pipelineGT.seqDatabase.contextualRLock();

@@ -928,6 +928,13 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	for (auto &tri : frame.triangulations)
 		markerPoints.emplace_back(tri.pos, (Color8)(tri.confidence < 4? colorNC : colorC), tri.size);
 
+	if (pipeline.isSimulationMode && visFrame.altFrameIt.accessible())
+	{
+		Color colorSim = Color{ 0.0f, 0.9f, 0.2f, 1.0f };
+		for (auto &tri : visFrame.altFrameIt->get()->triangulations)
+			markerPoints.emplace_back(tri.pos, (Color8)colorSim, tri.size/2);
+	}
+
 	if (pipeline.phase == PHASE_Calibration_Point)
 	{
 		auto room = pipeline.pointCalib.room.contextualRLock();

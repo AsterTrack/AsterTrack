@@ -421,7 +421,8 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			frameRecord->num = frameRecord->ID = frame;
 			frameRecord->time = sclock::now();
 			frameRecord->timeUTC = std::chrono::system_clock::now();
-			GenerateSimulationData(pipeline, *frameRecord);
+			pipeline.curSimulated = GenerateSimulationData(pipeline, *frameRecord);
+			pipeline.simulated.frames.insert(frame, pipeline.curSimulated);
 			if (!pipeline.isSimulationMode)
 			{ // Allow disabling of GT calculations easily
 				for (auto &cam : frameRecord->cameras)

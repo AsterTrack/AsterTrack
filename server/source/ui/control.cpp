@@ -452,8 +452,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 								std::filesystem::remove(section.path); // Clear occupied path
 							}
 							else
-							{
-								error = saveTrackingResults(section.path, pipeline.record, section.begin, section.end, 0);								
+							{ // Save current tracking results (or simulated baseline) alongside
+								auto &record = GetState().mode == MODE_Simulation? pipeline.simulated : pipeline.record;
+								error = saveTrackingResults(section.path, record, section.begin, section.end, 0);								
 								if (error) SignalErrorToUser(error.value());
 								error = storeCameraCalibrations(recordingsFolder + asprintf_s("/%d_calib.json", section.index), calibs);
 								if (error) SignalErrorToUser(error.value());

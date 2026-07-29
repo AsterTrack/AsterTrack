@@ -75,6 +75,11 @@ static void DeletePipelineData(PipelineState &pipeline)
 		imu->samplesRaw.delete_culled();
 		imu->samplesFused.delete_culled();
 	}
+	// Delete simulated data if any
+	pipeline.simulated.frames.cull_clear(); // Non-blocking, might need another delete_culled later
+	pipeline.simulated.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
+	pipeline.simulated.imus.clear();
+	pipeline.curSimulated = nullptr;
 }
 
 static void DeletePipelineSetup(PipelineState &pipeline)

@@ -53,6 +53,9 @@ struct VisFrameLock
 {
 	BlockedQueue<std::shared_ptr<FrameRecord>>::View<true> frames;
 	BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator frameIt;
+	// For Stored Recording or Simulation:
+	BlockedQueue<std::shared_ptr<FrameRecord>>::View<true> altFrames;
+	BlockedQueue<std::shared_ptr<FrameRecord>>::const_iterator altFrameIt;
 	bool isRealtimeFrame = true;
 	bool hasFrame = false, hasCamera = false;
 	VisTargetLock target = {};

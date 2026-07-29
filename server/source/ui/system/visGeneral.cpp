@@ -63,6 +63,12 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 	}
 	snapshot.hasFrame = *snapshot.frameIt && snapshot.frameIt->get()->finishedProcessing;
 	snapshot.hasCamera = snapshot.hasFrame && focusCamera >= 0 && focusCamera < snapshot.frameIt->get()->cameras.size();
+	if (pipeline.isSimulationMode && *snapshot.frameIt)
+	{
+		snapshot.altFrames = pipeline.simulated.frames.getView();
+		snapshot.altFrameIt = snapshot.altFrames.pos(snapshot.frameIt.index());
+	}
+	// TODO: Add stored records of replay as alternative frame
 	return snapshot;
 }
 

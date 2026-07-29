@@ -254,6 +254,8 @@ struct PipelineState
 	// Simulation state
 	bool isSimulationMode;
 	SynchronisedS<SimulationState> simulation = {};
+	TrackingRecord simulated = {};
+	std::shared_ptr<FrameRecord> curSimulated;
 };
 
 

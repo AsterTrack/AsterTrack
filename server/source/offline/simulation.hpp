@@ -123,15 +123,6 @@ struct SimProjectionParameters
 
 struct SimulationState
 {
-	BlockedVector<Eigen::Isometry3f> framePoses;
-	struct FrameInfo
-	{
-		FrameNum frame;
-		std::vector<std::pair<int, Eigen::Vector3f>> triangulation;
-	};
-	// Generating custom pose
-	FrameInfo lastFrame;
-
 	std::vector<SimulatedPoint> points;
 	PointSimulation pointSim = {};
 
@@ -190,7 +181,6 @@ struct SimulationState
 		}
 		points.clear();
 		primaryObject = 0;
-		framePoses.clear();
 	}
 };
 
@@ -200,7 +190,7 @@ struct SimulationState
 /**
  * Generates simulated data according to config and current phase
  */
-void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frame);
+std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, FrameRecord &frame);
 
 /**
  * Replace point data in frameState belonging to the given tracker records with simulated data if configured

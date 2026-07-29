@@ -93,6 +93,7 @@ struct CameraFrameRecord
 	std::vector<Cluster2DStats> clusters2D;
 
 	struct {
+		// TODO: Doesn't really play well with multiple SimulatedObjects, but does it need to?
 		std::vector<int> points2GTMarker;
 		std::vector<int> GTMarkers2Point;
 	} simulation = {};

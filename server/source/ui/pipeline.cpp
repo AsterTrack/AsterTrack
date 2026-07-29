@@ -642,6 +642,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		EndCollapsingRegion();
 	}
+	else if (state.mode == MODE_Simulation && BeginCollapsingRegion("Tracking Results"))
+	{
+		ShowTrackingResults();
+		EndCollapsingRegion();
+	}
 
 	ImGui::End();
 }
@@ -880,17 +885,26 @@ static void ShowTrackingResults()
 		for (auto &tracker: state.trackerConfigs)
 			trackers[tracker.id] = { tracker.label, tracker.type };
 
-		auto framesRecord = pipeline.record.frames.getView<true>();
-		auto framesStored = state.stored.frames.getView<true>();
-
-		// Handle each appended recording (if multiple) separately
-		// This allows us to filter out erroneous trackers per recording
-		FrameNum lastFrame = std::min(framesRecord.endIndex(), framesStored.endIndex());
-		for (auto recording : state.recording.recordings)
+		auto framesRecord = pipeline.record.frames.getView();
+		if (state.mode == MODE_Replay)
 		{
-			if (recording.frameStart >= lastFrame) break;
-			FrameNum end = std::min(recording.frameStart + recording.frameCount, lastFrame);
-			gatherTrackingSamples(framesRecord, framesStored, recording.frameStart, end);
+			auto framesStored = state.stored.frames.getView();
+
+			// Handle each appended recording (if multiple) separately
+			// This allows us to filter out erroneous trackers per recording
+			FrameNum lastFrame = std::min(framesRecord.endIndex(), framesStored.endIndex());
+			for (auto recording : state.recording.recordings)
+			{
+				if (recording.frameStart >= lastFrame) break;
+				FrameNum end = std::min(recording.frameStart + recording.frameCount, lastFrame);
+				gatherTrackingSamples(framesRecord, framesStored, recording.frameStart, end);
+			}
+		}
+		else if (state.mode == MODE_Simulation)
+		{
+			auto framesStored = pipeline.simulated.frames.getView();
+
+			gatherTrackingSamples(framesRecord, framesStored, framesStored.beginIndex(), framesStored.endIndex());
 		}
 
 		// Filter out any trackers without data

@@ -90,10 +90,10 @@ static void applyMergeMap(std::vector<Eigen::Vector2f> &points2D, std::vector<Bl
 static bool projectMarker(const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose,
 	const SimProjectionParameters &params, const Eigen::Vector3f &mkPoint, float mkSize, Eigen::Vector2f &ptPos, float &ptSize);
 
-static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::vector<int> &markerMap,
+static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::vector<BlobProperty> &properties, std::map<int,int> &mergeMap, std::vector<int> &markerMap,
 	const TargetCalibration3D &target, const CameraCalib &calib, const CameraMode &mode, const Eigen::Isometry3f &pose, const SimProjectionParameters &params);
 
-void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
+std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 {
 	ScopedLogCategory optLogCategory(LSimulation);
 	auto simLock = pipeline.simulation.contextualLock();
@@ -103,11 +103,11 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 	LOGC(LDebug, "Generating points for frame %" PRIu64 ":\n", frameState.num);
 
-	// ----- Generate 3D Point Cloud -----
+	std::shared_ptr<FrameRecord> simFrame = std::make_shared<FrameRecord>();
+	simFrame->num = frameState.num;
+	simFrame->triangulations.reserve(simulation.points.size());
 
-	simulation.lastFrame.frame = frameState.num;
-	simulation.lastFrame.triangulation.clear();
-	simulation.lastFrame.triangulation.reserve(simulation.points.size());
+	// ----- Generate 3D Point Cloud -----
 
 	{ // Update and project triangulatable points
 		const auto &params = simulation.pointSim;
@@ -139,10 +139,11 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			pt.pos += pt.vel + pt.acc/2;
 			pt.vel += pt.acc;
 			pt.vel *= 1 - params.pointDampening;
-			simulation.lastFrame.triangulation.emplace_back(-1, pt.pos);
 		}
 
+		std::vector<std::array<int,2>> triSamples(simulation.points.size());
 		std::map<int,int> mergeMap;
+		std::vector<int> obsStatus, markerMap;
 		for (auto &cam : pipeline.cameras)
 		{
 			if (cam->disabled) continue;
@@ -151,8 +152,13 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 			record.received = true;
 
 			mergeMap.clear();
-			for (auto &pt : simulation.points)
+			markerMap.clear();
+			obsStatus.clear();
+			obsStatus.resize(simulation.points.size(), 0); // Mark unused
+			for (int i = 0; i < simulation.points.size(); i++)
 			{
+				auto &pt = simulation.points[i];
+
 				// Project marker of given size
 				Eigen::Vector2f ptPos;
 				float ptSize;
@@ -161,6 +167,8 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 					continue;
 
 				// Register marker observation
+				obsStatus[i] = 1; // Mark used, unconflicted
+				markerMap.push_back(i);
 				record.rawPoints2D.push_back(ptPos);
 				record.properties.emplace_back(ptSize, 1000);
 
@@ -171,13 +179,35 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 			if (!mergeMap.empty())
 			{ // Actually merge with prior observations
+				for (auto &conflict : mergeMap)
+				{ // Mark used, conflicted
+					obsStatus[markerMap[conflict.first]] = 2;
+					obsStatus[markerMap[conflict.second]] = 2;
+				}
+
 				applyMergeMap(record.rawPoints2D, record.properties, mergeMap);
+			}
+
+			for (int i = 0; i < simulation.points.size(); i++)
+			{ // Count unconflicted and conflicted samples respectively
+				if (obsStatus[i] == 1) triSamples[i][0]++;
+				if (obsStatus[i] == 2) triSamples[i][1]++;
 			}
 
 			if (mergeMap.empty())
 				LOGC(LDebug, "  Camera %u has %d visible tri points!\n", cam->id, (int)record.rawPoints2D.size());
 			else
 				LOGC(LDebug, "  Camera %u has %d visible tri points, with %d mergers on %d original points!\n", cam->id, (int)record.rawPoints2D.size(), (int)mergeMap.size(), originalPts);
+		}
+
+		for (int i = 0; i < simulation.points.size(); i++)
+		{ // Register triangulations as they SHOULD be detected in simulated frame record
+			auto &pt = simulation.points[i];
+			int clean = triSamples[i][0], conflict = triSamples[i][1];
+			//float confidence = (clean*clean)/(conflict+1);
+			float confidence = clean*clean*2 + conflict;
+			if (confidence >= pipeline.params.tri.minIntersectionConfidence)
+				simFrame->triangulations.emplace_back(pt.pos, 0.001f, confidence);
 		}
 	}
 
@@ -210,6 +240,13 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 
 		// ----- Generate projection -----
 
+		TrackerRecord tracker = {};
+		tracker.id = object.id;
+		tracker.pose.observed = object.pose;
+		tracker.match2D = ptr::make_value<TargetMatch2D>();
+		tracker.match2D->pose = object.pose;
+		tracker.match2D->points2D.resize(pipeline.cameras.size());
+
 		std::vector<int> markerObsCount;
 		if (recordPoints)
 			markerObsCount.resize(object.target.markers.size());
@@ -230,6 +267,23 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 				object.target, cam->simulation.calib, cam->mode, object.pose, simulation.projectionParams);
 			applyMergeMap(record.rawPoints2D, record.properties, mergeMap, markerMap);
 
+			// Update TrackerRecord
+			std::vector<int> validMarkerMap = markerMap;
+			for (auto &conflict : mergeMap)
+			{ // Mark used, conflicted
+				validMarkerMap[conflict.first] = -2;
+				validMarkerMap[conflict.second] = -2;
+			}
+			for (int i = 0; i < markerMap.size(); i++)
+			{ // Enter valid samples into TargetMatch2D
+				if (markerMap[i] < 0) continue; // Not visible or merged and should not be used
+				tracker.match2D->points2D[cam->index].emplace_back(i, markerMap[i]);
+				float error = simulation.projectionParams.blobNoiseStdDev * 2;
+				tracker.match2D->error.mean += error;
+				tracker.match2D->error.max = std::max(tracker.match2D->error.max, error);
+				tracker.match2D->error.samples++;
+			}
+
 			if (recordPoints)
 			{ // Invert GTMarkers2Point to points2GTMarker (merged points are not invertible)
 				record.simulation.GTMarkers2Point.insert(record.simulation.GTMarkers2Point.end(),
@@ -249,18 +303,23 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 				}
 				assert(record.simulation.points2GTMarker.size() == record.rawPoints2D.size());
 			}
-			else
+			/* else
 			{ // Shuffle points around
 				std::shuffle(record.rawPoints2D.begin()+startPts, record.rawPoints2D.end(), gen);
-			}
+			} */
+		}
+
+		if (tracker.match2D->error.samples > 0)
+		{ // Record TrackerRecord on successful track
+			tracker.result = tracker.match2D->error.samples >= 3? TrackingResult::TRACKED_POSE : TrackingResult::NO_TRACK;
+			tracker.match2D->error.mean /= tracker.match2D->error.samples;
+			simFrame->trackers.push_back(std::move(tracker));
 		}
 
 		// ----- Generate 3D Point Cloud -----
 
-		{ // Recreate ground truth position of points which could have been triangulated
-
-			if (i == simulation.primaryObject)
-				simulation.framePoses.ensureAt(frameState.num) = object.pose;
+		if (SHOULD_LOGC(LTrace) && recordPoints)
+		{ // Double check target projection via triangulation
 
 			LOGC(LTrace, "Recording GT triangulations:\n");
 
@@ -281,40 +340,40 @@ void GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 				if (markerObsCount[i] < 2)
 					continue;
 				Eigen::Vector3f gtPoint = object.pose * object.target.markers[i].pos;
-				simulation.lastFrame.triangulation.emplace_back(i, gtPoint);
 
-				if (SHOULD_LOGC(LTrace))
-				{ // Triangulate the point to double check
-					triPoint.samples.clear();
-					for (auto &cam : pipeline.cameras)
+				// Triangulate the point to double check
+				triPoint.samples.clear();
+				for (auto &cam : pipeline.cameras)
+				{
+					auto &record = frameState.cameras[cam->index];
+					for (int j = 0; j < record.simulation.points2GTMarker.size(); j++)
 					{
-						auto &record = frameState.cameras[cam->index];
-						for (int j = 0; j < record.simulation.points2GTMarker.size(); j++)
+						if (record.simulation.points2GTMarker[j] == i)
 						{
-							if (record.simulation.points2GTMarker[j] == i)
-							{
-								blobContainer[cam->index][0] = undistortPoint(cam->calib, record.rawPoints2D[j]);
-								triPoint.samples.emplace_back(cam->index, 0); // Working with full camera set
-								break;
-							}
+							blobContainer[cam->index][0] = undistortPoint(cam->calib, record.rawPoints2D[j]);
+							triPoint.samples.emplace_back(cam->index, 0); // Working with full camera set
+							break;
 						}
 					}
-					if (triPoint.samples.size() >= 2)
-					{ // E.g. merged blobs might not be traceable
-						Eigen::Vector3f point3D = refineTriangulationIterative<float>(points2D, calibs, triPoint);
-						LOGC(LTrace, "  Triangulated target point %d (%.4f, %.4f, %.4f) from observations, error %.2fmm with %f error value\n",
-							i, point3D.x(), point3D.y(), point3D.z(), (point3D-gtPoint).norm()*1000, triPoint.error);
-					}
-					else
-					{
-						LOGC(LTrace, "  Could not triangulate target point %d from observations since points weren't all traceable (may have been merged)", i);
-					}
+				}
+				if (triPoint.samples.size() >= 2)
+				{ // E.g. merged blobs might not be traceable
+					Eigen::Vector3f point3D = refineTriangulationIterative<float>(points2D, calibs, triPoint);
+					LOGC(LTrace, "  Triangulated target point %d (%.4f, %.4f, %.4f) from observations, error %.2fmm with %f error value\n",
+						i, point3D.x(), point3D.y(), point3D.z(), (point3D-gtPoint).norm()*1000, triPoint.error);
+				}
+				else
+				{
+					LOGC(LTrace, "  Could not triangulate target point %d from observations since points weren't all traceable (may have been merged)", i);
 				}
 			}
-			LOGC(LTrace, "Entering %d GT triangulations for frame %" PRIu64 "\n",
-				(int)simulation.lastFrame.triangulation.size(), simulation.lastFrame.frame);
 		}
 	}
+
+	//simFrame->cameras = frameState.cameras;
+	simFrame->finishedProcessing = true;
+
+	return simFrame;
 }
 
 /**

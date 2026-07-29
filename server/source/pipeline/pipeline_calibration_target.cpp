@@ -206,7 +206,7 @@ void UpdateTargetCalibration(PipelineState &pipeline, std::vector<CameraPipeline
 }
 
 // Update data of tgtGT to newly projected GT data, used for debugging in simulation
-static void makeGTTarget(const SimulationState &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetCalibration3D &calibGT)
+static void makeGTTarget(const TrackingRecord &simulation, const SequenceData &sequences, const std::vector<CameraCalib> &calibs, ObsTarget &targetGT, const TargetCalibration3D &calibGT)
 {
 	// Set marker positions to most likely GT candidate
 	for (auto m : targetGT.markerMap)
@@ -225,9 +225,15 @@ static void makeGTTarget(const SimulationState &simulation, const SequenceData &
 		targetGT.markers[m.second] = calibGT.markers[gtMarker.first].pos;
 	}
 	// Take GT frame poses and overwrite observations with GT
+	auto simFrames = simulation.frames.getView();
 	for (auto &frame : targetGT.frames)
 	{
-		frame.pose = simulation.framePoses[frame.frame];
+		if (frame.frame < simFrames.beginIndex() || frame.frame >= simFrames.endIndex()) continue;
+		auto &simFrame = simFrames[frame.frame];
+		auto tracker = std::find_if(simFrame->trackers.begin(), simFrame->trackers.end(),
+			[&](auto &t){ return t.id == targetGT.trackerID; });
+		if (tracker == simFrame->trackers.end()) continue;
+		frame.pose = tracker->pose.observed;
 
 		for (auto &samples : frame.samples)
 		{
@@ -329,7 +335,7 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 	// Build a GT target
 	ObsTarget targetGT = obsData.targets.front();
 	if (pipeline->isSimulationMode && viewPtr->simulation.targetGT)
-		makeGTTarget(*pipeline->simulation.contextualRLock(), *pipeline->seqDatabase.contextualRLock(), calibs, targetGT, *viewPtr->simulation.targetGT);
+		makeGTTarget(pipeline->simulated, *pipeline->seqDatabase.contextualRLock(), calibs, targetGT, *viewPtr->simulation.targetGT);
 
 	auto reconstructView = [&]()
 	{

@@ -843,7 +843,12 @@ static bool ShowTrackingPanel()
 		ImGui::Checkbox("Follow Frame", &followFrame);
 		ImGui::SameLine();
 		ImGui::Checkbox("Current", &showCur);
-		if (state.mode == MODE_Replay)
+		if (state.mode == MODE_Simulation)
+		{
+			ImGui::SameLine();
+			ImGui::Checkbox("Simulated", &showRec);
+		}
+		else if (state.mode == MODE_Replay)
 		{
 			ImGui::SameLine();
 			ImGui::Checkbox("Recorded", &showRec);
@@ -860,8 +865,12 @@ static bool ShowTrackingPanel()
 	if ((inspecting == Inspect_CompareTrackers && compIndexA < 0) || (inspecting == Inspect_Trackers && curTrackerID == 0))
 		return false;
 
-	auto framesRecord = pipeline.record.frames.getView();
-	auto framesStored = state.stored.frames.getView();
+	BlockedQueue<std::shared_ptr<FrameRecord>>::View<true> framesRecord, framesStored;
+	framesRecord = pipeline.record.frames.getView();
+	if (state.mode == MODE_Replay)
+		framesStored = state.stored.frames.getView();
+	else if (state.mode == MODE_Simulation)
+		framesStored = pipeline.simulated.frames.getView();
 	OptFrameNum frameNum = pipeline.frameNum.load();
 	if (framesRecord.empty() && framesStored.empty())
 		return false;
@@ -1153,7 +1162,7 @@ static bool ShowTrackingPanel()
 	{
 		if (showCur && !framesRecord.empty())
 			drawCur = gatherTriangulationData(tracking, framesRecord, true);
-		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
+		if (showRec && !framesStored.empty())
 			drawRec = gatherTriangulationData(recording, framesStored, false);
 	}
 	else if (inspecting == Inspect_CompareTrackers)
@@ -1179,7 +1188,7 @@ static bool ShowTrackingPanel()
 
 		if (showCur && !framesRecord.empty())
 			drawCur = gatherTrackingData(tracking, framesRecord, curTrackerID, true);
-		if (showRec && state.mode == MODE_Replay && !framesStored.empty())
+		if (showRec && !framesStored.empty())
 			drawRec = gatherTrackingData(recording, framesStored, curTrackerID, false);
 
 		if (inspecting == Inspect_CombineTrackers && stateDifferences)

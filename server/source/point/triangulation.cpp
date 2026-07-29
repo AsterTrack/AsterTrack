@@ -159,10 +159,17 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	mergedIntersections.clear();
 	mergedIntersections.reserve(ixCnt/2+1);
 
-	// Merge possible intersections between three rays
-	std::vector<TwoIntersection*> mergers;
-	std::vector<TwoIntersection*> potentialMergers;
-	std::vector<BlobIndex> ixBlobs(camCount, InvalidBlob);
+	// Prepare allocation for intersection buffers
+	thread_local std::vector<TwoIntersection*> mergers, potentialMergers;
+	mergers.reserve((camCount+1)*camCount/2);
+	potentialMergers.reserve(mergers.size() * 2);
+
+	// Prepare intermediary buffer for blobs used for each camera
+	thread_local std::vector<BlobIndex> ixBlobs;
+	ixBlobs.clear();
+	ixBlobs.resize(camCount, InvalidBlob);
+
+	// Merge possible intersections
 	for (int i = 0; i < intersections.size(); i++)
 	{
 		TwoIntersection *ix = &intersections[i];
@@ -182,59 +189,72 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		ixBlobs[ix->c2] = ix->b2;
 
 		// Search for other intersections with one common ray and one new ray
-		auto testMerger = [&](TwoIntersection *ixm, int testCam)
+		auto testMerger = [&](TwoIntersection* &ixm, int testCam)
 		{
 			float errorSq = (ixm->center - ix->center).squaredNorm()/4;
 			float distSq = (cameras[testCam].transform.translation().cast<float>() - ix->center).squaredNorm();
-			float errorCone = maxError*maxError*distSq*(float)cameras[testCam].f*(float)cameras[testCam].f;
-			if (errorSq <= errorCone)
-			{ // Merge intersections, now consisting of three rays intersecting
-				mergers.push_back(ixm);
-				ixBlobs[ixm->c1] = ixm->b1;
-				ixBlobs[ixm->c2] = ixm->b2;
-			}
-			else
-			{ // else two intersections with different ray groups, but distant, so one must be wrong - register conflict
-				potentialMergers.push_back(ixm);
-			}
+			float errorConeSq = maxError*maxError * distSq * (float)cameras[testCam].f*(float)cameras[testCam].f;
+			if (errorSq > errorConeSq) return;
+			// Merge intersections, now consisting of three rays intersecting
+			ixBlobs[ixm->c1] = ixm->b1;
+			ixBlobs[ixm->c2] = ixm->b2;
+			mergers.push_back(ixm);
+			ixm = nullptr;
 		};
 
-		TimePoint_t t1 = sclock::now();
-
-		// Find matching intersections
-		mergers.clear();
+		// Find all close intersections
+		// TODO: Use nanoflann? Not the most critical bottleneck right now
+		TimePoint_t t10 = sclock::now();
+		float maxRange = maxError*2 * 32;
 		potentialMergers.clear();
 		for (int j = i+1; j < intersections.size(); j++)
 		{
 			TwoIntersection *ixm = &intersections[j];
 			if (ixm->merge != NULL) continue;
-
-			if (ixBlobs[ixm->c1] == ixm->b1)
-			{
-				if (ixBlobs[ixm->c2] == InvalidBlob)
-					testMerger(ixm, ixm->c1 == ix->c2? ix->c1 : ix->c2);
-				else if (ixBlobs[ixm->c2] == ixm->b2)
-					mergers.push_back(ixm);
-				// else // Technically, a conflict here COULD be better matching than an intersection already included...
-			}
-			else if (ixBlobs[ixm->c2] == ixm->b2)
-			{
-				if (ixBlobs[ixm->c1] == InvalidBlob)
-					testMerger(ixm, ixm->c2 == ix->c2? ix->c1 : ix->c2);
-				else if (ixBlobs[ixm->c1] == ixm->b1)
-					mergers.push_back(ixm);
-				// else // Technically, a conflict here COULD be better matching than an intersection already included...
+			if ((ixm->center - ix->center).squaredNorm() < maxRange*maxRange)
+			{ // Goal is to handle ANY that could possibly be merged, to limit cost of iterations
+				potentialMergers.push_back(ixm);
 			}
 		}
+		t_close += dtMS(t10, sclock::now());
 
-		if (SHOULD_LOGC(LTrace) && !potentialMergers.empty())
+		TimePoint_t t11 = sclock::now();
+		int count = -1;
+		mergers.clear();
+		int rem = potentialMergers.size();
+		while (count != mergers.size() && rem > 0)
 		{
-			std::string blobsStr = "";
+			count = mergers.size();
+			rem = 0;
 			for (auto &ixm : potentialMergers)
-				blobsStr += asprintf_s("%d, ", IXNUM(ixm));
-			LOGC(LTrace, "    Potentially conflicting intersections: %s", blobsStr.c_str());
+			{
+				if (!ixm) continue;
+				if (ixBlobs[ixm->c1] == ixm->b1)
+				{
+					if (ixBlobs[ixm->c2] == InvalidBlob)
+						testMerger(ixm, ixm->c1 == ix->c2? ix->c1 : ix->c2);
+					else if (ixBlobs[ixm->c2] == ixm->b2)
+					{
+						mergers.push_back(ixm);
+						ixm = nullptr;
+					}
+					// else // Technically, a conflict here COULD be better matching than an intersection already included...
+				}
+				else if (ixBlobs[ixm->c2] == ixm->b2)
+				{
+					if (ixBlobs[ixm->c1] == InvalidBlob)
+						testMerger(ixm, ixm->c2 == ix->c2? ix->c1 : ix->c2);
+					else if (ixBlobs[ixm->c1] == ixm->b1)
+					{
+						mergers.push_back(ixm);
+						ixm = nullptr;
+					}
+					// else // Technically, a conflict here COULD be better matching than an intersection already included...
+				}
+				if (ixm) rem++;
+			}
 		}
-		t_merge += dtMS(t1, sclock::now());
+		t_merge += dtMS(t11, sclock::now());
 
 		// Check if merge candidates found
 		if (mergers.empty())
@@ -247,25 +267,14 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 		// Add original intersection
 		mergers.push_back(ix);
 
+		LOGC(LTrace, "    Merged %d / %d closeby 2-intersections!\n", (int)mergers.size()-1, (int)potentialMergers.size());
+
 		if (SHOULD_LOGC(LTrace))
 		{
 			std::string blobsStr = "";
 			for (int j = 0; j < camCount; j++)
 				blobsStr += ixBlobs[j] == InvalidBlob? "X - " : asprintf_s("%d - ", ixBlobs[j]);
 			LOGC(LTrace, "    Merging Blobs: %s", blobsStr.c_str());
-		}
-
-		// Go through conflicts (other intersections on the two rays of our main intersection ix respectively)
-		// And find those that intersect with any two rays involved in this merging intersection
-		// Then add them to the merge and remove them as conflicts
-		for (int i = 0; i < potentialMergers.size(); i++)
-		{
-			TwoIntersection *ixm = potentialMergers[i];
-			if (ixBlobs[ixm->c1] == ixm->b1 && ixBlobs[ixm->c2] == ixm->b2)
-			{ // Accept as merger, probably out of error range of another set of rays tested against
-				mergers.push_back(potentialMergers[i]);
-				LOGC(LDarn, "        Added intersection %d to merge because of shared rays!\n", IXNUM(potentialMergers[i]));
-			}
 		}
 
 		if (SHOULD_LOGC(LTrace))

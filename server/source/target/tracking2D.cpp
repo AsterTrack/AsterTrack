@@ -407,27 +407,23 @@ void matchTargetPointsRecover(
 			m, (int)cand.matches.size(), (int)mkMatch.matches.size(), cand.matches.front().value);
 	}
 
-	// TODO: Sadly have to discarding excess matches allocations. matching.hpp can't deal with size limit on matchCandidates right now
-	matchCandidates.resize(candidateCount);
-
 	// Resolve match candidates tentatively
-	int numMatches = resolveMatchCandidates(matchCandidates, points2D.size(), params.match);
+	int numMatches = resolveMatchCandidates(matchCandidates.begin(), matchCandidates.begin()+candidateCount, points2D.size(), params.match);
 	if (numMatches <= 1)
 	{ // No hope if even relaxed constraints resulted in only 1
 		// 1 match for slow algorithm means nothing, discard
-		LOGC(LTrace, "               Got %d candidates but only %d valid matches!\n",
-			(int)matchCandidates.size(), numMatches);
+		LOGC(LTrace, "               Got %d candidates but only %d valid matches!\n", candidateCount, numMatches);
 		return;
 	}
 	/* { // Boost other matches whose diff
-		for (int i = 0; i < matchCandidates.size(); i++)
+		for (int i = 0; i < candidateCount; i++)
 		{
 			auto &match = matchCandidates[i];
 			bool resolved = !match.matches.front().valid();
 			for (auto &m : match.matches)
 				m.invalid = false;
 			if (!resolved) continue;
-			for (int j = 0; j < matchCandidates.size(); j++)
+			for (int j = 0; j < candidateCount; j++)
 			{
 				if (i == j) continue;
 				for (auto &m : matchCandidates[j].matches)
@@ -439,7 +435,7 @@ void matchTargetPointsRecover(
 	} */
 	// TODO: Consider using hungarian algorithm instead, the custom algorithm performs great but has many parameters
 
-	LOGC(LTrace, "               Got %d final sorted candidates, of which %d are valid!\n", (int)matchCandidates.size(), numMatches);
+	LOGC(LTrace, "               Got %d final sorted candidates, of which %d are valid!\n", candidateCount, numMatches);
 
 	// Gather resolved matching points
 	matches.reserve(numMatches);

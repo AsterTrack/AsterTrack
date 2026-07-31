@@ -236,16 +236,17 @@ static int resolveMatchCandidatesOptimistic(std::vector<Source> &sourceMatches, 
  *
  * Additionally, competeRange will require each primary match to compete with non-primary matches of other sources
  */
-template<typename Source>
-static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int targetCount, const MatchingParameters &params)
+template<typename SourceIt>
+static int resolveMatchCandidates(SourceIt begin, SourceIt end, int targetCount, const MatchingParameters &params)
 {
 	thread_local std::vector<TargetMatch> targetMatches;
 	targetMatches.clear();
 	targetMatches.resize(targetCount);
 
-	for (int s = 0; s < sourceMatches.size(); s++)
+	int s = 0;
+	for (auto it = begin; it != end; s++, it++)
 	{
-		Source &source = sourceMatches[s];
+		auto &source = *it;
 		if (source.matches.empty())
 			continue; // Incase a dynamic container is used
 		auto &priMatch = source.matches.front();
@@ -264,7 +265,7 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 				cont = { s, m };
 				continue;
 			}
-			auto &contMatch = sourceMatches[cont.source].matches[cont.priority];
+			auto &contMatch = std::next(begin, cont.source)->matches[cont.priority];
 			if (match.value < contMatch.value)
 			{
 				targetMatches[match.index] = { s, m };
@@ -281,7 +282,7 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 		}
 		// Else, a match was previously registered, which means it's *a* match for both candidates - need to compete with it
 
-		Source &contSource = sourceMatches[contestingSource];
+		auto &contSource = *std::next(begin, contestingSource);
 		int contPrio = targetMatches[target].priority;
 		auto &contMatch = contSource.matches[contPrio];
 		if (contMatch.value > (priMatch.value + params.uncertainty) * params.compAdvantage)
@@ -304,15 +305,16 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 		}
 	}
 	int matchCnt = 0;
-	for (int i = 0; i < sourceMatches.size(); i++)
+	s = 0;
+	for (auto it = begin; it != end; s++, it++)
 	{
-		Source &source = sourceMatches[i];
+		auto &source = *it;
 		if (source.matches.empty())
 			continue; // Incase a dynamic container is used
 		auto &match = source.matches.front();
 		if (!match.valid())
 			continue; // No match found, or already discarded
-		assert(targetMatches[match.index].source == i);
+		assert(targetMatches[match.index].source == s);
 		bool primAdvantaged = (source.matches.size() < 2) || (source.matches[1].index < 0) || source.matches[1].value > (match.value + params.uncertainty) * params.primAdvantage;
 		if (primAdvantaged)
 		{ // It is both competitively and primarily advantaged and thus a valid match
@@ -332,7 +334,7 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 			match.invalid = true;
 			continue;
 		}
-		Source &secSource = sourceMatches[secTarget.source];
+		auto &secSource = *std::next(begin, secTarget.source);
 		bool secCompAdv = secSource.matches[0].index == source.matches[1].index;
 		if (!secCompAdv)
 		{ // Alternate match was not able to claim secondary match for itself as primary. Discard match
@@ -368,9 +370,10 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 		matchCnt++;
 	}
 	int matchesVerify = 0;
-	for (int i = 0; i < sourceMatches.size(); i++)
+	s = 0;
+	for (auto it = begin; it != end; s++, it++)
 	{
-		Source &source = sourceMatches[i];
+		auto &source = *it;
 		if (source.matches.empty())
 			continue; // Incase a dynamic container is used
 		if (source.matches.front().valid())
@@ -378,6 +381,12 @@ static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int target
 	}
 	assert(matchCnt == matchesVerify);
 	return matchCnt;
+}
+
+template<typename Source>
+static int resolveMatchCandidates(std::vector<Source> &sourceMatches, int targetCount, const MatchingParameters &params)
+{
+	return resolveMatchCandidates(sourceMatches.begin(), sourceMatches.end(), targetCount, params);	
 }
 
 

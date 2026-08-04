@@ -840,12 +840,10 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 	}
 
 	std::vector<std::vector<int>> remainingPoints2D(frameRecord->cameras.size());
-	std::vector<std::vector<int> const *> relevantPoints2D(frameRecord->cameras.size());
 	for (int c = 0; c < frameRecord->cameras.size(); c++)
 	{
 		remainingPoints2D[c].resize(points2D[c]->size());
 		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
-		relevantPoints2D[c] = &remainingPoints2D[c];
 	}
 
 	TargetTracking2DData internalData(frameRecord->cameras.size());
@@ -853,7 +851,7 @@ static TargetMatch2D tryTrackFrame(const std::vector<CameraCalib> &calibs, const
 	TargetMatch2D match2D = {};
 	trackTarget2D(params, trkTarget,
 		prediction, covariance,
-		calibs, frameRecord->cameras.size(), points2D, properties, relevantPoints2D,
+		calibs, frameRecord->cameras.size(), points2D, properties, remainingPoints2D,
 		match2D, internalData);
 	return match2D;
 }

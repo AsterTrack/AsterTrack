@@ -73,7 +73,7 @@ float estimate3DSize(const CameraCalib &calib, Eigen::Vector3f pos, Eigen::Vecto
  * Stores intersection data internally for later use in conflict resolving
  */
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
-	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int>> &relevantPoints2D,
 	std::vector<TriangulatedPoint> &points3D, float maxError, float minError);
 
 /**

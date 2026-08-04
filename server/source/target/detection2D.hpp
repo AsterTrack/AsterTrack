@@ -37,7 +37,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	Eigen::Vector3f pos, int cameraCount, int probeCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData);
 
@@ -47,7 +47,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	int focusCamera, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData);
 

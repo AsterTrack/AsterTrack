@@ -317,12 +317,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameraCount);
 			std::vector<std::vector<BlobProperty> const *> properties(cameraCount);
 			std::vector<std::vector<int>> remainingPoints2D(cameraCount);
-			std::vector<std::vector<int> const *> relevantPoints2D(cameraCount);
 			for (int c = 0; c < cameraCount; c++)
 			{
 				points2D[c] = &frameRecord.cameras[c].points2D;
 				properties[c] = &frameRecord.cameras[c].properties;
-				relevantPoints2D[c] = &remainingPoints2D[c];
 				// Consider all points for tracking, as would the original target tracking
 				remainingPoints2D[c].resize(points2D[c]->size());
 				std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
@@ -343,7 +341,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				debugVis.targetMatch2D = {};
 				trackTarget2D(pipeline.params.track, trackConfig->calib,
 					trackRecord->ext->predicted, trackRecord->ext->predictedCov,
-					calibs, cameraCount, points2D, properties, relevantPoints2D,
+					calibs, cameraCount, points2D, properties, remainingPoints2D,
 					debugVis.targetMatch2D, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
 				debugVis.trackerID = visState.tracking.focusedTrackerID;

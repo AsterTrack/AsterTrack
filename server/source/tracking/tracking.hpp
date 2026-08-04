@@ -380,7 +380,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params);
 
 TrackingResult trackMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,

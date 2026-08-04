@@ -808,7 +808,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 	const std::vector<CameraCalib> &calibs, int cameraCount,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	TargetMatch2D &targetMatch2D, TargetTracking2DData &internalData)
 {
 	ScopedLogCategory scopedLogCategory(LTracking);
@@ -857,7 +857,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 		for (int c = 0; c < calibs.size(); c++)
 		{
 			closePoints2D[c].clear();
-			if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
+			if (relevantPoints2D[c].empty()) continue;
 
 			// Project target bounds and relevant target points into camera view
 			Eigen::Projective3f mvp = calibs[c].camera.cast<float>() * targetMatch2D.pose;
@@ -868,7 +868,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 			projectedBounds.extendBy(end1-source); // Extending in both directions
 
 			// Filter observed points by target bounds
-			for (int p : *relevantPoints2D[c])
+			for (int p : relevantPoints2D[c])
 			{
 				if (projectedBounds.includes(points2D[c]->at(p)))
 					closePoints2D[c].push_back(p);

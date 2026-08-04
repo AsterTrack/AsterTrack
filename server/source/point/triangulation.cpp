@@ -100,8 +100,8 @@ float estimate3DSize(const CameraCalib &calib, Eigen::Vector3f pos, Eigen::Vecto
 	return (rayF.dir - rayN.dir).norm() * dist / 2;
 }
 
-static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras, 
-	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
+static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int>> &relevantPoints2D,
 	std::vector<TwoIntersection> &intersections, std::vector<std::vector<RayIxCnt>> &rayIxCnt, float maxError, float minError)
 {
 	int camCount = cameras.size();
@@ -117,7 +117,7 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 		rayIxCnt[c].clear();
 		rayIxCnt[c].resize(points2D[c]->size(), 0);
 		rayGroups[c].resize(points2D[c]->size());
-		for (int p : *relevantPoints2D[c])
+		for (int p : relevantPoints2D[c])
 		{
 			rayGroups[c][p] = castRay<float>(points2D[c]->at(p), cameras[c]);
 		}
@@ -128,11 +128,11 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 	{
 		for (int j = i+1; j < camCount; j++)
 		{
-			for (BlobIndex v : *relevantPoints2D[i])
+			for (BlobIndex v : relevantPoints2D[i])
 			{
 //				const Ray3f ray1 = castRay<float>(points1->at(v), cameras[i]);
 				const Ray3f ray1 = rayGroups[i][v];
-				for (BlobIndex w : *relevantPoints2D[j])
+				for (BlobIndex w : relevantPoints2D[j])
 				{
 //					const Ray3f ray2 = castRay<float>(points2->at(w), cameras[j]);
 					const Ray3f ray2 = rayGroups[j][w];
@@ -160,7 +160,7 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 }
 
 void triangulateRayIntersections(const std::vector<CameraCalib> &cameras, 
-	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int>> &relevantPoints2D,
 	std::vector<TriangulatedPoint> &points3D, float maxError, float minError)
 {
 	ScopedLogCategory scopedLogCategory(LTriangulation);

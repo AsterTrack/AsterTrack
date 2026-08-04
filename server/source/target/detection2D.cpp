@@ -51,7 +51,7 @@ static std::pair<int, float> getMatchErrorApprox(const std::vector<Eigen::Vector
 TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	Eigen::Vector3f pos, int cameraCount, int probeCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData)
 {
@@ -113,7 +113,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 
 		for (int c = 0; c < calibs.size(); c++)
 		{
-			if (!relevantPoints2D[c] || relevantPoints2D[c]->empty()) continue;
+			if (relevantPoints2D[c].empty()) continue;
 			projectTarget(projected2D[c], relevantProjected2D[c],
 				target3D, calibs[c], targetMatch2D.pose, params.expandMarkerViewAngle);
 			if (relevantProjected2D[c].empty()) continue;
@@ -125,7 +125,7 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 			// Match relevant points (observation and projected target)
 			// Note: We use "Slow" here because it can deal with our position estimate being wildly off
 			auto &cameraMatches = targetMatch2D.points2D[calibs[c].index];
-			matchTargetPointsRecover(*points2D[c], *properties[c], *relevantPoints2D[c],
+			matchTargetPointsRecover(*points2D[c], *properties[c], relevantPoints2D[c],
 				projected2D[c], relevantProjected2D[c], cameraMatches,
 				matchingStage, track.matchRecover, paramScale[c]);
 			if (cameraMatches.size() < track.quality.minCameraObs)
@@ -321,7 +321,7 @@ static std::vector<Eigen::Isometry3f> bruteForcePoseCandidates(std::stop_token s
 TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3D &target3D, const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<std::vector<BlobProperty> const *> &properties,
-	const std::vector<std::vector<int> const *> &relevantPoints2D,
+	const std::vector<std::vector<int>> &relevantPoints2D,
 	int focusCamera, int cameraCount, const TargetDetectionParameters &params, const TargetTrackingParameters &track, 
 	TargetTracking2DData &internalData)
 {
@@ -329,16 +329,16 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 
 	int focus = calibs[focusCamera].index;
 	LOGC(LDebug, "Brute forcing camera %u's %d points!",
-		calibs[focusCamera].id, (int)relevantPoints2D[focusCamera]->size());
+		calibs[focusCamera].id, (int)relevantPoints2D[focusCamera].size());
 
 	// Brute-force a few candidate poses based on 3 points only
 	auto candidates = bruteForcePoseCandidates(stopToken, target3D, calibs[focusCamera],
-		*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera], params);
+		*points2D[focusCamera], *properties[focusCamera], relevantPoints2D[focusCamera], params);
 	if (stopToken.stop_requested())
 		return {};
 
 	LOGC(LDebug, "Found %d candidates by brute forcing camera %u's %d points!",
-		(int)candidates.size(), calibs[focusCamera].id, (int)relevantPoints2D[focusCamera]->size());
+		(int)candidates.size(), calibs[focusCamera].id, (int)relevantPoints2D[focusCamera].size());
 
 	thread_local std::vector<Eigen::Vector2f> projected2D;
 	thread_local std::vector<int> relevantProjected2D;
@@ -370,7 +370,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 
 		// Add focus camera point matches using initial pose
 		auto &cameraMatches = targetMatch2D.points2D[focus];
-		matchTargetPointsRecover(*points2D[focusCamera], *properties[focusCamera], *relevantPoints2D[focusCamera],
+		matchTargetPointsRecover(*points2D[focusCamera], *properties[focusCamera], relevantPoints2D[focusCamera],
 			projected2D, relevantProjected2D, cameraMatches, matchData,
 			params.match, distFactor);
 

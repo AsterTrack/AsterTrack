@@ -137,6 +137,10 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	}
 	obs.ext.predicted = filter.state.getIsometry().cast<float>();
 	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+#if !defined(NDEBUG)
+	if (conditionCovariance(obs.ext.predictedCov, 0))
+		LOG(LTrackingFilter, LDarn, "Filter prediction covariance was not positive semi-definite!");
+#endif
 
 	// Match target with points and optimise pose
 	trackTarget2D(params, target.calib,
@@ -224,6 +228,10 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	obs.pose.filtered = filter.state.getIsometry().cast<float>();
 	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
 	obs.time = time;
+#if !defined(NDEBUG)
+	if (conditionCovariance(obs.pose.filteredCov, 0))
+		LOG(LTrackingFilter, LDarn, "Filter covariance after correction was not positive semi-definite!");
+#endif
 
 	return trackResult;
 }

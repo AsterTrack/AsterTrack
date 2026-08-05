@@ -465,10 +465,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 			if (targetIt == targets.end()) continue; // Not interested in lost targets anyway
 			if (targetIt->filter.lastObsFrame > frameRecord.num || trackRecord.result.isDetected())
 			{ // Initialise filter as good as possible
-				targetIt->filter.initialise(trackRecord.pose.filtered, frameRecord.time, frameRecord.num, pipeline.params.track);
-				targetIt->filter.lastObsFrame = frameRecord.num;
-				targetIt->filter.lastObservation = frameRecord.time;
-				targetIt->filter.lastIMUSample = -1;
+				targetIt->filter = TrackerFilter(trackRecord.pose.filtered, frameRecord.time, frameRecord.num, pipeline.params.track);
 				continue;
 			}
 

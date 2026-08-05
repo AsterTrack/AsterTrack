@@ -237,7 +237,8 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ScalarProperty<int>("Max Parallelism", "threads", &params.maxParallelism, &standard.maxParallelism, 1, 128);
 
 		BeginSection("Prediction");
-		modified |= ScalarProperty<float>("Min 3D Uncertainty", "mm", &params.minUncertainty3D, &standard.minUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");
+		modified |= ScalarProperty<float>("Min 3D Std Dev", "mm", &params.minStdDev3D, &standard.minStdDev3D, 0, 100, 1.0f, 1000, "%.1f");
+		modified |= ScalarProperty<float>("Add 3D Uncertainty", "mm", &params.addUncertainty3D, &standard.addUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");
 		modified |= ScalarProperty<float>("Uncertainty Sigma", "o", &params.uncertaintySigma, &standard.uncertaintySigma, 0, 100, 0.1f, 1, "%.1f");
 		EndSection();
 

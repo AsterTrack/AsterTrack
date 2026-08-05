@@ -313,20 +313,29 @@ static Eigen::Matrix<Scalar,DIM,DIM> covarianceFromHessian(const NumericCovarian
 }
 
 template<typename Scalar, int N>
-Eigen::Matrix<Scalar,N,N> sampleCovarianceExtremes(Eigen::Matrix<Scalar,N,N> covariance, float sigma)
+static bool conditionCovariance(Eigen::Matrix<Scalar,N,N> &covariance, float minCovariance)
+{
+	// Condition eigenvalues (covariance needs to be positive semi-definite)
+	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,N,N>> evd(covariance, Eigen::ComputeEigenvectors);
+	Eigen::Vector<Scalar,N> ev = evd.eigenvalues().cwiseMax(minCovariance);
+	covariance = evd.eigenvectors() * ev.asDiagonal() * evd.eigenvectors().transpose();
+	return ev != evd.eigenvalues();
+}
+
+template<typename Scalar, int N>
+static Eigen::Matrix<Scalar,N,N> sampleCovarianceExtremes(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance)
 {
 	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
 	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,N,N>> evd(covariance, Eigen::ComputeEigenvectors);
-	Eigen::Matrix<Scalar,N,1> deviations = sigma * evd.eigenvalues().cwiseSqrt();
+	Eigen::Matrix<Scalar,N,1> deviations = sigma * evd.eigenvalues().cwiseMax(minCovariance).cwiseSqrt();
 	return evd.eigenvectors().array().rowwise() * deviations.transpose().array();
 }
 
-
 template<typename Scalar, int N>
-Eigen::Matrix<Scalar,N,1> sampleCovarianceUncertainty(Eigen::Matrix<Scalar,N,N> covariance, float sigma, Eigen::Matrix<Scalar,N,N> targetAxis)
+static Eigen::Matrix<Scalar,N,1> sampleCovarianceUncertainty(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance, Eigen::Matrix<Scalar,N,N> targetAxis)
 {
 	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
-	Eigen::Matrix<Scalar,N,N> extremes = sampleCovarianceExtremes<Scalar,N>(covariance, sigma);
+	Eigen::Matrix<Scalar,N,N> extremes = sampleCovarianceExtremes<Scalar,N>(covariance, sigma, minCovariance);
 	// Align extremes to desired axis before sampling the uncertainty
 	return (targetAxis * extremes).cwiseAbs().rowwise().norm();
 }

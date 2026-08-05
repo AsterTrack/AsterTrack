@@ -61,6 +61,7 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 	if (frame - filter.lastObsFrame > 5)
 	{
 		LOG(LTracking, LDebug, "Virtual Tracker detected after %" PRId64 " frames!", frame - filter.lastObsFrame);
+		filter = TrackerFilter();
 	}
 
 	auto realignTracker = [&]()

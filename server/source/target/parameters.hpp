@@ -219,7 +219,8 @@ struct TargetTrackingParameters
 {
 	int maxParallelism = 8;
 	// Prediction
-	float minUncertainty3D = 0.02f;
+	float minStdDev3D = 0.0f;
+	float addUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;
 	// Marker Matching
 	float expandMarkerViewAngle = 0.025f;

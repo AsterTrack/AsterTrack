@@ -822,8 +822,8 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 
 	// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 	Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(covariance.topLeftCorner<3,3>(),
-		params.uncertaintySigma, prediction.rotation());
-	uncertainty += Eigen::Vector3f::Constant(params.minUncertainty3D);
+		params.uncertaintySigma, params.minStdDev3D*params.minStdDev3D, prediction.rotation());
+	uncertainty += Eigen::Vector3f::Constant(params.addUncertainty3D);
 	Bounds3f targetBounds = target.bounds.extendedBy(uncertainty);
 
 	// Reused allocation of per-camera data

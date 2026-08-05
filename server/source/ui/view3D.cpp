@@ -642,6 +642,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	// Else, show real-time situation
 	if (!visFrame) return;
 	auto &frame = *visFrame.frameIt->get();
+	auto &track = pipeline.params.track;
 
 	thread_local std::vector<VisModel> covariances;
 	covariances.clear();
@@ -779,8 +780,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		{ // Show search bounds
 			// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 			Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackRecord.ext->predictedCov.topLeftCorner<3,3>(),
-				pipeline.params.track.uncertaintySigma, trackRecord.ext->predicted.rotation());
-			uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
+				track.uncertaintySigma, track.minStdDev3D*track.minStdDev3D, trackRecord.ext->predicted.rotation());
+			uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.addUncertainty3D);
 			auto bounds = target.bounds.extendedBy(uncertainty);
 			auto corners = transformBounds(trackRecord.ext->predicted, bounds);
 
@@ -858,7 +859,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			samples.clear();
 			Color devCol = { 1.0f, 1.0f, 1.0f, 1.0f };
 			Color hypCol = { 0.5f, 1.0f, 1.0f, 0.4f };
-			auto &covParam = state.pipeline.params.track.filter.pose.cov;
+			auto &covParam = track.filter.pose.cov;
 			float posNorm = 1.0f/(covParam.sampleRangePos*covParam.sampleRangePos);
 			float rotNorm = 1.0f/(covParam.sampleRangeRot*covParam.sampleRangeRot);
 			for (auto &sample : tgtMatch.hessianSamples)
@@ -875,14 +876,14 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			if (visState.tracking.showCovariancePos && !tgtMatch.hessianSamples.empty())
 			{
 				CovarianceMatrix hessian = fitHessianToSamples(tgtMatch.hessianSamples);
-				Eigen::Matrix3f covariance = covarianceFromHessian(pipeline.params.track.filter.pose.cov, hessian).topLeftCorner<3,3>();
+				Eigen::Matrix3f covariance = covarianceFromHessian(track.filter.pose.cov, hessian).topLeftCorner<3,3>();
 				covariances.emplace_back(composeCovarianceTransform(
 					tgtMatch.pose, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.5f, 0.6f, 0.2f, 0.4f });
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
-				Eigen::Matrix3f covariance = pipeline.params.track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * pipeline.params.track.filter.trackSigma;
+				Eigen::Matrix3f covariance = track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
 					tgtMatch.pose, covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });

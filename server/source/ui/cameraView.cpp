@@ -1123,11 +1123,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 		else if (phase == PHASE_Tracking)
 		{
+			auto &track = pipeline.params.track;
+
 			if (visState.showClusters2D)
 			{
 				for (auto &cluster : camFrame.clusters2D)
 				{
-					Eigen::Matrix2f axis = sampleCovarianceExtremes(cluster.covariance, 3);
+					Eigen::Matrix2f axis = sampleCovarianceExtremes(cluster.covariance, 3, 0);
 					visualiseEllipse<false>(cluster.center, axis.col(0), axis.col(1), Color{ 1.0f, 0.0f, 0.0f, 1.0f });
 				}
 			}
@@ -1140,7 +1142,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			{ // Visualise internal tracking debug instead of normal vis
 
 				visualiseTarget2DMatchingStages(visState, calib, camFrame, *debugVis.calib,
-					debugVis.internalData.matching.at(camera.pipeline->index), pipeline.params.track.expandMarkerViewAngle);
+					debugVis.internalData.matching.at(camera.pipeline->index), track.expandMarkerViewAngle);
 
 				if (visState.tracking.showUncertaintyAxis)
 				{ // Visualise uncertainty axis of dominant camera from internal tracking debug data
@@ -1195,15 +1197,15 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				}
 				if (tracker.type != TrackerConfig::TRACKER_TARGET) continue;
 
-				float expandViewAngle = pipeline.params.track.expandMarkerViewAngle / pipeline.params.track.normaliseDistance
+				float expandViewAngle = track.expandMarkerViewAngle / track.normaliseDistance
 					* (trackRecord.pose.filtered.translation() - calib.transform.translation().cast<float>()).norm();
 
 				if (visState.tracking.showSearchBounds && trackRecord.ext)
 				{ // Show search bounds
 					// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackRecord.ext->predictedCov.topLeftCorner<3,3>(),
-						pipeline.params.track.uncertaintySigma, trackRecord.ext->predicted.rotation());
-					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.minUncertainty3D);
+						track.uncertaintySigma, track.minStdDev3D*track.minStdDev3D, trackRecord.ext->predicted.rotation());
+					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.addUncertainty3D);
 					auto bounds = tracker.calib.bounds.extendedBy(uncertainty);
 					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackRecord.ext->predicted;
 					visualiseBounds2D(projectBounds(mvp, bounds));

@@ -55,9 +55,10 @@ struct TrackerFilter
 	OptFrameNum lastIMUSample;
 	TimePoint_t lastIMUTime;
 
-	TrackerFilter() : state{}, firstObsFrame(-1), lastObsFrame(-1), lastIMUSample(-1) {}
+	inline TrackerFilter() : state{}, firstObsFrame(-1), lastObsFrame(-1), lastIMUSample(-1) {}
 
-	inline void initialise(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params)
+	inline TrackerFilter(Eigen::Isometry3f pose, TimePoint_t time, OptFrameNum frame, const TargetTrackingParameters &params)
+		 : state{}, lastIMUSample(-1)
 	{
 		firstObsFrame = lastObsFrame = frame;
 		firstObservation = lastObservation = time;
@@ -353,20 +354,14 @@ struct OrphanedIMU
 	TrackerObservation obs;
 
 	OrphanedIMU(std::shared_ptr<IMU> &imu, const TargetTrackingParameters &params) :
-		filter{},
+		filter(orphanedIMUPose, sclock::now(), -1, params),
 		inertial(imu, IMUCalib()),
-		obs(orphanedIMUPose, sclock::now(), params)
-	{
-		filter.initialise(orphanedIMUPose, sclock::now(), -1, params);
-	}
+		obs(orphanedIMUPose, sclock::now(), params) {}
 
 	OrphanedIMU(std::shared_ptr<IMU> &&imu, const TargetTrackingParameters &params) :
-		filter{},
+		filter(orphanedIMUPose, sclock::now(), -1, params),
 		inertial(std::move(imu), IMUCalib()),
-		obs(orphanedIMUPose, sclock::now(), params)
-	{
-		filter.initialise(orphanedIMUPose, sclock::now(), -1, params);
-	}
+		obs(orphanedIMUPose, sclock::now(), params) {}
 };
 
 
@@ -413,7 +408,7 @@ inline TrackedTarget::TrackedTarget(DormantTarget &&dormant, Eigen::Isometry3f o
 inline void TrackedTarget::PickUpTracking(Eigen::Isometry3f obsPose,
 	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
-	filter.initialise(obsPose, time, frame, params);
+	filter = TrackerFilter(obsPose, time, frame, params);
 	obs = TrackerObservation(obsPose, time, params);
 	if (inertial)
 		postCorrectIMU(*this, filter, inertial, obs, time, params);
@@ -439,7 +434,7 @@ inline void IMUMarker::PickUpTracking(Eigen::Vector3f pos,
 	Eigen::Isometry3f obsPose;
 	obsPose.translation() = pos;
 	obsPose.linear() = inertial.fusion.quat.toRotationMatrix().cast<float>();
-	filter.initialise(obsPose, time, frame, params);
+	filter = TrackerFilter(obsPose, time, frame, params);
 	obs = TrackerObservation(obsPose, time, params);
 }
 

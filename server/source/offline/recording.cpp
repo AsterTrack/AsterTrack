@@ -203,3 +203,38 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 
 	return std::nullopt;
 }
+
+std::optional<ErrorMessage> loadRecordingSet(ServerState &state, const std::vector<int> &recordings)
+{
+	std::map<int, Recording> recordEntries;
+	parseRecordEntries(recordEntries);
+
+	std::vector<Recording> selectedRecordings;
+	selectedRecordings.reserve(recordings.size());
+	for (int selected : recordings)
+		if (recordEntries.contains(selected))
+			selectedRecordings.push_back(recordEntries[selected]);
+
+	if (selectedRecordings.empty())
+		return "Found none of the specified recordings!";
+
+	state.isLoading = true;
+
+	if (state.mode != MODE_None)
+		StopReplay(state);
+
+	// Load all recordings marked for testing with all their captures
+	bool first = true;
+	for (auto &recording : selectedRecordings)
+	{
+		auto error = loadRecording(state, std::move(recording), !first, !first);
+		if (error) SignalErrorToUser(error.value());
+		else first = false;
+	}
+
+	state.isLoading = false;
+
+	if (first)
+		return "Failed to load any specified recordings!";
+	return std::nullopt;
+}

@@ -136,6 +136,12 @@ struct ServerState
 	std::vector<int> recordingTestSet;
 	// Copy detections of trackers from stored records (to replace slow detection attempts)
 	bool simCopyDetectionsFromStored = false, simCopyAlsoFromTracked = true, simCopyLimitedReinstatement = true;
+	struct
+	{ // Automatic testing of configured captures (potentially headless)
+		bool isTesting;
+		std::string condition;
+		std::vector<int> recordings;
+	} testing;
 
 	// IMU Device integration
 	std::mutex hid_access;

@@ -22,6 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/shared.hpp" // Signals to UI
 #include "signals.hpp" // Signals to Server
 
+#include "offline/recording.hpp"
+
 #include "device/tracking_controller.hpp"
 #include "device/tracking_camera.hpp"
 
@@ -42,6 +44,8 @@ ctpl::thread_pool threadPool = ctpl::thread_pool(6);
 #include "util/debugging.hpp"
 std::atomic<bool> dbg_isBreaking;
 std::atomic<int> dbg_debugging;
+
+#include <fstream>
 
 // ----------------------------------------------------------------------------
 // Server Lifetime
@@ -103,6 +107,48 @@ bool ServerInit(ServerState &state)
 	// Initialise wireless server for cameras
 	WirelessServerInit();
 	state.server.host = getHostnameString();
+
+	// TODO: Use command line to trigger testing
+	//state.testing.isTesting = true;
+	//state.testing.condition = "Testing Condition";
+
+	if (state.testing.isTesting)
+	{
+		{ // Quick and dirty parsing of UI-configured recording test set, without relying on loading UI first
+			state.testing.recordings.clear();
+			std::ifstream config("imgui.ini");
+			std::string line;
+			while (std::getline(config, line) && line != "[Testing][Recordings]");
+			int rec;
+			while (config >> rec)
+				state.testing.recordings.push_back(rec);
+		}
+		
+		if (!state.testing.recordings.empty())
+		{
+			threadPool.push([](int){
+				auto &state = GetState();
+				auto error = loadRecordingSet(state, state.testing.recordings);
+				if (error)
+				{ // TODO: Proper output usable by CI on both failure and success
+					SignalErrorToUser(error.value());
+					return;
+				}
+
+				// Setup to very quick tracking verification by default
+				state.pipeline.params.detect.useAsyncDetection = false;
+				state.simAdvanceQuickly = true;
+
+				// Optionally, for detailed regression tests & comparision of logs
+				state.pipeline.params.track.maxParallelism = 1;
+
+				// Automatically start tracking
+				state.pipeline.phase = PHASE_Tracking;
+
+				StartStreaming(state);
+			});
+		}
+	}
 
 	return true;
 }

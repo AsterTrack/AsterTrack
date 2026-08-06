@@ -710,6 +710,12 @@ static bool ShowTrackingPanel()
 	static bool stateDifferences = false;
 	static bool combinedHideProbes = true;
 
+	static bool initialisedTesting = false;
+	if (state.testing.isTesting && !initialisedTesting)
+	{ // External change
+		initialisedTesting = true;
+		stateDifferences = true;
+	}
 	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID && !inspectExplicit)
 	{ // External change
 		for (auto &tracker : state.trackerConfigs)

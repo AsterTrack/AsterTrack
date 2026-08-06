@@ -202,14 +202,14 @@ void InterfaceState::UpdateMainMenuBar()
 					: asprintf_s("Capture %d: %s", entry.number, entry.label.c_str());
 				if (select)
 				{ // Just select via recordingTestSet
-					auto selectedIt = std::find(state.recordingTestSet.begin(), state.recordingTestSet.end(), entry.number);
-					bool selected = selectedIt != state.recordingTestSet.end();
-					if (selected) label += asprintf_s(" (%d)", (int)(selectedIt - state.recordingTestSet.begin()) + 1);
+					auto selectedIt = std::find(state.testing.recordings.begin(), state.testing.recordings.end(), entry.number);
+					bool selected = selectedIt != state.testing.recordings.end();
+					if (selected) label += asprintf_s(" (%d)", (int)(selectedIt - state.testing.recordings.begin()) + 1);
 					ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
 					if (ImGui::MenuItem(label.c_str(), nullptr, selected))
 					{
-						if (selected) state.recordingTestSet.erase(selectedIt);
-						else state.recordingTestSet.insert(state.recordingTestSet.begin(), entry.number);
+						if (selected) state.testing.recordings.erase(selectedIt);
+						else state.testing.recordings.insert(state.testing.recordings.begin(), entry.number);
 						ImGui::MarkIniSettingsDirty(); // These are stored in config
 					}
 					ImGui::PopItemFlag();
@@ -251,41 +251,28 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		if (ImGui::MenuItem("Start test captures", nullptr, false, !state.isLoading && (state.mode == MODE_Replay || state.mode == MODE_None)))
 		{ // Perform read in a separate thread to prevent blocking UI
-			if (!cachingRecordEntries)
-			{
-				cachingRecordEntries = true;
-				recordEntries.clear();
-				parseRecordEntries(recordEntries);
-			}
-			std::vector<Recording> selectedRecordings;
-			selectedRecordings.reserve(state.recordingTestSet.size());
-			for (int selected : state.recordingTestSet)
-				if (recordEntries.contains(selected))
-					selectedRecordings.push_back(recordEntries[selected]);
-			state.isLoading = true;
-			threadPool.push([](int, std::vector<Recording> &recordings)
+			threadPool.push([](int)
 			{
 				ServerState &state = GetState();
-				if (state.mode != MODE_None)
-					StopReplay(state);
+				auto error = loadRecordingSet(state, state.testing.recordings);
+				if (error)
+				{
+					SignalErrorToUser(error.value());
+					return;
+				}
+
 				// Automatically open tracking settings
 				GetUI().windows[WIN_TRACKING_PARAMS].open = true;
-				// Load all recordings marked for testing with all their captures
-				bool first = true;
-				for (auto &recording : recordings)
-				{
-					auto error = loadRecording(state, std::move(recording), !first, !first);
-					if (error) SignalErrorToUser(error.value());
-					first = false;
-				}
-				state.isLoading = false;
+
 				// Setup to very quick tracking verification by default
 				state.pipeline.params.detect.useAsyncDetection = false;
 				state.simAdvanceQuickly = true;
+
 				// Automatically start tracking
 				state.pipeline.phase = PHASE_Tracking;
+
 				StartStreaming(state);
-			}, std::move(selectedRecordings));
+			});
 		}
 
 		ImGui::Separator();
@@ -337,9 +324,16 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		else if (state.mode == MODE_Replay)
 		{
-			if (ImGui::Button("Stop Replay", button))
-				StopReplay(state);
-			ImGui::SetItemTooltip("Stop from AsterTrack hardware.");
+			if (state.testing.isTesting)
+			{
+				ImGui::Text("%s", state.testing.condition.c_str());
+			}
+			else
+			{
+				if (ImGui::Button("Stop Replay", button))
+					StopReplay(state);
+				ImGui::SetItemTooltip("Stop the replay.");
+			}
 		}
 		else if (state.mode == MODE_None)
 		{

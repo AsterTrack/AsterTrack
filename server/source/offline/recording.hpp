@@ -56,4 +56,9 @@ void parseRecordEntries(std::map<int,Recording> &recordEntries);
  */
 HANDLE_ERROR loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate);
 
+/**
+ * Load a specified set of recordings by ID from the recordings folder
+ */
+std::optional<ErrorMessage> loadRecordingSet(ServerState &state, const std::vector<int> &recordings);
+
 #endif // RECORDING_H

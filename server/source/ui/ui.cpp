@@ -616,9 +616,10 @@ bool InterfaceState::Init()
 		handler.TypeHash = ImHashStr("Testing");
 		handler.ReadOpenFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, const char *header)
 		{
+			// WARNING: Ensure headless testing code in server can still read this!
 			bool recordings = strncmp("Recordings", header, sizeof("Recordings")-1) == 0;
 			if (recordings)
-				GetState().recordingTestSet.clear();
+				GetState().testing.recordings.clear();
 			return (void*)(intptr_t)(recordings? 1 : 0);
 		};
 		handler.ReadLineFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line)
@@ -627,16 +628,16 @@ bool InterfaceState::Init()
 			{ // Recordings
 				int d1;
 				if (sscanf(line, "%d", &d1) >= 1)
-					GetState().recordingTestSet.push_back(d1);
+					GetState().testing.recordings.push_back(d1);
 			}
 		};
 		handler.WriteAllFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output)
 		{
-			if (!GetState().recordingTestSet.empty())
+			if (!GetState().testing.recordings.empty())
 			{
 				output->appendf("[%s][Recordings]\n", settings->TypeName);
-				output->reserve(output->size() + GetState().recordingTestSet.size() * (sizeof("XXXX\n")-1) + 1);
-				for (auto &record : GetState().recordingTestSet)
+				output->reserve(output->size() + GetState().testing.recordings.size() * (sizeof("XXXX\n")-1) + 1);
+				for (auto &record : GetState().testing.recordings)
 					output->appendf("%.4d\n", record);
 				output->appendf("\n");
 			}

@@ -61,6 +61,8 @@ struct TrackerFilter
 	{
 		firstObsFrame = lastObsFrame = frame;
 		firstObservation = lastObservation = time;
+		this->time = time;
+		state = {};
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();

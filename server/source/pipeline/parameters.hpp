@@ -83,7 +83,7 @@ struct VirtualTrackingParameters
     struct {
 		// General behaviour for all filters
 		float sigmaInitState = 50000, sigmaInitChange = 10000000;
-		float detectSigma = 1000000, trackSigma = 1;
+		float trackSigma = 1;
 		float dampeningPos = 0.95f, dampeningRot = 0.9f;
 
 		// UKR settings for all filters

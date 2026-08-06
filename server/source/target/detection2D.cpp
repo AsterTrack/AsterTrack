@@ -389,7 +389,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 			errors.samples, errors.mean*PixelFactor);
 
 		// Potentially overwrite numeric covariance with default initial covariance
-		CovarianceMatrix detectCov = track.filter.pose.useSyntheticCov? track.filter.getSyntheticCovariance<float>() * track.filter.detectSigma : targetMatch2D.covariance;
+		CovarianceMatrix detectCov = params.search.useSyntheticCov? track.filter.getSyntheticCovariance<float>() * params.search.covSigma : targetMatch2D.covariance;
 
 		if (SHOULD_LOGC(LDebug))
 		{

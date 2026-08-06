@@ -150,7 +150,11 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Error Sigma over Best", "o", &params.search.errorSigma, &standard.search.errorSigma, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Error Max", "px", &params.search.errorMax, &standard.search.errorMax, 0, 10, 0.5f, PixelFactor, "%.1f");
 		modified |= ScalarProperty<int>("Max Candidates", "", &params.search.maxCandidates, &standard.search.maxCandidates, 1, 100);
-		BooleanProperty("Allow Single Camera Search", &params.search.allowSingleCamera, &standard.search.allowSingleCamera);
+		modified |= BooleanProperty("Allow Single Camera Search", &params.search.allowSingleCamera, &standard.search.allowSingleCamera);
+		modified |= BooleanProperty("Use Synthetic Covariance", &params.search.useSyntheticCov, &standard.search.useSyntheticCov);
+		ImGui::BeginDisabled(!params.search.useSyntheticCov);
+		modified |= ScalarProperty<float>("Sigma Detect", "x", &params.search.covSigma, &standard.search.covSigma, 0, 10000000, 1.0f, 1, "%.1f");
+		ImGui::EndDisabled();
 		EndSection();
 
 		BeginSection("2D Probe");
@@ -330,7 +334,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
-		filterMod |= ScalarProperty<float>("Sigma Detect", "x", &params.filter.detectSigma, &standard.filter.detectSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		filterMod |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
 		filterMod |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
@@ -449,6 +452,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ImGui::Spacing();
 		ScalarInput<int>("Min Relations Count", "", &triTargetMinRelations, 0, 100);
 		ScalarInput<float>("Min Relations Range", "mm", &triTargetMinDistance, 0, 100, 5.0f, 1000, "%.1f");
+		ScalarProperty<float>("Synthetic Covariance Sigma", "x", &params.detect.tri.covSigma, &standard.detect.tri.covSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		EndSection();
 
 		EndCollapsingRegion();
@@ -496,7 +500,6 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
 		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Sigma Detect", "x", &params.filter.detectSigma, &standard.filter.detectSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		modified |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
 		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");

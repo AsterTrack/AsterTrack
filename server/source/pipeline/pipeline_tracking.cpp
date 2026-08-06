@@ -910,7 +910,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (acceptCandidate)
 			{
 				// Use pose candidate to track target with 2D points
-				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * pipeline.params.track.filter.detectSigma;
+				// TODO: Consider lower (numeric?) covariance - 3D point detection is accurate enough to not need thiss
+				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * detect.tri.covSigma;
 				auto match2D = ptr::make_value<TargetMatch2D>();
 				trackTarget2D(pipeline.params.track, dormant.target.calib,
 					candidate.pose, covariance,

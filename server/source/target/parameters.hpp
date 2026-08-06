@@ -104,7 +104,7 @@ struct TargetFilteringParameters
 {
 	// General behaviour for all filters
 	float sigmaInitState = 50000, sigmaInitChange = 10000000;
-	float detectSigma = 1000000, trackSigma = 1;
+	float trackSigma = 1;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
 
 	// UKR settings for all filters
@@ -166,6 +166,8 @@ struct TargetDetectionParameters
 		float errorSigma = 3;
 		int maxCandidates = 10;
 		bool allowSingleCamera = true;
+		bool useSyntheticCov = true;
+		float covSigma = 1000000;
 	} search;
 	RotationGenerationParameters rotGen;
 	struct
@@ -182,6 +184,8 @@ struct TargetDetectionParameters
 		float poseSigmaError = 4.0f;
 		int minPointCount = 5;
 		float maxErrorRMSE = 5;
+		//bool useSyntheticCov = true; // No alternative
+		float covSigma = 1000000; // Lower this?
 	} tri;
 	// Initial marker matching (before trackTarget2D)
 	float expandMarkerViewAngle = 0.0f;

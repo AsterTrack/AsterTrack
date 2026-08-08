@@ -1164,13 +1164,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			{ // Display origin
 				visualiseOrigin(visState.room.origin, 1, 5);
 			}
-			if (!frame->triangulations.empty())
-			{ // Display triangulated points
+			if (!frame->markers3D.empty())
+			{ // Display markers (tracked and just triangulated)
 				thread_local std::vector<VisPoint> vertices;
 				vertices.clear();
 				Color colorC = Color{ 1.0f, 0.6f, 0.8f, 0.5f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.5f };
-				for (const auto &tri : frame->triangulations)
-					vertices.emplace_back(tri.pos, tri.confidence < 4? colorNC : colorC, tri.size);
+				for (const auto &mk : frame->markers3D)
+					vertices.emplace_back(mk.pos, mk.confidence < 4? colorNC : colorC, mk.size);
 				visualisePointsSpheresDepthSorted(vertices);
 			}
 

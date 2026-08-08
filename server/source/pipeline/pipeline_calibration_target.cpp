@@ -634,18 +634,18 @@ static int findTargetAlignmentCandidates(const TargetCalibration3D &baseCalib, c
 	const TargetAssemblyParameters &params, std::vector<TargetCandidate3D> &candidates)
 {
 	// Prepare interface for target detection
-	std::vector<TriangulatedPoint> triPoints;
-	triPoints.reserve(target.markers.size());
+	std::vector<MarkerObservation> markers;
+	markers.reserve(target.markers.size());
 	for (const Eigen::Vector3f &pos : target.markers)
-		triPoints.push_back(TriangulatedPoint(pos, params.alignPointError/1000, 10.0f));
-	std::vector<int> triIndices(triPoints.size());
-	std::iota(triIndices.begin(), triIndices.end(), 0);
+		markers.emplace_back(0, pos, params.alignPointError/1000);
+	std::vector<int> indices(markers.size());
+	std::iota(indices.begin(), indices.end(), 0);
 
 	// Match markers between the two targets
 	candidates.clear();
-	detectTarget3D(baseCalib, triPoints, triIndices, candidates, params.alignPointSigma, params.alignPoseSigma, false);
+	detectTarget3D(baseCalib, markers, indices, candidates, params.alignPointSigma, params.alignPoseSigma, false);
 
-	std::tuple<int,int> bestCand = getBestTargetCandidate(baseCalib, triPoints, candidates);
+	std::tuple<int,int> bestCand = getBestTargetCandidate(baseCalib, markers, candidates);
 	return std::get<0>(bestCand);
 }
 

@@ -926,13 +926,13 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	markerPoints.clear();
 
 	Color colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f };
-	for (auto &tri : frame.triangulations)
+	for (auto &tri : frame.markers3D)
 		markerPoints.emplace_back(tri.pos, (Color8)(tri.confidence < 4? colorNC : colorC), tri.size);
 
 	if (pipeline.isSimulationMode && visFrame.altFrameIt.accessible())
 	{
 		Color colorSim = Color{ 0.0f, 0.9f, 0.2f, 1.0f };
-		for (auto &tri : visFrame.altFrameIt->get()->triangulations)
+		for (auto &tri : visFrame.altFrameIt->get()->markers3D)
 			markerPoints.emplace_back(tri.pos, (Color8)colorSim, tri.size/2);
 	}
 

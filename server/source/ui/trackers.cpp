@@ -1087,15 +1087,15 @@ static void HandleObjImportObj(ImGuiID popup)
 				auto &params = state.pipeline.targetCalib.params.assembly;
 
 				// Prepare interface for target detection
-				std::vector<TriangulatedPoint> triPoints;
-				triPoints.reserve(refCalib.markers.size());
+				std::vector<MarkerObservation> markers;
+				markers.reserve(refCalib.markers.size());
 				for (const auto &mk : refCalib.markers)
-					triPoints.push_back(TriangulatedPoint(mk.pos, params.alignPointError/1000, 10.0f));
-				std::vector<int> triIndices(triPoints.size());
-				std::iota(triIndices.begin(), triIndices.end(), 0);
+					markers.emplace_back(0, mk.pos, params.alignPointError/1000);
+				std::vector<int> indices(markers.size());
+				std::iota(indices.begin(), indices.end(), 0);
 
 				// Match markers between the two targets
-				auto match = detectTarget3D(target, triPoints, triIndices, params.alignPointSigma, params.alignPoseSigma, false);
+				auto match = detectTarget3D(target, markers, indices, params.alignPointSigma, params.alignPoseSigma, false);
 
 				// Copy marker parameters for matched markers
 				for (int m = 0; m < match.pointMap.size(); m++)

@@ -106,15 +106,15 @@ void StartSimulation(ServerState &state)
 			id = existingCalib->id;
 
 			// Set ground truth target as point cloud
-			std::vector<TriangulatedPoint> triPoints;
-			triPoints.reserve(calib.markers.size());
+			std::vector<MarkerObservation> markers;
+			markers.reserve(calib.markers.size());
 			for (const auto &marker : calib.markers)
-				triPoints.emplace_back(marker.pos, state.pipeline.params.tri.maxIntersectError, state.pipeline.params.tri.minIntersectionConfidence);
-			std::vector<int> triIndices(triPoints.size());
-			std::iota(triIndices.begin(), triIndices.end(), 0);
+				markers.emplace_back(0, marker.pos, state.pipeline.params.tri.maxIntersectError);
+			std::vector<int> indices(markers.size());
+			std::iota(indices.begin(), indices.end(), 0);
 
 			// Detect match using calibrated target
-			auto cand = detectTarget3D(existingCalib->calib, triPoints, triIndices,
+			auto cand = detectTarget3D(existingCalib->calib, markers, indices,
 				state.pipeline.params.detect.tri.sigmaError, state.pipeline.params.detect.tri.poseSigmaError, false);
 			if (cand.points.size() > 0)
 			{ // Read out offset transform and correct for it to get accurate error calculations

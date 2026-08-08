@@ -42,7 +42,7 @@ struct TriangulatedPoint_t
 	Vector3<Scalar> pos;
 	Scalar error; // Mean distance to involved rays 
 	Scalar confidence; // Validity score
-	Scalar size; // Estimated size in 3D
+	Scalar size;
 	struct TriSample
 	{
 		CamIndex camera;
@@ -51,10 +51,24 @@ struct TriangulatedPoint_t
 	std::vector<TriSample> samples;
 
 	TriangulatedPoint_t () {}
-	TriangulatedPoint_t (Vector3<Scalar> pos, Scalar error, Scalar confidence, Scalar size = 0.01f)
-		: pos(pos), error(error), confidence(confidence), size(size) {}
+	TriangulatedPoint_t (Vector3<Scalar> pos, Scalar error, Scalar confidence)
+		: pos(pos), error(error), confidence(confidence) {}
 };
 typedef TriangulatedPoint_t<float> TriangulatedPoint;
+
+/**
+ * Observation of a marker (either tracked with transient ID or just triangulated in this frame with ID 0)
+ */
+struct MarkerObservation
+{
+	uint32_t id;
+	Eigen::Vector3f pos;
+	float error2D;
+	float uncertainty3D;
+	float size;
+	int samples;
+	float confidence;
+};
 
 
 /* Functions */
@@ -83,6 +97,14 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
  * Requires internally stored intersection data from previous triangulateRayIntersections call
  */
 void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std::vector<TriangulatedPoint> &points3D, float maxError, float confidenceThreshold);
+
+/**
+ * Calculate reprojection RMSE of triangulation
+ * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
+ */
+template<typename Scalar, typename PointScalar, typename CalibScalar, typename TriScalar>
+Scalar getTriReprojectionRMSE(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
+	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint_t<TriScalar> &point3D);
 
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error (not projection invariant)

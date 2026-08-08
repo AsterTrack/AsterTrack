@@ -472,6 +472,21 @@ void resolveTriangulationConflicts(const std::vector<CameraCalib> &cameras, std:
 	points3D.resize(index);
 }
 
+template<typename Scalar, typename PointScalar, typename CalibScalar, typename TriScalar>
+Scalar getTriReprojectionRMSE(const std::vector<std::vector<Eigen::Matrix<PointScalar,2,1>> const *> &points2D, 
+	const std::vector<CameraCalib_t<CalibScalar>> &cameras, TriangulatedPoint_t<TriScalar> &point3D)
+{
+	float reprojectionRMSE = 0.0f;
+	for (auto &sample : point3D.samples)
+	{
+		auto camMat = cameras[sample.camera].camera.matrix().template cast<Scalar>();
+		auto point = points2D[sample.camera]->at(sample.blob).template cast<Scalar>();
+		Eigen::Vector<Scalar,2> proj = projectPoint2D(cameras[sample.camera].camera, point3D.pos).template cast<Scalar>();
+		reprojectionRMSE += (point - proj).squaredNorm();
+	}
+	return std::sqrt(reprojectionRMSE / point3D.samples.size());
+}
+
 /**
  * Refine triangulation accuracy of point by minimising the reprojection error iteratively (nearly projection invariant)
  * NOTE: Relies on TriangulatedPoint::TriSample::camera indexing into given subset of cameras
@@ -529,10 +544,7 @@ Eigen::Matrix<Scalar,3,1> refineTriangulationIterative(const std::vector<std::ve
 		}
 	}
 	point3D.pos = lastTri.template cast<TriScalar>();
-	// Get reprojection error, not sure if properly in pixels
-	//point3D.error = (triSolve * triResult).cwiseAbs().mean()*1000;
-	// Actually, detection.cpp currently relies on this being "error" in m
-	// So keep estimate from before
+	// No cheap way to update error estimate accurately here
 	return lastTri;
 }
 
@@ -548,6 +560,11 @@ Eigen::Matrix<Scalar,3,1> refineTriangulation(const std::vector<std::vector<Eige
 }
 
 // Generate specific implementations
+
+template float getTriReprojectionRMSE(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
+	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
+template double getTriReprojectionRMSE(const std::vector<std::vector<Eigen::Vector2d> const *> &points2D, 
+	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);
 
 template Eigen::Vector3f refineTriangulation(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, 
 	const std::vector<CameraCalib> &cameras, TriangulatedPoint &point3D);

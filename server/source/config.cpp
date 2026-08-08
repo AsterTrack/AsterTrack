@@ -1479,9 +1479,9 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			if (!jsFrame.contains("targets")) continue;
 			if (!jsFrame["targets"].is_array()) continue;
 			auto &jsTrackers = jsFrame["targets"];
-			if (!jsFrame.contains("triangulations") || !jsFrame["triangulations"].is_array())
-				jsFrame["triangulations"] = json::array();
-			auto &jsTriangulations = jsFrame["triangulations"];
+			if (!jsFrame.contains("markers") || !jsFrame["markers"].is_array())
+				jsFrame["markers"] = json::array();
+			auto &jsMarkers = jsFrame["markers"];
 
 			FrameNum num = jsFrame["num"].get<FrameNum>();
 			if (num-frameOffset < frames.beginIndex()) continue;
@@ -1491,22 +1491,24 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 			if (!framePtr) continue;
 			FrameRecord &frame = *framePtr;
 
-			frame.triangulations.clear();
-			frame.triangulations.reserve(jsTriangulations.size());
-			for (auto &jsTri : jsTriangulations)
+			frame.markers3D.clear();
+			frame.markers3D.reserve(jsMarkers.size());
+			for (auto &jsMk : jsMarkers)
 			{
-				if (!jsTri.is_array() || jsTri.size() < 7) continue;
-				frame.triangulations.emplace_back();
-				auto &tri = frame.triangulations.back();
-				tri.pos = Eigen::Vector3f(
-					jsTri[0].get<float>(),
-					jsTri[1].get<float>(),
-					jsTri[2].get<float>()
+				if (!jsMk.is_array() || jsMk.size() < 9) continue;
+				frame.markers3D.emplace_back();
+				auto &mk = frame.markers3D.back();
+				mk.id = jsMk[0].get<uint32_t>();
+				mk.pos = Eigen::Vector3f(
+					jsMk[1].get<float>(),
+					jsMk[2].get<float>(),
+					jsMk[3].get<float>()
 				);
-				tri.error = jsTri[3].get<float>();
-				tri.confidence = jsTri[4].get<float>();
-				tri.size = jsTri[5].get<float>();
-				tri.samples.resize(jsTri[6].get<int>());
+				mk.error2D = jsMk[4].get<float>();
+				mk.uncertainty3D = jsMk[5].get<float>();
+				mk.size = jsMk[6].get<float>();
+				mk.samples = jsMk[7].get<int>();
+				mk.confidence = jsMk[8].get<float>();
 			}
 
 			frame.trackers.clear();
@@ -1564,7 +1566,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 	json file;
 
 	std::set<int> targetIDs;
-	bool hasTris = false;
+	bool hasMarkers = false;
 
 	// Write observations
 	file["trackingResults"] = json::object();
@@ -1599,19 +1601,21 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 			targetIDs.insert(target.id);
 		}
 
-		jsFrame["triangulations"] = json::array();
-		for (const auto &tri : frame.triangulations)
+		jsFrame["markers"] = json::array();
+		for (const auto &mk : frame.markers3D)
 		{
-			jsFrame["triangulations"].emplace_back(json::array({
-				tri.pos.x(),
-				tri.pos.y(),
-				tri.pos.z(),
-				tri.error,
-				tri.confidence,
-				tri.size,
-				tri.samples.size()
+			jsFrame["markers"].emplace_back(json::array({
+				mk.id,
+				mk.pos.x(),
+				mk.pos.y(),
+				mk.pos.z(),
+				mk.error2D,
+				mk.uncertainty3D,
+				mk.size,
+				mk.samples,
+				mk.confidence,
 			}));
-			hasTris = true;
+			hasMarkers = true;
 		}
 
 		jsFrames.push_back(std::move(jsFrame));
@@ -1622,7 +1626,7 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 	for (int tgtID : targetIDs)
 		jsRecords["trackers"].push_back(tgtID);
 
-	if ((!hasTris && targetIDs.empty()) || jsFrames.empty())
+	if ((!hasMarkers && targetIDs.empty()) || jsFrames.empty())
 		return std::nullopt; // Nothing to save, no error
 
 	return writeJSON(path, file);

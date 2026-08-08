@@ -815,11 +815,14 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	// Compile markers into unified format
+	frame->markers3D.reserve(track.triangulations3D.size());
 	std::vector<Eigen::Vector3f> points3D;
 	points3D.reserve(track.triangulations3D.size());
 
 	for (auto &tri : track.triangulations3D)
 	{
+		float error2D = getTriReprojectionRMSE<float>(points2D, calibs, tri);
+
 		// Estimate size
 		tri.size = 0.0f;
 		for (auto &sample : tri.samples)
@@ -837,6 +840,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		for (auto &sample : tri.samples)
 			sample.camera = calibs[sample.camera].index;
 
+		LOG(LTriangulation, LTrace, "    -> Triangulation of size %.3fmm with %d samples (confidence %.1f), %.2fmm 3D error and %.2fpx reprojection RMSE",
+			tri.size*1000, (int)tri.samples.size(), tri.confidence, tri.error*1000, error2D*PixelFactor);
+
+		frame->markers3D.emplace_back(0, tri.pos, error2D, tri.error, tri.size, tri.samples.size(), tri.confidence);
 		points3D.emplace_back(tri.pos);
 	}
 
@@ -868,15 +875,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	if (pipeline.isSimulationMode && pipeline.curSimulated && SHOULD_LOG(LTriangulation, LTrace))
 	{
-		for (int p = 0; p < points3D.size(); p++)
+		for (int p = 0; p < frame->markers3D.size(); p++)
 		{
-			Eigen::Vector3f tri = points3D[p];
+			auto trMk = frame->markers3D[p];
 			float bestDist = std::numeric_limits<float>::max();
 			int bestIndex = -1;
-			for (int g = 0; g < pipeline.curSimulated->triangulations.size(); g++)
+			for (int g = 0; g < pipeline.curSimulated->markers3D.size(); g++)
 			{
-				auto gtTri = pipeline.curSimulated->triangulations[g];
-				float dist = (tri - gtTri.pos).squaredNorm();
+				auto gtMk = pipeline.curSimulated->markers3D[g];
+				float dist = (trMk.pos - gtMk.pos).squaredNorm();
 				if (dist < bestDist)
 				{
 					bestIndex = g;
@@ -889,6 +896,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				LOG(LTriangulation, LTrace, "        Tri %d had closest GT tri %d with distance of %fmm\n",
 					p, bestIndex, std::sqrt(bestDist)*1000);
 			}
+
+			// TODO: Properly compare
 		}
 	}
 
@@ -896,7 +905,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	const auto &detect = pipeline.params.detect;
 
-	if (trackTargets && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount && !detect.suspendDetections)
+	if (trackTargets && frame->markers3D.size() >= detect.tri.minPointCount && !detect.suspendDetections)
 	{ // Target detection in 3D point cloud
 
 		auto dormantIt = pipeline.tracking.dormantTargets.begin();
@@ -914,7 +923,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			// Detect target in remaining 3D point cloud
 			TargetCandidate3D candidate = detectTarget3D(dormant.target.calib,
-				pipeline.tracking.triangulations3D, remainingPoints3D,
+				frame->markers3D, remainingPoints3D,
 				detect.tri.sigmaError, detect.tri.poseSigmaError, detect.tri.quickAssignTargetMatches);
 
 			bool acceptCandidate = candidate.points.size() >= detect.tri.minPointCount && candidate.MSE < detect.tri.maxErrorRMSE*detect.tri.maxErrorRMSE;
@@ -1246,7 +1255,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	// Record single-marker and auxiliary tracking artifacts
-	frame->triangulations = track.triangulations3D;
 	frame->cluster2DTri = std::move(trackedClusters2DTri);
 	frame->clusterTri3D = std::move(trackedClustersTri3D);
 	for (int c = 0; c < calibs.size(); c++)

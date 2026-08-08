@@ -307,10 +307,8 @@ struct FrameRecord
 	// Since this is data storage, std::vector provides a better memory layout
 	std::vector<TrackerRecord> trackers;
 
-	// TODO: Track individual large markers (4/4)
-	// Either store in tracker record or here in separate records
-
-	std::vector<TriangulatedPoint> triangulations;
+	// Markers - tracked markers with transient ID or triangulated points with no ID (0)
+	std::vector<MarkerObservation> markers3D;
 
 	// This is mostly for visualisation
 	std::vector<Cluster3DStats> clusterTri3D; // Will mostly capture targets of sphere-markers

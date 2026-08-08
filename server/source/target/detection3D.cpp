@@ -39,7 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
  * Calculate MSE of candidate marker in given point cloud in mm^2
  */
 float calculateCandidateMSE(const TargetCalibration3D &target3D, 
-	const std::vector<TriangulatedPoint> &points3D, const TargetCandidate3D &candidate)
+	const std::vector<MarkerObservation> &points3D, const TargetCandidate3D &candidate)
 {
 	float meanSquaredError = 0.0f;
 	for (int j = 0; j < candidate.points.size(); j++)
@@ -59,7 +59,7 @@ float calculateCandidateMSE(const TargetCalibration3D &target3D,
  * Calculates MSE in mm^2 of those best candidates
  */
 std::tuple<int,int> getBestTargetCandidate(const TargetCalibration3D &target3D, 
-	const std::vector<TriangulatedPoint> &points3D, std::vector<TargetCandidate3D> &candidates)
+	const std::vector<MarkerObservation> &points3D, std::vector<TargetCandidate3D> &candidates)
 {
 	// Find maximum point count and how many candidates have this point count
 	int bestCandPtCnt = -1, bestCandCount = 0;
@@ -98,7 +98,7 @@ std::tuple<int,int> getBestTargetCandidate(const TargetCalibration3D &target3D,
  * - The point it is registered with comes first (pt1), then the partner (pt2)
  * - For each point, trRelations contains all bases first, then all arms
  */
-void createPointNetwork(const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
+void createPointNetwork(const std::vector<MarkerObservation> &points3D, const std::vector<int> &indices,
 	float maxRelevantDistance, 
 	std::vector<int> &trRelBases, std::vector<std::vector<PointRelation>> &trRelations)
 {
@@ -140,7 +140,7 @@ void createPointNetwork(const std::vector<TriangulatedPoint> &points3D, const st
  * Returns all candidates
  */
 void detectTarget3D(const TargetCalibration3D &target3D,
-	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
+	const std::vector<MarkerObservation> &points3D, const std::vector<int> &indices,
 	std::vector<TargetCandidate3D> &candidates,
 	float sigmaError, float poseSigmaError, bool quickAssign)
 {
@@ -291,8 +291,8 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 						{
 							int trPt = candidate.points[o];
 							float distSq = (points3D[trPt].pos-com).squaredNorm();
-							poseErrorSqNew += distSq / (points3D[trPt].error*points3D[trPt].error);
-							poseErrorSqOld += points3D[trPt].error*points3D[trPt].error / distSq;
+							poseErrorSqNew += distSq / (points3D[trPt].uncertainty3D*points3D[trPt].uncertainty3D);
+							poseErrorSqOld += points3D[trPt].uncertainty3D*points3D[trPt].uncertainty3D / distSq;
 						}
 						poseErrorSqNew = 1.0f / poseErrorSqNew;
 						poseErrorSqOld = poseErrorSqOld/candidate.points.size();
@@ -307,8 +307,8 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 							{
 								int trPt = candidate.points[o];
 								float dist = (points3D[trPt].pos-com).norm();
-								float error = points3D[trPt].error / dist;
-								LOGC(LDebug, "|  |  |  |  |    - Point %d, dist %fmm, error %f, rel error %f", trPt, dist*1000, points3D[trPt].error, error);
+								float error = points3D[trPt].uncertainty3D / dist;
+								LOGC(LDebug, "|  |  |  |  |    - Point %d, dist %fmm, error %f, rel error %f", trPt, dist*1000, points3D[trPt].uncertainty3D, error);
 							}
 							return;
 						}
@@ -322,7 +322,7 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 							if (trPtAssigned[j]) continue;
 							if (candidate.pointMap[j] >= 0) continue;
 							Eigen::Vector3f estMkPos = invTransform * points3D[j].pos;
-							float ptError = sigmaError * points3D[j].error;
+							float ptError = sigmaError * points3D[j].uncertainty3D;
 							//float distFromCoM = (points3D[j].pos - com).norm();
 							//float errorLimit = ptError + poseError * distFromCoM;
 							float distFromCoMSq = (points3D[j].pos - com).squaredNorm();
@@ -412,7 +412,7 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 			// trRelBase is a relation in the triangulated point cloud which has not been used as a base before
 
 			// Find potential matches for the base using the marker lookup table with distance within the error range
-			float baseError = sigmaError * (points3D[trRelBase.pt1].error + points3D[trRelBase.pt2].error);
+			float baseError = sigmaError * (points3D[trRelBase.pt1].uncertainty3D + points3D[trRelBase.pt2].uncertainty3D);
 			auto mkRelBaseRange = std::equal_range(target3D.relationDist.begin(), target3D.relationDist.end(), 
 													trRelBase.distance, ErrorRangeComp(baseError));
 			LOGC(LTrace, "BASE (%d - %d) of length %f += %f: %d potential matches in marker!\n", trRelBase.pt1, trRelBase.pt2, 
@@ -434,7 +434,7 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 				// Now we have a set of three points around joint point trRelBase->pt1 which have not been handled before
 				assert(trRelBase.pt1 == trRelArm.pt1);
 
-				float armError = sigmaError * (points3D[trRelArm.pt1].error + points3D[trRelArm.pt2].error);
+				float armError = sigmaError * (points3D[trRelArm.pt1].uncertainty3D + points3D[trRelArm.pt2].uncertainty3D);
 				LOGC(LTrace, "_ - Tr Arm Relation (%d - %d) with length %f += %f!\n", trRelArm.pt1, trRelArm.pt2, trRelArm.distance, armError);
 
 				LOGC(LTrace, "  -- Checking candidate Base (%d,%d)[%d] with joint arm (%d,%d)[%d]\n", 
@@ -462,7 +462,7 @@ void detectTarget3D(const TargetCalibration3D &target3D,
 				// Now we have a set of three points around joint point trRelBase->pt2 which have not been handled before
 				assert(trRelBase.pt2 == trRelArm.pt1);
 
-				float armError = sigmaError * (points3D[trRelArm.pt1].error + points3D[trRelArm.pt2].error);
+				float armError = sigmaError * (points3D[trRelArm.pt1].uncertainty3D + points3D[trRelArm.pt2].uncertainty3D);
 				LOGC(LTrace, "_ - Tr Arm Relation (%d - %d) with length %f += %f!\n", trRelArm.pt1, trRelArm.pt2, trRelArm.distance, armError);
 
 				LOGC(LTrace, "  -- Checking candidate Base (%d,%d)[%d] with joint arm (%d,%d)[%d]\n", 
@@ -485,7 +485,7 @@ void detectTarget3D(const TargetCalibration3D &target3D,
  * Returns it's MSE in mm^2 (or none with point-count 0 if none found)
  */
 TargetCandidate3D detectTarget3D(const TargetCalibration3D &target3D,
-	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices,
+	const std::vector<MarkerObservation> &points3D, const std::vector<int> &indices,
 	float sigmaError, float poseSigmaError, bool quickAssign)
 {
 	std::vector<TargetCandidate3D> candidates;
@@ -503,7 +503,7 @@ TargetCandidate3D detectTarget3D(const TargetCalibration3D &target3D,
  * Rreturns all candidates with respective MSE in mm^2 and point count
  */
 void detectTarget3D(const TargetCalibration3D &target3D,
-	const std::vector<TriangulatedPoint> &points3D, const std::vector<int> &indices, 
+	const std::vector<MarkerObservation> &points3D, const std::vector<int> &indices, 
 	std::vector<Eigen::Isometry3f> &poses3D, std::vector<std::pair<float,int>> &posesMSE,
 	float sigmaError, float poseSigmaError, bool quickAssign)
 {

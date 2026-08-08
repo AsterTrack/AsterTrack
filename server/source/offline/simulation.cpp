@@ -105,7 +105,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 
 	std::shared_ptr<FrameRecord> simFrame = std::make_shared<FrameRecord>();
 	simFrame->num = frameState.num;
-	simFrame->triangulations.reserve(simulation.points.size());
+	simFrame->markers3D.reserve(simulation.points.size());
 
 	// ----- Generate 3D Point Cloud -----
 
@@ -163,7 +163,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 				Eigen::Vector2f ptPos;
 				float ptSize;
 				if (!projectMarker(cam->simulation.calib, cam->mode, Eigen::Isometry3f::Identity(),
-					simulation.projectionParams, pt.pos, 0.01f, ptPos, ptSize))
+					simulation.projectionParams, pt.pos, simulation.pointSim.pointSize, ptPos, ptSize))
 					continue;
 
 				// Register marker observation
@@ -207,7 +207,8 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 			//float confidence = (clean*clean)/(conflict+1);
 			float confidence = clean*clean*2 + conflict;
 			if (confidence >= pipeline.params.tri.minIntersectionConfidence)
-				simFrame->triangulations.emplace_back(pt.pos, 0.001f, confidence);
+				simFrame->markers3D.emplace_back(i, pt.pos, simulation.projectionParams.blobNoiseStdDev*2,
+					0.001f, simulation.pointSim.pointSize, clean+conflict, confidence);
 		}
 	}
 

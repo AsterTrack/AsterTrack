@@ -624,7 +624,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			{
 				if (!frameStored) continue;
 				frameStored->trackers.clear();
-				frameStored->triangulations.clear();
+				frameStored->markers3D.clear();
 			}
 			for (const auto &frameRecord : framesRecord)
 			{
@@ -632,7 +632,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				if (framesStored.size() <= frameRecord->num) break;
 				framesStored[frameRecord->num]->finishedProcessing = frameRecord->finishedProcessing;
 				framesStored[frameRecord->num]->trackers = frameRecord->trackers;
-				framesStored[frameRecord->num]->triangulations = frameRecord->triangulations;
+				framesStored[frameRecord->num]->markers3D = frameRecord->markers3D;
 			}
 		}
 
@@ -679,12 +679,12 @@ static void ShowTrackingResults()
 		if (cVal < lVal) stats.removed.update(lVal-cVal);
 	};
 
-	struct TriangulationSamples
+	struct Marker3DSamples
 	{
 		EventChange count;
-		StatChange samples, error;
+		StatChange samples, error, uncertainty;
 	};
-	static TriangulationSamples triangulations;
+	static Marker3DSamples markers;
 
 	struct TrackingSamples
 	{
@@ -849,28 +849,32 @@ static void ShowTrackingResults()
 				updateStatChange(tracker.error, trkFrame.errorLoaded, trkFrame.errorCurrent, trkFrame.samplesLoaded, trkFrame.samplesCurrent, true);
 				updateStatChange(tracker.time, trkFrame.timeLoaded, trkFrame.timeCurrent, trkFrame.samplesLoaded, trkFrame.samplesCurrent, true);
 			}
-			// Accumulate and update changes in triangulations
-			uint32_t triSamplesStored = 0, triSamplesCurrent = 0;
-			float triErrorStored = 0, triErrorCurrent = 0;
-			for (auto &tri : framesStored[f]->triangulations)
+			// Accumulate and update changes in markers
+			uint32_t mkSamplesStored = 0, mkSamplesCurrent = 0;
+			float mkErrorStored = 0, mkErrorCurrent = 0;
+			float mkUncertaintyStored = 0, mkUncertaintyCurrent = 0;
+			for (auto &mk : framesStored[f]->markers3D)
 			{
-				triSamplesStored += tri.samples.size();
-				triErrorStored += tri.error / framesStored[f]->triangulations.size();
+				mkSamplesStored += mk.samples;
+				mkErrorStored += mk.error2D / framesStored[f]->markers3D.size();
+				mkUncertaintyStored += mk.uncertainty3D / framesStored[f]->markers3D.size();
 			}
-			for (auto &tri : framesRecord[f]->triangulations)
+			for (auto &mk : framesRecord[f]->markers3D)
 			{
-				triSamplesCurrent += tri.samples.size();
-				triErrorCurrent += tri.error / framesRecord[f]->triangulations.size();
+				mkSamplesCurrent += mk.samples;
+				mkErrorCurrent += mk.error2D / framesRecord[f]->markers3D.size();
+				mkUncertaintyCurrent += mk.uncertainty3D / framesRecord[f]->markers3D.size();
 			}
-			updateEventChange(triangulations.count, framesStored[f]->triangulations.size(), framesRecord[f]->triangulations.size());
-			updateStatChange(triangulations.samples, triSamplesStored, triSamplesCurrent, triSamplesStored, triSamplesCurrent, false);
-			updateStatChange(triangulations.error, triErrorStored, triErrorCurrent, triSamplesStored, triSamplesCurrent, true);
+			updateEventChange(markers.count, framesStored[f]->markers3D.size(), framesRecord[f]->markers3D.size());
+			updateStatChange(markers.samples, mkSamplesStored, mkSamplesCurrent, mkSamplesStored, mkSamplesCurrent, false);
+			updateStatChange(markers.error, mkErrorStored, mkErrorCurrent, mkSamplesStored, mkSamplesCurrent, true);
+			updateStatChange(markers.uncertainty, mkUncertaintyStored, mkUncertaintyCurrent, mkSamplesStored, mkSamplesCurrent, true);
 		}
 	};
 
 	if (ImGui::Button("Update Tracking Results", SizeWidthFull()))
 	{
-		triangulations = {};
+		markers = {};
 		losses = {};
 		search2D = {};
 		detect2D = {};
@@ -947,19 +951,21 @@ static void ShowTrackingResults()
 		FMT_EXT("      >/<: ", stat, tVal, fac, fmtMin, fmtMax);\
 	}
 
-	if (triangulations.count.current > 0 || triangulations.count.loaded > 0)
+	if (markers.count.current > 0 || markers.count.loaded > 0)
 	{
 		ImGui::AlignTextToFramePadding();
-		bool open = ImGui::TreeNodeEx("Triangulations", ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_AllowOverlap);
+		bool open = ImGui::TreeNodeEx("Markers", ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_AllowOverlap);
 		if (open)
 		{
-			ImGui::Text("Points: %u  [%u]  +%u -%u", triangulations.count.current, triangulations.count.loaded, triangulations.count.added, triangulations.count.removed);
-			FMT_SUM("Samples: ", triangulations.samples, uint32_t, 1, "%u");
-			FMT_DIST(triangulations.samples, uint32_t, 1, "%.2f", "%u", "%u");
-			ImGui::Text("Errors :");
-			FMT_DIST(triangulations.error, float, 1000, "%.2fmm", "%.3fmm", "%.2fmm")
+			ImGui::Text("Points: %u  [%u]  +%u -%u", markers.count.current, markers.count.loaded, markers.count.added, markers.count.removed);
+			FMT_SUM("Samples: ", markers.samples, uint32_t, 1, "%u");
+			FMT_DIST(markers.samples, uint32_t, 1, "%.2f", "%u", "%u");
+			ImGui::Text("Reprojection Errors:");
+			FMT_DIST(markers.error, float, PixelFactor, "%.2fpx", "%.3fpx", "%.2fpx")
+			ImGui::Text("Uncertainty 3D:");
+			FMT_DIST(markers.uncertainty, float, 1000, "%.2fmm", "%.3fmm", "%.2fmm")
 			//ImGui::Text("Times  :");
-			//FMT_DIST(triangulations.time, false, float, 1000, "%.2fms", "%.2fms", "%.3fms", "%.2fms")
+			//FMT_DIST(markers.time, false, float, 1000, "%.2fms", "%.2fms", "%.3fms", "%.2fms")
 			ImGui::TreePop();
 		}
 	}

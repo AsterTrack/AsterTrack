@@ -222,6 +222,15 @@ struct VisualisationState
 		bool debugUpVectors;
 	} tracking;
 
+
+	struct
+	{
+		bool showCovarianceIn3DView = true;
+		bool showCovarianceInCam2D = false;
+		bool showCovarianceInCam3D = false;
+		float scaleCovariance = 3.0f;
+	} markers;
+
 	struct
 	{
 		struct ObservationCompare

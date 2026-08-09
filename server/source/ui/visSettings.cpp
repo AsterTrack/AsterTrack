@@ -123,6 +123,17 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::TreePop();
 	}
 
+	if (pipeline.phase == PHASE_Tracking && (state.mode == MODE_Replay || state.mode == MODE_Simulation)
+		&& ImGui::TreeNode("Marker Tracking"))
+	{
+		ImGui::Checkbox("Show Covariance in 3D View", &visState.markers.showCovarianceIn3DView);
+		ImGui::Checkbox("Show Covariance 3D in Camera", &visState.markers.showCovarianceInCam3D);
+		ImGui::Checkbox("Show Covariance 2D in Camera", &visState.markers.showCovarianceInCam2D);
+		ImGui::SliderFloat("Covariance Sigma", &visState.markers.scaleCovariance, 1, 100);
+
+		ImGui::TreePop();
+	}
+
 	if (ImGui::TreeNode("Room References"))
 	{
 		ImGui::Checkbox("Origin", &visState.room.showOrigin);

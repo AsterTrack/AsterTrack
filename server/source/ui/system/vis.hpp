@@ -97,7 +97,7 @@ void visualiseBounds3D(Bounds3f bounds, Eigen::Isometry3f pose);
 /*
  * Render 2D wireframe of bounds
  */
-void visualiseBounds2D(Bounds2f bounds);
+void visualiseBounds2D(Bounds2f bounds, Color8 col);
 
 /**
  * Render visualisation of camera distortion using a grid of size num
@@ -107,7 +107,7 @@ void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT,
 /**
  * Composes pose and covariance matrix into a transform to be used on a sphere model to visualise covariance
  */
-Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float scale);
+Eigen::Affine3f composeCovarianceTransform(Eigen::Vector3f pos, Eigen::Matrix3f covariance, float scale);
 
 /**
  * Visualise rotational covariance of a pose

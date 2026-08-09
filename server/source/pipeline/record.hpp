@@ -113,7 +113,10 @@ struct TrackerVirtualError
 	int subtrackers = 0;
 };
 
+using CovStorageScalar = Eigen::bfloat16;
 using CovarianceMatrix = Eigen::Matrix<float,6,6>;
+using CovStorageMatrix = Eigen::Matrix<CovStorageScalar,6,6>;
+using CovCompPosMatrix = Eigen::Matrix<CovStorageScalar,3,3>;
 
 struct TargetCalibration3D;
 
@@ -309,6 +312,7 @@ struct FrameRecord
 
 	// Markers - tracked markers with transient ID or triangulated points with no ID (0)
 	std::vector<MarkerObservation> markers3D;
+	std::vector<CovCompPosMatrix> markersCov; // Covariances for visualisation
 
 	// This is mostly for visualisation
 	std::vector<Cluster3DStats> clusterTri3D; // Will mostly capture targets of sphere-markers

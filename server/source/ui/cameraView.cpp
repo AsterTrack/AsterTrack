@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "pipeline/pipeline.hpp"
 
 #include "gl/visualisation.hpp"
+#include "gl/sharedGL.hpp"
 #include "system/vis.hpp"
 #include "imgui/imgui_onDemand.hpp"
 
@@ -1129,7 +1130,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			{
 				for (auto &cluster : camFrame.clusters2D)
 				{
-					Eigen::Matrix2f axis = sampleCovarianceExtremes(cluster.covariance, 3, 0);
+					Eigen::Matrix2f axis = getUncertaintyAxis(cluster.covariance, 3, 0);
 					visualiseEllipse<false>(cluster.center, axis.col(0), axis.col(1), Color{ 1.0f, 0.0f, 0.0f, 1.0f });
 				}
 			}
@@ -1174,8 +1175,36 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				visualisePointsSpheresDepthSorted(vertices);
 			}
 
+			if (visState.markers.showCovarianceInCam3D && !frame->markers3D.empty())
+			{ // Visualise positional covariance ellipsoids
+				Color colorCov3D = Color{ 1.0f, 0.6f, 0.4f, 0.6f };
+				int numCov = std::min(frame->markers3D.size(), frame->markersCov.size());
+				std::vector<VisModel> covariances;
+				covariances.reserve(numCov);
+				for (int m = 0; m < numCov; m++)
+					covariances.emplace_back(composeCovarianceTransform(
+						frame->markers3D[m].pos, frame->markersCov[m].cast<float>(),
+						pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance), colorCov3D);
+				glEnable(GL_CULL_FACE);
+				glCullFace(GL_BACK);
+				visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
+				glDisable(GL_CULL_FACE);
+			}
+
 			// Return to 2D projection for the rest
 			visSetupProjection(postProjMat);
+
+			if (visState.markers.showCovarianceInCam2D && !frame->markers3D.empty())
+			{ // Display markers (tracked and just triangulated)
+				Color colorCov2D = Color{ 0.4f, 0.6f, 1.0f, 1.0f };
+				for (int m = 0; m < frame->markers3D.size() && m < frame->markersCov.size(); m++)
+				{
+					Eigen::Vector2f center = projectPoint2D(calib.camera, frame->markers3D[m].pos);
+					Eigen::Matrix2f cov2D = projectCovariance3D(calib, frame->markers3D[m].pos, frame->markersCov[m].cast<float>().eval());
+					Eigen::Matrix2f axis = getUncertaintyAxis(cov2D, pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance, 0);
+					visualiseEllipse<false>(center, axis.col(0), axis.col(1), colorCov2D);
+				}
+			}
 
 			thread_local std::vector<Eigen::Vector2f> projected2D;
 			for (auto &trackRecord : frame->trackers)
@@ -1202,13 +1231,14 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 
 				if (visState.tracking.showSearchBounds && trackRecord.ext)
 				{ // Show search bounds
+					Color8 searchCol = Color{ 1, 1, 0, 1 };
 					// Add positional uncertainty in target-space (rotated by prediction) to target-local bounds
 					Eigen::Vector3f uncertainty = sampleCovarianceUncertainty<float,3>(trackRecord.ext->predictedCov.topLeftCorner<3,3>(),
 						track.uncertaintySigma, track.minStdDev3D*track.minStdDev3D, trackRecord.ext->predicted.rotation());
 					uncertainty += Eigen::Vector3f::Constant(pipeline.params.track.addUncertainty3D);
 					auto bounds = tracker.calib.bounds.extendedBy(uncertainty);
 					Eigen::Projective3f mvp = calib.camera.cast<float>() * trackRecord.ext->predicted;
-					visualiseBounds2D(projectBounds(mvp, bounds));
+					visualiseBounds2D(projectBounds(mvp, bounds), searchCol);
 				}
 
 				Color colVisible = Color{ 0.0, 0.8, 0.2, 0.3f };

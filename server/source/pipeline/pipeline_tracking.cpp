@@ -868,6 +868,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	// Compile markers into unified format
 	frame->markers3D.reserve(track.transientMarkers.size() + track.triangulations3D.size());
+	frame->markersCov.reserve(track.transientMarkers.size() + track.triangulations3D.size());
 	std::vector<Eigen::Vector3f> points3D;
 	points3D.reserve(track.transientMarkers.size() + track.triangulations3D.size());
 
@@ -886,6 +887,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			marker.marker.size*1000, marker.samples, confidence, uncertainty3D*1000, marker.error2D*PixelFactor);
 
 		frame->markers3D.emplace_back(marker.id, pos, marker.error2D, uncertainty3D, marker.marker.size, marker.samples, confidence);
+		frame->markersCov.emplace_back(cov.cast<CovStorageScalar>());
 		points3D.emplace_back(pos);
 	}
 
@@ -914,6 +916,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			tri.size*1000, (int)tri.samples.size(), tri.confidence, tri.error*1000, error2D*PixelFactor);
 
 		frame->markers3D.emplace_back(0, tri.pos, error2D, tri.error, tri.size, tri.samples.size(), tri.confidence);
+		frame->markersCov.emplace_back(Eigen::Vector3f::Constant(tri.error*tri.error).cast<CovStorageScalar>().asDiagonal());
 		points3D.emplace_back(tri.pos);
 	}
 

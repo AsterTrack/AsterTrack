@@ -437,9 +437,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		{
 			for (auto &cluster : visFrame.frameIt->get()->clusterTri3D)
 			{
-				Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
 				clusters.emplace_back(
-					composeCovarianceTransform(pose, cluster.covariance, 3),
+					composeCovarianceTransform(cluster.center, cluster.covariance, 3),
 					Color{ 0.4f, 0.8f, 0.2f, 0.6f });
 			}
 		}
@@ -447,20 +446,19 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		{
 			for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
 			{
-				Eigen::Isometry3f pose(Eigen::Translation3f(cluster.center));
 				clusters.emplace_back(
-					composeCovarianceTransform(pose, cluster.covariance, 3),
+					composeCovarianceTransform(cluster.center, cluster.covariance, 3),
 					Color{ 0.4f, 0.8f, 0.2f, 0.6f });
 			}
 		}
 		if (!clusters.empty())
 		{
-			glDisable(GL_DEPTH_TEST);
+			glDepthMask(GL_FALSE);
 			glEnable(GL_CULL_FACE);
 			glCullFace(GL_BACK);
 			visualiseMeshesDepthSorted(clusters, smoothSphereMesh);
 			glDisable(GL_CULL_FACE);
-			glEnable(GL_DEPTH_TEST);
+			glDepthMask(GL_TRUE);
 		}
 	}
 
@@ -714,11 +712,11 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			}
 			if (visState.tracking.showTargetFiltered)
 				covariances.emplace_back(composeCovarianceTransform(
-					trackRecord.pose.filtered, trackRecord.pose.filteredCov.topLeftCorner<3,3>(),
+					trackRecord.pose.filtered.translation(), trackRecord.pose.filteredCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colVirtual);
 			if (visState.tracking.showTargetObserved)
 				covariances.emplace_back(composeCovarianceTransform(
-					trackRecord.pose.observed, trackRecord.pose.observedCov.topLeftCorner<3,3>(),
+					trackRecord.pose.observed.translation(), trackRecord.pose.observedCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colObserved);
 			if (visState.tracking.showCovarianceRot)
 			{ // Visualise rotational covariance rings around pose cross
@@ -815,15 +813,15 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		{
 			if (visState.tracking.showTargetFiltered)
 				covariances.emplace_back(composeCovarianceTransform(
-					trk.pose.filtered, trk.pose.filteredCov.topLeftCorner<3,3>(),
+					trk.pose.filtered.translation(), trk.pose.filteredCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colFiltered);
 			if (visState.tracking.showTargetPredicted && trk.ext)
 				covariances.emplace_back(composeCovarianceTransform(
-					trk.ext->predicted, trk.ext->predictedCov.topLeftCorner<3,3>(),
+					trk.ext->predicted.translation(), trk.ext->predictedCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colPredicted);
 			if (visState.tracking.showTargetObserved)
 				covariances.emplace_back(composeCovarianceTransform(
-					trk.pose.observed, trk.pose.observedCov.topLeftCorner<3,3>(),
+					trk.pose.observed.translation(), trk.pose.observedCov.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colObserved);
 		};
 
@@ -878,14 +876,14 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				CovarianceMatrix hessian = fitHessianToSamples(tgtMatch.hessianSamples);
 				Eigen::Matrix3f covariance = covarianceFromHessian(track.filter.pose.cov, hessian).topLeftCorner<3,3>();
 				covariances.emplace_back(composeCovarianceTransform(
-					tgtMatch.pose, covariance,
+					tgtMatch.pose.translation(), covariance,
 					visState.tracking.scaleCovariance), Color{ 0.5f, 0.6f, 0.2f, 0.4f });
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
 				Eigen::Matrix3f covariance = track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
-					tgtMatch.pose, covariance,
+					tgtMatch.pose.translation(), covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });
 			}
 		}
@@ -898,7 +896,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				const auto &tgtMatch = trkDbg.showInitial? trkDbg.initialMatch2D :
 					(trkDbg.showEdited? trkDbg.editedMatch2D : trkDbg.targetMatch2D);
 				covariances.emplace_back(composeCovarianceTransform(
-					tgtMatch.pose, tgtMatch.covariance.topLeftCorner<3,3>(),
+					tgtMatch.pose.translation(), tgtMatch.covariance.topLeftCorner<3,3>(),
 					visState.tracking.scaleCovariance), colObserved);
 			}
 		}
@@ -912,53 +910,60 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		visualisePointsSpheresDepthSorted(markers);
 	}
 
-	if (!covariances.empty())
-	{ // Visualise positional covariance ellipsoids
-		glDisable(GL_DEPTH_TEST);
-		glEnable(GL_CULL_FACE);
-		glCullFace(GL_BACK);
-		visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
-		glDisable(GL_CULL_FACE);
-		glEnable(GL_DEPTH_TEST);
-	}
-
 	thread_local std::vector<VisPoint> markerPoints;
 	markerPoints.clear();
 
-	Color colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f };
+	Color8 colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f }, colorCov = Color{ 0.8f, 0.6f, 1.0f, 0.3f };
+	int i = 0;
 	for (auto &tri : frame.markers3D)
-		markerPoints.emplace_back(tri.pos, (Color8)(tri.confidence < 4? colorNC : colorC), tri.size);
+	{
+		markerPoints.emplace_back(tri.pos, tri.confidence < pipeline.params.tri.minIntersectionConfidence? colorNC : colorC, tri.size);
+		if (frame.markersCov.size() <= i || !visState.markers.showCovarianceIn3DView) continue;
+		covariances.emplace_back(composeCovarianceTransform(
+			tri.pos, frame.markersCov[i++].cast<float>(),
+			pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance), colorCov);
+	}
 
 	if (pipeline.isSimulationMode && visFrame.altFrameIt.accessible())
 	{
-		Color colorSim = Color{ 0.0f, 0.9f, 0.2f, 1.0f };
+		Color8 colorSim = Color{ 0.0f, 0.9f, 0.2f, 1.0f };
 		for (auto &tri : visFrame.altFrameIt->get()->markers3D)
-			markerPoints.emplace_back(tri.pos, (Color8)colorSim, tri.size/2);
+			markerPoints.emplace_back(tri.pos, colorSim, tri.size/2);
 	}
 
 	if (pipeline.phase == PHASE_Calibration_Point)
 	{
 		auto room = pipeline.pointCalib.room.contextualRLock();
-		Color col = { 0.6f, 1.0f, 0.1f, 0.6f };
+		Color8 col = Color{ 0.6f, 1.0f, 0.1f, 0.6f };
 		for (auto &pt : room->floorPoints)
 		{
 			if (pt.sampleCount > 3)
-				markerPoints.emplace_back(pt.pos.cast<float>(), (Color8)col, 0.02f);
+				markerPoints.emplace_back(pt.pos.cast<float>(), col, 0.02f);
 		}
 	}
 
 	if (pipeline.isSimulationMode)
 	{
 		auto sim_lock = pipeline.simulation.contextualRLock();
-		Color gtCol = { 1.0f, 0.0f, 0.8f, 0.6f };
+		Color8 gtCol = Color{ 1.0f, 0.0f, 0.8f, 0.6f };
 		for (const auto &object : sim_lock->objects)
 		{
 			if (!object.enabled) continue;
 			for (const auto &pt : object.target.markers)
-				markerPoints.emplace_back(object.pose * pt.pos, (Color8)gtCol, 0.01f*0.5f);
+				markerPoints.emplace_back(object.pose * pt.pos, gtCol, 0.01f*0.5f);
 		}
 		for (const auto &pt : sim_lock->points)
 			markerPoints.emplace_back(pt.pos, gtCol, sim_lock->pointSim.pointSize);
+	}
+
+	if (!covariances.empty())
+	{ // Visualise positional covariance ellipsoids
+		glDepthMask(GL_FALSE);
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
+		visualiseMeshesDepthSorted(covariances, smoothSphereMesh);
+		glDisable(GL_CULL_FACE);
+		glDepthMask(GL_TRUE);
 	}
 
 	visualisePointsSpheresDepthSorted(markerPoints);

@@ -275,7 +275,7 @@ void visualiseBounds3D(Bounds3f bounds, Eigen::Isometry3f pose)
 	visualiseLines(lines, 1.0f);
 }
 
-void visualiseBounds2D(Bounds2f bounds)
+void visualiseBounds2D(Bounds2f bounds, Color8 col)
 {
 	float depth = 1-0.9f;
 	std::array<Eigen::Vector3f, 4> corners = {
@@ -284,7 +284,6 @@ void visualiseBounds2D(Bounds2f bounds)
 		Eigen::Vector3f(bounds.max.x(), bounds.max.y(), depth),
 		Eigen::Vector3f(bounds.min.x(), bounds.max.y(), depth)
 	};
-	Color8 col = Color{ 1, 1, 0, 1 };
 	std::vector<std::pair<VisPoint, VisPoint>> lines = {
 		{ { corners[0], col }, { corners[1], col } },
 		{ { corners[1], col }, { corners[2], col } },
@@ -340,17 +339,17 @@ void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT,
 /**
  * Composes pose and covariance matrix into a transform to be used on a sphere model to visualise covariance
  */
-Eigen::Affine3f composeCovarianceTransform(Eigen::Isometry3f pose, Eigen::Matrix3f covariance, float scale)
+Eigen::Affine3f composeCovarianceTransform(Eigen::Vector3f pos, Eigen::Matrix3f covariance, float scale)
 {
 	Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd(covariance, Eigen::ComputeEigenvectors);
 	Eigen::Matrix3f axis = evd.eigenvectors();
-	Eigen::Vector3f stdDev = evd.eigenvalues().cwiseSqrt();
+	Eigen::Vector3f stdDev = evd.eigenvalues().cwiseAbs().cwiseSqrt();
 	if (axis.determinant() < 0)
 		axis.col(0) *= -1;
 
 	Eigen::Affine3f transform = Eigen::Affine3f::Identity();
 	transform.linear() = axis * Eigen::Scaling(stdDev*scale);
-	transform.translation() = pose.translation();
+	transform.translation() = pos;
 	return transform;
 }
 

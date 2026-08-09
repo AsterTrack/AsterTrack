@@ -313,7 +313,7 @@ static Eigen::Matrix<Scalar,DIM,DIM> covarianceFromHessian(const NumericCovarian
 }
 
 template<typename Scalar, int N>
-static bool conditionCovariance(Eigen::Matrix<Scalar,N,N> &covariance, float minCovariance)
+static inline bool conditionCovariance(Eigen::Matrix<Scalar,N,N> &covariance, float minCovariance)
 {
 	// Condition eigenvalues (covariance needs to be positive semi-definite)
 	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,N,N>> evd(covariance, Eigen::ComputeEigenvectors);
@@ -323,21 +323,34 @@ static bool conditionCovariance(Eigen::Matrix<Scalar,N,N> &covariance, float min
 }
 
 template<typename Scalar, int N>
-static Eigen::Matrix<Scalar,N,N> sampleCovarianceExtremes(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance)
+static inline Eigen::Matrix<Scalar,N,N> getUncertaintyAxis(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance)
 {
 	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
 	Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar,N,N>> evd(covariance, Eigen::ComputeEigenvectors);
-	Eigen::Matrix<Scalar,N,1> deviations = sigma * evd.eigenvalues().cwiseMax(minCovariance).cwiseSqrt();
-	return evd.eigenvectors().array().rowwise() * deviations.transpose().array();
+	Eigen::Matrix<Scalar,N,1> stdDev = evd.eigenvalues().cwiseMax(minCovariance).cwiseSqrt();
+	return evd.eigenvectors() * Eigen::Scaling(sigma * stdDev);
 }
 
 template<typename Scalar, int N>
-static Eigen::Matrix<Scalar,N,1> sampleCovarianceUncertainty(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance, Eigen::Matrix<Scalar,N,N> targetAxis)
+static inline Eigen::Matrix<Scalar,N,1> sampleCovarianceUncertainty(Eigen::Matrix<Scalar,N,N> covariance, float sigma, float minCovariance, Eigen::Matrix<Scalar,N,N> targetAxis)
 {
 	// Get "extremes" of covariance, e.g. uncertainty in their primary directions
-	Eigen::Matrix<Scalar,N,N> extremes = sampleCovarianceExtremes<Scalar,N>(covariance, sigma, minCovariance);
+	Eigen::Matrix<Scalar,N,N> extremes = getUncertaintyAxis<Scalar,N>(covariance, sigma, minCovariance);
 	// Align extremes to desired axis before sampling the uncertainty
-	return (targetAxis * extremes).cwiseAbs().rowwise().norm();
+	return (targetAxis * extremes).rowwise().norm();
+}
+
+template<typename Scalar, typename CalibScalar>
+static inline Eigen::Matrix<Scalar,2,2> projectCovariance3D(const CameraCalib_t<CalibScalar> &calib, const Eigen::Matrix<Scalar,3,1> pos, const Eigen::Matrix<Scalar,3,3> covariance)
+{
+	Eigen::Vector3f posCam = calib.view.template cast<Scalar>() * pos;
+	Scalar zInv = 1.0f / posCam.z();
+	Scalar pptTerm = -calib.f * zInv * zInv;
+	Eigen::Matrix<Scalar,2,3> camJac;
+	camJac << calib.f * zInv, 0, pptTerm * posCam.x(),
+			  0, calib.f * zInv, pptTerm * posCam.y();
+	Eigen::Matrix<Scalar,2,3> covProj = camJac * calib.view.rotation().template cast<Scalar>();
+	return covProj * covariance.template cast<Scalar>() * covProj.transpose();
 }
 
 #endif // COVARIANCE_H

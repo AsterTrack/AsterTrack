@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/eigendef.hpp"
 #include "util/stats.hpp"
 
+#include "detail/kalman_3dof.hpp"
 #include "flexkalman/process/PoseSeparatelyDampedConstantVelocity.h"
 #include "flexkalman/state/PoseState.h"
 
@@ -232,7 +233,7 @@ struct TrackerVirtual
 
 struct TrackedTarget;
 struct DormantTarget;
-struct IMUMarker;
+struct InertialMarker;
 struct OrphanedIMU;
 
 struct TrackedBase
@@ -302,7 +303,7 @@ struct DormantTarget : public virtual TrackedBase
  * A marker of known size with IMU associated, allowing for consistent identification.
  * 6-DOF by combining 3-DOF absolute optical position and 3-DOF inertial rotation (may drift).
  */
-struct IMUMarker : public virtual TrackedBase
+struct InertialMarker : public virtual TrackedBase
 {
 	// Single Marker tracking source
 	TrackerMarker marker;
@@ -317,13 +318,55 @@ struct IMUMarker : public virtual TrackedBase
 	// Latest observation
 	TrackerObservation obs;
 
-	IMUMarker(int id, std::string label, TrackerMarker marker) :
+	InertialMarker(int id, std::string label, TrackerMarker marker) :
 		TrackedBase(id, label), marker(std::move(marker)), inertial{} {}
 
 	inline void PickUpTracking(Eigen::Vector3f pos,
 		TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 
 	inline void InterruptTracking();
+};
+
+struct MarkerFilter
+{
+	using State = flexkalman::pos_marker::State;
+	using Model = flexkalman::MarkerDampedConstantVelocityProcessModel;
+
+	// Current state
+	State state;
+	TimePoint_t time;
+
+	// Information about state
+	OptFrameNum firstObsFrame;
+	TimePoint_t firstObsTime;
+	OptFrameNum lastObsFrame;
+	TimePoint_t lastObsTime;
+
+	MarkerFilter(Eigen::Vector3f pos, TimePoint_t time, OptFrameNum frame, const MarkerTrackingParameters &params)
+		: state{}, time(time), firstObsFrame(frame), firstObsTime(time), lastObsFrame(frame), lastObsTime(time)
+	{
+		state.position() = pos.cast<double>();
+		state.errorCovariance().diagonal().template segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitState);
+		state.errorCovariance().diagonal().template segment<3>(3).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitChange);
+	}
+};
+
+struct TransientMarker
+{
+	uint32_t id;
+	TrackingResult result;
+	int samples;
+	float error2D;
+
+	// Single Marker tracking source
+	TrackerMarker marker;
+
+	// Current filtered state
+	MarkerFilter filter;
+
+	inline TransientMarker(uint32_t id, Eigen::Vector3f pos, float size, int samples,
+		TimePoint_t time, FrameNum frame, const MarkerTrackingParameters &params)
+		: id(id), samples(samples), marker(size), filter(pos, time, frame, params) {}
 };
 
 struct VirtualTracker : public virtual TrackedBase
@@ -378,7 +421,15 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	const std::vector<std::vector<int>> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params);
 
-TrackingResult trackMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
+void trackMarker(std::list<TransientMarker> &markers,
+	std::vector<std::vector<int>> &matches2D,
+	const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int>> &relevantPoints2D,
+	TimePoint_t time, FrameNum frame, int cameraCount, const MarkerTrackingParameters &params);
+
+TrackingResult trackIMUMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
 	TimePoint_t time, float sigma);
 
@@ -428,7 +479,7 @@ inline DormantTarget::DormantTarget(TrackedTarget &&tracker) :
 	resetIMU(inertial);
 }
 
-inline void IMUMarker::PickUpTracking(Eigen::Vector3f pos,
+inline void InertialMarker::PickUpTracking(Eigen::Vector3f pos,
 	TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
 	Eigen::Isometry3f obsPose;
@@ -438,7 +489,7 @@ inline void IMUMarker::PickUpTracking(Eigen::Vector3f pos,
 	obs = TrackerObservation(obsPose, time, params);
 }
 
-inline void IMUMarker::InterruptTracking()
+inline void InertialMarker::InterruptTracking()
 {
 	// TODO: Now in search for marker of given size following same pattern as IMU accelerometer
 }

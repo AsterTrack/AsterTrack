@@ -149,21 +149,25 @@ struct PipelineState
 	// Tracking pipeline state
 	struct
 	{
-		// Currently triangulated points
-		std::vector<TriangulatedPoint> triangulations3D;
 		// Trackers (dormant & tracked)
 		std::list<TrackedTarget> trackedTargets;
 		std::list<DormantTarget> dormantTargets;
-		std::list<IMUMarker> markers;
-		std::list<OrphanedIMU> orphanedIMUs;
 		// Virtual trackers composed of and interfacing with tracked objects
 		std::list<VirtualTracker> virtualTrackers;
+		// Tracked markers (intertial & transient)
+		std::list<InertialMarker> inertialMarkers;
+		std::list<TransientMarker> transientMarkers;
+		// IMUs not assigned to a tracker or marker
+		std::list<OrphanedIMU> orphanedIMUs;
+		// Currently triangulated points
+		std::vector<TriangulatedPoint> triangulations3D;
 		// Asynchronous Detections
 		bool asyncDetection;
 		int asyncDetectTargetID = 0;
 		std::stop_source asyncDetectionStop, syncDetectionStop;
 		// Add information which cluster async detection handles to interrupt it should that cluster disappear or be detected
 		// Currently we only check for which target ID is being attempted to be detected, to abort when that target has been found 
+		uint32_t ongoingMarkerID = 1;
 	} tracking = {};
 
 	// Point calibration state

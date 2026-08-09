@@ -432,6 +432,53 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
+	if (BeginCollapsingRegion("Marker Tracking"))
+	{
+		auto &params = state.pipeline.params.marker;
+		const auto &standard = defaultParams.marker;
+		bool modified = false;
+
+		modified |= BooleanProperty("Enable", &params.enabled, &standard.enabled);
+
+		BeginSection("Prediction");
+		modified |= ScalarProperty<float>("Min 3D Std Dev", "mm", &params.minStdDev3D, &standard.minStdDev3D, 0, 100, 1.0f, 1000, "%.1f");
+		modified |= ScalarProperty<float>("Add 3D Uncertainty", "mm", &params.addUncertainty3D, &standard.addUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");
+		modified |= ScalarProperty<float>("Uncertainty Sigma", "o", &params.uncertaintySigma, &standard.uncertaintySigma, 0, 100, 0.1f, 1, "%.1f");
+		EndSection();
+
+		BeginSection("2D Point Matching");
+		modified |= ScalarProperty<float>("Match Radius", "px", &params.matchRadius, &standard.matchRadius, 0, 100, 1.0f, PixelFactor);
+		modified |= matchAlgParamUI(params.match, standard.match);
+		EndSection();
+
+		BeginSection("Quality");
+		modified |= ScalarProperty<int>("Min Initial Obs", "", &params.minInitialObs, &standard.minInitialObs, 0, 20);
+		modified |= ScalarProperty<int>("Max Dropout Frames", "", &params.maxDropoutFrames, &standard.maxDropoutFrames, 0, 50);
+		EndSection();
+
+		BeginSection("Filtering");
+
+		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+
+		ImGui::Separator();
+
+		modified |= ScalarProperty<float>("Unscented Alpha", "", &params.filter.sigmaAlpha, &standard.filter.sigmaAlpha, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Unscented Beta", "", &params.filter.sigmaBeta, &standard.filter.sigmaBeta, 0, 10, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Unscented Kappa", "", &params.filter.sigmaKappa, &standard.filter.sigmaKappa, 0, 10, 0.1f, 1, "%.4f");
+
+		ImGui::Separator();
+
+		modified |= ScalarProperty<int>("Pos Update Obs Limit", "", &params.filter.obsLimit, &standard.filter.obsLimit, 0, 20);
+		modified |= ScalarProperty<float>("StdDev Pos", "mm", &params.filter.stdDevPos, &standard.filter.stdDevPos, 0, 10, 0.01f, 1000, "%.4f");
+		modified |= ScalarProperty<float>("StdDev Obs", "px", &params.filter.stdDevObs, &standard.filter.stdDevObs, 0, 10, 0.1f, PixelFactor, "%.2f");
+
+		EndSection();
+
+		EndCollapsingRegion();
+	}
+
 	if (BeginCollapsingRegion("Triangulation Algorithms"))
 	{
 		TrackingParameters &params = state.pipeline.params;

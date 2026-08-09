@@ -243,7 +243,7 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 	// Forcefully move all trackers to dormant state (no matter whether it has inertial unit or not)
 	std::move(pipeline.tracking.trackedTargets.begin(), pipeline.tracking.trackedTargets.end(), std::front_inserter(pipeline.tracking.dormantTargets));
 	pipeline.tracking.trackedTargets.clear();
-	for (auto &tracker : pipeline.tracking.markers)
+	for (auto &tracker : pipeline.tracking.inertialMarkers)
 	{ // Interrupt as if tracking lost, but also reset IMU due to jump to another frame
 		tracker.InterruptTracking();
 		resetIMU(tracker.inertial);
@@ -266,7 +266,10 @@ void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameReco
 		pipeline.tracking.trackedTargets.emplace_back(std::move(*dormantIt), trackerRecord.pose.observed, frameRecord.time, frameRecord.num, pipeline.params.track);
 		pipeline.tracking.dormantTargets.erase(dormantIt);
 	}
+
 	// TODO: Adopt tracked markers
+	//pipeline.tracking.inertialMarkers
+	pipeline.tracking.transientMarkers.clear();
 }
 
 

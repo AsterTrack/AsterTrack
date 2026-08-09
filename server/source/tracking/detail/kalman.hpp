@@ -31,6 +31,7 @@ SOFTWARE.
 #include "flexkalman/EigenQuatExponentialMap.h"
 
 #include "target/detail/TargetReprojectionError.hpp"
+#include "point/triangulation.hpp"
 
 /**
  * AbsolutePoseMeasurement for use with flexkalman UKF
@@ -198,10 +199,6 @@ public:
 		m_covariance.diagonal() = variance;
 	}
 
-	AbsolutePositionMeasurement(Eigen::Vector3d const &pos,
-								MeasurementSquareMatrix const &covariance)
-		: m_pos(pos), m_covariance(covariance) {}
-
 	template <typename State>
 	MeasurementSquareMatrix const &getCovariance(State const &)
 	{
@@ -235,6 +232,147 @@ public:
 private:
 	Eigen::Vector3d m_pos;
 	MeasurementSquareMatrix m_covariance;
+};
+
+template<int DIM = Eigen::Dynamic>
+class TriangulationObservationMeasurement :
+	public flexkalman::MeasurementBase<TriangulationObservationMeasurement<DIM>> {
+  public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	static constexpr int Dimension = DIM;
+	using Scalar = flexkalman::types::Scalar;
+	using MeasurementVector = flexkalman::types::Vector<Dimension>;
+	using MeasurementSquareMatrix = flexkalman::types::SquareMatrix<Dimension>;
+
+	// TODO: If we end up using individual point samples (e.g. setting m_sample)
+	// Then rewrite as static-sized measurement
+	int fullSize() const { return DIM == Eigen::Dynamic? (m_tri->samples.size()*2) : DIM; }
+	int size() const { return DIM == Eigen::Dynamic? (m_sample < 0? (m_tri->samples.size()*2) : 2) : DIM; }
+
+	TriangulationObservationMeasurement(const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+		const std::vector<CameraCalib> &calibs, const TriangulatedPoint &tri, Scalar const &pointVariance)
+		: m_variance(pointVariance), m_calibs(calibs), m_points2D(points2D), m_tri(&tri), m_sample(-1)
+	{
+	}
+
+	MeasurementVector getMeasurement() const
+	{
+		if (m_sample >= 0)
+		{
+			auto &sample = m_tri->samples[m_sample];
+			return (*m_points2D[sample.camera])[sample.blob].cast<Scalar>();
+		}
+
+		static_assert(DIM == Eigen::Dynamic);
+		MeasurementVector measurement(fullSize());
+		for (int s = 0; s < m_tri->samples.size(); s++)
+		{
+			auto &sample = m_tri->samples[s];
+			measurement.segment(s*2, 2) = (*m_points2D[sample.camera])[sample.blob].cast<Scalar>();
+		}
+		return measurement;
+	}
+
+	template <typename State>
+	MeasurementSquareMatrix const &getCovariance(State const &)
+	{
+		m_covariance = MeasurementSquareMatrix::Identity(size(), size());
+		m_covariance.diagonal().setConstant(m_variance);
+		return m_covariance;
+	}
+
+	template <typename State>
+	MeasurementVector predictMeasurement(State const &state) const
+	{
+		if (m_sample >= 0)
+		{
+			auto &sample = m_tri->samples[m_sample];
+			return projectPoint2D(m_calibs[sample.camera].camera, state.position());
+		}
+
+		static_assert(DIM == Eigen::Dynamic);
+		MeasurementVector measurement(fullSize());
+		for (int s = 0; s < m_tri->samples.size(); s++)
+		{
+			auto &sample = m_tri->samples[s];
+			measurement.segment(s*2, 2) = projectPoint2D(m_calibs[sample.camera].camera, state.position());
+		}
+		return measurement;
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(MeasurementVector const &prediction,
+								  State const &state) const
+	{
+		return getMeasurement() - prediction;
+	}
+
+	template <typename State>
+	MeasurementVector getResidual(State const &state) const
+	{
+		return getMeasurement() - predictMeasurement(state);
+	}
+
+	void setMeasurement(const TriangulatedPoint &tri)
+	{
+		m_tri = &tri;
+	}
+
+	void setSample(int sample)
+	{
+		m_sample = sample;
+	}
+
+	template <typename State>
+	void calculateJacobian(State const &state, int p, Eigen::Ref<Eigen::MatrixXd> jacobian) const
+	{
+		auto &pt = m_tri->samples[p];
+		int c = pt.camera;
+		auto cm = m_calibs[c].camera;
+
+		// Projection to differenciate
+		Vector4<double> tmpPt = cm * state.position().homogeneous();
+		Vector2<double> camPt = tmpPt.head<2>() / tmpPt.w();
+
+		// Differenciation w.r.t. position
+		double tX = tmpPt.x(), tY = tmpPt.y(), tZ = tmpPt.z(), tW = tmpPt.w();
+		double d_cX_posX = (tW*cm(0,0) - tX*cm(3,0))/(tW*tW);
+		double d_cY_posX = (tW*cm(1,0) - tY*cm(3,0))/(tW*tW);
+		double d_cX_posY = (tW*cm(0,1) - tX*cm(3,1))/(tW*tW);
+		double d_cY_posY = (tW*cm(1,1) - tY*cm(3,1))/(tW*tW);
+		double d_cX_posZ = (tW*cm(0,2) - tX*cm(3,2))/(tW*tW);
+		double d_cY_posZ = (tW*cm(1,2) - tY*cm(3,2))/(tW*tW);
+
+		jacobian.template block<2,3>(0,0) << // w.r.t. x,y,z
+			d_cX_posX, d_cX_posY, d_cX_posZ,
+			d_cY_posX, d_cY_posY, d_cY_posZ;
+	}
+
+	template <typename State>
+	flexkalman::types::Matrix<Dimension, State::Dimension> getJacobian(State const &state) const
+	{
+		flexkalman::types::Matrix<Dimension, State::Dimension> jacobian(size(), state.size());
+		jacobian.setZero();
+		if (m_sample < 0)
+		{
+			for (int p = 0; p < m_tri->samples.size(); p++)
+				calculateJacobian(state, p, jacobian.block(p*2, 0, 2, 3));
+		}
+		else
+		{
+			calculateJacobian(state, m_sample, jacobian.block(0, 0, 2, 3));
+		}
+		return jacobian;
+	}
+
+
+  private:
+	MeasurementSquareMatrix m_covariance;
+	double m_variance;
+	TriangulatedPoint const *m_tri;
+	std::vector<CameraCalib> const &m_calibs;
+	std::vector<std::vector<Eigen::Vector2f> const *> const &m_points2D;
+	int m_sample;
 };
 
 /**
@@ -450,7 +588,7 @@ class TargetMatchMeasurement :
 		double d_cX_aZ = (tW*d_tX_aZ - tX*d_tW_aZ)/(tW*tW);
 		double d_cY_aZ = (tW*d_tY_aZ - tY*d_tW_aZ)/(tW*tW);
 	
-		jacobian.template block<2,3>(0,0) << // w.r.t. x,y
+		jacobian.template block<2,3>(0,0) << // w.r.t. x,y,z
 			d_cX_posX, d_cX_posY, d_cX_posZ,
 			d_cY_posX, d_cY_posY, d_cY_posZ;
 

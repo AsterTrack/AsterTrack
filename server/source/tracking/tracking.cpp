@@ -18,10 +18,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "tracking/tracking.hpp"
 #include "tracking/detail/kalman.hpp"
+#include "point/triangulation.hpp"
 
 #include "signals.hpp"
 
 #include "util/log.hpp"
+#include "util/matching.hpp"
 
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
@@ -236,73 +238,163 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	return trackResult;
 }
 
-TrackingResult trackMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
-	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,
-	TimePoint_t time, float sigma)
+void trackMarker(std::list<TransientMarker> &markers,
+	std::vector<std::vector<int>> &matches2D,
+	const std::vector<CameraCalib> &calibs,
+	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
+	const std::vector<std::vector<BlobProperty> const *> &properties,
+	const std::vector<std::vector<int>> &relevantPoints2D,
+	TimePoint_t time, FrameNum frame, int cameraCount, const MarkerTrackingParameters &params)
 {
-	// TODO: Track individual large markers (1/4) - expose parameters
-	TargetTrackingParameters params = {};
+	MarkerFilter::Model model(params.filter.dampeningPos, 1.0f);
 
-	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	matches2D.resize(calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+		matches2D[c].clear();
 
-	if (dtMS(filter.time, time) > 0.01f)
-	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(filter.state, model, dtS(filter.time, time));
-		filter.time = time;
-		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
-	}
-	obs.ext.predicted = filter.state.getIsometry().cast<float>();
-	obs.ext.predictedCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
+	// Maintain allocation of match candidates for every camera and marker
+	typedef MatchCandidates<int, MatchCandidate<float>, 2> PointCandidates;
+	thread_local std::vector<std::vector<PointCandidates>> matchCandidates;
+	preallocConservative<true>(matchCandidates, calibs.size());
+	for (int c = 0; c < calibs.size(); c++)
+		matchCandidates[c].resize(markers.size());
 
-	Eigen::Vector3f predPos = obs.ext.predicted.translation();
-	Eigen::Matrix3f predCov = obs.ext.predictedCov.topLeftCorner<3,3>();
+	LOG(LTracking, LTrace, "Tracking %d transient markers!", (int)markers.size());
 
-	// Find best candidate
-	int matchedPoint = -1;
-	float matchedErrorProbability = std::numeric_limits<float>::max();
-	for (int p : triIndices)
+	float matchRadiusSq = params.matchRadius*params.matchRadius;
+	float includeRadiusSq = matchRadiusSq*params.match.primAdvantage*params.match.primAdvantage;
+
+	auto collectMatchCandidates = [&](PointCandidates &matches, int c, Eigen::Vector2f proj, float projSizeSq, float radiusSq)
 	{
-		Eigen::Vector3f diff = points3D[p]-predPos;
-		float err = diff.norm();
-		Eigen::Vector3f dir = diff/err;
-		float var = dir.transpose() * predCov * dir;
-		float limit = std::sqrt(var) * 3;
-		if (err < limit)
-		{ // Within sigma interval
-			matchedPoint = p;
-			matchedErrorProbability = err/limit;
+		auto &camPoints = *points2D[c];
+		auto &camProps = *properties[c];
+
+		MatchCandidate<float> matchCand = {};
+		int matchCnt = 0;
+		for (int p : relevantPoints2D[c])
+		{
+			float distSq = (camPoints[p] - proj).squaredNorm();
+			if (distSq > radiusSq) continue;
+			float blobSizeSq = camProps[p].size * camProps[p].size;
+			// TODO: Compare blobSizeSq to projSizeSq
+			matchCand.value = std::max(0.0f, distSq - blobSizeSq);
+			matchCand.index = p;
+			matchCnt++;
+			recordMatchCandidate(matches, matchCand);
+		}
+		return matchCnt;
+	};
+
+	std::vector<int> camMatchCnt(calibs.size(), 0);
+	int m = -1;
+	for (TransientMarker &marker : markers)
+	{
+		m++;
+
+		if (dtMS(marker.filter.time, time) > 0.01f)
+		{ // Predict new state if not done already using IMU samples
+			flexkalman::predict(marker.filter.state, model, dtS(marker.filter.time, time));
+			marker.filter.time = time;
+		}
+
+		Eigen::Vector3f predPos = marker.filter.state.position().cast<float>();
+		Eigen::Matrix3f predCov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
+
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (calibs[c].invalid()) continue;
+			Eigen::Vector2f proj = projectPoint2D(calibs[c].camera, predPos);
+			float size = calculate2DSizeSimple(calibs[c], predPos, marker.marker.size);
+
+			auto &matches = matchCandidates[c][m];
+			int matchCnt = collectMatchCandidates(matches, c, proj, size*size, includeRadiusSq);
+			if (matches.matches.front().valid())
+			{
+				camMatchCnt[c]++;
+
+				auto &pri = matches.matches[0], &sec = matches.matches[1];
+				LOG(LTracking, LTrace, "      Marker %d Cam %d has %d potential matches, best %d with %.2fpx and %d with %.2fpx", marker.id, c, matchCnt,
+					pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
+					sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor);
+			}
 		}
 	}
 
-	if (matchedPoint < 0 || matchedErrorProbability > 1000)
-	{
-		LOG(LTracking, LWarn, "Best point %d of %d points had %f error probability\n", matchedPoint, (int)points3D.size(), matchedErrorProbability);
-		return TrackingResult::NO_TRACK;
-	}
-	obs.pose.observed.translation() = points3D[matchedPoint];
-	obs.pose.observedCov.setIdentity();
-	obs.pose.observedCov.diagonal().head<3>().setConstant(params.filter.pose.stdDevPos);
+	// TODO: Reinforce likely matches via 3D correlation
 
-	// Update state
-	auto measurement = AbsolutePositionMeasurement(
-		points3D[matchedPoint].cast<double>(),
-		obs.pose.observedCov.diagonal().head<3>().cast<double>().eval());
+	// Resolve match candidates tentatively
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		if (calibs[c].invalid()) continue;
+		int numMatches = resolveMatchCandidates(matchCandidates[c], points2D[c]->size(), params.match.squared());
+		LOG(LTracking, LTrace, "    %d / %d tris had matches in camera %d, resolved to %d final matches!\n", camMatchCnt[c], (int)markers.size(), c, numMatches);
+	}
+
+	TriangulatedPoint tri;
 	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
-	if (!flexkalman::correctUnscented(filter.state, measurement, true, sigmaParams))
+	m = -1;
+	for (TransientMarker &marker : markers)
 	{
-		LOG(LTrackingFilter, LWarn, "Failed to correct pose in marker filter! Reset!");
+		m++;
+
+		// Update tri samples
+		tri.samples.clear();
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (calibs[c].invalid()) continue;
+			auto &match = matchCandidates[c][m].matches.front();
+			if (!match.valid()) continue;
+			if (match.getValue() > matchRadiusSq)
+			{
+				LOG(LTracking, LTrace, "      Marker %d Cam %d is ignoring match to %d after all, outside match radius %.2fpx", marker.id, c,
+					match.index, std::sqrt(match.getValue())*PixelFactor);
+				continue;
+			}
+			tri.samples.emplace_back(c, match.index);
+			matches2D[c].emplace_back(match.index);
+		}
+		if (tri.samples.size() < params.minInitialObs)
+		{
+			LOG(LTracking, LDarn, "      Marker %d lost tracking entirely!", marker.id);
+			marker.result = TrackingResult::NO_TRACK;
+			marker.samples = 0;
+			marker.error2D = 0;
+			continue;
+		}
+
+		// Update state
+		if (tri.samples.size() <= params.filter.obsLimit)
+		{ // Use 2D observations and rely on kalman to determine filtered posistion
+			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, using 2D filter update!", marker.id, marker.samples, (int)tri.samples.size());
+			auto measurement = TriangulationObservationMeasurement(
+				points2D, calibs, tri, params.filter.stdDevObs*params.filter.stdDevObs);
+			if (!flexkalman::correctUnscented(marker.filter.state, measurement, true, sigmaParams))
+			{
+				LOG(LTrackingFilter, LWarn, "Failed to correct marker filter with %d observed samples! Reset!", (int)tri.samples.size());
+				marker.result.setFlag(TrackingResult::FILTER_FAILED);
+			}
+			tri.pos = marker.filter.state.position().cast<float>();
+		}
+		else
+		{ // Refine properly and use 3D position to update kalman filter
+			auto measurement = AbsolutePositionMeasurement(
+				refineTriangulationIterative<float>(points2D, calibs, tri).cast<double>(),
+				Eigen::Vector3d::Constant(params.filter.stdDevPos*params.filter.stdDevPos));
+			if (!flexkalman::correctUnscented(marker.filter.state, measurement, true, sigmaParams))
+			{
+				LOG(LTrackingFilter, LWarn, "Failed to correct marker filter with pose from %d samples! Reset!", (int)tri.samples.size());
+				marker.result.setFlag(TrackingResult::FILTER_FAILED);
+			}
+			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, correcting prediction with 3D pos!", marker.id, marker.samples, (int)tri.samples.size());
+		}
+
+		marker.error2D = getTriReprojectionRMSE<float>(points2D, calibs, tri);
+		marker.result = TrackingResult::TRACKED_MARKER;
+		marker.samples = tri.samples.size();
+		marker.filter.lastObsTime = time;
+		marker.filter.lastObsFrame = frame;
+		marker.filter.time = time;
 	}
-
-	filter.lastObservation = time;
-	filter.lastObsFrame++;
-	// TODO: Track individual large markers (2/4) - switch to frame number
-
-	obs.pose.filtered = filter.state.getIsometry().cast<float>() ;
-	obs.pose.filteredCov = filter.state.errorCovariance().topLeftCorner<6,6>().cast<float>();
-	obs.time = time;
-
-	*bestPoint = matchedPoint;
-	return TrackingResult::TRACKED_MARKER;
 }
 
 static Eigen::Quaterniond GyroToQuat(Eigen::Vector3d gyro)

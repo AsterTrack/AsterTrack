@@ -681,7 +681,7 @@ static void ShowTrackingResults()
 
 	struct Marker3DSamples
 	{
-		EventChange count;
+		EventChange count, triCount, trkCount, idEvent;
 		StatChange samples, error, uncertainty;
 	};
 	static Marker3DSamples markers;
@@ -853,19 +853,33 @@ static void ShowTrackingResults()
 			uint32_t mkSamplesStored = 0, mkSamplesCurrent = 0;
 			float mkErrorStored = 0, mkErrorCurrent = 0;
 			float mkUncertaintyStored = 0, mkUncertaintyCurrent = 0;
+			int trkCountStored = 0, trkCountCurrent = 0;
+			int triCountStored = 0, triCountCurrent = 0;
+			uint32_t mkIDsStored = 0, mkIDsCurrent = 0;
 			for (auto &mk : framesStored[f]->markers3D)
 			{
 				mkSamplesStored += mk.samples;
 				mkErrorStored += mk.error2D / framesStored[f]->markers3D.size();
 				mkUncertaintyStored += mk.uncertainty3D / framesStored[f]->markers3D.size();
+				if (mk.id > 0) trkCountStored++;
+				else triCountStored++;
+				mkIDsStored = std::max(mkIDsStored, mk.id);
 			}
 			for (auto &mk : framesRecord[f]->markers3D)
 			{
 				mkSamplesCurrent += mk.samples;
 				mkErrorCurrent += mk.error2D / framesRecord[f]->markers3D.size();
 				mkUncertaintyCurrent += mk.uncertainty3D / framesRecord[f]->markers3D.size();
+				if (mk.id > 0) trkCountCurrent++;
+				else triCountCurrent++;
+				mkIDsCurrent = std::max(mkIDsCurrent, mk.id);
 			}
 			updateEventChange(markers.count, framesStored[f]->markers3D.size(), framesRecord[f]->markers3D.size());
+			updateEventChange(markers.trkCount, trkCountStored, trkCountCurrent);
+			updateEventChange(markers.triCount, triCountStored, triCountCurrent);
+			updateEventChange(markers.idEvent,
+				mkIDsStored > markers.idEvent.loaded? mkIDsStored-markers.idEvent.loaded : 0,
+				mkIDsCurrent > markers.idEvent.current? mkIDsCurrent-markers.idEvent.current : 0);
 			updateStatChange(markers.samples, mkSamplesStored, mkSamplesCurrent, mkSamplesStored, mkSamplesCurrent, false);
 			updateStatChange(markers.error, mkErrorStored, mkErrorCurrent, mkSamplesStored, mkSamplesCurrent, true);
 			updateStatChange(markers.uncertainty, mkUncertaintyStored, mkUncertaintyCurrent, mkSamplesStored, mkSamplesCurrent, true);
@@ -957,7 +971,10 @@ static void ShowTrackingResults()
 		bool open = ImGui::TreeNodeEx("Markers", ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_AllowOverlap);
 		if (open)
 		{
-			ImGui::Text("Points: %u  [%u]  +%u -%u", markers.count.current, markers.count.loaded, markers.count.added, markers.count.removed);
+			ImGui::Text("Total Points: %u  [%u]  +%u -%u", markers.count.current, markers.count.loaded, markers.count.added, markers.count.removed);
+			ImGui::Text("Triangulations: %u  [%u]  +%u -%u", markers.triCount.current, markers.triCount.loaded, markers.triCount.added, markers.triCount.removed);
+			ImGui::Text("Tracked Markers: %u  [%u]  +%u -%u", markers.trkCount.current, markers.trkCount.loaded, markers.trkCount.added, markers.trkCount.removed);
+			ImGui::Text("Number of Marker IDs: %u  [%u]  +%u -%u", markers.idEvent.current, markers.idEvent.loaded, markers.idEvent.added, markers.idEvent.removed);
 			FMT_SUM("Samples: ", markers.samples, uint32_t, 1, "%u");
 			FMT_DIST(markers.samples, uint32_t, 1, "%.2f", "%u", "%u");
 			ImGui::Text("Reprojection Errors:");

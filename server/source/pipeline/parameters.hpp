@@ -78,6 +78,38 @@ struct ContinuousOptimisationParameters
 	};
 };
 
+struct MarkerTrackingParameters
+{
+	bool enabled = true;
+
+	// Prediction
+	float minStdDev3D = 0.0f;
+	float addUncertainty3D = 0.02f;
+	float uncertaintySigma = 3;
+
+	// Matching
+	float matchRadius = 12.0f*PixelSize;
+	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
+
+	// Quality
+	int minInitialObs = 2;
+	int maxDropoutFrames = 1;
+
+	struct
+	{
+		// General behaviour for all filters
+		float sigmaInitState = 50000, sigmaInitChange = 10000000;
+		float dampeningPos = 0.95f;
+
+		// UKR settings for all filters
+		float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;
+
+		int obsLimit = 2;
+		float stdDevObs = 0.2f * PixelSize;
+		float stdDevPos = 0.0001f;
+	} filter;
+};
+
 struct VirtualTrackingParameters
 {
     struct {
@@ -114,6 +146,7 @@ struct TrackingParameters
 	ClusteringParameters cluster = {};
 	TargetDetectionParameters detect = {};
 	TargetTrackingParameters track = {};
+	MarkerTrackingParameters marker = {};
 	ContinuousOptimisationParameters cont = {};
 	VirtualTrackingParameters virt = {};
 };

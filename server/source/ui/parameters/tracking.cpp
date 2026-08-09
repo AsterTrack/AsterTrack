@@ -451,6 +451,12 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= matchAlgParamUI(params.match, standard.match);
 		EndSection();
 
+		BeginSection("2D Point Final Fit");
+		modified |= ScalarProperty<float>("Final Fit Radius", "px", &params.fitRadius, &standard.fitRadius, 0, 10, 0.1f, PixelFactor);
+		modified |= BooleanProperty("Allow All Fitting Final Match", &params.allowAllFittingFinalMatch, &standard.allowAllFittingFinalMatch);
+		modified |= BooleanProperty("Allow Contested Final Match", &params.allowContestedFinalMatch, &standard.allowContestedFinalMatch);
+		EndSection();
+
 		BeginSection("Quality");
 		modified |= ScalarProperty<int>("Min Initial Obs", "", &params.minInitialObs, &standard.minInitialObs, 0, 20);
 		modified |= ScalarProperty<int>("Max Dropout Frames", "", &params.maxDropoutFrames, &standard.maxDropoutFrames, 0, 50);

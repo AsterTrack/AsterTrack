@@ -355,7 +355,7 @@ struct TransientMarker
 {
 	uint32_t id;
 	TrackingResult result;
-	int samples;
+	int samples, uncertain;
 	float error2D;
 
 	// Single Marker tracking source
@@ -423,6 +423,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 
 void trackMarker(std::list<TransientMarker> &markers,
 	std::vector<std::vector<int>> &matches2D,
+	std::vector<std::vector<int>> &conflictedMatches2D,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

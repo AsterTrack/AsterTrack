@@ -561,6 +561,20 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	int camCount = pipeline.cameras.size();
 	std::vector<int> remainingPoints3D;
 
+	auto occupyConflictedMatches2D = [&](std::vector<std::vector<int>> &conflictedMatches2D)
+	{
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (conflictedMatches2D[c].empty()) continue;
+			std::sort(conflictedMatches2D[c].begin(), conflictedMatches2D[c].end());
+			auto remRemoveEnd = remove_sorted(
+				remainingPoints2D[c].begin(), remainingPoints2D[c].end(),
+				conflictedMatches2D[c].begin(), conflictedMatches2D[c].end()
+			);
+			remainingPoints2D[c].erase(remRemoveEnd, remainingPoints2D[c].end());
+		}
+	};
+
 	auto occupyTargetMatches2D = [&](const TargetMatch2D &targetMatch2D)
 	{
 		for (int c = 0; c < calibs.size(); c++)
@@ -777,17 +791,27 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// Given the IMU support they'll have more reliable matching, but still they compete with each other
 
 		std::vector<std::vector<int>> matches2D;
-		trackMarker(track.transientMarkers, matches2D,
+		std::vector<std::vector<int>> conflictedMatches2D(calibs.size());
+		trackMarker(track.transientMarkers, matches2D, conflictedMatches2D,
 			calibs, points2D, properties, remainingPoints2D,
 			frame->time, frame->num, camCount, pipeline.params.marker);
 
 		// Remove matched points from points used for triangulation
 		for (int c = 0; c < calibs.size(); c++)
 		{
-			auto end = triangulatablePoints2D[c].end();
-			for (int pt : matches2D[c])
-				end = std::remove(triangulatablePoints2D[c].begin(), end, pt);
-			triangulatablePoints2D[c].erase(end, triangulatablePoints2D[c].end());
+			std::sort(matches2D[c].begin(), matches2D[c].end());
+			std::sort(conflictedMatches2D[c].begin(), conflictedMatches2D[c].end());
+			auto triRemoveEnd = triangulatablePoints2D[c].end();
+			triRemoveEnd = remove_sorted(
+				triangulatablePoints2D[c].begin(), triRemoveEnd,
+				matches2D[c].begin(), matches2D[c].end()
+			);
+			triRemoveEnd = remove_sorted(
+				triangulatablePoints2D[c].begin(), triRemoveEnd,
+				conflictedMatches2D[c].begin(), conflictedMatches2D[c].end()
+			);
+			triangulatablePoints2D[c].erase(triRemoveEnd, triangulatablePoints2D[c].end());
+			// triangulatablePoints2D[c] remains sorted, though it's not required to be
 		}
 
 		// Remove lost TransientMarkers
@@ -856,7 +880,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		Eigen::Vector3f pos = marker.filter.state.position().cast<float>();
 		Eigen::Matrix3f cov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
 		float uncertainty3D = cov.determinant();
-		float confidence = getTriConfidence(marker.samples, 0);
+		float confidence = getTriConfidence(marker.samples-marker.uncertain, marker.uncertain);
 
 		LOG(LTriangulation, LTrace, "    -> Tracked marker of size %.3fmm with %d samples (confidence %.1f), %.2fmm 3D uncertainty and %.2fpx reprojection RMSE",
 			marker.marker.size*1000, marker.samples, confidence, uncertainty3D*1000, marker.error2D*PixelFactor);

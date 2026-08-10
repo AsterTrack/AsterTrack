@@ -136,7 +136,7 @@ bool ServerInit(ServerState &state)
 
 				// Setup to very quick tracking verification by default
 				state.pipeline.params.detect.useAsyncDetection = false;
-				state.simAdvanceQuickly = true;
+				state.simTiming = ServerState::ADV_QUICKLY;
 
 				// Optionally, for detailed regression tests & comparision of logs
 				state.pipeline.params.track.maxParallelism = 1;

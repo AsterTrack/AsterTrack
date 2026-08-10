@@ -39,9 +39,10 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 {
 	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot, params.filter.noisePos, params.filter.noiseRot);
 
-	if (dtMS(filter.time, time) > 0.01f)
+	double timestep = dtS(filter.time, time);
+	if (timestep > 0.00001)
 	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(filter.state, model, dtS(filter.time, time));
+		flexkalman::predict(filter.state, model, timestep);
 		filter.time = time;
 		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	}
@@ -133,9 +134,11 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 {
 	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot, params.filter.noisePos, params.filter.noiseRot);
 
-	if (dtMS(filter.time, time) > 0.01f)
+	float timestep = dtS(filter.time, time);
+	if (timestep > 0.00001)
 	{ // Predict new state if not done already using IMU samples
-		flexkalman::predict(filter.state, model, dtS(filter.time, time));
+		if (timestep > 0.05) LOG(LTracking, LWarn, "Timestep for target was %.1fms", timestep*1000.0f);
+		flexkalman::predict(filter.state, model, timestep);
 		filter.time = time;
 		obs.ext.extrapolated = filter.state.getIsometry().cast<float>();
 	}
@@ -300,9 +303,11 @@ void trackMarker(std::list<TransientMarker> &markers,
 	{
 		m++;
 
-		if (dtMS(marker.filter.time, time) > 0.01f)
-		{ // Predict new state if not done already using IMU samples
-			flexkalman::predict(marker.filter.state, model, dtS(marker.filter.time, time));
+		double timestep = dtS(marker.filter.time, time);
+		if (timestep > 0.00001)
+		{  // Predict new state if not done already
+			if (timestep > 0.05) LOG(LTracking, LWarn, "Timestep for marker was %.1fms", timestep*1000.0f);
+			flexkalman::predict(marker.filter.state, model, timestep);
 			marker.filter.time = time;
 		}
 
@@ -603,7 +608,9 @@ bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObser
 
 	{ // Extrapolate without IMU samples for debug purposes
 		auto filterState = filter.state;
-		flexkalman::predict(filterState, model, dtS(filter.time, time));
+		double timestep = dtS(filter.time, time);
+		if (timestep > 0.05f) LOG(LTracking, LWarn, "Timestep for IMU was %.1fms", timestep*1000.0f);
+		flexkalman::predict(filterState, model, timestep);
 		obs.ext.extrapolated = filterState.getIsometry().cast<float>();
 	}
 

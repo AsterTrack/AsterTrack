@@ -64,11 +64,22 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		{
 			ImGui::AlignTextToFramePadding();
 			if (state.mode == MODE_Replay)
-				ImGui::Text("Replaying Frame %" PRId64 " / %" PRIu64, GetState().pipeline.frameNum.load(), GetState().recording.frames);
+				ImGui::Text("Replaying Frame %" PRId64 " / %" PRIu64, GetState().pipeline.frameNum.load()+1, GetState().recording.frames);
 			else if (state.mode == MODE_Simulation)
 				ImGui::Text("Simulating Frame %" PRId64, GetState().pipeline.frameNum.load());
 			SameLineTrailing(SizeWidthDiv3().x);
-			ImGui::Checkbox("Quickly", &state.simAdvanceQuickly);
+
+			ImGui::BeginGroup();
+			if (state.simTiming < 0 || state.simTiming >= ServerState::ADV_MAX)
+				state.simTiming = ServerState::ADV_NORMAL;
+			const char *icon = std::array{ ICON_LA_ANGLE_RIGHT, ICON_LA_CARET_RIGHT, ICON_LA_ANGLE_DOUBLE_RIGHT }[state.simTiming];
+			const char *label = std::array{ "Normal", "Realtime", "Quickly" }[state.simTiming];
+			if (IconButton(icon))
+				state.simTiming = (ServerState::AdvanceTiming)((state.simTiming+1) % ServerState::ADV_MAX);
+			ImGui::SameLine();
+			ImGui::AlignTextToFramePadding();
+			ImGui::Text("%s", label);
+			ImGui::EndGroup();
 		}
 
 		{
@@ -553,7 +564,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (!frame) continue;
 				AdoptFrameRecordState(pipeline, *frame);
 				// Quickly advance through frame range
-				state.simAdvanceQuickly = true;
+				state.simTiming = ServerState::ADV_QUICKLY;
 				state.simAdvance = range.end-range.begin;
 				state.simAdvance.notify_all();
 				int count;

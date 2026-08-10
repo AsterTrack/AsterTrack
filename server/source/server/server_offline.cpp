@@ -418,7 +418,10 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 		{
 			frameRecord = std::make_shared<FrameRecord>();
 			frameRecord->num = frameRecord->ID = frame;
-			frameRecord->time = sclock::now();
+			if (frame == 0)
+				frameRecord->time = sclock::now();
+			else
+				frameRecord->time = pipeline.simulated.frames.getView().back()->time + std::chrono::microseconds(desiredFrameIntervalUS);
 			frameRecord->timeUTC = std::chrono::system_clock::now();
 			pipeline.curSimulated = GenerateSimulationData(pipeline, *frameRecord);
 			pipeline.simulated.frames.insert(frame, pipeline.curSimulated);
@@ -487,7 +490,6 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 					auto &nextRecord = framesStored[frame+1];
 					if (nextRecord)
 						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
-					// TODO: Set desired frame end time to better stick to frame time, otherwise replay quickly gets out of sync and VRPN clients will be unhappy due to apparent high latency
 				}
 
 				if (!state.keepUnmatchedObservations || !pipeline.simulation.contextualRLock()->replace.empty())
@@ -636,8 +638,27 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			{} // Advance freely, do nothing
 		}
 
-		if (!state.simAdvanceQuickly)
-			std::this_thread::sleep_until(frameReceiveTime + std::chrono::microseconds(desiredFrameIntervalUS));
+		// frameRecord->time may be in the past if processing struggles to keep up with realtime, and thus have odd frame pacing
+		// But that is desired for e.g. replay to not desync too much for external integration use
+		// But it also means Halting replay and then Continuing will make it race until it catches up again...
+		while (true)
+		{
+			TimePoint_t now = sclock::now(), tgtTime;
+			if (state.simTiming == ServerState::ADV_NORMAL) // This will focus on locally correct pacing
+				tgtTime = frameReceiveTime + std::chrono::microseconds(desiredFrameIntervalUS);
+			else if (state.simTiming == ServerState::ADV_REALTIME) // This will try to achive correct frame timing
+				tgtTime = frameRecord->time + std::chrono::microseconds(desiredFrameIntervalUS);
+			else if (state.simTiming == ServerState::ADV_QUICKLY) // This will advance as quickly as possible
+				break;
+			if (dtMS(now, tgtTime) > 200)
+			{ // Allow changing timing modes
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				continue;
+			}
+			if (now < tgtTime)
+				std::this_thread::sleep_until(tgtTime);
+			break;
+		}
 
 		// Waiting for processing of last frame to finish
 		//while (threadPool.n_idle() != threadPool.size())

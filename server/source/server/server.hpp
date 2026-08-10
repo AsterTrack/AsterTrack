@@ -107,7 +107,8 @@ struct ServerState
 	// Simulation/Replay control
 	std::atomic<int> simAdvance = { -1 };
 	std::atomic<bool> simWaiting = { false };
-	bool simAdvanceQuickly;
+	enum AdvanceTiming { ADV_NORMAL, ADV_REALTIME, ADV_QUICKLY, ADV_MAX };
+	AdvanceTiming simTiming;
 	// Dropout Simulation
 	std::atomic<int> simDropoutIndex = { -1 };
 	std::vector<float> simDropoutSeverity = { 1 };

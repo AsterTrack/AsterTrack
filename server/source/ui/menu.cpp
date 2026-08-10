@@ -265,7 +265,7 @@ void InterfaceState::UpdateMainMenuBar()
 
 				// Setup to very quick tracking verification by default
 				state.pipeline.params.detect.useAsyncDetection = false;
-				state.simAdvanceQuickly = true;
+				state.simTiming = ServerState::ADV_QUICKLY;
 
 				// Automatically start tracking
 				state.pipeline.phase = PHASE_Tracking;

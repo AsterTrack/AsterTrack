@@ -416,7 +416,7 @@ void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record,
 
 	// If configured, extrapolate filter (with or without additional inertial samples)
 	auto &params = state.pipeline.params.track;
-	if (output.config.extrapolateWithIMU || (output.config.extrapolateAlways && inertial))
+	if (inertial && (output.config.extrapolateWithIMU || output.config.extrapolateAlways))
 	{ // Extrapolate with any new IMU samples
 		data.processedTime = sclock::now();
 		// TODO: there may be none, and will still extrapolate to current time - not really intended

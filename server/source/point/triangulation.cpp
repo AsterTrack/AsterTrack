@@ -73,6 +73,33 @@ float getTriConfidence(int obsClean, int obsConflicted)
 	return obsClean*obsClean*2 + obsConflicted;
 }
 
+float calculate2DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size3D)
+{
+	return size3D * calib.f / (pos - calib.transform.translation().cast<float>()).norm();
+}
+
+float estimate3DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size2D)
+{
+	return size2D * calib.fInv * (pos - calib.transform.translation().cast<float>()).norm();
+}
+
+float estimate3DSize(const CameraCalib &calib, Eigen::Vector3f pos, Eigen::Vector2f raw2D, float size2D)
+{
+	// TODO: Even this 2D ellipse size handling is not entirely correct
+	// It doesn't account for the exact elliptical area
+	// It just takes the size perpendicular to the image center (which is usually the smallest)
+	// So it SHOULD overestimate size
+	// But it actually tends to underestimate still (perhaps due to flare in image), so whatever
+	// TODO: Let camera handle blob size with full access to blob shape and intrinsic calibration
+	Eigen::Vector2f offset = raw2D.normalized() * size2D;
+	Eigen::Vector2f ptF = undistortPoint<float>(calib, raw2D + offset);
+	Eigen::Vector2f ptN = undistortPoint<float>(calib, raw2D - offset);
+	Ray3f rayF = castRay<float>(ptF, calib);
+	Ray3f rayN = castRay<float>(ptN, calib);
+	float dist = (pos - calib.transform.translation().cast<float>()).norm();
+	return (rayF.dir - rayN.dir).norm() * dist / 2;
+}
+
 static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras, 
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D, const std::vector<std::vector<int> const *> &relevantPoints2D,
 	std::vector<TwoIntersection> &intersections, std::vector<std::vector<RayIxCnt>> &rayIxCnt, float maxError, float minError)

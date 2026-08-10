@@ -540,6 +540,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	// Aggregate points and camera calibrations
 	std::vector<CameraCalib> calibs(cameras.size());
+	std::vector<std::vector<Eigen::Vector2f> const *> rawPoints2D(cameras.size());
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(cameras.size());
 	std::vector<std::vector<int> const *> relevantPoints2D(calibs.size());
@@ -548,6 +549,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		calibs[c]= cameras[c]->calib;
+		rawPoints2D[c] = &frame->cameras[calibs[c].index].rawPoints2D;
 		points2D[c] = &frame->cameras[calibs[c].index].points2D;
 		properties[c] = &frame->cameras[calibs[c].index].properties;
 		relevantPoints2D[c] = &frame->remainingPoints2D[calibs[c].index];
@@ -815,19 +817,22 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			track.points3D.push_back(tri.pos);
 		}
 
-		// TODO: Approximate 3D size of each triangulated point
-		/* for (int p = 0; p < track.triangulations3D.size(); p++)
+		// Approximate 3D size of each triangulated point
+		for (auto &tri : track.triangulations3D)
 		{
-			TriangulatedPoint &tri = track.triangulations3D[p];
-			for (int c = 0; c < calibs.size(); c++)
+			tri.size = 0.0f;
+			for (auto &sample : tri.samples)
 			{
-				if (tri.blobs[c] == InvalidBlob) continue;
-				auto &record = *pipeline.currentFrame->cameras[calibs[c].index];
-				int i = tri.blobs[c];
-				// Properly infer 3D size here, accounting for distortion is harder
-				//tri.size += record.pointSizes[i];
+				float size2D = properties[sample.camera]->at(sample.blob).size;
+				Eigen::Vector2f rawPt = rawPoints2D[sample.camera]->at(sample.blob);
+				float size3D = estimate3DSize(calibs[sample.camera], tri.pos, rawPt, size2D);
+				//float size3D = estimate3DSizeSimple(calibs[sample.camera], tri.pos, size2D);
+				tri.size += size3D;
+				LOG(LTriangulation, LTrace, "        Cam %d estimated size is %.3fmm", sample.camera, size3D*1000);
 			}
-		} */
+			tri.size /= tri.samples.size();
+			LOG(LTriangulation, LTrace, "    -> Tri estimated size across %d samples is %.3fmm", (int)tri.samples.size(), tri.size*1000);
+		}
 
 		// Remap camera indices from current subset to all cameras for storage
 		for (auto &tri : track.triangulations3D)

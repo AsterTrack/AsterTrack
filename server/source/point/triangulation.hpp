@@ -61,6 +61,10 @@ typedef TriangulatedPoint_t<float> TriangulatedPoint;
 
 float getTriConfidence(int obsClean, int obsConflicted);
 
+float calculate2DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size3D);
+float estimate3DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size2D);
+float estimate3DSize(const CameraCalib &calib, Eigen::Vector3f pos, Eigen::Vector2f raw2D, float size2D);
+
 /**
  * Calculate triangulatedPoints as the intersection points between rays of each camera 
  * Calculates mean error of triangulated points to rays and confidence based on rays involved

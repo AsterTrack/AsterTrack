@@ -16,6 +16,12 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+// Compile Default even in Release builds
+#if !defined(LOG_MAX_LEVEL_DEFAULT) || LOG_MAX_LEVEL_DEFAULT > LDebug
+#undef LOG_MAX_LEVEL_DEFAULT
+#define LOG_MAX_LEVEL_DEFAULT LDebug
+#endif
+
 #include "pipeline.hpp"
 
 #include "target/tracking2D.hpp"
@@ -528,7 +534,7 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 
 void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets)
 {
-	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, det0, det1, det2, tpt0, tpt1;
+	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, tri4, det0, det1, det2, tpt0, tpt1;
 	start = pclock::now();
 
 	// Aggregate points and camera calibrations
@@ -551,9 +557,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	auto &track = pipeline.tracking;
 	int camCount = pipeline.cameras.size();
-	std::vector<int> triIndices;
+	std::vector<int> remainingPoints3D;
 
-	auto occupyTargetMatches = [&](const TargetMatch2D &targetMatch2D)
+	auto occupyTargetMatches2D = [&](const TargetMatch2D &targetMatch2D)
 	{
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -566,8 +572,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				return false;
 			}), remainingPoints2D[c].end());
 		}
-		// Find and efficiently remove triangulated points if they are occupied
-		triIndices.erase(std::remove_if(triIndices.begin(), triIndices.end(), [&](int p)
+	};
+
+	auto occupyTargetMatches3D = [&](const TargetMatch2D &targetMatch2D)
+	{ // Find and efficiently remove triangulated points if they are occupied
+		remainingPoints3D.erase(std::remove_if(remainingPoints3D.begin(), remainingPoints3D.end(), [&](int p)
 		{
 			auto &tri = track.triangulations3D[p];
 			for (auto &sample : tri.samples)
@@ -578,7 +587,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						return true;
 			}
 			return false;
-		}), triIndices.end());	
+		}), remainingPoints3D.end());	
+	};
+
+	auto occupyTargetCandidate3D = [&](const TargetCandidate3D &candidate)
+	{ // Find and efficiently remove triangulated points if they are occupied
+		remainingPoints3D.erase(std::remove_if(remainingPoints3D.begin(), remainingPoints3D.end(), [&](int p)
+		{
+			return std::find(candidate.points.begin(), candidate.points.end(), p) != candidate.points.end();
+		}), remainingPoints3D.end());	
 	};
 
 	{ // Integrate orphaned IMU up until recent frame
@@ -637,10 +654,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		}
 
 		auto occupiedMarkers = getMarkerMatchesFromTrackers(frame);
-		for (int t = 0; t < track.trackedTargets.size(); t++)
+		int t = 0;
+		for (auto &tracker : track.trackedTargets)
 		{
-			auto &tracker = *std::next(track.trackedTargets.begin(), t);
-			auto &record = frame->trackers[t];
+			auto &record = frame->trackers[t++];
 
 			// Update mistrust rating of tracker based on matched points
 			auto &mistrust = pipeline.params.track.mistrust;
@@ -656,7 +673,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					record.id, tracker.label.c_str(), record.error.samples, record.error.mean*PixelFactor);
 
 				// Occupy all 2D points of tracked target
-				occupyTargetMatches(*record.match2D);
+				occupyTargetMatches2D(*record.match2D);
 				recordTrackingTargetData(pipeline, record.id, *record.match2D, tracker.target.calib, frame);
 
 				/* if (targetMatch2D.error.mean*PixelFactor > 0.5 && IsDebugging())
@@ -770,23 +787,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		tpt1 = pclock::now();
 	} */
 
-	std::vector<TriCluster3D> clustersTri3D;
-	std::vector<Cluster3DStats> trackedClustersTri3D;
-
-	const auto &detect = pipeline.params.detect;
-	const auto &clustering = pipeline.params.cluster;
-
 	{ // Triangulate unoccupied 2D points
-
-		// Clear past frames' triangulations
-		track.triangulations3D.clear();
-		track.points3D.clear();
-
 		auto &params = pipeline.params.tri;
 
 		tri0 = pclock::now();
 
 		// Find potential point correspondences as TriangulatedPoints
+		track.triangulations3D.clear();
 		triangulateRayIntersections(calibs, points2D, remainingPoints2D, track.triangulations3D,
 			params.maxIntersectError, params.minIntersectError);
 
@@ -800,83 +807,94 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		tri2 = pclock::now();
 
-		// Refine point positions
-		track.points3D.reserve(track.triangulations3D.size());
+		// Refine triangulation
 		for (auto &tri : track.triangulations3D)
-		{
 			refineTriangulationIterative<float>(points2D, calibs, tri, params.refineIterations);
-			track.points3D.push_back(tri.pos);
-		}
-
-		// Approximate 3D size of each triangulated point
-		for (auto &tri : track.triangulations3D)
-		{
-			tri.size = 0.0f;
-			for (auto &sample : tri.samples)
-			{
-				float size2D = properties[sample.camera]->at(sample.blob).size;
-				Eigen::Vector2f rawPt = rawPoints2D[sample.camera]->at(sample.blob);
-				float size3D = estimate3DSize(calibs[sample.camera], tri.pos, rawPt, size2D);
-				//float size3D = estimate3DSizeSimple(calibs[sample.camera], tri.pos, size2D);
-				tri.size += size3D;
-				LOG(LTriangulation, LTrace, "        Cam %d estimated size is %.3fmm", sample.camera, size3D*1000);
-			}
-			tri.size /= tri.samples.size();
-			LOG(LTriangulation, LTrace, "    -> Tri estimated size across %d samples is %.3fmm", (int)tri.samples.size(), tri.size*1000);
-		}
-
-		// Remap camera indices from current subset to all cameras for storage
-		for (auto &tri : track.triangulations3D)
-			for (auto &sample : tri.samples)
-				sample.camera = calibs[sample.camera].index;
-
-		if (pipeline.isSimulationMode && pipeline.curSimulated && SHOULD_LOG(LTriangulation, LTrace))
-		{
-			for (int p = 0; p < track.points3D.size(); p++)
-			{
-				Eigen::Vector3f tri = track.points3D[p];
-				float bestDist = std::numeric_limits<float>::max();
-				int bestIndex = -1;
-				for (int g = 0; g < pipeline.curSimulated->triangulations.size(); g++)
-				{
-					auto gtTri = pipeline.curSimulated->triangulations[g];
-					float dist = (tri - gtTri.pos).squaredNorm();
-					if (dist < bestDist)
-					{
-						bestIndex = g;
-						bestDist = dist;
-					}
-				}
-
-				if (bestIndex >= 0)
-				{
-					LOG(LTriangulation, LTrace, "        Tri %d had closest GT tri %d with distance of %fmm\n",
-						p, bestIndex, std::sqrt(bestDist)*1000);
-				}
-			}
-		}
 
 		tri3 = pclock::now();
+	}
+
+	// Compile markers into unified format
+	std::vector<Eigen::Vector3f> points3D;
+	points3D.reserve(track.triangulations3D.size());
+
+	for (auto &tri : track.triangulations3D)
+	{
+		// Estimate size
+		tri.size = 0.0f;
+		for (auto &sample : tri.samples)
+		{
+			float size2D = properties[sample.camera]->at(sample.blob).size;
+			Eigen::Vector2f rawPt = rawPoints2D[sample.camera]->at(sample.blob);
+			float size3D = estimate3DSize(calibs[sample.camera], tri.pos, rawPt, size2D);
+			//float size3D = estimate3DSizeSimple(calibs[sample.camera], tri.pos, size2D);
+			tri.size += size3D;
+			LOG(LTriangulation, LTrace, "        Cam %d estimated size is %.3fmm", sample.camera, size3D*1000);
+		}
+		tri.size /= tri.samples.size();
+
+		// Remap camera indices from current subset to all cameras for storage
+		for (auto &sample : tri.samples)
+			sample.camera = calibs[sample.camera].index;
+
+		points3D.emplace_back(tri.pos);
+	}
+
+	const auto &clustering = pipeline.params.cluster;
+
+	std::vector<TriCluster3D> clustersTri3D;
+	std::vector<Cluster3DStats> trackedClustersTri3D;
+	{ // 3D Marker Clustering
+
+		// Fill point 3D index list to pass to functions
+		remainingPoints3D.resize(points3D.size());
+		std::iota(remainingPoints3D.begin(), remainingPoints3D.end(), 0);
 
 		// Clustering triangulated points
-		clustersTri3D = dbscan<3,float, int>(track.points3D, clustering.tri3DCluster.maxDistance, clustering.tri3DCluster.minPoints);
+		clustersTri3D = dbscan<3,float, int>(points3D, clustering.tri3DCluster.maxDistance, clustering.tri3DCluster.minPoints);
 		trackedClustersTri3D.reserve(clustersTri3D.size());
 		for (auto &cluster : clustersTri3D)
-			trackedClustersTri3D.emplace_back(calculateClusterStats3D(cluster, track.points3D));
+			trackedClustersTri3D.emplace_back(calculateClusterStats3D(cluster, points3D));
 		// TODO: Use for target detection in 3D point cloud
 		// TODO: Track clusters in 3D (2/5) and use for cycling through detections to spread across frames
 		// TODO: Triangulated clusters2D (clusters2DTri) will likely be a superset of this, merge somehow?
 
-		LOG(LTracking, LDebug, "Grouped %d 3D points into %d clusters!", (int)track.points3D.size(), (int)clustersTri3D.size());
+		LOG(LTracking, LDebug, "Grouped %d 3D markers into %d clusters!", (int)points3D.size(), (int)clustersTri3D.size());
 		for (auto &cluster : clustersTri3D)
 			LOG(LTracking, LDebug, "    Cluster has %d 3D points!", (int)cluster.size());
+	}
 
-		// Fill triangulated point list to pass to functions
-		triIndices.resize(track.triangulations3D.size());
-		std::iota(triIndices.begin(), triIndices.end(), 0);
+	tri4 = pclock::now();
+
+	if (pipeline.isSimulationMode && pipeline.curSimulated && SHOULD_LOG(LTriangulation, LTrace))
+	{
+		for (int p = 0; p < points3D.size(); p++)
+		{
+			Eigen::Vector3f tri = points3D[p];
+			float bestDist = std::numeric_limits<float>::max();
+			int bestIndex = -1;
+			for (int g = 0; g < pipeline.curSimulated->triangulations.size(); g++)
+			{
+				auto gtTri = pipeline.curSimulated->triangulations[g];
+				float dist = (tri - gtTri.pos).squaredNorm();
+				if (dist < bestDist)
+				{
+					bestIndex = g;
+					bestDist = dist;
+				}
+			}
+
+			if (bestIndex >= 0)
+			{
+				LOG(LTriangulation, LTrace, "        Tri %d had closest GT tri %d with distance of %fmm\n",
+					p, bestIndex, std::sqrt(bestDist)*1000);
+			}
+		}
 	}
 
 	det0 = pclock::now();
+
+	const auto &detect = pipeline.params.detect;
 
 	if (trackTargets && pipeline.tracking.triangulations3D.size() >= detect.tri.minPointCount && !detect.suspendDetections)
 	{ // Target detection in 3D point cloud
@@ -896,7 +914,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			// Detect target in remaining 3D point cloud
 			TargetCandidate3D candidate = detectTarget3D(dormant.target.calib,
-				pipeline.tracking.triangulations3D, triIndices,
+				pipeline.tracking.triangulations3D, remainingPoints3D,
 				detect.tri.sigmaError, detect.tri.poseSigmaError, detect.tri.quickAssignTargetMatches);
 
 			bool acceptCandidate = candidate.points.size() >= detect.tri.minPointCount && candidate.MSE < detect.tri.maxErrorRMSE*detect.tri.maxErrorRMSE;
@@ -930,7 +948,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						match2D->error.samples, match2D->error.mean*PixelFactor);
 
 					// Occupy points matched to target
-					occupyTargetMatches(*match2D);
+					occupyTargetCandidate3D(candidate);
+					//occupyTargetMatches3D(*match2D); // Above should do about the same but faster
+					occupyTargetMatches2D(*match2D);
 
 					// Create tracked target
 					TrackedTarget tracker(std::move(dormant), match2D->pose, frame->time, frame->num, pipeline.params.track);
@@ -1172,9 +1192,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					"    Detected target using search in frame %" PRIu64 " (now %" PRId64 ") with %d 2D points and %fpx mean error!\n",
 						frame->num, pipeline.frameNum.load(), match2D->error.samples, match2D->error.mean*PixelFactor);
 
-					// Occupy points matched to target
-					occupyTargetMatches(*match2D);
-
 					// Create tracked target
 					TrackedTarget tracker(std::move(dormant), match2D->pose, frame->time, frame->num, pipeline.params.track);
 
@@ -1242,14 +1259,20 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	{ // Log timing
 		float frameTime = dtMS(start, pclock::now());
 		static float accumFrameTime = 0.0f;
-		static int accumCount = 0;
+		static OptFrameNum lastFrame = -1, frameCount = 0;
+		if (frame->num < lastFrame)
+		{
+			accumFrameTime = 0;
+			frameCount = 0;
+		}
+		lastFrame = frame->num;
 		accumFrameTime += frameTime;
-		accumCount++;
-		LOG(LPipeline, LDebug, "Tracking took %.3fms - average after %d cycles %f\n", frameTime, accumCount, accumFrameTime/accumCount);
-		LOG(LPipeline, LDebug, "Target Tracking %.3fms; Triangulation %f ms; Target Detection 3D %.3fms; Target Detection 2D %.3fms; Marker Tracking %.3fms\n",
-			dtMS(trk0, trk1), dtMS(tri0, tri3), dtMS(det0, det1), dtMS(det1, det2), dtMS(tpt0, tpt1));
-		LOG(LPipeline, LDebug, "Triangulation split up: Ray Intersection %.3fms; Filtering %.3fms; Refinement %.3fms\n",
-			dtMS(tri0, tri1), dtMS(tri1, tri2), dtMS(tri2, tri3));
+		frameCount++;
+		LOG(LPipeline, LDebug, "Tracking took %.3fms - average after %" PRId64 " cycles %f\n", frameTime, frameCount, accumFrameTime/frameCount);
+		LOG(LPipeline, LDebug, "Targets %.3fms; Markers %.3fms; Points %f ms; Target Detection 3D %.3fms; Target Detection 2D %.3fms\n",
+			dtMS(trk0, trk1), dtMS(tpt0, tpt1), dtMS(tri0, tri4), dtMS(det0, det1), dtMS(det1, det2));
+		LOG(LPipeline, LDebug, "Points split up: Triangulation %.3fms; Resolution %.3fms; Refinement %.3fms; Clustering %.3fms;\n",
+			dtMS(tri0, tri1), dtMS(tri1, tri2), dtMS(tri2, tri3), dtMS(tri3, tri4));
 	}
 }
 

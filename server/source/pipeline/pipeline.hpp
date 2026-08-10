@@ -150,7 +150,6 @@ struct PipelineState
 	struct
 	{
 		// Currently triangulated points
-		std::vector<Eigen::Vector3f> points3D; // points of triangulations3D
 		std::vector<TriangulatedPoint> triangulations3D;
 		// Trackers (dormant & tracked)
 		std::list<TrackedTarget> trackedTargets;

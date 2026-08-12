@@ -340,6 +340,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				debugVis.internalData.init(cameraCount);
 				auto calibs = pipeline.getCalibs();
 				calibs.resize(cameraCount);
+				debugVis.targetMatch2D = {};
 				trackTarget2D(pipeline.params.track, trackConfig->calib,
 					trackRecord->ext->predicted, trackRecord->ext->predictedCov,
 					calibs, cameraCount, points2D, properties, relevantPoints2D,

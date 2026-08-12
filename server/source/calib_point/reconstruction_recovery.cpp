@@ -290,6 +290,12 @@ float determineRank4Basis(
 
 	std::vector<Eigen::MatrixXd> partN;
 
+	std::vector<int> selectablePoints;
+	selectablePoints.reserve(pointCount);
+	for (int p = 0; p < pointCount; p++)
+		if (!projectiveDepthMissing.col(p).all())
+			selectablePoints.push_back(p);
+
 #define PARALLEL
 #ifdef PARALLEL
 	std::atomic<int> totalPartN = 0, totalColsN = 0;
@@ -297,7 +303,7 @@ float determineRank4Basis(
 	#pragma omp parallel num_threads(params.basis.maxParallelism)
 #endif
 	{
-	std::vector<int> selectablePoints;
+	std::vector<int> selPoints;
 	VectorX<BOOL> selectedViews = VectorX<BOOL>::Ones(viewCount);
 
 #ifdef PARALLEL
@@ -321,9 +327,8 @@ float determineRank4Basis(
 #endif
 
 		// Prepare selection buffers
-		selectablePoints.resize(pointCount);
-		std::iota(selectablePoints.begin(), selectablePoints.end(), 0);
-		// TODO: Only select points whose projective depths are even initialised (not set in projDepthsUninitialised)
+		selPoints.resize(pointCount);
+		std::copy(selectablePoints.begin(), selectablePoints.end(), selPoints.begin());
 		selectedViews.setOnes();
 
 		int indices[4];
@@ -331,19 +336,17 @@ float determineRank4Basis(
 		for (int i = 0; i < 4; i++)
 		{
 			good = false;
-			for (int k = 0; k < 10 && !selectablePoints.empty() && !good; k++)
+			for (int k = 0; k < 10 && !selPoints.empty() && !good; k++)
 			{ // Find next column that results in a useable tuple
-				indices[i] = selectablePoints[rand() % selectablePoints.size()];
-				auto selectableEnd = remove_swap(selectablePoints.begin(), selectablePoints.end(), indices[i]);
-				selectablePoints.erase(selectableEnd, selectablePoints.end());
+				auto pt = selPoints.begin() + (rand() % selPoints.size());
+				indices[i] = *pt;
+				selPoints.erase(remove_swap(selPoints.begin(), selPoints.end(), pt), selPoints.end());
 				// Determine if its a good pick
 				auto sharedViews = selectedViews.array() * (1 - observationDataMissing.col(indices[i]).array());
 				if (sharedViews.sum() < 2) continue;
 				// Found next column
 				good = true;
 				selectedViews = sharedViews;
-				//auto selectableEnd = std::remove_if(selectablePoints.begin(), selectableEnd, [&](auto &col){ return false; });
-				//selectablePoints.erase(selectableEnd, selectablePoints.end());
 			}
 			if (!good) break;
 		}

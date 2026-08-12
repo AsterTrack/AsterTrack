@@ -830,12 +830,9 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 	thread_local std::vector<std::vector<Eigen::Vector2f>> projected2D;
 	thread_local std::vector<std::vector<int>> relevantProjected2D;
 	thread_local std::vector<std::vector<int>> closePoints2D;
-	if (projected2D.size() < calibs.size())
-		projected2D.resize(calibs.size());
-	if (relevantProjected2D.size() < calibs.size())
-		relevantProjected2D.resize(calibs.size());
-	if (closePoints2D.size() < calibs.size())
-		closePoints2D.resize(calibs.size());
+	preallocConservative(projected2D, calibs.size());
+	preallocConservative(relevantProjected2D, calibs.size());
+	preallocConservative(closePoints2D, calibs.size());
 
 	// Clear internal data for visualisation purposes (low overhead)
 	internalData.init(cameraCount);

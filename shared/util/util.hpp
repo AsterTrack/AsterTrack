@@ -219,26 +219,78 @@ inline void printBuffer(std::stringstream &ss, const uint8_t *buffer, int size)
 
 /* More performant remove when relative order does not matter */
 
-template<class ForwardIt, class T = typename std::iterator_traits<ForwardIt>::value_type>
-ForwardIt remove_swap(ForwardIt first, ForwardIt last, const T& value)
+/* Removes iterator by swapping to the end. Does not retain order like std::remove does. */
+template<class It, class T = typename std::iterator_traits<It>::value_type>
+static inline It remove_swap(It begin, It end, It it)
 {
-    first = std::find(first, last, value);
-    if (first == last) return first;
-	std::advance(last, -1);
-	if (first != last)
-		std::swap(*first, *last);
-	return last;
+	if (it == end) return it;
+	std::advance(end, -1);
+	if (it != end)
+		std::swap(*it, *end);
+	return end;
 }
 
-template<class ForwardIt, class UnaryPred>
-ForwardIt remove_swap_if(ForwardIt first, ForwardIt last, UnaryPred p)
+/* Removes any occurence of value by swapping to the end. Does not retain order like std::remove does. */
+template<class It, class T = typename std::iterator_traits<It>::value_type>
+static inline It remove_swap(It begin, It end, const T& value)
 {
-    first = std::find_if(first, last, p);
-    if (first == last) return first;
-	std::advance(last, -1);
-	if (first != last)
-		std::swap(*first, *last);
-	return last;
+	auto it = begin;
+	while ((it = std::find(it, end, value)) != end)
+		end = remove_swap(begin, end, it);
+	return end;
+}
+
+/* Removes any element evaluating to true by swapping to the end. Does not retain order like std::remove_if does. */
+template<class It, class UnaryPred>
+static inline It remove_swap_if(It begin, It end, UnaryPred p)
+{
+	auto it = begin;
+	while ((it = std::find_if(it, end, p)) != end)
+		end = remove_swap(begin, end, it);
+	return end;
+}
+
+/**
+ * Remove elements of a sorted container from an equally sorted main container.
+ * Uses std::remove_if to retain order of main container.
+ */
+template<class It>
+static inline It remove_sorted(It begin, It end, It removeBegin, It removeEnd)
+{
+	return std::remove_if(begin, end, [&](auto val) -> bool {
+		while  (removeBegin != removeEnd && *removeBegin < val) ++removeBegin;
+		return (removeBegin != removeEnd && *removeBegin == val);
+	});
+}
+
+
+/* Management of multi-dimensional preallocations */
+
+/**
+ * Ensure sufficient allocation for multi-dimensional container without deallocating any prior allocations.
+ * Optionally clears container of last dimension.
+ */
+template<bool ClearLastDim = false, typename Container>
+static inline void preallocConservative(Container &container, std::size_t size)
+{
+	if (container.size() < size)
+		container.resize(size);
+	if constexpr (!ClearLastDim) return;
+	for (std::size_t i = 0; i < size; i++)
+		container[i].clear();
+}
+
+/**
+ * Ensure sufficient allocation for multi-dimensional container without deallocating any prior allocations.
+ * Optionally clears container of last dimension.
+ */
+template<bool ClearLastDim = false, typename Container, typename... SizeArgs>
+static inline void preallocConservative(Container &container, std::size_t size1, SizeArgs... sizes)
+{
+	if (container.size() < size1)
+		container.resize(size1);
+	for (std::size_t i = 0; i < size1; i++)
+		preallocConservative<ClearLastDim>(container[i], sizes...);
 }
 
 #endif // UTIL_H

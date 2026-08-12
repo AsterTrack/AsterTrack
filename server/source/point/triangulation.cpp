@@ -108,10 +108,8 @@ static void findInitialRayIntersections(const std::vector<CameraCalib> &cameras,
 
 	// Prepare allocated memory, cast rays
 	thread_local std::vector<std::vector<Ray3f>> rayGroups;
-	if (rayGroups.size() < camCount)
-		rayGroups.resize(camCount);
-	if (rayIxCnt.size() < camCount)
-		rayIxCnt.resize(camCount);
+	preallocConservative(rayGroups, camCount);
+	preallocConservative(rayIxCnt, camCount);
 	for (int c = 0; c < camCount; c++)
 	{
 		rayIxCnt[c].clear();

@@ -106,10 +106,8 @@ TargetMatch2D probeTarget2D(std::stop_token stopToken, const TargetCalibration3D
 		// Reused allocation of target point reprojections
 		thread_local std::vector<std::vector<Eigen::Vector2f>> projected2D;
 		thread_local std::vector<std::vector<int>> relevantProjected2D;
-		if (projected2D.size() < points2D.size())
-			projected2D.resize(points2D.size());
-		if (relevantProjected2D.size() < points2D.size())
-			relevantProjected2D.resize(points2D.size());
+		preallocConservative(projected2D, calibs.size());
+		preallocConservative(relevantProjected2D, calibs.size());
 
 		for (int c = 0; c < calibs.size(); c++)
 		{

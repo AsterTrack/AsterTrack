@@ -15,6 +15,8 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
+//#define LOG_MAX_LEVEL LTrace
+
 #include "target/tracking2D.hpp"
 
 #include "target/parameters.hpp"
@@ -808,6 +810,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int>> &relevantPoints2D,
+	std::vector<std::vector<int>> &conflictedMatches2D,
 	TargetMatch2D &targetMatch2D, TargetTracking2DData &internalData)
 {
 	ScopedLogCategory scopedLogCategory(LTracking);
@@ -965,7 +968,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 		return true;
 	};
 
-	auto updateCameraMatches = [&](int c, std::vector<std::pair<int, int>> matches)
+	auto updateCameraMatches = [&](int c, std::vector<std::pair<int, int>> &matches)
 	{
 		int camera = calibs[c].index;
 		auto &cameraMatches = targetMatch2D.points2D[camera];
@@ -1179,12 +1182,28 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 	{
 		if (!canUpdateCameraMatches(c) && checkDiscardCameraMatches(c)) continue;
 
+		auto &matchData = internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Final fast match");
 		matchTargetPointsFast(*points2D[c], *properties[c], closePoints2D[c],
 			projected2D[c], relevantProjected2D[c], matches,
-			internalData.nextMatchingStage(calibs[c].index, targetMatch2D.pose, "Final fast match"),
-			params.matchFastFinal, paramScale[c]);
+			matchData, params.matchFastFinal, paramScale[c]);
 
 		updateCameraMatches(c, matches);
+
+		if (c >= conflictedMatches2D.size())
+			continue; // No need to record conflicted points
+
+		for (int m = 0; m < matchData.markerCount; m++)
+		{
+			auto &mk = matchData.markers[m];
+			if (mk.matches.empty()) continue;
+			if (mk.matches.front().accepted) continue;
+			if (mk.matches.front().distSq > params.matchFastFinal.matchRadius*params.matchFastFinal.matchRadius) continue;
+			// Had a good match candidate but did not end up matching
+			// There is a chance another marker had competitive advantage over the match
+			// But most likely this is a merged blob and it wasn't matched to anything
+			// Either way, it should be marked as used anyway, it should not be used for anything beyond target tracking
+			conflictedMatches2D[c].push_back(mk.matches.front().index);
+		}
 	}
 
 	if (targetMatch2D.count() != 0)// && !nothingNew)

@@ -347,6 +347,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 	TargetMatchingData matchData = {};
 	TargetTracking2DData trackData = {};
 	trackData.init(cameraCount);
+	std::vector<std::vector<int>> conflictedMatches2D; // Unused
 	int i = 0;
 	for (const Eigen::Isometry3f &pose : candidates)
 	{
@@ -400,7 +401,7 @@ TargetMatch2D searchTarget2D(std::stop_token stopToken, const TargetCalibration3
 		trackTarget2D(track, target3D,
 			targetMatch2D.pose, detectCov,
 			calibs, cameraCount, points2D, properties, relevantPoints2D,
-			targetMatch2D, trackData);
+			conflictedMatches2D, targetMatch2D, trackData);
 
 		if (bestMatch.error.mean/bestMatch.error.samples > targetMatch2D.error.mean/targetMatch2D.error.samples)
 		{

@@ -179,6 +179,7 @@ void trackTarget2D(const TargetTrackingParameters &params, const TargetCalibrati
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int>> &relevantPoints2D,
+	std::vector<std::vector<int>> &conflictedMatches2D,
 	TargetMatch2D &targetMatch2D, TargetTracking2DData &internalData);
 
 #endif // TARGET_TRACKING_2D_H

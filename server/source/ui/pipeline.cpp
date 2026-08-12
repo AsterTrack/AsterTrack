@@ -396,10 +396,11 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				auto calibs = pipeline.getCalibs();
 				calibs.resize(cameraCount);
 				debugVis.targetMatch2D = {};
+				std::vector<std::vector<int>> conflictedMatches2D; // Unused
 				trackTarget2D(pipeline.params.track, trackConfig->calib,
 					trackRecord->ext->predicted, trackRecord->ext->predictedCov,
 					calibs, cameraCount, points2D, properties, remainingPoints2D,
-					debugVis.targetMatch2D, debugVis.internalData);
+					conflictedMatches2D, debugVis.targetMatch2D, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
 				debugVis.trackerID = visState.tracker.focusedID;
 				debugVis.calib = &trackConfig->calib;

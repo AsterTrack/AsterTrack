@@ -126,6 +126,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 }
 
 TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs, TargetMatch2D &match2D,
+	std::vector<std::vector<int>> &conflictedMatches2D,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -153,7 +154,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	trackTarget2D(params, target.calib,
 		obs.ext.predicted, obs.ext.predictedCov,
 		calibs, cameraCount, points2D, properties, relevantPoints2D,
-		match2D, target.data);
+		conflictedMatches2D, match2D, target.data);
 	int pointCount = match2D.count();
 	if (pointCount != match2D.error.samples)
 	{

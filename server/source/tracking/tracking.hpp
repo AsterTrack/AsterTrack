@@ -415,6 +415,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params);
 
 TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, TrackerObservation &obs, TargetMatch2D &match2D,
+	std::vector<std::vector<int>> &conflictedMatches2D,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

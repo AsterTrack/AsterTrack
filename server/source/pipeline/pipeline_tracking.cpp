@@ -269,8 +269,9 @@ static TrackerRecord retroactivelyTrackFrame(PipelineState &pipeline, TrackedTar
 		integrateIMU(tracker.filter, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
 	TimePoint_t start = sclock::now();
+	std::vector<std::vector<int>> conflictedMatches2D; // Unused
 	record.result = trackTarget(tracker.filter, tracker.target, tracker.obs, *record.match2D,
-		calibs, points2D, properties, frame->remainingPoints2D,
+		conflictedMatches2D, calibs, points2D, properties, frame->remainingPoints2D,
 		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.track);
 	record.procTimeMS = dtMS(start, sclock::now());
 
@@ -700,6 +701,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		assert(frame->trackers.empty());
 		frame->trackers.resize(track.trackedTargets.size());
 
+		// Preallocate conflictedMatches for all trackers
+		static std::vector<std::vector<std::vector<int>>> conflictedMatches2D;
+		preallocConservative<true>(conflictedMatches2D, track.trackedTargets.size(), calibs.size());
+
 	#pragma omp parallel for schedule(dynamic) num_threads(std::min<int>(track.trackedTargets.size(), pipeline.params.track.maxParallelism))
 		for (int t = 0; t < track.trackedTargets.size(); t++)
 		{
@@ -721,7 +726,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 			TimePoint_t start = sclock::now();
 			record.result = trackTarget(tracker.filter, tracker.target, tracker.obs, *record.match2D,
-				calibs, points2D, properties, remainingPoints2D,
+				conflictedMatches2D[t], calibs, points2D, properties, remainingPoints2D,
 				frame->time, frame->num, camCount, pipeline.params.track);
 			record.procTimeMS = dtMS(start, sclock::now());
 
@@ -738,7 +743,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		int t = 0;
 		for (auto &tracker : track.trackedTargets)
 		{
-			auto &record = frame->trackers[t++];
+			auto &record = frame->trackers[t];
+			auto &conflicts = conflictedMatches2D[t];
+			t++;
 
 			// Update mistrust rating of tracker based on matched points
 			auto &mistrust = pipeline.params.track.mistrust;
@@ -755,6 +762,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 				// Occupy all 2D points of tracked target
 				occupyTargetMatches2D(*record.match2D);
+				occupyConflictedMatches2D(conflicts);
 				recordTrackingTargetData(pipeline, record.id, *record.match2D, tracker.target.calib, frame);
 
 				/* if (targetMatch2D.error.mean*PixelFactor > 0.5 && IsDebugging())
@@ -1181,10 +1189,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				// TODO: Consider lower (numeric?) covariance - 3D point detection is accurate enough to not need thiss
 				CovarianceMatrix covariance = pipeline.params.track.filter.getSyntheticCovariance<float>() * detect.tri.covSigma;
 				auto match2D = ptr::make_value<TargetMatch2D>();
+				std::vector<std::vector<int>> conflictedMatches2D(calibs.size());
 				trackTarget2D(pipeline.params.track, dormant.target.calib,
 					candidate.pose, covariance,
 					calibs, camCount, points2D, properties, remainingPoints2D,
-					*match2D, dormant.target.data);
+					conflictedMatches2D, *match2D, dormant.target.data);
 
 				float procTimeMS = dtMS(start, sclock::now());
 				acceptCandidate = match2D->error.samples >= pipeline.params.track.quality.minTotalObs
@@ -1208,6 +1217,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					occupyTargetCandidate3D(candidate);
 					//occupyTargetMatches3D(*match2D); // Above should do about the same but faster
 					occupyTargetMatches2D(*match2D);
+					occupyConflictedMatches2D(conflictedMatches2D);
 
 					// Create tracked target
 					TrackedTarget tracker(std::move(dormant), match2D->pose, frame->time, frame->num, pipeline.params.track);

@@ -171,8 +171,8 @@ TrackingResult processVirtualTracker(TrackerFilter &filter, TrackerVirtual &virt
 		filter.state.position() = center.cast<double>();
 		filter.state.setQuaternion(quat.cast<double>());
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
-		filter.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
-		filter.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
+		filter.state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState*params.filter.sigmaInitState;
+		filter.state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange*params.filter.sigmaInitChange;
 		filter.time = time;
 
 		// Realign based on actual config

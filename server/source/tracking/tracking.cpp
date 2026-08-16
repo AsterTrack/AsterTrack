@@ -35,7 +35,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	const std::vector<CameraCalib> &calibs, const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const TrackerRecord &record, TimePoint_t time, FrameNum frame, const TargetTrackingParameters &params)
 {
-	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot, params.filter.noisePos, params.filter.noiseRot);
 
 	if (dtMS(filter.time, time) > 0.01f)
 	{ // Predict new state if not done already using IMU samples
@@ -52,7 +52,7 @@ TrackingResult simulateTrackTarget(TrackerFilter &filter, TrackerTarget &target,
 	obs.pose.observed = match2D.pose;
 	obs.pose.observedCov = match2D.covariance;
 	if (params.filter.pose.useSyntheticCov)
-		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
+		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma*params.filter.trackSigma;
 
 	int pointCount = match2D.count();
 	bool trackSparse = pointCount > 0 && pointCount <= params.filter.point.obsLimit;
@@ -129,7 +129,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	const std::vector<std::vector<int>> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const TargetTrackingParameters &params)
 {
-	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot, params.filter.noisePos, params.filter.noiseRot);
 
 	if (dtMS(filter.time, time) > 0.01f)
 	{ // Predict new state if not done already using IMU samples
@@ -162,7 +162,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 	obs.pose.observed = match2D.pose;
 	obs.pose.observedCov = match2D.covariance;
 	if (params.filter.pose.useSyntheticCov)
-		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma;
+		obs.pose.observedCov = params.filter.getSyntheticCovariance<float>() * params.filter.trackSigma*params.filter.trackSigma;
 
 	// Update state
 
@@ -248,7 +248,7 @@ void trackMarker(std::list<TransientMarker> &markers,
 	const std::vector<std::vector<int>> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const MarkerTrackingParameters &params)
 {
-	MarkerFilter::Model model(params.filter.dampeningPos, 1.0f);
+	MarkerFilter::Model model(params.filter.dampeningPos, params.filter.noisePos);
 
 	matches2D.resize(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
@@ -551,7 +551,7 @@ template<typename IMUSample>
 bool integrateIMU(TrackerFilter &filter, TrackerInertial &inertial, TrackerObservation &obs,
 	TimePoint_t time, const TargetTrackingParameters &params)
 {
-	typename TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot);
+	typename TrackerFilter::Model model(params.filter.dampeningPos, params.filter.dampeningRot, params.filter.noisePos, params.filter.noiseRot);
 
 	{ // Extrapolate without IMU samples for debug purposes
 		auto filterState = filter.state;

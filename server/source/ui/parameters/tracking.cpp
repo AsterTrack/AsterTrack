@@ -88,12 +88,12 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		ImPlot::PopStyleVar();
 	};
 
-	auto matchAlgParamUI = [&](MatchingParameters &params, const MatchingParameters &standard)
+	auto matchAlgParamUI = [&](MatchingParameters &params, const MatchingParameters &standard, const char *uncertaintyUnit = "", float uncertaintyFactor = 1.0f)
 	{
 		bool modified = false;
 		modified |= ScalarProperty<float>("Primary Advantage", "", &params.primAdvantage, &standard.primAdvantage, 0, 10, 0.1f);
 		modified |= ScalarProperty<float>("Competitive Advantage", "", &params.compAdvantage, &standard.compAdvantage, 0, 10, 0.1f);
-		modified |= ScalarProperty<float>("Uncertainty", "", &params.uncertainty, &standard.uncertainty, 0, 10, 0.02f);
+		modified |= ScalarProperty<float>("Uncertainty", uncertaintyUnit, &params.uncertainty, &standard.uncertainty, 0, 10, 0.02f, uncertaintyFactor);
 		modified |= ScalarProperty<int>("Conservative Level", "", &params.conservativeLevel, &standard.conservativeLevel, 0, 3);
 		modified |= ScalarProperty<int>("Compete Range", "", &params.competeRange, &standard.competeRange, 0, 10);
 
@@ -132,7 +132,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		}
 
 		ImGui::SeparatorText("Point Matching Algorithm");
-		modified |= matchAlgParamUI(params.match, standard.match);
+		modified |= matchAlgParamUI(params.match, standard.match, "px", PixelFactor);
 
 		return modified;
 	};
@@ -249,7 +249,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		if (ImGui::TreeNode("Fast Matching"))
 		{
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchFast.matchRadius, &standard.matchFast.matchRadius, 0, 100, 1.0f, PixelFactor);
-			modified |= matchAlgParamUI(params.matchFast.match, standard.matchFast.match);
+			modified |= matchAlgParamUI(params.matchFast.match, standard.matchFast.match, "px", PixelFactor);
 			ImGui::TreePop();
 		}
 		ImGui::SetItemTooltip("Fast matching used initially, works well when changes were predicted accurately.");
@@ -281,13 +281,13 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			modified |= ScalarProperty<int>("Max Steps", "", &params.matchUncertain.maxSteps, &standard.matchUncertain.maxSteps, 5, 100);
 			ImGui::SeparatorText("Matching in other cameras");
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchUncertain.subMatch.matchRadius, &standard.matchUncertain.subMatch.matchRadius, 0, 100, 1.0f, PixelFactor);
-			modified |= matchAlgParamUI(params.matchUncertain.subMatch.match, standard.matchUncertain.subMatch.match);
+			modified |= matchAlgParamUI(params.matchUncertain.subMatch.match, standard.matchUncertain.subMatch.match, "px", PixelFactor);
 			ImGui::TreePop();
 		}
 		if (ImGui::TreeNode("Final Fast Matching"))
 		{
 			modified |= ScalarProperty<float>("Match Radius", "px", &params.matchFastFinal.matchRadius, &standard.matchFastFinal.matchRadius, 0, 100, 1.0f, PixelFactor);
-			modified |= matchAlgParamUI(params.matchFastFinal.match, standard.matchFastFinal.match);
+			modified |= matchAlgParamUI(params.matchFastFinal.match, standard.matchFastFinal.match, "px", PixelFactor);
 			ImGui::TreePop();
 		}
 		ImGui::SetItemTooltip("Fast matching used at the end to increase points matched.");
@@ -333,11 +333,13 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Filtering");
 
-		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
-		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
-		filterMod |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
-		filterMod |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
-		filterMod |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000, 1.0f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000, 1.0f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000, 0.05f, 1, "%.1f");
+		filterMod |= ScalarProperty<float>("Pos Dampening", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.01f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Rot Dampening", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.01f, 1, "%.4f");
+		filterMod |= ScalarProperty<float>("Pos Noise", "mm", &params.filter.noisePos, &standard.filter.noisePos, 0, 1000, 0.01f, 1000, "%.4f");
+		filterMod |= ScalarProperty<float>("Rot Noise", "", &params.filter.noiseRot, &standard.filter.noiseRot, 0, 1000, 0.05f, 1000, "%.4f");
 
 		ImGui::Separator();
 
@@ -448,7 +450,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("2D Point Matching");
 		modified |= ScalarProperty<float>("Match Radius", "px", &params.matchRadius, &standard.matchRadius, 0, 100, 1.0f, PixelFactor);
-		modified |= matchAlgParamUI(params.match, standard.match);
+		modified |= matchAlgParamUI(params.match, standard.match, "px", PixelFactor);
 		EndSection();
 
 		BeginSection("2D Point Final Fit");
@@ -464,9 +466,10 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Filtering");
 
-		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Pos Dampening", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Pos Noise", "mm", &params.filter.noisePos, &standard.filter.noisePos, 0, 1000, 0.01f, 1000, "%.4f");
 
 		ImGui::Separator();
 
@@ -552,11 +555,13 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("Filtering");
 
-		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000000, 1.0f, 1, "%.1f");
-		modified |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init State", "x", &params.filter.sigmaInitState, &standard.filter.sigmaInitState, 0, 10000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Init Change", "x", &params.filter.sigmaInitChange, &standard.filter.sigmaInitChange, 0, 10000, 1.0f, 1, "%.1f");
+		modified |= ScalarProperty<float>("Sigma Track", "x", &params.filter.trackSigma, &standard.filter.trackSigma, 0, 10000, 1.0f, 1, "%.1f");
 		modified |= ScalarProperty<float>("Dampening Pos", "x", &params.filter.dampeningPos, &standard.filter.dampeningPos, 0, 1, 0.1f, 1, "%.4f");
 		modified |= ScalarProperty<float>("Dampening Rot", "x", &params.filter.dampeningRot, &standard.filter.dampeningRot, 0, 1, 0.1f, 1, "%.4f");
+		modified |= ScalarProperty<float>("Pos Noise", "mm", &params.filter.noisePos, &standard.filter.noisePos, 0, 1000, 0.01f, 1000, "%.4f");
+		modified |= ScalarProperty<float>("Rot Noise", "", &params.filter.noiseRot, &standard.filter.noiseRot, 0, 1000, 0.05f, 1000, "%.4f");
 
 		ImGui::Separator();
 

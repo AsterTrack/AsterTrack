@@ -881,7 +881,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			}
 			if (visState.tracking.showCovariancePos)
 			{ // This is the old fixed covariance
-				Eigen::Matrix3f covariance = track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * track.filter.trackSigma;
+				Eigen::Matrix3f covariance = track.filter.getSyntheticCovariance<float>().topLeftCorner<3,3>() * track.filter.trackSigma*track.filter.trackSigma;
 				covariances.emplace_back(composeCovarianceTransform(
 					tgtMatch.pose.translation(), covariance,
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });

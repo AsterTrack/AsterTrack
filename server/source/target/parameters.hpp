@@ -103,9 +103,10 @@ struct TargetOptimisationParameters
 struct TargetFilteringParameters
 {
 	// General behaviour for all filters
-	float sigmaInitState = 50000, sigmaInitChange = 10000000;
+	float sigmaInitState = 225, sigmaInitChange = 3150;
 	float trackSigma = 1;
 	float dampeningPos = 0.95f, dampeningRot = 0.9f;
+	float noisePos = 0.01f, noiseRot = 0.1f;
 
 	// UKR settings for all filters
 	float sigmaAlpha = 0.001f, sigmaBeta = 2.0f, sigmaKappa = 0.0f;

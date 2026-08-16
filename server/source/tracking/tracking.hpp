@@ -68,8 +68,8 @@ struct TrackerFilter
 		state.position() = pose.translation().cast<double>();
 		state.setQuaternion(Eigen::Quaterniond(pose.rotation().cast<double>()));
 		Eigen::Matrix<double,6,6> covariance = params.filter.getSyntheticCovariance<double>();
-		state.errorCovariance().topLeftCorner<6,6>() = covariance * params.filter.sigmaInitState;
-		state.errorCovariance().bottomRightCorner<6,6>() = covariance * params.filter.sigmaInitChange;
+		state.errorCovariance().topLeftCorner<6,6>() = covariance * (params.filter.sigmaInitState*params.filter.sigmaInitState);
+		state.errorCovariance().bottomRightCorner<6,6>() = covariance * (params.filter.sigmaInitChange*params.filter.sigmaInitChange);
 	}
 };
 
@@ -205,7 +205,7 @@ struct TrackerObservation
 	TrackerObservation(Eigen::Isometry3f pose_, TimePoint_t time, const TargetTrackingParameters &params) :
 		time(time), pose(pose_, pose_), ext(pose_, pose_)
 	{
-		pose.observedCov = pose.filteredCov = ext.predictedCov = params.filter.getSyntheticCovariance<float>() * params.filter.sigmaInitState;
+		pose.observedCov = pose.filteredCov = ext.predictedCov = params.filter.getSyntheticCovariance<float>() * (params.filter.sigmaInitState*params.filter.sigmaInitState);
 	}
 };
 
@@ -346,8 +346,8 @@ struct MarkerFilter
 		: state{}, time(time), firstObsFrame(frame), firstObsTime(time), lastObsFrame(frame), lastObsTime(time)
 	{
 		state.position() = pos.cast<double>();
-		state.errorCovariance().diagonal().template segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitState);
-		state.errorCovariance().diagonal().template segment<3>(3).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitChange);
+		state.errorCovariance().diagonal().template segment<3>(0).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitState*params.filter.sigmaInitState);
+		state.errorCovariance().diagonal().template segment<3>(3).setConstant(params.filter.stdDevPos*params.filter.stdDevPos * params.filter.sigmaInitChange*params.filter.sigmaInitChange);
 	}
 };
 

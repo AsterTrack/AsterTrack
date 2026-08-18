@@ -22,6 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "ui/ui.hpp"
 #include "ui/gl/visualisation.hpp"
 
+#include "pipeline/record.hpp"
+
 
 struct VisTargetLock
 {
@@ -87,7 +89,7 @@ void updateTargetMarkerVis(const PipelineState &pipeline, const TargetCalibratio
 /**
  * Render 3D Rays coming from the camera emitter
  */
-void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, Color8 color = Color{ 0, 0.5f, 0, 1 });
+void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobUsage> &usage);
 
 /*
  * Render 3D wireframe of bounds in given pose

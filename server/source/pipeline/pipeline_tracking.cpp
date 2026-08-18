@@ -544,6 +544,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	std::vector<std::vector<Eigen::Vector2f> const *> rawPoints2D(cameras.size());
 	std::vector<std::vector<Eigen::Vector2f> const *> points2D(cameras.size());
 	std::vector<std::vector<BlobProperty> const *> properties(cameras.size());
+	std::vector<std::vector<BlobUsage>*> blobUse(cameras.size());
 	std::vector<std::vector<int>> remainingPoints2D(calibs.size());
 	frame->remainingPoints2D.resize(pipeline.cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
@@ -552,6 +553,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		rawPoints2D[c] = &frame->cameras[calibs[c].index].rawPoints2D;
 		points2D[c] = &frame->cameras[calibs[c].index].points2D;
 		properties[c] = &frame->cameras[calibs[c].index].properties;
+		blobUse[c] = &frame->cameras[calibs[c].index].blobUse;
+		blobUse[c]->resize(rawPoints2D[c]->size(), BlobUsage::Unused);
 		// TODO: If we ever do separated processing groups of cameras, this might want to use existing remainingPoints2D
 		remainingPoints2D[c].resize(points2D[c]->size());
 		std::iota(remainingPoints2D[c].begin(), remainingPoints2D[c].end(), 0);
@@ -572,6 +575,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				conflictedMatches2D[c].begin(), conflictedMatches2D[c].end()
 			);
 			remainingPoints2D[c].erase(remRemoveEnd, remainingPoints2D[c].end());
+			// Mark use of points as conflicted
+			for (int &pt : conflictedMatches2D[c])
+				(*blobUse[c])[pt] = BlobUsage::Conflicted;
 		}
 	};
 
@@ -587,6 +593,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 						return true;
 				return false;
 			}), remainingPoints2D[c].end());
+			// Mark use of points as tracked
+			for (auto &match : targetMatch2D.points2D[cc])
+				(*blobUse[c])[match.second] = BlobUsage::Tracked;
 		}
 	};
 
@@ -812,6 +821,12 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			);
 			triangulatablePoints2D[c].erase(triRemoveEnd, triangulatablePoints2D[c].end());
 			// triangulatablePoints2D[c] remains sorted, though it's not required to be
+
+			// Mark use of points
+			for (int &pt : conflictedMatches2D[c])
+				(*blobUse[c])[pt] = BlobUsage::Conflicted;
+			for (int &pt : matches2D[c])
+				(*blobUse[c])[pt] = BlobUsage::Tracked;
 		}
 
 		// Remove lost TransientMarkers
@@ -907,6 +922,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			LOG(LTriangulation, LTrace, "        Cam %d estimated size is %.3fmm", sample.camera, size3D*1000);
 		}
 		tri.size /= tri.samples.size();
+
+		// Mark use of points
+		for (auto &sample : tri.samples)
+			(*blobUse[sample.camera])[sample.blob] = BlobUsage::Triangulated;
 
 		// Remap camera indices from current subset to all cameras for storage
 		for (auto &sample : tri.samples)
@@ -1017,6 +1036,49 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				{
 					LOG(LTriangulation, LWarn, "    Marker %d maps to GT marker %d (distance %.2fmm) but is drifting away! Closest to %d with distance of %.2fmm!\n",
 						trMk.id, gtID, gtDist*1000, bestID, std::sqrt(bestDistSq)*1000);
+				}
+			}
+		}
+	}
+
+	if (IsDebugging(2))
+	{
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			for (int p = 0; p < points2D[c]->size(); p++)
+			{
+				Eigen::Vector2f pt = (*points2D[c])[p];
+				float blobSize = (*properties[c])[p].size;
+				BlobUsage usage = (*blobUse[c])[p];
+				int exact = 0, fitting = 0, closeby = 0;
+				for (int m = 0; m < frame->markers3D.size(); m++)
+				{
+					auto trMk = frame->markers3D[m];
+					Eigen::Vector2f proj = projectPoint2D(calibs[c].camera, trMk.pos);
+					float projSize = calculate2DSizeSimple(calibs[c], trMk.pos, trMk.size);
+					float dist = (pt - proj).norm();
+					float rayHit = dist - projSize;
+					float overlap = dist - projSize - blobSize;
+					LOG(LPipeline, LTrace, "Camera %d Observation %d dist %.2fpx, proj size %.2fpx, blob size %.2fpx, ray hit %.2fpx, overlap %.2fpx, ",
+						c, p, dist*PixelFactor, projSize*PixelFactor, blobSize*PixelFactor, rayHit*PixelFactor, overlap*PixelFactor);
+					if (dist < 0.6f * PixelSize) exact++;
+					if (dist < 1.5f * PixelSize || rayHit < 0.0f * PixelSize) fitting++;
+					if (dist < 5.0f * PixelSize || overlap < -0.5f * PixelSize) closeby++;
+				}
+				const char *basUsage = nullptr;
+				if (usage == BlobUsage::Unused && closeby > 0)
+					basUsage = "Unused";
+				else if (usage == BlobUsage::Triangulated && (exact != 1 || closeby > 1))
+					basUsage = "Triangulated";
+				else if (usage == BlobUsage::Tracked && (exact != 1 && fitting != 1))
+					basUsage = "Tracked";
+				else if (usage == BlobUsage::Conflicted && closeby < 2)
+					basUsage = "Conflicted";
+				if (basUsage != nullptr)
+				{
+					LOG(LPipeline, LWarn, "Frame %" PRIu64 " Camera %d Observation %d is %s but nearby points suggest otherwise: "
+						"%d exact, %d fitting, %d closeby!", frame->num, c, p, basUsage, exact, fitting, closeby);
+					Breakpoint(2);
 				}
 			}
 		}

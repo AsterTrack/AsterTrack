@@ -225,17 +225,27 @@ void updateTargetMarkerVis(const PipelineState &pipeline, const TargetCalibratio
 	}
 }
 
-void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, Color8 color)
+void visualiseRays(const CameraCalib &emitter, const std::vector<Eigen::Vector2f> &points2D, const std::vector<BlobUsage> &usage)
 {
 	if (points2D.empty()) return;
 	thread_local std::vector<std::pair<VisPoint, VisPoint>> rayLines;
 	rayLines.clear();
-	for (const auto &pt : points2D)
+	const std::array<Color8, (std::size_t)BlobUsage::Max+1> rayColors = 
 	{
-		Ray3f ray = castRay<float>(pt, emitter);
+		Color{ 0.6f, 0.6f, 0.6f, 0.9f },
+		Color{ 0.6f, 0.6f, 1.0f, 0.6f },
+		Color{ 1.0f, 0.6f, 0.6f, 1.0f },
+		Color{ 0.6f, 1.0f, 0.6f, 0.3f },
+		Color{ 1.0f, 0.2f, 0.2f, 1.0f },
+	};
+	for (int i = 0; i < points2D.size(); i++)
+	{
+		Ray3f ray = castRay<float>(points2D[i], emitter);
+		BlobUsage use = i < usage.size()? (BlobUsage)usage[i] : BlobUsage::Unused;
+		if (use > BlobUsage::Max) use = BlobUsage::Max;
 		rayLines.emplace_back(
-			VisPoint{ ray.pos, color },
-			VisPoint{ ray.pos + ray.dir * 1000, color }
+			VisPoint{ ray.pos, rayColors[(int)use] },
+			VisPoint{ ray.pos + ray.dir * 1000, rayColors[(int)use] }
 		);
 	}
 	visualiseLines(rayLines, 0.5f);

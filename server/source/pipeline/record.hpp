@@ -72,6 +72,15 @@ struct BlobProperty
 	BlobProperty(float size, int value) : size(size), value(value) {}
 };
 
+enum class BlobUsage : uint8_t
+{
+	Unused = 0,
+	Triangulated,
+	Conflicted,
+	Tracked,
+	Max
+};
+
 struct CameraFrameRecord
 {
 	bool received;
@@ -89,6 +98,8 @@ struct CameraFrameRecord
 	// This affects logging, but also optimisation (how, I don't know - maybe it's even better in camera coordinates?)
 	// So it's a switch we COULD make, but it's a lot of effort, with minor benefits
 	// Consider doing this whenever CameraMode is reworked (which will change CameraCalib to some degree, too)
+
+	std::vector<BlobUsage> blobUse;
 
 	std::vector<Cluster2DStats> clusters2D;
 

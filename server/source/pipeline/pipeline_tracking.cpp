@@ -792,7 +792,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		std::vector<std::vector<int>> matches2D;
 		std::vector<std::vector<int>> conflictedMatches2D(calibs.size());
-		trackMarker(track.transientMarkers, matches2D, conflictedMatches2D,
+		trackMarker(track.transientMarkers, matches2D, conflictedMatches2D, frame->markerSearch,
 			calibs, points2D, properties, remainingPoints2D,
 			frame->time, frame->num, camCount, pipeline.params.marker);
 

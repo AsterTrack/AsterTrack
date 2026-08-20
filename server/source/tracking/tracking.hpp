@@ -424,6 +424,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 void trackMarker(std::list<TransientMarker> &markers,
 	std::vector<std::vector<int>> &matches2D,
 	std::vector<std::vector<int>> &conflictedMatches2D,
+	std::vector<MarkerSearchRecord> &markerSearch,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,

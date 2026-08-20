@@ -229,6 +229,9 @@ struct VisualisationState
 		bool showCovarianceInCam2D = false;
 		bool showCovarianceInCam3D = false;
 		float scaleCovariance = 3.0f;
+
+		bool showAllSearchesIn3DView = false;
+		bool showMissingSearchesIn3DView = true;
 	} markers;
 
 	struct

@@ -913,7 +913,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	thread_local std::vector<VisPoint> markerPoints;
 	markerPoints.clear();
 
-	Color8 colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f }, colorCov = Color{ 0.8f, 0.6f, 1.0f, 0.3f };
+	Color8 colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f },
+		colorCov = Color{ 0.8f, 0.6f, 1.0f, 0.3f }, colorSearchCov = Color{ 0.9f, 0.9f, 0.2f, 0.3f };
 	int i = 0;
 	for (auto &tri : frame.markers3D)
 	{
@@ -922,6 +923,16 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		covariances.emplace_back(composeCovarianceTransform(
 			tri.pos, frame.markersCov[i++].cast<float>(),
 			pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance), colorCov);
+	}
+	if (visState.markers.showAllSearchesIn3DView || visState.markers.showMissingSearchesIn3DView)
+	{
+		for (auto &search : frame.markerSearch)
+		{
+			if (search.found && !visState.markers.showAllSearchesIn3DView) continue;
+			covariances.emplace_back(composeCovarianceTransform(
+				search.predPos, search.predCov.cast<float>(),
+				pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance), colorSearchCov);
+		}
 	}
 
 	if (pipeline.isSimulationMode && visFrame.altFrameIt.accessible())

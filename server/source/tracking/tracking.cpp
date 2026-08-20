@@ -241,6 +241,7 @@ TrackingResult trackTarget(TrackerFilter &filter, TrackerTarget &target, Tracker
 void trackMarker(std::list<TransientMarker> &markers,
 	std::vector<std::vector<int>> &matches2D,
 	std::vector<std::vector<int>> &conflictedMatches2D,
+	std::vector<MarkerSearchRecord> &markerSearch,
 	const std::vector<CameraCalib> &calibs,
 	const std::vector<std::vector<Eigen::Vector2f> const *> &points2D,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
@@ -302,6 +303,8 @@ void trackMarker(std::list<TransientMarker> &markers,
 
 		Eigen::Vector3f predPos = marker.filter.state.position().cast<float>();
 		Eigen::Matrix3f predCov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
+		// Record as search, whether tracked, dropped or still searching
+		markerSearch.emplace_back(marker.id, predPos, predCov.cast<CovStorageScalar>(), marker.result.isTracked());
 
 		for (int c = 0; c < calibs.size(); c++)
 		{

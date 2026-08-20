@@ -131,6 +131,8 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Checkbox("Show Covariance 2D in Camera", &visState.markers.showCovarianceInCam2D);
 		ImGui::SliderFloat("Covariance Sigma", &visState.markers.scaleCovariance, 1, 100);
 
+		ImGui::Checkbox("Show All Searches in 3D View", &visState.markers.showAllSearchesIn3DView);
+		ImGui::Checkbox("Show Missing Searches in 3D View", &visState.markers.showMissingSearchesIn3DView);
 		ImGui::TreePop();
 	}
 

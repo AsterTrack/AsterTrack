@@ -279,6 +279,14 @@ struct TrackerRecord
 		: id(id), result(result), procTimeMS(procTimeMS) {}
 };
 
+struct MarkerSearchRecord
+{
+	int id;
+	Eigen::Vector3f predPos;
+	CovCompPosMatrix predCov;
+	bool found;
+};
+
 struct FrameRecord
 {
 	FrameID ID; // Might be externally provided and not continuous, and might conflict between SyncGroups
@@ -313,6 +321,7 @@ struct FrameRecord
 	// Markers - tracked markers with transient ID or triangulated points with no ID (0)
 	std::vector<MarkerObservation> markers3D;
 	std::vector<CovCompPosMatrix> markersCov; // Covariances for visualisation
+	std::vector<MarkerSearchRecord> markerSearch; // Search status for visualisation
 
 	// This is mostly for visualisation
 	std::vector<Cluster3DStats> clusterTri3D; // Will mostly capture targets of sphere-markers

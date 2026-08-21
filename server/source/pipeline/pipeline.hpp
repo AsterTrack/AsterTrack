@@ -160,7 +160,7 @@ struct PipelineState
 		// IMUs not assigned to a tracker or marker
 		std::list<OrphanedIMU> orphanedIMUs;
 		// Currently triangulated points
-		std::vector<TriangulatedPoint> triangulations3D;
+		std::vector<TriangulatedPoint> triangulations3D, lastTriangulations3D;
 		// Asynchronous Detections
 		bool asyncDetection;
 		int asyncDetectTargetID = 0;

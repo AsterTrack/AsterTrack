@@ -499,6 +499,66 @@ void trackMarker(std::list<TransientMarker> &markers,
 	}
 }
 
+void adoptTransientMarkers(
+	std::list<TransientMarker> &transientMarkers,
+	const std::vector<int> &remainingPoints3D,
+	const std::vector<TriangulatedPoint> &triangulations,
+	const std::vector<TriangulatedPoint> &preTriangulations,
+	const std::shared_ptr<FrameRecord> &frame, const std::shared_ptr<FrameRecord> &preFrame,
+	const std::vector<CameraCalib> &calibs, const MarkerTrackingParameters &params)
+{
+	// Could rephrase as a function of speed and delta time
+	float radiusSq = params.detect.maxMovement*params.detect.maxMovement;
+
+	typedef MatchCandidates<int, MatchCandidate<>, 2> TriCandidates;
+	std::vector<TriCandidates> matchCandidates;
+	for (int p : remainingPoints3D)
+	{
+		if (p < transientMarkers.size()) continue;
+		const TriangulatedPoint &tri = triangulations[p - transientMarkers.size()];
+
+		TriCandidates candidates = { (int)(p - transientMarkers.size()) };
+		MatchCandidate<> matchCand = {};
+		for (int tt = 0; tt < preTriangulations.size(); tt++)
+		{ // Compare current triangulation (in markers3D) to past triangulations
+			const TriangulatedPoint &preTri = preTriangulations[tt];
+			float distSq = (tri.pos - preTri.pos).squaredNorm();
+			if (distSq > radiusSq) continue;
+			float sizePenalty = tri.size > preTri.size? tri.size/preTri.size : preTri.size/tri.size;
+			matchCand.value = distSq * sizePenalty*sizePenalty;
+			matchCand.index = tt;
+			recordMatchCandidate(candidates, matchCand);
+		}
+		if (candidates.matches.front().valid())
+			matchCandidates.push_back(candidates);
+	}
+
+	resolveMatchCandidates(matchCandidates, preTriangulations.size(), params.detect.match.squared());
+
+	for (auto &match : matchCandidates)
+	{
+		if (!match.matches.front().valid()) continue;
+		int t = match.context, tt = match.matches.front().index;
+		const TriangulatedPoint &tri = triangulations[t], &preTri = preTriangulations[tt];
+
+		// Add marker with direct estimate of velocity, without any estimate of covariance
+		TransientMarker &marker = transientMarkers.emplace_back(
+			tri.pos, (preTri.size + tri.size) / 2, tri.samples.size(),
+			frame->time, frame->num, params);
+		marker.filter.state.velocity() = (tri.pos - preTri.pos).cast<double>() * (1.0f / dtS(preFrame->time, frame->time));
+		// COULD use calibs, points2D, and both frame records, to initialise covariance properly using both TriangulatedPoints
+
+		// Record markers used for initialisation
+		marker.initMarkers.reserve(params.detect.minValidationFrames);
+		marker.initMarkers.emplace_back(preFrame->num, preFrame->markers3D.size() - preTriangulations.size() + tt);
+		marker.initMarkers.emplace_back(frame->num, frame->markers3D.size() - triangulations.size() + t);
+
+		LOG(LTracking, LDebug, "    New Marker detected with %d and %d samples, moved %.2fmm, filter reflects %.2fmm!",
+			(int)preTri.samples.size(), (int)tri.samples.size(), (tri.pos - preTri.pos).norm()*1000,
+			marker.filter.state.velocity().norm()*dtS(preFrame->time, frame->time)*1000);
+	}
+}
+
 static Eigen::Quaterniond GyroToQuat(Eigen::Vector3d gyro)
 {
 	double angle = gyro.norm(); // In rad/s

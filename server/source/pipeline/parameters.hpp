@@ -82,6 +82,13 @@ struct MarkerTrackingParameters
 {
 	bool enabled = true;
 
+	struct
+	{
+		float maxMovement = 0.2f;
+		MatchingParameters match = { 0.005f, 2, 2, 2, 1 };
+		int minValidationFrames = 3; // 2 to initially detect, one more tracked to verify
+	} detect;
+
 	// Prediction
 	float minStdDev3D = 0.0f;
 	float addUncertainty3D = 0.02f;

@@ -442,6 +442,12 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		modified |= BooleanProperty("Enable", &params.enabled, &standard.enabled);
 
+		BeginSection("Detection");
+		modified |= ScalarProperty<float>("Max Inter-Frame Movement", "mm", &params.detect.maxMovement, &standard.detect.maxMovement, 0, 1000, 1.0f, 1000, "%.1f");
+		modified |= matchAlgParamUI(params.detect.match, standard.detect.match);
+		modified |= ScalarProperty<int>("Min Validation Period", "frames", &params.detect.minValidationFrames, &standard.detect.minValidationFrames, 2, 10);
+		EndSection();
+
 		BeginSection("Prediction");
 		modified |= ScalarProperty<float>("Min 3D Std Dev", "mm", &params.minStdDev3D, &standard.minStdDev3D, 0, 100, 1.0f, 1000, "%.1f");
 		modified |= ScalarProperty<float>("Add 3D Uncertainty", "mm", &params.addUncertainty3D, &standard.addUncertainty3D, 0, 100, 1.0f, 1000, "%.1f");

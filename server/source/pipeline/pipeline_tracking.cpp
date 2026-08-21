@@ -646,6 +646,39 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		}), remainingPoints3D.end());	
 	};
 
+	auto checkAndAdoptTransientMarkers = [&]()
+	{ // Assign IDs to markers validated for minimum period
+		auto frames = pipeline.record.frames.getView();
+		for (auto markerIt = track.transientMarkers.begin(); markerIt != track.transientMarkers.end();)
+		{
+			auto &marker = *markerIt;
+			if (marker.id != 0)
+			{ // Already assigned
+				markerIt++;
+				continue;
+			}
+			bool conflicted = false;
+			for (auto &initMarker : marker.initMarkers)
+				if (frames[initMarker.first]->markers3D[initMarker.second].id != 0)
+					conflicted = true;
+			if (conflicted)
+			{ // Conflicted (another marker claimed one used in this)
+				LOG(LTracking, LDebug, "Found conflict in newly detected, not yet validated tracked marker!");
+				markerIt = track.transientMarkers.erase(markerIt);
+				continue;
+			}
+			if (marker.initMarkers.size() >= pipeline.params.marker.detect.minValidationFrames)
+			{ // Accept and assign ID - and retroactively set that ID for init markers
+				marker.id = track.ongoingMarkerID++;
+				LOG(LTracking, LDebug, "Validated newly detected tracked marker with ID %d!", marker.id);
+				for (auto &initMarker : marker.initMarkers)
+					frames[initMarker.first]->markers3D[initMarker.second].id = marker.id;
+				marker.initMarkers = {}; // Clear
+			}
+			markerIt++;
+		}
+	};
+
 	{ // Integrate orphaned IMU up until recent frame
 		int i = 0;
 		for (auto &tracker : track.orphanedIMUs)
@@ -879,8 +912,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 		tri0 = pclock::now();
 
-		// Find potential point correspondences as TriangulatedPoints
+		track.lastTriangulations3D.swap(track.triangulations3D);
 		track.triangulations3D.clear();
+
+		// Find potential point correspondences as TriangulatedPoints
 		triangulateRayIntersections(calibs, points2D, triangulatablePoints2D, track.triangulations3D,
 			params.maxIntersectError, params.minIntersectError);
 
@@ -921,6 +956,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		LOG(LTriangulation, LTrace, "    -> Tracked marker of size %.3fmm with %d samples (confidence %.1f), %.2fmm 3D uncertainty and %.2fpx reprojection RMSE",
 			marker.marker.size*1000, marker.samples, confidence, uncertainty3D*1000, marker.error2D*PixelFactor);
 
+		if (marker.id == 0)
+		{ // Not yet validated, add init marker using markers3D index
+			marker.initMarkers.emplace_back(frame->num, frame->markers3D.size());
+		}
+
 		frame->markers3D.emplace_back(marker.id, pos, marker.error2D, uncertainty3D, marker.marker.size, marker.samples, confidence);
 		frame->markersCov.emplace_back(cov.cast<CovStorageScalar>());
 		points3D.emplace_back(pos);
@@ -957,6 +997,11 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		frame->markers3D.emplace_back(0, tri.pos, error2D, tri.error, tri.size, tri.samples.size(), tri.confidence);
 		frame->markersCov.emplace_back(Eigen::Vector3f::Constant(tri.error*tri.error).cast<CovStorageScalar>().asDiagonal());
 		points3D.emplace_back(tri.pos);
+	}
+
+	if (pipeline.params.marker.enabled)
+	{ // Check if any new marker is now validated and assign an ID to them
+		checkAndAdoptTransientMarkers();
 	}
 
 	const auto &clustering = pipeline.params.cluster;
@@ -1224,17 +1269,23 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	tpt2 = pclock::now();
 
-	if (pipeline.params.marker.enabled)
-	{ // Add single markers to track
-		int offset = track.transientMarkers.size();
-		for (int p : remainingPoints3D)
-		{
-			if (p < offset) continue;
-			track.transientMarkers.emplace_back(track.ongoingMarkerID++,
-				frame->markers3D[p].pos, frame->markers3D[p].size, frame->markers3D[p].samples,
-				frame->time, frame->num, pipeline.params.marker);
-			// The 2D points involved will still be used for 2D target detections
-		}
+	if (pipeline.params.marker.enabled && pipeline.frameNum.load() >= 0)
+	{ // Find reasonable matches between last and current triangulations to start tracking as transient markers
+
+		// NOTE: Passing both frames internal triangulations3D and frameRecord with stored markers3D
+		// triangulations3D is only required if we care for samples to properly initialise covariance
+		// frameRecords could be replaced by respective time and frame number, since markers3D is unused as well
+		// But it also relies how they map to each other (all triangulated points are at the end of markers3D)
+
+		std::shared_ptr<FrameRecord> lastFrame = pipeline.record.frames.getView()[pipeline.frameNum.load()];
+		adoptTransientMarkers(track.transientMarkers, remainingPoints3D,
+			track.triangulations3D, track.lastTriangulations3D,
+			frame, lastFrame, pipeline.getCalibs(), pipeline.params.marker);
+		
+		// Filter out new markers conflicting with markers detected last frame
+		// (above function does not check if triangulations since got an ID assigned)
+		// And, if minValidationFrames == 2, immediately assign IDs to new markers
+		checkAndAdoptTransientMarkers();
 	}
 
 	tpt3 = pclock::now();

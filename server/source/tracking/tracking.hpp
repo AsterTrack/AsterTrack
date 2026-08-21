@@ -357,6 +357,7 @@ struct TransientMarker
 	TrackingResult result;
 	int samples, uncertain;
 	float error2D;
+	std::vector<std::pair<FrameNum, int>> initMarkers;
 
 	// Single Marker tracking source
 	TrackerMarker marker;
@@ -364,9 +365,9 @@ struct TransientMarker
 	// Current filtered state
 	MarkerFilter filter;
 
-	inline TransientMarker(uint32_t id, Eigen::Vector3f pos, float size, int samples,
+	inline TransientMarker(Eigen::Vector3f pos, float size, int samples,
 		TimePoint_t time, FrameNum frame, const MarkerTrackingParameters &params)
-		: id(id), samples(samples), marker(size), filter(pos, time, frame, params) {}
+		: id(0), result(TrackingResult::TRACKED_MARKER), samples(samples), marker(size), filter(pos, time, frame, params) {}
 };
 
 struct VirtualTracker : public virtual TrackedBase
@@ -430,6 +431,14 @@ void trackMarker(std::list<TransientMarker> &markers,
 	const std::vector<std::vector<BlobProperty> const *> &properties,
 	const std::vector<std::vector<int>> &relevantPoints2D,
 	TimePoint_t time, FrameNum frame, int cameraCount, const MarkerTrackingParameters &params);
+
+void adoptTransientMarkers(
+	std::list<TransientMarker> &transientMarkers,
+	const std::vector<int> &remainingPoints3D,
+	const std::vector<TriangulatedPoint> &triangulations,
+	const std::vector<TriangulatedPoint> &preTriangulations,
+	const std::shared_ptr<FrameRecord> &frame, const std::shared_ptr<FrameRecord> &preFrame,
+	const std::vector<CameraCalib> &calibs, const MarkerTrackingParameters &params);
 
 TrackingResult trackIMUMarker(TrackerFilter &filter, TrackerMarker &marker, TrackerObservation &obs,
 	const std::vector<Eigen::Vector3f> &points3D, const std::vector<int> &triIndices, int *bestPoint,

@@ -957,6 +957,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			for (const auto &pt : object.target.markers)
 				markerPoints.emplace_back(object.pose * pt.pos, (Color8)gtCol, 0.01f*0.5f);
 		}
+		for (const auto &pt : sim_lock->points)
+			markerPoints.emplace_back(pt.pos, gtCol, sim_lock->pointSim.pointSize);
 	}
 
 	visualisePointsSpheresDepthSorted(markerPoints);

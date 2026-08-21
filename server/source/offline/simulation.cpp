@@ -118,6 +118,8 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 		{
 			simulation.points[i].pos = genPoseInTrackingSpace(pipeline).translation();
 			simulation.points[i].vel.setZero();
+			simulation.points[i].lostCounter = 1000;
+			simulation.points[i].id = -1;
 		}
 
 		// Motion update, with centering and pseudo-gravity simulation
@@ -207,8 +209,19 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 			//float confidence = (clean*clean)/(conflict+1);
 			float confidence = clean*clean*2 + conflict;
 			if (confidence >= pipeline.params.tri.minIntersectionConfidence)
-				simFrame->markers3D.emplace_back(i, pt.pos, simulation.projectionParams.blobNoiseStdDev*2,
+			{
+				// Check if this would be a re-detection
+				if (pt.lostCounter > pipeline.params.marker.maxDropoutFrames)
+					pt.id = ++simulation.pointIDCounter;
+				pt.lostCounter = 0;
+				// Register theoretically possible observation
+				simFrame->markers3D.emplace_back(pt.id, pt.pos, simulation.projectionParams.blobNoiseStdDev*2,
 					0.001f, simulation.pointSim.pointSize, clean+conflict, confidence);
+			}
+			else if (clean >= pipeline.params.marker.minInitialObs)
+				pt.lostCounter = 0;
+			else
+				pt.lostCounter++;
 		}
 	}
 

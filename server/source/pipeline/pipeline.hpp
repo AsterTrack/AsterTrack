@@ -259,6 +259,7 @@ struct PipelineState
 	SynchronisedS<SimulationState> simulation = {};
 	TrackingRecord simulated = {};
 	std::shared_ptr<FrameRecord> curSimulated;
+	std::vector<int> simPointIDMap;
 };
 
 

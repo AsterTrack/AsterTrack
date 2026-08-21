@@ -77,6 +77,8 @@ struct SimulatedPoint
 	Eigen::Vector3f pos;
 	Eigen::Vector3f vel;
 	Eigen::Vector3f acc;
+	int lostCounter;
+	int id;
 };
 
 struct PointSimulation
@@ -125,6 +127,7 @@ struct SimulationState
 {
 	std::vector<SimulatedPoint> points;
 	PointSimulation pointSim = {};
+	int pointIDCounter;
 
 	std::vector<SimulatedObject> objects;
 	int primaryObject;
@@ -180,6 +183,7 @@ struct SimulationState
 		 	};
 		}
 		points.clear();
+		pointIDCounter = 0;
 		primaryObject = 0;
 	}
 };

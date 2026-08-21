@@ -80,13 +80,14 @@ static void DeletePipelineData(PipelineState &pipeline)
 	pipeline.simulated.frames.delete_culled(); // If views into frameRecords still exist, this won't delete those blocks
 	pipeline.simulated.imus.clear();
 	pipeline.curSimulated = nullptr;
+	pipeline.simulation.contextualLock()->resetState();
+	pipeline.simPointIDMap.clear();
 }
 
 static void DeletePipelineSetup(PipelineState &pipeline)
 {
 	pipeline.cameras.clear();
 	pipeline.record.imus.clear();
-	pipeline.simulation.contextualLock()->resetState();
 }
 
 void ResetPipelineState(PipelineState &pipeline)

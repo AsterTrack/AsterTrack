@@ -921,29 +921,77 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 
 	if (pipeline.isSimulationMode && pipeline.curSimulated && SHOULD_LOG(LTriangulation, LTrace))
 	{
+		if (pipeline.tracking.ongoingMarkerID > pipeline.simPointIDMap.size())
+			pipeline.simPointIDMap.resize((pipeline.tracking.ongoingMarkerID+100)*2, -1);
+
+		auto sim_lock = pipeline.simulation.contextualRLock();
 		for (int p = 0; p < frame->markers3D.size(); p++)
 		{
 			auto trMk = frame->markers3D[p];
-			float bestDist = std::numeric_limits<float>::max();
-			int bestIndex = -1;
-			for (int g = 0; g < pipeline.curSimulated->markers3D.size(); g++)
+			float bestDistSq = std::numeric_limits<float>::max();
+			int bestID = -1;
+			for (auto &gtMk : pipeline.curSimulated->markers3D)
 			{
-				auto gtMk = pipeline.curSimulated->markers3D[g];
-				float dist = (trMk.pos - gtMk.pos).squaredNorm();
-				if (dist < bestDist)
+				float distSq = (trMk.pos - gtMk.pos).squaredNorm();
+				if (distSq < bestDistSq)
 				{
-					bestIndex = g;
-					bestDist = dist;
+					bestDistSq = distSq;
+					bestID = gtMk.id;
 				}
 			}
 
-			if (bestIndex >= 0)
+			if (trMk.id == 0)
 			{
-				LOG(LTriangulation, LTrace, "        Tri %d had closest GT tri %d with distance of %fmm\n",
-					p, bestIndex, std::sqrt(bestDist)*1000);
+				if (bestID >= 0 && bestDistSq > 0.005*0.005)
+				{
+					LOG(LTriangulation, LDarn, "    Triangulated point %d has closest GT marker %d with distance of %.2fmm!\n",
+						p, bestID, std::sqrt(bestDistSq)*1000);
+				}
+				continue;
 			}
 
-			// TODO: Properly compare
+			auto mk = std::find_if(track.transientMarkers.begin(), track.transientMarkers.end(), [&](auto &m){ return m.id == trMk.id; });
+
+			int gtID = pipeline.simPointIDMap[trMk.id];
+			if (gtID == -1)
+			{
+				int alive = mk->filter.lastObsFrame - mk->filter.firstObsFrame;
+				if (bestDistSq < 0.005*0.005)
+				{
+					pipeline.simPointIDMap[trMk.id] = bestID;
+					LOG(LTriangulation, alive > 5? LWarn : (alive > 1? LDarn : LDebug), "    Marker %d was associated with closest GT marker %d with distance of %.2fmm after %d frames!\n",
+						trMk.id, bestID, std::sqrt(bestDistSq)*1000, alive);
+				}
+				else if (bestID >= 0)
+				{
+					LOG(LTriangulation, alive >= 5? LWarn : LDarn, "    Marker %d failed to associate with closest GT marker %d with distance of %.2fmm after %d frames!\n",
+						trMk.id, bestID, std::sqrt(bestDistSq)*1000, alive);
+				}
+			}
+			else
+			{ // Already associated to a GT marker
+				auto gtPt = std::find_if(sim_lock->points.begin(), sim_lock->points.end(), [&](auto &p){ return p.id == gtID; });
+				bool gtExists = gtPt != sim_lock->points.end();
+				float gtDist = gtExists? (trMk.pos - gtPt->pos).norm() : 0;
+				if (!gtExists)
+				{
+					LOG(LTriangulation, LError, "    Marker %d maps to GT marker %d which disappeared and became untrackable, but it now tracks closest %d with distance of %.2fmm!\n",
+						trMk.id, gtID, bestID, std::sqrt(bestDistSq)*1000);
+					Breakpoint(1);
+				}
+				else if (gtID != bestID)
+				{
+					LOG(LTriangulation, LError, "    Marker %d maps to GT marker %d (distance %.2fmm) but is closest to %d with distance of %.2fmm!\n",
+						trMk.id, gtID, gtDist*1000, bestID, std::sqrt(bestDistSq)*1000);
+					pipeline.simPointIDMap[trMk.id] = bestID; // Only warn once
+					Breakpoint(1);
+				}
+				else if (gtDist > 0.02)
+				{
+					LOG(LTriangulation, LWarn, "    Marker %d maps to GT marker %d (distance %.2fmm) but is drifting away! Closest to %d with distance of %.2fmm!\n",
+						trMk.id, gtID, gtDist*1000, bestID, std::sqrt(bestDistSq)*1000);
+				}
+			}
 		}
 	}
 

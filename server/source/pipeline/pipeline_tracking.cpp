@@ -564,6 +564,26 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	int camCount = pipeline.cameras.size();
 	std::vector<int> remainingPoints3D;
 
+	/*
+	track targets in remainingPoints2D
+		remove from remainingPoints2D for targets, markers, triangulations
+	track transient markers in remainingPoints2D for markers
+		remove from remainingPoints2D for triangulations
+	triangulate remainingPoints2D for triangulations
+	combine tracked markers and new triangulations into markers3D (as remainingPoints3D)
+	TODO: track skeletons in remainingPoints3D
+		remove from remainingPoints2D for targets
+	cluster remainingPoints3D
+	detect targets in remainingPoints3D
+		remove from remainingPoints3D
+		perhaps outright invalidate tracked markers involved
+		remove from remainingPoints2D for targets
+	transition remainingPoints3D into transient markers
+		potentially match over a few frames in 3D first
+	cluster remainingPoints2D for targets
+	detect targets in remainingPoints2D for targets (async)
+	*/
+
 	auto occupyConflictedMatches2D = [&](std::vector<std::vector<int>> &conflictedMatches2D)
 	{
 		for (int c = 0; c < calibs.size(); c++)

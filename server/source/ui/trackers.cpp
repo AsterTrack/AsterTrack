@@ -74,7 +74,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 {
 	auto discardSelection = []
 	{
-		GetUI().visState.target.selectedTrackerID = 0;
+		GetUI().visState.tracker.selectedID = 0;
 		if (GetUI().visState.target.inspectingSource == 'T')
 			GetUI().visState.resetVisTarget();
 	};
@@ -118,7 +118,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		};
 		int newID = selectNewID();
 		state.trackerConfigs.push_back(TrackerConfig(newID, asprintf_s("Target %d", newID), TrackerConfig::TRACKER_VIRTUAL));
-		visState.target.selectedTrackerID = newID;
+		visState.tracker.selectedID = newID;
 	}
 
 	if (!ImGui::BeginChild("EditChild", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding))
@@ -156,15 +156,15 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			ImGui::TableNextColumn();
 			ImGui::AlignTextToFramePadding();
 
-			bool select = visState.target.selectedTrackerID == tracker.id;
+			bool select = visState.tracker.selectedID == tracker.id;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 			{
-				if (visState.target.inspectingSource == 'T' && visState.target.inspectingTrackerID == visState.target.selectedTrackerID)
+				if (visState.target.inspectingSource == 'T' && visState.target.inspectingID == visState.tracker.selectedID)
 					visState.resetVisTarget();
-				if (visState.target.selectedTrackerID == tracker.id)
-					visState.target.selectedTrackerID = 0;
+				if (visState.tracker.selectedID == tracker.id)
+					visState.tracker.selectedID = 0;
 				else
-					visState.target.selectedTrackerID = tracker.id;
+					visState.tracker.selectedID = tracker.id;
 			}
 			ImGui::SameLine(0, 0);
 
@@ -262,7 +262,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	}
 
 	auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-		[&](auto &t){ return t.id == visState.target.selectedTrackerID; });
+		[&](auto &t){ return t.id == visState.tracker.selectedID; });
 	if (trackerIt == state.trackerConfigs.end())
 	{
 		discardSelection();
@@ -619,7 +619,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 	{
 		BeginSection("Target Calibration");
 
-		if (visState.target.inspectingTrackerID == tracker.id)
+		if (visState.target.inspectingID == tracker.id)
 		{
 			if (ImGui::Button("Stop###Inspect", SizeWidthFull()))
 				visState.resetVisTarget();
@@ -628,7 +628,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		{
 			if (visState.resetVisTarget())
 			{
-				visState.target.inspectingTrackerID = tracker.id;
+				visState.target.inspectingID = tracker.id;
 				visState.target.inspectingSource = 'T';
 				visState.updateVisTarget();
 			}
@@ -648,7 +648,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			auto obs_lock = state.pipeline.obsDatabase.contextualLock();
 			for (auto &tgt : obs_lock->targets)
 			{
-				if (tgt.trackerID != visState.target.inspectingTrackerID) continue;
+				if (tgt.trackerID != visState.target.inspectingID) continue;
 				for (auto &mk : tgt.markers)
 					mk *= adjustScale;
 			}

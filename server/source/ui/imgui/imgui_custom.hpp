@@ -133,12 +133,14 @@ static inline void EndSection()
 }
 
 static inline bool BeginCollapsingRegion(const char* label, ImGuiTreeNodeFlags flags = 0)
-{
+{ // Like CollapsingHeader but with ID and hiding contents if disabled
 	ImGuiWindow* window = ImGui::GetCurrentWindow();
 	if (window->SkipItems)
 		return false;
 	ImGuiID id = window->GetID(label);
 	if (!ImGui::TreeNodeBehavior(id, flags | ImGuiTreeNodeFlags_CollapsingHeader, label))
+		return false;
+	if ((ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0)
 		return false;
 	ImGui::PushID(id);
 	return true;

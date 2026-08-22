@@ -55,13 +55,16 @@ void InterfaceState::UpdateSequences(bool reset)
 
 		UpdateCalibrationError(reset);
 	}
-	else if (visState.showMarkerTrails)
-	{
-		// Do incremental update of all observation stats and visualisations
-		UpdateIncrementalSequencesVis(*pipeline.seqDatabase.contextualRLock(), false, false);
+
+	if (visState.incObsUpdate.showSeq2DTrail)
+	{ // For e.g. target calibration
+		if (pipeline.phase != PHASE_Calibration_Point)
+		{ // Do incremental update of all observation stats and visualisations
+			UpdateIncrementalSequencesVis(*pipeline.seqDatabase.contextualRLock(), false, false);
+		}
 
 		auto frames = pipeline.record.frames.getView();
-		if (!frames.empty())
+		if (visState.incObsUpdate.showSeq2DLabels && !frames.empty())
 		{
 			auto &frame = frames.back();
 			std::vector<std::vector<SceneLabel>> labels(frame->cameras.size());
@@ -85,6 +88,11 @@ void InterfaceState::UpdateSequences(bool reset)
 			}
 		}
 	}
+	else if (pipeline.phase != PHASE_Calibration_Point)
+	{
+		ResetIncrementalSequenceVis();
+	}
+
 	visState.incObsUpdate.lastFrameUpdated = pipeline.frameNum.load();
 }
 
@@ -151,6 +159,21 @@ void InterfaceState::UpdateCalibrations()
 		cam.second.vis.calibration.precalculated = false;
 }
 
+void InterfaceState::ResetIncrementalSequenceVis()
+{
+	auto &inc = visState.incObsUpdate;
+
+	inc.cameraTriObservations.clear();
+	inc.pointsStable = 0;
+	for (auto &map : cameraViews)
+	{
+		map.second.vis.observations.frameIndices.clear();
+		map.second.vis.observations.ptsStable.clear();
+	}
+	inc.frameIndices.clear();
+	inc.frameStable = 0;
+}
+
 void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences, bool updateStable, bool rawPoints)
 {
 	auto &inc = visState.incObsUpdate;
@@ -169,18 +192,11 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 		if (inc.resetFirstFrame == 0)
 		{
 			LOG(LGUI, LDebug, "Resetting incremental observation completely!");
-			inc.cameraTriObservations.clear();
-			inc.pointsStable = 0;
-			for (auto &map : cameraViews)
-			{
-				map.second.vis.observations.frameIndices.clear();
-				map.second.vis.observations.ptsStable.clear();
-			}
-			inc.frameIndices.clear();
-			inc.frameStable = 0;
+			ResetIncrementalSequenceVis();
 		}
 		else
 		{ // Find [frame, index] checkpoint where frame < inc.resetAfterFrame and reset to it (or (0,0))
+			inc.cameraTriObservations.resize(cameraCount, 0);
 			for (auto &map : cameraViews)
 			{
 				auto reset = map.second.vis.observations.frameIndices.lower_bound(inc.resetFirstFrame);
@@ -330,7 +346,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 				auto &seq = camSeq.sequences.back();
 
 				SceneLabel label;
-				label.position.head<2>() = (rawPoints? seq.rawPoints.back() : seq.points.back()) + Eigen::Vector2f(0.0f, 1*PixelSize);
+				label.position.head<2>() = (rawPoints? seq.rawPoints.back() : seq.points.back()) + Eigen::Vector2f(1, 1) * PixelSize;
 				label.radius = 1 * PixelSize;
 				label.text = asprintf_s("Value: %.2f", seq.value);
 				label.color = Color{ 0, 0.4f, 0.8f, 1 };
@@ -343,7 +359,7 @@ void InterfaceState::UpdateIncrementalSequencesVis(const SequenceData &sequences
 			{
 				auto &seq = sequences.temporary[c][t];
 				SceneLabel label;
-				label.position.head<2>() = (rawPoints? seq.rawPoints.back() : seq.points.back()) + Eigen::Vector2f(0.0f, 1*PixelSize);
+				label.position.head<2>() = (rawPoints? seq.rawPoints.back() : seq.points.back()) + Eigen::Vector2f(1, 1) * PixelSize;
 				label.radius = 1 * PixelSize;
 				label.text = asprintf_s("Value: %.2f", seq.value);
 				label.color = Color{ 0.8f, 0.3f, 0.0f, 1 };

@@ -132,74 +132,67 @@ struct VisualisationState
 	VisFrameLock lockVisFrame(const PipelineState &pipeline, bool focusTarget = true, bool focusFrame = true, int focusCamera = -1) const;
 	Eigen::Vector3f getPreferredTarget(const VisFrameLock &visFrame) const;
 
-	bool showMarkerTrails = false;
-	bool showMarkerRays = false;
-	bool showClustersTri3D = false;
-	bool showClusters2DTri = false;
-	bool showClusters2D = false;
-
-	struct {
-		FrameNum focusedFrame = 0;
-		bool visFocusedFrame = false;
+	struct
+	{ // Override visualised frame
+		FrameNum focusedNum = 0;
+		bool visFocused = false;
 	} frame;
 
 	struct
-	{
-		float brightness = 0.0f;
-		float contrast = 1.0f;
-	} image;
+	{ // Visualisation of general pipeline inputs and intermediate outputs
+		bool showMarkerRays = false;
+		bool showClustersTri3D = false;
+		bool showClusters2DTri = false;
+		bool showClusters2D = false;
+	} pipeline;
 
 	struct
 	{
-		bool showFoVCircle, showFoVBounds, showDesignCalib;
-		float circularFoV = 90.0f;
-		std::array<float,3> boundsFoV = { 80, 60, 100 };
-		std::vector<CameraCalib> designCalibs;
-	} calib;
-
-	struct
-	{
-		CameraID focusCameraID = CAMERA_ID_NONE;
+		CameraID focusedID = CAMERA_ID_NONE;
 	} camera;
 
 	struct
 	{
-		// Tracking target to focus on
-		int focusedTrackerID = 0;
+		// Selected tracker to edit, selected in trackers UI
+		int selectedID = 0;
+
+		// Active tracker to focus on, selected in pipeline UI, affects view3D and insights
+		int focusedID = 0;
 		bool focusTrackingInsights, focusTrackerCompare;
+	} tracker;
 
-		struct TrackingTargets
-		{
-			std::string label;
-			FrameNum lastTrackedFrame;
-			TrackingResult trackState;
-			TrackerInertialState imuState;
-			StatFloatingf imuSampleRate;
-			float imuSampleAgo;
-		};
-		std::map<int, TrackingTargets> targets;
-
-		// Tracking visualisations
-		bool showOrphanedIMUs = true;
+	struct
+	{ // Visualisation of trackers
+		// Base tracker state visualisation
+		bool showOrphanedIMUs = false;
 		bool showSearchBounds = false;
 		bool showTargetObserved = true, showTargetPredicted = false, showTargetFiltered = true, showTargetFilteredCamera = false;
 		bool showPoseExtrapolated = false, showInertialIntegrated = false, showInertialFused = false, showInertialFiltered = false;
-		int trailLength = 0;
+
+		// Tracker covariance visualisation
 		bool showCovariancePos = true, showCovarianceRot = false;
 		float scaleCovariance = 10.0f;
 		bool showCovarianceSamples = false;
 		float covSamplesSize = 0.5f;
 		float covSamplesScaling = 10.0f;
 
-		// Debug visualisation settings & state
+		// Show past states as trail
+		int trailLength = 0;
+	} tracking;
+
+	struct
+	{ // Target matching debugging
+
+		// Debugging settings
 		bool showUncertaintyAxis = false;
 		bool debugMatchingState = true;
 		int debugFocusStage = 0;
 		int debugFocusPoint = -1;
 		bool onlyFocusPoint = false;
 		bool showAllLabels = false;
+
 		struct
-		{
+		{ // Debugging state
 			int frameNum = -1, trackerID = 0;
 			bool needsUpdate = false;
 			const TargetCalibration3D *calib;
@@ -215,68 +208,62 @@ struct VisualisationState
 			std::vector<std::vector<SceneLabel>> secLabels;
 			std::vector<std::vector<SceneButton>> editButtons;
 		} debug;
+	} targetMatching;
 
-		// Virtual Trackers
+	struct
+	{ // Virtual trackers visualisation
 		bool showRelations = true;
 		bool debugRelationsReverse;
 		bool debugUpVectors;
-	} tracking;
-
+	} virtTrackers;
 
 	struct
-	{
+	{ // Tracked marker visualisation and debugging
+
+		// Marker covariance visualisation
 		bool showCovarianceIn3DView = true;
 		bool showCovarianceInCam2D = false;
 		bool showCovarianceInCam3D = false;
 		float scaleCovariance = 3.0f;
 
+		// Marker search area visualisation
 		bool showAllSearchesIn3DView = false;
 		bool showMissingSearchesIn3DView = true;
 	} markers;
 
 	struct
-	{
-		struct ObservationCompare
-		{
-			std::vector<BlockedVector<Eigen::Vector2f>> visPoints;
-			std::size_t markerCount, obsCount, triCount;
-		};
-		std::vector<ObservationCompare> savedObs;
-		int64_t visSavedObs = -1;
-	} observations;
+	{ // Target inspection, editing and visualisation outside of target calibration
 
-	struct
-	{
-		int selectedTrackerID = 0;
-
-		// Selection of target for inspection outside of target calib
-		int inspectingTrackerID = 0;
+		// Selection of target for inspection
+		int inspectingID = 0;
 		char inspectingSource = 'N';
-		TargetCalibration3D inspectingTargetCalib;
+		TargetCalibration3D inspectingCalib;
 
-		// Visualisation
+		// Inspection visualisation and editing
 		std::vector<bool> cameraRays;
 		std::vector<bool> markerSelect;
 		bool focusOnMarkerSelection = false;
-		int markerFocussed = -1; // Hovered in "Insights/Target Markers" Sequencer
+		int markerFocused = -1; // Hovered in "Insights/Target Markers" Sequencer
 		int markerHovered = -1; // Hovered in 3D View
 		bool markerObservations = false;
 		bool markerViewCones = true;
 		float adjViewAngle = 0.0f;
 	} target;
 
-	// Target Calibration
 	struct
-	{
+	{ // Target calibration editing & visualisation overlay
+	
 		// Currently edited assembly stage
 		std::shared_ptr<TargetAssemblyBase> edit = nullptr;
 		bool editingMarkers, editingViewCones;
 		int highlightedObservation = -1, selectedObservation = -1;
 		float adjViewAngle = 0.0f, setViewAngle = 0.0f;
+
 		// Selection of existing target views or assembly stages
 		std::shared_ptr<TargetView> view = nullptr;
 		std::shared_ptr<TargetAssemblyStage> stage = nullptr;
 		int stageSubIndex = -1, stageSubSubIndex = -1;
+
 		// Frame within VisTargetLock
 		int frameIdx = 0, frameNum = 0;
 	} targetCalib;
@@ -285,8 +272,20 @@ struct VisualisationState
 	void updateVisTarget(const VisTargetLock &visTarget);
 	void updateVisTarget();
 
-	// Incremental update of observations
-	struct {
+	struct
+	{ // Comparision and visualisation of sequence2D observations
+		struct ObservationCompare
+		{
+			std::vector<BlockedVector<Eigen::Vector2f>> visPoints;
+			std::size_t markerCount, obsCount, triCount;
+		};
+		std::vector<ObservationCompare> savedObs;
+		int64_t savedObsSel = -1;
+	} observations;
+
+	struct
+	{ // Incrementally updated snapshot of sequence2D observations
+
 		// Not synchronised, only updated by UpdateIncrementalObservationVis
 		// And read by UI right after
 		int frameStable = 0; // Last time the stable list was updated
@@ -296,18 +295,36 @@ struct VisualisationState
 		int markerCount = 0; // To check if observations were cleared
 		OptFrameNum lastFrameUpdated = -1;
 		OptFrameNum resetFirstFrame = -1;
+
+		// Additional debug for target view aquisition
+		bool showSeq2DTrail = false;
+		bool showSeq2DLabels = false;
 	} incObsUpdate = {};
 
-	// Visualisation of reference points in virtual space
 	struct
-	{
-		// TODO: Add other cameras, floorplane once calibrated, etc.
+	{ // Visualisation of room calibration and reference points in virtual space
+
+		// TODO: Add other cameras, floorplane once calibrated, etc. for camera view
 		bool showOrigin = false;
 		Eigen::Vector3f origin = Eigen::Vector3f::Zero();
 	} room;
 
 	struct
-	{
+	{ // Visualisation settings of image frames
+		float brightness = 0.0f;
+		float contrast = 1.0f;
+	} image;
+
+	struct
+	{ // Debug & visualisation of calibrations
+		bool showFoVCircle, showFoVBounds, showDesignCalib;
+		float circularFoV = 90.0f;
+		std::array<float,3> boundsFoV = { 80, 60, 100 };
+		std::vector<CameraCalib> designCalibs;
+	} calib;
+
+	struct
+	{ // Debugging of WIP rotation generation for future target probing
 		bool visualise = false;
 
 		float pointSize = 10.0f;
@@ -322,7 +339,7 @@ struct VisualisationState
 		Eigen::Vector3f sphereOrigin = Eigen::Vector3f(0, 0, 2);
 		Eigen::Vector3f boxOrigin = Eigen::Vector3f(2, 0, 1);
 		float boxScale = 0.4f;
-	} rotationSphere;
+	} rotationGeneration;
 };
 
 struct View3D
@@ -450,6 +467,18 @@ public:
 	int targetDiscardAfterStage = -1;
 	bool targetFramesAdvancing = false;
 
+	// Pipeline/Tracking state
+	struct LazyTrackerState
+	{ // Copy of a trackers state updated from within interface
+		std::string label;
+		FrameNum lastTrackedFrame;
+		TrackingResult trackState;
+		TrackerInertialState imuState;
+		StatFloatingf imuSampleRate;
+		float imuSampleAgo;
+	};
+	std::map<int, LazyTrackerState> trackerStates;
+
 	// Log state
 	BlockedQueue<LogEntry, 16384>::View<true> lastLogView;
 	BlockedQueue<LogEntry, 16384> logsFilteredBacklog;
@@ -476,6 +505,7 @@ public:
 	void Exit();
 
 	void UpdateSequences(bool reset = false);
+		void ResetIncrementalSequenceVis();
 		void UpdateIncrementalSequencesVis(const SequenceData &sequences, bool updateStable, bool rawPoints);
 	void UpdateCalibrationError(bool reset = false, bool userTrigger = false);
 	void UpdateCalibrations();

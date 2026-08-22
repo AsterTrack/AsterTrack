@@ -417,9 +417,9 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			frameRelevantParametersDirty = true;
 		if (state.mode == MODE_Replay || state.mode == MODE_Simulation)
 		{ // In replay/simulation
-			if (modified && state.simAdvance == 0 && visState.tracking.debug.frameNum == pipeline.frameNum)
+			if (modified && state.simAdvance == 0 && visState.targetMatching.debug.frameNum == pipeline.frameNum)
 			{ // Debugging tracking, automatically track frame again
-				visState.tracking.debug.needsUpdate = true;
+				visState.targetMatching.debug.needsUpdate = true;
 			}
 			if (trustMod)
 			{ // Debugging trust values, simulate new filter parameters on recent history

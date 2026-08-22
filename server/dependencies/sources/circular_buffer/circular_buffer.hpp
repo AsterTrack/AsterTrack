@@ -50,19 +50,17 @@ public:
     typedef T value_type;
 
 	explicit CircularBuffer(size_t size, size_t initial_size = 0)
-		:_buff{std::unique_ptr<T[]>(new value_type[size])}, _max_size{size}, _size{std::min(size, initial_size)}
-	{
-		std::memset(_buff.get(), 0, _size);
+		:_buff{std::make_unique<T[]>(size)}, _max_size{size}, _size{std::min(size, initial_size)}{
 	}
 
 	CircularBuffer(const CircularBuffer& other)
-		:_buff{std::unique_ptr<T[]>(new value_type[other._max_size])},
+		:_buff{std::make_unique<T[]>(other._max_size)},
 		 _max_size{other._max_size},
 		 _size{other._size},
 		 _head{other._head},
 		 _tail{other._tail}{
-			 std::copy(other.data(), other.data() + _max_size, _buff.get());
-		 }
+		std::copy(other.data(), other.data() + _max_size, _buff.get());
+	}
 
 	
 	CircularBuffer& operator=(const CircularBuffer& other){
@@ -320,7 +318,7 @@ inline
 typename CircularBuffer<T>::size_type CircularBuffer<T>::size() const{
 //	std::lock_guard<std::mutex> _lck(_mtx);
 	return _size;
-	}
+}
 
 template<typename T>
 inline

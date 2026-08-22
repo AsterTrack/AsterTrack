@@ -35,11 +35,11 @@ void InterfaceState::UpdateSubsamplingParameters(SubsampleTargetParameters &para
 	sub |= ScalarProperty<float>("Dynamic Marker Factor", "", &params.dynamicMarkerFactor, &standard.dynamicMarkerFactor, 0, 1000, 0.01f);
 	sub |= ScalarProperty<float>("Dynamic Camera Factor", "", &params.dynamicCameraFactor, &standard.dynamicCameraFactor, 0, 1000, 0.01f);
 	sub |= ScalarProperty<float>("Noise Std Dev", "", &params.randomStdDev, &standard.randomStdDev, 0.0001f, 100, 0.01f);
-	if (sub && visState.target.inspectingTrackerID != 0)
+	if (sub && visState.target.inspectingID != 0)
 	{
 		for (auto &tgt  : GetState().pipeline.obsDatabase.contextualRLock()->targets)
 		{
-			if (tgt.trackerID != visState.target.inspectingTrackerID) continue;
+			if (tgt.trackerID != visState.target.inspectingID) continue;
 			subsampleTargetObservations(GetState().pipeline.record.frames, tgt, params);
 		}
 	}

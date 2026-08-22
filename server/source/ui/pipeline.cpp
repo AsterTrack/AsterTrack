@@ -142,9 +142,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		for (auto &trackRecord : frameRecord.trackers)
 		{
 			if (trackRecord.result.isProbe()) continue;
-			auto findIt = visState.tracking.targets.find(trackRecord.id);
-			auto &t = visState.tracking.targets[trackRecord.id];
-			if (findIt == visState.tracking.targets.end())
+			auto findIt = trackerStates.find(trackRecord.id);
+			auto &t = trackerStates[trackRecord.id];
+			if (findIt == trackerStates.end())
 			{ // Setup tracked target for the first time
 				auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 					[&](auto &t){ return t.id == trackRecord.id; });
@@ -165,12 +165,12 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	bool foundFocused = false;
 	auto SelectableTracker = [&](int id, std::string label)
 	{
-		bool selected = visState.tracking.focusedTrackerID == id;
+		bool selected = visState.tracker.focusedID == id;
 		if (ImGui::Selectable(label.c_str(), &selected,
 			ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 		{
-			visState.tracking.focusedTrackerID = selected? id : 0;
-			visState.tracking.focusTrackingInsights = selected;
+			visState.tracker.focusedID = selected? id : 0;
+			visState.tracker.focusTrackingInsights = selected;
 		}
 		if (selected) foundFocused = true;
 	};
@@ -202,8 +202,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	for (auto &tracker : state.trackerConfigs)
 	{
 		if (!tracker.triggered) continue;
-		auto trackerRec = visState.tracking.targets.find(tracker.id);
-		if (trackerRec == visState.tracking.targets.end()) { hasDormant = true; continue; }
+		auto trackerRec = trackerStates.find(tracker.id);
+		if (trackerRec == trackerStates.end()) { hasDormant = true; continue; }
 		OptFrameNum trackedAgo = frameNum - trackerRec->second.lastTrackedFrame;
 		if (trackedAgo >= 500) { hasDormant = true; continue; }
 		hasTracked = true;
@@ -232,8 +232,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	for (auto &tracker : state.trackerConfigs)
 	{
 		if (!tracker.triggered) continue;
-		auto trackerRec = visState.tracking.targets.find(tracker.id);
-		if (trackerRec != visState.tracking.targets.end())
+		auto trackerRec = trackerStates.find(tracker.id);
+		if (trackerRec != trackerStates.end())
 		{ // Skip recently tracked trackers
 			OptFrameNum trackedAgo = frameNum - trackerRec->second.lastTrackedFrame;
 			if (trackedAgo < 500)
@@ -242,7 +242,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		ImGui::PushID(tracker.id);
 		ImGui::AlignTextToFramePadding();
 		SelectableTracker(tracker.id, asprintf_s("Dormant '%s' (%d)", tracker.label.c_str(), tracker.id));
-		if (trackerRec != visState.tracking.targets.end())
+		if (trackerRec != trackerStates.end())
 			ShowIMUStatus(trackerRec->second);
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (ImGui::ArrowButton("Unset", ImGuiDir_Down))
@@ -252,7 +252,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	}
 
 	if (!foundFocused)
-		visState.tracking.focusedTrackerID = 0;
+		visState.tracker.focusedID = 0;
 
 	if (ImGui::CollapsingHeader("Unused Trackers"))
 	{
@@ -275,17 +275,20 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::TextWrapped("No unused trackers, all are expected to be in the tracking volume.\n"
 				"You may set trigger conditions based on cues that they are in use.");
 			if (ImGui::Button("Open Tracker Configuration", SizeWidthFull()))
+			{
 				windows[WIN_TRACKERS].open = true;
+				ImGui::SetWindowFocus(windows[WIN_TRACKERS].title.c_str());
+			}
 		}
 	}
 
 	ImGui::PopID();
 	ImGui::Dummy(ImVec2(0, 4));
 
-	if (visState.tracking.focusedTrackerID != 0)
+	if (visState.tracker.focusedID != 0)
 	{
 		auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-					[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+					[&](auto &t){ return t.id == visState.tracker.focusedID; });
 		if (trackConfig->type == TrackerConfig::TRACKER_VIRTUAL)
 		{
 			ManualUpCalibrationControl(state, *trackConfig);
@@ -294,21 +297,21 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.simAdvance.load() == 0 || dbg_isBreaking);
 
-	if (displayInternalDebug && visFrame && visState.tracking.focusedTrackerID != 0)
+	if (displayInternalDebug && visFrame && visState.tracker.focusedID != 0)
 	{
 		// Temporary debug tools, data, etc.
 
 		auto &frameRecord = *visFrame.frameIt->get();
 		auto trackRecord = std::find_if(frameRecord.trackers.begin(), frameRecord.trackers.end(),
-					[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+					[&](auto &t){ return t.id == visState.tracker.focusedID; });
 		auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-					[&](auto &t){ return t.id == visState.tracking.focusedTrackerID; });
+					[&](auto &t){ return t.id == visState.tracker.focusedID; });
 		if (trackRecord != frameRecord.trackers.end() && trackConfig != state.trackerConfigs.end()
 			&& !trackRecord->result.isProbe() && trackConfig->type == TrackerConfig::TRACKER_TARGET
 			&& trackRecord->match2D && trackRecord->ext
 			&& BeginCollapsingRegion("Target Tracking Debug"))
 		{
-			auto &debugVis = visState.tracking.debug;
+			auto &debugVis = visState.targetMatching.debug;
 			// Might be less than pipeline cameras if more cameras where added in a future frame
 			// E.g. appended replays may add pipeline cameras but don't need to modify past records
 			// Device mode may do the same when hardware is added, but this is ofc not relevant here
@@ -344,7 +347,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 					calibs, cameraCount, points2D, properties, remainingPoints2D,
 					debugVis.targetMatch2D, debugVis.internalData);
 				debugVis.editedMatch2D = debugVis.targetMatch2D;
-				debugVis.trackerID = visState.tracking.focusedTrackerID;
+				debugVis.trackerID = visState.tracker.focusedID;
 				debugVis.calib = &trackConfig->calib;
 				debugVis.frameNum = frameNum;
 			}
@@ -425,15 +428,15 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::PushID(tgt.trackerID);
 			std::string label = asprintf_s("Target %d: %d frames, %d samples, %d outliers###TgtCont",
 				tgt.trackerID, (int)tgt.frames.size(), tgt.totalSamples, tgt.outlierSamples);
-			bool selected = visState.target.inspectingTrackerID == tgt.trackerID;
+			bool selected = visState.target.inspectingID == tgt.trackerID;
 			ImGui::AlignTextToFramePadding();
 			if (ImGui::Selectable(label.c_str(), &selected, ImGuiSelectableFlags_AllowOverlap))
 			{
 				if (visState.resetVisTarget(false) && selected)
 				{ // Set new selected target ID
-					visState.target.inspectingTargetCalib = {};
-					getTargetCalib(tgt, visState.target.inspectingTargetCalib);
-					visState.target.inspectingTrackerID = tgt.trackerID;
+					visState.target.inspectingCalib = {};
+					getTargetCalib(tgt, visState.target.inspectingCalib);
+					visState.target.inspectingID = tgt.trackerID;
 					visState.target.inspectingSource = 'O';
 					auto unlock = db_lock.scopedUnlock(); // for lockVisTarget
 					visState.updateVisTarget();
@@ -444,7 +447,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			bool del = CrossButton("Del");
 			if (del)
 			{
-				if (visState.target.inspectingTrackerID == tgt.trackerID)
+				if (visState.target.inspectingID == tgt.trackerID)
 					visState.resetVisTarget(false);
 				tgtIt = db_lock->targets.erase(tgtIt);
 			}
@@ -463,25 +466,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		}
 		ImGui::EndDisabled();
 		ImGui::SameLine();
-		ImGui::BeginDisabled(visState.target.inspectingTrackerID == 0 || tgtCalib.optPlannedForTargetID != 0);
+		ImGui::BeginDisabled(visState.target.inspectingID == 0 || tgtCalib.optPlannedForTargetID != 0);
 		if (ImGui::Button("Optimise Target", SizeWidthDiv2()))
 		{
 			auto tgtOptLock = tgtCalib.targetOptimisations.contextualRLock();
 			auto trackerIt = std::find_if(tgtOptLock->begin(), tgtOptLock->end(),
-				[&](auto &t){ return t->targetID == visState.target.inspectingTrackerID; });
+				[&](auto &t){ return t->targetID == visState.target.inspectingID; });
 			if (trackerIt == tgtOptLock->end())
-				tgtCalib.optPlannedForTargetID = visState.target.inspectingTrackerID;
+				tgtCalib.optPlannedForTargetID = visState.target.inspectingID;
 			else
 				SignalErrorToUser("Already optimising the selected target!");
 		}
 		ImGui::EndDisabled();
 
-		ImGui::BeginDisabled(visState.target.inspectingTrackerID == 0);
+		ImGui::BeginDisabled(visState.target.inspectingID == 0);
 
 		if (ImGui::Button("Edit Target", SizeWidthDiv2()))
 		{
 			auto trackerIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-				[&](auto &t){ return t.trackerID == visState.target.inspectingTrackerID; });
+				[&](auto &t){ return t.trackerID == visState.target.inspectingID; });
 			auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
 			if (trackerIt == db_lock->targets.end())
 				SignalErrorToUser("Selected tracker not found in target database!");
@@ -511,9 +514,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		if (ImGui::Button("Update View Cones", SizeWidthDiv2()))
 		{
 			auto trackerIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-				[&](auto &t){ return t.trackerID == visState.target.inspectingTrackerID; });
+				[&](auto &t){ return t.trackerID == visState.target.inspectingID; });
 			auto track = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-				[&](auto &t){ return t.id == visState.target.inspectingTrackerID; });
+				[&](auto &t){ return t.id == visState.target.inspectingID; });
 			if (trackerIt == db_lock->targets.end())
 				SignalErrorToUser("Selected tracker not found in target database!");
 			else if (track == state.trackerConfigs.end())
@@ -1020,7 +1023,7 @@ static void ShowTrackingResults()
 				record.frames.insert(frameRecord->num, std::move(copyFrame));
 			}
 			state.compareTrackers.push_back(std::move(record));
-			GetUI().visState.tracking.focusTrackerCompare = true;
+			GetUI().visState.tracker.focusTrackerCompare = true;
 		}
 		if (open)
 		{

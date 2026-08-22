@@ -631,9 +631,9 @@ void InterfaceState::UpdateInsights(InterfaceWindow &window)
 	PipelineState &pipeline = state.pipeline;
 
 	ImGuiTabItemFlags trackingTabFlags = 0;
-	if (pipeline.phase == PHASE_Tracking && visState.tracking.focusTrackingInsights && visState.tracking.focusedTrackerID != 0)
+	if (pipeline.phase == PHASE_Tracking && visState.tracker.focusTrackingInsights && visState.tracker.focusedID != 0)
 		trackingTabFlags = ImGuiTabItemFlags_SetSelected;
-	visState.tracking.focusTrackingInsights = false;
+	visState.tracker.focusTrackingInsights = false;
 	if (pipeline.phase == PHASE_Tracking && ImGui::BeginTabItem("Tracking", NULL, trackingTabFlags))
 	{
 		if (ShowTrackingPanel())
@@ -717,30 +717,30 @@ static bool ShowTrackingPanel()
 		initialisedTesting = true;
 		stateDifferences = true;
 	}
-	if (ui.visState.tracking.focusedTrackerID != 0 && ui.visState.tracking.focusedTrackerID != curTrackerID && !inspectExplicit)
+	if (ui.visState.tracker.focusedID != 0 && ui.visState.tracker.focusedID != curTrackerID && !inspectExplicit)
 	{ // External change
 		for (auto &tracker : state.trackerConfigs)
 		{
 			if (!tracker.triggered) continue;
 			if (tracker.type != TrackerConfig::TRACKER_TARGET && tracker.type != TrackerConfig::TRACKER_VIRTUAL)
 				continue; // TODO: Support marker trackers
-			if (tracker.id != ui.visState.tracking.focusedTrackerID) continue;
+			if (tracker.id != ui.visState.tracker.focusedID) continue;
 			inspecting = Inspect_Trackers;
 			inspectingType = inspectType(tracker.type);
 			curTrackerID = tracker.id;
 			curTrackerLabel = tracker.label;
 		}
 	}
-	if (ui.visState.tracking.focusedTrackerID == 0 && curTrackerID > 0 && !inspectExplicit)
+	if (ui.visState.tracker.focusedID == 0 && curTrackerID > 0 && !inspectExplicit)
 	{ // External change
 		inspecting = Inspect_CombineTrackers;
 		inspectingType = Inspect_Targets;
 		curTrackerLabel = "All Targets";
 		curTrackerID = 0;
 	}
-	if (ui.visState.tracking.focusTrackerCompare)
+	if (ui.visState.tracker.focusTrackerCompare)
 	{ // External change
-		ui.visState.tracking.focusTrackerCompare = false;
+		ui.visState.tracker.focusTrackerCompare = false;
 		inspecting = Inspect_CompareTrackers;
 		curTrackerLabel = "Compare";
 	}
@@ -782,7 +782,7 @@ static bool ShowTrackingPanel()
 				inspectingType = inspectType(tracker.type);
 				curTrackerID = tracker.id;
 				curTrackerLabel = tracker.label;
-				ui.visState.tracking.focusedTrackerID = tracker.id;
+				ui.visState.tracker.focusedID = tracker.id;
 			}
 			ImGui::PopID();
 		}
@@ -1352,14 +1352,14 @@ static bool ShowTrackingPanel()
 
 	// Current and selected frames
 	double curFrame = frameNum + 0.5;
-	double focusFrame = (double)ui.visState.frame.focusedFrame;
+	double focusFrame = (double)ui.visState.frame.focusedNum;
 	ImPlot::SetNextLineStyle(ImVec4(0.33, 0.66, 0.4, 1.0), 3);
 	ImPlot::PlotInfLines("CurFrame", &curFrame, 1);
 	if (ImPlot::DragLineX(2, &focusFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
 	{
-		ui.visState.frame.focusedFrame = (FrameNum)std::max(0.0, focusFrame);
+		ui.visState.frame.focusedNum = (FrameNum)std::max(0.0, focusFrame);
 		if (!state.isStreaming || state.simAdvance.load() == 0)
-			ui.visState.frame.visFocusedFrame = true;
+			ui.visState.frame.visFocused = true;
 	}
 
 	ImPlot::PopColormap();
@@ -1469,7 +1469,7 @@ static bool ShowTargetCalibrationPanel(VisTargetLock &visTarget)
 		}
 		targetViewZoom = ui.seqTarget->framePixelWidthTarget;
 
-		ImSequencer::Sequencer(ui.seqTarget.get(), &ui.visState.targetCalib.frameIdx, nullptr, &ui.visState.target.markerFocussed, &ui.seqTarget->m_start,
+		ImSequencer::Sequencer(ui.seqTarget.get(), &ui.visState.targetCalib.frameIdx, nullptr, &ui.visState.target.markerFocused, &ui.seqTarget->m_start,
 			ImSequencer::SEQUENCER_CHANGE_FRAME);
 
 		ImGui::EndTabItem();

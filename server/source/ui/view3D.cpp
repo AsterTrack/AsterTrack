@@ -332,11 +332,20 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		ImGui::SameLine();
 	}
 
-	ImGui::SetCursorPosX(areaEnd - GetBarWidth(ImGui::GetFrameHeight(), 1));
+	ImGui::SetCursorPosX(areaEnd - GetBarWidth(ImGui::GetFrameHeight(), 2));
 	ImGui::BeginDisabled(true);
 	ImGui::Button("?", SizeFrame());
 	ImGui::EndDisabled();
 	ImGui::SetItemTooltip("Move around with WASD/Arrow Keys\nMove Up/Down with E/Q\nLook around with Left Mouse Drag");
+
+	ImGui::SameLine();
+
+	if (ImGui::Button(ICON_LA_COG, SizeFrame()))
+	{
+		windows[WIN_VISUALISATION].open = true;
+		ImGui::SetWindowFocus(windows[WIN_VISUALISATION].title.c_str());
+	}
+	ImGui::SetItemTooltip("Open visualisation options for both 3D View and Camera Views");
 
 	EndViewToolbar();
 
@@ -365,18 +374,15 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	{ // Side Panel
 		sidePanelWidth = ImGui::GetWindowWidth();
 
-		ImGui::Checkbox("Show Marker Rays", &visState.showMarkerRays);
-		ImGui::Checkbox("Show 3D Tri Clusters in 3D", &visState.showClustersTri3D);
-		ImGui::Checkbox("Show Tri 2D Clusters in 3D", &visState.showClusters2DTri);
-		ImGui::Checkbox("Show 2D Clusters in Camera", &visState.showClusters2D);
+		ImGui::Checkbox("Show Marker Rays", &visState.pipeline.showMarkerRays);
 
-		VisTargetLock visTarget = visState.lockVisTarget();
-		if (visTarget && ImGui::TreeNode("Target Calibration"))
+		if (visState.lockVisTarget())
 		{
-			ImGui::Checkbox("Show Marker FoV", &visState.target.markerViewCones);
-			ImGui::Checkbox("Show Marker Observations", &visState.target.markerObservations);
+			BeginSection("Target Calibration");
+			ImGui::Checkbox("Show View Cones", &visState.target.markerViewCones);
+			ImGui::Checkbox("Show Observations", &visState.target.markerObservations);
 			ImGui::Checkbox("Focus on Selection", &visState.target.focusOnMarkerSelection);
-			ImGui::TreePop();
+			EndSection();
 		}
 
 		ImGui::EndChild();
@@ -411,10 +417,10 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 	for (auto &camera : pipeline.cameras)
 		if (camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusCameraID == camera->id? 0.6f : 0.3f, 1.0f });
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
 	for (auto &camera : pipeline.cameras)
 		if (!camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusCameraID == camera->id? 0.6f : 0.3f, 1.0f });
+			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
 
 	if (pipeline.isSimulationMode)
 	{
@@ -422,18 +428,18 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			visualiseCamera(camera->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
 	}
 
-	if (visState.showMarkerRays && visFrame)
+	if (visState.pipeline.showMarkerRays && visFrame)
 	{
 		auto &frame = *visFrame.frameIt->get();
 		for (int c = 0; c < frame.cameras.size(); c++)
 			visualiseRays(pipeline.cameras[c]->calib, frame.cameras[c].points2D, frame.cameras[c].blobUse);
 	}
 
-	if ((visState.showClustersTri3D || visState.showClusters2DTri) && visFrame && visFrame.isRealtimeFrame)
+	if ((visState.pipeline.showClustersTri3D || visState.pipeline.showClusters2DTri) && visFrame && visFrame.isRealtimeFrame)
 	{ // Only for realtime frames (e.g. no inspecting frames in target calib later)
 		thread_local std::vector<VisModel> clusters;
 		clusters.clear();
-		if (visState.showClustersTri3D)
+		if (visState.pipeline.showClustersTri3D)
 		{
 			for (auto &cluster : visFrame.frameIt->get()->clusterTri3D)
 			{
@@ -442,7 +448,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 					Color{ 0.4f, 0.8f, 0.2f, 0.6f });
 			}
 		}
-		if (visState.showClusters2DTri)
+		if (visState.pipeline.showClusters2DTri)
 		{
 			for (auto &cluster : visFrame.frameIt->get()->cluster2DTri)
 			{
@@ -462,7 +468,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 	}
 
-	if (visState.rotationSphere.visualise)
+	if (visState.rotationGeneration.visualise)
 		visualRotationGenAnalysis(visState, pipeline.params.detect.rotGen);
 
 	if (visFrame.target)
@@ -645,8 +651,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	thread_local std::vector<VisModel> covariances;
 	covariances.clear();
 
-	auto &trkDbg = visState.tracking.debug;
-	bool debugging = state.pipeline.phase == PHASE_Tracking && trkDbg.frameNum == frame.num && trkDbg.trackerID == visState.tracking.focusedTrackerID;
+	auto &trkDbg = visState.targetMatching.debug;
+	bool debugging = state.pipeline.phase == PHASE_Tracking && trkDbg.frameNum == frame.num && trkDbg.trackerID == visState.tracker.focusedID;
 	for (auto &trackRecord : frame.trackers)
 	{
 		if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
@@ -673,11 +679,11 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			auto &subtrackers = trackRecord.visual->virtualSubtrackers;
 
 			std::vector<std::pair<VisPoint,VisPoint>> edges(
-				(visState.tracking.showRelations? relations.size() : 0) + 
-				(visState.tracking.debugRelationsReverse? subtrackers.size() : 0) + 
-				(visState.tracking.debugUpVectors? subtrackers.size() : 0));
+				(visState.virtTrackers.showRelations? relations.size() : 0) + 
+				(visState.virtTrackers.debugRelationsReverse? subtrackers.size() : 0) + 
+				(visState.virtTrackers.debugUpVectors? subtrackers.size() : 0));
 			int edgeBaseIndex = 0;
-			if (visState.tracking.showRelations)
+			if (visState.virtTrackers.showRelations)
 			{
 				const Color8 colOffset = Color{ 1.0, 0.1, 0.4, 0.8 };
 				for (int i = 0; i < relations.size(); i++)
@@ -688,7 +694,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				}
 				edgeBaseIndex += relations.size();
 			}
-			if (visState.tracking.debugRelationsReverse)
+			if (visState.virtTrackers.debugRelationsReverse)
 			{
 				const Color8 colRelation = Color{ 0.7f, 0.6f, 0.2f, 0.6f };
 				for (int i = 0; i < subtrackers.size(); i++)
@@ -699,7 +705,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				}
 				edgeBaseIndex += subtrackers.size();
 			}
-			if (visState.tracking.debugUpVectors)
+			if (visState.virtTrackers.debugUpVectors)
 			{
 				const Color8 colRelation = Color{ 0.4f, 0.2f, 0.7f, 0.8f };
 				for (int i = 0; i < subtrackers.size(); i++)
@@ -982,7 +988,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 
 static void visualRotationGenAnalysis(const VisualisationState &visState, const RotationGenerationParameters &gen)
 {
-	auto sphere = visState.rotationSphere;
+	auto sphere = visState.rotationGeneration;
 
 	std::vector<Eigen::Quaternionf> rotations(gen.rollAxisShells*gen.shellPoints);
 	for (int r = 0; r < gen.rollAxisShells; r++)

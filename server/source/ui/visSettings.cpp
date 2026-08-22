@@ -34,29 +34,38 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
  
-	if (ImGui::TreeNode("Image Adjustment"))
+	bool isTracking = pipeline.phase == PHASE_Tracking || pipeline.phase == PHASE_Automatic;
+	bool isTargetCalib = pipeline.phase == PHASE_Calibration_Target;
+	bool isTesting = state.mode == MODE_Replay || state.mode == MODE_Simulation;
+	bool isDebug = (isTesting && state.simAdvance.load() == 0) || dbg_isBreaking;
+
+	if (BeginCollapsingRegion("Pipeline"))
 	{
-		SliderInput("Brightness", &visState.image.brightness, -0.4f, 0.4f);
-		SliderInput("Contrast", &visState.image.contrast, 0.0f, 5.0f);
-		ImGui::TreePop();
+		ImGui::Checkbox("Show Marker Rays", &visState.pipeline.showMarkerRays);
+		ImGui::Checkbox("Show 3D Tri Clusters in 3D", &visState.pipeline.showClustersTri3D);
+		ImGui::Checkbox("Show Tri 2D Clusters in 3D", &visState.pipeline.showClusters2DTri);
+		ImGui::Checkbox("Show 2D Clusters in Camera", &visState.pipeline.showClusters2D);
+
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::TreeNode("Lens Calibration Vis"))
+	ImGui::BeginDisabled(!isTracking);
+	if (BeginCollapsingRegion("Markers"))
 	{
-		float checkboxIndent = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x*2;
-		ImGui::Checkbox("Show FoV Circle", &visState.calib.showFoVCircle);
-		ImGui::Indent(checkboxIndent);
-		ImGui::SliderFloat("##FOV", &visState.calib.circularFoV, 0.0f, 160.0f);
-		ImGui::Unindent(checkboxIndent);
-		ImGui::Checkbox("Show FoV Bounds (H, V, D)", &visState.calib.showFoVBounds);
-		ImGui::Indent(checkboxIndent);
-		ImGui::InputFloat3("##HVD", visState.calib.boundsFoV.data(), "%.3f°");
-		ImGui::Unindent(checkboxIndent);
-		ImGui::TreePop();
-	}
+		ImGui::Checkbox("Show Covariance in 3D View", &visState.markers.showCovarianceIn3DView);
+		ImGui::Checkbox("Show Covariance 3D in Camera", &visState.markers.showCovarianceInCam3D);
+		ImGui::Checkbox("Show Covariance 2D in Camera", &visState.markers.showCovarianceInCam2D);
+		ImGui::SliderFloat("Covariance Sigma", &visState.markers.scaleCovariance, 1, 100);
 
-	if (pipeline.phase == PHASE_Tracking && (state.mode == MODE_Replay || state.mode == MODE_Simulation)
-		&& ImGui::TreeNode("Target Tracking"))
+		ImGui::Checkbox("Show All Searches in 3D View", &visState.markers.showAllSearchesIn3DView);
+		ImGui::Checkbox("Show Missing Searches in 3D View", &visState.markers.showMissingSearchesIn3DView);
+
+		EndCollapsingRegion();
+	}
+	ImGui::EndDisabled();
+
+	ImGui::BeginDisabled(!isTracking);
+	if (BeginCollapsingRegion("Trackers"))
 	{
 		ImGui::Checkbox("Show Oprhaned IMUs", &visState.tracking.showOrphanedIMUs);
 		ImGui::Checkbox("Show Search Bounds", &visState.tracking.showSearchBounds);
@@ -68,75 +77,72 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::Checkbox("Show Inertial Filtered", &visState.tracking.showInertialFiltered);
 		ImGui::Checkbox("Show Filtered Target", &visState.tracking.showTargetFiltered);
 		ImGui::Checkbox("Show Filtered Target in Camera", &visState.tracking.showTargetFilteredCamera);
+
 		ImGui::SliderInt("Trail Length", &visState.tracking.trailLength, 0, 100);
 
+		BeginSection("Covariance");
+		ImGui::Checkbox("Show Positional Covariance", &visState.tracking.showCovariancePos);
+		ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovarianceRot);
+		ImGui::SliderFloat("Covariance Sigma", &visState.tracking.scaleCovariance, 1, 100);
+		ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
+		ImGui::SliderFloat("Sample Size", &visState.tracking.covSamplesSize, 0, 1);
+		ImGui::SliderFloat("Sample Scaling", &visState.tracking.covSamplesScaling, 0, 100);
 
-		if (ImGui::TreeNode("Covariance"))
+		VisFrameLock visFrame = visState.lockVisFrame(pipeline, false, true);
+		if (isDebug && visFrame)
 		{
-			ImGui::Checkbox("Show Positional Covariance", &visState.tracking.showCovariancePos);
-			ImGui::Checkbox("Show Rotational Covariance", &visState.tracking.showCovarianceRot);
-			ImGui::SliderFloat("Covariance Sigma", &visState.tracking.scaleCovariance, 1, 100);
-			ImGui::Checkbox("Show Covariance Samples", &visState.tracking.showCovarianceSamples);
-			ImGui::SliderFloat("Sample Size", &visState.tracking.covSamplesSize, 0, 1);
-			ImGui::SliderFloat("Sample Scaling", &visState.tracking.covSamplesScaling, 0, 100);
-
-			bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
-			VisFrameLock visFrame = visState.lockVisFrame(pipeline, false, true);
-			if (displayInternalDebug && visFrame)
+			auto trackRecord = std::find_if(visFrame.frameIt->get()->trackers.begin(), visFrame.frameIt->get()->trackers.end(),
+				[&](auto &tgt){ return tgt.id == visState.tracker.focusedID; });
+			if (trackRecord != visFrame.frameIt->get()->trackers.end())
 			{
-				auto trackRecord = std::find_if(visFrame.frameIt->get()->trackers.begin(), visFrame.frameIt->get()->trackers.end(),
-					[&](auto &tgt){ return tgt.id == visState.tracking.focusedTrackerID; });
-				if (trackRecord != visFrame.frameIt->get()->trackers.end())
-				{
-					Eigen::Matrix3f covariance = trackRecord->pose.filteredCov.topLeftCorner<3,3>().transpose();
-					ImGui::InputFloat3("##CovT1", covariance.data()+0, "%.8f");
-					ImGui::InputFloat3("##CovT2", covariance.data()+3, "%.8f");
-					ImGui::InputFloat3("##CovT3", covariance.data()+6, "%.8f");
-				}
+				Eigen::Matrix3f covariance = trackRecord->pose.filteredCov.topLeftCorner<3,3>().transpose();
+				ImGui::InputFloat3("##CovT1", covariance.data()+0, "%.8f");
+				ImGui::InputFloat3("##CovT2", covariance.data()+3, "%.8f");
+				ImGui::InputFloat3("##CovT3", covariance.data()+6, "%.8f");
 			}
-
-			ImGui::TreePop();
 		}
-		else visState.tracking.showCovariancePos = visState.tracking.showCovarianceRot = visState.tracking.showCovarianceSamples = false;
+		EndSection();
 
-		bool displayInternalDebug = state.simAdvance.load() == 0 || dbg_isBreaking;
-		if (displayInternalDebug && visState.tracking.debug.frameNum >= 0)
-		{
-			ImGui::Checkbox("Debug Matching Algorithm", &visState.tracking.debugMatchingState);
-			ImGui::InputInt("Matching Stage", &visState.tracking.debugFocusStage);
-			ImGui::BeginDisabled(visState.tracking.debugFocusStage <= 0);
-			ImGui::Checkbox("Show all labels", &visState.tracking.showAllLabels);
-			ImGui::InputInt("Focus on Point", &visState.tracking.debugFocusPoint);
-			ImGui::Checkbox("Only focus point", &visState.tracking.onlyFocusPoint);
-			ImGui::EndDisabled();
-			ImGui::Checkbox("Show Axis of Uncertainty", &visState.tracking.showUncertaintyAxis);
-		}
+		BeginSection("Virtual Tracker");
+		ImGui::Checkbox("Show Relation to Subtrackers", &visState.virtTrackers.showRelations);
+		ImGui::Checkbox("Debug relation from Subtrackers", &visState.virtTrackers.debugRelationsReverse);
+		ImGui::Checkbox("Debug Up Vectors", &visState.virtTrackers.debugUpVectors);
+		EndSection();
 
-		if (ImGui::TreeNode("Virtual Tracker"))
-		{
-			ImGui::Checkbox("Show Relation to Subtrackers", &visState.tracking.showRelations);
-			ImGui::Checkbox("Debug relation from Subtrackers", &visState.tracking.debugRelationsReverse);
-			ImGui::Checkbox("Debug Up Vectors", &visState.tracking.debugUpVectors);
-			ImGui::TreePop();
-		}
-
-		ImGui::TreePop();
+		EndCollapsingRegion();
 	}
+	ImGui::EndDisabled();
 
-	if (pipeline.phase == PHASE_Tracking && (state.mode == MODE_Replay || state.mode == MODE_Simulation)
-		&& ImGui::TreeNode("Marker Tracking"))
+	ImGui::BeginDisabled(visState.targetMatching.debug.frameNum < 0);
+	ImGui::SetNextItemOpen(visState.targetMatching.debug.frameNum >= 0, ImGuiCond_Appearing);
+	if (isTracking && isDebug && BeginCollapsingRegion("Target Matching Debug"))
 	{
-		ImGui::Checkbox("Show Covariance in 3D View", &visState.markers.showCovarianceIn3DView);
-		ImGui::Checkbox("Show Covariance 3D in Camera", &visState.markers.showCovarianceInCam3D);
-		ImGui::Checkbox("Show Covariance 2D in Camera", &visState.markers.showCovarianceInCam2D);
-		ImGui::SliderFloat("Covariance Sigma", &visState.markers.scaleCovariance, 1, 100);
+		ImGui::Checkbox("Debug Matching Algorithm", &visState.targetMatching.debugMatchingState);
+		ImGui::InputInt("Matching Stage", &visState.targetMatching.debugFocusStage);
+		ImGui::BeginDisabled(visState.targetMatching.debugFocusStage <= 0);
+		ImGui::Checkbox("Show all labels", &visState.targetMatching.showAllLabels);
+		ImGui::InputInt("Focus on Point", &visState.targetMatching.debugFocusPoint);
+		ImGui::Checkbox("Only focus point", &visState.targetMatching.onlyFocusPoint);
+		ImGui::EndDisabled();
+		ImGui::Checkbox("Show Axis of Uncertainty", &visState.targetMatching.showUncertaintyAxis);
 
-		ImGui::Checkbox("Show All Searches in 3D View", &visState.markers.showAllSearchesIn3DView);
-		ImGui::Checkbox("Show Missing Searches in 3D View", &visState.markers.showMissingSearchesIn3DView);
-		ImGui::TreePop();
+		EndCollapsingRegion();
 	}
+	ImGui::EndDisabled();
 
-	if (ImGui::TreeNode("Room References"))
+	ImGui::BeginDisabled(!isTargetCalib);
+	if (isTesting && BeginCollapsingRegion("Target Calibration"))
+	{
+		BeginSection("Target View Aquisition (Camera View)");
+		ImGui::Checkbox("Show Marker Trails", &visState.incObsUpdate.showSeq2DTrail);
+		ImGui::Checkbox("Show Marker Labels", &visState.incObsUpdate.showSeq2DLabels);
+		EndSection();
+
+		EndCollapsingRegion();
+	}
+	ImGui::EndDisabled();
+
+	if (BeginCollapsingRegion("Room References"))
 	{
 		ImGui::Checkbox("Origin", &visState.room.showOrigin);
 		ImGui::SameLine();
@@ -144,18 +150,40 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 		ImGui::InputFloat3("##Origin", visState.room.origin.data(), "%.3f");
 		ImGui::EndDisabled();
 
-		ImGui::TreePop();
+		EndCollapsingRegion();
 	}
 
-	if (ImGui::TreeNode("Rotation Sphere"))
+	if (BeginCollapsingRegion("Image Adjustment"))
 	{
-		ImGui::Checkbox("Visualise", &visState.rotationSphere.visualise);
+		SliderInput("Brightness", &visState.image.brightness, -0.4f, 0.4f);
+		SliderInput("Contrast", &visState.image.contrast, 0.0f, 5.0f);
+
+		EndCollapsingRegion();
+	}
+
+	if (BeginCollapsingRegion("Lens Calibration Vis (Camera View)"))
+	{
+		float checkboxIndent = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x*2;
+		ImGui::Checkbox("Show FoV Circle", &visState.calib.showFoVCircle);
+		ImGui::Indent(checkboxIndent);
+		ImGui::SliderFloat("##FOV", &visState.calib.circularFoV, 0.0f, 160.0f);
+		ImGui::Unindent(checkboxIndent);
+		ImGui::Checkbox("Show FoV Bounds (H, V, D)", &visState.calib.showFoVBounds);
+		ImGui::Indent(checkboxIndent);
+		ImGui::InputFloat3("##HVD", visState.calib.boundsFoV.data(), "%.3f°");
+		ImGui::Unindent(checkboxIndent);
+
+		EndCollapsingRegion();
+	}
+
+	if (isTesting && BeginCollapsingRegion("Rotation Generation Debug (3D View)"))
+	{
+		ImGui::Checkbox("Visualise", &visState.rotationGeneration.visualise);
 
 		auto &gen = pipeline.params.detect.rotGen;
 
-
 		ImGui::SeparatorText("Visualisation");
-		auto &sphere = visState.rotationSphere;
+		auto &sphere = visState.rotationGeneration;
 
 		ImGui::SliderFloat("Point Size", &sphere.pointSize, 0, 50.0f);
 
@@ -174,7 +202,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 
 		ImGui::SliderFloat("Min Neighbour Angle", &sphere.minNeighbourAngle, 0, 90.0f);
 
-		ImGui::TreePop();
+		EndCollapsingRegion();
 	}
 
 	ImGui::End();

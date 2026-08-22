@@ -281,14 +281,14 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			displaySceneLabels(view.vis.emulation.labels);
 		}
 	}
-	if (visState.showMarkerTrails)
+	if (visState.incObsUpdate.showSeq2DLabels && state.pipeline.phase != PHASE_Calibration_Point)
 	{
 		displaySceneLabels(view.vis.observations.labels);
 	}
-	if (state.pipeline.phase == PHASE_Tracking && visState.tracking.debug.frameNum > 0 &&
-		visState.tracking.debug.trackerID == visState.tracking.focusedTrackerID && visState.tracking.debugMatchingState)
+	if (state.pipeline.phase == PHASE_Tracking && visState.targetMatching.debug.frameNum > 0 &&
+		visState.targetMatching.debug.trackerID == visState.tracker.focusedID && visState.targetMatching.debugMatchingState)
 	{
-		auto &trkVis = visState.tracking;
+		auto &trkVis = visState.targetMatching;
 		int camera = view.camera->pipeline->index;
 		if (trkVis.debugFocusStage > 0 && trkVis.debug.internalData.matching.size() > camera)
 		{ // Camera may not be involved if it was added after this frame (e.g. from future appended replay)
@@ -483,8 +483,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			if (view.vis.emulation.enabled)
 				view.vis.imageVis.undistort = false;
 		}
-
-		ImGui::MenuItem("Show Marker Trails", nullptr, &visState.showMarkerTrails);
 
 		ImGui::EndCombo();
 	}
@@ -1098,8 +1096,10 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
 			else
 				visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1.0, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
-			if (visState.showMarkerTrails && visFrame.isRealtimeFrame)
+
+			if (visState.incObsUpdate.showSeq2DTrail && visFrame.isRealtimeFrame && phase != PHASE_Calibration_Point)
 			{ // Only works with current frame, not past frames
+				// Intended for debugging sequence2D for target calibration
 				visualisePoints2D(visCamera.observations.ptsUnstable.begin(), visCamera.observations.ptsUnstable.end(), Color{ 0.4f, 0.4f, 1.0f, 0.2f }, 3.0f*pixelRatio);
 				visualisePoints2D(visCamera.observations.ptsTemp.begin(), visCamera.observations.ptsTemp.end(), Color{ 1.0f, 0.2f, 0.2f, 0.2f }, 3.0f*pixelRatio);
 				visualisePoints2D(visCamera.observations.ptsInactive.begin(), visCamera.observations.ptsInactive.end(), Color{ 0.6f, 0.8f, 0.2f, 0.2f }, 3.0f*pixelRatio);
@@ -1126,7 +1126,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		{
 			auto &track = pipeline.params.track;
 
-			if (visState.showClusters2D)
+			if (visState.pipeline.showClusters2D)
 			{
 				for (auto &cluster : camFrame.clusters2D)
 				{
@@ -1135,17 +1135,17 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				}
 			}
 
-			auto &debugVis = visState.tracking.debug;
+			auto &debugVis = visState.targetMatching.debug;
 			if (debugVis.frameNum > 0 && debugVis.frameNum != frame->num)
 				debugVis = {}; // Any one camera can reset
-			if (displayInternalDebug && visState.tracking.debugMatchingState &&
-				debugVis.frameNum == frame->num && debugVis.trackerID == visState.tracking.focusedTrackerID)
+			if (displayInternalDebug && visState.targetMatching.debugMatchingState &&
+				debugVis.frameNum == frame->num && debugVis.trackerID == visState.tracker.focusedID)
 			{ // Visualise internal tracking debug instead of normal vis
 
 				visualiseTarget2DMatchingStages(visState, calib, camFrame, *debugVis.calib,
 					debugVis.internalData.matching.at(camera.pipeline->index), track.expandMarkerViewAngle);
 
-				if (visState.tracking.showUncertaintyAxis)
+				if (visState.targetMatching.showUncertaintyAxis)
 				{ // Visualise uncertainty axis of dominant camera from internal tracking debug data
 					visualiseTarget2DUncertaintyAxis(debugVis.internalData.uncertaintyAxis.at(camera.pipeline->index));
 				}
@@ -1251,10 +1251,10 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				{
 					// Visualise target points that were considered (since they should've been visible assuming the pose is about right)
 					projectTarget(projected2D, tracker.calib, calib, trackRecord.pose.observed, expandViewAngle);
-					visualisePoints2D(projected2D, trackRecord.id == visState.tracking.focusedTrackerID? colVisibleF : colVisible, 2.0f);
+					visualisePoints2D(projected2D, trackRecord.id == visState.tracker.focusedID? colVisibleF : colVisible, 2.0f);
 
 					// Visualise target points that are tracked this frame
-					if (trackRecord.visual && trackRecord.visual->visibleMarkers.size() > camera.pipeline->index && trackRecord.id == visState.tracking.focusedTrackerID)
+					if (trackRecord.visual && trackRecord.visual->visibleMarkers.size() > camera.pipeline->index && trackRecord.id == visState.tracker.focusedID)
 					{
 						projectTarget(projected2D, tracker.calib, calib,
 							trackRecord.visual->visibleMarkers[camera.pipeline->index], trackRecord.pose.observed);
@@ -1291,9 +1291,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 		else if (phase == PHASE_Calibration_Point)
 		{
-			if (visState.observations.visSavedObs >= 0 && visState.observations.visSavedObs < visState.observations.savedObs.size())
+			if (visState.observations.savedObsSel >= 0 && visState.observations.savedObsSel < visState.observations.savedObs.size())
 			{
-				const auto &obsCmp = visState.observations.savedObs[visState.observations.visSavedObs];
+				const auto &obsCmp = visState.observations.savedObs[visState.observations.savedObsSel];
 				if (camera.pipeline->index < obsCmp.visPoints.size())
 				{
 					const auto &pts = obsCmp.visPoints[camera.pipeline->index];
@@ -1330,7 +1330,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 	}
 	else if (visCamera.visMode == VIS_ERROR_VIS)
-	{ // TODO: Proper UI controls to enable/disable error visualisation as desired
+	{
+		// TODO: Unmaintained, needs testing
+
 		auto &errorVis = visCamera.errors;
 		if (calib.valid() && errorVis.hasMap)
 		{
@@ -1349,6 +1351,8 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	}
 	else if (visCamera.visMode == VIS_VISUAL_DEBUG)
 	{
+		// TODO: Unmaintained, needs testing
+
 		// Show other blobs next to it normally
 		visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
 

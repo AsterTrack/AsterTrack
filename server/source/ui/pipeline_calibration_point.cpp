@@ -303,13 +303,13 @@ void InterfaceState::UpdatePipelineCalibSection()
 				}
 				ImGui::SetItemTooltip("Reset and invalidate the existing camera calibration. If there is a default lens, it will be applied.");
 
-				bool selected = visState.camera.focusCameraID == camera->id;
+				bool selected = visState.camera.focusedID == camera->id;
 				ImGui::SameLine();
 				if (ImGui::Selectable("", &selected,
 					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (selected) visState.camera.focusCameraID = camera->id;
-					else visState.camera.focusCameraID = 0;
+					if (selected) visState.camera.focusedID = camera->id;
+					else visState.camera.focusedID = 0;
 				}
 				ImGui::PopID();
 			}
@@ -639,18 +639,18 @@ void InterfaceState::UpdatePipelineObservationSection()
 				ImGui::TableNextColumn();
 				ImGui::Text("%" PRIu64, obsCmp.triCount);
 				ImGui::TableNextColumn();
-				bool select = visState.observations.visSavedObs == i;
+				bool select = visState.observations.savedObsSel == i;
 				if (ImGui::Selectable("##Sel", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				{
-					visState.observations.visSavedObs = select? i : -1;
+					visState.observations.savedObsSel = select? i : -1;
 				}
 				ImGui::SameLine(0, 0);
 				if (CrossButton("##Del"))
 				{
-					if (visState.observations.visSavedObs == i)
-						visState.observations.visSavedObs = -1;
-					else if (visState.observations.visSavedObs > i)
-						visState.observations.visSavedObs--;
+					if (visState.observations.savedObsSel == i)
+						visState.observations.savedObsSel = -1;
+					else if (visState.observations.savedObsSel > i)
+						visState.observations.savedObsSel--;
 					visState.observations.savedObs.erase(visState.observations.savedObs.begin()+i);
 					i--;
 				}

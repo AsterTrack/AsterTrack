@@ -45,10 +45,10 @@ VisFrameLock VisualisationState::lockVisFrame(const PipelineState &pipeline, boo
 		snapshot.frameIt = snapshot.frames.pos(frame);
 		snapshot.isRealtimeFrame = false;
 	}
-	else if (focusFrame && frame.visFocusedFrame)
+	else if (focusFrame && frame.visFocused)
 	{ // Visualise focused frame
 		snapshot.frameIt = snapshot.frames.pos(std::max<OptFrameNum>(snapshot.frames.beginIndex(),
-			std::min<OptFrameNum>(snapshot.frames.endIndex()-1, frame.focusedFrame)));
+			std::min<OptFrameNum>(snapshot.frames.endIndex()-1, frame.focusedNum)));
 	}
 	else
 	{ // Visualise most recent frame
@@ -104,10 +104,10 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 	FrameRecord &frame = *visFrame.frameIt->get();
 	if (!frame.trackers.empty())
 	{ // Pose from frame tracking records
-		if (tracking.focusedTrackerID >= 0)
+		if (tracker.focusedID >= 0)
 		{
 			auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(),
-				[&](auto &tgt){ return tgt.id == tracking.focusedTrackerID; });
+				[&](auto &tgt){ return tgt.id == tracker.focusedID; });
 			if (trackRecord != frame.trackers.end())
 				return trackRecord->pose.filtered.translation();
 		}

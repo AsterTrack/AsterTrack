@@ -420,6 +420,8 @@ void InterfaceState::GeneralUpdate()
 		lastObservationUpdate = sclock::now();
 		UpdateSequences();
 	}
+	else if (!pipeline.recordSequences)
+		ResetIncrementalSequenceVis();
 
 	MaintainFilteredLogs();
 }
@@ -887,8 +889,7 @@ static void CleanVisualisationState()
 	GetUI().visState.target = {};
 	GetUI().visState.targetCalib = {};
 	GetUI().visState.incObsUpdate = {};
-	GetUI().visState.tracking.targets = {};
-	GetUI().visState.tracking.debug = {};
+	GetUI().visState.targetMatching.debug = {};
 }
 
 EXPORT void _SignalServerEvent(ServerEvents event)
@@ -913,12 +914,12 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 		case EVT_START_STREAMING:
 			GetUI().recordSections.clear();
 			GetUI().recordSectionStart = -1;
-			GetUI().visState.frame.visFocusedFrame = false;
+			GetUI().visState.frame.visFocused = false;
 			break;
 		case EVT_STOP_STREAMING:
 			// TODO: Might need UI drawing lock, not in UI thread right now
-			GetUI().visState.tracking.targets.clear();
-			GetUI().visState.tracking.focusedTrackerID = 0;
+			GetUI().trackerStates.clear();
+			GetUI().visState.tracker.focusedID = 0;
 			break;
 		case EVT_UPDATE_CAMERAS:
 			GetUI().cameraListDirty = true;

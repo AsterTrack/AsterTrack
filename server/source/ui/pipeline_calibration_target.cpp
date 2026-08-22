@@ -1061,9 +1061,9 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			ImGui::Text("Save as");
 			SameLinePos(SizeWidthDiv3().x + ImGui::GetStyle().ItemSpacing.x);
 
-			auto focusTargetID = [](int id)
+			auto focusTrackerID = [](int id)
 			{
-				GetUI().visState.target.selectedTrackerID = id;
+				GetUI().visState.tracker.selectedID = id;
 				GetUI().windows[WIN_TRACKERS].open = true;
 				ImGui::SetWindowFocus(GetUI().windows[WIN_TRACKERS].title.c_str());
 			};
@@ -1075,7 +1075,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				return id + 1;
 			};
 			static std::shared_ptr<TargetAssemblyStage> writingStage = nullptr;
-			if (ImGui::Button("Target", SizeWidthDiv3()))
+			if (ImGui::Button("Tracker", SizeWidthDiv3()))
 			{
 				auto stage = visState.targetCalib.stage? visState.targetCalib.stage : pipeline.targetCalib.assemblyStages.contextualRLock()->back();
 				if (pipeline.targetCalib.assignedTrackerID != 0)
@@ -1087,7 +1087,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				{
 					pipeline.targetCalib.assignedTrackerID = selectNewID();
 					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, stage->base.targetCalib);
-					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					focusTrackerID(pipeline.targetCalib.assignedTrackerID);
 					LOG(LTargetCalib, LInfo, "Registered new target with %d markers under ID %d!\n",
 						(int)stage->base.target.markers.size(), pipeline.targetCalib.assignedTrackerID);
 				}
@@ -1104,7 +1104,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				if (ImGui::Button("Overwrite", SizeWidthDiv2()))
 				{
 					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, writingStage->base.targetCalib);
-					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					focusTrackerID(pipeline.targetCalib.assignedTrackerID);
 					LOG(LTargetCalib, LInfo, "Updated existing target calibration '%s' (%d) with %d markers!\n",
 						trk->label.c_str(), trk->id, (int)writingStage->base.target.markers.size());
 					ImGui::CloseCurrentPopup();
@@ -1114,7 +1114,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				{
 					pipeline.targetCalib.assignedTrackerID = selectNewID();
 					SignalTargetCalibUpdate(pipeline.targetCalib.assignedTrackerID, writingStage->base.targetCalib);
-					focusTargetID(pipeline.targetCalib.assignedTrackerID);
+					focusTrackerID(pipeline.targetCalib.assignedTrackerID);
 					LOG(LTargetCalib, LInfo, "Registered new target with %d markers under ID %d!\n",
 						(int)writingStage->base.target.markers.size(), pipeline.targetCalib.assignedTrackerID);
 					ImGui::CloseCurrentPopup();

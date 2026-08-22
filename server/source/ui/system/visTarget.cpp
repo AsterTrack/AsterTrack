@@ -53,22 +53,22 @@ VisTargetLock VisualisationState::lockVisTarget() const
 		state.hasPose = true;
 		state.targetGT = targetCalib.stage->base.simulation.targetGT;
 	}
-	else if (target.inspectingTrackerID != 0)
+	else if (target.inspectingID != 0)
 	{
 		// Get TargetCalibration3D
 		auto trackerIt = std::find_if(GetState().trackerConfigs.begin(), GetState().trackerConfigs.end(),
-			[&](auto &tgt){ return tgt.id == target.inspectingTrackerID; });
+			[&](auto &tgt){ return tgt.id == target.inspectingID; });
 		if (trackerIt != GetState().trackerConfigs.end() && trackerIt->type == TrackerConfig::TRACKER_TARGET)
 			state.calib = &trackerIt->calib;
-		else if (!target.inspectingTargetCalib.markers.empty())
-			state.calib = &target.inspectingTargetCalib;
+		else if (!target.inspectingCalib.markers.empty())
+			state.calib = &target.inspectingCalib;
 		else
 			return state;
 		state.targetGT = nullptr;
 		// Get ObsTarget if tracking data exists
 		auto db_lock = GetState().pipeline.obsDatabase.contextualRLock();
 		auto obsIt = std::find_if(db_lock->targets.begin(), db_lock->targets.end(),
-			[&](auto &tgt){ return tgt.trackerID == target.inspectingTrackerID; });
+			[&](auto &tgt){ return tgt.trackerID == target.inspectingID; });
 		if (obsIt == db_lock->targets.end())
 			return state;
 		state.db_lock = std::move(db_lock);
@@ -103,8 +103,8 @@ bool VisualisationState::resetVisTarget(bool keepFrame)
 	targetCalib.stageSubIndex = -1;
 	targetCalib.stageSubSubIndex = -1;
 	target.inspectingSource = 'N';
-	target.inspectingTrackerID = 0;
-	target.inspectingTargetCalib = {};
+	target.inspectingID = 0;
+	target.inspectingCalib = {};
 	target.markerSelect.clear();
 	target.adjViewAngle = 0.0f;
 	return true;
@@ -197,7 +197,7 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 				markerIndices[mBase+gtMarker.first] = map.second;
 				if (visState.target.markerSelect[map.second])
 					markerPt.color = gtHighlight;
-				if (visState.target.markerFocussed == map.second)
+				if (visState.target.markerFocused == map.second)
 					markerPt.size *= focusSizeFactor;
 				if (markersVisible[map.second])
 					markerPt.color.a = std::min(255, (int)(markerPt.color.a * visibleAlphaFactor));
@@ -221,8 +221,8 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 			markerPoints.emplace_back(pose * marker, map < 0? auxColor : mappedColor, auxSize);
 			markerIndices.push_back(map);
 		}
-		if (visState.target.markerFocussed >= 0 && visState.target.markerFocussed < viewRes.markers.size())
-			markerPoints[mBase+visState.target.markerFocussed].size *= focusSizeFactor;
+		if (visState.target.markerFocused >= 0 && visState.target.markerFocused < viewRes.markers.size())
+			markerPoints[mBase+visState.target.markerFocused].size *= focusSizeFactor;
 		visualisePose(pose, auxColor, 0.1f, 2.0f);
 	}
 
@@ -239,8 +239,8 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 			markerPoints.emplace_back(tgtPose * marker, map < 0? auxColor : mappedColor, auxSize);
 			markerIndices.push_back(map);
 		}
-		if (visState.target.markerFocussed >= 0 && visState.target.markerFocussed < viewRes.markers.size())
-			markerPoints[mBase+visState.target.markerFocussed].size *= focusSizeFactor;
+		if (visState.target.markerFocused >= 0 && visState.target.markerFocused < viewRes.markers.size())
+			markerPoints[mBase+visState.target.markerFocused].size *= focusSizeFactor;
 	}
 
 	{ // Draw current markers of actively selected target (target view or assembly stage)
@@ -252,7 +252,7 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 			if (markersVisible[m])
 				markerPt.color.a = std::min(255, (int)(markerPt.color.a * visibleAlphaFactor));
 			markerPt.size = mkSize;
-			if (visState.target.markerFocussed == m)
+			if (visState.target.markerFocused == m)
 				markerPt.size *= focusSizeFactor;
 			markerPoints.push_back(markerPt);
 			markerIndices.push_back(m);
@@ -387,7 +387,7 @@ void visualiseVisTargetViewCones(const std::vector<CameraCalib> &calibs, const V
 	{
 		visCone(tgtPose * marker.pos, tgtPose.linear() * marker.nrm, marker.viewAngle);
 	}
-	if (visState.target.inspectingTrackerID != 0 && visState.target.adjViewAngle != 0.0f)
+	if (visState.target.inspectingID != 0 && visState.target.adjViewAngle != 0.0f)
 	{
 		for (auto &vert : coneMesh) vert.color = Color{ 0.5f, 0.8f, 0.5f, 0.6f };
 		for (auto &marker : visTarget.calib->markers)
@@ -490,7 +490,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 {
 	thread_local std::vector<Eigen::Vector2f> projected2D;
 	thread_local std::vector<int> relevantProjected2D;
-	auto &trkVis = visState.tracking;
+	auto &trkVis = visState.targetMatching;
 
 	int camCount = trkVis.debug.targetMatch2D.points2D.size();
 	trkVis.debug.targetBounds.resize(camCount);
@@ -558,7 +558,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 		button.context = (intptr_t)(mkIdx*0x35D0C2+ptIdx*0x44A7F3+pos.x()*0x854EF7);
 		int cam = calib.index;
 		button.callback = [cam, mkIdx, ptIdx](intptr_t){
-			auto &edit = GetUI().visState.tracking.debug.editedMatch2D;
+			auto &edit = GetUI().visState.targetMatching.debug.editedMatch2D;
 			auto &pts = edit.points2D[cam];
 			for (auto m = pts.begin(); m != pts.end(); m++)
 			{

@@ -249,7 +249,7 @@ INTERFACE_CPP = \
 	ui/trackers.cpp ui/integrations.cpp \
 	ui/tools/lens_selection.cpp ui/tools/testing.cpp ui/tools/production.cpp \
 	ui/cameraPanels.cpp ui/cameraView.cpp ui/view3D.cpp ui/visSettings.cpp \
-	ui/system/state.cpp ui/system/visGeneral.cpp ui/system/visTarget.cpp \
+	ui/system/state.cpp ui/system/visGeneral.cpp ui/system/visTarget.cpp ui/system/visInteract.cpp \
 	ui/gl/visualisation.cpp ui/gl/sharedGL.cpp \
 	ui/gl/mesh.cpp ui/gl/shader.cpp \
 	ui/imgui/imgui_custom.cpp ui/imgui/imgui_onDemand.cpp \

@@ -44,6 +44,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include "util/log.hpp"
 
 #include <map>
+#include <set>
 
 // Forward-declared opaque structs
 struct TrackingCameraState; // device/tracking_camera.hpp
@@ -220,6 +221,10 @@ struct VisualisationState
 	struct
 	{ // Tracked marker visualisation and debugging
 
+		uint32_t hoveredID = 0; // Hovered in 3D View
+		std::set<uint32_t> boundedIDs; // In mouse drag bounds in 3D View
+		std::set<uint32_t> selectedIDs; // Selected in 3D View
+
 		// Marker covariance visualisation
 		bool showCovarianceIn3DView = true;
 		bool showCovarianceInCam2D = false;
@@ -345,7 +350,7 @@ struct VisualisationState
 struct View3D
 {
 	// General projection
-	float fov = 65.0f;
+	float fInv = fInvFromFoV(65.0f);
 	float pitch = 0, heading = 0;
 	Eigen::Isometry3f viewTransform;
 
@@ -354,17 +359,24 @@ struct View3D
 	float distance;
 	Eigen::Vector3f target;
 
-	// Interaction
-	bool isDragging = false;
-	bool sidePanelOpen = true;
+	// Mouse Interaction (though click may be remapped to any key)
+	bool rotatingView = false;
 	Eigen::Vector2f mousePos;
+	bool mouseIn;
+	int selectingBounded = 0;
+	Eigen::Vector2f selectMouseStart;
+	Bounds2f selectBounds;
+	struct ClickReg { ImGuiKey key; char source; int64_t id; int priority; };
+	ClickReg clickReg;
+
+	bool sidePanelOpen = true;
 
 	inline Eigen::Projective3f getProj(float aspect) const
 	{
 		Eigen::Projective3f proj;
 		const float zNear = 0.0001f/2, zFar = 100; // 0.1mm-100m
 		const float a = -(zFar+zNear)/(zFar-zNear), b = (2*zNear*zFar)/(zFar-zNear);
-		float sY = 1.0f / fInvFromFoV(fov);
+		float sY = 1.0f / fInv;
 		float sX = sY*aspect;
 		// Projection - negative z because of blender-style camera coordinate system
 		proj.matrix() <<
@@ -478,6 +490,11 @@ public:
 		float imuSampleAgo;
 	};
 	std::map<int, LazyTrackerState> trackerStates;
+	struct LazyMarkerState
+	{ // Copy of a trackers state updated from within interface
+		FrameNum lastTrackedFrame;
+	};
+	std::map<uint32_t, LazyMarkerState> markerStates;
 
 	// Log state
 	BlockedQueue<LogEntry, 16384>::View<true> lastLogView;

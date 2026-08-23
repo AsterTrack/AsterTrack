@@ -142,9 +142,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		for (auto &trackRecord : frameRecord.trackers)
 		{
 			if (trackRecord.result.isProbe()) continue;
-			auto findIt = trackerStates.find(trackRecord.id);
-			auto &t = trackerStates[trackRecord.id];
-			if (findIt == trackerStates.end())
+			auto existing = trackerStates.insert({ trackRecord.id, {} });
+			auto &t = existing.first->second;
+			if (existing.second)
 			{ // Setup tracked target for the first time
 				auto trackConfig = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
 					[&](auto &t){ return t.id == trackRecord.id; });
@@ -159,6 +159,25 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			if (trackRecord.imuSampleInterval > 0.0001f)
 				t.imuSampleRate.update(std::round(1/trackRecord.imuSampleInterval));
 			t.imuSampleAgo = dtS(trackRecord.imuLastSample, frameRecord.time);
+		}
+		for (auto &marker : frameRecord.markers3D)
+		{
+			if (marker.id == 0) continue; // Just triangulated or tracked but not yet validated
+			auto existing = markerStates.insert({ marker.id, { (FrameNum)frameNum } });
+			auto &mk = existing.first->second;
+			if (!existing.second)
+				mk.lastTrackedFrame = frameNum;
+		}
+		for (auto marker = markerStates.begin(); marker != markerStates.end();)
+		{
+			if (marker->second.lastTrackedFrame + 50 > frameNum)
+			{ // 50 frames is generous
+				marker++;
+				continue;
+			}
+			// Dropped, remove from selection, too
+			visState.markers.selectedIDs.erase(marker->first);
+			marker = markerStates.erase(marker);
 		}
 	}
 
@@ -279,6 +298,42 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				windows[WIN_TRACKERS].open = true;
 				ImGui::SetWindowFocus(windows[WIN_TRACKERS].title.c_str());
 			}
+		}
+	}
+
+	if (ImGui::CollapsingHeader("Transient Markers"))
+	{
+		auto SelectableMarker = [&](int id, std::string label)
+		{
+			ImGui::PushID(id);
+			bool selected = visState.markers.selectedIDs.contains(id);
+			if (ImGui::Selectable(label.c_str(), &selected,
+				ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+			{
+				if (!ImGui::GetIO().KeyShift && !ImGui::GetIO().KeyCtrl)
+				{
+					if (visState.markers.selectedIDs.size() > 1)
+						selected = true;
+					visState.markers.selectedIDs.clear();
+				}
+				if (selected)
+					visState.markers.selectedIDs.insert(id);
+				if (!selected && ImGui::GetIO().KeyCtrl)
+					visState.markers.selectedIDs.erase(id);
+			}
+			ImGui::PopID();
+		};
+		for (auto &marker : markerStates)
+		{
+			OptFrameNum trackedAgo = frameNum - marker.second.lastTrackedFrame;
+			if (trackedAgo > 10) continue;
+			SelectableMarker(marker.first, asprintf_s("Tracking Marker %u###Mk", marker.first));
+		}
+		for (auto &marker : markerStates)
+		{
+			OptFrameNum trackedAgo = frameNum - marker.second.lastTrackedFrame;
+			if (trackedAgo <= 10) continue;
+			SelectableMarker(marker.first, asprintf_s("Lost Marker %u, %ld frames ago###Mk", marker.first, trackedAgo));
 		}
 	}
 

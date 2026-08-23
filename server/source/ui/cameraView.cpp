@@ -1282,7 +1282,11 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 				visSetupCamera(postProjMat, calib);
 
 				// Visualise all markers at once to z-sort them appropriately
-				auto &markerPoints = visualiseVisTargetMarkers(pipeline, visState, visFrame.target);
+				thread_local std::vector<VisPoint> markerPoints;
+				thread_local std::vector<int> markerIndices;
+				markerPoints.clear();
+				markerIndices.clear();
+				visualiseVisTargetMarkers(pipeline, visState, visFrame.target, markerPoints, markerIndices);
 				visualisePointsSpheresDepthSorted(markerPoints);
 
 				// Reinstate projection after 3D

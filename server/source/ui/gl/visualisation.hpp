@@ -68,6 +68,20 @@ static inline Color lerp(Color a, Color b, float val)
 	return col;
 }
 
+static inline Color8 highlightColor8(Color8 col, float factor = 2)
+{
+	auto adapt = [factor](uint8_t &val) { val = std::min(255, std::max(100, (int)(val*factor))); };
+	if (col.a < 150) adapt(col.a);
+	else
+	{ // Adapt lowest color value
+		int min = std::min(col.r, std::min(col.g, col.b));
+		if (col.r == min) adapt(col.r);
+		else if (col.g == min) adapt(col.g);
+		else if (col.b == min) adapt(col.b);
+	}
+	return col;
+}
+
 #pragma pack(push, 1)
 struct VisPoint
 {

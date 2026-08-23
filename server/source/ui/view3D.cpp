@@ -85,9 +85,39 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	ImVec2 viewOrigin = ImGui::GetCursorPos() - ImGui::GetStyle().WindowPadding;
 
 	bool viewBGHovered, viewHeld;
-	bool viewPressed = InteractionSurface("3DView", viewWin->InnerRect, viewBGHovered, viewHeld);
+	InteractionSurface("3DView", viewWin->InnerRect, viewBGHovered, viewHeld);
 	bool viewFocused = ImGui::IsItemFocused();
 	bool viewHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem);
+	auto clickReg = [this, viewHovered](ImGuiKey key, char source, int64_t id, int priority)
+	{ // Chosing to do own click processing on everything in 3D View, could instead implement it more in line with Dear ImGui
+		if (viewHovered && ImGui::IsKeyReleased(key) && view3D.clickReg.source == source && view3D.clickReg.id == id)
+		{
+			LOG(LGUI, LDebug, "Registered click in 3D View on %c %ld", source, id);
+			view3D.clickReg = {};
+			return true;
+		}
+		if (viewHovered && ImGui::IsKeyPressed(key, false))
+		{
+			if (view3D.clickReg.source != 0)
+				LOG(LGUI, LDebug, "Click in 3D View on %c %ld is competing with %c %ld, priorities %d and %d",
+					source, id, view3D.clickReg.source, view3D.clickReg.id, priority, view3D.clickReg.priority);
+			if (view3D.clickReg.priority < priority)
+			{
+				LOG(LGUI, LDebug, "Starting click in 3D View on %c %ld!", source, id);
+				view3D.clickReg = { key, source, id, priority };
+			}
+		}
+		return false;
+	};
+	auto cancelClickReg = [this]()
+	{
+		if (view3D.clickReg.source != 0)
+		{
+			LOG(LGUI, LDebug, "Cancelling click in 3D view on %c %ld", view3D.clickReg.source, view3D.clickReg.id);
+			view3D.clickReg = {};
+		}
+	};
+
 
 	/**
 	 * 3D View Key Input
@@ -111,7 +141,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			if (ImGui::IsKeyDown(ImGuiKey_W))
 			{
 				RequestUpdates();
-				view3D.distance -= 1.0f*dT;
+				view3D.distance = std::max(0.001f, view3D.distance - 1.0f*dT);
 			}
 			if (ImGui::IsKeyDown(ImGuiKey_U))
 			{
@@ -167,21 +197,25 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		}
 	}
 
+
 	/**
 	 * 3D View Mouse Interaction
 	 */
 
-	if (viewHovered && std::abs(io.MouseWheel) > 0.0001f)
-	{
-		if (view3D.orbit)
-		{
-			view3D.distance = std::max(0.001f, view3D.distance/(1.0f+io.MouseWheel*0.05f) - io.MouseWheel*0.0001f);
-		}
-	}
+	// Convert to projected space useful for 3D interactions - with square pixels, e.g. within (-aspect, +aspect) vertically
+	ImVec2 mouseClamp = ImMin(viewWin->InnerRect.Max, ImMax(viewWin->InnerRect.Min, ImGui::GetMousePos()));
+	ImVec2 mouseRel = (ImGui::GetMousePos() - viewWin->InnerRect.GetCenter()) * 2 / viewWin->InnerRect.GetSize().x;
+	view3D.mousePos = Eigen::Vector2f(mouseRel.x, -mouseRel.y);
+	view3D.mouseIn = viewHovered;
 
-	if (viewPressed)
+
+	/* View Rotation/Orbit and Zoom */
+
+	const ImGuiKey KEY_ROTATE_VIEW = ImGuiKey_MouseRight;
+
+	if (viewHovered && ImGui::IsKeyPressed(KEY_ROTATE_VIEW, false))
 	{
-		view3D.isDragging = true;
+		view3D.rotatingView = true;
 #ifdef VIEW_CAPTURE_MOUSE_CURSOR // Wayland/GLFW has a bug where it doesn't update the mouse pos in between captures when not moved 
 		glfwSetInputMode(glfwWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	#ifdef VIEW_RAW_MOUSE_MOVEMENT
@@ -189,9 +223,9 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	#endif
 #endif
 	}
-	if (view3D.isDragging && !viewHeld)
+	if (view3D.rotatingView && !ImGui::IsKeyDown(KEY_ROTATE_VIEW))
 	{
-		view3D.isDragging = false;
+		view3D.rotatingView = false;
 #ifdef VIEW_CAPTURE_MOUSE_CURSOR // Wayland/GLFW has a bug where it doesn't update the mouse pos in between captures when not moved 
 		glfwSetInputMode(glfwWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	#ifdef VIEW_RAW_MOUSE_MOVEMENT
@@ -199,7 +233,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	#endif
 #endif
 	}
-	if (view3D.isDragging)
+	if (view3D.rotatingView)
 	{
 #ifndef VIEW_CAPTURE_MOUSE_CURSOR // Wayland/GLFW has a bug where it doesn't update the mouse pos in between captures when not moved 
 		ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
@@ -211,6 +245,9 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		view3D.heading = std::fmod(view3D.heading, (float)PI*2);
 		view3D.viewTransform.linear() = getRotationXYZ(Eigen::Vector3f(view3D.pitch, 0, view3D.heading));
 
+		// Don't allow other mouse interactions while mouse is captured
+		view3D.mouseIn = false;
+
 		if (view3D.orbit)
 		{
 			VisFrameLock visFrame = visState.lockVisFrame(state.pipeline);
@@ -220,22 +257,50 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		}
 	}
 
-	//LOG(LGUI, LDebug, "Want capture mouse: %s, keyboard: %s", io.WantCaptureMouse? "true" : "false\n", io.WantCaptureKeyboard? "true" : "false");
-
-
-	/**
-	 * 3D View Interaction
-	 */
-
-	if (viewHovered)
-	{ // Convert to projected space useful for 3D interactions
-		ImVec2 mouseRel = (ImGui::GetMousePos() - viewWin->InnerRect.Min) / viewWin->InnerRect.GetSize();
-		view3D.mousePos = Eigen::Vector2f(mouseRel.x*2-1, -(mouseRel.y*2-1));
+	if (viewHovered && std::abs(io.MouseWheel) > 0.0001f)
+	{
+		if (view3D.orbit)
+		{
+			view3D.distance = std::max(0.001f, view3D.distance/(1.0f+io.MouseWheel*0.05f) - io.MouseWheel*0.0001f);
+		}
 	}
-	else
-		view3D.mousePos.setConstant(NAN);
 
-	PipelineState &pipeline = state.pipeline;
+
+	/* Bounded Selection */
+
+	const ImGuiKey KEY_SELECT = ImGuiKey_MouseLeft;
+	const ImGuiKey KEY_SELECT_ABORT = ImGuiKey_MouseRight;
+
+	int acceptSelectBounds = 0;
+	if (viewHovered && ImGui::IsKeyPressed(KEY_SELECT, false) && !ImGui::IsKeyDown(KEY_SELECT_ABORT))
+	{ // Start bounded selection
+		view3D.selectingBounded = io.KeyCtrl? 3 : (io.KeyShift? 2 : 1);
+		view3D.selectMouseStart = view3D.mousePos;
+	}
+	if (view3D.selectingBounded && ImGui::IsKeyReleased(KEY_SELECT))
+	{ // Apply bounded selection (even if released outside)
+		if (!view3D.selectBounds.center().hasNaN())
+		{ // Too small bounds will be NaN and should not be regarded as a bounded selection
+			acceptSelectBounds = view3D.selectingBounded;
+			cancelClickReg(); // Override any other click registration
+		}
+		view3D.selectingBounded = 0;
+	}
+	if (view3D.selectingBounded && ImGui::IsKeyDown(KEY_SELECT_ABORT))
+	{ // Abort without modifying selection
+		cancelClickReg(); // Override any other click registration
+		view3D.selectingBounded = 0;
+	}
+	if (view3D.selectingBounded && (view3D.mousePos - view3D.selectMouseStart).norm() > 5*PixelSize)
+	{
+		view3D.selectBounds = Bounds2f(view3D.selectMouseStart, Eigen::Vector2f::Zero());
+		view3D.selectBounds.include(view3D.mousePos);
+	}
+	else view3D.selectBounds = Bounds2f(Eigen::Vector2f::Constant(NAN), Eigen::Vector2f::Constant(NAN));
+
+
+	/* Target Inspection Interactions */
+
 	{
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget)
@@ -249,7 +314,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			{
 				Eigen::Projective3f proj = view3D.getProj(viewWin->InnerRect.GetHeight() / viewWin->InnerRect.GetWidth()) * view3D.viewTransform.inverse();
 				float radiusPx = 8.0f;
-				for (auto &cam : pipeline.cameras)
+				for (auto &cam : state.pipeline.cameras)
 				{
 					Eigen::Vector3f dir = (cam->calib.transform.translation().cast<float>() - frame.pose.translation()).normalized();
 					Eigen::Vector3f pos3D = frame.pose.translation() + dir*0.2f;
@@ -262,42 +327,84 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 					ImGui::SetNextItemAllowOverlap();
 					if (ImGui::Button(asprintf_s("##CamBtn%d", cam->index).c_str(), ImVec2(radiusPx*2, radiusPx*2)))
 					{
-						visState.target.cameraRays.resize(pipeline.cameras.size());
+						visState.target.cameraRays.resize(state.pipeline.cameras.size());
 						visState.target.cameraRays[cam->index] = !visState.target.cameraRays[cam->index];
 					}
 				}
 			}
 		}
 
-		if (visTarget && visState.target.markerHovered >= 0)
-		{
-			ImGuiID id = ImGui::GetID("TargetCalibMarker");
-			ImVec2 pos = ImGui::GetMousePos();
-			ImRect bb(pos - ImVec2(10,10), pos + ImVec2(10,10));
-			ImGui::SetNextItemAllowOverlap();
-			if (ImGui::ItemAdd(bb, id))
-			{
-				bool hovered, held;
-				bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
-				if (pressed)
-				{
-					visState.target.markerSelect[visState.target.markerHovered] =
-						!visState.target.markerSelect[visState.target.markerHovered]; 
-				}
-			}
+		if (visTarget && visState.target.markerHovered >= 0 && clickReg(KEY_SELECT, 'T', visState.target.markerHovered, 20))
+		{ // Different, much simplified selection mechanic than ordinaty transient markers, but still usable
+			visState.target.markerSelect[visState.target.markerHovered] = !visState.target.markerSelect[visState.target.markerHovered];
 		}
 		visState.target.markerHovered = -1;
 	}
+
+
+	/* Transient Markers Interaction */
+
+	if (acceptSelectBounds)
+	{
+		if (acceptSelectBounds == 1) // Normal
+			visState.markers.selectedIDs = std::move(visState.markers.boundedIDs);
+		else if (acceptSelectBounds == 2) // Shift
+			visState.markers.selectedIDs.insert_range(visState.markers.boundedIDs);
+		else if (acceptSelectBounds == 3) // Ctrl
+			for (int id : visState.markers.boundedIDs)
+				visState.markers.selectedIDs.erase(id);
+	}
+	visState.markers.boundedIDs.clear();
+
+	if (visState.markers.hoveredID > 0 && clickReg(KEY_SELECT, 'M', visState.markers.hoveredID, 10))
+	{
+		if (io.KeyCtrl)
+		{
+			if (visState.markers.selectedIDs.contains(visState.markers.hoveredID))
+				visState.markers.selectedIDs.erase(visState.markers.hoveredID);
+			else
+				visState.markers.selectedIDs.insert(visState.markers.hoveredID);
+		}
+		else
+		{
+			if (!io.KeyShift) visState.markers.selectedIDs.clear();
+			visState.markers.selectedIDs.insert(visState.markers.hoveredID);
+		}
+	}
+	if (visState.markers.hoveredID == 0 && !io.KeyShift && !io.KeyCtrl && clickReg(KEY_SELECT, 'D', 0, 5))
+	{ // Clear marker selection if clicked on nothing
+		visState.markers.selectedIDs.clear();
+	}
+	visState.markers.hoveredID = 0;
+
+
+	/* Finalise 3D View Interaction */
+
+	if (view3D.clickReg.source != 0 && !ImGui::IsKeyDown(view3D.clickReg.key))
+	{ // If click did not register after being released, clear it now
+		LOG(LGUI, LDebug, "Clearing stale click %c %ld!", view3D.clickReg.source, view3D.clickReg.id);
+		view3D.clickReg = {};
+	}
+
 
 	/**
 	 * Overlay UI Layout
 	 */
 
+	if (view3D.selectingBounded && !view3D.selectBounds.center().hasNaN())
+	{ // Show selection bounds
+		ImVec2 boundsMin = ImVec2(view3D.selectBounds.min.x(), -view3D.selectBounds.max.y());
+		ImVec2 boundsMax = ImVec2(view3D.selectBounds.max.x(), -view3D.selectBounds.min.y());
+		boundsMin = boundsMin * viewWin->InnerRect.GetSize().x/2 + viewWin->InnerRect.GetCenter();
+		boundsMax = boundsMax * viewWin->InnerRect.GetSize().x/2 + viewWin->InnerRect.GetCenter();
+		ImGui::RenderFrame(boundsMin, boundsMax, IM_COL32(0xAA, 0xAA, 0xAA, 0x33), false);
+	}
+
 	static float sidePanelWidth = 200;
 	float areaEnd = ImGui::GetContentRegionAvail().x + ImGui::GetStyle().WindowPadding.x; // To use instead of GetRightAlignedStartPos
 	ImRect area3D(viewOrigin, viewOrigin + viewWin->InnerRect.GetSize()), areaSide;
 	if (view3D.sidePanelOpen)
-	{
+	{ // Reserve space for the side panel
 		areaSide = area3D;
 		areaSide.Min.x = area3D.Max.x - (sidePanelWidth + ImGui::GetStyle().WindowPadding.x);
 		areaSide.Max.x -= ImGui::GetStyle().WindowPadding.x;
@@ -310,9 +417,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	}
 
 
-	/**
-	 * 3D View Toolbar
-	 */
+	/* 3D View Toolbar */
 
 	ImGui::SetCursorPos(toolbarPos);
 
@@ -350,11 +455,9 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	EndViewToolbar();
 
 
-	/**
-	 * Side Panel
-	 */
+	/* Side Panel */
 
-	bool showWindow = false;
+	bool showSidePanelContents = false;
 	if (view3D.sidePanelOpen)
 	{
 		ImGui::SetCursorPos(areaSide.Min);
@@ -362,16 +465,16 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		sideBG.w = 0.3f;
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, sideBG);
 		ImGui::SetNextWindowSizeConstraints(ImVec2(150, 100), ImVec2(FLT_MAX,FLT_MAX));
-		showWindow = ImGui::BeginChild("Visualisation", ImVec2(0,0),
+		showSidePanelContents = ImGui::BeginChild("Visualisation", ImVec2(0,0),
 			ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AutoResizeX |
 			ImGuiChildFlags_Borders | ImGuiChildFlags_TitleBar |
 			ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar, &view3D.sidePanelOpen);
 		ImGui::PopStyleColor();
-		if (!showWindow)
+		if (!showSidePanelContents)
 			ImGui::EndChild();
 	}
-	if (showWindow)
-	{ // Side Panel
+	if (showSidePanelContents)
+	{
 		sidePanelWidth = ImGui::GetWindowWidth();
 
 		ImGui::Checkbox("Show Marker Rays", &visState.pipeline.showMarkerRays);
@@ -494,25 +597,22 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 
 		// Draw marker visualisation of the current target and its related state
-		auto &markerPoints = visualiseVisTargetMarkers(pipeline, visState, visFrame.target);
-		if (!view3D.mousePos.hasNaN())
+		static std::vector<VisPoint> markerPoints;
+		static std::vector<int> markerIndices;
+		markerPoints.clear();
+		markerIndices.clear();
+		visualiseVisTargetMarkers(pipeline, visState, visFrame.target, markerPoints, markerIndices);
+
+		if (view3D.mouseIn)
 		{ // Inject UI interaction into 3D marker spheres before rendering
-			auto interacting = interactWithVisTargetMarker(view3D.viewTransform, view3D.getProj(visAspect), view3D.mousePos);
-			if (interacting.first >= 0)
+			int interacting = probePointCloudPos2D(markerPoints, view3D.viewTransform, view3D.fInv/visAspect, view3D.mousePos);
+			if (interacting >= 0)
 			{
-				VisPoint &vis = markerPoints[interacting.first];
-				auto adapt = [](uint8_t &val) { val = std::min(255, std::max(100, val*2)); };
-				if (vis.color.a < 150) adapt(vis.color.a);
-				else
-				{ // Adapt lowest color value
-					int min = std::min(vis.color.r, std::min(vis.color.g, vis.color.b));
-					if (vis.color.r == min) adapt(vis.color.r);
-					else if (vis.color.g == min) adapt(vis.color.g);
-					else if (vis.color.b == min) adapt(vis.color.b);
-				}
+				markerPoints[interacting].color = highlightColor8(markerPoints[interacting].color);
+				if (markerIndices[interacting] >= 0)
+					visState.target.markerHovered = markerIndices[interacting];
 			}
-			if (interacting.second >= 0)
-				visState.target.markerHovered = interacting.second;
+			else visState.target.markerHovered = -1;
 		}
 		// Draw transparent spheres
 		visualisePointsSpheresDepthSorted(markerPoints);
@@ -919,17 +1019,44 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	thread_local std::vector<VisPoint> markerPoints;
 	markerPoints.clear();
 
-	Color8 colorC = Color{ 1.0f, 0.6f, 0.8f, 0.8f }, colorNC = Color{ 0.8f, 0.6f, 1.0f, 0.8f },
-		colorCov = Color{ 0.8f, 0.6f, 1.0f, 0.3f }, colorSearchCov = Color{ 0.9f, 0.9f, 0.2f, 0.3f };
+	Color8 colorC = Color{ 1.0f, 0.3f, 0.6f, 0.8f }, colorNC = Color{ 0.6f, 0.3f, 1.0f, 0.8f },
+		colorCov = Color{ 0.6f, 0.3f, 1.0f, 0.3f }, colorSearchCov = Color{ 0.9f, 0.9f, 0.2f, 0.3f };
 	int i = 0;
-	for (auto &tri : frame.markers3D)
+	for (auto &mk : frame.markers3D)
 	{
-		markerPoints.emplace_back(tri.pos, tri.confidence < pipeline.params.tri.minIntersectionConfidence? colorNC : colorC, tri.size);
+		Color8 color = mk.confidence < pipeline.params.tri.minIntersectionConfidence? colorNC : colorC;
+		bool selected = mk.id > 0 && visState.markers.selectedIDs.contains(mk.id);
+		if (selected) color = highlightColor8(color, 2.0f);
+		markerPoints.emplace_back(mk.pos, color, mk.size);
 		if (frame.markersCov.size() <= i || !visState.markers.showCovarianceIn3DView) continue;
 		covariances.emplace_back(composeCovarianceTransform(
-			tri.pos, frame.markersCov[i++].cast<float>(),
+			mk.pos, frame.markersCov[i++].cast<float>(),
 			pipeline.params.marker.uncertaintySigma * visState.markers.scaleCovariance), colorCov);
 	}
+
+	if (!view3D.selectBounds.center().hasNaN())
+	{ // Inject UI interaction into 3D marker spheres before rendering
+		std::vector<int> boundedIndices = probePointCloudBounds2D(markerPoints, view3D.viewTransform, view3D.fInv/visAspect, view3D.selectBounds);
+		visState.markers.boundedIDs.clear();
+		for (int mk : boundedIndices)
+		{
+			int id = frame.markers3D[mk].id;
+			if (id == 0) continue; // Triangulation, not tracked
+			markerPoints[mk].color = highlightColor8(markerPoints[mk].color, 1.4f);
+			visState.markers.boundedIDs.insert(id);
+		}
+	}
+	else if (view3D.mouseIn)
+	{ // Inject UI interaction into 3D marker spheres before rendering
+		int interacting = probePointCloudPos2D(markerPoints, view3D.viewTransform, view3D.fInv/visAspect, view3D.mousePos);
+		visState.markers.hoveredID = 0;
+		if (interacting >= 0 && frame.markers3D[interacting].id > 0)
+		{
+			markerPoints[interacting].color = highlightColor8(markerPoints[interacting].color, 1.4f);
+			visState.markers.hoveredID = frame.markers3D[interacting].id;
+		}
+	}
+
 	if (visState.markers.showAllSearchesIn3DView || visState.markers.showMissingSearchesIn3DView)
 	{
 		for (auto &search : frame.markerSearch)

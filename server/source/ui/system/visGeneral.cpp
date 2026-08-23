@@ -100,17 +100,36 @@ Eigen::Vector3f VisualisationState::getPreferredTarget(const VisFrameLock &visFr
 
 	if (!visFrame)
 		return Eigen::Vector3f::Constant(NAN);
-
 	FrameRecord &frame = *visFrame.frameIt->get();
+
+	if (tracker.focusedID > 0)
+	{ // Focused tracker
+		auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(),
+			[&](auto &tgt){ return tgt.id == tracker.focusedID; });
+		if (trackRecord != frame.trackers.end())
+			return trackRecord->pose.filtered.translation();
+		return Eigen::Vector3f::Constant(NAN);
+	}
+
+	if (!markers.selectedIDs.empty())
+	{ // A 3D cluster of triangulated points
+		Eigen::Vector3f center = Eigen::Vector3f::Zero();
+		int matches = 0;
+		for (auto &marker : frame.markers3D)
+		{
+			if (markers.selectedIDs.contains(marker.id))
+			{
+				center += marker.pos;
+				matches++;
+			}
+		}
+		if (matches > 0)
+			return center / matches;
+		return Eigen::Vector3f::Constant(NAN);
+	}
+
 	if (!frame.trackers.empty())
 	{ // Pose from frame tracking records
-		if (tracker.focusedID >= 0)
-		{
-			auto trackRecord = std::find_if(frame.trackers.begin(), frame.trackers.end(),
-				[&](auto &tgt){ return tgt.id == tracker.focusedID; });
-			if (trackRecord != frame.trackers.end())
-				return trackRecord->pose.filtered.translation();
-		}
 		for (auto &tracker : frame.trackers)
 		{
 			if (tracker.result.isProbe()) continue;

@@ -133,9 +133,9 @@ void VisualisationState::updateVisTarget()
 		updateVisTarget(visTarget);
 }
 
-thread_local std::vector<VisPoint> markerPoints;
-thread_local std::vector<int> markerIndices;
-std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT, const VisualisationState &visState, const VisTargetLock &visTarget)
+void visualiseVisTargetMarkers(const PipelineState &pipelineGT,
+	const VisualisationState &visState, const VisTargetLock &visTarget,
+	std::vector<VisPoint> &markerPoints, std::vector<int> &markerIndices)
 {
 	assert(visTarget);
 	Eigen::Isometry3f tgtPose = visTarget.getPose();
@@ -162,9 +162,6 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 		for (auto &sample : frame.samples)
 			markersVisible[visTarget.obs->markerMap.at(sample.marker)] = true;
 	}
-
-	markerPoints.clear();
-	markerIndices.clear();
 
 	if (visTarget.hasObs() && visTarget.hasPose && visTarget.targetGT && pipelineGT.isSimulationMode)
 	{ // Draw markers of GT target
@@ -259,48 +256,6 @@ std::vector<VisPoint>& visualiseVisTargetMarkers(const PipelineState &pipelineGT
 		}
 		visualisePose(tgtPose, mkColor, 0.1f, 2.0f);
 	}
-
-	return markerPoints;
-}
-
-static int interactWithPointCloud(const std::vector<VisPoint> &points, Eigen::Isometry3f view, Eigen::Projective3f proj, Eigen::Vector2f mouse)
-{
-	// Enter valid points with their distance
-	thread_local std::vector<std::pair<int, float>> order;
-	order.clear();
-	for (int i = 0; i < points.size(); i++)
-	{
-		auto &pt = points[i];
-		if (pt.color.a == 0) continue;
-		float dist = (view.inverse() * pt.pos).z();
-		order.emplace_back(i, dist - pt.size);
-	}
-	// Sort front-to-back
-	std::sort(order.begin(), order.end(), 
-		[&](auto &a, auto &b) { return a.second < b.second; });
-	// Find frontmost circle hit (not proper sphere raycasting but whatever)
-	Eigen::Projective3f vp = proj * view.inverse();
-	for (int i = 0; i < order.size(); i++)
-	{
-		auto &pt = points[order[i].first];
-		Eigen::Vector3f viewUpAxis = view.matrix().col(2).head<3>().cast<float>();
-		Eigen::Vector3f sideVec = (pt.pos - view.translation().cast<float>()).cross(viewUpAxis);
-		Eigen::Vector3f sidePos = pt.pos + (pt.size/2 * sideVec.normalized());
-		Eigen::Vector2f pSide = (vp * sidePos.homogeneous()).hnormalized().head<2>();
-		Eigen::Vector2f pCenter = (vp * pt.pos.homogeneous()).hnormalized().head<2>();
-		float sizeSq = (pCenter - pSide).squaredNorm() * 2*2;
-		float distSq = (pCenter - mouse).squaredNorm();
-		if (distSq < sizeSq)
-			return order[i].first;
-	}
-	return -1;
-}
-
-std::pair<int,int> interactWithVisTargetMarker(Eigen::Isometry3f view, Eigen::Projective3f proj, Eigen::Vector2f mouse)
-{
-	int interacting = interactWithPointCloud(markerPoints, view, proj, mouse);
-	if (interacting < 0) return { -1, -1 };
-	return { interacting, markerIndices[interacting] };
 }
 
 void visualiseVisTargetObservations(const std::vector<CameraCalib> &calibs, const VisualisationState &visState, const VisTargetLock &visTarget)

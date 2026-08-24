@@ -461,8 +461,9 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 
 		BeginSection("2D Point Final Fit");
 		modified |= ScalarProperty<float>("Final Fit Radius", "px", &params.fitRadius, &standard.fitRadius, 0, 10, 0.1f, PixelFactor);
-		modified |= BooleanProperty("Allow All Fitting Final Match", &params.allowAllFittingFinalMatch, &standard.allowAllFittingFinalMatch);
-		modified |= BooleanProperty("Allow Contested Final Match", &params.allowContestedFinalMatch, &standard.allowContestedFinalMatch);
+		modified |= BooleanProperty("Allow Conflicted (Comp)", &params.allowFinalConflicted, &standard.allowFinalConflicted);
+		modified |= BooleanProperty("Allow Non Prim Advantaged", &params.allowFinalNonAdvantaged, &standard.allowFinalNonAdvantaged);
+		modified |= BooleanProperty("Allow Primary Advantaged", &params.allowFinalPrimAdvantaged, &standard.allowFinalPrimAdvantaged);
 		EndSection();
 
 		BeginSection("Quality");

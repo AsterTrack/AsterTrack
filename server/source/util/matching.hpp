@@ -63,7 +63,7 @@ struct MatchingParameters
 struct NoCtx { };
 template<typename Context = NoCtx>
 struct MatchCandidate {
-	bool invalid = false;
+	bool invalid = false, competing = false;
 	int index = -1;
 	float value = std::numeric_limits<float>::max();
 	Context context;
@@ -81,7 +81,7 @@ struct TargetMatch
 template<typename Context = NoCtx>
 struct WeightedMatch
 {
-	bool invalid = false;
+	bool invalid = false, competing = false;
 	int index = -1;
 	float value = 0;
 	int weight = 0;
@@ -252,7 +252,7 @@ static int resolveMatchCandidates(SourceIt begin, SourceIt end, int targetCount,
 		auto &priMatch = source.matches.front();
 		if (priMatch.index < 0)
 			continue; // No match found
-		priMatch.invalid = false;
+		priMatch.invalid = priMatch.competing = false;
 
 		// Enter non-primary matches as competitors to other primary matches as well (simplified, only need best)
 		for (int m = 1; m < params.competeRange && m < source.matches.size(); m++)
@@ -269,7 +269,7 @@ static int resolveMatchCandidates(SourceIt begin, SourceIt end, int targetCount,
 			if (match.value < contMatch.value)
 			{
 				targetMatches[match.index] = { s, m };
-				contMatch.invalid = true;
+				contMatch.invalid = contMatch.competing = true;
 			}
 		}
 
@@ -288,16 +288,16 @@ static int resolveMatchCandidates(SourceIt begin, SourceIt end, int targetCount,
 		if (contMatch.value > (priMatch.value + params.uncertainty) * params.compAdvantage)
 		{ // New match is advantaged over existing match, replace
 			targetMatches[target] = { s, 0 };
-			contMatch.invalid = true;
+			contMatch.invalid = contMatch.competing = true;
 		}
 		else if (priMatch.value > (contMatch.value + params.uncertainty) * params.compAdvantage)
 		{ // Existing match prevails as advantaged over new match
-			priMatch.invalid = true;
+			priMatch.invalid = priMatch.competing = true;
 		}
 		else
 		{ // Neither of them prevails
-			contMatch.invalid = true;
-			priMatch.invalid = true;
+			contMatch.invalid = contMatch.competing = true;
+			priMatch.invalid = priMatch.competing = true;
 			// Make sure match has best candidate registered, even if it's not a valid match
 			// So a future competitor would have to compete favourably against best candidate
 			if (priMatch.value < contMatch.value)

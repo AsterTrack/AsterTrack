@@ -100,8 +100,9 @@ struct MarkerTrackingParameters
 
 	// Final fit
 	float fitRadius = 2.0f*PixelSize;
-	bool allowAllFittingFinalMatch = false;
-	bool allowContestedFinalMatch = true;
+	bool allowFinalConflicted = false;
+	bool allowFinalNonAdvantaged = false;
+	bool allowFinalPrimAdvantaged = true;
 
 	// Quality
 	int minInitialObs = 2;

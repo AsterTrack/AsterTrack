@@ -395,7 +395,7 @@ static int resolveCorrespondences(const SequenceAquisitionParameters &params, Ca
 		}
 
 		WeightedMatch<std::vector<CorrespondenceSupport>> match = 
-			{ false, m, errorAvg, (int)(supportingWeight-discreditingWeight), std::move(correspondence) };
+			{ false, false, m, errorAvg, (int)(supportingWeight-discreditingWeight), std::move(correspondence) };
 		recordMatchCandidate(correspondenceCandidates, match);
 	}
 

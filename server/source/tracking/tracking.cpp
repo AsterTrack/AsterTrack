@@ -254,6 +254,9 @@ void trackMarker(std::list<TransientMarker> &markers,
 	for (int c = 0; c < calibs.size(); c++)
 		matches2D[c].clear();
 
+	markerSearch.clear();
+	markerSearch.reserve(markers.size());
+
 	// Maintain allocation of match candidates for every camera and marker
 	typedef MatchCandidates<int, MatchCandidate<float>, 2> PointCandidates;
 	thread_local std::vector<std::vector<PointCandidates>> matchCandidates;
@@ -278,10 +281,10 @@ void trackMarker(std::list<TransientMarker> &markers,
 		for (int p : relevantPoints2D[c])
 		{
 			float distSq = (camPoints[p] - proj).squaredNorm();
-			if (distSq > radiusSq) continue;
 			float blobSizeSq = camProps[p].size * camProps[p].size;
 			// TODO: Compare blobSizeSq to projSizeSq
 			matchCand.value = std::max(0.0f, distSq - blobSizeSq);
+			if (matchCand.value > radiusSq) continue;
 			matchCand.index = p;
 			matchCnt++;
 			recordMatchCandidate(matches, matchCand);
@@ -304,7 +307,7 @@ void trackMarker(std::list<TransientMarker> &markers,
 		Eigen::Vector3f predPos = marker.filter.state.position().cast<float>();
 		Eigen::Matrix3f predCov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
 		// Record as search, whether tracked, dropped or still searching
-		markerSearch.emplace_back(marker.id, predPos, predCov.cast<CovStorageScalar>(), marker.result.isTracked());
+		markerSearch.emplace_back(marker.id, predPos, predCov.cast<CovStorageScalar>(), true);
 
 		for (int c = 0; c < calibs.size(); c++)
 		{
@@ -420,32 +423,34 @@ void trackMarker(std::list<TransientMarker> &markers,
 					}
 					continue;
 				}
-				if (pri.invalid) continue;
-
-				// Evaluate new match manually (resolveMatchCandidates with conservativeLevel == 0)
-				bool notCompeting = sec.index < 0;
-				bool primAdvantaged = notCompeting || sec.value > (pri.value + params.match.uncertainty) * params.match.primAdvantage;
-
-				// Add as match or conflict (to occupy point)
-				if (primAdvantaged)
-					matches2D[c].emplace_back(pri.index);
-				else
+				if (pri.invalid)
 				{
-					uncertainSamples++;
-					if (c < conflictedMatches2D.size())
-						conflictedMatches2D[c].emplace_back(pri.index); // This can handle duplicates
+					if (match.index >= 0 && c < conflictedMatches2D.size())
+						conflictedMatches2D[c].emplace_back(match.index); // This can handle duplicates
+					continue;
 				}
 
-				if (notCompeting || (params.allowContestedFinalMatch && primAdvantaged) || params.allowAllFittingFinalMatch)
+				// If it was previously competing as the best candidate already, discard
+				bool conflicted = match.index == pri.index && match.competing;
+				// Evaluate new match manually (resolveMatchCandidates with conservativeLevel == 0)
+				bool noAlternative = sec.index < 0;
+				bool primAdvantaged = noAlternative || sec.value > (pri.value + params.match.uncertainty) * params.match.primAdvantage;
+
+				if ((!conflicted || params.allowFinalConflicted) && (noAlternative || (primAdvantaged && params.allowFinalPrimAdvantaged) || params.allowFinalNonAdvantaged))
 				{ // Add as matching sample in final match
 					tri.samples.emplace_back(c, pri.index);
+					matches2D[c].emplace_back(pri.index);
+					if (conflicted || !primAdvantaged)
+						uncertainSamples++; // Mark as uncertain even if we accepted it
 					LOG(LTracking, LTrace, "      Marker %d Cam %d has %d alternate potential matches, best %d with %.2fpx and %d with %.2fpx, accepting %d!", marker.id, c, matchCnt,
 						pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
 						sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor,
 						pri.index);
 				}
 				else
-				{ // Don't include in final match, but will be marked as occupied anyway
+				{ // Don't include in final match, but mark as occupied anyway
+					if (c < conflictedMatches2D.size())
+						conflictedMatches2D[c].emplace_back(pri.index); // This can handle duplicates
 					LOG(LTracking, LTrace, "      Marker %d Cam %d has %d alternate potential matches, best %d with %.2fpx and %d with %.2fpx, conflicting!", marker.id, c, matchCnt,
 						pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
 						sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor);
@@ -460,6 +465,8 @@ void trackMarker(std::list<TransientMarker> &markers,
 			marker.result = TrackingResult::NO_TRACK;
 			marker.samples = marker.uncertain = 0;
 			marker.error2D = 0;
+			// Mark search as unsuccessful
+			markerSearch[m].found = false;
 			continue;
 		}
 

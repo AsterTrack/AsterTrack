@@ -333,6 +333,7 @@ struct FrameRecord
 	std::vector<MarkerObservation> markers3D;
 	std::vector<CovCompPosMatrix> markersCov; // Covariances for visualisation
 	std::vector<MarkerSearchRecord> markerSearch; // Search status for visualisation
+	float dtMarkerTrack, dtTriangulation, dtMarkerCluster;
 
 	// This is mostly for visualisation
 	std::vector<Cluster3DStats> clusterTri3D; // Will mostly capture targets of sphere-markers

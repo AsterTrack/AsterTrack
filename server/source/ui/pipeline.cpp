@@ -691,6 +691,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				framesStored[frameRecord->num]->finishedProcessing = frameRecord->finishedProcessing;
 				framesStored[frameRecord->num]->trackers = frameRecord->trackers;
 				framesStored[frameRecord->num]->markers3D = frameRecord->markers3D;
+				framesStored[frameRecord->num]->dtMarkerTrack = frameRecord->dtMarkerTrack;
+				framesStored[frameRecord->num]->dtTriangulation = frameRecord->dtTriangulation;
+				framesStored[frameRecord->num]->dtMarkerCluster = frameRecord->dtMarkerCluster;
 			}
 		}
 
@@ -741,6 +744,10 @@ static void ShowTrackingResults()
 	{
 		EventChange count, triCount, trkCount, idEvent;
 		StatChange samples, error, uncertainty;
+		struct
+		{
+			float markerTrack, triangulation, markerCluster;
+		} dtLoaded, dtCurrent;
 	};
 	static Marker3DSamples markers;
 
@@ -941,6 +948,12 @@ static void ShowTrackingResults()
 			updateStatChange(markers.samples, mkSamplesStored, mkSamplesCurrent, mkSamplesStored, mkSamplesCurrent, false);
 			updateStatChange(markers.error, mkErrorStored, mkErrorCurrent, mkSamplesStored, mkSamplesCurrent, true);
 			updateStatChange(markers.uncertainty, mkUncertaintyStored, mkUncertaintyCurrent, mkSamplesStored, mkSamplesCurrent, true);
+			markers.dtLoaded.markerTrack += framesStored[f]->dtMarkerTrack;
+			markers.dtLoaded.triangulation += framesStored[f]->dtTriangulation;
+			markers.dtLoaded.markerCluster += framesStored[f]->dtMarkerCluster;
+			markers.dtCurrent.markerTrack += framesRecord[f]->dtMarkerTrack;
+			markers.dtCurrent.triangulation += framesRecord[f]->dtTriangulation;
+			markers.dtCurrent.markerCluster += framesRecord[f]->dtMarkerCluster;
 		}
 	};
 
@@ -1041,6 +1054,10 @@ static void ShowTrackingResults()
 			FMT_DIST(markers.uncertainty, float, 1000, "%.2fmm", "%.3fmm", "%.2fmm")
 			//ImGui::Text("Times  :");
 			//FMT_DIST(markers.time, false, float, 1000, "%.2fms", "%.2fms", "%.3fms", "%.2fms")
+			ImGui::Text("Times:");
+			ImGui::Text("    Marker Tracking: %.2fms  [%.2fms]", markers.dtCurrent.markerTrack, markers.dtLoaded.markerTrack);
+			ImGui::Text("    Triangulation: %.2fms  [%.2fms]", markers.dtCurrent.triangulation, markers.dtLoaded.triangulation);
+			ImGui::Text("    Marker Clustering: %.2fms  [%.2fms]", markers.dtCurrent.markerCluster, markers.dtLoaded.markerCluster);
 			ImGui::TreePop();
 		}
 	}

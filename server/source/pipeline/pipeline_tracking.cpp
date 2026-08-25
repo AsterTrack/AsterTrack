@@ -536,7 +536,7 @@ void RetroactivelySimulateMistrust(PipelineState &pipeline, std::size_t frameSta
 
 void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*> &cameras, std::shared_ptr<FrameRecord> &frame, bool trackTargets)
 {
-	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, tri4, det0, det1, det2, tpt0, tpt1;
+	pclock::time_point start, trk0, trk1, tri0, tri1, tri2, tri3, tri4, det0, det1, det2, tpt0, tpt1, tpt2, tpt3;
 	start = pclock::now();
 
 	// Aggregate points and camera calibrations
@@ -1222,6 +1222,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		}
 	}
 
+	tpt2 = pclock::now();
+
 	if (pipeline.params.marker.enabled)
 	{ // Add single markers to track
 		int offset = track.transientMarkers.size();
@@ -1234,6 +1236,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			// The 2D points involved will still be used for 2D target detections
 		}
 	}
+
+	tpt3 = pclock::now();
 
 	det1 = pclock::now();
 
@@ -1458,6 +1462,9 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	// Record single-marker and auxiliary tracking artifacts
 	frame->cluster2DTri = std::move(trackedClusters2DTri);
 	frame->clusterTri3D = std::move(trackedClustersTri3D);
+	frame->dtMarkerTrack = dtS(tpt0, tpt1) + dtS(tpt2, tpt3);
+	frame->dtTriangulation = dtS(tri0, tri3);
+	frame->dtMarkerCluster = dtS(tri3, tri4);
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		int cc = calibs[c].index;

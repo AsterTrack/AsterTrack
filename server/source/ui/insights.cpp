@@ -906,8 +906,8 @@ static bool ShowTrackingPanel()
 		ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 20);
 		ImPlot::SetupAxis(ImAxis_Y2, "Errors /px", ImPlotAxisFlags_Opposite | ImPlotAxisFlags_Lock);
 		ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 1.0f);
-		ImPlot::SetupAxis(ImAxis_Y4, "Samples", ImPlotAxisFlags_Lock);
-		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 20);
+		ImPlot::SetupAxis(ImAxis_Y4, "Time", ImPlotAxisFlags_Lock);
+		ImPlot::SetupAxisLimits(ImAxis_Y4, 0, 10);
 	}
 	else if (inspectingType == Inspect_Virtual)
 	{ // Virtual Tracker uses different metrics
@@ -1143,14 +1143,15 @@ static bool ShowTrackingPanel()
 			FrameNum index = f - visibleMin;
 			FrameRecord &frame = *frameIt->get(); 
 			stats.dataNum[index] = frame.markers3D.size();
-			stats.dataAux[index] = 0;
+			stats.dataAux[index] = (frame.dtMarkerTrack + frame.dtTriangulation + frame.dtMarkerCluster) * 1000.0f;
+			stats.mistrust[index] = 0;
 			stats.errors[index] = 0;
 			for (auto &mk : frame.markers3D)
 			{
-				stats.dataAux[index] += mk.samples;
+				stats.mistrust[index] += mk.samples;
 				stats.errors[index] += mk.error2D * PixelFactor;
 			}
-			stats.dataAux[index] /= frame.markers3D.size(); // Possible NAN is intended
+			stats.mistrust[index] /= frame.markers3D.size(); // Possible NAN is intended
 			stats.errors[index] /= frame.markers3D.size(); // Possible NAN is intended
 		}
 		GetUI().RequestUpdates();
@@ -1277,36 +1278,40 @@ static bool ShowTrackingPanel()
 	}
 
 	ImPlot::SetAxis(ImAxis_Y4);
+	bool y4Alt = inspecting != Inspect_Triangulations && inspectingType == Inspect_Virtual;
+	const char *y4Label = y4Alt? "Rot Error" : "Time";
+	if (drawRec)
+	{ // Draw recorded
+		if (!y4Alt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
+		ImPlot::PlotLine(y4Label, recording.dataAux.data(), recording.dataAux.size(), 1, frameRange.Min);
+	}
+	if (drawCur)
+	{ // Draw current
+		if (!y4Alt) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+		ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1.0), 2.0);
+		ImPlot::PlotLine(y4Label, tracking.dataAux.data(), tracking.dataAux.size(), 1, frameRange.Min);
+	}
+
 	if (inspecting == Inspect_Triangulations)
 	{
-		const char *y4Label = "Samples";
+		ImPlot::SetAxis(ImAxis_Y1); // Use same axis, but not necessarily the same scala
+		const char *y2AltLabel = "Samples";
 		if (drawCur)
 		{ // Draw current
-			ImPlot::SetNextLineStyle(ImVec4(0.8*1.2, 0.2*1.2, 0.8*1.2, 0.6), 2.0);
-			ImPlot::PlotLine(y4Label, tracking.dataAux.data(), tracking.dataAux.size(), 1, frameRange.Min);
+			ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+			ImPlot::SetNextLineStyle(ImVec4(0.2*1.2, 0.8*1.2, 0.2*1.2, 0.6), 2.0);
+			ImPlot::PlotLine(y2AltLabel, tracking.mistrust.data(), tracking.mistrust.size(), 1, frameRange.Min);
 		}
 		if (drawRec)
 		{ // Draw recorded
-			ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 0.6), 2.0);
-			ImPlot::PlotLine(y4Label, recording.dataAux.data(), recording.dataAux.size(), 1, frameRange.Min);
+			ImPlot::HideNextItem(true, ImGuiCond_Appearing);
+			ImPlot::SetNextLineStyle(ImVec4(0.2*0.6, 0.8*0.6, 0.2*0.6, 0.6), 2.0);
+			ImPlot::PlotLine(y2AltLabel, recording.mistrust.data(), recording.mistrust.size(), 1, frameRange.Min);
 		}
 	}
 	else
 	{
-		const char *y4Label = inspectingType == Inspect_Virtual? "Rot Error" : "Time";
-		if (drawRec)
-		{ // Draw recorded
-			if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
-			ImPlot::SetNextLineStyle(ImVec4(0.8*0.6, 0.2*0.6, 0.8*0.6, 1.0), 2.0);
-			ImPlot::PlotLine(y4Label, recording.dataAux.data(), recording.dataAux.size(), 1, frameRange.Min);
-		}
-		if (drawCur)
-		{ // Draw current
-			if (inspectingType != Inspect_Virtual) ImPlot::HideNextItem(true, ImGuiCond_Appearing);
-			ImPlot::SetNextLineStyle(ImVec4(0.8, 0.2, 0.8, 1.0), 2.0);
-			ImPlot::PlotLine(y4Label, tracking.dataAux.data(), tracking.dataAux.size(), 1, frameRange.Min);
-		}
-
 		ImPlot::SetAxis(ImAxis_Y2); // Use same axis, but not necessarily the same scala
 		const char *y2AltLabel = inspectingType == Inspect_Virtual? "Pos 3-Sigma" : "Mistrust";
 		if (drawRec)

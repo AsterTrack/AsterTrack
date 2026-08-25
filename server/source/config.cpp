@@ -1510,6 +1510,9 @@ std::optional<ErrorMessage> parseTrackingResults(std::string &path, TrackingReco
 				mk.samples = jsMk[7].get<int>();
 				mk.confidence = jsMk[8].get<float>();
 			}
+			frame.dtMarkerTrack = jsFrame.contains("timeMarkerTrack")? jsFrame["timeMarkerTrack"].get<float>() : 0;
+			frame.dtMarkerCluster = jsFrame.contains("timeMarkerCluster")? jsFrame["timeMarkerCluster"].get<float>() : 0;
+			frame.dtTriangulation = jsFrame.contains("timeTriangulation")? jsFrame["timeTriangulation"].get<float>() : 0;
 
 			frame.trackers.clear();
 			frame.trackers.reserve(jsTrackers.size());
@@ -1617,6 +1620,9 @@ std::optional<ErrorMessage> saveTrackingResults(std::string &path, const Trackin
 			}));
 			hasMarkers = true;
 		}
+		jsFrame["timeMarkerTrack"] = frame.dtMarkerTrack;
+		jsFrame["timeMarkerCluster"] = frame.dtMarkerCluster;
+		jsFrame["timeTriangulation"] = frame.dtTriangulation;
 
 		jsFrames.push_back(std::move(jsFrame));
 	}

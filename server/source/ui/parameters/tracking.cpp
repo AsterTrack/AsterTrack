@@ -454,20 +454,18 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 		modified |= ScalarProperty<float>("Uncertainty Sigma", "o", &params.uncertaintySigma, &standard.uncertaintySigma, 0, 100, 0.1f, 1, "%.1f");
 		EndSection();
 
-		BeginSection("2D Point Matching");
-		modified |= ScalarProperty<float>("Match Radius", "px", &params.matchRadius, &standard.matchRadius, 0, 100, 1.0f, PixelFactor);
-		modified |= matchAlgParamUI(params.match, standard.match, "px", PixelFactor);
+		BeginSection("Initial Matching");
+		modified |= ScalarProperty<float>("Find Radius", "px", &params.find.radius, &standard.find.radius, 0, 100, 1.0f, PixelFactor);
+		modified |= matchAlgParamUI(params.find.match, standard.find.match, "px", PixelFactor);
 		EndSection();
 
-		BeginSection("2D Point Final Fit");
-		modified |= ScalarProperty<float>("Final Fit Radius", "px", &params.fitRadius, &standard.fitRadius, 0, 10, 0.1f, PixelFactor);
-		modified |= BooleanProperty("Allow Conflicted (Comp)", &params.allowFinalConflicted, &standard.allowFinalConflicted);
-		modified |= BooleanProperty("Allow Non Prim Advantaged", &params.allowFinalNonAdvantaged, &standard.allowFinalNonAdvantaged);
-		modified |= BooleanProperty("Allow Primary Advantaged", &params.allowFinalPrimAdvantaged, &standard.allowFinalPrimAdvantaged);
+		BeginSection("Final Matching");
+		modified |= ScalarProperty<float>("Fit Radius", "px", &params.fit.radius, &standard.fit.radius, 0, 10, 0.1f, PixelFactor);
+		modified |= matchAlgParamUI(params.fit.match, standard.fit.match, "px", PixelFactor);
 		EndSection();
 
 		BeginSection("Quality");
-		modified |= ScalarProperty<int>("Min Initial Obs", "", &params.minInitialObs, &standard.minInitialObs, 0, 20);
+		modified |= ScalarProperty<int>("Min Initial Obs", "", &params.minObservations, &standard.minObservations, 1, 20);
 		modified |= ScalarProperty<int>("Max Dropout Frames", "", &params.maxDropoutFrames, &standard.maxDropoutFrames, 0, 50);
 		EndSection();
 

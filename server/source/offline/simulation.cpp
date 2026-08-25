@@ -218,7 +218,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 				simFrame->markers3D.emplace_back(pt.id, pt.pos, simulation.projectionParams.blobNoiseStdDev*2,
 					0.001f, simulation.pointSim.pointSize, clean+conflict, confidence);
 			}
-			else if (clean >= pipeline.params.marker.minInitialObs)
+			else if (clean >= pipeline.params.marker.minObservations)
 				pt.lostCounter = 0;
 			else
 				pt.lostCounter++;

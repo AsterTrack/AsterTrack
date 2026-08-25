@@ -16,6 +16,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+//#define LOG_MAX_LEVEL LTrace
+
 #include "tracking/tracking.hpp"
 #include "tracking/detail/kalman.hpp"
 #include "point/triangulation.hpp"
@@ -24,6 +26,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "util/log.hpp"
 #include "util/matching.hpp"
+#include "util/debugging.hpp"
 
 #include "flexkalman/FlexibleKalmanFilter.h"
 #include "flexkalman/FlexibleUnscentedCorrect.h"
@@ -266,10 +269,10 @@ void trackMarker(std::list<TransientMarker> &markers,
 
 	LOG(LTracking, LTrace, "Tracking %d transient markers!", (int)markers.size());
 
-	float matchRadiusSq = params.matchRadius*params.matchRadius;
-	float includeRadiusSq = matchRadiusSq*params.match.primAdvantage*params.match.primAdvantage;
-	float fitRadiusSq = params.fitRadius*params.fitRadius;
-	float fitIncludeRadiusSq = fitRadiusSq*params.match.primAdvantage*params.match.primAdvantage;
+	float findRadiusSq = params.find.radius*params.find.radius;
+	float findIncludeRadiusSq = findRadiusSq*params.find.match.primAdvantage*params.find.match.primAdvantage;
+	float fitRadiusSq = params.fit.radius*params.fit.radius;
+	float fitIncludeRadiusSq = fitRadiusSq*params.fit.match.primAdvantage*params.fit.match.primAdvantage;
 
 	auto collectMatchCandidates = [&](PointCandidates &matches, int c, Eigen::Vector2f proj, float projSizeSq, float radiusSq)
 	{
@@ -316,8 +319,8 @@ void trackMarker(std::list<TransientMarker> &markers,
 			float size = calculate2DSizeSimple(calibs[c], predPos, marker.marker.size);
 
 			auto &matches = matchCandidates[c][m];
-			int matchCnt = collectMatchCandidates(matches, c, proj, size*size, includeRadiusSq);
-			if (matches.matches.front().valid())
+			int matchCnt = collectMatchCandidates(matches, c, proj, size*size, findIncludeRadiusSq);
+			if (matchCnt > 0)
 			{
 				camMatchCnt[c]++;
 
@@ -329,146 +332,125 @@ void trackMarker(std::list<TransientMarker> &markers,
 		}
 	}
 
-	// TODO: Reinforce likely matches via 3D correlation
-
 	// Resolve match candidates tentatively
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (calibs[c].invalid()) continue;
-		int numMatches = resolveMatchCandidates(matchCandidates[c], points2D[c]->size(), params.match.squared());
-		LOG(LTracking, LTrace, "    %d / %d tris had matches in camera %d, resolved to %d final matches!\n", camMatchCnt[c], (int)markers.size(), c, numMatches);
+		int numMatches = resolveMatchCandidates(matchCandidates[c], points2D[c]->size(), params.find.match.squared());
+		LOG(LTracking, LTrace, "    %d / %d markers had initial matches in camera %d, resolved to %d potential matches!\n", camMatchCnt[c], (int)markers.size(), c, numMatches);
+		camMatchCnt[c] = 0;
 	}
 
 	TriangulatedPoint tri;
-	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
 	m = -1;
 	for (TransientMarker &marker : markers)
 	{
 		m++;
 
-		// Update tri samples
+		// Collect probable tri samples
 		tri.samples.clear();
 		for (int c = 0; c < calibs.size(); c++)
 		{
 			if (calibs[c].invalid()) continue;
 			auto &match = matchCandidates[c][m].matches.front();
 			if (!match.valid()) continue;
-			if (match.getValue() > matchRadiusSq)
-			{ // Mark invalid so final fit knows this was not added to matches already
-				match.invalid = true;
-				LOG(LTracking, LTrace, "      Marker %d Cam %d is ignoring match to %d after all, outside match radius %.2fpx", marker.id, c,
-					match.index, std::sqrt(match.getValue())*PixelFactor);
-				continue;
-			}
+			if (match.getValue() > findRadiusSq) continue;
 			tri.samples.emplace_back(c, match.index);
 		}
-		if (tri.samples.size() < params.minInitialObs)
+
+		if (tri.samples.size() <= 1)
+		{ // Reduce error just to realistically compete with others matches
+			for (int c = 0; c < calibs.size(); c++)
+			{
+				auto &match = matchCandidates[c][m].matches.front();
+				if (match.index >= 0) match.value *= 0.8f * 0.8f;
+			}
+		}
+		else
+		{ // Reevaluate all existing candidates
+			Eigen::Vector3f newPos = refineTriangulation<float>(points2D, calibs, tri);
+			for (int c = 0; c < calibs.size(); c++)
+			{ // Reevaluate
+				if (calibs[c].invalid()) continue;
+
+				// Start matching from scratch
+				auto &matches = matchCandidates[c][m];
+				matches.matches = {};
+
+				Eigen::Vector2f proj = projectPoint2D(calibs[c].camera, newPos);
+				float size = calculate2DSizeSimple(calibs[c], newPos, marker.marker.size);
+
+				int matchCnt = collectMatchCandidates(matches, c, proj, size*size, fitIncludeRadiusSq);
+				if (matchCnt > 0)
+					camMatchCnt[c]++;
+			}
+		}
+	}
+
+	// Resolve match candidates finally
+	for (int c = 0; c < calibs.size(); c++)
+	{
+		if (calibs[c].invalid()) continue;
+		int numMatches = resolveMatchCandidates(matchCandidates[c], points2D[c]->size(), params.fit.match.squared());
+		LOG(LTracking, LTrace, "    %d / %d markers had fitting matches in camera %d, resolved to %d final matches!\n", camMatchCnt[c], (int)markers.size(), c, numMatches);
+	}
+
+	flexkalman::SigmaPointParameters sigmaParams(params.filter.sigmaAlpha, params.filter.sigmaBeta, params.filter.sigmaKappa);
+	m = -1;
+	for (TransientMarker &marker : markers)
+	{
+		m++;
+
+		// Collect fitting tri samples
+		int uncertainSamples = 0;
+		tri.samples.clear();
+		for (int c = 0; c < calibs.size(); c++)
+		{
+			if (calibs[c].invalid()) continue;
+			auto &pri = matchCandidates[c][m].matches[0], &sec = matchCandidates[c][m].matches[1];
+			if (pri.index < 0) continue;
+			if (pri.getValue() > fitRadiusSq)
+			{
+				LOG(LTracking, LTrace, "      Marker %d Cam %d is ignoring match to %d after all, %.2fpx outside final match radius", marker.id, c,
+					pri.index, std::sqrt(pri.getValue())*PixelFactor);
+				continue;
+			}
+			if (pri.invalid)
+			{
+				if (c < conflictedMatches2D.size())
+					conflictedMatches2D[c].emplace_back(pri.index); // This can handle duplicates
+
+				// TODO: Even if conflicting, a merged blob may still provide some constraint on marker
+				// Use as very uncertain TriangulationObservationMeasurement, especially if it would otherwise have few?
+
+				LOG(LTracking, LTrace, "      Marker %d Cam %d has reevaluated matches, best %d with %.2fpx and %d with %.2fpx, conflicting!", marker.id, c,
+					pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
+					sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor);
+				continue;
+			}
+			// TODO: Check advantage again to find uncertain samples?
+			//uncertainSamples++;
+			tri.samples.emplace_back(c, pri.index);
+
+			LOG(LTracking, LTrace, "      Marker %d Cam %d has reevaluated matches, best %d with %.2fpx and %d with %.2fpx, accepting %d!", marker.id, c,
+				pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
+				sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor,
+				pri.index);
+		}
+		if (tri.samples.size() < params.minObservations)
 		{
 			LOG(LTracking, LDarn, "      Marker %d lost tracking entirely!", marker.id);
 			marker.result = TrackingResult::NO_TRACK;
 			marker.samples = marker.uncertain = 0;
 			marker.error2D = 0;
-			continue;
-		}
-
-		int initialSamples = tri.samples.size();
-		int uncertainSamples = 0;
-		if (tri.samples.size() <= 1)
-		{ // Assume as valid, can't check
-			for (auto &sample : tri.samples)
-				matches2D[sample.camera].emplace_back(sample.blob);
-		}
-		else
-		{ // Final fit match, validating existing matches and finding new ones with newPos
-			Eigen::Vector3f newPos = refineTriangulation<float>(points2D, calibs, tri);
-
-			for (int c = 0; c < calibs.size(); c++)
-			{
-				if (calibs[c].invalid()) continue;
-				auto &match = matchCandidates[c][m].matches.front();
-				Eigen::Vector2f proj = projectPoint2D(calibs[c].camera, newPos);
-				if (match.valid())
-				{
-					float distSq = ((*points2D[c])[match.index] - proj).squaredNorm();
-					if (distSq < fitRadiusSq)
-					{ // Validated
-						matches2D[c].emplace_back(match.index);
-						continue;
-					}
-
-					LOG(LTracking, LDarn, "      Marker %d Cam %d has matched %d with %.2fpx, refined to %.2fpx, exceeding fit radius!", marker.id, c,
-						match.index, std::sqrt(match.getValue())*PixelFactor, std::sqrt(distSq)*PixelFactor);
-				}
-				float size = calculate2DSizeSimple(calibs[c], newPos, marker.marker.size);
-
-				auto &prevMatches = matchCandidates[c][m];
-				PointCandidates matches = {};
-				int matchCnt = collectMatchCandidates(matches, c, proj, size*size, fitIncludeRadiusSq);
-				auto &pri = matches.matches[0], &sec = matches.matches[1];
-				pri.invalid = pri.index < 0 || pri.getValue() > fitRadiusSq;
-
-				if (match.valid())
-				{
-					LOG(LTracking, pri.invalid? LDarn : LDebug,
-					"      Marker %d Cam %d has reevaluated potential matches, best %d with %.2fpx and %d with %.2fpx!", marker.id, c,
-						pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
-						sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor);
-					if (pri.invalid)
-					{ // Was added to tri samples but does not fit, remove
-						tri.samples.erase(std::remove_if(tri.samples.begin(), tri.samples.end(), [&](auto &sample){  return sample.camera == c; }), tri.samples.end());
-					}
-					else
-					{ // Validated
-						matches2D[c].emplace_back(match.index);
-					}
-					continue;
-				}
-				if (pri.invalid)
-				{
-					if (match.index >= 0 && c < conflictedMatches2D.size())
-						conflictedMatches2D[c].emplace_back(match.index); // This can handle duplicates
-					continue;
-				}
-
-				// If it was previously competing as the best candidate already, discard
-				bool conflicted = match.index == pri.index && match.competing;
-				// Evaluate new match manually (resolveMatchCandidates with conservativeLevel == 0)
-				bool noAlternative = sec.index < 0;
-				bool primAdvantaged = noAlternative || sec.value > (pri.value + params.match.uncertainty) * params.match.primAdvantage;
-
-				if ((!conflicted || params.allowFinalConflicted) && (noAlternative || (primAdvantaged && params.allowFinalPrimAdvantaged) || params.allowFinalNonAdvantaged))
-				{ // Add as matching sample in final match
-					tri.samples.emplace_back(c, pri.index);
-					matches2D[c].emplace_back(pri.index);
-					if (conflicted || !primAdvantaged)
-						uncertainSamples++; // Mark as uncertain even if we accepted it
-					LOG(LTracking, LTrace, "      Marker %d Cam %d has %d alternate potential matches, best %d with %.2fpx and %d with %.2fpx, accepting %d!", marker.id, c, matchCnt,
-						pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
-						sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor,
-						pri.index);
-				}
-				else
-				{ // Don't include in final match, but mark as occupied anyway
-					if (c < conflictedMatches2D.size())
-						conflictedMatches2D[c].emplace_back(pri.index); // This can handle duplicates
-					LOG(LTracking, LTrace, "      Marker %d Cam %d has %d alternate potential matches, best %d with %.2fpx and %d with %.2fpx, conflicting!", marker.id, c, matchCnt,
-						pri.index, pri.index < 0? 0 : std::sqrt(pri.getValue())*PixelFactor,
-						sec.index, sec.index < 0? 0 : std::sqrt(sec.getValue())*PixelFactor);
-				}
-			}
-		}
-
-		if (tri.samples.empty())
-		{ // After final fit, none of the existing samples got validated
-			// Maybe had one or multiple bad matches that caused the refinement to go astray?
-			LOG(LTracking, LDarn, "      Marker %d lost all %d initial matches in final fit! Previously had %d.", marker.id, initialSamples, marker.samples);
-			marker.result = TrackingResult::NO_TRACK;
-			marker.samples = marker.uncertain = 0;
-			marker.error2D = 0;
 			// Mark search as unsuccessful
 			markerSearch[m].found = false;
+			Breakpoint(3);
 			continue;
 		}
+
+		for (auto &sample : tri.samples)
+			matches2D[sample.camera].emplace_back(sample.blob);
 
 		// Update state
 		if (tri.samples.size() <= params.filter.obsLimit)

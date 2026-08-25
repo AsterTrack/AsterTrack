@@ -94,18 +94,20 @@ struct MarkerTrackingParameters
 	float addUncertainty3D = 0.02f;
 	float uncertaintySigma = 3;
 
-	// Initial Matching
-	float matchRadius = 12.0f*PixelSize;
-	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
+	struct
+	{
+		float radius = 12.0f*PixelSize;
+		MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
+	} find;
 
-	// Final fit
-	float fitRadius = 2.0f*PixelSize;
-	bool allowFinalConflicted = false;
-	bool allowFinalNonAdvantaged = false;
-	bool allowFinalPrimAdvantaged = true;
+	struct
+	{
+		float radius = 1.5f*PixelSize;
+		MatchingParameters match = { 1.0f*PixelSize, 2, 2, 2, 1 };
+	} fit;
 
 	// Quality
-	int minInitialObs = 2;
+	int minObservations = 2;
 	int maxDropoutFrames = 1;
 
 	struct

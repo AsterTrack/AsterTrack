@@ -28,7 +28,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 PrecomputedKernels precomputeKernels(const BlobProcessingParameters &params)
 {
 	PrecomputedKernels kernels;
-	kernels.base = discreteGaussianKernelNormalised(params.base.sigma, params.base.radius);
+	kernels.base = discreteGaussianKernel(params.base.sigma, params.base.radius);
+	normaliseKernel(kernels.base);
 	std::vector<float> ssrSigmas;
 	generateSSR(params.ssr, ssrSigmas, kernels.ssr);
 	return kernels;

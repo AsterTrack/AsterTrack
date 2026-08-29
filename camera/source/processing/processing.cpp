@@ -132,6 +132,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 	StreamingState enterStreaming = {};
 
+
 	// ---- Setup camera stream ----
 
 #ifdef RUN_CAMERA
@@ -214,6 +215,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 #else // Camera emulation buffers
 	uint32_t srcStride = (state.camera.width+31)/32*32;
 #endif
+
 
 	// ---- Start camera stream ----
 
@@ -705,6 +707,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			detect.initBackgroundCalibration(bgBitmask);
 	}
 
+	PrecomputedKernels kernels;
+	if (state.blobParams.base.blur)
+		kernels = precomputeKernels(state.blobParams);
 
 	// ---- Processing Loop ----
 
@@ -739,6 +744,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		if (state.updateSetupCPU.exchange(false))
 		{ // Got a new setup packet to read
 			acceptCPUConfig(state);
+			if (state.blobParams.base.blur)
+				kernels = precomputeKernels(state.blobParams);
 		}
 
 		if (state.updateMode.exchange(false))
@@ -986,13 +993,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			std::mutex syncClusters, done;
 			std::atomic<int> remaining = { (int)oldClusters.size() };
 
-			PrecomputedKernels kernels;
-
 			if (!oldClusters.empty())
 			{ // Will submit threads
 				done.lock();
-				if (state.blobParams.base.blur)
-					kernels = precomputeKernels(state.blobParams);
 			}
 			for (int i = 0; i < oldClusters.size(); i++)
 			{

@@ -54,37 +54,40 @@ static std::vector<float> discreteGaussianKernel(float sigma, int radius)
 {
 	float t = sigma * sigma;
 	std::vector<float> kernel(2 * radius + 1);
-	for (int i = -radius; i <= radius; i++)
+	for (int i = 0; i <= radius; i++)
 	{
 #if defined(_LIBCPP_VERSION)
-		#warning Camera Blob Detection Emulation not supported when compiling for libcpp
-		kernel[radius + i] = i == 0? 1 : 0; // No blurring
+		// Quick-and-dirty polyfill, libc++ does not implement std::cyl_bessel_i
+		// About accurate to 1e-7 in ~6 iterations
+		float term = std::exp(-t);
+		for (int j = 0; j < i; j++)
+			term *= t / (2 * (j + 1));
+		float sum = term;
+		for (int j = 0; std::abs(term) >= std::abs(sum) * 1e-12; j++)
+		{
+			term *= (t * t / 4.0f) / ((j + 1) * (j + i + 1));
+			sum += term;
+		}
+		kernel[radius + i] = sum;
 #else
 		kernel[radius + i] = std::exp(-t) * std::cyl_bessel_i(std::abs(i), t);
 #endif
 	}
+	for (int i = 0; i <= radius; i++)
+	{ // Mirror
+		kernel[radius - i] = kernel[radius + i];
+	}
 	return kernel;
 }
 
-static std::vector<float> discreteGaussianKernelNormalised(float sigma, int radius)
+static std::vector<float> normaliseKernel(std::vector<float> &kernel)
 {
-	float t = sigma * sigma;
 	float correction = 0.0f;
-	std::vector<float> kernel(2 * radius + 1);
-	for (int i = -radius; i <= radius; i++)
-	{
-#if defined(_LIBCPP_VERSION)
-		#warning Camera Blob Detection Emulation not supported when compiling for libcpp
-		float value = i == 0? 1 : 0;
-#else
-		float value = std::exp(-t) * std::cyl_bessel_i(std::abs(i), t);
-#endif
-		kernel[radius + i] = value;
-		correction += value;
-	}
+	for (int i = 0; i < kernel.size(); i++)
+		correction += kernel[i];
 	correction = 1.0f / correction;
-	for (int i = -radius; i <= radius; i++)
-		kernel[radius + i] *= correction;
+	for (int i = 0; i < kernel.size(); i++)
+		kernel[i] *= correction;
 	return kernel;
 }
 
@@ -258,6 +261,7 @@ static void generateSSR(const SSRParameters params, std::vector<float> &sigmas, 
 		int radius = std::ceil(params.sigmaTrunc * sigma);
 		sigmas[s] = sigma;
 		kernels[s] = discreteGaussianKernel(sigma, radius);
+		normaliseKernel(kernels[s]);
 	}
 };
 

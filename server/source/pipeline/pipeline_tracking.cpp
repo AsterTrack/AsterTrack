@@ -545,7 +545,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	std::vector<std::vector<BlobProperty> const *> properties(cameras.size());
 	std::vector<std::vector<BlobUsage>*> blobUse(cameras.size());
 	std::vector<std::vector<int>> remainingPoints2D(calibs.size());
-	frame->remainingPoints2D.resize(pipeline.cameras.size());
+	frame->remainingPoints2D.resize(frame->cameras.size());
 	for (int c = 0; c < cameras.size(); c++)
 	{
 		calibs[c]= cameras[c]->calib;
@@ -560,7 +560,8 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	auto &track = pipeline.tracking;
-	int camCount = pipeline.cameras.size();
+	int camCount = frame->cameras.size();
+	assert(frame->cameras.size() <= pipeline.cameras.size());
 	std::vector<int> remainingPoints3D;
 
 	/*

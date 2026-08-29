@@ -1047,12 +1047,20 @@ std::optional<ErrorMessage> storeTrackerConfigurations(const std::string &folder
 
 std::optional<ErrorMessage> parseRecording(const std::string &path, std::vector<CameraConfigRecord> &cameras, std::vector<int> &cameraIndices, TrackingRecord &record, std::size_t &frameOffset, bool separate)
 {
-	std::filesystem::path imgFolder = std::filesystem::path(path).replace_extension();
 	frameOffset = 0;
 
 	json file;
 	auto error = readJSON(path, file);
 	if (error) return error;
+
+	std::filesystem::path imgFolder;
+	std::size_t seek = path.find_last_of('/');
+	if (seek == std::string::npos) seek = 0;
+	seek = path.find("_capture");
+	if (seek != std::string::npos)
+		imgFolder = std::filesystem::path(path.substr(0, seek + strlen("_capture")));
+	else
+		imgFolder = std::filesystem::path(path).replace_extension();
 
 	JSON_PARSE_TRY_BLOCK
 	{

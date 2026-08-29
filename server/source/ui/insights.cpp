@@ -1364,6 +1364,8 @@ static bool ShowTrackingPanel()
 		ui.visState.frame.focusedNum = (FrameNum)std::max(0.0, focusFrame);
 		if (!state.isStreaming || state.simAdvance.load() == 0)
 			ui.visState.frame.visFocused = true;
+		else if (state.mode == MODE_Replay && state.pipeline.frameNum.load() == state.stored.frames.getView().endIndex()-1)
+			ui.visState.frame.visFocused = true;
 	}
 
 	ImPlot::PopColormap();

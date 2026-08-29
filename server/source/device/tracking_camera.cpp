@@ -47,7 +47,14 @@ bool TrackingCameraState::sendPacket(PacketTag tag, uint8_t *data, unsigned int 
 	}
 	CommMedium medium = COMM_MEDIUM_UART;
 	if (tag < PACKET_HOST_SBC)
-		medium = COMM_MEDIUM_UART; // Force UART if sending to MCU - TODO: Support nRF in the future
+	{ // Force UART if sending to MCU - TODO: Support nRF in the future
+		if (!controller || (camState.commState & COMM_READY) != COMM_READY)
+		{
+			LOG(LCameraDevice, LError, "Cannot send packets to MCU of Camera %u because it is not connected yet!", id);
+			return false;
+		}
+		medium = COMM_MEDIUM_UART;
+	}
 	else if (client && client->ready && length > 100)
 		medium = COMM_MEDIUM_WIFI; // Prefer wireless for "larger" packets
 	else if (controller && (camState.commState == COMM_SBC_READY || dtMS(camState.lastConnected, sclock::now()) < 300))

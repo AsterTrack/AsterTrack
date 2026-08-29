@@ -1,19 +1,18 @@
 /**
 AsterTrack Optical Tracking System
-Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors
+Copyright (C) 2026 Seneral <seneral@seneral.dev> and contributors
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, specifically version 3.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "ui.hpp"
@@ -536,20 +535,19 @@ void InterfaceState::UpdateMainMenuBar()
 			ImGuiChildFlags_Borders | ImGuiChildFlags_FrameStyle);
 		ImGui::PushFont(fonts.imgui, fonts.imgui->LegacySize);
 		ImGui::TextUnformatted(
-			"Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors\n"
+			"Copyright (C)  2026 Seneral <seneral@seneral.dev> and contributors\n"
 			"\n"
 			"This program is free software: you can redistribute it and/or modify\n"
 			"it under the terms of the GNU General Public License as published by\n"
-			"the Free Software Foundation, either version 3 of the License, or\n"
-			"(at your option) any later version.\n"
+			"the Free Software Foundation, specifically version 3.\n"
 			"\n"
 			"This program is distributed in the hope that it will be useful,\n"
 			"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
-			"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+			"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n"
 			"GNU General Public License for more details.\n"
 			"\n"
 			"You should have received a copy of the GNU General Public License\n"
-			"along with this program.  If not, see <https://www.gnu.org/licenses/>.");
+			"along with this program. If not, see <https://www.gnu.org/licenses/>.");
 		ImGui::PopFont();
 		ImGui::EndChild();
 

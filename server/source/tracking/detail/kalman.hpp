@@ -1,6 +1,6 @@
 /**
 AsterTrack Optical Tracking System
-Copyright (C)  2025 Seneral <contact@seneral.dev> and contributors
+Copyright (C)  2026 Seneral <seneral@seneral.dev> and contributors
 
 MIT License
 

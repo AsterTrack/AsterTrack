@@ -1069,7 +1069,7 @@ FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile)
 				return false;
 			case FW_TX_TYPE_FILE:
 			case FW_TX_TYPE_UNKNOWN:
-				if (firmwareFile.ends_with(".lst") && !firmwareFile.contains("/"))
+				if (firmwareFile.ends_with(".lst") && firmwareFile.find('/') == std::string::npos)
 				{ // Package list file, for system changes / maintenance
 					update->transfers.emplace_back("/mnt/mmcblk0p2/tce/" + firmwareFile);
 					break;

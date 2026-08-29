@@ -348,7 +348,8 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 		if (acceptSelectBounds == 1) // Normal
 			visState.markers.selectedIDs = std::move(visState.markers.boundedIDs);
 		else if (acceptSelectBounds == 2) // Shift
-			visState.markers.selectedIDs.insert_range(visState.markers.boundedIDs);
+			for (int id : visState.markers.boundedIDs)
+				visState.markers.selectedIDs.insert(id);
 		else if (acceptSelectBounds == 3) // Ctrl
 			for (int id : visState.markers.boundedIDs)
 				visState.markers.selectedIDs.erase(id);

@@ -194,7 +194,7 @@ cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
 	-Wno-deprecated-enum-enum-conversion -Wno-unknown-attributes \
 	-DEIGEN_MPL2_ONLY -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
-	-std=c++23
+	-std=c++20
 lflags = $(lenv) $(lstd) $(lmode) $(march)
 
 

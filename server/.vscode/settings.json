@@ -1,3 +1,7 @@
 {
-	"lldb.launch.initCommands": [ "command script import ${workspaceFolder}/.vscode/LLDB_Eigen_Data_Formatter.py'" ],
+	"lldb.launch.initCommands": [
+		"command script import ${workspaceFolder}/.vscode/LLDB_Eigen_Data_Formatter.py",
+		"command script import ${workspaceFolder}/.vscode/LLDB_Block_Data_Formatter.py",
+		"settings set target.language c++20",
+	]
 }

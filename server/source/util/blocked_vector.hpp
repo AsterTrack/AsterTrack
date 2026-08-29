@@ -43,11 +43,12 @@ SOFTWARE.
  * Two blocked datastructures for optimising many data entries
  * BlockedVector: Blocked vector with erase operations only modifying one block, leaving "holes" - iterator has to skip holes
  * ---missing---: Blocked vector without support for erase operations, allowing for faster random-access iteration
- * BlockedQueue: Queue-like container providing fast thread-safe push_back and iterators (mostly just using atomics) as well as somewhat-thread-safe popping (cull+delete)
+ * BlockedQueue: Queue-like container providing fast thread-safe push_back and iterators as well as thread-safe popping from front (cull+delete)
  */
 
 /**
- * Constant-time random access, Constant-time(N) push_back, Constant-time(N) remove/erase
+ * Random access and appending take linear-time in Size/N
+ * Erasing takes linear-time in Size/N + N
  * No reallocation of data structures (only the access structures) - but data can be moved when removing/erasing
  * No data continuity (blocks of size N are continuous)
  * 
@@ -378,7 +379,7 @@ public:
  * - Write is also allowed if View is non-const (template parameter), but thread-safety depends on the elements themselves
  * - The view mostly behaves like a normal container, except that the index might be offset due to culled blocks
  * - e.g. beginIndex() > 0 - iterators have index() methods to get the index
- * - the Views pos() / operator[] methods use that shifted index, so pos(0) will NOT necessarily yield begin()
+ * - the Views pos() / operator[] methods use that shifted index, so pos(0) will NOT necessarily yield begin() and may instead assert(false)
  * 
  * Internally uses a mutex but takes care to not hold it for very long. The following operations acquire the mutex:
  * - push_back/insert: short state-copy and block-check, as well as allocation for any new blocks required while locked
@@ -434,15 +435,13 @@ private:
 
 	inline void detachBlocks(BlockIt<false> begin, BlockIt<false> end)
 	{
+		if (begin == end) return;
 		// Exchange lifetime to allow controlled deletion of culled blocks
 		std::shared_ptr<BlockAccess> blockLifetime = std::make_shared<BlockAccess>();
 		m_blockLifetime.swap(blockLifetime);
-		if (begin != end)
-		{ // Have culled blocks to delete in a controlled manner later
-			blockLifetime->front = begin;
-			blockLifetime->back = std::prev(end);
-			m_culledBlocks.push(std::move(blockLifetime));
-		}
+		blockLifetime->front = begin;
+		blockLifetime->back = std::prev(end);
+		m_culledBlocks.push(std::move(blockLifetime));
 	}
 
 	template<bool Const = false>

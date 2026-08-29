@@ -130,9 +130,9 @@ MatrixX<BOOL> estimateProjectiveDepths(
 				}
 				int transferrable = existingTransferrable + newlyTransferrable;
 
-				float weight = std::pow<float>(transferrable, params.strategy.transferPow)
-					* std::pow<float>(correspondences, params.strategy.correspondencePow)
-					/ std::pow<float>(indirection, params.strategy.indirectionPow);
+				float weight = std::pow((float)transferrable, params.strategy.transferPow)
+					* std::pow((float)correspondences, params.strategy.correspondencePow)
+					/ std::pow((float)indirection, params.strategy.indirectionPow);
 				if (weight > bestWeight)
 				{ // Propagating from source view to this one is the current best next propagation possible
 					bestWeight = weight;

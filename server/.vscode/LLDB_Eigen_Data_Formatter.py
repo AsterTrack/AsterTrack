@@ -36,11 +36,15 @@ def do_log(valobj, msg):
 	lldb.formatters.Logger.Logger() >> "'" + get_expression_path(valobj) + "': " + msg
 
 def debug_templates(valobj, t, tgt):
-	for i in range(t.GetNumberOfTemplateArguments()):
-		if t.GetTemplateArgumentKind(i) == lldb.eTemplateArgumentKindType:
-			do_log(valobj, "Template parameter " + str(i) + ": type " + t.GetTemplateArgumentType(i).GetName())
-		else:
-			do_log(valobj, "Template parameter " + str(i) + ": value " + t.GetTemplateArgumentValue(tgt, i).GetValue())
+	lldb.formatters.Logger.Logger() >> "Type %s has %d template arguments:" % (t.GetName(), t.GetNumberOfTemplateArguments())
+	try:
+		for i in range(t.GetNumberOfTemplateArguments()):
+			if t.GetTemplateArgumentKind(i) == lldb.eTemplateArgumentKindType:
+				lldb.formatters.Logger.Logger() >> "Template parameter %d: type %s" % (i, t.GetTemplateArgumentType(i).GetName())
+			else:
+				lldb.formatters.Logger.Logger() >> "Template parameter %d: kind %d, value %s" % (i, t.GetTemplateArgumentKind(i), str(t.GetTemplateArgumentValue(tgt, i).GetValue()))
+	except:
+		lldb.formatters.Logger.Logger() >> "Iterating template arguments failed: %s" % (traceback.format_exc())
 
 def find_base_class(t, base):
 	if t.GetName().startswith(base):
@@ -99,7 +103,7 @@ class eigen_dense_matrix_array_ref:
 			self.cols = int(t.GetTemplateArgumentValue(tgt, 3).GetValue())
 			opts = int(t.GetTemplateArgumentValue(tgt, 4).GetValue())
 		except:
-			do_log(valobj, "Failed to parse Matrix/Array template parameters!")
+			do_log(valobj, "Failed to parse Matrix/Array template parameters of %s: %s" % (t.GetName(), traceback.format_exc()))
 			debug_templates(valobj, t, tgt)
 			self.size = -1
 			return
@@ -137,7 +141,7 @@ class eigen_dense_matrix_array_ref:
 			# Strangely, strideType template arguments NOR the base class Stride is accessible at all, so need to parse string
 			outer = re.match("^Eigen::OuterStride<([0-9]+)>", strideType.GetName())
 			inner = re.match("^Eigen::InnterStride<([0-9]+)>", strideType.GetName())
-			both = re.match("^Eigen::StrideStride<([0-9]+),\s?([0-9]+)>", strideType.GetName())
+			both = re.match("^Eigen::StrideStride<([0-9]+), ?([0-9]+)>", strideType.GetName())
 			if outer:
 				outerStride = int(outer.group(1))
 			elif inner:
@@ -148,7 +152,7 @@ class eigen_dense_matrix_array_ref:
 			if outerStride == 0: outerStride = 1
 			if innerStride == 0: innerStride = 1
 		except:
-			do_log(valobj, "Failed to parse Ref template parameters! " + str(t.GetName()))
+			do_log(valobj, "Failed to parse Ref template parameters of %s: %s" % (t.GetName(), traceback.format_exc()))
 			debug_templates(valobj, t, tgt)
 			return
 
@@ -310,7 +314,7 @@ class eigen_dense_block:
 			self.rows = int(t.GetTemplateArgumentValue(tgt, 1).GetValue())
 			self.cols = int(t.GetTemplateArgumentValue(tgt, 2).GetValue())
 		except:
-			do_log(self.valobj, "Failed to parse BlockImpl template parameters!")
+			do_log(self.valobj, "Failed to parse BlockImpl template parameters of %s: %s" % (t.GetName(), traceback.format_exc()))
 			debug_templates(self.valobj, t, tgt)
 			return
 
@@ -416,7 +420,7 @@ class eigen_sparse_matrix:
 		try:
 			opts = int(t.GetTemplateArgumentValue(tgt, 1).GetValue())
 		except:
-			do_log(self.valobj, "Failed to parse SparseMatrix template parameters!")
+			do_log(self.valobj, "Failed to parse SparseMatrix template parameters of %s: %s" % (t.GetName(), traceback.format_exc()))
 			debug_templates(self.valobj, t, tgt)
 			return
 		self.rowMajor = opts & 1
@@ -451,7 +455,7 @@ class eigen_sparse_matrix:
 				for i in range(self.outerSize):
 					self.nnzs += self.innerNonZeros.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValueAsSigned()
 		except:
-			do_log(self.valobj, "Failed to evaluate SparseMatrix layout!")
+			do_log(self.valobj, "Failed to evaluate SparseMatrix layout: " + traceback.format_exc())
 			return
 
 		# Preload remaining properties
@@ -590,7 +594,7 @@ def format_eigen_dense(valobj, matrix):
 	for row in range(0, matrix.rows):
 		for col in range(0, matrix.cols):
 			el = matrix.get_element(row, col)
-			output += ("X" if el is None or not el.IsValid() else el.GetValue()) + " "
+			output += ("X" if el is None or not el.IsValid() else str(el.GetValue())) + " "
 			if len(output) >= abortAtLen: break
 		if col == matrix.cols-1:
 			output = output[:-1] + ", "

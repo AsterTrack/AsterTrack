@@ -361,10 +361,12 @@ static int EditHardwareDescriptor(std::string &hwDesc)
 {
 	ImGui::SetNextItemWidth(SizeWidthFull().x);
 	ImGui::InputText("##hwDesc", &hwDesc);
-	if (hwDesc.contains(MCU_MULTI_TEXT_SEP)) // Disallow
-		hwDesc.resize(hwDesc.find_first_of(MCU_MULTI_TEXT_SEP));
-	if (hwDesc.contains('\0')) // Disallow
-		hwDesc.resize(hwDesc.find_first_of('\0'));
+	std::size_t sepPos = hwDesc.find(MCU_MULTI_TEXT_SEP);
+	if (sepPos != std::string::npos) // Disallow
+		hwDesc.resize(sepPos);
+	std::size_t nulPos = hwDesc.find('\0');
+	if (nulPos != std::string::npos) // Disallow
+		hwDesc.resize(nulPos);
 	return ((hwDesc.size()+1) + 7) / 8; // Add space for trailing \0, then round up
 }
 

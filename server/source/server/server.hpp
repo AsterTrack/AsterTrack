@@ -72,7 +72,6 @@ struct ServerState
 	int defaultLens;
 	std::vector<CameraCalib> cameraCalibrations;
 	std::vector<TrackerConfig> trackerConfigs; // TODO: Synchronised
-	std::string wpa_supplicant_conf;
 	bool generalConfigDirty, cameraConfigDirty;
 	bool cameraCalibsDirty, lensPresetsDirty;
 
@@ -104,6 +103,8 @@ struct ServerState
 	// Since parsing may take too long due to debug builds, system load, bugs, etc.
 	bool usePacketQueue = false;
 
+	bool keepFrameImages = true, keepTrackingResults = true;
+
 	// Simulation/Replay control
 	std::atomic<int> simAdvance = { -1 };
 	std::atomic<bool> simWaiting = { false };
@@ -112,8 +113,6 @@ struct ServerState
 	// Dropout Simulation
 	std::atomic<int> simDropoutIndex = { -1 };
 	std::vector<float> simDropoutSeverity = { 1 };
-	// Tracker Replacement
-	bool keepUnmatchedObservations = true;
 	// Loaded records for replay
 	struct Segment { FrameNum frameStart, frameCount, frameOffset; };
 	struct Recording { int number; std::string label; FrameNum frameStart, frameCount; std::vector<int> cameras; };

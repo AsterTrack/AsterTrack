@@ -106,6 +106,7 @@ struct ReplaceParameters
 	float expandMarkerViewAngle = 0.1f;
 	float occludeAngleTolerance = 0.1f;
 	float occlusionDiscredit = 0.1f;
+	bool keepUnmatchedObservations = true;
 };
 
 struct SimProjectionParameters
@@ -198,6 +199,6 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 /**
  * Replace point data in frameState belonging to the given tracker records with simulated data if configured
  */
-void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers, bool keepUnmatchedObservations);
+void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers);
 
 #endif // SIMULATION_H

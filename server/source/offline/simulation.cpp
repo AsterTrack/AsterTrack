@@ -392,14 +392,14 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 /**
  * Replace point data in frameState belonging to the given tracker record with simulated data
  */
-void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers, bool keepUnmatchedObservations)
+void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers)
 {
-	ScopedLogCategory optLogCategory(LSimulation);
 	auto sim_lock = pipeline.simulation.contextualRLock();
 	const SimulationState &simulation = *sim_lock;
 	const ReplaceParameters &params = simulation.replaceParams;
 	// For temporarily showing original observations (e.g. to interactively compare)
 	if (params.suspendReplacing) return;
+	ScopedLogCategory optLogCategory(LSimulation);
 
 	struct CameraReplace
 	{
@@ -512,7 +512,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 		auto &camRec = frame.cameras[c];
 		auto &camRep = cameraReplace[c];
 
-		if (keepUnmatchedObservations)
+		if (params.keepUnmatchedObservations)
 		{ // Filter out matched points from recorded observations
 			int pp = 0;
 			for (int p = 0; p < camRec.rawPoints2D.size(); p++)

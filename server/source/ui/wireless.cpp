@@ -23,8 +23,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 void InterfaceState::
 UpdateWirelessSetup(InterfaceWindow &window)
 {
+	static std::string wpa_supplicant_edit;
+	static std::string wpa_supplicant_conf;
 	if (!window.open)
+	{
+		wpa_supplicant_edit = {};
+		wpa_supplicant_conf = {};
 		return;
+	}
 	if (!ImGui::Begin(window.title.c_str(), &window.open))
 	{
 		ImGui::End();
@@ -32,13 +38,12 @@ UpdateWirelessSetup(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 
-	static std::string wpa_supplicant_edit;
 	if (ImGui::CollapsingHeader("Wifi Credentials"))
 	{
 		ImGui::AlignTextToFramePadding();
 		if (wpa_supplicant_edit.empty())
 		{
-			if (state.wpa_supplicant_conf.empty())
+			if (wpa_supplicant_conf.empty())
 				ImGui::Text("wpa_supplicant.conf not configured");
 			else
 				ImGui::Text("wpa_supplicant.conf configured");
@@ -48,10 +53,10 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			SameLineTrailing(SizeWidthDiv3().x); 
 			if (ImGui::Button("Edit", SizeWidthDiv3()))
 			{
-				if (state.wpa_supplicant_conf.empty())
+				if (wpa_supplicant_conf.empty())
 					wpa_supplicant_edit = "network={\n\tssid=\"SSID\"\n\t#psk=PSK\n\tpsk=\"PASSWORD\"\n}";
 				else
-					wpa_supplicant_edit = state.wpa_supplicant_conf;
+					wpa_supplicant_edit = wpa_supplicant_conf;
 			}
 		}
 		else
@@ -73,20 +78,20 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			ImGui::SameLine();
 			if (ImGui::Button("Delete", SizeWidthDiv3()))
 			{
-				state.wpa_supplicant_conf.clear();
+				wpa_supplicant_conf.clear();
 				wpa_supplicant_edit.clear();
 				// Just deletes local copy, don't clear wireless credentials from cameras
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Accept", SizeWidthDiv3()))
 			{
-				state.wpa_supplicant_conf = wpa_supplicant_edit;
+				wpa_supplicant_conf = wpa_supplicant_edit;
 				wpa_supplicant_edit.clear();
 				// Update cameras with new wireless credentials, but don't make them store it automatically
 				for (auto &camera : state.cameras)
 				{
 					if (camera->config.wireless.setConfig & WIRELESS_CONFIG_WIFI)
-						CameraUpdateWireless(state, *camera);
+						CameraUpdateWireless(state, *camera, wpa_supplicant_conf);
 				}
 			}
 		}
@@ -107,7 +112,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 			for (auto &camera : state.cameras)
 			{
 				if (camera->config.wireless.lastConfig & WIRELESS_CONFIG_SERVER)
-					CameraUpdateWireless(state, *camera);
+					CameraUpdateWireless(state, *camera, wpa_supplicant_conf);
 			}
 		}
 
@@ -125,7 +130,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 					if (camera->config.wireless.lastConfig & WIRELESS_CONFIG_SERVER)
 					{
 						camera->config.wireless.setConfig = camera->config.wireless.lastConfig;
-						CameraUpdateWireless(state, *camera);
+						CameraUpdateWireless(state, *camera, wpa_supplicant_conf);
 					}
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -162,7 +167,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				if ((camera->config.wireless.lastConfig & flag) != toggle)
 				{
 					camera->config.wireless.setConfig = (WirelessConfig)((camera->config.wireless.lastConfig & ~flag) | toggle);
-					CameraUpdateWireless(state, *camera);
+					CameraUpdateWireless(state, *camera, wpa_supplicant_conf);
 				}
 			}
 		};
@@ -283,7 +288,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				if (cameraID != 0 && camera->id != cameraID) continue;
 				auto &wireless = camera->config.wireless;
 				wireless.setConfig = wireless.lastConfig;
-				CameraUpdateWireless(state, *camera, action);
+				CameraUpdateWireless(state, *camera, wpa_supplicant_conf, action);
 			}
 		};
 		auto actionDropdown = [&](int cameraID)
@@ -419,7 +424,7 @@ UpdateWirelessSetup(InterfaceWindow &window)
 
 			if (changed)
 			{
-				CameraUpdateWireless(state, *camera);
+				CameraUpdateWireless(state, *camera, wpa_supplicant_conf);
 			}
 		}
 		ImGui::EndTable();

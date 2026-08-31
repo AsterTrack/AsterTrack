@@ -317,8 +317,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 		else if (state.mode == MODE_Replay && ImGui::CollapsingHeader("Replace Trackers"))
 		{
-			BooleanProperty("Keep Unmatched Observerations", &state.keepUnmatchedObservations, nullptr);
 			auto sim_lock = pipeline.simulation.contextualLock();
+			BooleanProperty("Keep Unmatched Observerations", &sim_lock->replaceParams.keepUnmatchedObservations, nullptr);
 			for (auto &tracker : state.trackerConfigs)
 			{
 				ImGui::PushID(tracker.id);
@@ -381,22 +381,20 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	if (ImGui::CollapsingHeader("Recording", ImGuiTreeNodeFlags_DefaultOpen))
 	{ // Allow recording and storing of frame sections
 
-		ImGui::Checkbox("Frame Images", &pipeline.keepFrameImages);
+		ImGui::Checkbox("Frame Images", &state.keepFrameImages);
 		SameLineTrailing(SizeWidthDiv2().x);
-		ImGui::Checkbox("Tracking Results", &recordTrackingResults);
+		ImGui::Checkbox("Tracking Results", &state.keepTrackingResults);
 
 		if (ImGui::Button(recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
 		{
 			if (recordSectionStart < 0)
 			{ // TODO: Hold reference to view to prevent frame range from being deleted once garbage collect is implemented? 
 				recordSectionStart = pipeline.record.frames.getView().endIndex();
-				pipeline.keepFrameRecords = true;
 			}
 			else
 			{
 				recordSections.emplace_back(recordSectionStart, pipeline.record.frames.getView().endIndex());
 				recordSectionStart = -1;
-				pipeline.keepFrameRecords = pipeline.keepFrameRecordsDefault;
 			}
 		}
 		ImGui::SameLine();

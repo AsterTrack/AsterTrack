@@ -213,7 +213,7 @@ bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera);
 bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraState> &camera);
 
 void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
-bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action = WIRELESS_ACTION_NONE);
+bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const std::string &credentials, WirelessAction action = WIRELESS_ACTION_NONE);
 void CameraUpdateStream(TrackingCameraState &device);
 void CameraUpdateVis(TrackingCameraState &device);
 void CameraRequestMCUInfo(TrackingCameraState &device);

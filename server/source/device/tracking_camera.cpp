@@ -323,7 +323,7 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 	device.sendPacket(PACKET_CFG_SETUP, setup, sizeof(setup));
 }
 
-bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, WirelessAction action)
+bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const std::string &credentials, WirelessAction action)
 {
 	// Send wireless config to Tracking Camera
 	auto &wireless = device.config.wireless;
@@ -333,7 +333,7 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, Wirel
 		actions.push_back(action);
 
 	bool sendCreds = wireless.setConfig & WIRELESS_CONFIG_WIFI;
-	std::size_t credSize = sendCreds? state.wpa_supplicant_conf.size() : 0;
+	std::size_t credSize = sendCreds? credentials.size() : 0;
 	if (credSize > 2000)
 	{ // TODO: wpa_supplicant limited by CTRL_TRANSFER_SIZE and USBD_CTRL_MAX_PACKET_SIZE
 		LOG(LGUI, LWarn, "wpa_supplicant is too long to send over control transfers!");
@@ -355,7 +355,7 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, Wirel
 	for (int i = 0; i < actions.size(); i++)
 		packet[WIRELESS_PACKET_HEADER+i] = actions[i];
 	if (credSize > 0)
-		memcpy(packet.data()+WIRELESS_PACKET_HEADER+actions.size(), state.wpa_supplicant_conf.data(), credSize);
+		memcpy(packet.data()+WIRELESS_PACKET_HEADER+actions.size(), credentials.data(), credSize);
 	if (hostSize > 0)
 		memcpy(packet.data()+WIRELESS_PACKET_HEADER+actions.size()+credSize, hostStr.data(), hostSize);
 

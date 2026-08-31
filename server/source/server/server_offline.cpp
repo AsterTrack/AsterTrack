@@ -54,7 +54,6 @@ void StartSimulation(ServerState &state)
 	// Initialise state
 	state.mode = MODE_Simulation;
 	state.pipeline.isSimulationMode = true;
-	state.pipeline.keepInternalData = true;
 
 	{ // Setup cameras
 		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
@@ -220,7 +219,6 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	// Initialise state
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
-	state.pipeline.keepInternalData = true;
 
 	{ // Setup cameras
 		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras 
@@ -492,10 +490,8 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 						desiredFrameIntervalUS = std::chrono::duration_cast<std::chrono::microseconds>(nextRecord->time - loadedRecord->time).count();
 				}
 
-				if (!state.keepUnmatchedObservations || !pipeline.simulation.contextualRLock()->replace.empty())
-				{ // Replace some target observations with simulated data (configurable in UI)
-					ReplaceTargetObservations(pipeline, *frameRecord, loadedRecord->trackers, state.keepUnmatchedObservations);
-				}
+				// Replace some target observations with simulated data (configurable in UI)
+				ReplaceTargetObservations(pipeline, *frameRecord, loadedRecord->trackers);
 
 				// Copy imu samples a bit ahead of the frame into record
 				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);

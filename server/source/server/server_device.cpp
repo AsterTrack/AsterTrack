@@ -56,7 +56,6 @@ void StartDeviceMode(ServerState &state)
 	// Initialise state
 	state.mode = MODE_Device;
 	state.pipeline.isSimulationMode = false;
-	state.pipeline.keepInternalData = false;
 
 	// Connect to IMU providers
 	hid_init();

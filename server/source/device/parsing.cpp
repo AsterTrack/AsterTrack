@@ -770,7 +770,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 			auto camera = GetCamera(GetState(), imageRecord->cameraID);
 			if (!camera) return; // Camera has been disconnected
 
-			if (GetState().pipeline.keepFrameImages)
+			if (GetState().keepFrameImages)
 			{ // Store compressed image record in frameRecord for later use
 				auto framesRecord = GetState().pipeline.record.frames.getView<false>();
 				if (framesRecord.empty()) return;

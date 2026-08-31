@@ -128,7 +128,6 @@ struct PipelineState
 	// Recent ones might still be referenced for rendering and detection
 	// Culling can be achieved for both frames and IMU samples with cull_front+delete_culled
 	TrackingRecord record = {};
-	bool keepFrameRecordsDefault = true, keepFrameRecords = true, keepFrameImages = true, keepInternalData = true;
 	std::atomic<OptFrameNum> frameNum = -1; // The latest fully processed frame
 
 	// Recorded 2D sequences, used for both point calib and target calib

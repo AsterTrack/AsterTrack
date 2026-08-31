@@ -108,7 +108,7 @@ struct CameraFrameRecord
 		std::vector<int> GTMarkers2Point;
 	} simulation = {};
 
-	std::shared_ptr<CameraImageRecord> image; // Assigned only if pipeline.keepFrameImages is true
+	std::shared_ptr<CameraImageRecord> image; // Assigned only if keepFrameImages is true
 };
 
 struct TargetMatchError

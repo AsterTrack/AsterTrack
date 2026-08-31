@@ -73,7 +73,7 @@ static TrackerRecord& enterTrackerRecord(std::shared_ptr<FrameRecord> &frame, Tr
 	return frame->trackers.back();
 }
 
-static void recordTrackerInertial(TrackerRecord &record, const TrackerInertial &inertial, bool keepInternalData)
+static void recordTrackerInertial(TrackerRecord &record, const TrackerInertial &inertial)
 {
 	if (inertial)
 	{
@@ -94,18 +94,17 @@ static void recordTrackerInertial(TrackerRecord &record, const TrackerInertial &
 		record.imuState = TrackerInertialState::NO_IMU;
 }
 
-static void recordTargetTracking(TrackerRecord &record, const TrackedTarget &tracker, bool keepInternalData)
+static void recordTargetTracking(TrackerRecord &record, const TrackedTarget &tracker)
 {
 	record.pose = tracker.obs.pose;
-	if (keepInternalData)
-		record.ext = ptr::make_value<TrackerPoseExtended>(tracker.obs.ext);
+	record.ext = ptr::make_value<TrackerPoseExtended>(tracker.obs.ext);
 	if (record.match2D)
 	{
 		record.error = record.match2D->error; // Keep error even if match2D is garbage-collected eventually
 		record.visual = ptr::make_value<TrackerRecordVis>();
 		updateVisibleMarkers(record.visual->visibleMarkers, *record.match2D);
 	}
-	recordTrackerInertial(record, tracker.inertial, keepInternalData);
+	recordTrackerInertial(record, tracker.inertial);
 }
 
 static void recordTargetProbe(TrackerRecord &record, ptr::value_ptr<TargetMatch2D> &&match2D)
@@ -281,7 +280,7 @@ static TrackerRecord retroactivelyTrackFrame(PipelineState &pipeline, TrackedTar
 	if (tracker.inertial && record.result.isTracked())
 		postCorrectIMU(tracker, tracker.filter, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
-	recordTargetTracking(record, tracker, pipeline.keepInternalData);
+	recordTargetTracking(record, tracker);
 
 	// Update mistrust rating of tracker based on matched points
 	// Don't care about occupied markers, by design retroactive tracking cannot conflict as it uses only remainingPoints2D
@@ -342,7 +341,7 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 	TrackedTarget tracker(std::move(dormant), match2D->pose, frame->time, frame->num, pipeline.params.track);
 	TrackerRecord record(tracker.id, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D, procTimeMS);
 	record.match2D = std::move(match2D);
-	recordTargetTracking(record, tracker, pipeline.keepInternalData);
+	recordTargetTracking(record, tracker);
 	enterTrackerRecord(frame, std::move(record));
 
 	if (stopToken.stop_requested())
@@ -487,9 +486,8 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 				postCorrectIMU(*targetIt, targetIt->filter, targetIt->inertial, targetIt->obs, frameRecord.time, pipeline.params.track);
 
 			trackRecord.pose = targetIt->obs.pose;
-			if (pipeline.keepInternalData)
-				trackRecord.ext = ptr::make_value<TrackerPoseExtended>(targetIt->obs.ext);
-			recordTrackerInertial(trackRecord, targetIt->inertial, pipeline.keepInternalData);
+			trackRecord.ext = ptr::make_value<TrackerPoseExtended>(targetIt->obs.ext);
+			recordTrackerInertial(trackRecord, targetIt->inertial);
 		}
 	}
 }
@@ -733,7 +731,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			if (tracker.inertial && record.result.isTracked())
 				postCorrectIMU(tracker, tracker.filter, tracker.inertial, tracker.obs, frame->time, pipeline.params.track);
 
-			recordTargetTracking(record, tracker, pipeline.keepInternalData);
+			recordTargetTracking(record, tracker);
 
 			// Shortcut to output tracking results
 			SignalTrackerTracked(*frame, record, tracker.filter, tracker.inertial);
@@ -1225,7 +1223,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					// Create tracker record
 					TrackerRecord record(tracker.id, TrackingResult::DETECTED_M3D, procTimeMS);
 					record.match2D = std::move(match2D);
-					recordTargetTracking(record, tracker, pipeline.keepInternalData);
+					recordTargetTracking(record, tracker);
 
 					// Shortcut to output tracking results
 					SignalTrackerDetected(tracker.id);
@@ -1473,7 +1471,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					// Create tracker record
 					TrackerRecord record(tracker.id, useProbe? TrackingResult::DETECTED_P2D : TrackingResult::DETECTED_S2D, procTimeMS);
 					record.match2D = std::move(match2D);
-					recordTargetTracking(record, tracker, pipeline.keepInternalData);
+					recordTargetTracking(record, tracker);
 
 					// Shortcut to output tracking results
 					SignalTrackerDetected(tracker.id);

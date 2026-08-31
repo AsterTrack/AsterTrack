@@ -30,14 +30,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 extern ctpl::thread_pool threadPool;
 
 
-
 void InterfaceState::UpdateMainMenuBar()
 {
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10,6));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10,10));
-
-	static bool openAboutPopup = false;
 
 	if (!ImGui::BeginMainMenuBar())
 	{
@@ -47,6 +44,13 @@ void InterfaceState::UpdateMainMenuBar()
 	// Warning: Only use with useCustomHeader, doesn't play well with libdecor
 	bool mouseInHeader = ImGui::IsWindowHovered(); 
 	bool focusOnUIElement = false;
+
+	bool openAboutPopup = false, openRenamePopup = false, openDeletePopup = false;
+	static struct {
+		Recording recording;
+		std::string label;
+		std::optional<ErrorMessage> error;
+	} editRecordingPopup;
 
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
@@ -183,7 +187,7 @@ void InterfaceState::UpdateMainMenuBar()
 	static std::map<int,Recording> recordEntries;
 	if (ImGui::BeginMenu("Replay"))
 	{
-		auto showCaptureMenus = [&](bool append, bool separate, bool select = false)
+		auto showCaptureMenus = [&](bool append, bool separate, bool select = false, bool allowEdit = false)
 		{
 			cachePaths = true;
 			if (!cachingRecordEntries)
@@ -194,11 +198,12 @@ void InterfaceState::UpdateMainMenuBar()
 			}
 			if (recordEntries.empty())
 				ImGui::MenuItem("No stored captures", nullptr, nullptr, false);
-			for (auto entryIt = recordEntries.rbegin(); entryIt != recordEntries.rend(); entryIt++)
+			for (auto entryIt = recordEntries.rbegin(); entryIt != recordEntries.rend();)
 			{
 				const auto &entry = entryIt->second;
 				std::string label = entry.label.empty()? asprintf_s("Capture %d", entry.number)
 					: asprintf_s("Capture %d: %s", entry.number, entry.label.c_str());
+				if (!entry.images.empty()) label += " " ICON_LA_IMAGES;
 				if (select)
 				{ // Just select via recordingTestSet
 					auto selectedIt = std::find(state.testing.recordings.begin(), state.testing.recordings.end(), entry.number);
@@ -212,24 +217,58 @@ void InterfaceState::UpdateMainMenuBar()
 						ImGui::MarkIniSettingsDirty(); // These are stored in config
 					}
 					ImGui::PopItemFlag();
+					entryIt++;
 					continue;
 				}
-				if (!ImGui::MenuItem(label.c_str())) continue;
-				// Perform read in a separate thread to prevent blocking UI
-				state.isLoading = true;
-				threadPool.push([](int, Recording entry, bool append, bool separate)
+				if (allowEdit) ImGui::SetNextItemAllowOverlap();
+				if (ImGui::MenuItem(label.c_str()))
+				{ // Perform read in a separate thread to prevent blocking UI
+					state.isLoading = true;
+					threadPool.push([](int, Recording entry, bool append, bool separate)
+					{
+						if (!append && GetState().mode != MODE_None)
+							StopReplay(GetState());
+						auto error = loadRecording(GetState(), std::move(entry), append, separate);
+						if (error) SignalErrorToUser(error.value());
+						GetState().isLoading = false;
+					}, entry, append, separate);
+				}
+				if (!allowEdit)
 				{
-					if (!append && GetState().mode != MODE_None)
-						StopReplay(GetState());
-					auto error = loadRecording(GetState(), std::move(entry), append, separate);
-					if (error) SignalErrorToUser(error.value());
-					GetState().isLoading = false;
-				}, entry, append, separate);
+					entryIt++;
+					continue;
+				}
+				ImGui::PushID(entry.number);
+				ImGui::SameLine();
+				if (InlineIconButton(ICON_LA_EDIT "##Rename"))
+				{
+					editRecordingPopup = { entry, entry.label };
+					openRenamePopup = true;
+				}
+				ImGui::SameLine();
+				bool deleted = false;
+				if (InlineIconButton(ICON_LA_TIMES "##Delete"))
+				{
+					editRecordingPopup = { entry };
+					openDeletePopup = true;
+					if (ImGui::GetIO().KeyShift)
+					{
+						editRecordingPopup.error = deleteRecording(editRecordingPopup.recording);
+						if (!editRecordingPopup.error)
+						{
+							entryIt = decltype(entryIt)(recordEntries.erase(std::next(entryIt).base()));
+							deleted = true;
+							openDeletePopup = false;
+						}
+					}
+				}
+				ImGui::PopID();
+				if (!deleted) entryIt++;
 			}
 		};
 		if (ImGui::BeginMenu("Replay capture", !state.isLoading && (state.mode == MODE_Replay || state.mode == MODE_None)))
 		{
-			showCaptureMenus(false, false);
+			showCaptureMenus(false, false, false, true);
 			ImGui::EndMenu();
 		}
 		if (state.mode == MODE_Replay && ImGui::BeginMenu("Append similar capture", !state.isLoading))
@@ -511,14 +550,10 @@ void InterfaceState::UpdateMainMenuBar()
 			glfwResizeWindow(glfwWindow, borderFlag);
 	}
 
-	static bool aboutPopupOpened = false;
 	if (openAboutPopup)
-	{
-		openAboutPopup = false;
 		ImGui::OpenPopup("About AsterTrack");
-		aboutPopupOpened = true;
-	}
-	if (ImGui::BeginPopupModal("About AsterTrack", &aboutPopupOpened, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
+	openAboutPopup = true; // Reuse as open flag to get close button
+	if (ImGui::BeginPopupModal("About AsterTrack", &openAboutPopup, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
 	{
 		ImGui::Text("Server Version %d.%d.%d (Build %.2x - %s)",
 			serverVersion.major, serverVersion.minor, serverVersion.patch, serverVersion.build, serverVersionDescriptor.c_str());
@@ -554,6 +589,65 @@ void InterfaceState::UpdateMainMenuBar()
 		ImGui::EndPopup();
 	}
 
+	if (openRenamePopup)
+		ImGui::OpenPopup("Rename");
+	if (ImGui::BeginPopup("Rename"))
+	{
+		if (editRecordingPopup.error)
+		{
+			ImGui::Text("%s", editRecordingPopup.error->c_str());
+		}
+		else
+		{
+			ImGui::Text("Renaming recording '%s' of %d parts", editRecordingPopup.recording.label.c_str(), (int)editRecordingPopup.recording.captures.size());
+			ImGui::SetNextItemWidth(LineWidth());
+			if (ImGui::IsWindowAppearing())
+				ImGui::SetKeyboardFocusHere();
+			bool save = ImGui::InputText("##Label", &editRecordingPopup.label, ImGuiInputTextFlags_EnterReturnsTrue);
+			// Note: This may stay invalid while editing as TextInput takes control of string
+			// Note: This will keep sanitising every frame while editing as TextInput takes control of string
+			auto labelProblem = sanitiseRecordingLabel(editRecordingPopup.label);
+			if (labelProblem) save = false;
+
+			if (labelProblem)
+				ImGui::TextUnformatted(labelProblem->c_str());
+
+			ImGui::BeginDisabled(labelProblem.has_value());
+			if (ImGui::Button("Rename", SizeWidthFull()) || save)
+			{
+				editRecordingPopup.error = renameRecording(editRecordingPopup.recording, editRecordingPopup.label);
+				if (!editRecordingPopup.error)
+					ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndDisabled();
+		}
+
+		ImGui::EndPopup();
+	}
+
+	if (openDeletePopup)
+		ImGui::OpenPopup("Delete");
+	if (ImGui::BeginPopup("Delete"))
+	{
+		if (editRecordingPopup.error)
+		{
+			ImGui::Text("%s", editRecordingPopup.error->c_str());
+		}
+		else
+		{
+			ImGui::Text("Delete recording '%s' of %d parts?", editRecordingPopup.recording.label.c_str(), (int)editRecordingPopup.recording.captures.size());
+			ImGui::TextUnformatted("This will remove all related recording files and can NOT be undone!");
+
+			if (ImGui::Button("Delete", SizeWidthFull()))
+			{
+				editRecordingPopup.error = deleteRecording(editRecordingPopup.recording);
+				if (!editRecordingPopup.error)
+					ImGui::CloseCurrentPopup();
+			}
+		}
+
+		ImGui::EndPopup();
+	}
 
 	// Could have a secondary toolbar
 	/* ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;

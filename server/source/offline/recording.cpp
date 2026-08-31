@@ -25,33 +25,90 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include <filesystem>
 
+
+#define LABEL_ILLEGAL "/\\\n\t\r"
+#define LABEL_MATCH "%200[^" LABEL_ILLEGAL "]"
+const int RECORDING_NAME_MAX_SIZE = 200;
+
+std::optional<ErrorMessage> sanitiseRecordingLabel(std::string &label)
+{
+	std::optional<ErrorMessage> sanitiseReason;
+	int num, pos;
+	bool startNum = std::sscanf(label.c_str(), "%d%n", &num, &pos) == 1;
+	if (startNum && pos == label.length())
+	{ // Number without _ would be fine
+		sanitiseReason = asprintf_s("May not be just a number.");
+		label += ";";
+	}
+	if (startNum && label[pos] == '_')
+	{ // Number without _ would be fine
+		sanitiseReason = asprintf_s("May not start with a number followed by underscore!");
+		label[pos] = ';';
+	}
+	if (label.size() > RECORDING_NAME_MAX_SIZE)
+	{
+		sanitiseReason = asprintf_s("Exceeding size %d by %d characters", RECORDING_NAME_MAX_SIZE, (int)label.size() - RECORDING_NAME_MAX_SIZE);
+		label.resize(RECORDING_NAME_MAX_SIZE);
+	}
+	auto illegalChar = label.find_first_of(LABEL_ILLEGAL);
+	if (illegalChar != std::string::npos)
+	{
+		sanitiseReason = asprintf_s("Illegal character '%c'", label[illegalChar]);
+		label.resize(illegalChar);
+	}
+	return sanitiseReason;
+}
+
+enum RecordFileType { File_Capture, File_Tracking, File_Calib, File_Unknown };
+static const std::array<std::string,3> FileTypes = { "capture", "tracking", "calib" };
+
+static bool parseRecordFileName(const std::string &file, int &num, int &type, int &part, std::string &label)
+{
+	// Parse number and type
+	int head, tail;
+	if (std::sscanf(file.data(), "%d_%n", &num, &head) != 1)
+		return false;
+	for (type = 0; type < FileTypes.size(); type++)
+	{
+		if (file.size() < head + FileTypes[type].length())
+			continue;
+		if (std::strncmp(file.data()+head, FileTypes[type].data(), FileTypes[type].length()) == 0)
+			break;
+	}
+	if (type == FileTypes.size())
+		return false;
+	head += FileTypes[type].length();
+
+	// Parse part (optional) and label (optional)
+	char labelBuf[RECORDING_NAME_MAX_SIZE+1] = "";
+	part = 0;
+	if (file.length() == head) {}
+	else if (std::sscanf(file.data()+head, "_%d_" LABEL_MATCH "%n", &part, labelBuf, &tail) == 2) {}
+	else if (std::sscanf(file.data()+head, "_%d%n", &part, &tail) == 1 && file.length() == head+tail) {}
+	else if (std::sscanf(file.data()+head, "_" LABEL_MATCH "%n", labelBuf, &tail) == 1) { part = 0; }
+	else return false; // Something other than _ after type
+	label = labelBuf;
+	if (label.starts_with("to"))
+		LOG(LGUI, LInfo, "Derp");
+	// TODO: What if file.length() != pos+end? e.g. longer label or number X NOT followed by _?
+	return true;
+}
+
 void parseRecordEntries(std::map<int, Recording> &recordEntries)
 {
-	if (!std::filesystem::exists(std::filesystem::path(recordingsFolder))) return;
+	std::filesystem::path recordings(recordingsFolder);
+	if (!std::filesystem::is_directory(recordings)) return;
 
-	for (const auto &file : std::filesystem::directory_iterator(recordingsFolder))
+	for (const auto &file : std::filesystem::directory_iterator(recordings))
 	{
+		if (!file.is_regular_file()) continue;
 		if (file.path().extension().compare(".json") != 0) continue;
 		const std::string &str = file.path().stem().string();
 
-		// Parse number and type
-		int num = -1, pos;
-		if (std::sscanf(str.data(), "%d_%n", &num, &pos) != 1) continue;
-		int type = 0;
-		static const std::array<std::string,3> types = { "capture", "tracking", "calib" };
-		for (; type < types.size(); type++)
-			if (std::strncmp(str.data()+pos, types[type].data(), types[type].length()) == 0) break;
-		if (type == types.size()) continue;
-		pos += types[type].length();
-
-		// Parse part (optional) and label (optional)
-		int part = 0;
-		char label[100] = "";
-		if (str.length() == pos) {}
-		else if (std::sscanf(str.data()+pos, "_%d_%99s", &part, label) == 2) {}
-		else if (std::sscanf(str.data()+pos, "_%d", &part) == 1) {}
-		else if (std::sscanf(str.data()+pos, "_%99s", label) == 1) { part = 0; }
-		else continue; // Something other than _ after type
+		int num, type, part;
+		std::string label;
+		if (!parseRecordFileName(str, num, type, part, label))
+			continue;
 
 		// Update record entry
 		auto &entry = recordEntries[num];
@@ -64,10 +121,28 @@ void parseRecordEntries(std::map<int, Recording> &recordEntries)
 		if (entry.label.empty()) entry.label = label;
 		if (entry.captures.size() <= part) entry.captures.resize(part+1);
 		if (entry.tracking.size() <= part) entry.tracking.resize(part+1);
-		if (type == 2) entry.calib = file.path().string();
-		else if (type == 0) entry.captures[part] = file.path().string();
-		else if (type == 1) entry.tracking[part] = file.path().string();
+		if (type == File_Calib) entry.calib = file.path().string();
+		else if (type == File_Capture) entry.captures[part] = file.path().string();
+		else if (type == File_Tracking) entry.tracking[part] = file.path().string();
 	}
+
+	for (auto &recordIt : recordEntries)
+	{
+		auto &recording = recordIt.second;
+		std::filesystem::path imageFolder = recordings / asprintf_s("%d_capture", recording.number);
+		if (std::filesystem::is_directory(imageFolder))
+			recording.images = imageFolder.string();
+	}
+}
+
+std::optional<Recording> findRecording(int recording)
+{
+	std::map<int, Recording> recordEntries;
+	parseRecordEntries(recordEntries);
+	auto recIt = recordEntries.find(recording);
+	if (recIt != recordEntries.end())
+		return recIt->second;
+	return std::nullopt;
 }
 
 std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate)
@@ -235,5 +310,86 @@ std::optional<ErrorMessage> loadRecordingSet(ServerState &state, const std::vect
 
 	if (first)
 		return "Failed to load any specified recordings!";
+	return std::nullopt;
+}
+
+std::optional<ErrorMessage> renameRecording(Recording &recording, std::string label)
+{
+	auto sanitiseReason = sanitiseRecordingLabel(label);
+	if (sanitiseReason) return sanitiseReason;
+
+	auto renameFile = [&](std::string &fileName, RecordFileType fileType) -> std::optional<ErrorMessage>
+	{
+		std::filesystem::path path(fileName);
+		if (!std::filesystem::exists(path))
+			return asprintf_s("File '%s' does not exist!", path.filename().c_str());
+
+		int num, type, part;
+		std::string l;
+		if (!parseRecordFileName(path.stem().string(), num, type, part, l))
+			return asprintf_s("File '%s' is not an expected capture file!", path.filename().c_str());
+		else if (num != recording.number || type != fileType)
+			return asprintf_s("File '%s' is not an expected capture file!", path.filename().c_str());
+
+		std::filesystem::path newPath;
+		if (recording.captures.size() > 1)
+			newPath = asprintf_s("%d_%s_%d_%s.json", recording.number, FileTypes[fileType].c_str(), part, label.c_str());
+		else
+			newPath = asprintf_s("%d_%s_%s.json", recording.number, FileTypes[fileType].c_str(), label.c_str());
+		newPath = path.parent_path() / newPath;
+		if (path == newPath)
+			return std::nullopt;
+		if (std::filesystem::exists(newPath))
+			return asprintf_s("File '%s' already exists, renaming failed!", newPath.filename().c_str());
+
+		std::filesystem::rename(path, newPath);
+		fileName = newPath.string();
+		return std::nullopt;
+	};
+
+
+	std::optional<ErrorMessage> error;
+
+	for (auto &capture : recording.captures)
+		if ((error = renameFile(capture, File_Capture)))
+			return error;
+
+	for (auto &tracking : recording.tracking)
+		if ((error = renameFile(tracking, File_Tracking)))
+			return error;
+
+	// Currently, calib is not named at all
+	//error = renameFile(recording.calib, File_Calib);
+
+	// Image folder is never renamed, paths in capture rely on it
+
+	recording.label = label;
+	return error;
+}
+
+std::optional<ErrorMessage> deleteRecording(Recording &recording)
+{
+	int missing = 0;
+
+	for (auto &capture : recording.captures)
+		if (!std::filesystem::remove(capture))
+			missing++;
+
+	for (auto &tracking : recording.tracking)
+		if (!std::filesystem::remove(tracking))
+			missing++;
+
+	if (!std::filesystem::remove(recording.calib))
+		missing++;
+
+	if (!recording.images.empty())
+	{
+		if (std::filesystem::is_directory(recording.images))
+			std::filesystem::remove_all(recording.images);
+		else missing++;
+	}
+
+	if (missing > 0)
+		return asprintf_s("Failed to delete %d files of the recording.", missing);
 	return std::nullopt;
 }

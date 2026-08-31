@@ -912,7 +912,8 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			break;
 		case EVT_START_STREAMING:
 			GetUI().recordSections.clear();
-			GetUI().recordSectionStart = -1;
+			if (GetUI().recordSectionStart > 0)
+				GetUI().recordSectionStart = -1;
 			GetUI().visState.frame.visFocused = false;
 			break;
 		case EVT_STOP_STREAMING:
@@ -1172,7 +1173,7 @@ void InterfaceState::StyleColorsAsterDark(ImGuiStyle *dst)
 	colors[ImGuiCol_TextDisabled]			= ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
 	colors[ImGuiCol_WindowBg]				= ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
 	colors[ImGuiCol_ChildBg]				= colors[ImGuiCol_WindowBg];
-	colors[ImGuiCol_PopupBg]				= colors[ImGuiCol_WindowBg];
+	colors[ImGuiCol_PopupBg]				= ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
 	colors[ImGuiCol_Border]					= ImVec4(0.25f, 0.25f, 0.25f, 0.50f);
 	colors[ImGuiCol_BorderShadow]			= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	colors[ImGuiCol_FrameBg]				= ImVec4(0.25f, 0.25f, 0.25f, 1.00f);

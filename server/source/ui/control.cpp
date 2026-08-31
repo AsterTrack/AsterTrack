@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui.hpp"
 #include "config.hpp"
+#include "offline/recording.hpp"
 
 #include "imgui/imgui_custom.hpp"
 #include "imgui/imgui_onDemand.hpp"
@@ -411,8 +412,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		{
 			ImGui::TableSetupColumn("Start");
 			ImGui::TableSetupColumn("Frames");
-			ImGui::TableSetupColumn("Save##Header", ImGuiTableColumnFlags_WidthStretch, 3);
-			ImGui::TableSetupColumn("##Export", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+			ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3);
+			ImGui::TableSetupColumn("##Interact", ImGuiTableColumnFlags_WidthFixed, GetBarWidth(ImGui::GetFrameHeight(), 2));
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 			ImGui::TableHeadersRow();
 
@@ -420,20 +421,54 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			{
 				auto &section = recordSections[i];
 				ImGui::PushID(i);
-				ImGui::AlignTextToFramePadding();
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
+				ImGui::AlignTextToFramePadding();
 				ImGui::Text("%" PRIu64, section.begin);
 				ImGui::TableNextColumn();
+				ImGui::AlignTextToFramePadding();
 				ImGui::Text("%" PRIu64, section.end-section.begin);
+
 				ImGui::TableNextColumn();
-				if (section.path.empty())
+				std::optional<ErrorMessage> labelProblem;
+				bool acceptLabel = false;
+				if (section.path.empty() || section.editing)
 				{
-					if (section.forceSave || ImGui::Button("Save", ImVec2(ImGui::GetColumnWidth(2), 0)))
+					ImGui::SetNextItemWidth(LineWidth());
+					if (ImGui::InputText("##Name", &section.name, ImGuiInputTextFlags_ElideLeft | ImGuiInputTextFlags_EnterReturnsTrue))
+						acceptLabel = true;
+					// Note: This will keep sanitising every frame while editing as TextInput takes control of string
+					labelProblem = sanitiseRecordingLabel(section.name);
+					if (labelProblem) acceptLabel = false;
+					if (labelProblem)
+						ImGui::SetTooltip("%s", labelProblem->c_str());
+					else
+						ImGui::SetItemTooltip("Optional label for recording.");
+				}
+				else if (!section.saved)
+				{
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted("Saving...");
+				}
+				else
+				{
+					ImGui::SetNextItemWidth(LineWidth());
+					ImGui::BeginDisabled(true);
+					ImGui::InputText("##Path", &section.path, ImGuiInputTextFlags_ElideLeft);
+					ImGui::EndDisabled();
+				}
+
+				ImGui::TableNextColumn();
+				bool saved = !section.path.empty(), editing = saved && section.editing;
+
+				if (!saved)
+				{
+					ImGui::BeginDisabled(labelProblem.has_value());
+					if (IconButton(ICON_LA_SAVE "##Save") || section.forceSave || acceptLabel)
 					{
 						// Find path
 						section.index = findHighestFileEnumeration(recordingsFolder.c_str(), "%d_capture", ".json")+1;
-						section.path = recordingsFolder + asprintf_s("/%d_capture.json", section.index);
+						section.path = recordingsFolder + asprintf_s("/%d_capture%s.json", section.index, section.name.empty()? "" : ("_" + section.name).c_str());
 						// Occupy path now to prevent next save from using same path
 						touchFile(section.path);
 						// Perform write in a separate thread to prevent blocking UI
@@ -490,29 +525,71 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							GetUI().RequestUpdates();
 						}, section);
 					}
+					ImGui::EndDisabled();
+					ImGui::SetItemTooltip("Save as new recording file.");
 				}
-				else if (!section.saved)
+
+				if (saved && !editing)
 				{
-					ImGui::TextUnformatted("Saving...");
+					if (IconButton(ICON_LA_EDIT "##Edit"))
+					{
+						std::optional<Recording> ex = findRecording(section.index);
+						if (!ex) SignalErrorToUser(asprintf_s("Failed to find saved recording with index '%d'!", section.index));
+						else
+						{
+							section.name = ex->label;
+							section.editing = true;
+						}
+					}
+					ImGui::SetItemTooltip("Start editing the name of the saved recording on disk.");
 				}
-				else
+
+				if (editing)
 				{
-					ImGui::Text("%s", section.path.c_str());
+					ImGui::BeginDisabled(labelProblem.has_value());
+					if (IconButton(ICON_LA_CHECK "##Apply") || acceptLabel)
+					{
+						std::optional<Recording> ex = findRecording(section.index);
+						std::optional<ErrorMessage> error;
+						if (!ex) error = asprintf_s("Failed to find saved recording with index '%d'!", section.index);
+						else error = renameRecording(ex.value(), section.name);
+						if (error) SignalErrorToUser(error.value());
+						else if (!ex->captures.empty())
+							section.path = ex->captures.front();
+						section.editing = false;
+					}
+					ImGui::EndDisabled();
+					ImGui::SetItemTooltip("Apply edited recording name to saved recording on disk.");
+					ImGui::SameLine();
+					if (IconButton(ICON_LA_BAN "##Discard"))
+					{
+						section.editing = false;
+					}
+					ImGui::SetItemTooltip("Discard editing the name of the saved recording.");
 				}
-				ImGui::TableNextColumn();
-				if (IconButton(ICON_LA_FILE_EXPORT "##Export"))
+
+				if (!editing)
 				{
-					int index = findHighestFileEnumeration("dump", "%d_export", ".c3d")+1;
-					std::string path = asprintf_s("dump/%d_export.c3d", index);
-					exportDlg = { section.begin, section.end, path };
-					ImGui::OpenPopup(exportDlgID);
+					ImGui::SameLine();
+					ImGui::BeginDisabled(labelProblem.has_value());
+					if (IconButton(ICON_LA_FILE_EXPORT "##Export"))
+					{
+						int index = findHighestFileEnumeration("dump", "%d_export", ".c3d")+1;
+						std::string path = asprintf_s("dump/%d_export%s.c3d", index, section.name.empty()? "" : ("_" + section.name).c_str());
+						exportDlg = { section.begin, section.end, path };
+						ImGui::OpenPopup(exportDlgID);
+					}
+					ImGui::EndDisabled();
+					ImGui::SetItemTooltip("Show export dialog initialised with this sections frame range.");
 				}
+
 				ImGui::TableNextColumn();
 				if (CrossButton("Del"))
 				{
 					recordSections.erase(std::next(recordSections.begin(), i));
 					i--;
 				}
+				ImGui::SetItemTooltip("Forget about the section.\nDoes not actively delete frame records.\nDoes not delete saved recordings.");
 				ImGui::PopID();
 			}
 			ImGui::EndTable();

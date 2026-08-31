@@ -39,16 +39,26 @@ struct Recording
 	bool corrupt = false;
 	std::vector<std::string> captures;
 	std::vector<std::string> tracking;
-	std::string calib;
+	std::string calib, images;
 };
 
 
 /* Functions */
 
 /**
+ * Sanitise label for recording and return reason if it was modified.
+ */
+std::optional<ErrorMessage> sanitiseRecordingLabel(std::string &label);
+
+/**
  * Parses recording folder for all record entries that can be loaded
  */
 void parseRecordEntries(std::map<int,Recording> &recordEntries);
+
+/**
+ * Parses recording folder to find the given recording
+ */
+std::optional<Recording> findRecording(int recording);
 
 /**
  * Loads the recording into state for replay, optionally appending to an existing recording
@@ -59,5 +69,15 @@ HANDLE_ERROR loadRecording(ServerState &state, Recording &&recordEntries, bool a
  * Load a specified set of recordings by ID from the recordings folder
  */
 std::optional<ErrorMessage> loadRecordingSet(ServerState &state, const std::vector<int> &recordings);
+
+/**
+ * Rename the files of the given recording to assign the given label 
+ */
+std::optional<ErrorMessage> renameRecording(Recording &recording, std::string label);
+
+/**
+ * Remove all files of the given recording
+ */
+std::optional<ErrorMessage> deleteRecording(Recording &recording);
 
 #endif // RECORDING_H

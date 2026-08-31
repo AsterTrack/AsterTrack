@@ -188,11 +188,15 @@ static inline bool IconButton(const char *iconLabel)
 
 static inline bool InlineIconButton(const char *iconLabel)
 {
+	auto &style = ImGui::GetStyle();
+	ImVec2 touchPadding = style.TouchExtraPadding;
+	style.TouchExtraPadding = ImVec2(touchPadding.x + style.FramePadding.x, touchPadding.y + style.FramePadding.y);
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
 	ImGui::PushStyleColor(ImGuiCol_Button, ImGuiCol_FrameBg);
 	bool pressed = ImGui::Button(iconLabel, SizeFrame());
 	ImGui::PopStyleColor();
 	ImGui::PopStyleVar();
+	style.TouchExtraPadding = touchPadding;
 	return pressed;
 }
 

@@ -1,0 +1,386 @@
+#ifndef EZC3D_PARAMETER_H
+#define EZC3D_PARAMETER_H
+///
+/// \file Parameter.h
+/// \brief Declaration of Parameter class
+/// \author Pariterre
+/// \version 1.0
+/// \date October 17th, 2018
+///
+
+#include "ezc3d/ezc3dNamespace.h"
+#include <iostream>
+#include <vector>
+#ifdef _WIN32
+#include <string>
+#endif
+
+///
+/// \brief Parameter of a C3D file
+///
+class EZC3D_VISIBILITY ezc3d::ParametersNS::GroupNS::Parameter {
+  //---- CONSTRUCTOR ----//
+public:
+  ///
+  /// \brief Create an empty parameter
+  /// \param name The name of the parameter
+  /// \param description The description of the parameter
+  ///
+  EZC3D_API Parameter(const std::string &name = "",
+                      const std::string &description = "");
+
+  ///
+  /// \brief Create an empty parameter with given type and dimension
+  /// \param name The name of the parameter
+  /// \param description The description of the parameter
+  /// \param type The type of the parameter
+  /// \param dimension The dimension of the parameter
+  ///
+  EZC3D_API Parameter(
+    const std::string &name, const std::string &description,
+    ezc3d::DATA_TYPE type, const std::vector<size_t> &dimension = {});
+
+  ///
+  /// \brief Create a deep copy of a parameter
+  /// \return A deep copy of the parameter
+  ///
+  EZC3D_API Parameter clone() const;
+
+  //---- STREAM ----//
+public:
+  ///
+  /// \brief Print the parameter and its values
+  ///
+  EZC3D_API void print() const;
+
+  ///
+  /// \brief Write the parameter to an opened file
+  /// \param writeOptions
+  /// \param f Already opened fstream file with write access
+  /// \param groupIdx Index of the group that this particular parameter is in
+  /// \param dataStartPositionToFill The position in the file where the data
+  /// start (special case for POINT:DATA_START and ROTATION:DATA_START
+  /// parameters)
+  /// \param dataStartType The type of data start (-1 no data start, 0 points,
+  /// 1 rotations)
+  ///
+  /// Write the parameter and its values to a file
+  ///
+  EZC3D_API void write(const WriteOptions &writeOptions, std::fstream &f,
+                       int groupIdx,
+                       ezc3d::DataStartInfo &dataStartPositionToFill,
+                       int dataStartType) const;
+
+
+  ///
+  /// \brief Write a matrix of parameter to a file
+  /// \param f The file stream already opened with write access
+  /// \param dim The dimension of the matrix of parameter
+  /// \param currentIdx Internal variable that keep track where it is in the
+  /// matrix recursive calls. It should be set to 0 when called the first time.
+  /// \param cmp Internal variable that keep track where it is in the parameter
+  /// recursive calls. It should be set to 0 when called the first time. \return
+  /// The internal variable cmp. It should be ignore by the user.
+  ///
+  size_t writeImbricatedParameter(std::fstream &f,
+                                  const std::vector<size_t> &dim,
+                                  size_t currentIdx = 0, size_t cmp = 0) const;
+
+public:
+  ///
+  /// \brief Read and store a parameter from an opened C3D file
+  /// \param c3d C3D reference to copy the data in
+  /// \param params Reference to a valid parameter
+  /// \param file The file stream already opened with read access
+  /// \param nbCharInName The number of character of the parameter name
+  /// \return The position in the file of the next Group/Parameter
+  ///
+  EZC3D_API int read(c3d &c3d, const Parameters &params, std::fstream &file,
+                     int nbCharInName);
+
+  //---- METADATA ----//
+
+  std::string _name;        ///< The name of the parameter
+  std::string _description; ///< The description of the parameter
+  bool _isLocked;           ///< The lock status of the parameter
+  ezc3d::DATA_TYPE
+      _data_type; ///< The type of data (int, float or string) the parameter is
+
+public:
+  ///
+  /// \brief Get the name of the parameter
+  /// \return The name of the parameter
+  ///
+  EZC3D_API const std::string &name() const;
+
+  ///
+  /// \brief Set the name of the parameter
+  /// \param name The name of the parameter
+  ///
+  EZC3D_API void name(const std::string &name);
+
+  ///
+  /// \brief Get the description of the parameter
+  /// \return The description of the parameter
+  ///
+  EZC3D_API const std::string &description() const;
+
+  ///
+  /// \brief Set the description of the parameter
+  /// \param description The description of the parameter
+  ///
+  EZC3D_API void description(const std::string &description);
+
+  ///
+  /// \brief Get the locking status of the parameter
+  /// \return The locking status of the parameter
+  ///
+  EZC3D_API bool isLocked() const;
+
+  ///
+  /// \brief Set the locking status of the parameter to true
+  ///
+  EZC3D_API void lock();
+
+  ///
+  /// \brief Set the locking status of the parameter to false
+  ///
+  EZC3D_API void unlock();
+
+  //---- DATA DIMENSIONS ----//
+
+  std::vector<size_t> _dimension; ///< Mapping of the data vector to the matrix of parameter
+
+  ///
+  /// \brief longestElement Compute the longest element in the holder. This is
+  /// interesting solely for char \return The longest element. If 0 is return,
+  /// then no element is present
+  ///
+  size_t longestElement() const;
+
+public:
+  ///
+  /// \brief Return the vector mapping the dimension of the parameter matrix
+  /// \return The vector mapping the dimension of the parameter matrix
+  ///
+  /// A parameter can have multiple values organized in vector or matrix. This
+  /// parameter keeps track of the dimension of the parameter. For example, if
+  /// dimension == {2, 3, 4}, then the values of the parameters are organized
+  /// into a 3-dimensional fashion with rows == 2, columns == 3 and sheets == 4.
+  ///
+  EZC3D_API const std::vector<size_t> &dimension() const;
+
+  ///
+  /// \brief Check if the dimension parameter is consistent with the values
+  /// \param dataSize The size of the STL vector of the parameter
+  /// \param dimension The dimension mapping of the parameter matrix
+  /// \return If the dimension is consistent with the parameter size
+  ///
+  /// The dimension of a parameter would be considered consistent if the product
+  /// of all its values equals the dataSize. For example, if dimension == {2, 3,
+  /// 4}, a consistent dataSize would be 24 (2*3*4).
+  ///
+  EZC3D_API bool isDimensionConsistent(size_t dataSize, const std::vector<size_t> &dimension) const;
+
+  ///
+  /// \brief Update dimension assuming a single-dimension updated data
+  ///
+  EZC3D_API void updateSingleDimension();
+
+  //---- DATA ----//
+
+  bool _isEmpty; ///< If the parameter is empty
+
+  ///
+  /// \brief Set the empty flag to true if the parameter is actually empty
+  ///
+  void setEmptyFlag();
+
+  std::vector<int> _param_data_int; ///< Parameter values if the parameter type
+                                    ///< is DATA_TYPE::BYTE of DATA_TYPE::INT
+  std::vector<double> _param_data_double; ///< Parameter values if the parameter
+                                          ///< type is DATA_TYPE::FLOAT
+  std::vector<std::string> _param_data_string; ///< Parameter values if the parameter type is
+                          ///< DATA_TYPE::CHAR
+
+public:
+
+  ///
+  /// \brief Return the size of the data
+  /// \return The size of the data
+  ///
+  EZC3D_API size_t dataSize() const;
+
+  ///
+  /// \brief Return the type of the data
+  /// \return The type of the data
+  ///
+  EZC3D_API ezc3d::DATA_TYPE type() const;
+
+  ///
+  /// \brief Force a cast on the type for the data, effectively changing its
+  /// type. This can only be done for switching between int and float. Other
+  /// types casting will raise an exception. Obviously, this is cause loss of
+  /// data if the original type is float and the new type is int and decimal are
+  /// present. No checks are done in this regard.
+  /// \param type The type to set for the data
+  ///
+  EZC3D_API void staticCastType(ezc3d::DATA_TYPE newType);
+
+  ///
+  /// \brief Return the vector of values of the parameter
+  /// \return The vector of values of the parameter
+  ///
+  /// Return the vector of values that was previously stored into the parameter.
+  ///
+  /// Throw an std::invalid_argument if the asked type was wrong (i.e. not
+  /// DATA_TYPE::BYTE).
+  ///
+  EZC3D_API std::vector<int> &valuesAsByte();
+  EZC3D_API const std::vector<int> &valuesAsByte() const;
+
+  ///
+  /// \brief Return the vector of values of the parameter
+  /// \return The vector of values of the parameter
+  ///
+  /// Return the vector of values that was previously stored into the parameter.
+  ///
+  /// Throw an std::invalid_argument if the asked type was wrong (i.e. not
+  /// DATA_TYPE::INT).
+  ///
+  EZC3D_API std::vector<int> &valuesAsInt();
+  EZC3D_API const std::vector<int> &valuesAsInt() const;
+
+  ///
+  /// \brief Return a copy of the vector of values of the parameter
+  /// \return A copy of the vector of values of the parameter
+  ///
+  /// Return a copy of the vector of values that was previously stored into the
+  /// parameter.
+  ///
+  /// Unlike valuesAsInt(), it doesn't throw an error if asked and stored types
+  /// do not match. However, it returns a copy (instead of a const reference) of
+  /// the values. WARNING: This function trunkate data
+  ///
+  EZC3D_API const std::vector<int> valuesConvertedAsInt() const;
+
+  ///
+  /// \brief Return the vector of values of the parameter
+  /// \return The vector of values of the parameter
+  ///
+  /// Return the vector of values that was previously stored into the parameter.
+  ///
+  /// Throw an std::invalid_argument if the asked type was wrong (i.e. not
+  /// DATA_TYPE::FLOAT). Internally, float are converted to double and converted
+  /// back to float when written to the file
+  ///
+  EZC3D_API std::vector<double> &valuesAsDouble();
+  EZC3D_API const std::vector<double> &valuesAsDouble() const;
+
+  ///
+  /// \brief Return a copy of the vector of values of the parameter
+  /// \return A copy of the vector of values of the parameter
+  ///
+  /// Return a copy of the vector of values that was previously stored into the
+  /// parameter.
+  ///
+  /// Unlike valuesAsDouble(), it doesn't throw an error if asked and stored
+  /// types do not match. However, it returns a copy (instead of a const
+  /// reference) of the values.
+  ///
+  EZC3D_API const std::vector<double> valuesConvertedAsDouble() const;
+
+  ///
+  /// \brief Return the vector of values of the parameter
+  /// \return The vector of values of the parameter
+  ///
+  /// Return the vector of values that was previously stored into the parameter.
+  ///
+  /// Throw an std::invalid_argument if the asked type was wrong (i.e. not
+  /// DATA_TYPE::STRING).
+  ///
+  EZC3D_API std::vector<std::string> &valuesAsString();
+  EZC3D_API const std::vector<std::string> &valuesAsString() const;
+
+  ///
+  /// \brief Set the integer scalar value for the parameter
+  /// \param data The integer data
+  ///
+  /// Set the scalar value for a parameter assuming this value is an integer.
+  ///
+  EZC3D_API void set(int data);
+
+  ///
+  /// \brief Set the size_t scalar value as integer for the parameter
+  /// \param data The size_t scalar data
+  ///
+  /// Set the scalar value as integer for a parameter assuming this value is an
+  /// size_t.
+  ///
+  EZC3D_API void set(size_t data);
+
+  ///
+  /// \brief Set the integer vector of values for the parameter
+  /// \param data The integer data
+  /// \param dimension The vector mapping of the dimension of the parameter
+  /// matrix
+  ///
+  /// Set the values for a parameter assuming these values are integers.
+  /// If no dimension mapping is provided, it assumes to be a scalar if the data
+  /// is the size of 1 or a vector if the data has a size higher than 1.
+  ///
+  EZC3D_API void set(const std::vector<int> &data,
+                     const std::vector<size_t> &dimension = {});
+
+  ///
+  /// \brief Set the float scalar value for the parameter
+  /// \param data The float data
+  ///
+  /// Set the scalar value for a parameter assuming this value is a float.
+  ///
+  EZC3D_API void set(float data);
+
+  ///
+  /// \brief Set the double scalar value as float for the parameter
+  /// \param data The double data
+  ///
+  /// Set the scalar value as a flot for a parameter assuming this value is a
+  /// double.
+  ///
+  EZC3D_API void set(double data);
+
+  ///
+  /// \brief Set the float vector of values for the parameter
+  /// \param data The float data
+  /// \param dimension The vector mapping of the dimension of the parameter
+  /// matrix
+  ///
+  /// Set the values for a parameter assuming these values are floats.
+  /// If no dimension mapping is provided, it assumes to be a scalar if the data
+  /// is the size of 1 or a vector if the data has a size higher than 1.
+  ///
+  EZC3D_API void set(const std::vector<double> &data,
+                     const std::vector<size_t> &dimension = {});
+
+  ///
+  /// \brief Set the single string value for the parameter
+  /// \param data The string data
+  ///
+  EZC3D_API void set(const std::string &data);
+
+  ///
+  /// \brief Set the vector of strings for the parameter
+  /// \param data The vector of strings
+  /// \param dimension The vector mapping of the dimension of the parameter
+  /// matrix
+  ///
+  /// Set the vector of strings for a parameter.
+  /// If no dimension mapping is provided, it assumes to be a single string if
+  /// the data is the size of 1 or a vector if the data has a size higher
+  /// than 1.
+  ///
+  EZC3D_API void set(const std::vector<std::string> &data,
+                     const std::vector<size_t> &dimension = {});
+};
+
+#endif

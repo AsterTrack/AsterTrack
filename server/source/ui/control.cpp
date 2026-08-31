@@ -21,10 +21,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "imgui/imgui_custom.hpp"
 #include "imgui/imgui_onDemand.hpp"
 
+#include "io/c3d.hpp"
+
 #include "util/debugging.hpp" // Provide controls here, even if it's not technically restricted to simulation mode
 
 #include "ctpl/ctpl.hpp"
 extern ctpl::thread_pool threadPool;
+
+#include "ui/util/nfd.hpp"
 
 #include <filesystem>
 
@@ -366,8 +370,14 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 	}
 
-	if (state.mode != MODE_Replay && 
-		ImGui::CollapsingHeader("Recording", ImGuiTreeNodeFlags_DefaultOpen))
+	struct ExportDlg {
+		FrameNum frameRange[2];
+		std::string path, message;
+		bool started = false, done = false;
+	};
+	static ExportDlg exportDlg;
+	const ImGuiID exportDlgID = ImGui::GetID("ExportDialogue");
+	if (ImGui::CollapsingHeader("Recording", ImGuiTreeNodeFlags_DefaultOpen))
 	{ // Allow recording and storing of frame sections
 
 		ImGui::Checkbox("Frame Images", &pipeline.keepFrameImages);
@@ -397,11 +407,12 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 		ImGui::EndDisabled();
 
-		if (ImGui::BeginTable("Sections", 4, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
+		if (ImGui::BeginTable("Sections", 5, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoClip | ImGuiTableFlags_PadOuterX))
 		{
 			ImGui::TableSetupColumn("Start");
 			ImGui::TableSetupColumn("Frames");
 			ImGui::TableSetupColumn("Save##Header", ImGuiTableColumnFlags_WidthStretch, 3);
+			ImGui::TableSetupColumn("##Export", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 			ImGui::TableHeadersRow();
 
@@ -489,6 +500,14 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 					ImGui::Text("%s", section.path.c_str());
 				}
 				ImGui::TableNextColumn();
+				if (IconButton(ICON_LA_FILE_EXPORT "##Export"))
+				{
+					int index = findHighestFileEnumeration("dump", "%d_export", ".c3d")+1;
+					std::string path = asprintf_s("dump/%d_export.c3d", index);
+					exportDlg = { section.begin, section.end, path };
+					ImGui::OpenPopup(exportDlgID);
+				}
+				ImGui::TableNextColumn();
 				if (CrossButton("Del"))
 				{
 					recordSections.erase(std::next(recordSections.begin(), i));
@@ -498,6 +517,78 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			}
 			ImGui::EndTable();
 		}
+	}
+	ImGui::SetNextWindowSize(ImVec2(30*ImGui::GetFontSize(), -1), ImGuiCond_Appearing);
+	if (BeginPopup(exportDlgID))
+	{
+		if (exportDlg.done)
+		{
+			ImGui::Text("%s", exportDlg.message.c_str());
+		}
+		else
+		{
+			ImGui::BeginDisabled(exportDlg.started);
+			ImGui::Text("Exporting Selected Frames:");
+
+			ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+			ImGui::InputScalar("##begin", ImGuiDataType_U64, &exportDlg.frameRange[0]);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(SizeWidthDiv2().x);
+			ImGui::InputScalar("##end", ImGuiDataType_U64, &exportDlg.frameRange[1]);
+
+			ImGui::SetNextItemWidth(LineWidth() - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
+			ImGui::InputText("##path", &exportDlg.path, ImGuiInputTextFlags_ElideLeft);
+			ImGui::SameLine();
+			if (IconButton(ICON_LA_FOLDER_OPEN "##pick"))
+			{
+				threadPool.push([](int id)
+				{
+					NFD_Context context{};
+					if (!context) return;
+
+					const int filterLen = 1;
+					nfdfilteritem_t filterList[filterLen] = {
+						{"C3D File", "c3d"},
+					};
+					nfdchar_t *outPath;
+					nfdsavedialogu8args_t args;
+					args.filterList = filterList;
+					args.filterCount = filterLen;
+					std::filesystem::path path = std::filesystem::absolute(exportDlg.path);
+					std::filesystem::path file = path.filename();
+					args.defaultName = file.c_str();
+					args.defaultPath = path.remove_filename().c_str();
+					ConvertGLFWHandleToNFD(GetUI().glfwWindow, &args.parentWindow);
+					nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
+					if (result == NFD_OKAY)
+					{
+						exportDlg.path = outPath;
+						NFD_FreePath(outPath);
+					}
+					else if (result == NFD_ERROR)
+					{
+						SignalErrorToUser(asprintf_s("Failed to use File Picker: %s", NFD_GetError()));
+					}
+					GetUI().RequestUpdates();
+				});
+			}
+
+			if (ImGui::Button("Export", SizeWidthFull()))
+			{
+				exportDlg.started = true;
+				threadPool.push([](int)
+				{
+					exportDlg.message = c3d_exportFile(exportDlg.path, exportDlg.frameRange[0], exportDlg.frameRange[1],
+						GetState().controllerConfig.framerate, GetState().pipeline.record, GetState().trackerConfigs);
+					exportDlg.done = true;
+					GetUI().RequestUpdates(1);
+				});
+			}
+
+			ImGui::EndDisabled();
+		}
+
+		ImGui::EndPopup();
 	}
 
 	struct FrameRange

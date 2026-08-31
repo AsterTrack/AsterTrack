@@ -1,0 +1,121 @@
+#define EZC3D_API_EXPORTS
+///
+/// \file Data.cpp
+/// \brief Implementation of Data class
+/// \author Pariterre
+/// \version 1.0
+/// \date October 17th, 2018
+///
+
+#include "ezc3d/Data.h"
+#include "ezc3d/AnalogsInfo.h"
+#include "ezc3d/DataStartInfo.h"
+#include "ezc3d/Header.h"
+#include "ezc3d/Parameters.h"
+#include "ezc3d/PointsInfo.h"
+#include "ezc3d/RotationsInfo.h"
+#include "ezc3d/ezc3d.h"
+#include <iostream>
+#include <stdexcept>
+
+ezc3d::DataNS::Data::Data() {}
+
+ezc3d::DataNS::Data::Data(ezc3d::c3d &c3d, std::fstream &file) {
+  // Firstly move the pointer to the data start position
+  file.seekg(static_cast<int>(c3d.header().dataStart() - 1) * 512,
+             std::ios::beg);
+
+  // Read the data
+  ezc3d::DataNS::Points3dNS::Info pointsInfo(c3d);
+  ezc3d::DataNS::AnalogsNS::Info analogsInfo(c3d);
+  ezc3d::DataNS::RotationNS::Info rotationsInfo(c3d);
+
+  size_t nbFrames = c3d.header().nbFrames();
+  if (nbFrames == 0xFFFF && !c3d.header().hasRotationalData()) {
+    // This is a special case to account for Vicon files which don't provide the
+    // actual number of frames in the header nor in the parameters when the
+    // number of frames is larger than 65535. We need to make sure the
+    // rotational data are not present in the file after the points and analogs
+    // data in order to use "all-of-file" (nbFrames = -1) reading
+    nbFrames = -1;
+  }
+
+  frames.resize(nbFrames);
+  for (size_t f = 0; f < nbFrames; ++f) {
+    // Read point 3d
+    *frames[f].points = ezc3d::DataNS::Points3dNS::Points(c3d, file, pointsInfo);
+
+    // Read analogs
+    *frames[f].analogs = ezc3d::DataNS::AnalogsNS::Analogs(c3d, file, analogsInfo);
+
+    // If we ran out of space, then leave. The reason we test here is because
+    // is set after failing, resulting in one extra frame added if this if
+    // is after the push_back
+    if (file.eof())
+      break;
+  }
+
+  // Read the rotation data
+  if (c3d.header().hasRotationalData()) {
+    // Prepare the reading
+
+    // If the max length of the file is smaller than the data start, then there
+    // is no data
+    std::streampos fileSize = file.seekg(0, std::ios::end).tellg();
+    int targetPos(static_cast<int>(rotationsInfo.dataStart() - 1) * 512);
+    if (fileSize < targetPos) {
+      return;
+    }
+    file.seekg(targetPos, std::ios::beg);
+
+    for (size_t f = 0; f < nbFrames; ++f) {
+      if (file.eof())
+        break;
+
+      *frames[f].rotations = ezc3d::DataNS::RotationNS::Rotations(c3d, file, rotationsInfo);
+    }
+  }
+}
+
+ezc3d::DataNS::Data ezc3d::DataNS::Data::clone() const {
+  Data copy;
+  for (const auto &frame : frames)
+    copy.frames.push_back(frame.clone());
+  return copy;
+}
+
+void ezc3d::DataNS::Data::print() const {
+  for (size_t i = 0; i < frames.size(); ++i) {
+    std::cout << "Frame " << i << "\n";
+    frames.at(i).print();
+    std::cout << "\n";
+  }
+}
+
+void ezc3d::DataNS::Data::write(
+    const ezc3d::Header &header, std::fstream &f,
+    const ezc3d::DataNS::Points3dNS::Info &pointsInfo,
+    const ezc3d::DataNS::AnalogsNS::Info &analogsInfo,
+    ezc3d::DataStartInfo &dataStartInfoToFill) const {
+
+  dataStartInfoToFill.setPointDataStart(f.tellg());
+  for (const auto &frame : frames)
+    frame.write(f, pointsInfo, analogsInfo, 0);
+
+  if (header.hasRotationalData()) {
+    ezc3d::c3d::moveCursorToANewBlock(f);
+    dataStartInfoToFill.setRotationsDataStart(f.tellg());
+    for (const auto &frame : frames)
+      frame.write(f, pointsInfo, analogsInfo, 1);
+  }
+}
+
+void ezc3d::DataNS::Data::frame(ezc3d::DataNS::Frame &&frame, size_t idx) {
+  if (idx == SIZE_MAX)
+    frames.push_back(std::move(frame));
+  else {
+    if (idx >= frames.size())
+      frames.resize(idx + 1);
+    frames[idx] = std::move(frame);
+  }
+}

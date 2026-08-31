@@ -24,7 +24,7 @@ set(SERVER
 	comm/wireless_server.cpp
 	device/tracking_controller.cpp device/tracking_camera.cpp device/wireless_cameras.cpp
 	device/parsing.cpp device/camera_firmware.cpp device/controller_firmware.cpp
-	io/integrations.cpp io/vmc.cpp io/vrpn.cpp io/vrpn_imu.cpp
+	io/integrations.cpp io/vmc.cpp io/vrpn.cpp io/vrpn_imu.cpp io/c3d.cpp
 	imu/trackerAsterTrack.cpp imu/trackerSlimeVR.cpp imu/remoteIMU.cpp
 	pipeline/pipeline.cpp pipeline/pipeline_tracking.cpp
 	pipeline/pipeline_calibration_point.cpp pipeline/pipeline_calibration_target.cpp
@@ -51,6 +51,13 @@ set(SERVER_DEP
 	miniz/miniz.c
 	oscpack/OscTypes.cpp oscpack/OscOutboundPacketStream.cpp
 	oscpack/OscReceivedElements.cpp oscpack/OscPrintReceivedElements.cpp
+	ezc3d/src/ezc3d.cpp ezc3d/src/Header.cpp ezc3d/src/Data.cpp ezc3d/src/DataStartInfo.cpp
+	ezc3d/src/Frame.cpp ezc3d/src/Group.cpp ezc3d/src/Parameter.cpp ezc3d/src/Parameters.cpp
+	ezc3d/src/Point.cpp ezc3d/src/Points.cpp ezc3d/src/PointsInfo.cpp
+	ezc3d/src/Analogs.cpp ezc3d/src/AnalogsInfo.cpp ezc3d/src/AnalogsSubframe.cpp ezc3d/src/Channel.cpp
+	ezc3d/src/Rotation.cpp ezc3d/src/Rotations.cpp ezc3d/src/RotationsInfo.cpp ezc3d/src/RotationsSubframe.cpp
+	ezc3d/src/math/Matrix.cpp ezc3d/src/math/Vector3d.cpp ezc3d/src/math/Vector6d.cpp
+	ezc3d/src/math/Matrix33.cpp ezc3d/src/math/Matrix44.cpp ezc3d/src/math/Matrix66.cpp
 )
 set(INTERFACE
 	ui/ui.cpp ui/menu.cpp

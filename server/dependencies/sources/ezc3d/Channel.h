@@ -1,0 +1,79 @@
+#ifndef EZC3D_CHANNEL_H
+#define EZC3D_CHANNEL_H
+///
+/// \file Channel.h
+/// \brief Declaration of Channel class
+/// \author Pariterre
+/// \version 1.0
+/// \date October 17th, 2018
+///
+
+#include "ezc3d/ezc3dNamespace.h"
+
+///
+/// \brief Channel of an analogous data
+///
+class EZC3D_VISIBILITY ezc3d::DataNS::AnalogsNS::Channel {
+  //---- CONSTRUCTORS ----//
+public:
+  ///
+  /// \brief Create an empty analogous data channel
+  ///
+  EZC3D_API Channel();
+
+  ///
+  /// \brief Copy an analog channel
+  /// \param channel The channel to copy
+  ///
+  EZC3D_API Channel(const ezc3d::DataNS::AnalogsNS::Channel &channel);
+
+  ///
+  /// \brief Create a filled Channel class at a given subframe from a given file
+  /// \param c3d Reference to the c3d to copy the data in
+  /// \param file File to copy the data from
+  /// \param info The information about the analogs
+  /// \param channelIndex The index of the channel currently created
+  ///
+  EZC3D_API Channel(ezc3d::c3d &c3d, std::fstream &file,
+                    const AnalogsNS::Info &info, size_t channelIndex);
+
+  ///
+  /// \brief Create a deep copy of a channel
+  /// \return A deep copy of the channel
+  ///
+  EZC3D_API Channel clone() const;
+
+  //---- STREAM ----//
+public:
+  ///
+  ///
+  /// \brief Print the channel
+  ///
+  /// Print the value of the analog data to the console
+  ///
+  EZC3D_API void print() const;
+
+  ///
+  /// \brief Write the channel to an opened file
+  /// \param f Already opened fstream file with write access
+  /// \param analogsInfo The information about the analogs
+  /// \param channelIndex The index of the channel currently written
+  ///
+  /// Write the value of the analog data to a file
+  ///
+  EZC3D_API void write(std::fstream &f,
+                       const ezc3d::DataNS::AnalogsNS::Info &analogsInfo,
+                       size_t channelIndex) const;
+
+  //---- DATA ----//
+
+  double data; ///< Value of the analog data
+public:
+  ///
+  /// \brief Return if the channel is empty
+  /// \return if the channel is empty
+  ///
+  EZC3D_API bool isEmpty() const;
+};
+
+#endif

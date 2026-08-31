@@ -1,0 +1,10 @@
+https://github.com/pyomeca/ezc3d
+commit 3077821
+
+Modifications by Seneral:
+- Removed most (not all) encapsulation
+    - Was hindering writing capability
+    - Was causing unnecessary performance degradation
+    - Does require more explicit use, less safeguards
+- Improved support for "ROTATION" (pose data)
+- A lot of general cleanups and improvements

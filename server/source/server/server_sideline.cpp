@@ -38,7 +38,7 @@ extern ctpl::thread_pool threadPool;
 #include <numeric> // iota
 
 // Coprocessing thread
-static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *statePtr);
+static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *statePtr);
 
 // ----------------------------------------------------------------------------
 // Simulation Mode
@@ -175,7 +175,7 @@ void StartSimulation(ServerState &state)
 
 	// Start simulation thread
 	assert(state.coprocessingThread == NULL);
-	state.coprocessingThread = new std::jthread(OfflineCoprocessingThread, &state);
+	state.coprocessingThread = new std::jthread(SidelineCoprocessingThread, &state);
 
 	IntegrationsInit(state.io, state.config);
 
@@ -231,8 +231,8 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 
 	// Setup IMUs
 	state.pipeline.record.imus.clear();
-	state.pipeline.record.imus.reserve(state.stored.imus.size());
-	for (auto &storedIMU : state.stored.imus)
+	state.pipeline.record.imus.reserve(state.sideline.record.imus.size());
+	for (auto &storedIMU : state.sideline.record.imus)
 	{
 		auto imu = std::make_shared<IMURecord>(*storedIMU);
 		imu->index = state.pipeline.record.imus.size();
@@ -260,7 +260,7 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 
 	// Start replay thread
 	assert(state.coprocessingThread == NULL);
-	state.coprocessingThread = new std::jthread(OfflineCoprocessingThread, &state);
+	state.coprocessingThread = new std::jthread(SidelineCoprocessingThread, &state);
 
 	IntegrationsInit(state.io, state.config);
 
@@ -290,10 +290,10 @@ void StopReplay(ServerState &state)
 		tracker.imu = nullptr;
 
 	// Reset replay
-	state.recording = {};
-	state.stored.frames.cull_clear();
-	state.stored.imus.clear();
-	state.stored.frames.delete_culled();
+	state.sideline.recording = {};
+	state.sideline.record.frames.cull_clear();
+	state.sideline.record.imus.clear();
+	state.sideline.record.frames.delete_culled();
 	state.pipeline.params.detect.suspendDetections = false;
 
 	SignalServerEvent(EVT_MODE_SIMULATION_STOP);
@@ -304,7 +304,7 @@ void StopReplay(ServerState &state)
 // Coprocessing (Simulation + Replay)
 // ----------------------------------------------------------------------------
 
-static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *statePtr)
+static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *statePtr)
 {
 	ServerState &state = *statePtr;
 	PipelineState &pipeline = state.pipeline;
@@ -319,18 +319,18 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 		};
 		for (const TrackerRecord &trackerRecord : frameStored->trackers)
 		{
-			if (!trackerRecord.result.isDetected() && !(state.simCopyAlsoFromTracked && trackerRecord.result.isTracked())) continue;
+			if (!trackerRecord.result.isDetected() && !(state.sideline.copyAlsoFromTracked && trackerRecord.result.isTracked())) continue;
 			auto existing = std::find_if(frameRecord->trackers.begin(), frameRecord->trackers.end(),
 				[&](const auto &t){ return t.id == trackerRecord.id; });
 			if (existing != frameRecord->trackers.end()) continue;
-			if (state.simCopyLimitedReinstatement && trackerRecord.result.isTracked())
+			if (state.sideline.copyLimitedReinstatement && trackerRecord.result.isTracked())
 			{ // Must've just lost tracking, or denied reinstation before
 				auto framesRecord = pipeline.record.frames.getView();
 				if (!hasTracker(framesRecord[frameRecord->num-1], [&](auto &t){ return t.id == trackerRecord.id && t.result.hasFlag(TrackingResult::REMOVED); }))
 					continue;
 				// Just lost the tracker, but was still tracking in stored records
 				// Check if tracker was still tracking from before last detection in stored frames
-				auto framesStored = state.stored.frames.getView();
+				auto framesStored = state.sideline.record.frames.getView();
 				bool reinstate = false;
 				for (int f = frameRecord->num-1; f > 0; f--)
 				{
@@ -389,19 +389,19 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			continue;
 
 		// Check after breakpoint to allow for halting while in breakpoint
-		if (state.simAdvance == 0)
+		if (state.sideline.advance.mode == 0)
 		{ // Wait for next frame advance
-			state.simWaiting = true;
-			state.simWaiting.notify_all();
-			//state.simAdvance.wait(0);
-			while (state.simAdvance == 0)
+			state.sideline.advance.waiting = true;
+			state.sideline.advance.waiting.notify_all();
+			//state.interaction.Advance.wait(0);
+			while (state.sideline.advance.mode == 0)
 			{ // Instead of wait, to allow thread updates
 				UpdatePipelineStatus(state.pipeline);
 				IntegrationsUpdate(state.io, state); // Send camera positions and manager exposed trackers
 				IntegrationsReceive(state.io, state); // Keep I/O connections alive
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			}
-			state.simWaiting = false;
+			state.sideline.advance.waiting = false;
 		}
 
 		if (!state.isStreaming || stop_token.stop_requested())
@@ -436,7 +436,7 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 		{
 			if (frame == 0)
 			{ // Reset time
-				state.recording.replayTime = sclock::now();
+				state.sideline.recording.replayTime = sclock::now();
 				// Ensure timestamp is set properly
 				for (auto &imu : pipeline.record.imus)
 				{
@@ -449,11 +449,11 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 					imu->samplesFused.delete_culled();
 				}
 			}
-			else if (state.recording.recordings.size() > 1)
+			else if (state.sideline.recording.recordings.size() > 1)
 			{ // Check if on transition from one replay to another
-				for (int i = 1; i < state.recording.recordings.size(); i++)
+				for (int i = 1; i < state.sideline.recording.recordings.size(); i++)
 				{
-					auto &recording = state.recording.recordings[i];
+					auto &recording = state.sideline.recording.recordings[i];
 					if (recording.frameStart > frame) break;
 					if (recording.frameStart < frame) continue;
 					// Frame is indeed start of a recording, interrupt and restart tracking
@@ -466,13 +466,13 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 					state.isStreaming = true;
 					for (auto &tracker : state.trackerConfigs)
 						ServerUpdateTrackerConditions(state, tracker, true);
-					auto &lastRec = state.recording.recordings[i-1];
+					auto &lastRec = state.sideline.recording.recordings[i-1];
 					LOG(LSimulation, LDebug, "Transitioned from recording %d '%s' to %d '%s'!",
 						lastRec.number, lastRec.label.c_str(), recording.number, recording.label.c_str());
 				}
 			}
 
-			auto framesStored = state.stored.frames.getView();
+			auto framesStored = state.sideline.record.frames.getView();
 			if (frame < framesStored.endIndex() && framesStored[frame])
 			{
 				frameRecord = std::make_shared<FrameRecord>();
@@ -480,7 +480,7 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 				assert(loadedRecord->num == frame);
 				frameRecord->num = loadedRecord->num;
 				frameRecord->ID = loadedRecord->ID;
-				frameRecord->time = state.recording.replayTime + (loadedRecord->time - framesStored.front()->time);
+				frameRecord->time = state.sideline.recording.replayTime + (loadedRecord->time - framesStored.front()->time);
 				frameRecord->timeUTC = convertClock<std::chrono::system_clock::time_point>(frameRecord->time);
 				frameRecord->cameras = loadedRecord->cameras;
 				if (frame+1 < framesStored.endIndex())
@@ -495,27 +495,27 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 
 				// Copy imu samples a bit ahead of the frame into record
 				auto targetIMUTime = loadedRecord->time + std::chrono::milliseconds(10);
-				assert(pipeline.record.imus.size() == state.stored.imus.size());
-				for (int i = 0; i < state.stored.imus.size(); i++)
+				assert(pipeline.record.imus.size() == state.sideline.record.imus.size());
+				for (int i = 0; i < state.sideline.record.imus.size(); i++)
 				{
 					auto &imu = pipeline.record.imus[i];
 					{
-						auto samples = state.stored.imus[i]->samplesFused.getView();
+						auto samples = state.sideline.record.imus[i]->samplesFused.getView();
 						auto it = samples.pos(imu->samplesFused.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state.recording.replayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state.sideline.recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesFused.insert(it.index(), sample);
 						}
 					}
 					{
-						auto samples = state.stored.imus[i]->samplesRaw.getView();
+						auto samples = state.sideline.record.imus[i]->samplesRaw.getView();
 						auto it = samples.pos(imu->samplesRaw.getView().endIndex());
 						for (; it != samples.end() && it->timestamp < targetIMUTime; it++)
 						{ // Copy sample, re-mapping timestamp to current replay time
 							auto sample = *it;
-							sample.timestamp = state.recording.replayTime + (sample.timestamp - framesStored.front()->time);
+							sample.timestamp = state.sideline.recording.replayTime + (sample.timestamp - framesStored.front()->time);
 							imu->samplesRaw.insert(it.index(), sample);
 						}
 					}
@@ -554,13 +554,13 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
-		int dropout = state.simDropoutIndex.load();
-		if (dropout >= state.simDropoutSeverity.size())
-			state.simDropoutIndex = -1;
+		int dropout = state.sideline.dropoutIndex.load();
+		if (dropout >= state.sideline.dropoutSeverity.size())
+			state.sideline.dropoutIndex = -1;
 		else if (dropout >= 0)
 		{ // Drop a random amount of blobs
-			float droprate = state.simDropoutSeverity[dropout];
-			state.simDropoutIndex = dropout+1;
+			float droprate = state.sideline.dropoutSeverity[dropout];
+			state.sideline.dropoutIndex = dropout+1;
 			for (auto &camera : frameRecord->cameras)
 			{
 				auto blobIt = camera.rawPoints2D.begin();
@@ -592,13 +592,13 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 			IntegrationsUpdate(state.io, state);
 			IntegrationsReceive(state.io, state);
 
-			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.simCopyDetectionsFromStored;
+			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored;
 
 			ProcessFrame(pipeline, frameRecord); // new shared_ptr
 
-			if (state.mode == MODE_Replay && state.simCopyDetectionsFromStored)
+			if (state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored)
 			{
-				auto framesStored = state.stored.frames.getView();
+				auto framesStored = state.sideline.record.frames.getView();
 				if (frameRecord->num < framesStored.size() && framesStored[frameRecord->num])
 				{
 					copyDetectionFromStoredRecord(framesStored[frameRecord->num], frameRecord);
@@ -612,11 +612,11 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 		}
 
 		{ // Special cases for advancing
-			int count = state.simAdvance;
+			int count = state.sideline.advance.mode;
 			if (count > 0)
 			{ // Advance limited amount of frames, if it fails to reduce, no matter
-				state.simAdvance.compare_exchange_weak(count, count-1);
-				state.simAdvance.notify_all();
+				state.sideline.advance.mode.compare_exchange_weak(count, count-1);
+				state.sideline.advance.mode.notify_all();
 			}
 			else if (count == -2)
 			{ // Advance until next image - halt advance since we received the next image
@@ -625,8 +625,8 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 					haveImageData |= (bool)frameRecord->cameras[cam->pipeline->index].image;
 				if (haveImageData)
 				{
-					state.simAdvance = 0;
-					state.simAdvance.notify_all();
+					state.sideline.advance.mode = 0;
+					state.sideline.advance.mode.notify_all();
 				}
 				else {} // Advance freely, do nothing
 			}
@@ -640,11 +640,11 @@ static void OfflineCoprocessingThread(std::stop_token stop_token, ServerState *s
 		while (true)
 		{
 			TimePoint_t now = sclock::now(), tgtTime;
-			if (state.simTiming == ServerState::ADV_NORMAL) // This will focus on locally correct pacing
+			if (state.sideline.advance.timing == SidelineState::ADV_NORMAL) // This will focus on locally correct pacing
 				tgtTime = frameReceiveTime + std::chrono::microseconds(desiredFrameIntervalUS);
-			else if (state.simTiming == ServerState::ADV_REALTIME) // This will try to achive correct frame timing
+			else if (state.sideline.advance.timing == SidelineState::ADV_REALTIME) // This will try to achive correct frame timing
 				tgtTime = frameRecord->time + std::chrono::microseconds(desiredFrameIntervalUS);
-			else if (state.simTiming == ServerState::ADV_QUICKLY) // This will advance as quickly as possible
+			else if (state.sideline.advance.timing == SidelineState::ADV_QUICKLY) // This will advance as quickly as possible
 				break;
 			if (dtMS(now, tgtTime) > 200)
 			{ // Allow changing timing modes

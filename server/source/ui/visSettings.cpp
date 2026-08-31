@@ -36,7 +36,7 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 	bool isTracking = pipeline.phase == PHASE_Tracking || pipeline.phase == PHASE_Automatic;
 	bool isTargetCalib = pipeline.phase == PHASE_Calibration_Target;
 	bool isTesting = state.mode == MODE_Replay || state.mode == MODE_Simulation;
-	bool isDebug = (isTesting && state.simAdvance.load() == 0) || dbg_isBreaking;
+	bool isDebug = (isTesting && state.sideline.advance.mode.load() == 0) || dbg_isBreaking;
 
 	if (BeginCollapsingRegion("Pipeline"))
 	{

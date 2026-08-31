@@ -711,7 +711,7 @@ static bool ShowTrackingPanel()
 	static bool combinedHideProbes = true;
 
 	static bool initialisedTesting = false;
-	if (state.testing.isTesting && !initialisedTesting)
+	if (state.sideline.testing.isTesting && !initialisedTesting)
 	{ // External change
 		initialisedTesting = true;
 		stateDifferences = true;
@@ -801,9 +801,9 @@ static bool ShowTrackingPanel()
 		ImGui::SameLine();
 		ImGui::Spacing();
 		float spacingW = ImGui::GetStyle().ItemSpacing.x;
-		for (int i = 0; i < state.compareTrackers.size(); i++)
+		for (int i = 0; i < state.sideline.compareTrackers.size(); i++)
 		{
-			auto &trackComp = state.compareTrackers[i];
+			auto &trackComp = state.sideline.compareTrackers[i];
 			ImGui::SameLine();
 			ImGui::PushID(i);
 			ImVec2 labelPos = ImGui::GetCursorPos();
@@ -819,7 +819,7 @@ static bool ShowTrackingPanel()
 			ImGui::SameLine();
 			if (CrossButton("##Delete"))
 			{
-				state.compareTrackers.erase(state.compareTrackers.begin()+i);
+				state.sideline.compareTrackers.erase(state.sideline.compareTrackers.begin()+i);
 				i--;
 				if (compIndexA > i) compIndexA--;
 				if (compIndexB > i) compIndexB--;
@@ -827,14 +827,14 @@ static bool ShowTrackingPanel()
 			ImGui::PopID();
 		}
 
-		if (state.compareTrackers.empty())
+		if (state.sideline.compareTrackers.empty())
 		{
 			ImGui::SameLine();
 			ImGui::Text("Add Tracker Records to compare in \"Tracking Results\" in \"Pipeline/Tracking\" panel");
 		}
 
-		if (compIndexA > 0 && compIndexA < state.compareTrackers.size())
-			inspectingType = inspectType((TrackerConfig::TrackerType)state.compareTrackers[compIndexA].type);
+		if (compIndexA > 0 && compIndexA < state.sideline.compareTrackers.size())
+			inspectingType = inspectType((TrackerConfig::TrackerType)state.sideline.compareTrackers[compIndexA].type);
 	}
 	else
 	{
@@ -867,7 +867,7 @@ static bool ShowTrackingPanel()
 	BlockedQueue<std::shared_ptr<FrameRecord>>::View<true> framesRecord, framesStored;
 	framesRecord = pipeline.record.frames.getView();
 	if (state.mode == MODE_Replay)
-		framesStored = state.stored.frames.getView();
+		framesStored = state.sideline.record.frames.getView();
 	else if (state.mode == MODE_Simulation)
 		framesStored = pipeline.simulated.frames.getView();
 	OptFrameNum frameNum = pipeline.frameNum.load();
@@ -1169,12 +1169,12 @@ static bool ShowTrackingPanel()
 	{
 		if (compIndexA >= 0)
 		{
-			auto &comp = state.compareTrackers[compIndexA];
+			auto &comp = state.sideline.compareTrackers[compIndexA];
 			drawCur = gatherTrackingData(tracking, comp.frames.getView(), comp.trackerID, true);
 		}
 		if (compIndexB >= 0)
 		{
-			auto &comp = state.compareTrackers[compIndexB];
+			auto &comp = state.sideline.compareTrackers[compIndexB];
 			drawRec = gatherTrackingData(recording, comp.frames.getView(), comp.trackerID, false);
 		}
 	}
@@ -1362,9 +1362,9 @@ static bool ShowTrackingPanel()
 	if (ImPlot::DragLineX(2, &focusFrame, ImVec4(0.66, 0.33, 0.4, 1.0), 3))
 	{
 		ui.visState.frame.focusedNum = (FrameNum)std::max(0.0, focusFrame);
-		if (!state.isStreaming || state.simAdvance.load() == 0)
+		if (!state.isStreaming || state.sideline.advance.mode.load() == 0)
 			ui.visState.frame.visFocused = true;
-		else if (state.mode == MODE_Replay && state.pipeline.frameNum.load() == state.stored.frames.getView().endIndex()-1)
+		else if (state.mode == MODE_Replay && state.pipeline.frameNum.load() == state.sideline.record.frames.getView().endIndex()-1)
 			ui.visState.frame.visFocused = true;
 	}
 

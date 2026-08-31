@@ -201,8 +201,8 @@ lflags = $(lenv) $(lstd) $(lmode) $(march)
 # Define all source files to be compiled
 SERVER_CPP = \
 	app.cpp config.cpp version.cpp \
-	server/server.cpp server/server_device.cpp server/server_offline.cpp \
-	offline/simulation.cpp offline/recording.cpp \
+	server/server.cpp server/server_device.cpp server/server_sideline.cpp \
+	sideline/simulation.cpp sideline/recording.cpp \
 	comm/usb.cpp comm/protocol_packet.cpp comm/streaming.cpp \
 	comm/wireless_server.cpp \
 	device/tracking_controller.cpp device/tracking_camera.cpp device/wireless_cameras.cpp \

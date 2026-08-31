@@ -555,7 +555,7 @@ bool MaintainStreamState(StreamState &state)
 			{ // Finally remove frame, whether completed or not
 
 				if (!frame->finallyProcessed)
-				{ // Never got a non-premature processing, do here for offline saving reasons only
+				{ // Never got a non-premature processing, do here for recording purposes only
 					registerFrameEnd(false);
 					processFrame(false);
 				}

@@ -620,7 +620,7 @@ bool InterfaceState::Init()
 			// WARNING: Ensure headless testing code in server can still read this!
 			bool recordings = strncmp("Recordings", header, sizeof("Recordings")-1) == 0;
 			if (recordings)
-				GetState().testing.recordings.clear();
+				GetState().sideline.testing.recordings.clear();
 			return (void*)(intptr_t)(recordings? 1 : 0);
 		};
 		handler.ReadLineFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, void *entry, const char *line)
@@ -629,16 +629,16 @@ bool InterfaceState::Init()
 			{ // Recordings
 				int d1;
 				if (sscanf(line, "%d", &d1) >= 1)
-					GetState().testing.recordings.push_back(d1);
+					GetState().sideline.testing.recordings.push_back(d1);
 			}
 		};
 		handler.WriteAllFn = [](ImGuiContext *context, ImGuiSettingsHandler *settings, ImGuiTextBuffer *output)
 		{
-			if (!GetState().testing.recordings.empty())
+			if (!GetState().sideline.testing.recordings.empty())
 			{
 				output->appendf("[%s][Recordings]\n", settings->TypeName);
-				output->reserve(output->size() + GetState().testing.recordings.size() * (sizeof("XXXX\n")-1) + 1);
-				for (auto &record : GetState().testing.recordings)
+				output->reserve(output->size() + GetState().sideline.testing.recordings.size() * (sizeof("XXXX\n")-1) + 1);
+				for (auto &record : GetState().sideline.testing.recordings)
 					output->appendf("%.4d\n", record);
 				output->appendf("\n");
 			}
@@ -911,9 +911,6 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			CleanVisualisationState();
 			break;
 		case EVT_START_STREAMING:
-			GetUI().recordSections.clear();
-			if (GetUI().recordSectionStart > 0)
-				GetUI().recordSectionStart = -1;
 			GetUI().visState.frame.visFocused = false;
 			break;
 		case EVT_STOP_STREAMING:

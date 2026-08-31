@@ -1072,7 +1072,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Visualise frame based on phase
 	 */
-	bool displayInternalDebug = (GetState().mode == MODE_Replay || GetState().mode == MODE_Simulation) && (GetState().simAdvance.load() == 0 || dbg_isBreaking);
+	bool displayInternalDebug = (GetState().mode == MODE_Replay || GetState().mode == MODE_Simulation) && (GetState().sideline.advance.mode.load() == 0 || dbg_isBreaking);
 	float blobAlpha = 1.0f, blobCross = 0.0f;
 	if (visCamera.image && visCamera.imageVis.show)
 	{ // Make blob more transparent and instead use blob cross

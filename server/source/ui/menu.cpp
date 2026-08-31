@@ -19,7 +19,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "app.hpp"
 #include "version.hpp"
-#include "offline/recording.hpp"
+#include "sideline/recording.hpp"
 
 #include "device/tracking_camera.hpp"
 
@@ -206,14 +206,14 @@ void InterfaceState::UpdateMainMenuBar()
 				if (!entry.images.empty()) label += " " ICON_LA_IMAGES;
 				if (select)
 				{ // Just select via recordingTestSet
-					auto selectedIt = std::find(state.testing.recordings.begin(), state.testing.recordings.end(), entry.number);
-					bool selected = selectedIt != state.testing.recordings.end();
-					if (selected) label += asprintf_s(" (%d)", (int)(selectedIt - state.testing.recordings.begin()) + 1);
+					auto selectedIt = std::find(state.sideline.testing.recordings.begin(), state.sideline.testing.recordings.end(), entry.number);
+					bool selected = selectedIt != state.sideline.testing.recordings.end();
+					if (selected) label += asprintf_s(" (%d)", (int)(selectedIt - state.sideline.testing.recordings.begin()) + 1);
 					ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
 					if (ImGui::MenuItem(label.c_str(), nullptr, selected))
 					{
-						if (selected) state.testing.recordings.erase(selectedIt);
-						else state.testing.recordings.insert(state.testing.recordings.begin(), entry.number);
+						if (selected) state.sideline.testing.recordings.erase(selectedIt);
+						else state.sideline.testing.recordings.insert(state.sideline.testing.recordings.begin(), entry.number);
 						ImGui::MarkIniSettingsDirty(); // These are stored in config
 					}
 					ImGui::PopItemFlag();
@@ -292,7 +292,7 @@ void InterfaceState::UpdateMainMenuBar()
 			threadPool.push([](int)
 			{
 				ServerState &state = GetState();
-				auto error = loadRecordingSet(state, state.testing.recordings);
+				auto error = loadRecordingSet(state, state.sideline.testing.recordings);
 				if (error)
 				{
 					SignalErrorToUser(error.value());
@@ -304,7 +304,7 @@ void InterfaceState::UpdateMainMenuBar()
 
 				// Setup to very quick tracking verification by default
 				state.pipeline.params.detect.useAsyncDetection = false;
-				state.simTiming = ServerState::ADV_QUICKLY;
+				state.sideline.advance.timing = SidelineState::ADV_QUICKLY;
 
 				// Automatically start tracking
 				state.pipeline.phase = PHASE_Tracking;
@@ -362,9 +362,9 @@ void InterfaceState::UpdateMainMenuBar()
 		}
 		else if (state.mode == MODE_Replay)
 		{
-			if (state.testing.isTesting)
+			if (state.sideline.testing.isTesting)
 			{
-				ImGui::Text("%s", state.testing.condition.c_str());
+				ImGui::Text("%s", state.sideline.testing.condition.c_str());
 			}
 			else
 			{

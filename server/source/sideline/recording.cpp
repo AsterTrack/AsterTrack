@@ -147,13 +147,13 @@ std::optional<Recording> findRecording(int recording)
 
 std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate)
 {
-	int prevAdvance = state.simAdvance;
-	int prevIMUs = state.stored.imus.size(), prevCams = state.pipeline.cameras.size();
+	int prevAdvance = state.sideline.advance.mode;
+	int prevIMUs = state.sideline.record.imus.size(), prevCams = state.pipeline.cameras.size();
 	std::vector<CameraConfigRecord> cameras;
 	if (append)
 	{
 		// Pause replay
-		state.simAdvance = 0;
+		state.sideline.advance.mode = 0;
 		// Add existing cameras for verification
 		cameras.resize(state.pipeline.cameras.size());
 		for (auto &camera : state.pipeline.cameras)
@@ -161,41 +161,41 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	}
 	else
 	{ // Clear previous recording
-		state.recording = {};
-		state.stored.frames.cull_clear();
-		state.stored.imus.clear();
-		state.stored.frames.delete_culled();
+		state.sideline.recording = {};
+		state.sideline.record.frames.cull_clear();
+		state.sideline.record.imus.clear();
+		state.sideline.record.frames.delete_culled();
 	}
 	// Prepare full recording data
-	std::size_t recStart = state.stored.frames.getView().size();
+	std::size_t recStart = state.sideline.record.frames.getView().size();
 	std::vector<int> cameraIndices;
 	// Will load recording in numbered segments
-	std::size_t segmentOffset = state.recording.segments.size();
-	state.recording.segments.reserve(segmentOffset + recordEntries.captures.size());
+	std::size_t segmentOffset = state.sideline.recording.segments.size();
+	state.sideline.recording.segments.reserve(segmentOffset + recordEntries.captures.size());
 	// Load all capture segments containing recorded data
 	for (int i = 0; i < recordEntries.captures.size(); i++)
 	{
-		std::size_t start = state.stored.frames.getView().size();
+		std::size_t start = state.sideline.record.frames.getView().size();
 		std::size_t offset;
-		auto error = parseRecording(recordEntries.captures[i], cameras, cameraIndices, state.stored, offset, separate);
+		auto error = parseRecording(recordEntries.captures[i], cameras, cameraIndices, state.sideline.record, offset, separate);
 		if (error) return error;
-		std::size_t count = state.stored.frames.getView().size() - start;
-		state.recording.segments.emplace_back(start, count, offset);
+		std::size_t count = state.sideline.record.frames.getView().size() - start;
+		state.sideline.recording.segments.emplace_back(start, count, offset);
 	}
 	// Load all tracking segments containing recorded tracking results
 	for (int i = 0; i < recordEntries.tracking.size(); i++)
 	{
-		auto &segment = state.recording.segments[segmentOffset + i];
+		auto &segment = state.sideline.recording.segments[segmentOffset + i];
 		if (segment.frameCount == 0) continue; // Invalid or missing segment
-		auto error = parseTrackingResults(recordEntries.tracking[i], state.stored, segment.frameOffset);
+		auto error = parseTrackingResults(recordEntries.tracking[i], state.sideline.record, segment.frameOffset);
 		if (error && error->code != ENOENT) return error;
 	}
 	// Store paths of each numbered segment as well
-	std::move(std::begin(recordEntries.captures), std::end(recordEntries.captures), std::back_inserter(state.recording.captures));
-	std::move(std::begin(recordEntries.tracking), std::end(recordEntries.tracking), std::back_inserter(state.recording.tracking));
-	std::size_t recCount = state.stored.frames.getView().size() - recStart;
-	state.recording.recordings.emplace_back(recordEntries.number, recordEntries.label, recStart, recCount, std::move(cameraIndices));
-	state.recording.frames += recCount;
+	std::move(std::begin(recordEntries.captures), std::end(recordEntries.captures), std::back_inserter(state.sideline.recording.captures));
+	std::move(std::begin(recordEntries.tracking), std::end(recordEntries.tracking), std::back_inserter(state.sideline.recording.tracking));
+	std::size_t recCount = state.sideline.record.frames.getView().size() - recStart;
+	state.sideline.recording.recordings.emplace_back(recordEntries.number, recordEntries.label, recStart, recCount, std::move(cameraIndices));
+	state.sideline.recording.frames += recCount;
 
 	std::vector<CameraCalib> cameraCalibs;
 	if (!recordEntries.calib.empty())
@@ -208,10 +208,10 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	if (append)
 	{
 		// Add new IMUs
-		state.pipeline.record.imus.reserve(state.stored.imus.size());
-		for (int i = prevIMUs; i < state.stored.imus.size(); i++)
+		state.pipeline.record.imus.reserve(state.sideline.record.imus.size());
+		for (int i = prevIMUs; i < state.sideline.record.imus.size(); i++)
 		{
-			auto imu = std::make_shared<IMURecord>(*state.stored.imus[i]);
+			auto imu = std::make_shared<IMURecord>(*state.sideline.record.imus[i]);
 			imu->index = state.pipeline.record.imus.size();
 			state.pipeline.record.imus.push_back(std::move(imu));
 		}
@@ -259,8 +259,8 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 			SignalServerEvent(EVT_UPDATE_CAMERAS);
 		}
 		// Continue replay
-		state.simAdvance = prevAdvance;
-		state.simAdvance.notify_all();
+		state.sideline.advance.mode = prevAdvance;
+		state.sideline.advance.mode.notify_all();
 		return std::nullopt;
 	}
 	if (state.mode != MODE_None)

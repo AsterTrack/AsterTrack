@@ -349,7 +349,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		}
 	}
 
-	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.simAdvance.load() == 0 || dbg_isBreaking);
+	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.sideline.advance.mode.load() == 0 || dbg_isBreaking);
 
 	if (displayInternalDebug && visFrame && visState.tracker.focusedID != 0)
 	{
@@ -645,16 +645,17 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	if (state.mode == MODE_Replay && BeginCollapsingRegion("Tracking Results"))
 	{
+		auto &recording = state.sideline.recording;
 		if (ImGui::Button("Update on disk", SizeWidthDiv3()))
 		{
-			assert(state.recording.segments.size() == state.recording.tracking.size());
-			for (int i = 0; i < state.recording.segments.size(); i++)
+			assert(recording.segments.size() == recording.tracking.size());
+			for (int i = 0; i < recording.segments.size(); i++)
 			{
-				auto &segment = state.recording.segments[i];
+				auto &segment = recording.segments[i];
 				if (segment.frameCount == 0) continue; // Invalid or missing segment
-				if (state.recording.tracking[i].empty())
-					state.recording.tracking[i] = state.recording.captures[i];
-				auto error = saveTrackingResults(state.recording.tracking[i], pipeline.record,
+				if (recording.tracking[i].empty())
+					recording.tracking[i] = recording.captures[i];
+				auto error = saveTrackingResults(recording.tracking[i], pipeline.record,
 					segment.frameStart, segment.frameStart+segment.frameCount, segment.frameOffset);
 				if (error) SignalErrorToUser(error.value());
 			}
@@ -662,14 +663,14 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		ImGui::SameLine();
 		if (ImGui::Button("Load from disk", SizeWidthDiv3()))
 		{
-			assert(state.recording.segments.size() == state.recording.tracking.size());
-			for (int i = 0; i < state.recording.segments.size(); i++)
+			assert(recording.segments.size() == recording.tracking.size());
+			for (int i = 0; i < recording.segments.size(); i++)
 			{
-				auto &segment = state.recording.segments[i];
+				auto &segment = recording.segments[i];
 				if (segment.frameCount == 0) continue; // Invalid or missing segment
-				if (state.recording.tracking[i].empty())
-					state.recording.tracking[i] = state.recording.captures[i];
-				auto error = parseTrackingResults(state.recording.tracking[i], state.stored, segment.frameOffset);
+				if (recording.tracking[i].empty())
+					recording.tracking[i] = recording.captures[i];
+				auto error = parseTrackingResults(recording.tracking[i], state.sideline.record, segment.frameOffset);
 				if (error) SignalErrorToUser(error.value());
 			}
 		}
@@ -677,7 +678,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 		if (ImGui::Button("Set temporarily", SizeWidthDiv3()))
 		{
 			auto framesRecord = pipeline.record.frames.getView();
-			auto framesStored = state.stored.frames.getView();
+			auto framesStored = state.sideline.record.frames.getView();
 			for (auto &frameStored : framesStored)
 			{
 				if (!frameStored) continue;
@@ -975,12 +976,12 @@ static void ShowTrackingResults()
 		auto framesRecord = pipeline.record.frames.getView();
 		if (state.mode == MODE_Replay)
 		{
-			auto framesStored = state.stored.frames.getView();
+			auto framesStored = state.sideline.record.frames.getView();
 
 			// Handle each appended recording (if multiple) separately
 			// This allows us to filter out erroneous trackers per recording
 			FrameNum lastFrame = std::min(framesRecord.endIndex(), framesStored.endIndex());
-			for (auto recording : state.recording.recordings)
+			for (auto &recording : state.sideline.recording.recordings)
 			{
 				if (recording.frameStart >= lastFrame) break;
 				FrameNum end = std::min(recording.frameStart + recording.frameCount, lastFrame);
@@ -1094,7 +1095,7 @@ static void ShowTrackingResults()
 				copyFrame->finishedProcessing = true;
 				record.frames.insert(frameRecord->num, std::move(copyFrame));
 			}
-			state.compareTrackers.push_back(std::move(record));
+			state.sideline.compareTrackers.push_back(std::move(record));
 			GetUI().visState.tracker.focusTrackerCompare = true;
 		}
 		if (open)

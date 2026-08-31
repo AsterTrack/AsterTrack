@@ -20,13 +20,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "config.hpp" // Config
 #include "pipeline/pipeline.hpp" // Main processing pipeline
+#include "sideline/sideline.hpp" // Recording, Replay, Simulation and Testing
 #include "comm/streaming.hpp" // Streaming blob data in
 #include "comm/wireless_server.hpp"
 #include "imu/device.hpp"
 #include "io/integrations.hpp"
 
 #include <thread>
-#include <atomic>
 
 
 /* Structures */
@@ -59,6 +59,7 @@ struct ServerState
 	bool isLoading, isStreaming;
 	TimePoint_t lastStreamingStart;
 	PipelineState pipeline;
+	SidelineState sideline;
 
 	// Error reporting
 	std::mutex errorPushMutex;
@@ -103,50 +104,11 @@ struct ServerState
 	// Since parsing may take too long due to debug builds, system load, bugs, etc.
 	bool usePacketQueue = false;
 
-	bool keepFrameImages = true, keepTrackingResults = true;
-
-	// Simulation/Replay control
-	std::atomic<int> simAdvance = { -1 };
-	std::atomic<bool> simWaiting = { false };
-	enum AdvanceTiming { ADV_NORMAL, ADV_REALTIME, ADV_QUICKLY, ADV_MAX };
-	AdvanceTiming simTiming;
-	// Dropout Simulation
-	std::atomic<int> simDropoutIndex = { -1 };
-	std::vector<float> simDropoutSeverity = { 1 };
-	// Loaded records for replay
-	struct Segment { FrameNum frameStart, frameCount, frameOffset; };
-	struct Recording { int number; std::string label; FrameNum frameStart, frameCount; std::vector<int> cameras; };
-	struct {
-		// This may contain info about multiple appended recordings
-		// And each recording may be split into multiple segments (capture+tracking)
-		// The following lists have an entry for each segment
-		std::vector<std::string> captures;
-		std::vector<std::string> tracking;
-		std::vector<Segment> segments;
-		// This list has an entry for each appended recording
-		std::vector<Recording> recordings;
-		FrameNum frames = 0;
-		TimePoint_t replayTime;
-	} recording = {};
-	TrackingRecord stored;
-	// Manual selection of tracking data to compare (persistent across UI reloads)
-	std::vector<TrackerCompareRecord> compareTrackers;
-	// Recordings part of a test set to verify tracking results
-	std::vector<int> recordingTestSet;
-	// Copy detections of trackers from stored records (to replace slow detection attempts)
-	bool simCopyDetectionsFromStored = false, simCopyAlsoFromTracked = true, simCopyLimitedReinstatement = true;
-	struct
-	{ // Automatic testing of configured captures (potentially headless)
-		bool isTesting;
-		std::string condition;
-		std::vector<int> recordings;
-	} testing;
-
 	// IMU Device integration
 	std::mutex hid_access;
 	Synchronised<IMUDeviceProviderList> imuProviders;
 
-	// All integrations
+	// Interfacing integrations
 	IntegrationsState io;
 	std::map<int, TrackerOutput> trackerOutput; // Synchronised via pipelineLock
 };

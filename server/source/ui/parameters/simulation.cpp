@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui/ui.hpp"
 
-#include "offline/simulation.hpp"
+#include "sideline/simulation.hpp"
 
 
 void InterfaceState::UpdateSimulationParameters(InterfaceWindow &window)
@@ -79,13 +79,13 @@ void InterfaceState::UpdateSimulationParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
-	if (modified && state.mode == MODE_Replay && state.simAdvance.load() == 0)
+	if (modified && state.mode == MODE_Replay && state.sideline.advance.mode.load() == 0)
 	{ // Simulation mode will loose simulation state, and doesn't benefit much from this anyway
 		// Load last frame if currently halted
 		AdoptFrameRecordState(pipeline, *pipeline.record.frames.getView().at(pipeline.frameNum.load()-1));
 		// Then proceed by one frame to re-process it entirely
-		state.simAdvance = 1;
-		state.simAdvance.notify_all();
+		state.sideline.advance.mode = 1;
+		state.sideline.advance.mode.notify_all();
 	}
 
 	ImGui::End();

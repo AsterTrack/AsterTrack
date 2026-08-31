@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "ui.hpp"
 #include "config.hpp"
-#include "offline/recording.hpp"
+#include "sideline/recording.hpp"
 
 #include "imgui/imgui_custom.hpp"
 #include "imgui/imgui_onDemand.hpp"
@@ -41,7 +41,7 @@ static std::shared_ptr<FrameRecord> GetFrameByNum(ServerState &state, FrameNum n
 			return framesRecord[num];
 	}
 	{ // Try stored record
-		auto framesStored = state.stored.frames.getView();
+		auto framesStored = state.sideline.record.frames.getView();
 		if (num < framesStored.size() && framesStored[num])
 			return framesStored[num];
 	}
@@ -59,6 +59,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	}
 	ServerState &state = GetState();
 	PipelineState &pipeline = state.pipeline;
+	SidelineState &sideline = state.sideline;
 
 	if (state.mode == MODE_Device)
 	{
@@ -66,21 +67,23 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	}
 	else if (state.mode == MODE_Simulation || state.mode == MODE_Replay)
 	{
+		auto &advance = sideline.advance;
+
 		{
 			ImGui::AlignTextToFramePadding();
 			if (state.mode == MODE_Replay)
-				ImGui::Text("Replaying Frame %" PRId64 " / %" PRIu64, GetState().pipeline.frameNum.load()+1, GetState().recording.frames);
+				ImGui::Text("Replaying Frame %" PRId64 " / %" PRIu64, GetState().pipeline.frameNum.load()+1, GetState().sideline.recording.frames);
 			else if (state.mode == MODE_Simulation)
 				ImGui::Text("Simulating Frame %" PRId64, GetState().pipeline.frameNum.load());
 			SameLineTrailing(SizeWidthDiv3().x);
 
 			ImGui::BeginGroup();
-			if (state.simTiming < 0 || state.simTiming >= ServerState::ADV_MAX)
-				state.simTiming = ServerState::ADV_NORMAL;
-			const char *icon = std::array{ ICON_LA_ANGLE_RIGHT, ICON_LA_CARET_RIGHT, ICON_LA_ANGLE_DOUBLE_RIGHT }[state.simTiming];
-			const char *label = std::array{ "Normal", "Realtime", "Quickly" }[state.simTiming];
+			if (advance.timing < 0 || advance.timing >= SidelineState::ADV_MAX)
+				advance.timing = SidelineState::ADV_NORMAL;
+			const char *icon = std::array{ ICON_LA_ANGLE_RIGHT, ICON_LA_CARET_RIGHT, ICON_LA_ANGLE_DOUBLE_RIGHT }[advance.timing];
+			const char *label = std::array{ "Normal", "Realtime", "Quickly" }[advance.timing];
 			if (IconButton(icon))
-				state.simTiming = (ServerState::AdvanceTiming)((state.simTiming+1) % ServerState::ADV_MAX);
+				advance.timing = (SidelineState::AdvanceTiming)((advance.timing+1) % SidelineState::ADV_MAX);
 			ImGui::SameLine();
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("%s", label);
@@ -88,34 +91,34 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		}
 
 		{
-			bool advancing = state.simAdvance.load() != 0;
+			bool advancing = advance.mode.load() != 0;
 			if (ImGui::Button(advancing? "Halt##Halt" : "Continue##Halt", SizeWidthDiv3()))
 			{
 				advancing = !advancing;
 				if (advancing)
 				{ // Continue freely (-1) or limited steps (positive integers)
-					state.simAdvance = -1;
-					state.simAdvance.notify_all();
+					advance.mode = -1;
+					advance.mode.notify_all();
 					visState.frame.visFocused = false;
 				}
 				else
 				{ // Halt
-					state.simAdvance = 0;
+					advance.mode = 0;
 				}
 			}
 			ImGui::SameLine();
 			ImGui::BeginDisabled(advancing || !state.isStreaming);
 			if (ImGui::Button("+1", SizeWidthDiv3_Div2()))
 			{
-				state.simAdvance = 1;
-				state.simAdvance.notify_all();
+				advance.mode = 1;
+				advance.mode.notify_all();
 				visState.frame.visFocused = false;
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("+10", SizeWidthDiv3_Div2()))
 			{
-				state.simAdvance = 10;
-				state.simAdvance.notify_all();
+				advance.mode = 10;
+				advance.mode.notify_all();
 				visState.frame.visFocused = false;
 			}
 			ImGui::SameLine();
@@ -123,8 +126,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			{ // Show Replay-Specific control
 				if (ImGui::Button("Next Image", SizeWidthDiv3()))
 				{
-					state.simAdvance = -2;
-					state.simAdvance.notify_all();
+					advance.mode = -2;
+					advance.mode.notify_all();
 					visState.frame.visFocused = false;
 				}
 			}
@@ -158,16 +161,16 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			if (ImGui::Button("Jump To", SizeWidthDiv3()))
 			{
 				// Stop advancing replay
-				int prevState = state.simAdvance;
-				state.simAdvance = 0;
-				state.simWaiting.wait(false);
+				int prevState = advance.mode;
+				advance.mode = 0;
+				advance.waiting.wait(false);
 				// Jump to frame after last frame has been processed
 				std::shared_ptr<FrameRecord> frame = GetFrameByNum(state, visState.frame.focusedNum);
 				if (frame)
 					AdoptFrameRecordState(pipeline, *frame);
 				// Continue advancing
-				state.simAdvance = prevState;
-				state.simAdvance.notify_all();
+				advance.mode = prevState;
+				advance.mode.notify_all();
 			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
@@ -183,25 +186,25 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::AlignTextToFramePadding();
 			ImGui::Text("Detection");
 			ImGui::SameLine();
-			ImGui::Checkbox("Copy", &state.simCopyDetectionsFromStored);
+			ImGui::Checkbox("Copy", &sideline.copyDetectionsFromStored);
 			ImGui::SetItemTooltip("Disables actual detection routines and instead copies detection from stored tracking results.\n"
 				"This may significantly speed up testing if detection is assumed to behave the same.\n"
 				"NOTE: Interpret the results carefully, whether only copying detections or also tracked.");
 			ImGui::SameLine();
-			ImGui::BeginDisabled(!state.simCopyDetectionsFromStored);
-			ImGui::Checkbox("Tracked", &state.simCopyAlsoFromTracked);
+			ImGui::BeginDisabled(!sideline.copyDetectionsFromStored);
+			ImGui::Checkbox("Tracked", &sideline.copyAlsoFromTracked);
 			ImGui::SetItemTooltip("Don't just copy detections, but also reinstate from a tracked state in stored recorss\n."
 				"NOTE: This may not result in a stable track itself as filter is not initialised!\n"
 				"Use filtering tools when interpreting tracking results.");
 			ImGui::SameLine();
-			ImGui::BeginDisabled(!state.simCopyAlsoFromTracked);
-			ImGui::Checkbox("Limited", &state.simCopyLimitedReinstatement);
+			ImGui::BeginDisabled(!sideline.copyAlsoFromTracked);
+			ImGui::Checkbox("Limited", &sideline.copyLimitedReinstatement);
 			ImGui::SetItemTooltip("Limit copying from tracked records to once per stored detection.\n"
 				"So it must have performed better and thus skipped the detection to be allowed to be reinstated.");
 			ImGui::EndDisabled();
 			ImGui::EndDisabled();
 			ImGui::SameLine();
-			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.simCopyDetectionsFromStored;
+			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && sideline.copyDetectionsFromStored;
 			ImGui::BeginDisabled(state.pipeline.params.detect.suspendDetections);
 			ImGui::Checkbox("Async", &state.pipeline.params.detect.useAsyncDetection);
 			ImGui::EndDisabled();
@@ -209,31 +212,31 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 		if (showDebug)
 		{ // Show controls for simulating dropouts
-			ImGui::BeginDisabled(state.simDropoutIndex >= 0);
+			ImGui::BeginDisabled(sideline.dropoutIndex >= 0);
 			if (ImGui::Button("Frame Drop", SizeWidthDiv3()))
 			{
-				for (int i = 0; i < state.simDropoutSeverity.size(); i++)
-					state.simDropoutSeverity[i] = 1.0f;
-				state.simDropoutIndex = 0;
+				for (int i = 0; i < sideline.dropoutSeverity.size(); i++)
+					sideline.dropoutSeverity[i] = 1.0f;
+				sideline.dropoutIndex = 0;
 			}
 			ImGui::SetItemTooltip("Simulate full frame drops (no optical data) for all cameras.\nDrop length adjustable");
 			ImGui::SameLine();
 			if (ImGui::Button("Occlusion", SizeWidthDiv3()))
 			{
-				float peak = std::log(1 + state.simDropoutSeverity.size());
-				for (int i = 0; i < state.simDropoutSeverity.size(); i++)
+				float peak = std::log(1 + sideline.dropoutSeverity.size());
+				for (int i = 0; i < sideline.dropoutSeverity.size(); i++)
 				{
-					float dist = (float)std::abs((int)state.simDropoutSeverity.size() - 1 - i*2) / state.simDropoutSeverity.size();
-					state.simDropoutSeverity[i] = std::min(1.0f, (1.0f - dist) * peak);
+					float dist = (float)std::abs((int)sideline.dropoutSeverity.size() - 1 - i*2) / sideline.dropoutSeverity.size();
+					sideline.dropoutSeverity[i] = std::min(1.0f, (1.0f - dist) * peak);
 				}
-				state.simDropoutIndex = 0;
+				sideline.dropoutIndex = 0;
 			}
 			ImGui::SetItemTooltip("Simulate a severe visual occlusion across all cameras.\nDrop length adjustable, will drop blobs partially at beginning and end.");
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(SizeWidthDiv3().x);
-			int dropoutLen = state.simDropoutSeverity.size();
+			int dropoutLen = sideline.dropoutSeverity.size();
 			if (ImGui::InputInt("##DropoutLength", &dropoutLen))
-				state.simDropoutSeverity.resize(std::min(100, dropoutLen));
+				sideline.dropoutSeverity.resize(std::min(100, dropoutLen));
 			ImGui::SetItemTooltip("Sets the length of the dropout.");
 			ImGui::EndDisabled();
 		}
@@ -381,20 +384,20 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 	if (ImGui::CollapsingHeader("Recording", ImGuiTreeNodeFlags_DefaultOpen))
 	{ // Allow recording and storing of frame sections
 
-		ImGui::Checkbox("Frame Images", &state.keepFrameImages);
+		ImGui::Checkbox("Frame Images", &sideline.keepFrameImages);
 		SameLineTrailing(SizeWidthDiv2().x);
-		ImGui::Checkbox("Tracking Results", &state.keepTrackingResults);
+		ImGui::Checkbox("Tracking Results", &sideline.keepTrackingResults);
 
-		if (ImGui::Button(recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
+		if (ImGui::Button(sideline.recordSectionStart < 0? "Start Section##Section" : "Stop Section##Section", SizeWidthDiv2()))
 		{
-			if (recordSectionStart < 0)
+			if (sideline.recordSectionStart < 0)
 			{ // TODO: Hold reference to view to prevent frame range from being deleted once garbage collect is implemented? 
-				recordSectionStart = pipeline.record.frames.getView().endIndex();
+				sideline.recordSectionStart = pipeline.record.frames.getView().endIndex();
 			}
 			else
 			{
-				recordSections.emplace_back(recordSectionStart, pipeline.record.frames.getView().endIndex());
-				recordSectionStart = -1;
+				sideline.recordSections.emplace_back(sideline.recordSectionStart, pipeline.record.frames.getView().endIndex());
+				sideline.recordSectionStart = -1;
 			}
 		}
 		ImGui::SameLine();
@@ -402,7 +405,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 		if (ImGui::Button("Save All Frames", SizeWidthDiv2()))
 		{
 			auto framesRecord = pipeline.record.frames.getView();
-			recordSections.emplace_back(framesRecord.beginIndex(), framesRecord.endIndex(), true);
+			sideline.recordSections.emplace_back(framesRecord.beginIndex(), framesRecord.endIndex(), true);
 		}
 		ImGui::EndDisabled();
 
@@ -415,9 +418,9 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
 			ImGui::TableHeadersRow();
 
-			for (int i = 0; i < recordSections.size(); i++)
+			for (int i = 0; i < sideline.recordSections.size(); i++)
 			{
-				auto &section = recordSections[i];
+				auto &section = sideline.recordSections[i];
 				ImGui::PushID(i);
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
@@ -470,7 +473,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 						// Occupy path now to prevent next save from using same path
 						touchFile(section.path);
 						// Perform write in a separate thread to prevent blocking UI
-						threadPool.push([](int, InterfaceState::RecordedSections section)
+						threadPool.push([](int, RecordedSections section)
 						{
 							PipelineState &pipeline = GetState().pipeline;
 							// Copy ids and calibs of involved cameras
@@ -514,7 +517,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 								if (error) SignalErrorToUser(error.value());
 							}
 
-							for (auto &s : GetUI().recordSections)
+							for (auto &s : GetState().sideline.recordSections)
 							{
 								if (s.begin != section.begin || s.end != section.end) continue;
 								if (error) s.path.clear();
@@ -584,7 +587,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				ImGui::TableNextColumn();
 				if (CrossButton("Del"))
 				{
-					recordSections.erase(std::next(recordSections.begin(), i));
+					sideline.recordSections.erase(std::next(state.sideline.recordSections.begin(), i));
 					i--;
 				}
 				ImGui::SetItemTooltip("Forget about the section.\nDoes not actively delete frame records.\nDoes not delete saved recordings.");
@@ -692,8 +695,8 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			PipelineState &pipeline = state.pipeline;
 
 			// Assume control over pipeline processing
-			state.simAdvance = 0;
-			state.simWaiting.wait(false);
+			state.sideline.advance.mode = 0;
+			state.sideline.advance.waiting.wait(false);
 
 			while (!stop_token.stop_requested())
 			{
@@ -730,14 +733,15 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 				if (!frame) continue;
 				AdoptFrameRecordState(pipeline, *frame);
 				// Quickly advance through frame range
-				state.simTiming = ServerState::ADV_QUICKLY;
-				state.simAdvance = range.end-range.begin;
-				state.simAdvance.notify_all();
+				auto &advance = state.sideline.advance;
+				advance.timing = SidelineState::ADV_QUICKLY;
+				advance.mode = range.end-range.begin;
+				advance.mode.notify_all();
 				int count;
-				while ((count = state.simAdvance.load()) > 0 && !stop_token.stop_requested())
-					state.simAdvance.wait(count);
+				while ((count = advance.mode.load()) > 0 && !stop_token.stop_requested())
+					advance.mode.wait(count);
 				if (stop_token.stop_requested()) break;
-				if (state.simAdvance.load() < 0) continue;
+				if (advance.mode.load() < 0) continue;
 				// Tracking completed and pipeline is stalled, read results before handling next frame range
 				auto framesRecord = pipeline.record.frames.getView();
 				auto begin = framesRecord.pos(range.begin), end = framesRecord.pos(range.end);
@@ -838,7 +842,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 			auto framesRecord = pipeline.record.frames.getView();
 			for (auto &frame : framesRecord)
 				if (frame) handleFrame(*frame);
-			auto framesStored = state.stored.frames.getView();
+			auto framesStored = state.sideline.record.frames.getView();
 			for (int f = addFrameRange[1]+1; f < framesStored.endIndex(); f++)
 				if (framesStored[f]) handleFrame(*framesStored[f]);
 			if (inRange)

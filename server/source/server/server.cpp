@@ -21,7 +21,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "ui/shared.hpp" // Signals to UI
 #include "signals.hpp" // Signals to Server
 
-#include "offline/recording.hpp"
+#include "sideline/recording.hpp"
 
 #include "device/tracking_controller.hpp"
 #include "device/tracking_camera.hpp"
@@ -108,26 +108,26 @@ bool ServerInit(ServerState &state)
 	state.server.host = getHostnameString();
 
 	// TODO: Use command line to trigger testing
-	//state.testing.isTesting = true;
-	//state.testing.condition = "Testing Condition";
+	//state.sideline.testing.isTesting = true;
+	//state.sideline.testing.condition = "Testing Condition";
 
-	if (state.testing.isTesting)
+	if (state.sideline.testing.isTesting)
 	{
 		{ // Quick and dirty parsing of UI-configured recording test set, without relying on loading UI first
-			state.testing.recordings.clear();
+			state.sideline.testing.recordings.clear();
 			std::ifstream config("imgui.ini");
 			std::string line;
 			while (std::getline(config, line) && line != "[Testing][Recordings]");
 			int rec;
 			while (config >> rec)
-				state.testing.recordings.push_back(rec);
+				state.sideline.testing.recordings.push_back(rec);
 		}
 		
-		if (!state.testing.recordings.empty())
+		if (!state.sideline.testing.recordings.empty())
 		{
 			threadPool.push([](int){
 				auto &state = GetState();
-				auto error = loadRecordingSet(state, state.testing.recordings);
+				auto error = loadRecordingSet(state, state.sideline.testing.recordings);
 				if (error)
 				{ // TODO: Proper output usable by CI on both failure and success
 					SignalErrorToUser(error.value());
@@ -136,7 +136,7 @@ bool ServerInit(ServerState &state)
 
 				// Setup to very quick tracking verification by default
 				state.pipeline.params.detect.useAsyncDetection = false;
-				state.simTiming = ServerState::ADV_QUICKLY;
+				state.sideline.advance.timing = SidelineState::ADV_QUICKLY;
 
 				// Optionally, for detailed regression tests & comparision of logs
 				state.pipeline.params.track.maxParallelism = 1;
@@ -177,8 +177,8 @@ void StopCoprocessingThread(ServerState &state)
 {
 	if (!state.coprocessingThread) return;
 	state.coprocessingThread->request_stop();
-	state.simAdvance = -1;
-	state.simAdvance.notify_all();
+	state.sideline.advance.mode = -1;
+	state.sideline.advance.mode.notify_all();
 	dbg_debugging = 0;
 	dbg_debugging.notify_all();
 	dbg_isBreaking = false;
@@ -325,7 +325,7 @@ void SignalErrorToUser(ErrorMessage error)
 {
 	LOG(LGUI, LWarn, "Error: %s", error.c_str());
 	std::unique_lock lock(GetState().errorPushMutex);
-	GetState().errors.push(std::move(error));	
+	GetState().errors.push(std::move(error));
 }
 
 void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib)
@@ -591,6 +591,12 @@ bool StartStreaming(ServerState &state)
 		// Start realtime processing thread
 		assert(state.rtProcessingThread == NULL);
 		state.rtProcessingThread = new std::jthread(RealtimeProcessingThread, &state);
+	}
+
+	{
+		state.sideline.recordSections.clear();
+		if (state.sideline.recordSectionStart > 0)
+			state.sideline.recordSectionStart = -1;
 	}
 
 	SignalServerEvent(EVT_START_STREAMING);

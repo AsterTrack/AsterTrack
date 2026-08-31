@@ -416,7 +416,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			frameRelevantParametersDirty = true;
 		if (state.mode == MODE_Replay || state.mode == MODE_Simulation)
 		{ // In replay/simulation
-			if (modified && state.simAdvance == 0 && visState.targetMatching.debug.frameNum == pipeline.frameNum)
+			if (modified && state.sideline.advance.mode == 0 && visState.targetMatching.debug.frameNum == pipeline.frameNum)
 			{ // Debugging tracking, automatically track frame again
 				visState.targetMatching.debug.needsUpdate = true;
 			}
@@ -424,7 +424,7 @@ void InterfaceState::UpdateTrackingParameters(InterfaceWindow &window)
 			{ // Debugging trust values, simulate new filter parameters on recent history
 				RetroactivelySimulateMistrust(pipeline, 0, pipeline.frameNum+1);
 			}
-			else if (filterMod && state.simAdvance == 0 && visState.tracking.trailLength > 0)
+			else if (filterMod && state.sideline.advance.mode == 0 && visState.tracking.trailLength > 0)
 			{ // Debugging filter, simulate new filter parameters on recent history
 				RetroactivelySimulateFilter(pipeline, pipeline.frameNum-visState.tracking.trailLength, pipeline.frameNum);
 			}

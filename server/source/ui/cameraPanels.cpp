@@ -110,14 +110,14 @@ void InterfaceState::UpdateCameraViews(InterfaceWindow &window)
 
 	ServerState &state = GetState();
 	static int lastRecordingNum = -1;
-	if (state.mode == MODE_Replay && state.recording.recordings.size() > 1)
+	if (state.mode == MODE_Replay && state.sideline.recording.recordings.size() > 1)
 	{ // If in replay mode with multiple recordings appended, only show cameras used for current recording
 		OptFrameNum frame = state.pipeline.frameNum.load();
 		// No synchronisation with actual frame displayed required
 		// CameraViews support being displayed even when not used, this is just for visuals
-		auto rec = std::find_if(state.recording.recordings.begin(), state.recording.recordings.end(),
+		auto rec = std::find_if(state.sideline.recording.recordings.begin(), state.sideline.recording.recordings.end(),
 			[frame](auto &rec){ return frame >= rec.frameStart && frame < rec.frameStart+rec.frameCount; });
-		if (rec == state.recording.recordings.end())
+		if (rec == state.sideline.recording.recordings.end())
 		{
 			if (lastRecordingNum != -1)
 			{ // Display all if e.g. streaming has not started

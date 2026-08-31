@@ -432,28 +432,13 @@ public:
 	ImVec2 gridCellSize;
 	bool cameraListDirty = false;
 	bool cameraGridDirty = false;
+
+	// Further dirty flags
 	bool calibrationsDirty = false;
+	bool frameRelevantParametersDirty = false;
 
 	// 3D View state
 	View3D view3D;
-
-	// Control/Recording state
-	struct RecordedSections
-	{
-		FrameNum begin, end;
-		bool forceSave, saved, editing;
-		int index;
-		std::string name;
-		std::string path;
-
-		// For MSVC...
-		RecordedSections(FrameNum begin, FrameNum end, bool forceSave = false)
-			: begin(begin), end(end), forceSave(forceSave), saved(false), editing(false), index(-1) {}
-	};
-	std::vector<RecordedSections> recordSections;
-	OptFrameNum recordSectionStart = -1;
-	bool recordTrackingResults = true;
-	bool frameRelevantParametersDirty = false;
 
 	// Sequences state
 	opaque_ptr<TargetViewSequence> seqTarget;

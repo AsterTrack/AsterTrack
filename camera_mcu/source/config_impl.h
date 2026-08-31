@@ -34,6 +34,7 @@ extern "C"
 #define V0_4 2
 #define V1_0 2
 #define V1_1 3
+#define V1_2 4
 
 #if BOARD_REV == V0_3 // using hardware sync line over Cat5e
 
@@ -91,7 +92,7 @@ extern "C"
 
 #else
 // BOARD_REV == V1_0 (also V0.4.x) using UART sync
-// BOARD_REV == V1_1 using UART or nRF sync
+// BOARD_REV >= V1_1 using UART or nRF sync
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOB
@@ -141,10 +142,10 @@ extern "C"
 #define BUTTONS_GPIO_X GPIOA
 #define BUTTON_BOTTOM_PIN GPIO_PIN_0
 #define BUTTON_TOP_PIN GPIO_PIN_1
-#if BOARD_REV == V1_0
-#define BUTTON_READ(GPIOX, PIN) (!GPIO_READ(GPIOX, PIN))
-#elif BOARD_REV >= V1_1
+#if BOARD_REV == V1_1
 #define BUTTON_READ(GPIOX, PIN) GPIO_READ(GPIOX, PIN)
+#else
+#define BUTTON_READ(GPIOX, PIN) (!GPIO_READ(GPIOX, PIN))
 #endif
 
 // VSense ADC pins

@@ -913,7 +913,7 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 	response[0] = Packet_Version;		// Fetch Info packet version
 	response[1] = OTP_Version; 			// OTP Format Version
 	response[2] = OTP_NumSubParts; 		// Sub-Part Count
-	response[3] = 0						// Detected Hardware Features
+	response[3] = 0						// Detected Hardware Features / Defects
 		| (hasHSEClock? MCU_HW_HAS_HSE : 0);
 
 	// Write string lengths for separate request

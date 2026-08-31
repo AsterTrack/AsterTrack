@@ -134,6 +134,8 @@ else ifeq ($(REV), V1_0)
 	BOARD = -DBOARD_REV=2 -DUSE_UART -DUSE_I2C
 else ifeq ($(REV), V1_1)
 	BOARD = -DBOARD_REV=3 -DUSE_UART -DUSE_I2C -DUSE_SPI_NRF_SYNC
+else ifeq ($(REV), V1_2)
+	BOARD = -DBOARD_REV=4 -DUSE_UART -DUSE_I2C -DUSE_SPI_NRF_SYNC
 endif
 
 COMMON_FLAGS = -std=c23 -Wall -fdata-sections -ffunction-sections -funsigned-char -ffast-math

@@ -447,6 +447,7 @@ void visualiseTarget2DMatchingStages(VisualisationState &visState, const CameraC
 	auto &trkVis = visState.targetMatching;
 
 	int camCount = trkVis.debug.targetMatch2D.points2D.size();
+	if (calib.index >= camCount) return;
 	trkVis.debug.targetBounds.resize(camCount);
 	trkVis.debug.priLabels.resize(camCount);
 	trkVis.debug.secLabels.resize(camCount);

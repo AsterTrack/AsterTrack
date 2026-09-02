@@ -229,7 +229,7 @@ static void updateTrackerMistrust(const TargetMistrustParameters &params, const 
 
 	if (!matchedMarkers.empty())
 	{ // Mistrust from conflicting markers, claimed by two trackers
-		for (int c = 0; c < frame->cameras.size(); c++)
+		for (int c = 0; c < match2D.points2D.size(); c++)
 		{
 			for (int p = 0; p < match2D.points2D[c].size(); p++)
 			{
@@ -271,7 +271,7 @@ static TrackerRecord retroactivelyTrackFrame(PipelineState &pipeline, TrackedTar
 	std::vector<std::vector<int>> conflictedMatches2D; // Unused
 	record.result = trackTarget(tracker.filter, tracker.target, tracker.obs, *record.match2D,
 		conflictedMatches2D, calibs, points2D, properties, frame->remainingPoints2D,
-		frame->time, frame->num, pipeline.cameras.size(), pipeline.params.track);
+		frame->time, frame->num, frame->cameras.size(), pipeline.params.track);
 	record.procTimeMS = dtMS(start, sclock::now());
 
 	// TODO: Add seeded re-detection for targets with inertial units
@@ -315,12 +315,12 @@ static bool detectTargetAsync(std::stop_token stopToken, PipelineState &pipeline
 		if (useProbe)
 		{ // Probe target against clusters points
 			*match2D = probeTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, detectionPoints2D,
-				pos, pipeline.cameras.size(), probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				pos, frame->cameras.size(), probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
 		}
 		else
 		{ // Detect target first in focusCameras 2D points, and then match with others
 			*match2D = searchTarget2D(stopToken, dormant.target.calib, calibs, points2D, properties, detectionPoints2D,
-				focus, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+				focus, frame->cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 		}
 		procTimeMS = dtMS(start, sclock::now());
 		if (match2D->error.samples < pipeline.params.detect.minObservations.total
@@ -450,7 +450,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 
 	std::vector<CameraCalib> calibs = pipeline.getCalibs();
-	std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
+	std::vector<std::vector<Eigen::Vector2f> const *> points2D;
 	auto &targets = pipeline.tracking.trackedTargets;
 
 	auto framesRecord = pipeline.record.frames.getView<false>();
@@ -462,8 +462,10 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 	{
 		if (!*frameRecordIt || !frameRecordIt->get()->finishedProcessing) continue;
 		FrameRecord &frameRecord = *frameRecordIt->get();
-		for (int c = 0; c < pipeline.cameras.size(); c++)
-			points2D[c] = &frameRecord.cameras[calibs[c].index].points2D;
+		points2D.resize(frameRecord.cameras.size());
+		for (int c = 0; c < frameRecord.cameras.size(); c++)
+			points2D[c] = &frameRecord.cameras[c].points2D;
+		std::vector<CameraCalib> trackCalibs(calibs.begin(), calibs.begin()+frameRecord.cameras.size());
 		for (auto &trackRecord : frameRecord.trackers)
 		{
 			if (!trackRecord.result.isDetected() && !trackRecord.result.isTracked()) continue;
@@ -480,7 +482,7 @@ void RetroactivelySimulateFilter(PipelineState &pipeline, FrameNum frameStart, F
 				integrateIMU(targetIt->filter, targetIt->inertial, targetIt->obs, frameRecord.time, pipeline.params.track);
 
 			trackRecord.result = simulateTrackTarget(targetIt->filter, targetIt->target, targetIt->obs,
-				calibs, points2D, trackRecord, frameRecord.time, frameRecord.num, pipeline.params.track);
+				trackCalibs, points2D, trackRecord, frameRecord.time, frameRecord.num, pipeline.params.track);
 
 			if (targetIt->inertial)
 				postCorrectIMU(*targetIt, targetIt->filter, targetIt->inertial, targetIt->obs, frameRecord.time, pipeline.params.track);
@@ -559,8 +561,6 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	auto &track = pipeline.tracking;
-	int camCount = frame->cameras.size();
-	assert(frame->cameras.size() <= pipeline.cameras.size());
 	std::vector<int> remainingPoints3D;
 
 	/*
@@ -725,7 +725,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			TimePoint_t start = sclock::now();
 			record.result = trackTarget(tracker.filter, tracker.target, tracker.obs, *record.match2D,
 				conflictedMatches2D[t], calibs, points2D, properties, remainingPoints2D,
-				frame->time, frame->num, camCount, pipeline.params.track);
+				frame->time, frame->num, frame->cameras.size(), pipeline.params.track);
 			record.procTimeMS = dtMS(start, sclock::now());
 
 			if (tracker.inertial && record.result.isTracked())
@@ -862,7 +862,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		std::vector<std::vector<int>> conflictedMatches2D(calibs.size());
 		trackMarker(track.transientMarkers, matches2D, conflictedMatches2D, frame->markerSearch,
 			calibs, points2D, properties, remainingPoints2D,
-			frame->time, frame->num, camCount, pipeline.params.marker);
+			frame->time, frame->num, frame->cameras.size(), pipeline.params.marker);
 
 		// Remove matched points from points used for triangulation
 		for (int c = 0; c < calibs.size(); c++)
@@ -1190,7 +1190,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				std::vector<std::vector<int>> conflictedMatches2D(calibs.size());
 				trackTarget2D(pipeline.params.track, dormant.target.calib,
 					candidate.pose, covariance,
-					calibs, camCount, points2D, properties, remainingPoints2D,
+					calibs, frame->cameras.size(), points2D, properties, remainingPoints2D,
 					conflictedMatches2D, *match2D, dormant.target.data);
 
 				float procTimeMS = dtMS(start, sclock::now());
@@ -1286,9 +1286,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// But it also relies how they map to each other (all triangulated points are at the end of markers3D)
 
 		std::shared_ptr<FrameRecord> lastFrame = pipeline.record.frames.getView()[pipeline.frameNum.load()];
+		auto calibSuperset = pipeline.getCalibs(); // With calibs for both frames
 		adoptTransientMarkers(track.transientMarkers, remainingPoints3D,
 			track.triangulations3D, track.lastTriangulations3D,
-			frame, lastFrame, pipeline.getCalibs(), pipeline.params.marker);
+			frame, lastFrame, calibSuperset, pipeline.params.marker);
 		
 		// Filter out new markers conflicting with markers detected last frame
 		// (above function does not check if triangulations since got an ID assigned)
@@ -1319,7 +1320,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 
 	// Match those 2D clusters to potential 3D clusters using triangulation
-	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, camCount, clustering);
+	std::vector<Cluster2DTri3D> clusters2DTri = triangulateClusters2D(cluster2DStats, calibs, frame->cameras.size(), clustering);
 	std::sort(clusters2DTri.begin(), clusters2DTri.end(), [](auto &a, auto &b){ return a.score > b.score; });
 
 	// TODO: Track clusters in 3D (3/5)
@@ -1430,7 +1431,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 					detectTargetAsync(stopToken, pipeline, frameRec, calibs, detectionPoints2D, 
 						useProbe, focus, pos, probeCount, std::move(dormant));
 					pipeline.tracking.asyncDetection = false;
-				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, std::move(calibs), std::move(detectionPoints2D),
+				}, pipeline.tracking.asyncDetectionStop.get_token(), frame, calibs, std::move(detectionPoints2D),
 					useProbe, focusCamera, focusPos, config.probeCount, dormant);
 			}
 			else
@@ -1442,13 +1443,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				{ // Probe target against clusters points
 					*match2D = probeTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
 						dormant.target.calib, calibs, points2D, properties, detectionPoints2D, focusPos,
-						pipeline.cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
+						frame->cameras.size(), config.probeCount, pipeline.params.detect, pipeline.params.track, dormant.target.data);
 				}
 				else
 				{ // Detect target first in focusCameras 2D points, and then match with others
 					*match2D = searchTarget2D(pipeline.tracking.syncDetectionStop.get_token(),
 						dormant.target.calib, calibs, points2D, properties, detectionPoints2D,
-						focusCamera, pipeline.cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
+						focusCamera, frame->cameras.size(), pipeline.params.detect, pipeline.params.track, dormant.target.data);
 				}
 				float procTimeMS = dtMS(start, sclock::now());
 				if (match2D->error.samples < pipeline.params.detect.minObservations.total

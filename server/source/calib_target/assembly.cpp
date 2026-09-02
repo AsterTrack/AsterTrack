@@ -1014,7 +1014,7 @@ OptErrorRes reevaluateFrameObservations(const std::vector<CameraCalib> &calibs, 
 		if constexpr (!APPLY) continue;
 
 		frame.samples.clear();
-		for (int c = 0; c < frameRecord->cameras.size(); c++)
+		for (int c = 0; c < targetMatch2D.points2D.size(); c++)
 		{
 			for (auto &match : targetMatch2D.points2D[c])
 				frame.samples.push_back({ -match.first-2, (uint16_t)c, frameRecord->cameras[c].rawPoints2D.at(match.second) });

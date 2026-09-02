@@ -45,7 +45,7 @@ void InterfaceState::UpdateSequences(bool reset)
 		auto &obsVis = visState.incObsUpdate;
 
 		int total2DPoints = 0;
-		for (int c = 0; c < pipeline.cameras.size(); c++)
+		for (int c = 0; c < obsVis.cameraTriObservations.size(); c++)
 			total2DPoints += obsVis.cameraTriObservations[c];
 		if (obsVis.markerCount == 0)
 			*calibSamples.contextualLock() = std::string("No Samples");

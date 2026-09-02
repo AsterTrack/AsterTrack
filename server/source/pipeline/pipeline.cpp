@@ -125,7 +125,8 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 
 	// Accumulate cameras to update
 	std::vector<CameraPipeline*> cameras;
-	cameras.reserve(pipeline.cameras.size());
+	cameras.reserve(frame->cameras.size());
+	assert(frame->cameras.size() <= pipeline.cameras.size());
 	bool fullyCalibrated = true;
 	for (auto &cam : pipeline.cameras)
 	{

@@ -34,10 +34,10 @@ extern ctpl::thread_pool threadPool;
 
 #include <numeric>
 
-static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
-static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
-static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
-static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
+static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
+static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
+static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
+static void ThreadCalibrationRoom(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state);
 
 
 // ----------------------------------------------------------------------------
@@ -78,21 +78,16 @@ void UpdatePointCalibrationStatus(PipelineState &pipeline)
 	}
 	else if (ptCalib.planned)
 	{
-		std::vector<CameraPipeline*> cameras;
-		cameras.reserve(pipeline.cameras.size());
-		for (auto &cam : pipeline.cameras)
-			cameras.push_back(cam.get());
-
 		ptCalib.planned = false;
 		ptCalib.control = std::make_shared<ThreadControl>();
 		if (ptCalib.settings.typeFlags & 0b0001)
-			ptCalib.control->thread = new std::thread(ThreadCalibrationReconstruction, &pipeline, cameras, ptCalib.control, ptCalib.state);
+			ptCalib.control->thread = new std::thread(ThreadCalibrationReconstruction, &pipeline, ptCalib.control, ptCalib.state);
 		else if (ptCalib.settings.typeFlags & 0b0010)
-			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisation, &pipeline, cameras, ptCalib.control, ptCalib.state);
+			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisation, &pipeline, ptCalib.control, ptCalib.state);
 		else if (ptCalib.settings.typeFlags & 0b0100)
-			ptCalib.control->thread = new std::thread(ThreadCalibrationRoom, &pipeline, cameras, ptCalib.control, ptCalib.state);
+			ptCalib.control->thread = new std::thread(ThreadCalibrationRoom, &pipeline, ptCalib.control, ptCalib.state);
 		else if (ptCalib.settings.typeFlags & 0b1000)
-			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisationTarget, &pipeline, cameras, ptCalib.control, ptCalib.state);
+			ptCalib.control->thread = new std::thread(ThreadCalibrationOptimisationTarget, &pipeline, ptCalib.control, ptCalib.state);
 		SignalPipelineUpdate();
 	}
 }
@@ -152,7 +147,7 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 			}
 			if (!tri.samples.empty())
 			{
-				point.samples.resize(pipeline.cameras.size(), { 0, Eigen::Vector2d::Zero() });
+				point.samples.resize(frame->cameras.size(), { 0, Eigen::Vector2d::Zero() });
 				for (auto &sample : tri.samples)
 				{
 					// NOTE: Relies on sample.camera indexing into full cameras
@@ -179,7 +174,7 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 	}
 }
 
-static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
+static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
@@ -196,13 +191,13 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
 	std::vector<CameraMode> modes(pipeline->cameras.size());
 	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-	{
-		int index = cameras[c]->index;
-		modes[index] = cameras[c]->mode;
-		calibs[index] = cameras[c]->calib;
-		calibs[index].id = cameras[c]->id;
-		calibs[index].index = cameras[c]->index;
+	for (int c = 0; c < pipeline->cameras.size(); c++)
+	{ // May use subset in the future
+		auto &cam = pipeline->cameras[c];
+		modes[c] = cam->mode;
+		calibs[c] = cam->calib;
+		calibs[c].id = cam->id;
+		calibs[c].index = cam->index;
 	}
 
 	ObsData pointData = {};
@@ -278,7 +273,7 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::vector
 	LOGC(LInfo, "=======================\n");
 }
 
-static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
+static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
@@ -296,13 +291,13 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
 	std::vector<CameraMode> modes(pipeline->cameras.size());
 	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-	{
-		int index = cameras[c]->index;
-		modes[index] = cameras[c]->mode;
-		calibs[index] = cameras[c]->calib;
-		calibs[index].id = cameras[c]->id;
-		calibs[index].index = cameras[c]->index;
+	for (int c = 0; c < pipeline->cameras.size(); c++)
+	{ // May use subset in the future
+		auto &cam = pipeline->cameras[c];
+		modes[c] = cam->mode;
+		calibs[c] = cam->calib;
+		calibs[c].id = cam->id;
+		calibs[c].index = cam->index;
 	}
 
 	// New database with selected points
@@ -428,7 +423,7 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::vector<C
 	LOGC(LDebug, "=======================\n");
 }
 
-static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
+static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
@@ -444,10 +439,9 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	auto settings = pipeline->pointCalib.settings;
 	ObsData data = *pipeline->obsDatabase.contextualRLock();
 	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-	{ // ObsTargetSample::camera indexes into full cameras
-		int index = cameras[c]->index;
-		calibs[index] = cameras[c]->calib;
+	for (int c = 0; c < pipeline->cameras.size(); c++)
+	{ // ObsTargetSample::camera indexes into full cameras!
+		calibs[c] = pipeline->cameras[c]->calib;
 	}
 
 	// Subsample data
@@ -519,7 +513,7 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::ve
 	LOGC(LDebug, "=======================\n");
 }
 
-static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPipeline*> cameras, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
+static void ThreadCalibrationRoom(PipelineState *pipeline, std::shared_ptr<ThreadControl> control, std::shared_ptr<PipelineState::PointCalibState> state)
 {
 	std::stop_token stopToken = control->stop_source.get_token();
 	const auto exitNotifier = sg::make_scope_guard([&]() noexcept { control->finished = true; });
@@ -533,9 +527,11 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::vector<CameraPip
 
 	// Copy data
 	auto roomCalib = *pipeline->pointCalib.room.contextualRLock();
-	std::vector<CameraCalib> calibs(cameras.size());
-	for (int c = 0; c < cameras.size(); c++)
-		calibs[c] = cameras[c]->calib;
+	std::vector<CameraCalib> calibs(pipeline->cameras.size());
+	for (int c = 0; c < pipeline->cameras.size(); c++)
+	{ // May use subset in the future
+		calibs[c] = pipeline->cameras[c]->calib;
+	}
 
 	LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
 

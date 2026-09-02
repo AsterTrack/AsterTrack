@@ -351,8 +351,10 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 	bool displayInternalDebug = (state.mode == MODE_Replay || state.mode == MODE_Simulation) && (state.sideline.advance.mode.load() == 0 || dbg_isBreaking);
 
-	if (displayInternalDebug && visFrame && visState.tracker.focusedID != 0)
-	{
+	if (displayInternalDebug && visState.tracker.focusedID != 0 &&
+		(visFrame = visState.lockVisFrame(pipeline, false, true)))
+	{ // Re-locking frame to allow debug of older focused frames, not just most recent
+	
 		// Temporary debug tools, data, etc.
 
 		auto &frameRecord = *visFrame.frameIt->get();
@@ -439,7 +441,9 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 				ImGui::SameLine();
 				if (ImGui::Button("Optimise", SizeWidthDiv4()))
 				{
-					debugVis.editedMatch2D.error = optimiseTargetPose<true>(pipeline.getCalibs(), points2D, 
+					auto calibs = pipeline.getCalibs();
+					calibs.resize(cameraCount);
+					debugVis.editedMatch2D.error = optimiseTargetPose<true>(calibs, points2D, 
 						debugVis.editedMatch2D, *debugVis.calib, trackRecord->ext->predicted, pipeline.params.track.opt);
 				}
 				ImGui::SameLine();

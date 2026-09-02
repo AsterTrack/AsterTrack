@@ -313,7 +313,8 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 			{
 				Eigen::Projective3f proj = view3D.getProj(viewWin->InnerRect.GetHeight() / viewWin->InnerRect.GetWidth()) * view3D.viewTransform.inverse();
 				float radiusPx = 8.0f;
-				for (auto &cam : state.pipeline.cameras)
+				auto camera_lock = state.pipeline.cameras.contextualRLock();
+				for (auto &cam : *camera_lock)
 				{
 					Eigen::Vector3f dir = (cam->calib.transform.translation().cast<float>() - frame.pose.translation()).normalized();
 					Eigen::Vector3f pos3D = frame.pose.translation() + dir*0.2f;
@@ -326,7 +327,7 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 					ImGui::SetNextItemAllowOverlap();
 					if (ImGui::Button(asprintf_s("##CamBtn%d", cam->index).c_str(), ImVec2(radiusPx*2, radiusPx*2)))
 					{
-						visState.target.cameraRays.resize(state.pipeline.cameras.size());
+						visState.target.cameraRays.resize(camera_lock->size());
 						visState.target.cameraRays[cam->index] = !visState.target.cameraRays[cam->index];
 					}
 				}
@@ -518,24 +519,28 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	if (visState.room.showOrigin)
 		visualiseOrigin(visState.room.origin, 1, 5);
 
-	for (auto &camera : pipeline.cameras)
-		if (camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
-	for (auto &camera : pipeline.cameras)
-		if (!camera->disabled)
-			visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
-
-	if (pipeline.isSimulationMode)
 	{
-		for (auto &camera : pipeline.cameras)
-			visualiseCamera(camera->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
-	}
+		auto camera_lock = pipeline.cameras.contextualRLock();
 
-	if (visState.pipeline.showMarkerRays && visFrame)
-	{
-		auto &frame = *visFrame.frameIt->get();
-		for (int c = 0; c < frame.cameras.size(); c++)
-			visualiseRays(pipeline.cameras[c]->calib, frame.cameras[c].points2D, frame.cameras[c].blobUse);
+		for (auto &camera : *camera_lock)
+			if (camera->disabled)
+				visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
+		for (auto &camera : *camera_lock)
+			if (!camera->disabled)
+				visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
+
+		if (pipeline.isSimulationMode)
+		{
+			for (auto &camera : *camera_lock)
+				visualiseCamera(camera->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
+		}
+
+		if (visState.pipeline.showMarkerRays && visFrame)
+		{
+			auto &frame = *visFrame.frameIt->get();
+			for (int c = 0; c < frame.cameras.size(); c++)
+				visualiseRays((*camera_lock)[c]->calib, frame.cameras[c].points2D, frame.cameras[c].blobUse);
+		}
 	}
 
 	if ((visState.pipeline.showClustersTri3D || visState.pipeline.showClusters2DTri) && visFrame && visFrame.isRealtimeFrame)
@@ -578,14 +583,16 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	{ // Only show target calibration data, not real-time state
 		visState.updateVisTarget(visFrame.target);
 
+		auto calibs = pipeline.getCalibs();
+
 		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.target.markerObservations)
 		{ // Show show observations ray for each marker
-			visualiseVisTargetObservations(pipeline.getCalibs(), visState, visFrame.target);
+			visualiseVisTargetObservations(calibs, visState, visFrame.target);
 		}
 
 		if (visFrame.target.hasObs() && visFrame.target.hasPose)
 		{ // Draw observation rays for focused cameras, if any
-			visualiseVisTargetObsCameraRays(pipeline.getCalibs(), visState, visFrame.target);
+			visualiseVisTargetObsCameraRays(calibs, visState, visFrame.target);
 		}
 
 		if (visFrame.target.hasObs() && visFrame.target.hasPose && visState.targetCalib.selectedObservation >= 0)
@@ -593,7 +600,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
 			int selObs = visState.targetCalib.selectedObservation;
 			if (selObs >= 0 && obs_lock->markers.size() > selObs)
-				visualiseMarkerSequenceRays(pipeline.getCalibs(), visFrame.target, obs_lock->markers[selObs], selObs);
+				visualiseMarkerSequenceRays(calibs, visFrame.target, obs_lock->markers[selObs], selObs);
 		}
 
 		// Draw marker visualisation of the current target and its related state
@@ -620,7 +627,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		// Draw transparent cones sticking out of spheres
 		if (visState.target.markerViewCones)
 		{ // Show calculated directionality and field of view of each marker
-			visualiseVisTargetViewCones(pipeline.getCalibs(), visState, visFrame.target);
+			visualiseVisTargetViewCones(calibs, visState, visFrame.target);
 		}
 
 		return;
@@ -651,8 +658,8 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	}
 	else if (visState.tracking.showOrphanedIMUs)
 	{
-		std::shared_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(50));
-		if (pipeline_lock.owns_lock())
+		std::unique_lock processing_lock(pipeline.processingMutex, std::chrono::milliseconds(50));
+		if (processing_lock.owns_lock())
 		{
 			for (auto &tracker : pipeline.tracking.orphanedIMUs)
 			{

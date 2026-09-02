@@ -206,10 +206,10 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		LOG(LControllerDevice, LError, "Received malformed status packet of length %d < %d!\n", length, CONTROLLER_STATUS_SIZE);
 		return false;
 	}
-	std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-	if (!dev_lock.owns_lock())
+	std::shared_lock device_lock(state.deviceMutex, std::chrono::milliseconds(10));
+	if (!device_lock.owns_lock())
 	{
-		LOG(LUSB, LDarn, "Failed to lock device access mutex - likely attempting to disconnect!");
+		LOG(LUSB, LDarn, "Failed to lock device access mutex in status packet - likely attempting to disconnect!");
 		return false;
 	}
 
@@ -243,7 +243,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 	// Step 1: Ensure controller port count matches
 	if (controller.cameras.size() != portCount)
 	{ // Adopt controller port count
-		std::unique_lock dev_lock(state.deviceAccessMutex); // controller.cameras, controller.ports
+		std::unique_lock device_lock(state.deviceMutex); // controller.cameras, controller.ports
 		if (!controller.ports.empty())
 		{
 			LOG(LControllerDevice, LError, "Controller status packet reports port count %d when previously %d where reported! "
@@ -277,7 +277,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 		if (controller.cameras[i] && controller.cameras[i]->id == id)
 			continue;
 
-		std::unique_lock dev_lock(state.deviceAccessMutex); // state.cameras, controller.cameras
+		std::unique_lock device_lock(state.deviceMutex); // state.cameras, controller.cameras
 
 		if (controller.cameras[i])
 		{ // Another camera was on this port, or it changed IDs
@@ -766,7 +766,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 			auto image = decompressCameraImageRecord(imageRecord);
 			if (!image) return; // Image jpeg is faulty, don't store record
 
-			std::shared_lock device_lock(GetState().deviceAccessMutex);
+			std::shared_lock device_lock(GetState().deviceMutex);
 			auto camera = GetCamera(GetState(), imageRecord->cameraID);
 			if (!camera) return; // Camera has been disconnected
 

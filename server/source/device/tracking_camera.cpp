@@ -228,7 +228,7 @@ bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera)
 	}
 	// Can safely remove camera
 
-	std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
+	std::unique_lock device_lock(state.deviceMutex); // cameras
 
 	if (camera.controller)
 	{ // Disassociate from controller

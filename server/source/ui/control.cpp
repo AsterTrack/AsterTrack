@@ -479,7 +479,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							// Copy ids and calibs of involved cameras
 							std::vector<CameraConfigRecord> cameras;
 							std::vector<CameraCalib> calibs;
-							for (auto &cam : pipeline.cameras)
+							for (auto &cam : *pipeline.cameras.contextualRLock())
 							{
 								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
 								calibs.push_back(cam->calib);
@@ -965,7 +965,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 	if (ImGui::CollapsingHeader("Disable Cameras"))
 	{
-		for (auto &camera : pipeline.cameras)
+		for (auto &camera : *pipeline.cameras.contextualRLock())
 		{
 			ImGui::PushID(camera->id);
 			ImGui::Text("#%u", camera->id);

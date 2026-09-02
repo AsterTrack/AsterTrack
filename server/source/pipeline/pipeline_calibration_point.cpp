@@ -187,18 +187,23 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::shared
 	LOGC(LInfo, "=======================\n");
 
 	// Copy data
+	std::vector<CameraMode> modes;
+	std::vector<CameraCalib> calibs;
+	{
+		auto camera_lock = pipeline->cameras.contextualRLock();
+		modes.resize(camera_lock->size());
+		calibs.resize(camera_lock->size());
+		for (int c = 0; c < camera_lock->size(); c++)
+		{ // May use subset in the future
+			auto &cam = camera_lock->at(c);
+			modes[c] = cam->mode;
+			calibs[c] = cam->calib;
+			calibs[c].id = cam->id;
+			calibs[c].index = cam->index;
+		}
+	}
 	PointCalibParameters params = pipeline->pointCalib.params;
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
-	std::vector<CameraMode> modes(pipeline->cameras.size());
-	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < pipeline->cameras.size(); c++)
-	{ // May use subset in the future
-		auto &cam = pipeline->cameras[c];
-		modes[c] = cam->mode;
-		calibs[c] = cam->calib;
-		calibs[c].id = cam->id;
-		calibs[c].index = cam->index;
-	}
 
 	ObsData pointData = {};
 	addTriangulatableObservations(pointData.points, observations.markers);
@@ -227,7 +232,7 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::shared
 	if (pipeline->isSimulationMode)
 	{
 		LOGC(LInfo, "== Adjusting calibration to ground truth simulation setup:\n");
-		auto errors = AlignWithGT(*pipeline, calibs);
+		auto errors = AlignWithGT(*pipeline->cameras.contextualRLock(), calibs);
 		if (errors.first < 50 && errors.second < 10)
 			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3f°\n", errors.first, errors.second);
 		else
@@ -261,9 +266,11 @@ static void ThreadCalibrationReconstruction(PipelineState *pipeline, std::shared
 		state->errors = updateReprojectionErrors(*db_lock, calibs);
 	}
 
-	// Update calibration
-	AdoptNewCalibrations(*pipeline, calibs);
-	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
+	{ // Update calibration
+		auto camera_lock = pipeline->cameras.contextualLock();
+		AdoptNewCalibrations(*pipeline, *camera_lock, calibs);
+		UpdateCalibrationRelations(*pipeline->calibration.contextualLock(), pipeline->sequenceParams, *camera_lock, observations);
+	}
 	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LInfo, "== Done Reconstructing Calibration!\n");
@@ -286,19 +293,24 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_p
 	LOGC(LInfo, "=======================\n");
 
 	// Copy data
+	std::vector<CameraMode> modes;
+	std::vector<CameraCalib> calibs;
+	{
+		auto camera_lock = pipeline->cameras.contextualRLock();
+		modes.resize(camera_lock->size());
+		calibs.resize(camera_lock->size());
+		for (int c = 0; c < camera_lock->size(); c++)
+		{ // May use subset in the future
+			auto &cam = camera_lock->at(c);
+			modes[c] = cam->mode;
+			calibs[c] = cam->calib;
+			calibs[c].id = cam->id;
+			calibs[c].index = cam->index;
+		}
+	}
 	auto settings = pipeline->pointCalib.settings;
 	PointCalibParameters params = pipeline->pointCalib.params;
 	SequenceData observations = *pipeline->seqDatabase.contextualRLock();
-	std::vector<CameraMode> modes(pipeline->cameras.size());
-	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < pipeline->cameras.size(); c++)
-	{ // May use subset in the future
-		auto &cam = pipeline->cameras[c];
-		modes[c] = cam->mode;
-		calibs[c] = cam->calib;
-		calibs[c].id = cam->id;
-		calibs[c].index = cam->index;
-	}
 
 	// New database with selected points
 	ObsData pointData = {};
@@ -346,8 +358,10 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_p
 			LOGC(LWarn, "Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n",
 				state->numSteps, errors.mean, errors.stdDev, errors.max);
 
-		// Update calibration
-		AdoptNewCalibrations(*pipeline, calibs);
+		{ // Update calibration
+			auto camera_lock = pipeline->cameras.contextualLock();
+			AdoptNewCalibrations(*pipeline, *camera_lock, calibs);
+		}
 		SignalCameraCalibUpdate(calibs);
 
 		if (errors.max > errors.mean + params.outliers.sigma.trigger*errors.stdDev)
@@ -396,7 +410,7 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_p
 	if (pipeline->isSimulationMode)
 	{
 		LOGC(LInfo, "== Adjusting calibration to ground truth simulation setup:\n");
-		auto errors = AlignWithGT(*pipeline, calibs);
+		auto errors = AlignWithGT(*pipeline->cameras.contextualRLock(), calibs);
 		if (errors.first < 50 && errors.second < 10)
 			LOGC(LInfo, "    Adjusted room calibration to Ground Truth with error of %.3fmm and %.3f°\n", errors.first, errors.second);
 		else
@@ -415,9 +429,11 @@ static void ThreadCalibrationOptimisation(PipelineState *pipeline, std::shared_p
 		db_lock->points = std::move(pointData.points);
 	}
 
-	// Update calibration
-	AdoptNewCalibrations(*pipeline, calibs);
-	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), observations);
+	{ // Update calibration
+		auto camera_lock = pipeline->cameras.contextualLock();
+		AdoptNewCalibrations(*pipeline, *camera_lock, calibs);
+		UpdateCalibrationRelations(*pipeline->calibration.contextualLock(), pipeline->sequenceParams, *camera_lock, observations);
+	}
 	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LDebug, "=======================\n");
@@ -436,13 +452,17 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::sh
 	LOGC(LInfo, "=======================\n");
 
 	// Copy data
+	std::vector<CameraCalib> calibs;
+	{
+		auto camera_lock = pipeline->cameras.contextualRLock();
+		calibs.resize(camera_lock->size());
+		for (int c = 0; c < camera_lock->size(); c++)
+		{ // ObsTargetSample::camera indexes into full cameras!
+			calibs[c] = camera_lock->at(c)->calib;
+		}
+	}
 	auto settings = pipeline->pointCalib.settings;
 	ObsData data = *pipeline->obsDatabase.contextualRLock();
-	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < pipeline->cameras.size(); c++)
-	{ // ObsTargetSample::camera indexes into full cameras!
-		calibs[c] = pipeline->cameras[c]->calib;
-	}
 
 	// Subsample data
 	ObsData subsampled = {};
@@ -470,8 +490,10 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::sh
 			LOGC(LWarn, "Current errors has NaNs after optimisation step %d: (%f, %f, %f)\n",
 				state->numSteps, errors.mean, errors.stdDev, errors.max);
 
-		// Update calibration
-		AdoptNewCalibrations(*pipeline, calibs);
+		{ // Update calibration
+			auto camera_lock = pipeline->cameras.contextualLock();
+			AdoptNewCalibrations(*pipeline, *camera_lock, calibs);
+		}
 		SignalCameraCalibUpdate(calibs);
 
 		LOGCL("Intermediate result with subsampled tracker database:");
@@ -505,9 +527,11 @@ static void ThreadCalibrationOptimisationTarget(PipelineState *pipeline, std::sh
 	else // Since we've already overwrote calibration while calibrating anyway
 		LOGC(LInfo, "== Aborted Optimising Calibration! Accepting results nonetheless!\n");
 
-	// Update calibration
-	AdoptNewCalibrations(*pipeline, calibs);
-	UpdateCalibrationRelations(*pipeline, *pipeline->calibration.contextualLock(), data);
+	{ // Update calibration
+		auto camera_lock = pipeline->cameras.contextualLock();
+		AdoptNewCalibrations(*pipeline, *camera_lock, calibs);
+		UpdateCalibrationRelations(*pipeline->calibration.contextualLock(), pipeline->sequenceParams, *camera_lock, data);
+	}
 	SignalCameraCalibUpdate(calibs);
 
 	LOGC(LDebug, "=======================\n");
@@ -526,12 +550,16 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::shared_ptr<Threa
 	LOGC(LInfo, "=======================\n");
 
 	// Copy data
-	auto roomCalib = *pipeline->pointCalib.room.contextualRLock();
-	std::vector<CameraCalib> calibs(pipeline->cameras.size());
-	for (int c = 0; c < pipeline->cameras.size(); c++)
-	{ // May use subset in the future
-		calibs[c] = pipeline->cameras[c]->calib;
+	std::vector<CameraCalib> calibs;
+	{
+		auto camera_lock = pipeline->cameras.contextualRLock();
+		calibs.resize(camera_lock->size());
+		for (int c = 0; c < camera_lock->size(); c++)
+		{ // May use subset in the future
+			calibs[c] = camera_lock->at(c)->calib;
+		}
 	}
+	auto roomCalib = *pipeline->pointCalib.room.contextualRLock();
 
 	LOG(LPointCalib, LDebug, "Attempting to calibrate the floor!\n");
 
@@ -554,16 +582,18 @@ static void ThreadCalibrationRoom(PipelineState *pipeline, std::shared_ptr<Threa
 		LOG(LPointCalib, LInfo, "Scaled calibration by %f during floor calibration!",
 			roomTransform.linear().colwise().norm().mean());
 
-		// Update calibration
-		ApplyTransformation(calibs, roomOrientation, roomTransform);
-		AdoptNewCalibrations(*pipeline, calibs, true);
+		{ // Update calibration
+			ApplyTransformation(calibs, roomOrientation, roomTransform);
+			auto camera_lock = pipeline->cameras.contextualLock();
+			AdoptNewCalibrations(*pipeline, *camera_lock, calibs, true);
+		}
 		SignalCameraCalibUpdate(calibs);
 	}
 
 	LOGC(LDebug, "=======================\n");
 }
 
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib)
+void AdoptNewCalibrations(PipelineState &pipeline, PipelineState::CameraList &cameras, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib)
 {
 	if (!isLoadOrRoomCalib)
 	{ // Loaded calibs and new room calibration do not need old room calibration transferred
@@ -572,8 +602,8 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		std::vector<CameraCalib> roomCalib(calibs.size());
 		for (int c = 0; c < calibs.size(); c++)
 		{
-			assert(pipeline.cameras[calibs[c].index]->id == calibs[c].id);
-			roomCalib[c] = pipeline.cameras[calibs[c].index]->calibRoom;
+			assert(cameras[calibs[c].index]->id == calibs[c].id);
+			roomCalib[c] = cameras[calibs[c].index]->calibRoom;
 		}
 
 		Eigen::Matrix3d roomOrientation;
@@ -610,9 +640,8 @@ void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &cal
 		pipeline.pointCalib.roomState.unchangedCameras.clear();
 	}
 
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
 	bool lensesChanged = false;
-	for (auto &cam : pipeline.cameras)
+	for (auto &cam : cameras)
 	{
 		cam->calibBackup = cam->calib; // Create backup
 		for (auto &calib : calibs)

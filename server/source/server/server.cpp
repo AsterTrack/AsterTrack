@@ -221,17 +221,11 @@ void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool 
 	if (!tracker.triggered) return;
 
 	// Make use of recursive mutex, subroutines will also lock
-	std::unique_lock lock (state.pipeline.pipelineLock);
+	std::unique_lock processing_lock(state.pipeline.processingMutex);
 	
 	// Ensure tracker output is registered for pipeline to use
 	auto registerOutput = state.trackerOutput.emplace(tracker.id, tracker.id);
 	TrackerOutput &output = registerOutput.first->second;
-	if (registerOutput.second)
-	{ // Newly setup output
-		auto io_lock = std::unique_lock(state.io.mutex);
-		if (state.io.vrpn.trackers.contains(tracker.id))
-			output.vrpn = state.io.vrpn.trackers[tracker.id];
-	}
 	{ // Update output
 		output.label = tracker.label;
 		output.role = tracker.role;
@@ -252,6 +246,15 @@ void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool 
 		DisassociateIMU(state.pipeline, tracker.id);
 		if (tracker.imu)
 			AssociateIMU(state.pipeline, tracker.imu, tracker.id, tracker.imuCalib);
+	}
+
+	processing_lock.unlock();
+
+	if (registerOutput.second)
+	{ // Newly setup output
+		std::unique_lock io_lock(state.io.mutex);
+		if (state.io.vrpn.trackers.contains(tracker.id))
+			output.vrpn = state.io.vrpn.trackers[tracker.id];
 	}
 }
 
@@ -284,7 +287,7 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 	else if (manualTrigger < 0)
 	{
 		// Make use of recursive mutex, subroutines will also lock
-		std::unique_lock lock (state.pipeline.pipelineLock);
+		std::unique_lock processing_lock(state.pipeline.processingMutex);
 
 		// Remove tracker
 		tracker.triggered = false;
@@ -402,14 +405,14 @@ void SignalTrackerDetected(int trackerID)
 
 void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial)
 { // Lowest-latency signal of tracker being tracked or detected
-	// For now only called from pipeline thread under pipelineLock
+	// For now only called from pipeline thread under processingMutex
 	// In the future, may be called from individual tracker thread
-	//   NOTE: Need to ensure we're still under pipelineLock then!
+	//   NOTE: Need to ensure we're still under processingMutex then!
 	// Either way, filter and inertial are safe to access and copy
 	// But server needs to be accessed in a thread-safe manner
 	ServerState &state = GetState();
 
-	// Valid throughout streaming, only modified under pipelineLock
+	// Valid throughout streaming, only modified under processingMutex
 	TrackerOutput &output = state.trackerOutput.at(record.id);
 	TrackerOutputData data { frame.num, record.pose.filtered, frame.time, record.pose.filtered };
 
@@ -464,18 +467,17 @@ CameraMode getCameraMode(ServerState &state, CameraID id)
 
 static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, CameraID id)
 {
-	auto cam = std::find_if(state.pipeline.cameras.begin(), state.pipeline.cameras.end(), [id](const auto &c) { return c->id == id; });
-	if (cam != state.pipeline.cameras.end())
+	auto camera_lock = state.pipeline.cameras.contextualLock();
+	auto cam = std::find_if(camera_lock->begin(), camera_lock->end(), [id](const auto &c) { return c->id == id; });
+	if (cam != camera_lock->end())
 		return *cam;
-	std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
-
 	std::shared_ptr<CameraPipeline> camera = std::make_shared<CameraPipeline>();
 	camera->id = id;
-	camera->index = state.pipeline.cameras.size();
-	state.pipeline.cameras.push_back(camera); // new shared_ptr
+	camera->index = camera_lock->size();
+	camera_lock->push_back(camera); // new shared_ptr
 
 	// Assign slot in observations
-	state.pipeline.seqDatabase.contextualLock()->verifyCameraCount(state.pipeline.cameras.size());
+	state.pipeline.seqDatabase.contextualLock()->verifyCameraCount(camera_lock->size());
 
 	// Setup camera settings
 	camera->mode = getCameraMode(state, id);
@@ -507,7 +509,7 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	if (camera->calib.valid())
 	{ // Calculate fundamental matrices from calibration
 		auto lock = folly::detail::lock(folly::detail::wlock(state.pipeline.calibration), folly::detail::rlock(state.pipeline.seqDatabase));
-		UpdateCalibrationRelations(state.pipeline, *std::get<0>(lock), *std::get<1>(lock), camera->index);
+		UpdateCalibrationRelations(*std::get<0>(lock), state.pipeline.sequenceParams, *camera_lock, *std::get<1>(lock), camera->index);
 	}
 	else
 	{
@@ -523,6 +525,8 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id)
 {
+	// assert(unique_lock(deviceMutex));
+
 	auto cam = std::find_if(state.cameras.begin(), state.cameras.end(), [id](const auto &c) { return c->id == id; });
 	if (cam != state.cameras.end())
 		return *cam;
@@ -557,8 +561,6 @@ bool StartStreaming(ServerState &state)
 		return false;
 	} */
 
-	std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
-
 	// Clean any prior streaming state
 	// TODO: Find a way to retain records and calibration state of last Streaming (without leaving current mode!)
 	// Currently after stop	ping stream, all data is retained, and only deleted after starting stream again or leaving mode
@@ -580,8 +582,6 @@ bool StartStreaming(ServerState &state)
 
 	if (state.mode == MODE_Device)
 	{
-		std::shared_lock dev_lock(state.deviceAccessMutex);
-
 		// In case no controller is connected, provide virtual sync group for e.g. IMUs
 		SetupVirtualSyncGroup(state);
 
@@ -613,8 +613,6 @@ void StopStreaming(ServerState &state)
 
 	if (state.mode == MODE_Device)
 	{
-		std::shared_lock dev_lock(state.deviceAccessMutex);
-
 		// Tell devices (wireless and wired) to stop streaming
 		DevicesStopStreaming(state);
 
@@ -625,6 +623,7 @@ void StopStreaming(ServerState &state)
 		ResetStreamState(*state.stream.contextualLock());
 
 		// Join realtime processing thread
+		state.rtProcessingThread->request_stop();
 		state.processing_cv.notify_all();
 		delete state.rtProcessingThread;
 		state.rtProcessingThread = NULL;

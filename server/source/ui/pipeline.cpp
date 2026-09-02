@@ -70,7 +70,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 
 		if (calibState.relUncertain && ImGui::Button("Assume calibrations to be valid", SizeWidthFull()))
 		{ // Skip manual verification (by providing samples) and instead write bogus values
-			AssumeCalibrationsValid(pipeline, *pipeline.calibration.contextualLock());
+			AssumeCalibrationsValid(*pipeline.calibration.contextualLock(), pipeline.sequenceParams, *pipeline.cameras.contextualRLock(), pipeline.frameNum);
 			UpdateCalibrations();
 		}
 	}

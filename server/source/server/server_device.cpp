@@ -53,6 +53,8 @@ void StartDeviceMode(ServerState &state)
 	if (state.mode != MODE_None)
 		return;
 
+	std::unique_lock device_lock(state.deviceMutex); // controllers, cameras
+
 	// Initialise state
 	state.mode = MODE_Device;
 	state.pipeline.isSimulationMode = false;
@@ -97,7 +99,8 @@ void StopDeviceMode(ServerState &state)
 
 	IntegrationsCleanup(state.io, state.config);
 
-	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
+	std::unique_lock device_lock(state.deviceMutex); // controllers, cameras
+
 	state.mode = MODE_None;
 
 	// Disconnect from controllers and their wired-only cameras
@@ -148,7 +151,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 
 		TimePoint_t now = sclock::now();
 
-		// Check for disconnected hardware without upgrading a shared_lock deviceAccessMutex to unique_lock
+		// Check for disconnected hardware without upgrading a shared_lock deviceMutex to unique_lock
 		// The UI thread can do this, and does so a lot, so it should be the only thread allowed to do that
 		for (int c = 0; c < state.controllers.size(); c++)
 		{
@@ -175,11 +178,11 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 		}
 
 		// Try to lock, and if failing to do so, yield to (potentially) another thread stopping device mode
-		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-		if (!dev_lock.owns_lock())
-			LOG(LControllerDevice, LError, "Failed to lock deviceAccessMutex in device thread, likely avoided deadlock!");
+		std::shared_lock device_lock(state.deviceMutex, std::chrono::milliseconds(10));
+		if (!device_lock.owns_lock())
+			LOG(LControllerDevice, LError, "Failed to lock deviceMutex in device thread, likely avoided deadlock!");
 		if (stop_token.stop_requested()) break;
-		if (!dev_lock.owns_lock()) continue;
+		if (!device_lock.owns_lock()) continue;
 
 #if !defined(_WIN32)
 		// Does work, but takes over a second on windows because no hotplugging support
@@ -262,7 +265,9 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			threadPool.push([](int, IMUDeviceList &addedIMUs, IMUDeviceList &removedIMUs){
 				ServerState &state = GetState();
 				// In threadPool so we're not blocking (waiting for frame processing) in device supervisor thread
-				std::unique_lock pipeline_lock(state.pipeline.pipelineLock);
+				std::unique_lock processing_lock(state.pipeline.processingMutex); // For AssociateIMU/OrphanIMU
+				// TODO: How to synchronise access to pipeline.record.imus?
+				// Should not rely on processingMutex for that
 				for (auto &imuDevice : addedIMUs)
 				{
 					if (!imuDevice || imuDevice->index >= 0) continue;
@@ -327,8 +332,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 			UpdatePipelineStatus(state.pipeline);
 		}
 
-		// Unlock shared deviceAccessMutex
-		dev_lock.unlock();
+		// Unlock shared deviceMutex
+		device_lock.unlock();
 
 		// Interval only affects IMU polling rate, not USB packets by controllers
 		int interval = imusRegistered? (state.lowLatencyIMU? 1 : 1) : 20;
@@ -344,6 +349,8 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 
 void DevicesStartStreaming(ServerState &state)
 {
+	std::shared_lock device_lock(state.deviceMutex);
+
 	for (auto &controller : state.controllers)
 	{
 		{ // Reset timesync
@@ -415,13 +422,6 @@ void DevicesStartStreaming(ServerState &state)
 
 	LOG(LGUI, LInfo, "Setup cameras and sync groups");
 
-	// Setup sync masks for all controllers
-	for (auto &controller : state.controllers)
-	{
-		if (!ControllerUpdateSyncMask(*controller))
-			LOG(LGUI, LInfo, "Failed to setup controller %d for streaming!", controller->id);
-	}
-
 	for (auto &cam : state.cameras)
 	{ // Wait for cameras to send mode change packets to signal they are ready to receive frame syncs
 		while (sclock::now() < modeSetTimeout && cam->mode != cam->modeSet.mode)
@@ -433,6 +433,13 @@ void DevicesStartStreaming(ServerState &state)
 		cam->modeSet.handleIndividually = true;
 	}
 	LOG(LGUI, LInfo, "Waited %fms for cameras to change modes!", dtMS(modeSetTime, sclock::now()));
+
+	// Setup sync masks for all controllers
+	for (auto &controller : state.controllers)
+	{
+		if (!ControllerUpdateSyncMask(*controller))
+			LOG(LGUI, LInfo, "Failed to setup controller %d for streaming!", controller->id);
+	}
 
 	// Configure controllers for generating sync last
 	for (auto &controller : state.controllers)
@@ -446,10 +453,13 @@ void DevicesStartStreaming(ServerState &state)
 
 void DevicesStopStreaming(ServerState &state)
 {
+	std::shared_lock device_lock(state.deviceMutex);
+
 	for (auto &cam : state.cameras)
 	{ // Communicate with cameras to stop streaming
 		cam->sendModeSet(TRCAM_STANDBY, false);
 	}
+	TimePoint_t modeSetTime = sclock::now();
 	TimePoint_t modeSetTimeout = sclock::now() + std::chrono::milliseconds(100);
 
 	for (auto &cam : state.cameras)
@@ -457,11 +467,7 @@ void DevicesStopStreaming(ServerState &state)
 		while (sclock::now() < modeSetTimeout && cam->mode != cam->modeSet.mode)
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
-	for (auto &cam : state.cameras)
-	{ // Set handleIndividually flag right before we update controller with streaming status for each camera port
-		// If this cameras mode hasn't changed yet, it will have to finish configuring it's streaming state later
-		cam->modeSet.handleIndividually = false;
-	}
+	LOG(LGUI, LInfo, "Waited %fms for cameras to change modes!", dtMS(modeSetTime, sclock::now()));
 
 	// Communicate with controllers to prepare to stop streaming
 	for (auto &controller : state.controllers)
@@ -626,7 +632,7 @@ void ProcessStreamFrame(SyncGroup &sync, SyncedFrame &frame, bool premature)
 	// Accept for realtime processing, create FrameState
 
 	std::shared_ptr<FrameRecord> frameRecord = std::make_shared<FrameRecord>();
-	frameRecord->cameras.resize(pipeline.cameras.size());
+	frameRecord->cameras.resize(pipeline.cameras.unsafeGetUnlocked().size());
 	for (auto &camera : sync.cameras)
 	{ // Setup camera data
 		if (!camera) continue; // Removed while streaming - have to ignore even if data was valid

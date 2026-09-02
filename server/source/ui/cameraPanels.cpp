@@ -31,7 +31,7 @@ void InterfaceState::UpdateCameras()
 {
 	cameraListDirty = false;
 	ServerState &state = GetState();
-	std::shared_lock dev_lock(state.deviceAccessMutex); // cameras
+	std::shared_lock device_lock(state.deviceMutex); // controllers, cameras
 
 	// Check for change in connecting cameras
 	int connecting = 0;

@@ -56,7 +56,7 @@ void StartSimulation(ServerState &state)
 	state.pipeline.isSimulationMode = true;
 
 	{ // Setup cameras
-		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras
+		std::unique_lock device_lock(state.deviceMutex); // cameras
 		for (int c = 0; c < state.config.simulation.cameraDefinitions.size(); c++)
 		{
 			auto camDef = state.config.simulation.cameraDefinitions[c];
@@ -67,7 +67,7 @@ void StartSimulation(ServerState &state)
 	{ // Log testing calibrations
 		ScopedLogLevel scopedLogLevelInfo(LInfo);
 		std::vector<CameraCalib> testingCalibrations;
-		for (auto &cam : state.pipeline.cameras)
+		for (auto &cam : *state.pipeline.cameras.contextualRLock())
 			testingCalibrations.push_back(cam->simulation.calib);
 		LOG(LDefault, LInfo, "Loaded %d simulated calibrations:\n", (int)testingCalibrations.size());
 		//DebugCameraParameters(testingCalibrations);
@@ -146,13 +146,16 @@ void StartSimulation(ServerState &state)
 	}
 
 	{ // Align calibrations to simulated calibrations
-		auto calibs = state.pipeline.getCalibs();
-		AlignWithGT(state.pipeline, calibs);
-		AdoptNewCalibrations(state.pipeline, calibs, true);
+		auto camera_lock = state.pipeline.cameras.contextualLock();
+		std::vector<CameraCalib> calibs(camera_lock->size());
+		for (auto &camera : *camera_lock)
+			calibs[camera->index] = camera->calib;
+		AlignWithGT(*camera_lock, calibs);
+		AdoptNewCalibrations(state.pipeline, *camera_lock, calibs, true);
 	}
 
 	// Debug calibrations
-	for (auto &cam : state.pipeline.cameras)
+	for (auto &cam : *state.pipeline.cameras.contextualRLock())
 	{
 		const CameraCalib &tCam = cam->simulation.calib;
 		const CameraCalib &cCam = cam->calib;
@@ -194,7 +197,7 @@ void StopSimulation(ServerState &state)
 
 	IntegrationsCleanup(state.io, state.config);
 
-	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
+	std::unique_lock device_lock(state.deviceMutex); // cameras
 
 	// Reset state
 	state.mode = MODE_None;
@@ -220,8 +223,9 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 	state.mode = MODE_Replay;
 	state.pipeline.isSimulationMode = false;
 
+	std::unique_lock device_lock(state.deviceMutex); // cameras
+
 	{ // Setup cameras
-		std::unique_lock dev_lock(state.deviceAccessMutex); // cameras 
 		for (auto cam : cameras)
 		{
 			EnsureCamera(state, cam.ID);
@@ -243,19 +247,16 @@ void StartReplay(ServerState &state, std::vector<CameraConfigRecord> cameras)
 
 	{ // Log testing calibrations
 		ScopedLogLevel scopedLogLevelInfo(LInfo);
-		std::vector<CameraCalib> testingCalibrations;
-		for (auto &cam : state.pipeline.cameras)
-			testingCalibrations.push_back(cam->simulation.calib);
-		LOG(LDefault, LInfo, "Loaded %d simulated calibrations:\n", (int)testingCalibrations.size());
-		//DebugCameraParameters(testingCalibrations);
+		std::vector<CameraCalib> calibrations;
 		std::vector<CameraMode> modes;
-		modes.reserve(testingCalibrations.size());
-		for (auto &calib : testingCalibrations)
-		{ // Real one not needed for debugging
-			modes.push_back(CameraMode(1280, 800));
-			//modes.push_back(getCameraMode(state, calib.id));
+		for (auto &cam : *state.pipeline.cameras.contextualRLock())
+		{
+			calibrations.push_back(cam->simulation.calib.valid()? cam->simulation.calib : cam->calib);
+			modes.push_back(cam->mode);
 		}
-		DebugSpecificCameraParameters(testingCalibrations, modes);
+		LOG(LDefault, LInfo, "Loaded %d calibrations for replay:\n", (int)calibrations.size());
+		//DebugCameraParameters(calibrations);
+		DebugSpecificCameraParameters(calibrations, modes);
 	}
 
 	// Start replay thread
@@ -280,7 +281,7 @@ void StopReplay(ServerState &state)
 
 	IntegrationsCleanup(state.io, state.config);
 
-	std::scoped_lock dev_lock(state.deviceAccessMutex, state.pipeline.pipelineLock);
+	std::unique_lock device_lock(state.deviceMutex); // cameras
 
 	// Reset state
 	state.mode = MODE_None;
@@ -409,9 +410,8 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 
 		uint64_t desiredFrameIntervalUS = 1000000 / state.controllerConfig.framerate;
 
-		std::unique_lock pipeline_lock(pipeline.pipelineLock); // for frameNum/GenerateSimulationData
 		std::shared_ptr<FrameRecord> frameRecord = nullptr;
-		std::size_t frame = pipeline.frameNum+1;
+		std::size_t frame = pipeline.frameNum.load()+1;
 		if (state.mode == MODE_Simulation)
 		{
 			frameRecord = std::make_shared<FrameRecord>();
@@ -548,7 +548,6 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 		if (!frameRecord)
 		{
 			UpdatePipelineStatus(state.pipeline);
-			pipeline_lock.unlock();
 			IntegrationsUpdate(state.io, state); // Send camera positions and manager exposed trackers
 			IntegrationsReceive(state.io, state); // Keep I/O connections alive
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -577,39 +576,35 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 		if (!pipeline.record.frames.insert(frame, frameRecord)) // new shared_ptr
 		{ // Should not happen unless frameRecords culling is incorrectly used in replay mode
 			UpdatePipelineStatus(state.pipeline);
-			pipeline_lock.unlock();
 			std::this_thread::sleep_for(std::chrono::microseconds(desiredFrameIntervalUS));
 			continue;
 		}
-		pipeline_lock.unlock();
 
 		if (!state.isStreaming || stop_token.stop_requested())
 			continue;
 
 		auto frameReceiveTime = sclock::now();
 
+		IntegrationsUpdate(state.io, state);
+		IntegrationsReceive(state.io, state);
+
+		state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored;
+
+		ProcessFrame(pipeline, frameRecord); // new shared_ptr
+
+		if (state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored)
 		{
-			IntegrationsUpdate(state.io, state);
-			IntegrationsReceive(state.io, state);
-
-			state.pipeline.params.detect.suspendDetections = state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored;
-
-			ProcessFrame(pipeline, frameRecord); // new shared_ptr
-
-			if (state.mode == MODE_Replay && state.sideline.copyDetectionsFromStored)
+			auto framesStored = state.sideline.record.frames.getView();
+			if (frameRecord->num < framesStored.size() && framesStored[frameRecord->num])
 			{
-				auto framesStored = state.sideline.record.frames.getView();
-				if (frameRecord->num < framesStored.size() && framesStored[frameRecord->num])
-				{
-					copyDetectionFromStoredRecord(framesStored[frameRecord->num], frameRecord);
-				}
+				copyDetectionFromStoredRecord(framesStored[frameRecord->num], frameRecord);
 			}
-
-			IntegrationsSendFrame(state.io, state, frameRecord);
-
-			SignalCameraRefresh(0);
-			SignalPipelineUpdate();
 		}
+
+		IntegrationsSendFrame(state.io, state, frameRecord);
+
+		SignalCameraRefresh(0);
+		SignalPipelineUpdate();
 
 		{ // Special cases for advancing
 			int count = state.sideline.advance.mode;

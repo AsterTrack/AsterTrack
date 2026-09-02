@@ -253,8 +253,9 @@ void InterfaceState::UpdateUI()
 		}
 	}
 
-	// This is purely to protect the lists state.camera and state.controller
-	std::shared_lock dev_lock(GetState().deviceAccessMutex);
+	// This protect the lists state.camera and state.controller, and implicitly pipeline.cameras
+	// Essentially preventing camera devices from being added while UI does not expect it
+	std::shared_lock device_lock(GetState().deviceMutex);
 
 	GeneralInput();
 
@@ -281,6 +282,8 @@ void InterfaceState::UpdateUI()
 		 	viewIt.second.detachedIndex = -1;
 	}
 
+	device_lock.unlock();
+
 	static bool handlingErrors = false;
 	if (!handlingErrors && !GetState().errors.empty())
 	{
@@ -306,8 +309,6 @@ void InterfaceState::UpdateUI()
 		GetState().errors.pop();
 		handlingErrors = false;
 	}
-
-	dev_lock.unlock();
 
 	ImGui::PopFont();
 

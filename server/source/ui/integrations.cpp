@@ -78,7 +78,7 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 		}
 		if (vrpnEnabled)
 		{
-			auto io_lock = std::unique_lock(state.io.mutex);
+			std::unique_lock io_lock(state.io.mutex);
 
 			if (!state.io.vrpn.server->connected())
 				ImGui::Text("'%s': No clients connected.", state.io.vrpn.host.c_str());
@@ -132,7 +132,7 @@ void InterfaceState::UpdateIntegrations(InterfaceWindow &window)
 
 		if (vmcEnabled)
 		{
-			auto io_lock = std::unique_lock(state.io.mutex);
+			std::unique_lock io_lock(state.io.mutex);
 
 			if (!vmc_is_opened(state.io.vmc.output))
 				ImGui::Text("Trying to open port '%s'...", state.io.vmc.host.c_str());

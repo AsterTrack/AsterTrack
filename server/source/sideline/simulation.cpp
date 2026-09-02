@@ -76,9 +76,9 @@ TargetCalibration3D LineCalibMarker({
 
 /* Functions */
 
-static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState &pipeline);
-static Eigen::Vector3f centeringForce(const PipelineState &pipeline, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly);
-static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object);
+static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState::CameraList &cameras);
+static Eigen::Vector3f centeringForce(const PipelineState::CameraList &cameras, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly);
+static Eigen::Isometry3f generateFluidPose(const PipelineState::CameraList &cameras, SimulatedObject &object);
 
 static Eigen::Vector2f generateNoise(const SimProjectionParameters &params);
 
@@ -94,11 +94,13 @@ static void createTargetProjection(std::vector<Eigen::Vector2f> &points2D, std::
 
 std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, FrameRecord &frameState)
 {
-	ScopedLogCategory optLogCategory(LSimulation);
+	std::unique_lock processing_lock(pipeline.processingMutex);
+	auto camera_lock = pipeline.cameras.contextualRLock();
 	auto simLock = pipeline.simulation.contextualLock();
 	SimulationState &simulation = *simLock;
+	ScopedLogCategory optLogCategory(LSimulation);
 
-	frameState.cameras.resize(pipeline.cameras.size());
+	frameState.cameras.resize(camera_lock->size());
 
 	LOGC(LDebug, "Generating points for frame %" PRIu64 ":\n", frameState.num);
 
@@ -115,7 +117,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 		simulation.points.resize(params.pointCount);
 		for (int i = oldCount; i < params.pointCount; i++)
 		{
-			simulation.points[i].pos = genPoseInTrackingSpace(pipeline).translation();
+			simulation.points[i].pos = genPoseInTrackingSpace(*camera_lock).translation();
 			simulation.points[i].vel.setZero();
 			simulation.points[i].lostCounter = 1000;
 			simulation.points[i].id = -1;
@@ -133,7 +135,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 				pt.acc += diff.cwiseSquare().cwiseMax(szSquared).cwiseInverse().cwiseProduct(diff.cwiseSign());
 			}
 			pt.acc *= params.pointAttraction;
-			pt.acc += centeringForce(pipeline, pt.pos, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
+			pt.acc += centeringForce(*camera_lock, pt.pos, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
 		}
 		for (auto &pt : simulation.points)
 		{
@@ -145,7 +147,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 		std::vector<std::array<int,2>> triSamples(simulation.points.size());
 		std::map<int,int> mergeMap;
 		std::vector<int> obsStatus, markerMap;
-		for (auto &cam : pipeline.cameras)
+		for (auto &cam : *camera_lock)
 		{
 			if (cam->disabled) continue;
 
@@ -234,7 +236,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 		// ----- Generate new pose -----
 
 		Eigen::Isometry3f oldPose = object.pose;
-		object.pose = generateFluidPose(pipeline, object);
+		object.pose = generateFluidPose(*camera_lock, object);
 		//if (object.logPose)
 		{
 			Eigen::Quaternionf quat(object.internalMotionState.RGT);
@@ -258,13 +260,13 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 		tracker.pose.observed = object.pose;
 		tracker.match2D = ptr::make_value<TargetMatch2D>();
 		tracker.match2D->pose = object.pose;
-		tracker.match2D->points2D.resize(pipeline.cameras.size());
+		tracker.match2D->points2D.resize(camera_lock->size());
 
 		std::vector<int> markerObsCount;
 		if (recordPoints)
 			markerObsCount.resize(object.target.markers.size());
 
-		for (auto &cam : pipeline.cameras)
+		for (auto &cam : *camera_lock)
 		{
 			if (cam->disabled) continue;
 
@@ -337,10 +339,10 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 			LOGC(LTrace, "Recording GT triangulations:\n");
 
 			// Setup interfacing structures (reused for all points)
-			std::vector<std::vector<Eigen::Vector2f>> blobContainer(pipeline.cameras.size());
-			std::vector<std::vector<Eigen::Vector2f> const *> points2D(pipeline.cameras.size());
-			std::vector<CameraCalib> calibs(pipeline.cameras.size());
-			for (auto &cam : pipeline.cameras)
+			std::vector<std::vector<Eigen::Vector2f>> blobContainer(camera_lock->size());
+			std::vector<std::vector<Eigen::Vector2f> const *> points2D(camera_lock->size());
+			std::vector<CameraCalib> calibs(camera_lock->size());
+			for (auto &cam : *camera_lock)
 			{
 				blobContainer[cam->index].resize(1); // Used to store a single blob for each camera involved with a point
 				points2D[cam->index] = &blobContainer[cam->index];
@@ -356,7 +358,7 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
 
 				// Triangulate the point to double check
 				triPoint.samples.clear();
-				for (auto &cam : pipeline.cameras)
+				for (auto &cam : *camera_lock)
 				{
 					auto &record = frameState.cameras[cam->index];
 					for (int j = 0; j < record.simulation.points2GTMarker.size(); j++)
@@ -394,8 +396,10 @@ std::shared_ptr<FrameRecord> GenerateSimulationData(PipelineState &pipeline, Fra
  */
 void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame, const std::vector<TrackerRecord> &trackers)
 {
+	auto camera_lock = pipeline.cameras.contextualRLock();
 	auto sim_lock = pipeline.simulation.contextualRLock();
 	const SimulationState &simulation = *sim_lock;
+	const auto cameras = *camera_lock;
 	const ReplaceParameters &params = simulation.replaceParams;
 	// For temporarily showing original observations (e.g. to interactively compare)
 	if (params.suspendReplacing) return;
@@ -425,10 +429,10 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 
 		for (int c = 0; c < frame.cameras.size(); c++)
 		{
-			if (pipeline.cameras[c]->disabled) continue;
+			if (cameras[c]->disabled) continue;
 			auto &camRec = frame.cameras[c];
 			auto &camRep = cameraReplace[c];
-			CameraCalib calib = pipeline.cameras[c]->calib;
+			CameraCalib calib = cameras[c]->calib;
 			Eigen::Isometry3f mv = calib.view.cast<float>() * record.pose.observed;
 			float targetDist = (record.pose.observed.translation() - calib.transform.translation().cast<float>()).norm();
 			float paramScale = 5.0f / targetDist;
@@ -478,7 +482,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 			std::vector<int> markerMap;
 			std::map<int,int> mergeMap;
 			createTargetProjection(camRep.rawPoints2D, camRep.properties, mergeMap, markerMap,
-				replace.tgtCalib, calib, pipeline.cameras[c]->mode, record.pose.observed, simulation.projectionParams);
+				replace.tgtCalib, calib, cameras[c]->mode, record.pose.observed, simulation.projectionParams);
 			applyMergeMap(camRep.rawPoints2D, camRep.properties, mergeMap, markerMap);
 			int replacePoints = camRep.rawPoints2D.size() - preIndex;
 
@@ -508,7 +512,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 
 	for (int c = 0; c < frame.cameras.size(); c++)
 	{
-		if (pipeline.cameras[c]->disabled) continue;
+		if (cameras[c]->disabled) continue;
 		auto &camRec = frame.cameras[c];
 		auto &camRep = cameraReplace[c];
 
@@ -523,7 +527,7 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 				pp++;
 			}
 			LOGC(LDebug, "Camera %u: %d/%d observations remain, with %d newly projected!",
-				pipeline.cameras[c]->calib.id, pp, (int)camRec.rawPoints2D.size(), (int)camRep.rawPoints2D.size());
+				cameras[c]->calib.id, pp, (int)camRec.rawPoints2D.size(), (int)camRep.rawPoints2D.size());
 			camRec.rawPoints2D.resize(pp);
 			camRec.properties.resize(pp);
 			camRec.points2D.clear();
@@ -540,11 +544,11 @@ void ReplaceTargetObservations(const PipelineState &pipeline, FrameRecord &frame
 	}
 }
 
-static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState &pipeline)
+static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState::CameraList &cameras)
 {
 	// Min forced on the groundplane
 	Eigen::Vector3f min = Eigen::Vector3f::Zero(), max = Eigen::Vector3f::Zero();
-	for (const auto &cam : pipeline.cameras)
+	for (const auto &cam : cameras)
 	{
 		if (cam->disabled) continue;
 		min = min.array().min(cam->simulation.calib.transform.translation().cast<float>().array());
@@ -565,14 +569,14 @@ static Eigen::Isometry3f genPoseInTrackingSpace(const PipelineState &pipeline)
 	return pose;
 }
 
-static Eigen::Vector3f centeringForce(const PipelineState &pipeline, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly)
+static Eigen::Vector3f centeringForce(const PipelineState::CameraList &cameras, Eigen::Vector3f pos, float centerAttenuation, float centerForce, bool correctiveOnly)
 {
 	auto attenuate = [](float val, float att){
 		att = std::pow(std::abs(val), att);
 		return val < 0? -att : att;
 	};
 	Eigen::Vector3f force = Eigen::Vector3f::Zero();
-	for (const auto &cam : pipeline.cameras)
+	for (const auto &cam : cameras)
 	{
 		if (cam->disabled) continue;
 		// Calculate corrective target position in 2D camera view
@@ -603,7 +607,7 @@ static Eigen::Vector3f centeringForce(const PipelineState &pipeline, Eigen::Vect
 	return force;
 }
 
-static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, SimulatedObject &object)
+static Eigen::Isometry3f generateFluidPose(const PipelineState::CameraList &cameras, SimulatedObject &object)
 {
 	auto &motion = object.internalMotionState;
 	auto &params = motionPresets[object.motionPreset];
@@ -624,7 +628,7 @@ static Eigen::Isometry3f generateFluidPose(const PipelineState &pipeline, Simula
 	motion.TA -= motion.TD * params.slowT;
 	motion.RA -= motion.RD * params.slowR;
 	// Move towards center
-	motion.TA += centeringForce(pipeline, motion.TGT, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
+	motion.TA += centeringForce(cameras, motion.TGT, params.centerAttenuation, params.centerForce, params.centerCorrectOnly);
 	// Apply
 	motion.TGT += motion.TD+motion.TA/2;
 	motion.RGT = motion.RGT * getRotationXYZ(motion.RD+motion.RA/2);;

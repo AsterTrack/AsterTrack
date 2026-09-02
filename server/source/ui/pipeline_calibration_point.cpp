@@ -37,7 +37,12 @@ void InterfaceState::UpdatePipelineCalibSection()
 	BeginSection("Camera Calibration");
 	{
 		const auto &ptCalib = pipeline.pointCalib;
-		float PixelFactor = (pipeline.cameras.empty()? 1280 : pipeline.cameras.front()->mode.widthPx)/2.0f; // For external logging, already dynamic
+		float DynPixelFactor = PixelFactor;
+		{ // For external logging, so try to use real pixel size
+			auto camera_lock = pipeline.cameras.contextualRLock();
+			if (!camera_lock->empty())
+				DynPixelFactor = camera_lock->front()->mode.widthPx / 2.0f;
+		}
 		ImGui::AlignTextToFramePadding();
 		if (ptCalib.control && ptCalib.control->running() && ptCalib.state)
 		{
@@ -49,9 +54,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 			else if (ptCalib.settings.typeFlags & 0b010)
 			{
 				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*PixelFactor,
-					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor,
+					errors.mean*DynPixelFactor,
+					errors.stdDev*DynPixelFactor,
+					errors.max*DynPixelFactor,
 					errors.num);
 			}
 		}
@@ -62,17 +67,17 @@ void InterfaceState::UpdatePipelineCalibSection()
 			{
 				ImGui::TextUnformatted("Calibration is numerically unstable!");
 				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*PixelFactor,
-					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor,
+					errors.mean*DynPixelFactor,
+					errors.stdDev*DynPixelFactor,
+					errors.max*DynPixelFactor,
 					errors.num);
 			}
 			else
 			{
 				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*PixelFactor,
-					errors.stdDev*PixelFactor,
-					errors.max*PixelFactor,
+					errors.mean*DynPixelFactor,
+					errors.stdDev*DynPixelFactor,
+					errors.max*DynPixelFactor,
 					errors.num);
 			}
 		}
@@ -106,9 +111,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 	{
 		if (ImGui::Button("Reset##Calibration", ButtonSize))
 		{
+			int cameraCount;
 			{
-				std::unique_lock pipeline_lock(pipeline.pipelineLock);
-				for (auto &cam : pipeline.cameras)
+				auto camera_lock = pipeline.cameras.contextualRLock();
+				cameraCount = camera_lock->size();
+				for (auto &cam : *camera_lock)
 				{
 					if (state.defaultLens > 0)
 						cam->calib = CameraCalib(state.lensPresets[state.defaultLens]);
@@ -120,7 +127,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 			pipeline.pointCalib.roomState.lastTransferError = std::nullopt;
 			pipeline.pointCalib.roomState.unchangedCameras.clear();
 
-			pipeline.calibration.contextualLock()->init(pipeline.cameras.size());
+			pipeline.calibration.contextualLock()->init(cameraCount);
 			UpdateCalibrations();
 			UpdateCalibrationError(true);
 			// TODO: This implies resetting can delete an existing calibration on saving, which it does not
@@ -162,10 +169,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 			else
 			{
 				state.cameraCalibsDirty = false;
-				AdoptNewCalibrations(state.pipeline, state.cameraCalibrations, true);
 				{
+					auto camera_lock = pipeline.cameras.contextualLock();
+					AdoptNewCalibrations(state.pipeline, *camera_lock, state.cameraCalibrations, true);
 					auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::rlock(pipeline.seqDatabase));
-					UpdateCalibrationRelations(pipeline, *std::get<0>(lock), *std::get<1>(lock));
+					UpdateCalibrationRelations(*std::get<0>(lock), pipeline.sequenceParams, *camera_lock, *std::get<1>(lock));
 				}
 
 				UpdateCalibrations();
@@ -185,7 +193,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 			ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 5);
 			ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthStretch, 5);
 
-			for (auto &camera : pipeline.cameras)
+			for (auto &camera : *pipeline.cameras.contextualLock())
 			{
 				auto &calib = camera->calib;
 				ImGui::PushID(camera->id);
@@ -404,7 +412,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 					if (RetryButton("Refetch"))
 					{
 						int num = 0;
-						for (auto &camera : pipeline.cameras)
+						for (auto &camera : *pipeline.cameras.contextualRLock())
 							if (camera->calib.lensID == lens.id)
 								num++;
 						if (num > 0)
@@ -413,7 +421,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 							lens.k1 = 0;
 							lens.k2 = 0;
 							lens.k3 = 0;
-							for (auto &camera : pipeline.cameras)
+							for (auto &camera : *pipeline.cameras.contextualRLock())
 							{
 								if (camera->calib.lensID != lens.id) continue;
 								lens.f += camera->calib.f;
@@ -518,7 +526,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 		std::string obsPath = asprintf_s(obsPathFmt.c_str(), findLastFileEnumeration(obsPathFmt)+1);
 		// Copy camera ids
 		std::vector<CameraID> cameraIDs;
-		for (auto &cam : pipeline.cameras)
+		for (auto &cam : *pipeline.cameras.contextualRLock())
 			cameraIDs.push_back(cam->id);
 		// Write to path
 		auto error = dumpSequenceDatabase(obsPath, *pipeline.seqDatabase.contextualRLock(), cameraIDs);
@@ -540,23 +548,18 @@ void InterfaceState::UpdatePipelineObservationSection()
 				SignalErrorToUser(error.value());
 			else
 			{
-				bool valid = cameraIDs.size() == pipeline.cameras.size();
-				if (valid)
+				bool valid;
 				{
+					auto camera_lock = pipeline.cameras.contextualRLock();
+					valid = cameraIDs.size() == camera_lock->size();
 					std::vector<int> camMap(cameraIDs.size(), -1);
-					for (auto &cam : pipeline.cameras)
+					for (int c = 0; c < cameraIDs.size(); c++)
 					{
-						bool found = false;
-						for (int c = 0; c < cameraIDs.size(); c++)
-						{
+						if (!valid) break;
+						for (auto &cam : *camera_lock)
 							if (cameraIDs[c] == cam->id)
-							{
 								camMap[c] = cam->index;
-								found = true;
-								break;
-							}
-						}
-						if (!found) valid = false;
+						if (camMap[c] < 0) valid = false;
 					}
 
 					for (int c = 0; c < cameraIDs.size(); c++)
@@ -568,9 +571,9 @@ void InterfaceState::UpdatePipelineObservationSection()
 					{ // Re-order cameras for all observations
 						for (auto &marker : observations.markers)
 						{
-							std::vector<CameraSequences> camObs(pipeline.cameras.size());
+							std::vector<CameraSequences> camObs(camMap.size());
 							for (int c = 0; c < marker.cameras.size(); c++)
-								camObs[camMap[c]] = std::move(marker.cameras[c]);
+								camObs[camMap.at(c)] = std::move(marker.cameras[c]);
 							marker.cameras = std::move(camObs);
 						}
 					}
@@ -580,7 +583,7 @@ void InterfaceState::UpdatePipelineObservationSection()
 					LOG(LGUI, LDebug, "== Loaded calibration samples from '%s'!", obsPath.c_str());
 					if (observations.markers.empty())
 						SignalErrorToUser("Failed to load any samples from file!");
-					UpdateCalibrationRelations(pipeline, *pipeline.calibration.contextualLock(), observations);
+					UpdateCalibrationRelations(*pipeline.calibration.contextualLock(), pipeline.sequenceParams, *pipeline.cameras.contextualRLock(), observations);
 					*pipeline.seqDatabase.contextualLock() = std::move(observations);
 					UpdateSequences(true);
 				}
@@ -600,9 +603,12 @@ void InterfaceState::UpdatePipelineObservationSection()
 		{
 			visState.observations.savedObs.push_back({});
 			auto &obsCmp = visState.observations.savedObs.back();
-			obsCmp.visPoints.resize(pipeline.cameras.size());
-			for (auto &cam : pipeline.cameras)
-				obsCmp.visPoints[cam->index] = cameraViews.at(cam->id).vis.observations.ptsStable;
+			{
+				auto camera_lock = state.pipeline.cameras.contextualRLock();
+				obsCmp.visPoints.resize(camera_lock->size());
+				for (auto &cam : *camera_lock)
+					obsCmp.visPoints[cam->index] = cameraViews.at(cam->id).vis.observations.ptsStable;
+			}
 			auto obs_lock = pipeline.seqDatabase.contextualRLock();
 			obsCmp.markerCount = obs_lock->markers.size();
 			obsCmp.obsCount = 0;
@@ -715,11 +721,11 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 	else
 	{
-		auto getUniqueLenses = [&]()
+		auto getUniqueLenses = [&](auto &camera_lock)
 		{
-			int camUniqueLenses = pipeline.cameras.size();
+			int camUniqueLenses = camera_lock->size();
 			std::set<int> lenses;
-			for (auto &camera : pipeline.cameras)
+			for (auto &camera : *camera_lock)
 			{
 				if (camera->calib.lensID >= 0 && !lenses.insert(camera->calib.lensID).second)
 					camUniqueLenses--; // Remove duplicates
@@ -728,7 +734,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 		};
 		if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
 		{
-			if (pipeline.cameras.size() < 3)
+			if (state.pipeline.cameras.contextualRLock()->size() < 3)
 				ImGui::OpenPopup("RecConfirm");
 			else
 			 	startCalibration(0b01);
@@ -737,7 +743,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 			"It is an important first step in calibration, but it cannot determine non-linear parameters like lens-distortion, and so errors may be relatively high.");
 		if (ImGui::BeginPopup("RecConfirm"))
 		{
-			ImGui::Text("You have only %d cameras connected, with %d unique lenses.", (int)pipeline.cameras.size(), getUniqueLenses());
+			auto camera_lock = state.pipeline.cameras.contextualRLock();
+			ImGui::Text("You have only %d cameras connected, with %d unique lenses.", (int)camera_lock->size(), getUniqueLenses(camera_lock));
 			ImGui::TextUnformatted("For a fully constrained system, you need at least 3 cameras.\n"
 				"If all cameras use the same lens, you may be able to use just 2 cameras.\n"
 				"In that case, select the same Lens for both cameras in the Camera List above.");
@@ -754,12 +761,12 @@ void InterfaceState::UpdatePipelinePointCalib()
 	
 		ImGui::SameLine();
 
-		auto getUnknownLenses = [&]()
+		auto getUnknownLenses = [&](auto &camera_lock)
 		{
 			int camUnknownLenses = 0;
 			if (ptCalib.settings.options.sharedRadial)
 			{
-				for (auto &camera : pipeline.cameras)
+				for (auto &camera : *camera_lock)
 					if (camera->calib.lensID < 0)
 						camUnknownLenses++;
 			}
@@ -767,7 +774,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 		};
 		if (ImGui::Button("Optimise", SizeWidthDiv2()))
 		{
-			if (getUnknownLenses() > 1 && ptCalib.settings.options.radial && ptCalib.settings.options.sharedRadial)
+			auto camera_lock = state.pipeline.cameras.contextualRLock();
+			if (getUnknownLenses(camera_lock) > 1 && ptCalib.settings.options.radial && ptCalib.settings.options.sharedRadial)
 				ImGui::OpenPopup("OptConfirm");
 			else
 			 	startCalibration(0b10);
@@ -776,7 +784,8 @@ void InterfaceState::UpdatePipelinePointCalib()
 			"Required to determine non-linear parameters like lens-distortion.");
 		if (ImGui::BeginPopup("OptConfirm"))
 		{
-			ImGui::Text("%d/%d cameras don't have their lenses configured.", getUnknownLenses(), (int)pipeline.cameras.size());
+			auto camera_lock = state.pipeline.cameras.contextualRLock();
+			ImGui::Text("%d/%d cameras don't have their lenses configured.", getUnknownLenses(camera_lock), (int)camera_lock->size());
 			ImGui::TextUnformatted(
 				"The option to share distortion parameters among cameras using the same lens requires this.\n"
 				"You may proceed and cameras without a lens assigned will be assumed to have a unique lens.");
@@ -949,62 +958,56 @@ void InterfaceState::UpdatePipelinePointCalib()
 	ScalarInput<float>("Floor Height", "mm", &floorHeight, -5000.0f, 5000.0f, 1, 1000, "%.1f");
 	if (ImGui::Button("Add to Floor", SizeWidthFull()))
 	{
-		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(100));
-		if (pipeline_lock.owns_lock())
+		std::vector<CameraCalib> calibs;
 		{
-			for (auto &camera : pipeline.cameras)
+			for (auto &camera : *pipeline.cameras.contextualLock())
 			{
 				camera->calibBackup = camera->calib;
 				camera->calib.transform.translation().z() += floorHeight;
+				calibs.push_back(camera->calib);
 			}
-
-			// Re-evaluate positions incase calibration changed since observation
-			auto calibs = pipeline.getCalibs();
-			for (auto &point : roomCalib->floorPoints)
-				point.update(calibs);
-
-			SignalCameraCalibUpdate(calibs);
 		}
+
+		// Re-evaluate positions incase calibration changed since observation
+		for (auto &point : roomCalib->floorPoints)
+			point.update(calibs);
+
+		SignalCameraCalibUpdate(calibs);
 	}
 	ImGui::SetItemTooltip("Adjust the height of the floor-plane.");
 
 	if (ImGui::Button("Flip Vertically", SizeWidthFull()))
 	{
-		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(100));
-		if (pipeline_lock.owns_lock())
+		Eigen::Matrix3d orientation = Eigen::Quaterniond::FromTwoVectors(-Eigen::Vector3d::UnitZ(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+		std::vector<CameraCalib> calibs;
+		for (auto &camera : *pipeline.cameras.contextualRLock())
 		{
-			Eigen::Matrix3d orientation = Eigen::Quaterniond::FromTwoVectors(-Eigen::Vector3d::UnitZ(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
-			for (auto &camera : pipeline.cameras)
-			{
-				camera->calibBackup = camera->calib;
-				camera->calib.transform.linear() = orientation * camera->calib.transform.linear();
-				camera->calib.transform.translation() = orientation * camera->calib.transform.translation();
-				camera->calib.UpdateDerived();
-			}
-
-			// Re-evaluate positions incase calibration changed since observation
-			auto calibs = pipeline.getCalibs();
-			for (auto &point : roomCalib->floorPoints)
-				point.update(calibs);
-
-			SignalCameraCalibUpdate(calibs);
+			camera->calibBackup = camera->calib;
+			camera->calib.transform.linear() = orientation * camera->calib.transform.linear();
+			camera->calib.transform.translation() = orientation * camera->calib.transform.translation();
+			camera->calib.UpdateDerived();
+			calibs.push_back(camera->calib);
 		}
+
+		// Re-evaluate positions incase calibration changed since observation
+		for (auto &point : roomCalib->floorPoints)
+			point.update(calibs);
+
+		SignalCameraCalibUpdate(calibs);
 	}
 	ImGui::SetItemTooltip("Flip the cameras vertically if your setup is inverted or the automatic orientation was wrong.");
 
 	if (ImGui::Button("Undo Once", SizeWidthFull()))
 	{ // TODO: Disable this button if floor is not calibrated yet (or a new calibration exists)
 		// Or maybe simple store backups as transforms, and apply transforms (default being Isometry), so no chance of "restoring" a stale calibration exists
-		std::unique_lock pipeline_lock(pipeline.pipelineLock, std::chrono::milliseconds(100));
-		if (pipeline_lock.owns_lock())
+		std::vector<CameraCalib> calibs;
+		for (auto &camera : *pipeline.cameras.contextualRLock())
 		{
-			for (auto &camera : pipeline.cameras)
-			{
-				if (camera->calibBackup.valid())
-					camera->calib = camera->calibBackup;
-			}
-			SignalCameraCalibUpdate(pipeline.getCalibs());
+			if (camera->calibBackup.valid())
+				camera->calib = camera->calibBackup;
+			calibs.push_back(camera->calib);
 		}
+		SignalCameraCalibUpdate(calibs);
 	}
 	ImGui::SetItemTooltip("Restore calibration to backup created before last floor calibration.");
 

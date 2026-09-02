@@ -32,7 +32,7 @@ static bool ensureSequencesSaved(const PipelineState &pipeline, const SequenceDa
 		return true;
 	// Copy camera ids
 	std::vector<CameraID> cameraIDs;
-	for (auto &cam : pipeline.cameras)
+	for (auto &cam : *pipeline.cameras.contextualRLock())
 		cameraIDs.push_back(cam->id);
 	// Write accompanying sequences
 	auto error = dumpSequenceDatabase(temporaryStoreFolder + "/target_calib_sequences.json", sequences, cameraIDs);
@@ -53,23 +53,18 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 			SignalErrorToUser(error.value());
 			return false;
 		}
-		bool valid = cameraIDs.size() == pipeline.cameras.size();
-		if (valid)
+		bool valid;
 		{
+			auto camera_lock = pipeline.cameras.contextualRLock();
+			valid = cameraIDs.size() == camera_lock->size();
 			std::vector<int> camMap(cameraIDs.size(), -1);
-			for (auto &cam : pipeline.cameras)
+			for (int c = 0; c < cameraIDs.size(); c++)
 			{
-				bool found = false;
-				for (int c = 0; c < cameraIDs.size(); c++)
-				{
+				if (!valid) break;
+				for (auto &cam : *camera_lock)
 					if (cameraIDs[c] == cam->id)
-					{
 						camMap[c] = cam->index;
-						found = true;
-						break;
-					}
-				}
-				if (!found) valid = false;
+				if (camMap[c] < 0) valid = false;
 			}
 		}
 		if (!valid)
@@ -82,7 +77,7 @@ static bool checkSequencesLoad(PipelineState &pipeline, SequenceData &sequences)
 		if (GetState().mode == MODE_Replay && pipeline.frameNum == -1)
 		{ // Automatically load stored frames into current record if we haven't already started playback
 			ServerState &state = GetState();
-			std::unique_lock pipeline_lock(pipeline.pipelineLock);
+			std::unique_lock processing_lock(pipeline.processingMutex);
 			auto storedFrames = state.sideline.record.frames.getView();
 			LOG(LTargetCalib, LInfo, "Automatically 'replaying' %d stored frames for loaded data!", (int)storedFrames.size());
 			state.sideline.recording.replayTime = sclock::now();
@@ -921,11 +916,12 @@ void InterfaceState::UpdatePipelineTargetCalib()
 			if (ImGui::Button("Subsample Data", SizeWidthDiv2()))
 			{
 				assert(!assembly.planned && !assembly.control);
+				auto calibs = pipeline.getCalibs();
 				auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock();
 				TargetAssemblyBase base = stages_lock->back()->base;
 				base.target = subsampleTargetObservations(pipeline.record.frames, base.target, pipeline.targetCalib.params.assembly.subsampling);
-				base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-				updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
+				base.errors = getTargetErrorDist(calibs, base.target);
+				updateAssemblyTargetCalib(base, calibs, pipeline.targetCalib.params.post);
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Subsampled"));
 			}
 			ImGui::SetItemTooltip("Subsample current target data for all followup stages to reduce computation times.");
@@ -970,7 +966,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 				base.errors = getTargetErrorDist(calibs, base.target);
 				determineTargetOutliers(calibs, base.target, SigmaToErrors(pipeline.targetCalib.params.assembly.outlierSigmas, base.errors), pipeline.targetCalib.params.aquisition);
 				base.errors = getTargetErrorDist(calibs, base.target);
-				updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
+				updateAssemblyTargetCalib(base, calibs, pipeline.targetCalib.params.post);
 				stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_EDITED, 1, "Added outliers"));
 			}
 			ImGui::SetItemTooltip("Determine new outlier samples and remove them from the current target data.");
@@ -1035,6 +1031,7 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					auto error = parseTargetAssemblyStage(obsPath, base);
 					if (error) SignalErrorToUser(error.value());
 					if (error) return saveLoadStage = false;
+					auto calibs = pipeline.getCalibs();
 					auto stages_lock = pipeline.targetCalib.assemblyStages.contextualLock(); 
 					stages_lock->clear();
 					GetUI().visState.targetCalib.stage = nullptr;
@@ -1043,8 +1040,8 @@ void InterfaceState::UpdatePipelineTargetCalib()
 					pipeline.targetCalib.assignedTrackerID = base.assignedTrackerID;
 					auto obs_lock = pipeline.seqDatabase.contextualRLock();
 					updateTargetObservations(base.target, obs_lock->markers);
-					base.errors = getTargetErrorDist(pipeline.getCalibs(), base.target);
-					updateAssemblyTargetCalib(base, pipeline.getCalibs(), pipeline.targetCalib.params.post);
+					base.errors = getTargetErrorDist(calibs, base.target);
+					updateAssemblyTargetCalib(base, calibs, pipeline.targetCalib.params.post);
 					stages_lock->push_back(std::make_shared<TargetAssemblyStage>(std::move(base), STAGE_LOADED, 1, "Loaded"));
 					return saveLoadStage = false;
 				});

@@ -110,7 +110,7 @@ int DetectNewControllers(ServerState &state)
 
 void DisconnectController(ServerState &state, TrackingControllerState &controller)
 {
-	std::unique_lock dev_lock(state.deviceAccessMutex); // controllers, controller.cameras
+	std::unique_lock device_lock(state.deviceMutex); // controllers, controller.cameras
 
 	// Clean up cameras if they are now unconnected
 	for (int c = 0; c < controller.cameras.size(); c++)
@@ -270,7 +270,7 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 		int endpoint;
 	} packetState = { &state, &controller, receiveTime, endpoint };
 
-	// TODO: This is not properly synchronised/secured, deviceAccessMutex is not even locked
+	// TODO: This is not properly synchronised/secured, deviceMutex is not even locked
 	// Consider at least copying shared_ptr of camera
 
 	// Each USB frame contains multiple blocks of data from multiple ports
@@ -413,7 +413,6 @@ static void ReadUSBPacket(ServerState &state, TrackingControllerState &controlle
 static void onControlResponse(uint8_t request, uint16_t value, uint16_t index, uint8_t *data,
 	int length, void *userState, std::shared_ptr<void> &userDevice, bool success)
 {
-	// TODO: Do shared_ptr to ensure it's still here - it may not be
 	TrackingControllerState &controller = *static_cast<TrackingControllerState*>(userDevice.get());
 	ServerState &state = *(ServerState *)userState;
 	auto clearControlRequest = [&](TrackingControllerState::USBRequest &request, const char* label)
@@ -518,9 +517,9 @@ static void onUSBPacketIN(uint8_t *data, int length, TimePoint_t receiveTime, ui
 		return;
 	}
 
-	// No need to lock state.deviceAccessMutex, TrackingControllerState is guaranteed to still exist, before destruction comm is cleaned up properly
+	// No need to lock state.deviceMutex, TrackingControllerState is guaranteed to still exist, before destruction comm is cleaned up properly
 	// Make sure cameras are only destroyed well after any transfers might reference them - or copy shared_ptr when accessing them here
-	//std::shared_lock dev_lock(state.deviceAccessMutex);
+	//std::shared_lock device_lock(state.deviceMutex);
 	// TODO: Properly replace all those random mutexes (deviceAccess, pipeline) with Synchronised constructs where necessary
 	// Or find another construct that efficiently and easily enforces and protects these relevant states
 	// Currently, there's no major problem, but it's unsustainable

@@ -26,7 +26,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 void IntegrationsInit(IntegrationsState &io, const GeneralConfig &config)
 {
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 	io.vrpn.enabled = config.integrations.vrpn_auto_enable;
 	io.vmc.enabled = config.integrations.vmc_auto_enable;
 	io.lastUpdatedCameras = sclock::now() - std::chrono::seconds(2);
@@ -38,7 +38,7 @@ void IntegrationsInit(IntegrationsState &io, const GeneralConfig &config)
 
 void IntegrationsCleanup(IntegrationsState &io, const GeneralConfig &config)
 {
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 	io.vrpn.enabled = false;
 	io.vmc.enabled = false;
 
@@ -82,7 +82,7 @@ void IntegrationsReconfigureVMC(IntegrationsState &io, const GeneralConfig &conf
 
 void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 { // Gets called regularly while in a mode, even when not streaming
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 
 	// Timestamp for camera position
 	TimePoint_t timestamp = sclock::now();
@@ -111,9 +111,14 @@ void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 					if (io_tracker->second->markedConnected)
 						tracker.connected--;
 					io.vrpn.trackers.erase(io_tracker);
+					// TODO: Possible race condition with tracker being triggered, adding trackerOutput
+					// Protected via processingMutex, but can't safely aquire it with io.mutex locked
+					// Since SignalTrackerTracked (indirectly under processingMutex) may lock io.mutex
 					if (state.trackerOutput.contains(tracker.id))
 						state.trackerOutput[tracker.id].vrpn = nullptr;
+					io_lock.unlock();
 					ServerUpdateTrackerConditions(state, tracker);
+					io_lock.lock();
 				}
 				continue;
 			}
@@ -121,6 +126,9 @@ void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 			{
 				LOG(LIO, LInfo, "Exposing VRPN Tracker '%s'", tracker.label.c_str());
 				auto vrpn_tracker = std::make_shared<vrpn_Tracker_AsterTrack>(tracker.id, tracker.label.c_str(), io.vrpn.server.get());
+				// TODO: Possible race condition with tracker being triggered, adding trackerOutput
+				// Protected via processingMutex, but can't safely aquire it with io.mutex locked
+				// Since SignalTrackerTracked (indirectly under processingMutex) may lock io.mutex
 				if (state.trackerOutput.contains(tracker.id))
 					state.trackerOutput[tracker.id].vrpn = vrpn_tracker;
 				io_tracker = io.vrpn.trackers.insert({ tracker.id, std::move(vrpn_tracker) }).first;
@@ -130,21 +138,25 @@ void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 				LOG(LIO, LInfo, "VRPN Tracker '%s' has been connected!", tracker.label.c_str());
 				io_tracker->second->markedConnected = true;
 				tracker.connected++;
+				io_lock.unlock();
 				ServerUpdateTrackerConditions(state, tracker);
+				io_lock.lock();
 			}
 			else if (io_tracker->second->markedConnected && !io_tracker->second->isConnected())
 			{
 				LOG(LIO, LInfo, "VRPN Tracker '%s' has been disconnected!", tracker.label.c_str());
 				io_tracker->second->markedConnected = false;
 				tracker.connected--;
+				io_lock.unlock();
 				ServerUpdateTrackerConditions(state, tracker);
+				io_lock.lock();
 			}
 		}
 
 		if (updateCameras)
 		{ // Add cameras as trackers to give clients an opportunity to display them as references
 			// TODO: Implement proper custom protocol for meta-information like cameras, single 3D markers, etc.
-			for (const auto &camera : state.pipeline.cameras)
+			for (const auto &camera : *state.pipeline.cameras.contextualRLock())
 			{
 				auto io_tracker = io.vrpn.trackers.find(camera->id);
 				if (io_tracker == io.vrpn.trackers.end())
@@ -171,14 +183,17 @@ void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 		if (updateCameras)
 		{ // Send cameras as trackers to give clients an opportunity to display them as references
 			std::vector<vmc_device> cameras;
-			cameras.reserve(state.pipeline.cameras.size());
-			for (const auto &camera : state.pipeline.cameras)
 			{
-				cameras.emplace_back(VMCRole::Tracker,
-					asprintf_s("AsterTrack_Camera_%d", camera->index),
-					camera->calib.transform.cast<float>(),
-					(float)getEffectiveFoVD(camera->calib, camera->mode)
-				);
+				auto camera_lock = state.pipeline.cameras.contextualRLock();
+				cameras.reserve(camera_lock->size());
+				for (const auto &camera : *camera_lock)
+				{
+					cameras.emplace_back(VMCRole::Tracker,
+						asprintf_s("AsterTrack_Camera_%d", camera->index),
+						camera->calib.transform.cast<float>(),
+						(float)getEffectiveFoVD(camera->calib, camera->mode)
+					);
+				}
 			}
 			vmc_send_device_packets(io.vmc.output, cameras, timestamp, dtS(state.lastStreamingStart, timestamp));
 		}
@@ -187,7 +202,7 @@ void IntegrationsUpdate(IntegrationsState &io, ServerState &state)
 
 void IntegrationsReceive(IntegrationsState &io, const ServerState &state)
 {
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 
 	if (io.vrpn.enabled)
 	{ // Fetch incoming packets
@@ -204,7 +219,7 @@ void IntegrationsSendTracker(IntegrationsState &io, TrackerOutput &tracker, cons
 {
 	if (!io.vrpn.enabled && !io.vmc.enabled) return;
 
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 
 	if (tracker.vrpn && io.vrpn.lowLatencySend)
 	{ // Fast-track output to VRPN
@@ -227,7 +242,7 @@ void IntegrationsSendTracker(IntegrationsState &io, TrackerOutput &tracker, cons
 
 void IntegrationsSendFrame(IntegrationsState &io, ServerState &state, std::shared_ptr<FrameRecord> &frame)
 {
-	auto io_lock = std::unique_lock(io.mutex);
+	std::unique_lock io_lock(io.mutex);
 
 	bool vmc_connected = io.vmc.enabled && vmc_is_opened(io.vmc.output);
 	std::vector<vmc_device> vmc_output;

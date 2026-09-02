@@ -72,7 +72,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 			Color color;
 
 			{ // Get camera from id (to make sure it's still valid)
-				std::shared_lock dev_lock(GetState().deviceAccessMutex); // cameras
+				std::shared_lock device_lock(GetState().deviceMutex); // cameras
 				auto viewIt = GetUI().cameraViews.find(id);
 				if (viewIt == GetUI().cameraViews.end())
 					return; // Just removed, but UI hasn't been updated yet
@@ -289,7 +289,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				Color color;
 
 				{ // Get camera from id (to make sure it's still valid)
-					std::shared_lock dev_lock(GetState().deviceAccessMutex); // controllers
+					std::shared_lock device_lock(GetState().deviceMutex); // controllers
 					auto contIt = std::find_if(GetState().controllers.begin(), GetState().controllers.end(), [&](const auto &c) { return c->id == id; });
 					if (contIt == GetState().controllers.end())
 						return; // Just removed, but UI hasn't been updated yet

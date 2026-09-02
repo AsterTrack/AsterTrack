@@ -982,7 +982,7 @@ static void ThreadTargetAssembly(PipelineState *pipeline, std::shared_ptr<Thread
 		normaliseTarget(*pipeline, base.target, nullptr);
 
 		base.errors = getTargetErrorDist(calibs, base.target);
-		updateAssemblyTargetCalib(base, pipeline->getCalibs(), pipeline->targetCalib.params.post);
+		updateAssemblyTargetCalib(base, calibs, pipeline->targetCalib.params.post);
 		auto stages_lock = pipeline->targetCalib.assemblyStages.contextualLock();
 
 		// Log progress

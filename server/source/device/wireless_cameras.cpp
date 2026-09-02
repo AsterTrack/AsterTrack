@@ -52,8 +52,8 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 	server.callbacks.onIdentify = [](ClientCommState &client) { // Find or setup camera
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		LOG(LServer, LInfo, "Established server connection to camera #%u!\n", client.otherIdent.id);
-		std::unique_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(50));
-		if (!dev_lock.owns_lock())
+		std::unique_lock device_lock(state.deviceMutex, std::chrono::milliseconds(50));
+		if (!device_lock.owns_lock())
 		{ // Likely StopDeviceMode waiting on us to stop thread
 			if (state.mode != MODE_Device)
 				LOG(LServer, LDarn, "Aborted wireless camera connection because we're exiting device mode!\n");
@@ -121,8 +121,8 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		if (!header.isStreamPacket() && header.tag != PACKET_FRAME_SIGNAL)
 			return true;
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
-		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-		if (!dev_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
+		std::shared_lock device_lock(state.deviceMutex, std::chrono::milliseconds(10));
+		if (!device_lock.owns_lock()) return false; // Likely StopDeviceMode waiting on us to stop thread
 		assert(client.callbacks.userData2);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
 		if (!camera.sync)
@@ -161,8 +161,8 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 	server.callbacks.onReceivePacketBlock = [](ClientCommState &client, PacketHeader &header, uint8_t *data, unsigned int len, TimePoint_t receiveTime)
 	{
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
-		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
+		std::shared_lock device_lock(state.deviceMutex, std::chrono::milliseconds(10));
+		if (!device_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
 		assert(client.callbacks.userData2);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
 		if (!camera.sync) return; // Likely removed camera already (possible when halting during debugging)
@@ -180,8 +180,8 @@ void StartWirelessServer(ServerCommState &server, ServerState &state)
 		assert(client.callbacks.userData2);
 		ServerState &state = *((ServerState*)client.callbacks.userData1);
 		TrackingCameraState &camera = *std::static_pointer_cast<TrackingCameraState>(client.callbacks.userData2);
-		std::shared_lock dev_lock(state.deviceAccessMutex, std::chrono::milliseconds(10));
-		if (!dev_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
+		std::shared_lock device_lock(state.deviceMutex, std::chrono::milliseconds(10));
+		if (!device_lock.owns_lock()) return; // Likely StopDeviceMode waiting on us to stop thread
 		if (header.isStreamPacket())
 		{
 			auto cameraFrame = ReadStreamingPacket(camera, header, data, len, erroneous);

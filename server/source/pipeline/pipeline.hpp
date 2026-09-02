@@ -100,19 +100,21 @@ struct CameraPipeline
  */
 struct PipelineState
 {
-	// Lock for any actions conflicting with active frame processing
-	recursive_shared_mutex pipelineLock;
+	// Grants exclusive access to pipeline data involved in frame processing
+	mutable std::timed_mutex processingMutex;
 
 	// Phase describing which parts of the pipeline are active
 	// In the future, this should be controlled by hints (e.g. automatically start calibrating unknown point clusters)
 	std::atomic<enum PipelinePhase> phase = PHASE_Idle;
 
 	// Cameras
-	std::vector<std::shared_ptr<CameraPipeline>> cameras;
+	typedef std::vector<std::shared_ptr<CameraPipeline>> CameraList;
+	SynchronisedS<CameraList> cameras; // Synchronised protects both list (together with deviceMutex) and calibs 
 	inline std::vector<CameraCalib> getCalibs() const
 	{
-		std::vector<CameraCalib> calibs(cameras.size());
-		for (auto &camera : cameras)
+		auto camera_lock = cameras.contextualRLock();
+		std::vector<CameraCalib> calibs(camera_lock->size());
+		for (auto &camera : *camera_lock)
 			calibs[camera->index] = camera->calib;
 		return calibs;
 	}
@@ -197,7 +199,7 @@ struct PipelineState
 		// Room parameters
 		Synchronised<RoomCalib> room;
 		struct
-		{
+		{ // TODO: Add Synchronised?
 			bool knownGoodScale; // TODO: Validate over time by multi-camera tracking with pre-calibrated targets
 			bool knownGoodFloor; // TODO: Validate over time with IMUs
 			std::optional<ErrorMessage> lastTransferError;
@@ -346,7 +348,7 @@ void OrphanIMU(PipelineState &pipeline, std::shared_ptr<IMU> &imu);
  * Optionally copies an existing room calibration from current camera calibrations into the given new calibrations (updating them in the process).
  * This will try to identify at least two cameras that have not changed between the current calibration and this one.
  */
-void AdoptNewCalibrations(PipelineState &pipeline, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib = false);
+void AdoptNewCalibrations(PipelineState &pipeline, PipelineState::CameraList &cameras, std::vector<CameraCalib> &calibs, bool isLoadOrRoomCalib = false);
 
 /**
  * Log the parameters and inferred properties of the camera calibrations
@@ -365,19 +367,19 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 
 void UpdateErrorFromObservations(PipelineState &pipeline, bool errorMaps = true, bool logging = true);
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations);
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const ObsData &observations);
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences);
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const SequenceData &sequences);
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences, int camIndex);
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const SequenceData &sequences, int camIndex);
 
-void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibration &calibration);
+void AssumeCalibrationsValid(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, OptFrameNum frame);
 
 /**
  * Determine affine transformation between current calibration and ground truth from simulation setup
  * and apply it to be able to compare to ground truth
  * Returns remaining errors (positional in mm, angular in degrees)
  */
-std::pair<CVScalar,CVScalar> AlignWithGT(const PipelineState &pipeline, std::vector<CameraCalib> &calibs);
+std::pair<CVScalar,CVScalar> AlignWithGT(const PipelineState::CameraList &cameras, std::vector<CameraCalib> &calibs);
 
 #endif // PIPELINE_H

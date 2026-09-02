@@ -147,16 +147,24 @@ std::optional<Recording> findRecording(int recording)
 
 std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&recordEntries, bool append, bool separate)
 {
-	int prevAdvance = state.sideline.advance.mode;
-	int prevIMUs = state.sideline.record.imus.size(), prevCams = state.pipeline.cameras.size();
+	if (state.mode != MODE_None && !(append && state.mode == MODE_Replay))
+	{
+		LOG(LGUI, LWarn, "Already entered a mode, will not start replay!\n");
+		return "Entered a mode while loading replay!";
+	}
+	int prevAdvance, prevIMUs, prevCams;
 	std::vector<CameraConfigRecord> cameras;
 	if (append)
 	{
+		auto camera_lock = state.pipeline.cameras.contextualRLock();
+		prevAdvance = state.sideline.advance.mode;
+		prevIMUs = state.sideline.record.imus.size();
+		prevCams = camera_lock->size();
 		// Pause replay
 		state.sideline.advance.mode = 0;
 		// Add existing cameras for verification
-		cameras.resize(state.pipeline.cameras.size());
-		for (auto &camera : state.pipeline.cameras)
+		cameras.resize(camera_lock->size());
+		for (auto &camera : *camera_lock)
 			cameras[camera->index] = { camera->id, camera->mode.widthPx, camera->mode.heightPx };
 	}
 	else
@@ -246,15 +254,16 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 				}
 			}
 			{ // Add new cameras
-				std::unique_lock dev_lock(state.deviceAccessMutex); // cameras 
+				std::unique_lock device_lock(state.deviceMutex); // cameras 
 				for (auto cam : cameras)
 					EnsureCamera(state, cam.ID);
 			}
-			// Adopt calibrations for new cameras
-			AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
-			{ // Calculate fundamental matrices from calibration
+			{ // Adopt calibrations for new cameras
+				auto camera_lock = state.pipeline.cameras.contextualLock();
+				AdoptNewCalibrations(state.pipeline, *camera_lock, cameraCalibs, true);
+				// Calculate fundamental matrices from calibration
 				auto lock = folly::detail::lock(folly::detail::wlock(state.pipeline.calibration), folly::detail::rlock(state.pipeline.seqDatabase));
-				UpdateCalibrationRelations(state.pipeline, *std::get<0>(lock), *std::get<1>(lock));
+				UpdateCalibrationRelations(*std::get<0>(lock), state.pipeline.sequenceParams, *camera_lock, *std::get<1>(lock));
 			}
 			SignalServerEvent(EVT_UPDATE_CAMERAS);
 		}
@@ -273,7 +282,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 	StartReplay(state, cameras);
 
 	// Adopt calibrations stored alongside (replacing existing calibrations)
-	AdoptNewCalibrations(state.pipeline, cameraCalibs, true);
+	AdoptNewCalibrations(state.pipeline, *state.pipeline.cameras.contextualLock(), cameraCalibs, true);
 
 	return std::nullopt;
 }

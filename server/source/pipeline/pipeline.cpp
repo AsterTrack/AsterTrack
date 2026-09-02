@@ -33,7 +33,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 void InitPipelineStreaming(PipelineState &pipeline)
 { // Called when starting streaming after ResetPipelineData
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	// Init realtime subsystems
 	InitTrackingPipeline(pipeline);
@@ -41,7 +41,7 @@ void InitPipelineStreaming(PipelineState &pipeline)
 
 void ResetPipelineStreaming(PipelineState &pipeline)
 { // Called when stopping streaming
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	// Reset realtime subsystems
 	ResetTrackingPipeline(pipeline);
@@ -85,13 +85,13 @@ static void DeletePipelineData(PipelineState &pipeline)
 
 static void DeletePipelineSetup(PipelineState &pipeline)
 {
-	pipeline.cameras.clear();
+	pipeline.cameras.contextualLock()->clear();
 	pipeline.record.imus.clear();
 }
 
 void ResetPipelineState(PipelineState &pipeline)
 { // Called when leaving mode
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	// Reset all subsystems
 	ResetTrackingPipeline(pipeline);
@@ -105,7 +105,7 @@ void ResetPipelineState(PipelineState &pipeline)
 
 void ResetPipelineData(PipelineState &pipeline)
 { // Called when starting streaming
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	// Reset all subsystems
 	ResetTrackingPipeline(pipeline);
@@ -121,27 +121,34 @@ void ResetPipelineData(PipelineState &pipeline)
  */
 void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
-
 	// Accumulate cameras to update
 	std::vector<CameraPipeline*> cameras;
 	cameras.reserve(frame->cameras.size());
-	assert(frame->cameras.size() <= pipeline.cameras.size());
+	int fullCameraCount = 0;
 	bool fullyCalibrated = true;
-	for (auto &cam : pipeline.cameras)
 	{
-		if (cam->disabled)
-			continue;
-		if (cam->index >= frame->cameras.size())
-			continue; // May have been added since the frame was recorded
-		auto &record = frame->cameras[cam->index];
-		if (!record.received)
-			continue;
-		if (cam->calib.invalid())
-			fullyCalibrated = false;
-		PreprocessCameraData(cam->calib, record);
-		cameras.push_back(cam.get());
+		auto camera_lock = pipeline.cameras.contextualRLock();
+
+		// Camera may have been added since frame was received, this will only use frame->cameras
+		assert(frame->cameras.size() <= camera_lock->size());
+		fullCameraCount = camera_lock->size();
+
+		for (int c = 0; c < frame->cameras.size(); c++)
+		{
+			auto &cam = (*camera_lock)[c];
+			if (cam->disabled)
+				continue;
+			auto &record = frame->cameras[cam->index];
+			if (!record.received)
+				continue;
+			if (cam->calib.invalid())
+				fullyCalibrated = false;
+			PreprocessCameraData(cam->calib, record);
+			cameras.push_back(cam.get());
+		}
 	}
+
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	if (fullyCalibrated)
 	{
@@ -160,8 +167,8 @@ void ProcessFrame(PipelineState &pipeline, std::shared_ptr<FrameRecord> frame)
 	{ // Recording sequences is desired by point or target calibration
 
 		auto lock = folly::detail::lock(folly::detail::wlock(pipeline.calibration), folly::detail::wlock(pipeline.seqDatabase));
-		std::get<0>(lock)->verifyCameraCount(pipeline.cameras.size()); // Keep camera count up-to-date
-		std::get<1>(lock)->verifyCameraCount(pipeline.cameras.size()); // Keep camera count up-to-date
+		std::get<0>(lock)->verifyCameraCount(fullCameraCount); // Keep camera count up-to-date
+		std::get<1>(lock)->verifyCameraCount(fullCameraCount); // Keep camera count up-to-date
 
 		auto &params = pipeline.sequenceParams.get(pipeline.phase == PHASE_Calibration_Point? 0 : 1);
 
@@ -216,7 +223,7 @@ void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record)
  */
 void UpdatePipelineStatus(PipelineState &pipeline)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	UpdatePointCalibrationStatus(pipeline);
 	UpdateTargetCalibrationStatus(pipeline);
@@ -225,7 +232,7 @@ void UpdatePipelineStatus(PipelineState &pipeline)
 /* For simulation/replay to jump to a specific frame - caller has to make sure no more queued frames will be processed */
 void AdoptFrameRecordState(PipelineState &pipeline, const FrameRecord &frameRecord)
 {
-	std::unique_lock pipeline_lock(pipeline.pipelineLock);
+	std::unique_lock processing_lock(pipeline.processingMutex);
 
 	{
 		auto framesRecord = pipeline.record.frames.getView();
@@ -319,23 +326,24 @@ void DebugCameraParameters(const std::vector<CameraCalib> &calibs)
  */
 void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::vector<CameraCalib> &calibs)
 {
+	auto camera_lock = pipeline.cameras.contextualRLock();
 	std::vector<CameraErrorMaps*> errorMaps(calibs.size());
 	std::vector<SynchronisedS<CameraErrorMaps>::LockedPtr> errorMapLocks;
 	std::vector<OptErrorRes> errors(calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (calibs[c].index < 0) continue;
-		std::shared_ptr<CameraPipeline> &cam = pipeline.cameras[calibs[c].index];
-		cam->errorVisDirty = false;
-		auto err_lock = cam->errorVis.contextualLock();
+		auto &camera = *camera_lock.asNonConstUnsafe()[calibs[c].index];
+		camera.errorVisDirty = false;
+		auto err_lock = camera.errorVis.contextualLock();
 		if (calibs[c].invalid() || data.points.totalSamples == 0)
 		{ // Clear errors
 			err_lock->mapSize.setZero();
 			err_lock->pointErrors.clear();
-			cam->errorVisDirty = true;
+			camera.errorVisDirty = true;
 			continue;
 		}
-		err_lock->mapSize = Eigen::Vector2i(cam->mode.widthPx/32, cam->mode.heightPx/32);
+		err_lock->mapSize = Eigen::Vector2i(camera.mode.widthPx/32, camera.mode.heightPx/32);
 		// Stope pointer to error maps
 		errorMaps[c] = &*err_lock;
 		// Keep lock alive until error maps are not used anymore
@@ -343,14 +351,18 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 	}
 	if (data.points.totalSamples == 0)
 		return;
-	pipeline.pointCalib.state->errors = updateCameraErrorMaps(data, calibs, errorMaps, errors);
+	{ // Could keep it locked, no real harm, but this may take a while to compute
+		auto scoped_unlock = camera_lock.scopedUnlock();
+		pipeline.pointCalib.state->errors = updateCameraErrorMaps(data, calibs, errorMaps, errors);
+	}
 	for (int c = 0; c < calibs.size(); c++)
 	{
 		if (!errorMaps[c]) continue;
 		if (errorMaps[c]->pointErrors.empty())
 			errorMaps[c]->mapSize.setZero(); // No data for camera
-		pipeline.cameras[calibs[c].index]->errorVisDirty = true;
-		pipeline.cameras[calibs[c].index]->errorStats = errors[c];
+		auto &camera = *camera_lock.asNonConstUnsafe()[calibs[c].index];
+		camera.errorVisDirty = true;
+		camera.errorStats = errors[c];
 	}
 }
 
@@ -417,7 +429,7 @@ static void CalculateFMStats(FundamentalMatrix &FM, const SequenceData &sequence
 }
 
 template<typename DATA>
-static void UpdateCalibrationRelation(const SequenceParameters &params, CameraSystemCalibration &calibration, const DATA &data, const CameraCalib &calibA, const CameraCalib &calibB)
+static void UpdateCalibrationRelation(CameraSystemCalibration &calibration, const SequenceParameters &params, const DATA &data, const CameraCalib &calibA, const CameraCalib &calibB)
 {
 	assert(calibA.index >= 0 && calibB.index >= 0);
 	assert(calibA.index > calibB.index);
@@ -446,73 +458,72 @@ static void UpdateCalibrationRelation(const SequenceParameters &params, CameraSy
 	calibration.relations.setFundamentalMatrix(calibA.index, calibB.index, FM);
 }
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const ObsData &observations)
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const ObsData &observations)
 {
-	calibration.verifyCameraCount(pipeline.cameras.size());
-	for (int i = 1; i < pipeline.cameras.size(); i++)
+	calibration.verifyCameraCount(cameras.size());
+	for (int i = 1; i < cameras.size(); i++)
 	{
-		if (pipeline.cameras[i]->calib.invalid())
+		if (cameras[i]->calib.invalid())
 			continue;
 		for (int j = 0; j < i; j++)
 		{
-			if (pipeline.cameras[j]->calib.invalid())
+			if (cameras[j]->calib.invalid())
 				continue;
-			UpdateCalibrationRelation(pipeline.sequenceParams, calibration, observations, pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
+			UpdateCalibrationRelation(calibration, params, observations, cameras[i]->calib, cameras[j]->calib);
 		}
 	}
 }
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences)
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const SequenceData &sequences)
 {
-	calibration.verifyCameraCount(pipeline.cameras.size());
-	for (int i = 1; i < pipeline.cameras.size(); i++)
+	calibration.verifyCameraCount(cameras.size());
+	for (int i = 1; i < cameras.size(); i++)
 	{
-		if (pipeline.cameras[i]->calib.invalid())
+		if (cameras[i]->calib.invalid())
 			continue;
 		for (int j = 0; j < i; j++)
 		{
-			if (pipeline.cameras[j]->calib.invalid())
+			if (cameras[j]->calib.invalid())
 				continue;
-			UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
+			UpdateCalibrationRelation(calibration, params, sequences, cameras[i]->calib, cameras[j]->calib);
 		}
 	}
 }
 
-void UpdateCalibrationRelations(const PipelineState &pipeline, CameraSystemCalibration &calibration, const SequenceData &sequences, int camIndex)
+void UpdateCalibrationRelations(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, const SequenceData &sequences, int camIndex)
 {
-	if (pipeline.cameras[camIndex]->calib.invalid())
+	if (cameras[camIndex]->calib.invalid())
 		return;
-	calibration.verifyCameraCount(pipeline.cameras.size());
+	calibration.verifyCameraCount(cameras.size());
 	for (int j = 0; j < camIndex; j++)
 	{
-		if (pipeline.cameras[j]->calib.invalid())
+		if (cameras[j]->calib.invalid())
 			continue;
-		UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[camIndex]->calib, pipeline.cameras[j]->calib);
+		UpdateCalibrationRelation(calibration, params, sequences, cameras[camIndex]->calib, cameras[j]->calib);
 	}
-	for (int j = camIndex+1; j < pipeline.cameras.size(); j++)
+	for (int j = camIndex+1; j < cameras.size(); j++)
 	{
-		if (pipeline.cameras[j]->calib.invalid())
+		if (cameras[j]->calib.invalid())
 			continue;
-		UpdateCalibrationRelation(pipeline.sequenceParams, calibration, sequences, pipeline.cameras[j]->calib, pipeline.cameras[camIndex]->calib);
+		UpdateCalibrationRelation(calibration, params, sequences, cameras[j]->calib, cameras[camIndex]->calib);
 	}
 }
 
-void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibration &calibration)
+void AssumeCalibrationsValid(CameraSystemCalibration &calibration, const SequenceParameters &params, const PipelineState::CameraList &cameras, OptFrameNum frame)
 {
-	OptFrameNum frame = pipeline.frameNum;
-	for (int i = 1; i < pipeline.cameras.size(); i++)
+	for (int i = 1; i < cameras.size(); i++)
 	{
-		if (pipeline.cameras[i]->calib.invalid())
+		if (cameras[i]->calib.invalid())
 			continue;
 		for (int j = 0; j < i; j++)
 		{
-			if (pipeline.cameras[j]->calib.invalid())
+			if (cameras[j]->calib.invalid())
 				continue;
 			auto &FMcand = calibration.relations.getFMEntry(i, j);
 			if (FMcand.candidates.empty())
 			{
 				FMcand.candidates.push_back({});
-				FMcand.candidates.front().matrix = calculateFundamentalMatrix<float>(pipeline.cameras[i]->calib, pipeline.cameras[j]->calib);
+				FMcand.candidates.front().matrix = calculateFundamentalMatrix<float>(cameras[i]->calib, cameras[j]->calib);
 				FMcand.candidates.front().precalculated = true;
 			}
 			auto &FM = FMcand.getBestCandidate();
@@ -521,7 +532,7 @@ void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibrat
 			FM.stats.num = 6000;
 			FM.stats.avg = 0.01f;
 			FM.stats.M2 = 0.02f*0.02f*FM.stats.num;
-			updateTrustFromEpipolarStats(pipeline.sequenceParams.get(1), FM);
+			updateTrustFromEpipolarStats(params.get(1), FM);
 		}
 	}
 }
@@ -531,14 +542,14 @@ void AssumeCalibrationsValid(const PipelineState &pipeline, CameraSystemCalibrat
  * and apply it to be able to compare to ground truth
  * Returns remaining errors (positional in mm, angular in degrees)
  */
-std::pair<CVScalar,CVScalar> AlignWithGT(const PipelineState &pipeline, std::vector<CameraCalib> &calibs)
+std::pair<CVScalar,CVScalar> AlignWithGT(const PipelineState::CameraList &cameras, std::vector<CameraCalib> &calibs)
 {
 	// Collect camera positions as corresponding point clouds
 	Eigen::Matrix<CVScalar,Eigen::Dynamic,3> trMat(calibs.size(), 3);
 	Eigen::Matrix<CVScalar,3,Eigen::Dynamic> mkMat(3, calibs.size());
 	for (int c = 0; c < calibs.size(); c++)
 	{
-		const std::shared_ptr<CameraPipeline> &camera = pipeline.cameras[calibs[c].index];
+		auto &camera = cameras[calibs[c].index];
 		trMat.row(c) = camera->simulation.calib.transform.translation();
 		mkMat.col(c) = calibs[c].transform.translation();
 	}
@@ -558,7 +569,7 @@ std::pair<CVScalar,CVScalar> AlignWithGT(const PipelineState &pipeline, std::vec
 	std::pair<CVScalar,CVScalar> camErrors;
 	for (int c = 0; c < calibs.size(); c++)
 	{	
-		const std::shared_ptr<CameraPipeline> &camera = pipeline.cameras[calibs[c].index];
+		auto &camera = cameras[calibs[c].index];
 		std::pair<CVScalar,CVScalar> poseError = calculatePoseError(camera->simulation.calib.transform, calibs[c].transform);
 		camErrors.first += poseError.first;
 		camErrors.second += poseError.second;

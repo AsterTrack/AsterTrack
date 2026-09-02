@@ -127,10 +127,11 @@ void InterfaceState::UpdateCalibrations()
 
 	PipelineState &pipeline = GetState().pipeline;
 	auto minTrust = pipeline.sequenceParams.get(1).FM.ConfidentMinTrust;
+	auto camera_lock = pipeline.cameras.contextualRLock();
 	auto calib_lock = pipeline.calibration.contextualRLock();
-	for (int i = 0; i < pipeline.cameras.size(); i++)
+	for (int i = 0; i < camera_lock->size(); i++)
 	{
-		if (pipeline.cameras[i]->calib.invalid())
+		if ((*camera_lock)[i]->calib.invalid())
 		{
 			state.numUncalibrated++;
 			continue;
@@ -138,7 +139,7 @@ void InterfaceState::UpdateCalibrations()
 		state.numCalibrated++;
 		for (int j = 0; j < i; j++)
 		{
-			if (pipeline.cameras[j]->calib.invalid())
+			if ((*camera_lock)[j]->calib.invalid())
 				continue;
 			if (calib_lock->relations.FMStore.size() <= j)
 			{

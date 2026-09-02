@@ -1370,18 +1370,18 @@ class LockedPtr {
    *     are thread safe (e.g. mutating the value in an associative
    *     container with reference stability).
    *
-   * asNonConstUnsafe() returns a non-const reference to the data if
-   * the parent Synchronized object was non-const at the point of lock
-   * acquisition.
+   * asNonConstUnsafe() returns a non-const reference to the data.
+   *
+   * Originally it should only do this if the parent Synchronized
+   * object was non-const at the point of lock acquisition, but
+   * that seems to have never worked.
    */
   template <typename = void>
   DataType& asNonConstUnsafe() const {
-    static_assert(
-        AllowsConcurrentAccess && !std::is_const<SynchronizedType>::value,
-        "asNonConstUnsafe() is only available on non-exclusive locks"
-        " acquired in a non-const context");
+    static_assert(AllowsConcurrentAccess,
+        "asNonConstUnsafe() is only available on non-exclusive locks");
 
-    return parent()->datum_;
+    return const_cast<DataType&>(parent()->datum_);
   }
 
   /**

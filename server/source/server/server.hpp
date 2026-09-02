@@ -77,7 +77,7 @@ struct ServerState
 	bool cameraCalibsDirty, lensPresetsDirty;
 
 	// Device setup
-	recursive_shared_mutex deviceAccessMutex; // Protects controllers, cameras
+	recursive_shared_mutex deviceMutex; // Protects controllers, cameras, and implicitly pipeline.cameras
 	std::vector<std::shared_ptr<TrackingControllerState>> controllers;
 	std::vector<std::shared_ptr<TrackingCameraState>> cameras;
 
@@ -110,7 +110,7 @@ struct ServerState
 
 	// Interfacing integrations
 	IntegrationsState io;
-	std::map<int, TrackerOutput> trackerOutput; // Synchronised via pipelineLock
+	std::map<int, TrackerOutput> trackerOutput; // Synchronised via processingMutex
 };
 
 

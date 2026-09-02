@@ -973,8 +973,7 @@ void postCorrectIMU(TrackedBase &tracker, TrackerFilter &filter, TrackerInertial
 		int countSamples = calib.accel.samples.size() + calib.gyro.samples.size() + calib.fused.samples.size();
 		if (newSamples && (countSamples % 5) == 0)
 		{ // Attempt to align orientation with new data
-			if (alignIMUOrientation(inertial))
-				SignalIMUCalibUpdate(tracker.id, inertial.imu->id, inertial.calib);
+			alignIMUOrientation(inertial);
 		}
 	}
 	else
@@ -1468,6 +1467,7 @@ static bool alignIMUOrientation(TrackerInertial &inertial)
 		inertial.calib.conversion = conversion;
 		inertial.calib.orientation = orientation.cast<float>();
 		inertial.calibration.mat = inertial.calib.orientation.toRotationMatrix().cast<double>() * inertial.calib.conversion.cast<double>();
+		inertial.calibDirty = true;
 		return true;
 	}
 	return false;

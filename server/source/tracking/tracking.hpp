@@ -112,6 +112,7 @@ struct TrackerInertial
 {
 	std::shared_ptr<IMU> imu;
 	IMUCalib calib;
+	bool calibDirty;
 
 	using State = flexkalman::pose_externalized_rotation::State;
 	struct AccelAlignSample

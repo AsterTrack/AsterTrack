@@ -777,13 +777,23 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			else
 				return NoIMULabel;
 		};
+		auto updateIMUCalib = [&](IMUIdent ident, IMUCalib calib)
+		{
+			tracker.imuIdent = ident;
+			tracker.imuCalib = calib;
+			tracker.configDirty = true;
+			// Update pipeline - this update may have come from pipeline, still
+			bool updatedIMU = ServerUpdateTrackerIMU(state, tracker);
+			ServerUpdateTrackerConditions(state, tracker);
+			ServerUpdateTrackerConfig(state, tracker, updatedIMU);
+		};
 		BeginLabelledGroup("IMU");
 		if (ImGui::BeginCombo("##IMUSel", getIMUIdentLabel(tracker.imuIdent).c_str()))
 		{
 			if (ImGui::Selectable(NoIMULabel.c_str(), !tracker.imuIdent))
 			{
 				if (tracker.imuIdent)
-					SignalIMUCalibUpdate(tracker.id, {}, {});
+					updateIMUCalib({}, {});
 			}
 			for (auto &imu : state.pipeline.record.imus)
 			{
@@ -791,7 +801,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 				if (ImGui::Selectable(getIMULabel(*imu).c_str(), imu->id == tracker.imuIdent))
 				{
 					if (tracker.imuIdent != imu->id)
-						SignalIMUCalibUpdate(tracker.id, imu->id, {});
+						updateIMUCalib(imu->id, {});
 				}
 				ImGui::PopID();
 			}
@@ -821,7 +831,7 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			int noOffset = 0;
 
 			bool changed = ScalarProperty<int>("Timestamp Offset", "us", &tracker.imuCalib.timestampOffsetUS, &noOffset, -10000, +10000);
-			if (changed) SignalIMUCalibUpdate(tracker.id, tracker.imuIdent, tracker.imuCalib);
+			if (changed) updateIMUCalib(tracker.imuIdent, tracker.imuCalib);
 		}
 
 		EndSection();

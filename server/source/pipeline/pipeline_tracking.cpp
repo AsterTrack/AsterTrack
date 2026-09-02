@@ -748,6 +748,10 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			auto &conflicts = conflictedMatches2D[t];
 			t++;
 
+			// Has to run on main pipeline thread for recursive pipeline mutex to work
+			if (tracker.inertial && tracker.inertial.calibDirty)
+				SignalIMUCalibUpdate(tracker.id, tracker.inertial.imu->id, tracker.inertial.calib);
+
 			// Update mistrust rating of tracker based on matched points
 			auto &mistrust = pipeline.params.track.mistrust;
 			updateTrackerMistrust(mistrust, frame, occupiedMarkers,

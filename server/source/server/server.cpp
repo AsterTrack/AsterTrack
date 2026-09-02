@@ -355,13 +355,9 @@ void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib)
 	for (auto &tracker : GetState().trackerConfigs)
 	{
 		if (tracker.id != trackerID) continue;
-		tracker.imuIdent = ident;
+		if (tracker.imuIdent != ident) continue;
 		tracker.imuCalib = calib;
 		tracker.configDirty = true;
-		// Update pipeline - this update may have come from pipeline, still
-		bool updatedIMU = ServerUpdateTrackerIMU(GetState(), tracker);
-		ServerUpdateTrackerConditions(GetState(), tracker);
-		ServerUpdateTrackerConfig(GetState(), tracker, updatedIMU);
 		return;
 	}
 }

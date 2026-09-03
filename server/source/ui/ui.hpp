@@ -225,14 +225,14 @@ struct VisualisationState
 		std::set<uint32_t> selectedIDs; // Selected in 3D View
 
 		// Marker covariance visualisation
-		bool showCovarianceIn3DView = true;
+		bool showCovarianceIn3DView = false;
 		bool showCovarianceInCam2D = false;
 		bool showCovarianceInCam3D = false;
 		float scaleCovariance = 3.0f;
 
 		// Marker search area visualisation
 		bool showAllSearchesIn3DView = false;
-		bool showMissingSearchesIn3DView = true;
+		bool showMissingSearchesIn3DView = false;
 	} markers;
 
 	struct

@@ -963,7 +963,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		// TODO: Use raw position instead if sample count over a limit?
 		Eigen::Vector3f pos = marker.filter.state.position().cast<float>();
 		Eigen::Matrix3f cov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
-		float uncertainty3D = cov.determinant();
+		float uncertainty3D = get3DUncertainty(cov);
 		float confidence = getTriConfidence(marker.samples-marker.uncertain, marker.uncertain);
 
 		LOG(LTriangulation, LTrace, "    -> Tracked marker of size %.3fmm with %d samples (confidence %.1f), %.2fmm 3D uncertainty and %.2fpx reprojection RMSE",

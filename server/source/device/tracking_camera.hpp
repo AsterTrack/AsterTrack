@@ -192,6 +192,7 @@ struct TrackingCameraState
 		ErrorTag code;
 		bool serious;
 		TimePoint_t time, recoverTime;
+		operator bool() { return encountered && !recovered; }
 	};
 	struct Status
 	{

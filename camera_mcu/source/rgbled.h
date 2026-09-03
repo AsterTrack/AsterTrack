@@ -33,7 +33,8 @@ extern "C"
 // Update interval to use for smooth animations and transitions
 #define RGB_UPDATE_INTERVAL_MS 10
 
-enum LED_INTERPOLATION {
+enum LED_INTERPOLATION : uint8_t
+{
 	INTER_UNDEFINED = 0,
 	INTER_IMMEDIATE,
 	INTER_LERP_LINEAR
@@ -42,13 +43,14 @@ enum LED_INTERPOLATION {
 struct LED_Transition
 {
 	uint8_t *leds;
-	TimeSpan time;
-	enum LED_INTERPOLATION mode;
+	TimeSpan time : 28; // 270s
+	enum LED_INTERPOLATION mode : 4;
+	// This bit packing saves 4 bytes due to alignment
 };
 
 struct LED_Animation
 {
-	int repetitions;
+	int16_t repetitions;
 	uint8_t count;
 	struct LED_Transition transitions[];
 };

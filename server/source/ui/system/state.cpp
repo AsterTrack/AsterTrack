@@ -381,16 +381,16 @@ CameraConfig& getCameraConfig(const TrackingCameraState &camera)
 
 std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bool &abnormalStreamingState)
 {
-	auto status = *camera.state.contextualRLock(); // Copy
 	std::vector<std::string> statusMsgs;
 	if (GetState().mode != MODE_Device)
 	{
 		abnormalStreamingState = false;
 		return statusMsgs;
 	}
+	auto status = *camera.state.contextualRLock(); // Copy
 
 	// Detect if camera may need a streaming restart
-	bool expectingStreaming = GetState().isStreaming && !status.error.encountered;
+	bool expectingStreaming = GetState().isStreaming && !status.error;
 	bool isCameraStreaming = camera.isStreaming();// && camera.state.fsEnabled;
 	bool recentlySentCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
 	abnormalStreamingState = expectingStreaming && !isCameraStreaming && !recentlySentCommand;
@@ -436,14 +436,14 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 
 std::string getStatusText(const TrackingCameraState &camera)
 {
-	auto status = *camera.state.contextualRLock(); // Copy
 	if (GetState().mode != MODE_Device)
 	{
 		return "Camera."; // It's true,
 	}
+	auto status = *camera.state.contextualRLock(); // Copy
 
 	// Detect if camera may need a streaming restart
-	bool expectingStreaming = GetState().mode == MODE_Device && GetState().isStreaming && !status.error.encountered;
+	bool expectingStreaming = GetState().isStreaming && !status.error;
 	bool isCameraStreaming = camera.isStreaming();// && camera.state.fsEnabled;
 	//bool recentlySendCommand = camera.hasSetStreaming() && dtMS(camera.modeSet.time, sclock::now()) < 1000;
 	bool abnormalStreamingState = expectingStreaming && !isCameraStreaming;

@@ -407,15 +407,16 @@ UpdateWirelessSetup(InterfaceWindow &window)
 				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
 				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0,0));
 				ImGui::BeginDisabled(wireless.setConfig != wireless.lastConfig && dtMS(wireless.sendTime, sclock::now()) < 2000);
-				if (BeginIconDropdown("##Actions", icons().vdots, iconSize(), ImGuiComboFlags_PopupAlignLeft))
+				bool dropdown = BeginIconDropdown("##Actions", icons().vdots, iconSize(), ImGuiComboFlags_PopupAlignLeft);
+				ImGui::PopStyleVar();
+				ImGui::PopStyleColor();
+				if (dropdown)
 				{
 					actionDropdown(camera->id);
 					ImGui::EndCombo();
 				}
 				ImGui::EndDisabled();
 				ImGui::SetItemTooltip("Actions for configuring the camera.");
-				ImGui::PopStyleVar();
-				ImGui::PopStyleColor();
 			}
 			/* bool select = selectedCamera == camera;
 			if (ImGui::Selectable("", &select, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))

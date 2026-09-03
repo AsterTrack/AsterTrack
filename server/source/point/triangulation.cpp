@@ -27,6 +27,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "unsupported/Eigen/AutoDiff"
 #endif
 
+#include "Eigen/Eigenvalues"
+
 /**
  * Triangulation of 3D points from 2D blobs
  */
@@ -70,6 +72,12 @@ float getTriConfidence(int obsClean, int obsConflicted)
 {
 	//return (float)(obsClean*obsClean)/(obsConflicted+1);
 	return obsClean*obsClean*2 + obsConflicted;
+}
+
+float get3DUncertainty(Eigen::Matrix3f &covariance)
+{
+	Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd(covariance);
+	return std::sqrt(std::abs(evd.eigenvalues()(2)));
 }
 
 float calculate2DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size3D)

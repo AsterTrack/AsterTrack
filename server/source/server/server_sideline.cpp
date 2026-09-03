@@ -563,13 +563,20 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 			for (auto &camera : frameRecord->cameras)
 			{
 				auto blobIt = camera.rawPoints2D.begin();
+				auto propIt = camera.properties.begin();
 				while (blobIt != camera.rawPoints2D.end())
 				{
 					float chance = (double)rand() / RAND_MAX;
 					if (chance > droprate)
+					{
 						blobIt++;
+						propIt++;
+					}
 					else
+					{
 						blobIt = camera.rawPoints2D.erase(blobIt);
+						propIt = camera.properties.erase(propIt);
+					}
 				}
 			}
 		}

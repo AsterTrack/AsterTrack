@@ -499,6 +499,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 		BeginViewToolbar();
 		ImGui::PushID("IMG");
+		ImGui::PushItemFlag(ImGuiItemFlags_AllowOverlap, true);
 
 		ImGui::Checkbox("Undistort", &vis.undistort);
 		ImGui::SameLine();
@@ -618,8 +619,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		else
 			ImGui::Text("%dx%d, %d", size.x(), size.y(), request.jpegQuality);
 
+		ImGui::PopItemFlag();
 		SameLineTrailing(ImGui::GetFrameHeight());
-		ImGui::SetNextItemAllowOverlap();
 		if (CrossButton("Discard"))
 		{
 			view.camera->config.imageStreaming.enabled = false;
@@ -636,6 +637,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 		BeginViewToolbar();
 		ImGui::PushID("IMG");
+		ImGui::PushItemFlag(ImGuiItemFlags_AllowOverlap, true);
 	
 		ImGui::Checkbox("Undistort", &vis.undistort);
 		ImGui::SameLine();
@@ -653,6 +655,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			ImGui::Text("%dx%d (%dkb)", view.vis.image->width, view.vis.image->height, view.vis.image->jpegSize/1000);
 		}
 
+		ImGui::PopItemFlag();
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (CrossButton("Discard"))
 		{
@@ -1686,7 +1689,7 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 	Bounds2f view(visCamera.view.center, 
 		Eigen::Vector2f(camera.mode.sizeW*2.0f/visCamera.view.zoom, camera.mode.sizeH*2.0f/visCamera.view.zoom));
 	Bounds2f imageBounds;
-	if (visCamera.imageVis.undistort)
+	if (visCamera.imageVis.undistort && camera.calib.valid())
 	{ // Undistort roughly - since values outside of image could be used, it could be even more unstable than usual
 		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.max.x(), view.max.y()), 100, 0.5f*PixelSize));
 		imageBounds.include(distortPointUnstable(camera.calib, Eigen::Vector2f(view.max.x(), view.min.y()), 100, 0.5f*PixelSize));

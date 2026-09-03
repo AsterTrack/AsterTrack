@@ -53,7 +53,7 @@ void RemoveCameraSync(StreamState &state, TrackingCameraState &camera)
 
 	{ // Remove camera from its sync group
 		auto sync_lock = camera.sync->lock();
-		int last = 0;
+		int last = -1;
 		for (int c = 0; c < sync_lock->cameras.size(); c++)
 		{
 			if (!sync_lock->cameras[c]) continue;
@@ -61,7 +61,7 @@ void RemoveCameraSync(StreamState &state, TrackingCameraState &camera)
 				sync_lock->cameras[c] = nullptr;
 			else last = c;
 		}
-		sync_lock->cameras.resize(last);
+		sync_lock->cameras.resize(last+1);
 	}
 
 	// Remove group and source from StreamState if this was last reference

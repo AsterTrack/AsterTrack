@@ -887,8 +887,7 @@ static void ShowTrackingResults()
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesCurrent = trackRecord.error.samples;
 				trkFrame.errorCurrent = trackRecord.error.mean;
-				if (trackRecord.result.isTracked())
-					trkFrame.timeCurrent = trackRecord.procTimeMS;
+				trkFrame.timeCurrent = trackRecord.result.isTracked()? trackRecord.procTimeMS : 0.0f;
 			}
 			for (auto &trackRecord : framesStored[f]->trackers)
 			{
@@ -899,8 +898,7 @@ static void ShowTrackingResults()
 				auto &trkFrame = frameTrackers[trackRecord.id];
 				trkFrame.samplesLoaded = trackRecord.error.samples;
 				trkFrame.errorLoaded = trackRecord.error.mean;
-				if (trackRecord.result.isTracked())
-					trkFrame.timeLoaded = trackRecord.procTimeMS;
+				trkFrame.timeLoaded = trackRecord.result.isTracked()? trackRecord.procTimeMS : 0.0f;
 			}
 			// Update changes to all relevant tracking events
 			updateEventChange(losses, eventsStored.losses, eventsCurrent.losses);
@@ -1119,7 +1117,7 @@ static void ShowTrackingResults()
 			else
 				FMT_DIST(tgt.error, float, PixelFactor, "%.2fpx", "%.3fpx", "%.2fpx")
 			ImGui::Text("Times :");
-			FMT_DIST(tgt.time, float, 1000, "%.2fms", "%.3fms", "%.2fms")
+			FMT_DIST(tgt.time, float, 1, "%.2fms", "%.3fms", "%.2fms")
 			ImGui::TreePop();
 		}
 		ImGui::PopID();

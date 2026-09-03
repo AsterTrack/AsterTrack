@@ -74,6 +74,7 @@ struct MarkerObservation
 
 
 float getTriConfidence(int obsClean, int obsConflicted);
+float get3DUncertainty(Eigen::Matrix3f &covariance);
 
 float calculate2DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size3D);
 float estimate3DSizeSimple(const CameraCalib &calib, Eigen::Vector3f pos, float size2D);

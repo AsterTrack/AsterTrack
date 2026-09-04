@@ -17,9 +17,10 @@ echo Building libusb
 echo -----------------------------------------
 
 pushd $SRC_PATH
-./bootstrap.sh
+make distclean
 popd
 pushd linux/build
+../../$SRC_PATH/bootstrap.sh
 ../../$SRC_PATH/configure --prefix=$ABS_INSTALL_PATH --enable-shared=yes --enable-static=no --disable-log
 make install -j4
 popd

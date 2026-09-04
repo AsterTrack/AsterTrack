@@ -7,7 +7,7 @@
             "group": "build",
             "command": "bear",
             "args": [
-                "--output", "compile_commands.json", "--",
+                "--output", "compile_commands.json", "--append", "--",
                 "env/build_commands.sh",
             ],
         },

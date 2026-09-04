@@ -2,13 +2,15 @@
 
 
 # Read implicit compiler defaults if not explicitly specified
-ifneq ($(COMPILER), clang-libc)
-ifneq ($(COMPILER), clang-std)
-ifneq ($(COMPILER), gcc)
+ifneq ($(BUILD_CONFIG), clang-libc-static)
+ifneq ($(BUILD_CONFIG), clang-libc)
+ifneq ($(BUILD_CONFIG), clang-std)
+ifneq ($(BUILD_CONFIG), gcc)
 ifneq '' '$(findstring clang,$(CC))'
-COMPILER=clang-gnu
+BUILD_CONFIG=clang-gnu
 else
-COMPILER=gcc
+BUILD_CONFIG=gcc
+endif
 endif
 endif
 endif
@@ -21,39 +23,42 @@ endif
 # v4 is even better but too recent so we're compiling sensitive functions for x86-64-v4 with multi-target
 march = -march=x86-64-v3
 
-ifneq ($(SYS_ROOT),)
-	ENV_PREFIX=EXT-
-	cenv = --sysroot=$(SYS_ROOT)
-	exec = sudo chroot $(SYS_ROOT) env PATH=/usr/local/sbin:/usr/sbin:/usr/local/bin:/usr/bin bash -c
-	ldconfig = $(exec) 'ldconfig -p'
-	idbus = $(shell $(exec) 'pkg-config --cflags dbus-1' | sed 's/-I/-I$(SYS_ROOT)/g')
-else
-	ldconfig = ldconfig -p
-	idbus = $(shell pkg-config --cflags dbus-1)
-endif
+ldconfig = ldconfig -p
+idbus = $(shell pkg-config --cflags dbus-1)
 
 # Set compiler and options used
-ifeq ($(COMPILER), clang-libc)
+ifeq ($(BUILD_CONFIG), clang-libc-static)
+# clang compiler
+CXX=clang++ -MMD -MP
+CC=clang
+LD=clang++
+# clang libraries (libc++ + libomp), linked statically
+cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
+lstd = -fuse-ld=lld -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic -static-libgcc -static-libstdc++ -fopenmp=libomp -static-openmp --rtlib=compiler-rt --unwindlib=libunwind -Wl,-rpath='$$ORIGIN'
+lto = -flto=thin
+STDLIB = libcpp
+else ifeq ($(BUILD_CONFIG), clang-libc)
 # clang compiler
 CXX=clang++ -MMD -MP
 CC=clang
 LD=clang++
 # clang libraries (libc++ + libomp)
 cstd = -stdlib=libc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -fuse-ld=lld -lc++ -fopenmp=libomp -Wl,-rpath='$$ORIGIN' # --rtlib=compiler-rt -lunwind
+lstd = -fuse-ld=lld -lc++ -lc++abi -fopenmp=libomp --rtlib=platform --unwindlib=platform -Wl,-rpath='$$ORIGIN'
+# --rtlib=compiler-rt/platform --unwindlib=libunwind/platform # May want to leave this up to the system clang configuration
 lto = -flto=thin
 STDLIB = libcpp
-else ifeq ($(COMPILER), clang-std)
+else ifeq ($(BUILD_CONFIG), clang-std)
 # clang compiler
 CXX=clang++ -MMD -MP
 CC=clang
 LD=clang++
 # gnu library (libstdc++) but using clangs libomp (libgomp config stopped working)
 cstd = -stdlib=libstdc++ -fopenmp=libomp -Wno-gcc-compat
-lstd = -fuse-ld=lld -lstdc++ -fopenmp=libomp --rtlib=libgcc -latomic -Wl,-rpath='$$ORIGIN'
+lstd = -fuse-ld=lld -lstdc++ -fopenmp=libomp --rtlib=libgcc --unwindlib=libgcc -latomic -Wl,-rpath='$$ORIGIN'
 lto = -flto=thin
 STDLIB = libstdcpp
-else ifeq ($(COMPILER), gcc)
+else ifeq ($(BUILD_CONFIG), gcc)
 # gcc compiler
 CXX=g++ -MMD -MP
 CC=gcc
@@ -79,7 +84,7 @@ cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif
-lmode = $(lto)
+lmode = $(lto) # too large: -Wl,--thinlto-cache-dir=build/.cache/thinlto
 mode = release
 
 else ifeq ($(BUILD_TYPE), release-native)
@@ -90,7 +95,7 @@ cmode = -O3 -g -DNDEBUG -DEIGEN_NO_DEBUG $(lto) -DPERF=3
 ifeq ($(STDLIB), libcpp)
 	cmode += -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 endif
-lmode = $(lto)
+lmode = $(lto) # too large: -Wl,--thinlto-cache-dir=build/.cache/thinlto
 march = -march=native -mtune=native
 mode = release-native
 
@@ -185,9 +190,9 @@ src = source
 sh = ../shared
 dep = dependencies/sources
 b = build
-o = $(b)/$(ENV_PREFIX)$(COMPILER)-$(mode)
+o = $(b)/$(BUILD_CONFIG)-$(mode)
 cflags = -Idependencies/include -Idependencies/sources \
-	$(cenv) $(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus) \
+	$(cmode) $(march) -ffunction-sections -fpic -mshstk $(idbus) \
 	-ffp-contract=fast -fno-math-errno -fno-signed-zeros -fno-trapping-math \
 	-DGLEW_STATIC
 cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
@@ -195,7 +200,7 @@ cxxflags = $(cflags) $(cstd) -I$(src) -I$(sh) -I$(dep)/imgui \
 	-DEIGEN_MPL2_ONLY -DEIGEN_NO_AUTOMATIC_RESIZING -DEIGEN_INITIALIZE_MATRICES_BY_NAN \
 	-DBLOB_EMULATION \
 	-std=c++20
-lflags = $(lenv) $(lstd) $(lmode) $(march)
+lflags = $(lstd) $(lmode) $(march)
 
 
 # Define all source files to be compiled
@@ -297,7 +302,12 @@ usblib = $(libdir)/libusb/libusb-1.0.so.0
 vrpnlibs = $(libdir)/vrpn/libvrpn.a $(libdir)/vrpn/libquat.a
 glfwlib = $(libdir)/libglfw3.a
 trackerlibs = -ludev
-server_libs = $(usblib) $(vrpnlibs) $(trackerlibs) -lrt -lGL -lturbojpeg
+ifneq '' '$(findstring static,$(BUILD_CONFIG))'
+	imagelibs = -Wl,-Bstatic -lturbojpeg -Wl,-Bdynamic 
+else
+	imagelibs = -lturbojpeg
+endif
+server_libs = $(usblib) $(vrpnlibs) $(trackerlibs) $(imagelibs) -lGL -lm
 interface_libs = $(glfwlib) -ldbus-1
 
 # Run prechecks before starting compilation
@@ -337,14 +347,15 @@ endif
 # Force rebuild of version which includes a build indentifier
 $(shell touch source/version.cpp >/dev/null)
 
-all: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static copybinaries
+all: $(o)/astertrack-interface.so $(o)/astertrack-server copybinaries
+#$(o)/astertrack-static
 
 .PHONY: copybinaries
-copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server $(o)/astertrack-static
+copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server
 	@cp -u $(usblib) "$(b)/"
 	@-rm -f $(b)/astertrack*
 	@ln -sr $(o)/astertrack* $(b)/
-
+# $(o)/astertrack-static
 
 # May prefix this before each target to measure compile times
 # time --format="%E | $@"
@@ -371,13 +382,13 @@ $(o)/dependencies/%.obj: $(dep)/%.c
 $(shell mkdir -p $(dir $(OBJECTS_SERVER)) >/dev/null)
 $(shell mkdir -p $(dir $(OBJECTS_INTERFACE)) >/dev/null)
 
-# AsterTrack Static
+# AsterTrack Static (currently unused)
 # Combined server and interface just to have compile-time validation of interface
 OBJECTS_STATIC = $(subst $(o)/app.obj,$(o)/app-static.obj,$(OBJECTS_SERVER)) $(OBJECTS_INTERFACE)
 $(o)/app-static.obj: $(src)/app.cpp
 	$(CXX) $(cxxflags) -DINTERFACE_LINKED -c $< -o $@
 $(o)/astertrack-static: $(OBJECTS_STATIC)
-	$(LD) $(lenv) -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
+	$(LD) -o $@ $(OBJECTS_STATIC) $(server_libs) $(interface_libs) $(lflags)
 	objcopy --only-keep-debug $@ $@.debug
 	strip -S $@
 	objcopy --add-gnu-debuglink=$@.debug $@
@@ -385,7 +396,7 @@ $(o)/astertrack-static: $(OBJECTS_STATIC)
 # AsterTrack Server
 # Main binary, may load astertrack-interface.so
 $(o)/astertrack-server: $(OBJECTS_SERVER)
-	$(LD) $(lenv) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
+	$(LD) -rdynamic -o $@ $(OBJECTS_SERVER) $(server_libs) $(lflags)
 	objcopy --only-keep-debug $@ $@.debug
 	strip -S $@
 	objcopy --add-gnu-debuglink=$@.debug $@
@@ -393,7 +404,7 @@ $(o)/astertrack-server: $(OBJECTS_SERVER)
 # AsterTrack Interface
 # UI loaded as a shared library, mostly opaque to server, but heavily interacts with server itself
 $(o)/astertrack-interface.so: $(OBJECTS_INTERFACE)
-	$(LD) $(lenv) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
+	$(LD) -shared -o $@ $(OBJECTS_INTERFACE) $(interface_libs) $(lflags)
 	objcopy --only-keep-debug $@ $@.debug
 	strip -S $@
 	objcopy --add-gnu-debuglink=$@.debug $@

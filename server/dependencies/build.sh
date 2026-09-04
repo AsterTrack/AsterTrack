@@ -4,12 +4,12 @@
 MODE="$(echo $1 | tr '[:upper:]' '[:lower:]')"
 if [[ $MODE == "sanitize-thread" ]]; then
 	echo "Make sure to clean dependency build files before switching between sanitized and non-sanitized builds!"
-	export CFLAGS="-fsanitize=thread"
-	export CXXFLAGS="-fsanitize=thread"
+	export CFLAGS="$CFLAGS -fsanitize=thread"
+	export CXXFLAGS="$CXXFLAGS -fsanitize=thread"
 elif [[ $MODE == "sanitize-address" ]]; then
 	echo "Make sure to clean dependency build files before switching between sanitized and non-sanitized builds!"
-	export CFLAGS="-fsanitize=address"
-	export CXXFLAGS="-fsanitize=address"
+	export CFLAGS="$CFLAGS-fsanitize=address"
+	export CXXFLAGS="$CXXFLAGS -fsanitize=address"
 fi
 
 set -e

@@ -1,5 +1,10 @@
 #!/bin/sh
 
+if [[ "$EUID" == 0 ]]; then
+	echo "Don't run as root, will mess up build folder!"
+	exit 1
+fi
+
 tce-load -li $(cat /mnt/mmcblk0p2/tce/oncompile.lst) >/dev/null
 
 cd /home/tc

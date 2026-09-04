@@ -6,7 +6,7 @@
 			"type": "shell",
 			"group": "build",
 			"command": "make",
-			"args": [ "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)" ],
+			"args": [ "BUILD_CONFIG=${input:linuxBuildConfig}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)" ],
 			"windows": {
 				"command": "mkdir",
 				"args": [
@@ -29,37 +29,49 @@
 			"args": [
 				"-p", "build", "&",
 				"bear", "--output", "build/compile_commands.json", "--append", "--",
-				"make", "COMPILER=${input:compiler}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)",
+				"make", "BUILD_CONFIG=${input:linuxBuildConfig}", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)",
 				// Sadly, "make --dry-run", does not work, it intercepts commands
 			],
 			"runOptions": { "reevaluateOnRerun": false }
 		},
-	   /*  { // DO NOT USE: Doesn't build dependencies using debian environment, so any compatibility benefits may be void
-			"label": "Build using Debian Environment",
-			"type": "shell",
-			"group": "build",
-			"command": "sudo",
-			"args": [ "./env_debian_ext.sh", "debian-external", "&&", "make", "SYS_ROOT=debian-external", "COMPILER=clang-std", "BUILD_TYPE=${input:linuxBuildType}", "-j", "$(nproc", "--ignore=2)" ],
-		}, */
 		{
-			"label": "Build inside Debian Environment",
+			"label": "Build Release in Debian chroot Environment",
 			"type": "shell",
 			"group": "build",
 			"command": "sudo",
-			"args": [ "./env_debian_int.sh", "debian-internal", "release" ],
+			"args": [ "./debian_chroot_build.sh" ],
+			"options": { "cwd": "${workspaceFolder}/distrib/" },
 			// Currently, no verify or debug modes are supported due to the options of the clang custom build (bit tricky)
+		},
+		{
+			"label": "Build Debian Docker Image",
+			"type": "shell",
+			"group": "build",
+			"command": "sudo",
+			"args": [ "./setup_docker_image.sh" ],
+			"options": { "cwd": "${workspaceFolder}/distrib/" },
+		},
+		{
+			"label": "Build Release in Debian Docker Container",
+			"type": "shell",
+			"group": "build",
+			"command": "sudo",
+			"args": [ "./debian_docker_build.sh" ],
+			"options": { "cwd": "${workspaceFolder}/distrib/" },
 		},
 		{
 			"label": "Package AsterTrack Program",
 			"type": "shell",
 			"group": "build",
 			"command": "./package.sh && echo 'Compressing...' && tar -czf AsterTrack_Server.tar.gz package",
+			"options": { "cwd": "${workspaceFolder}/distrib/" },
 		},
 		{
 			"label": "Install AsterTrack Program",
 			"type": "shell",
 			"group": "build",
 			"command": "./package.sh && ./package/install.sh",
+			"options": { "cwd": "${workspaceFolder}/distrib/" },
 		},
 		{
 			"label": "Run AsterTrack",
@@ -165,14 +177,14 @@
 		{ // Allow sanitized builds on linux (gcc and clang)
 			"id": "linuxBuildType",
 			"description": "Build Type:",
-			"default": "verify-fast",
+			"default": "debug-fast",
 			"type": "pickString",
 			"options": [ "verify-fast", "debug-fast", "debug", "release", "release-native", "sanitize-thread", "sanitize-memory", "verify-extensive-fast", "verify-extensive-debug" ]
 		},
 		{ // On Linux, allow selection of compiler
-			"id": "compiler",
+			"id": "linuxBuildConfig",
 			"description": "Compiler:",
-			"default": "clang-std",
+			"default": "clang-libc",
 			"type": "pickString",
 			"options": [ "clang-libc", "clang-std", "gcc" ]
 		},

@@ -1,43 +1,5 @@
 #!/usr/bin/env bash
 
-if [[ -d package ]]; then
-    rm -rf package/*
-fi
-mkdir -p package
-
-cp -r licenses package/
-
-mkdir -p package/resources
-cp -r resources/icons package/resources/
-cp -r resources/fonts package/resources/
-cp resources/astertrack_icon_release.png package/resources/astertrack_icon.png
-cp resources/astertrack_icon_release.svg package/resources/astertrack_icon.svg
-
-mkdir -p package/store
-cp store/lens_presets_builtin.json package/store
-cp store/general_config.json package/store
-cp store/camera_simulated.json package/store
-cp store/Target_Ring.obj package/store
-cp store/Target_Sparse.obj package/store
-
-cp build/astertrack-server package
-cp build/astertrack-interface.so package
-cp build/libusb-1.* package
-
-cp README.md package
-cp astertrack.desktop package
-
-# Copy and edit so only appended install script remains (with correct executable bit)
-cp $0 package/install.sh
-match=$(grep --text --line-number '^exit 0 # Install Script Below$' $0 | cut -d ':' -f 1)
-sed -i 1,"$match"d package/install.sh
-
-echo "Finished packaging program into package folder!"
-
-# Don't want the install.sh in the repo root to prevent it being executed where it should not be
-exit 0 # Install Script Below
-#!/usr/bin/env bash
-
 INSTALL_DIR=$1
 DESKTOP_DIR=
 ICON_DIR=

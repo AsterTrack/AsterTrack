@@ -10,10 +10,10 @@ While they are tightly integrated, the UI is also clearly separated from the ser
 #### Linux
 If you want to build & develop normally:
 - Depending on the compiling toolchain (COMPILER input to Makefile):
-  - clang-std (recommended): `clang`
   - clang-libc: `clang`, `libc++`, `libomp5`/`openmp`
-  - gcc: `gcc`, `g++`
-- If using clangd for development: `clangd`, `bear`)
+  - clang-std: `clang`
+  - gcc: `gcc`, `g++` (not recommended, about 10x slower due to heavy template usage)
+- If using clangd for development: `clangd`, `bear`
 - Build tools: `cmake`, `autoconf`, `automake`, `libtool`, `unzip`, `wget`
 - OpenGL **development** libraries: `libgl1-mesa`, `libglu1-mesa`, `libglew`
 - Wayland **development** libraries: `libwayland`, `libxkbcommon`
@@ -22,17 +22,20 @@ If you want to build & develop normally:
 - TurboJPEG: `libturbojpeg`/`libturbojpeg0`
 - wget for fetching dependencies
 
-If you want to build a clang-std + release version with limited development capabilities:
-- Use `Build inside Debian Environment` task
-  - just depends on `git`
-  - needs superuser privileges
-  - will setup a debian 12 environment (GLIBC v2.36) using debootstrap
-  - will chroot into it and install all build dependencies
-  - will compile its own clang 21.1 toolchain
-  - will automatically compile server in release mode (others not supported)
+Or use the release build tooling with limited development capabilities:
+- will setup a Debian 13 environment (GLIBC v2.41) and install dependencies
+- will compile the LLVM 22.1.8 toolchain with flags for static libc++
+- will compile server in release mode and statically linked libc++
+
+This controlled build environment can be achieved in one of two ways:
+- Use `Build Release in Debian chroot Environment` task
+  - Uses debootstrap, just depends on `git`, needs superuser privileges
+  - Long (1hr+) LLVM build may be restarted / iterated on
+  - Great for development of the release build tooling itself, but requires 15GB of space
+- Use `Build Debian Docker Image` and `Build Release in Debian Docker Container` task
+  - Uses Docker, long (1hr+) LLVM build is a single image build step, but final image is only 5GB
 
 This is intended for building a binary distribution compatible with most modern Linux distributions - NOT for development!
-
 
 #### Windows
 **1. MSVC compiler** <br>
@@ -85,11 +88,11 @@ In CMakeLists.txt, change `set(LIB_DIR ${PLT_LIB_DIR}/debug)` to `set(LIB_DIR ${
 ### Compilation
 
 #### VS Code
-Run task "Build" or "Build (clangd)" if you use the clangd extension. Then select appropriate build configuration (recommended: clang, release-verify).
+Run task "Build" or "Build (clangd)" if you use the clangd extension. Then select appropriate build configuration (recommended: clang-libc or clang-std, debug-fast or verify-fast).
 
 #### Manually
 **Linux** (in server directory):
-  - `make BUILD_TYPE=release-verify -j$(nproc --ignore=2)`
+  - `make BUILD_TYPE=clang-libc BUILD_TYPE=debug-fast -j$(nproc --ignore=2)`
 
 **Windows** (in server directory, in vcvars64 environment):
   - `mkdir build & cd build`
@@ -129,4 +132,4 @@ The majority of the source code that is specific to AsterTrack or an optical tra
 If you wish to use a source code file in part or in full that currently is licensed too restrictively for you, feel free to contact me and I will consider changing the license of at least the source code over which I still hold copyright.
 
 ### Supplementary files
-All non-source-code-files in `store` and `resources` are licensed under the MIT License.
+All non-source-code-files in `config`, `resources` and `distrib` are licensed under the MIT License.

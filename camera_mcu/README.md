@@ -18,7 +18,6 @@ You can install `make` in Cygwin by selecting the `make` packet in the provided 
 
 **GNU ARM Embedded Toolchain**: <br>
 Download the `AArch32 bare-metal target (arm-none-eabi)` toolchain for your platform from <a href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">the ARM website</a>. Versions v14 and v15 have been confirmed to work. <br>
-The toolchain can also be built manually using <a href="https://github.com/riscv-collab/riscv-gnu-toolchain">this source repository</a> or using <a href="https://crosstool-ng.github.io/">crosstools-ng</a>. <br>
 You may place the toolchain in e.g. `/opt` or `C:/` and update the TOOL_PATH in `toolpath.make`.
 
 ### Compilation

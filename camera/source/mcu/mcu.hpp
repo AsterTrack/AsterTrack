@@ -27,7 +27,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 extern FirmwareTagHeader mcu_firmware_tag;
 
-extern std::mutex mcu_mutex;
+extern std::timed_mutex mcu_mutex;
 
 extern std::atomic<uint16_t> floatingSupplyVoltageMV;
 

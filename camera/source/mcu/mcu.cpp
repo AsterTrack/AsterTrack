@@ -66,7 +66,7 @@ FirmwareTagHeader mcu_firmware_tag;
 bool mcu_firmware_version_known = false;
 VersionDesc mcu_firmware_version;
 
-std::mutex mcu_mutex;
+std::timed_mutex mcu_mutex;
 std::atomic<bool> stop_thread;
 std::thread *mcu_comm_thread;
 TimePoint_t lastPing;
@@ -317,9 +317,9 @@ static void mcu_thread()
 		{
 			if (dtMS(lastPing, sclock::now()) > MCU_PROBE_INTERVAL_MS && !mcu_intentional_bootloader)
 			{
-				std::unique_lock lock(mcu_mutex);
-				if (mcu_active || mcu_intentional_bootloader)
-					continue;
+				std::unique_lock lock(mcu_mutex, std::chrono::milliseconds(5));
+				if (!lock.owns_lock()) continue; // May be waiting for thread to join
+				if (mcu_active || mcu_intentional_bootloader) continue;
 				lastPing = sclock::now();
 				if (i2c_probe()) // Reconnected
 				{
@@ -368,7 +368,8 @@ static void mcu_thread()
 		}
 
 		{ // Interrupt line signals events available, or waited long enough to read another ADC sample
-			std::unique_lock lock(mcu_mutex);
+			std::unique_lock lock(mcu_mutex, std::chrono::milliseconds(10));
+			if (!lock.owns_lock()) continue; // May be waiting for thread to join
 			if (!mcu_active) continue;
 			mcu_get_status();
 			lastPing = sclock::now();
@@ -376,7 +377,8 @@ static void mcu_thread()
 
 		if (events <= 0 && dtMS(lastPing, sclock::now()) > MCU_PING_INTERVAL_MS)
 		{
-			std::unique_lock lock(mcu_mutex);
+			std::unique_lock lock(mcu_mutex, std::chrono::milliseconds(10));
+			if (!lock.owns_lock()) continue; // May be waiting for thread to join
 			if (!mcu_active) continue;
 			mcu_send_ping();
 			lastPing = sclock::now();

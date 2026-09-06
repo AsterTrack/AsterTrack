@@ -104,7 +104,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 
 		// Information Popup
 		const ImGuiID infoPopupID = ImGui::GetID("##InfoPopup");
-		if (InlineIconButton(ICON_LA_INFO_CIRCLE))
+		bool hasDefects;
+		auto defects = getCameraDefects(camera, hasDefects);
+		if (hasDefects) ImGui::PushStyleColor(ImGuiCol_Text, isDarkMode? IM_COL32(220, 150, 150, 255) : IM_COL32(150, 50, 50, 255));
+		bool showInfo = InlineIconButton(hasDefects? ICON_LA_EXCLAMATION_TRIANGLE : ICON_LA_INFO_CIRCLE);
+		if (hasDefects) ImGui::PopStyleColor();
+		if (showInfo)
 		{
 			if (!camera.storage.receivedInfo && !camera.storage.receivedMCUInfo)
 			{ // Request info from MCU on explicit user action (may have a non-booting SBC)
@@ -131,6 +136,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 				ImGui::TextUnformatted("Camera has not sent info yet!");
 			else
 			{
+				if (hasDefects) desc.push_back("Defects:"); // May still show a message
+				std::move(defects.begin(), defects.end(), std::back_inserter(desc));
 				ImGui::AlignTextToFramePadding();
 				ImGui::Text("FW & HW Info:");
 				SameLineTrailing(SizeWidthDiv3().x);

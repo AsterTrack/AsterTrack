@@ -857,6 +857,8 @@ bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, cons
 		lastStatFrame = stat_lock->header.frame;
 		*stat_lock = s;
 	}
+	if (s.header.tempSOC/100.0f > 80.0f) // 85 is throttling limit
+		camera.state.contextualLock()->overtemp = { true, sclock::now() };
 	if (length == STAT_PACKET_HEADER)
 		return true;
 	float elapsedS = s.header.deltaUS/1000000.0f;
@@ -986,11 +988,14 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	{ // Keep support for older versions in here!
 		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
 		camera.storage.receivedInfo = true;
+		camera.state.contextualLock()->unsupported = { true, sclock::now() };
 		return false;
 	}
 	info.mcuOTPVersion = data[1];
 	info.mcuHWDetection = (CameraHWDetection)data[2];
-	uint8_t resv1 = data[2], resv2 = data[3];
+	uint8_t resv1 = data[3];
+	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
+		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
 
 	static_assert(sizeof(VersionDesc) == 4);
 	static_assert(sizeof(HardwareSerial) == 12);
@@ -1000,6 +1005,8 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	memcpy(&info.mcuUniqueID, &data[24], 12);
 	memcpy(&info.sbcRevisionCode, &data[36], 4);
 	memcpy(&info.sbcSerialNumber, &data[40], 4);
+	if (info.mcuFWVersion.num == 0 && info.mcuUniqueID[0] == 0)
+		camera.state.contextualLock()->noMCU = { true, sclock::now() };
 
 	int sbcFWDesc = (data[44] << 8) | data[45];
 	int mcuFWDesc = (data[46] << 8) | data[47];
@@ -1130,6 +1137,8 @@ bool ReadCameraMCUInfoPacket(TrackingCameraState &camera, const PacketHeader hea
 			(int)(info.subpartSerials.size()*sizeof(uint64_t)), (int)info.mcuHWDescriptor.size(), (int)info.mcuFWDescriptor.size());
 		return false;
 	}
+	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
+		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
 	const uint8_t *ptr = data + infoSize;
 
 	memcpy(info.mcuHWDescriptor.data(), ptr, info.mcuHWDescriptor.size());

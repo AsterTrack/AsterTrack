@@ -202,6 +202,8 @@ struct TrackingCameraState
 		TimePoint_t lastWirelessConnection;
 		ControllerCommState commState;
 		Errors error;
+		struct { bool triggered; TimePoint_t time; }
+			unsupported, usesHSI, noMCU, overtemp;
 	};
 	Synchronised<Status> state = {};
 };

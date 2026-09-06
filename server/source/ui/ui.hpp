@@ -680,6 +680,7 @@ struct CameraView
 // UI-only device functions
 CameraConfig& getCameraConfig(const TrackingCameraState &camera);
 std::string getStatusText(const TrackingCameraState &camera);
+std::vector<std::string> getCameraDefects(const TrackingCameraState &camera, bool &hasDefects);
 std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bool &abnormalStreamingState);
 Color getStatusColor(const TrackingCameraState &camera);
 Color getStatusColor(const TrackingControllerState &controller);

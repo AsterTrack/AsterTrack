@@ -379,6 +379,42 @@ CameraConfig& getCameraConfig(const TrackingCameraState &camera)
 	return GetState().cameraConfig.getCameraConfig(camera.id);
 }
 
+std::vector<std::string> getCameraDefects(const TrackingCameraState &camera, bool &hasDefects)
+{
+	std::vector<std::string> statusMsgs;
+	hasDefects = false;
+	if (GetState().mode != MODE_Device)
+	{
+		return statusMsgs;
+	}
+	if (!camera.storage.receivedInfo && !camera.storage.receivedMCUInfo)
+	{
+		statusMsgs.push_back("Hardware status still unknown.");
+		return statusMsgs;
+	}
+	auto &info = camera.storage.info;
+
+	if (info.mcuFWVersion.num == 0 && info.mcuUniqueID[0] == 0)
+	{
+		statusMsgs.push_back("The Cameras SBC could not connect with the MCU - if it exists at all.\n"
+			"If the MCU is bricked, check the documentation or contact support for recovery instructions.\n"
+			"Designs without MCUs are not supported.");
+		hasDefects = true;
+		return statusMsgs; // All other defects assume MCU is there to report them
+	}
+
+	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
+	{
+		statusMsgs.push_back("The Cameras MCU uses the unstable HSI clock, not an HSE crystal.\n"
+			"This may indicate an issue with the hardware or an insufficient PCB Design.\n"
+			"Please check if the SBC and Camera CSI FFC are connected and undamaged.\n"
+			"On production designs, the HSE requires both of them to be available.");
+		hasDefects = true;
+	}
+
+	return statusMsgs;
+}
+
 std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bool &abnormalStreamingState)
 {
 	std::vector<std::string> statusMsgs;
@@ -429,6 +465,30 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 	{ // May happen if controller stopped streaming on it's own and told cameras to stop, too
 		// e.g. when server hung for several seconds in debug
 		statusMsgs.push_back("Camera is not streaming!");
+	}
+
+	// Display hardware abnormalities temporarily
+	{
+		if (status.unsupported.triggered && dtMS(status.unsupported.time, sclock::now()) < 5000)
+		{ // Limited use as of now
+			statusMsgs.push_back("Received an unsupported packet - ensure firmware is compatible!");
+		}
+		if (status.usesHSI.triggered && dtMS(status.usesHSI.time, sclock::now()) < 5000)
+		{ // In production hardware, HSE relies on SBC and Camera FFC working
+			// So if SBC is already booted, this may indicate a FFC failure
+			if (status.hadPiConnected)
+				statusMsgs.push_back("MCU uses HSI - check Camera CSI FFC for damage!");
+			else
+				statusMsgs.push_back("MCU uses HSI - check SBC and Camera CSI FFC connection!");
+		}
+		if (status.noMCU.triggered && dtMS(status.noMCU.time, sclock::now()) < 5000)
+		{ // MCU may be disabled at this point when SBC could not automatically recover it
+			statusMsgs.push_back("MCU not found - check documentation for recovery steps!");
+		}
+		if (status.overtemp.triggered && dtMS(status.overtemp.time, sclock::now()) < 2000)
+		{ // MCU may be disabled at this point when SBC could not automatically recover it
+			statusMsgs.push_back(asprintf_s("SoC over-temperature - %.2f°C!", camera.receiving.statistics.contextualRLock()->header.tempSOC/100.0f));
+		}
 	}
 
 	return statusMsgs;

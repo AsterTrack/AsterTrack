@@ -373,6 +373,23 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		}
 		ImGui::SameLine();
 
+		// Warn about serious defects (temporary or in hardware)
+		bool hasDefects;
+		auto defects = getCameraDefects(*view.camera, hasDefects);
+		if (hasDefects)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, isDarkMode? IM_COL32(220, 150, 150, 255) : IM_COL32(150, 50, 50, 255));
+			ImGui::Text(hasDefects? ICON_LA_EXCLAMATION_TRIANGLE : ICON_LA_INFO_CIRCLE);
+			ImGui::PopStyleColor();
+			if (ImGui::BeginItemTooltip())
+			{
+				for (auto &str : defects)
+					ImGui::TextUnformatted(str.c_str());
+				ImGui::EndTooltip();
+			}
+			ImGui::SameLine();
+		}
+
 		// Show wireless status icon
 		auto &wireless = view.camera->config.wireless;
 		if (wireless.wifiStatus == WIRELESS_STATUS_CONNECTED)

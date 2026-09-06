@@ -45,6 +45,8 @@ struct MCUForwardedPacket
 extern std::mutex mcu_packet_mutex;
 extern std::vector<MCUForwardedPacket> mcu_packet_queue;
 
+extern bool embedded_state_updated;
+
 bool mcu_initial_connect(bool probe_attached, std::string mcu_firmware_path);
 bool mcu_init();
 bool mcu_probe();
@@ -62,5 +64,6 @@ void mcu_sync_info();
 bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config);
 bool mcu_update_id(CameraID cameraID);
 bool mcu_get_status();
+bool mcu_update_embedded_state(const uint8_t state[EMBEDDED_STATE_SIZE]);
 
 #endif // MCU_H

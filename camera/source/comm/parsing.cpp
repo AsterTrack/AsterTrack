@@ -20,6 +20,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "state.hpp"
 #include "wireless.hpp"
 #include "firmware.hpp"
+#include "mcu/mcu.hpp"
 #include "version.hpp"
 
 #include <thread>
@@ -55,6 +56,8 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 			return header.length >= FIRMWARE_PACKET_HEADER;
 		case PACKET_CAMERA_INFO:
 			return header.length == 0;
+		case PACKET_CAMERA_STATE:
+			return header.length == EMBEDDED_STATE_SIZE;
 		default:
 			printf("Received packet header with invalid tag %d!\n", header.tag);
 			return false;
@@ -183,8 +186,13 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 			return ReceiveFirmwareStatus(state, comm, data, length);
 		}
 		case PACKET_CAMERA_INFO:
+		{ // Request for camera info, but will send other state along as well
+			sendInitialState(state, comm.medium);
+			return true;
+		}
+		case PACKET_CAMERA_STATE:
 		{
-			sendInfoPacket(comm.medium);
+			mcu_update_embedded_state(data);
 			return true;
 		}
 		default:

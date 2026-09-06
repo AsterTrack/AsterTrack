@@ -19,7 +19,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 #include "parsing.hpp"
-#include "version.hpp"
 #include "processing/framesync.hpp"
 
 #include "comm/uart.h"
@@ -434,7 +433,7 @@ void CommThread(CommState *comm_ptr, TrackingCameraState *state_ptr)
 	TimePoint_t time_begin, time_read, time_ident, time_start;
 	time_begin = sclock::now();
 	int ident_backoff = 0;
-	bool sentInfo = false;
+	bool sentInitialState = false;
 	while (comm.enabled)
 	{
 
@@ -581,7 +580,7 @@ phase_comm:
 		ResetTimeSync(timesync);
 
 		time_start = sclock::now();
-		sentInfo = false;
+		sentInitialState = false;
 
 		time_read = sclock::now();
 		while (comm.enabled && comm.started && !comm.error && comm.ready)
@@ -747,15 +746,11 @@ phase_comm:
 
 			fflush(stdout);
 
-			if (!sentInfo && dtMS(time_start, sclock::now()) > 250)
+			if (!sentInitialState && dtMS(time_start, sclock::now()) > 250)
 			{
-				printf("%s: Sent info packet!\n", commName);
-				sendInfoPacket(comm.medium);
-				sentInfo = true;
-				// Also send mode incase camera crashed before this without sending an error packet
-				static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
-				uint8_t mode = (state.curMode.streaming? TRCAM_FLAG_STREAMING : 0) | state.curMode.mode | state.curMode.opt;
-				comm_send(realTimeAff, PacketHeader(PACKET_MODE, 1), &mode);
+				printf("%s: Sent initial state packet!\n", commName);
+				sendInitialState(state, comm.medium);
+				sentInitialState = true;
 			}
 
 			// Parsing done, now send from packet queue if it's not handled by main thread for realtime data

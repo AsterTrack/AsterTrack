@@ -91,6 +91,9 @@ int mcu_leading_bytes = MCU_LEADING_BYTES;
 std::mutex mcu_packet_mutex;
 std::vector<MCUForwardedPacket> mcu_packet_queue;
 
+uint8_t mcu_embedded_state[EMBEDDED_STATE_SIZE];
+bool embedded_state_updated = true;
+
 const int MCU_RESET_HOLDTIME_MS = 10;
 const int MCU_RESET_WAITTIME_MS = 80;
 const int MCU_RESET_BOOTWAIT_MS = 20;
@@ -285,6 +288,7 @@ static void mcu_is_connected()
 		printf("Connected to the MCU!\n");
 		ResetTimeSync(timesync);
 		mcu_active = true;
+		embedded_state_updated = true;
 		mcu_sync_info();
 	}
 }
@@ -1029,6 +1033,13 @@ bool mcu_fetch_packet(uint16_t size)
 	return true;
 }
 
+bool mcu_send_embedded_state()
+{
+	PacketHeader header(PACKET_CAMERA_STATE, EMBEDDED_STATE_SIZE);
+	std::vector<uint8_t> data(mcu_embedded_state, mcu_embedded_state+EMBEDDED_STATE_SIZE);
+	return comm_queue_send(comms.get(realTimeAff), header, std::move(data));
+}
+
 bool mcu_get_status()
 {
 	if (i2c_fd < 0) return false;
@@ -1050,20 +1061,15 @@ bool mcu_get_status()
 		transmitUS = (txLen*9 + 2)*1000/400,
 		receiveUS = (rxLen*9 + 2)*1000/400 + 10;
 	TimePoint_t estSendTime = receiveTime - std::chrono::microseconds(receiveUS);
-	
-	uint16_t states = (packet[0] << 8) | packet[1];
 
-	static enum FilterSwitchCommand pastFilterState = FILTER_KEEP;
-	enum FilterSwitchCommand filterState = (enum FilterSwitchCommand)((states >> 14) & 0b11);
-	if (pastFilterState != filterState)
-	{
-		pastFilterState = filterState;
-		if (filterState == FILTER_SWITCH_INFRARED)
-			printf("Filter set to show infrared light!\n");
-		else if (filterState == FILTER_SWITCH_VISIBLE)
-			printf("Filter set to show visible light!\n");
-		else
-			printf("Filter switcher in unknown state!\n");
+	memcpy(mcu_embedded_state, packet, EMBEDDED_STATE_SIZE);
+	if (isEmbeddedStateUpdated(packet))
+	{ // Set updated flag to ensure server is updated
+		embedded_state_updated = true;
+	}
+	if (embedded_state_updated)
+	{ // Forward state change/request to server, and keep flag if it failed
+		embedded_state_updated = !mcu_send_embedded_state();
 	}
 
 	uint16_t powerMV = (packet[2] << 8) | packet[3];
@@ -1138,6 +1144,25 @@ bool mcu_get_status()
 		}
 	}
 
+	return true;
+}
+
+bool mcu_update_embedded_state(const uint8_t state[EMBEDDED_STATE_SIZE])
+{
+	if (i2c_fd < 0) return false;
+
+	unsigned char I2C_CMD[1+EMBEDDED_STATE_SIZE] = { MCU_UPDATE_STATE };
+	memcpy(I2C_CMD+1, state, EMBEDDED_STATE_SIZE);
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (update state)! %d: %s\n", errno, strerror(errno));
+		i2c_handle_error();
+		return false;
+	}
 	return true;
 }
 

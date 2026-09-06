@@ -36,15 +36,16 @@ enum CameraMCUCommand
 	MCU_INITIATE = 1,
 
 	MCU_PING = 16,
-	MCU_BOOT_FIRST, // Notify Pi is booted and may take time initialising
-	MCU_BOOT,		// Notify Pi is booted even if main program fails to connect
-	MCU_FETCH_INFO,	// Get Info (ID, serial, harware rev, etc.) stored on MCU
-	MCU_GET_HW_STR,	// Get Hardware Descriptor String stored in OTP
-	MCU_GET_FW_STR,	// Get Firmware Descriptor String stored in firmware
-	MCU_GET_PARTS,	// Get list of Subpart Serial IDs stored in OTP
-	MCU_UPDATE_ID,	// Tell MCU to update its ID with the one stored on the Pi
-	MCU_GET_STATUS,	// Get Status
-	MCU_GET_PACKET, // Get last packet
+	MCU_BOOT_FIRST, 	// Notify Pi is booted and may take time initialising
+	MCU_BOOT,			// Notify Pi is booted even if main program fails to connect
+	MCU_FETCH_INFO,		// Get Info (ID, serial, harware rev, etc.) stored on MCU
+	MCU_GET_HW_STR,		// Get Hardware Descriptor String stored in OTP
+	MCU_GET_FW_STR,		// Get Firmware Descriptor String stored in firmware
+	MCU_GET_PARTS,		// Get list of Subpart Serial IDs stored in OTP
+	MCU_UPDATE_ID,		// Tell MCU to update its ID with the one stored on the Pi
+	MCU_GET_STATUS,		// Get Status
+	MCU_GET_PACKET, 	// Get last packet
+	MCU_UPDATE_STATE,	// Send embedded state update to MCU
 
 	MCU_COMMANDS = 32,
 	MCU_SWITCH_BOOTLOADER

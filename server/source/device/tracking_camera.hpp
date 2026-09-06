@@ -134,6 +134,9 @@ struct TrackingCameraState
 	bool selectedForFirmware;
 	CameraFirmwareUpdateRef firmware;
 
+	// Physical hardware state
+	CameraEmbeddedState embeddedState;
+
 	/**
 	* Receiving state
 	*/
@@ -220,5 +223,17 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const
 void CameraUpdateStream(TrackingCameraState &device);
 void CameraUpdateVis(TrackingCameraState &device);
 void CameraRequestMCUInfo(TrackingCameraState &device);
+
+/**
+ * Sync embedded state with camera device.
+ * If change flags of any authoritative states are set, camera is expected to change state and respond accordingly.
+ */
+void CameraUpdateEmbeddedState(TrackingCameraState &camera);
+
+/**
+ * Request camera to switch to given filter state if it has a filter switcher.
+ * Server-side state is non-authoritative and will only be updated when camera responds.
+ */
+void CameraRequestFilterSwitch(TrackingCameraState &camera, CameraFilterState filter);
 
 #endif // TRACKING_CAMERA_H

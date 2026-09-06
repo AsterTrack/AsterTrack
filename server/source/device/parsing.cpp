@@ -975,6 +975,37 @@ bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, c
 	return true;
 }
 
+bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
+{
+	if (erroneous) return false;
+	if (length < EMBEDDED_STATE_SIZE) return false;
+
+	CameraEmbeddedState state = parseEmbeddedState(data);
+
+	if (camera.embeddedState.filter != state.filter)
+	{
+		// May have been requested by server, or initiated by camera
+		// CameraRequestFilterSwitch currently does not store that, so trust camera
+		const char* initiator = state.changeFilter? "via buttons" : "on request";
+		if (state.filter == FILTER_NONE)
+			LOG(LCameraDevice, LInfo, "Camera #%u filter inactivated %s!", camera.id, initiator);
+		else if (state.filter == FILTER_INFRARED)
+			LOG(LCameraDevice, LInfo, "Camera #%u filter set to show infrared light %s!", camera.id, initiator);
+		else if (state.filter == FILTER_VISIBLE)
+			LOG(LCameraDevice, LInfo, "Camera #%u filter set to show visible light %s!", camera.id, initiator);
+		else
+			LOG(LCameraDevice, LWarn, "Camera #%u filter switcher set to unknown state %s!", camera.id, initiator);
+	}
+	else if (state.changeFilter)
+	{ // May be a race condition, not problematic
+		LOG(LCameraDevice, LDarn, "Camera #%u initiated a filter switch to same state %d!", camera.id, state.filter);
+	}
+	state.changeFilter = false;
+
+	camera.embeddedState = state;
+	return true;
+}
+
 bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (erroneous) return false;
@@ -1223,6 +1254,11 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 		if (!camera.firmware) break;
 		auto camStatus = camera.firmware->contextualLock();
 		camStatus->packets.emplace_back(data, data+length);
+		break;
+	}
+	case PACKET_CAMERA_STATE:
+	{
+		ReadCameraStatePacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_CAMERA_INFO:

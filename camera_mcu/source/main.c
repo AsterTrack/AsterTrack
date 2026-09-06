@@ -74,7 +74,6 @@ struct {
 } receive;
 
 // camera_mcu state
-volatile TimePoint lastFilterSwitch;
 volatile TimePoint lastUARTActivity = 0;
 volatile TimePoint lastMarker = 0;
 volatile TimePoint lastPiComm = 0;
@@ -85,10 +84,19 @@ volatile bool piHasPower = true;
 volatile bool piIsBooted;
 volatile bool piWantsBootloader;
 volatile bool piIsStreaming = false;
-volatile enum FilterSwitchCommand filterSwitcherState;
+volatile bool onUSBPower = false;
+
+// Boot mode (flash config)
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
+// Configuration update
 volatile CameraID cameraIDToWrite = 0;
-bool onUSBPower = false;
+
+// Embedded device state synced with server
+volatile struct CameraEmbeddedState embeddedState = {0};
+// Filter switching
+volatile TimePoint lastFilterSwitch;
+volatile enum CameraFilterState showingFSStatus = FILTER_KEEP;
+volatile TimePoint lastFSStatus;
 
 // Frame and Time sync
 struct time_sync timesync;	// Current estimate of controller-MCU-time relationship
@@ -128,7 +136,7 @@ static void uart_set_identification()
 
 static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion);
 
-static bool UpdateFilterSwitcher(enum FilterSwitchCommand state);
+static bool UpdateFilterSwitcher(enum CameraFilterState state);
 
 static bool ApplyUserFlashConfiguration();
 
@@ -230,7 +238,7 @@ int main(void)
 	}
 
 	// Bring filter switcher into default position
-	UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
+	UpdateFilterSwitcher(FILTER_INFRARED);
 
 #if defined(USE_I2C)
 	// Init I2C device
@@ -324,28 +332,30 @@ int main(void)
 		}
 
 		/* // Automatic switching of filter switcher for testing
-		UpdateFilterSwitcher(FILTER_SWITCH_VISIBLE);
+		UpdateFilterSwitcher(FILTER_VISIBLE);
 		delayUS(2000000);
-		UpdateFilterSwitcher(FILTER_SWITCH_INFRARED);
+		UpdateFilterSwitcher(FILTER_INFRARED);
 		delayUS(10000000); */
 
 		{
 			// Allow switching of filter via buttons
-			enum FilterSwitchCommand target = FILTER_KEEP;
+			enum CameraFilterState target = FILTER_KEEP;
 			if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
-				target = FILTER_SWITCH_INFRARED;
+				target = FILTER_INFRARED;
 			else if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
-				target = FILTER_SWITCH_VISIBLE;
+				target = FILTER_VISIBLE;
 
 			// Update status of filter and LEDs showing status
-			static enum FilterSwitchCommand showingFSStatus = FILTER_KEEP;
-			static TimePoint lastFSStatus;
 			if (target != FILTER_KEEP)
 			{ // Wish to switch filter
 				if (UpdateFilterSwitcher(target))
+				{
+					embeddedState.changeFilter = true; // Signal it was initiated by device
+					embeddedState.updated = true; // Ensure new state is sent to server 
 					GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+				}
 				if (showingFSStatus != target)
-					rgbled_transition(target == FILTER_SWITCH_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
+					rgbled_transition(target == FILTER_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
 				showingFSStatus = target;
 				lastFSStatus = GetTimePoint();
 			}
@@ -897,6 +907,36 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 			}
 			return true;
 		}
+		case MCU_UPDATE_STATE:
+		{
+			if (len > EMBEDDED_STATE_SIZE)
+			{
+				rgbled_displayError(1);
+				ReturnToDefaultLEDState(1000);
+				return false;
+			}
+			struct CameraEmbeddedState state = parseEmbeddedState(data);
+
+			if (state.changeFilter)
+			{
+				UpdateFilterSwitcher(state.filter);
+				embeddedState.changeFilter = false; // Clear any past flag
+				// Signal switch on RGB LEDs
+				rgbled_transition(state.filter == FILTER_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
+				showingFSStatus = state.filter;
+				lastFSStatus = GetTimePoint();
+				// Notify SBC of update (though it will poll at 100Hz anyway)
+				GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+			}
+			else if (embeddedState.filter != state.filter)
+			{ // Server had unexpected state without initiating a change
+				// Camera is are authoritative
+				rgbled_displayError(2);
+			}
+
+			embeddedState.updated = true; // Ensure new state is sent to server
+			return true;
+		}
 		default:
 			return false;
 	}
@@ -954,10 +994,11 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			// Reset interrupt flag
 			if (GetSBCQueueSize() <= 1)
 				GPIO_SET(I2C_INT_GPIO_X, I2C_INT_PIN);
-			// 16bits of various states
-			uint16_t states = ((filterSwitcherState & 0b11) << 14);
-			response[0] = states >> 8;
-			response[1] = states & 0xFF;
+			// Embedded state (selection, filter)
+			storeEmbeddedState(embeddedState, response);
+			// Clear flags
+			embeddedState.changeFilter = false;
+			embeddedState.updated = false;
 			// Latest supply voltage reading from ADC 
 			uint16_t powerMV = GetMillivolts();
 			response[2] = powerMV >> 8;
@@ -1079,12 +1120,12 @@ void ReturnToDefaultLEDState(int timeMS)
 		rgbled_transition(LED_INITIALISING, timeMS);
 }
 
-static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
+static bool UpdateFilterSwitcher(enum CameraFilterState state)
 {
-	bool switched = state != FILTER_KEEP && filterSwitcherState != state;
+	bool switched = state != FILTER_KEEP && embeddedState.filter != state;
 	if (switched)
 	{ // Need to actuate the motor to switch
-		filterSwitcherState = state;
+		embeddedState.filter = state;
 		lastFilterSwitch = GetTimePoint();
 	}
 	int timeSince = GetTimeSinceMS(lastFilterSwitch);
@@ -1097,13 +1138,13 @@ static bool UpdateFilterSwitcher(enum FilterSwitchCommand state)
 	} */
 	if (actuateMotor)
 	{
-		if (filterSwitcherState == FILTER_SWITCH_VISIBLE)
+		if (embeddedState.filter == FILTER_VISIBLE)
 		{
 			GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
 			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);
 			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_PIN_SLEEP);
 		}
-		else if (filterSwitcherState == FILTER_SWITCH_INFRARED)
+		else if (embeddedState.filter == FILTER_INFRARED)
 		{
 			GPIO_SET(FILTERSW_GPIO_X, FILTERSW_INFRARED_PIN);
 			GPIO_RESET(FILTERSW_GPIO_X, FILTERSW_VISIBLE_PIN);

@@ -127,5 +127,6 @@ extern std::string firmwareMount, sbc_firmware_path, mcu_firmware_path, mcu_firm
 bool options_read(TrackingCameraState &state, int argc, char **argv);
 void acceptCPUConfig(TrackingCameraState &state);
 void acceptQPUConfig(TrackingCameraState &state);
+void sendInitialState(TrackingCameraState &state, CommMedium medium);
 
 #endif // STATE_H

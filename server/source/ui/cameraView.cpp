@@ -319,6 +319,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	 */
 
 	BeginViewToolbar();
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.6f);
 
 	if (!view.isDetached)
 	{ // Show detach button and title within view
@@ -372,6 +373,43 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			ImGui::EndTooltip();
 		}
 		ImGui::SameLine();
+
+		// Show filter switcher icon
+		auto &embedded = view.camera->embeddedState;
+		bool hasFilterSwitcher = true; // May verify with view.camera->storage.info.subpartSerials in the future?
+		// Maybe even which filters are available
+		if (hasFilterSwitcher)
+		{ // Have to manually add frame padding
+			ImVec4 color = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+			std::string desc = "unknown state";
+			switch (embedded.filter)
+			{
+				case FILTER_VISIBLE:
+					color = ImVec4(0.0f, 0.88f, 0.92f, 1.0f);
+					desc = "show visible light";
+					break;
+				case FILTER_INFRARED:
+					color = ImVec4(1.0f, 0.0f, 1.0f, 1.0f);
+					desc = "show infrared light";
+					break;
+				default:
+					break;
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text, color);
+			bool filterToggle = CircleButton("Filter", true);
+			ImGui::PopStyleColor();
+			if (filterToggle)
+			{
+				auto filter = FILTER_INFRARED;
+				if (embedded.filter == FILTER_VISIBLE)
+					filter = FILTER_INFRARED;
+				else if (embedded.filter == FILTER_INFRARED)
+					filter = FILTER_VISIBLE;
+				CameraRequestFilterSwitch(*view.camera, filter);
+			}
+			ImGui::SetItemTooltip("Toggle Filter Switcher State\nSet to %s", desc.c_str());
+			ImGui::SameLine();
+		}
 
 		// Warn about serious defects (temporary or in hardware)
 		bool hasDefects;
@@ -710,6 +748,9 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		ImGui::PopID();
 		EndViewToolbar();
 	}
+
+	ImGui::PopStyleVar();
+
 
 	/**
 	 * Misc UI controls

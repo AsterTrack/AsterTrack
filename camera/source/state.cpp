@@ -23,6 +23,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 
+#include "version.hpp"
+#include "mcu/mcu.hpp"
+#include "comm/comm.hpp"
+
 std::string id_file = "/mnt/mmcblk0p4/config/id";
 std::string configFolder = "/mnt/mmcblk0p4/config";
 std::string firmwareMount = "/mnt/mmcblk0p2";
@@ -285,4 +289,21 @@ void acceptQPUConfig(TrackingCameraState &state)
 	state.camera.strobe = setupPacket.strobe;
 	state.camera.strobeOffset = setupPacket.strobeOffset;
 	state.camera.strobeLength = setupPacket.strobeLength;
+}
+
+void sendInitialState(TrackingCameraState &state, CommMedium medium)
+{ // Send all info server should know about current state
+	// May be initial connection of camera over a new comm medium
+	// May be server requesting info after it restarted
+
+	// Send main info packet, whether MCU info is available yet or not
+	sendInfoPacket(medium);
+
+	// Could send state from here if MCU is active, but MCU thread checks that every 10ms anyway
+	embedded_state_updated = true;
+
+	// Also send mode incase camera crashed before this without sending an error packet
+	static_assert(TRCAM_MODE_SIZE == std::numeric_limits<uint8_t>::max());
+	uint8_t mode = (state.curMode.streaming? TRCAM_FLAG_STREAMING : 0) | state.curMode.mode | state.curMode.opt;
+	comm_send(medium, PacketHeader(PACKET_MODE, 1), &mode);
 }

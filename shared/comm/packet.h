@@ -87,13 +87,14 @@ enum PacketTag
 	PACKET_VISUAL,			// Send visual debug data of frame
 	PACKET_IMAGE,			// Send camera frame image
 	PACKET_BGTILES,			// Send updated background tiles
-	PACKET_CFG_FILTER,		// Configure filter switcher state
-	PACKET_CFG_SIGNAL,		// Configure state for LED to signal
+	PACKET_UNUSED1,			// Unused
+	PACKET_UNUSED2,			// Unused
 	PACKET_FW_PREPARE,		// Prepare firmware update
 	PACKET_FW_BLOCK,		// Send block of a file for firmware update
 	PACKET_FW_STATUS,		// Send status of prior firmware update packet
 	PACKET_FW_APPLY,		// Apply firmware update
 	PACKET_CAMERA_INFO,		// Exchange SBC & MCU firmware version, MCU/SBC connection status, hardware serial numbers
+	PACKET_CAMERA_STATE,	// Report camera status and request changes
 	PACKET_MAX_ID_POSSIBLE = 63
 };
 
@@ -230,12 +231,6 @@ enum CommMedium
 	COMM_MEDIUM_MAX
 };
 
-enum FilterSwitchCommand {
-	FILTER_KEEP = 0,
-	FILTER_SWITCH_VISIBLE = 1,
-	FILTER_SWITCH_INFRARED = 2,
-};
-
 enum CameraMCUFlashConfig {
 	MCU_FLASH_KEEP = 0,
 	MCU_FLASH_UNKNOWN = 0,
@@ -286,7 +281,7 @@ static inline bool isStreamPacket(struct PacketHeader header) { return header.ta
 #define PACKET_HEADER_SIZE 4
 #define PACKET_MAX_LENGTH ((1 << 18) - 1)
 
-static inline struct PacketHeader parsePacketHeader(uint8_t data[PACKET_HEADER_SIZE])
+static inline struct PacketHeader parsePacketHeader(const uint8_t data[PACKET_HEADER_SIZE])
 {
 	struct PacketHeader header;
 	header.tag = (enum PacketTag)((data[0] >> 2) & 0x3F);
@@ -327,7 +322,7 @@ struct BlockHeader
 // Special blockID to designate signals (not from ports, but from controller itself)
 #define BLOCK_ID_SIGNAL				255
 
-static inline struct BlockHeader parseBlockHeader(uint8_t data[BLOCK_HEADER_SIZE])
+static inline struct BlockHeader parseBlockHeader(const uint8_t data[BLOCK_HEADER_SIZE])
 {
 	struct BlockHeader header;
 	header.blockID = data[0];
@@ -377,7 +372,7 @@ struct USBPacketHeader
 };
 #define USB_PACKET_HEADER 			4
 
-static inline struct USBPacketHeader parseUSBPacketHeader(uint8_t data[USB_PACKET_HEADER])
+static inline struct USBPacketHeader parseUSBPacketHeader(const uint8_t data[USB_PACKET_HEADER])
 {
 	struct USBPacketHeader header;
 	header.counter = data[0];
@@ -473,7 +468,7 @@ struct IdentPacket
 
 #define IDENT_PACKET_SIZE			10
 
-static inline struct IdentPacket parseIdentPacket(uint8_t data[IDENT_PACKET_SIZE])
+static inline struct IdentPacket parseIdentPacket(const uint8_t data[IDENT_PACKET_SIZE])
 {
 	struct IdentPacket ident;
 	ident.device = (enum DeviceTag)data[0];
@@ -515,7 +510,7 @@ struct SyncPacket
 };
 #define SYNC_PACKET_SIZE			3
 
-static inline struct SyncPacket parseSyncPacket(uint8_t data[SYNC_PACKET_SIZE])
+static inline struct SyncPacket parseSyncPacket(const uint8_t data[SYNC_PACKET_SIZE])
 {
 	struct SyncPacket sync;
 	sync.timeUS = (data[0] << 16) | (data[1] << 8) | (data[2]);
@@ -545,7 +540,7 @@ struct SOFPacket
 };
 #define SOF_PACKET_SIZE				7
 
-static inline struct SOFPacket parseSOFPacket(uint8_t data[SOF_PACKET_SIZE])
+static inline struct SOFPacket parseSOFPacket(const uint8_t data[SOF_PACKET_SIZE])
 {
 	struct SOFPacket sof;
 	sof.timeUS = (data[0] << 16) | (data[1] << 8) | (data[2]);
@@ -562,6 +557,55 @@ static inline void storeSOFPacket(struct SOFPacket sof, uint8_t data[SOF_PACKET_
 	data[4] = (sof.frameID >> 16) & 0xFF;
 	data[5] = (sof.frameID >> 8) & 0xFF;
 	data[6] = (sof.frameID >> 0) & 0xFF;
+};
+
+
+/**
+ * State of Camera Device (mostly MCU) for Server<->SBC<->MCU communication
+ */
+
+enum CameraFilterState
+{ // Reported filter state (camera authoritative)
+	// Either side sets changeFilter flag on deliberate change
+	FILTER_KEEP			= 0, // Used locally only
+	FILTER_UNKNOWN		= 0,
+	FILTER_NONE			= 1,
+	FILTER_VISIBLE		= 2,
+	FILTER_INFRARED		= 3,
+};
+
+struct CameraEmbeddedState
+{ // 16 bit available
+	bool updated;						// 1 bit
+
+	enum CameraFilterState filter;		// 2 bit
+	bool changeFilter;					// 1 bit
+};
+#define EMBEDDED_STATE_SIZE				2
+
+static inline bool isEmbeddedStateUpdated(const uint8_t data[EMBEDDED_STATE_SIZE])
+{
+	uint16_t states = (data[0] << 8) | data[1];
+	return (states >> 15) & 0b1;
+};
+
+static inline struct CameraEmbeddedState parseEmbeddedState(const uint8_t data[EMBEDDED_STATE_SIZE])
+{
+	uint16_t states = (data[0] << 8) | data[1];
+	struct CameraEmbeddedState mcu;
+	mcu.updated = (states >> 15) & 0b1;
+	mcu.filter = (enum CameraFilterState)((states >> 13) & 0b11);
+	mcu.changeFilter = (states >> 12) & 0b1;
+	return mcu;
+};
+
+static inline void storeEmbeddedState(struct CameraEmbeddedState state, uint8_t data[EMBEDDED_STATE_SIZE])
+{
+	uint16_t states = ((state.updated? 1 : 0) << 15)
+		| ((state.filter & 0b11) << 13)
+		| ((state.changeFilter? 1 : 0) << 12);
+	data[0] = states >> 8;
+	data[1] = states & 0xFF;
 };
 
 #endif // PACKET_H

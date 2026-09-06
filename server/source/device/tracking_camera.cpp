@@ -416,3 +416,21 @@ void CameraRequestMCUInfo(TrackingCameraState &device)
 	request[0] = MCU_INFO_VERSION; // Requested version of leading MCU_FETCH_INFO packet
 	device.sendPacket(PACKET_READ_MCU_INFO, request.data(), request.size());
 }
+
+void CameraUpdateEmbeddedState(TrackingCameraState &camera)
+{
+	std::vector<uint8_t> request(EMBEDDED_STATE_SIZE);
+	camera.embeddedState.changeFilter = false; // Should never be set server-side
+	storeEmbeddedState(camera.embeddedState, request.data());
+	camera.sendPacket(PACKET_CAMERA_STATE, request.data(), request.size());
+}
+
+void CameraRequestFilterSwitch(TrackingCameraState &camera, CameraFilterState filter)
+{
+	auto embeddedState = camera.embeddedState;
+	embeddedState.filter = filter;
+	embeddedState.changeFilter = true;
+	std::vector<uint8_t> request(EMBEDDED_STATE_SIZE);
+	storeEmbeddedState(embeddedState, request.data());
+	camera.sendPacket(PACKET_CAMERA_STATE, request.data(), request.size());
+}

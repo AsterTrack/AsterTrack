@@ -36,7 +36,7 @@ bool hasHSEClock = false; // True on anything but first dev boards
 
 #define TIM1_ARR 65000
 
-void Setup_Peripherals()
+int Setup_Peripherals()
 {
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
 
@@ -65,6 +65,7 @@ void Setup_Peripherals()
 	LL_FLASH_EnablePrefetch();
 
 	// Attempt to configure HSE
+	hasHSEClock = false;
 	LL_RCC_HSE_EnableBypass();
 	if (!LL_RCC_HSE_IsReady())
 		LL_RCC_HSE_Enable();
@@ -73,34 +74,54 @@ void Setup_Peripherals()
 
 	if (LL_RCC_HSE_IsReady())
 	{ // HSE clock detected
-		hasHSEClock = true;
 
 		// Configure PLL to 64MHz for SYSCLK using HSE-24Mhz
 		LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSE, LL_RCC_PLLM_DIV_3, 16, LL_RCC_PLLR_DIV_2);
+
+		// Enable PLL
+		LL_RCC_PLL_Enable();
+		LL_RCC_PLL_EnableDomain_SYS();
+		timeout = 100000;
+		while (!LL_RCC_PLL_IsReady() && --timeout > 0);
+		if (timeout <= 0)
+		{ // PLL failed to initialise with this HSE source, disable and use HSI
+			LL_RCC_PLL_Disable();
+		}
+		else
+		{ // PLL ready
+			hasHSEClock = true;
+		}
 	}
-	else
+
+	if (!hasHSEClock)
 	{ // HSE not detected, fall back to HSI16
 		LL_RCC_HSE_Disable();
 
 		// Configure HSI16
 		if (!LL_RCC_HSI_IsReady())
 			LL_RCC_HSI_Enable();
-		while (!LL_RCC_HSI_IsReady());
+		timeout = 100000;
+		while (!LL_RCC_HSI_IsReady() && --timeout > 0);
+		if (timeout <= 0) return 1;
 
 		// Configure PLL to 64MHz for SYSCLK using HSI-16Mhz
 		LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSI, LL_RCC_PLLM_DIV_1, 8, LL_RCC_PLLR_DIV_2);
-	}
 
-	// Enable PLL
-	LL_RCC_PLL_Enable();
-	LL_RCC_PLL_EnableDomain_SYS();
-	while (!LL_RCC_PLL_IsReady());
+		// Enable PLL
+		LL_RCC_PLL_Enable();
+		LL_RCC_PLL_EnableDomain_SYS();
+		timeout = 100000;
+		while (!LL_RCC_PLL_IsReady() && --timeout > 0);
+		if (timeout <= 0) return 2;
+	}
 
 	// Set system clock
 	LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1); // HCLK 64MHz
 	LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1); // PCLK 64MHz
 	LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_PLL); // SYSCLK 64MHz
-	while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL);
+	timeout = 100000;
+	while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL && --timeout > 0);
+	if (timeout <= 0) return 3;
 
 	//assert(SYSCLKFRQ == 64);
 #endif
@@ -299,6 +320,39 @@ void Setup_Peripherals()
 	EXTI->IMR1 |= LL_EXTI_LINE_15; // Enable interrupt generation
 #endif
 #endif
+
+	return 0;
+}
+
+void DisplaySystemError(int code, bool loop)
+{
+	// Should assume nothing is setup (except some kind of clock)
+
+	// Bare minimum for RJ45 LEDs
+	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+	LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOB);
+	LL_GPIO_SetPinMode(RJLED_GPIO_X, RJLED_GREEN_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(RJLED_GPIO_X, RJLED_GREEN_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(RJLED_GPIO_X, RJLED_GREEN_PIN, LL_GPIO_SPEED_FREQ_LOW);
+	LL_GPIO_SetPinMode(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_MODE_OUTPUT);
+	LL_GPIO_SetPinOutputType(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_OUTPUT_PUSHPULL);
+	LL_GPIO_SetPinSpeed(RJLED_GPIO_X, RJLED_ORANGE_PIN, LL_GPIO_SPEED_FREQ_LOW);
+
+	while (loop)
+	{
+		for (int i = 0; i < code; i++)
+		{
+			GPIO_SET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+			for (int j = 0; j < 1000000; j++) __NOP();
+			GPIO_RESET(RJLED_GPIO_X, RJLED_ORANGE_PIN);
+			for (int j = 0; j < 1000000; j++) __NOP();
+		}
+		GPIO_SET(RJLED_GPIO_X, RJLED_GREEN_PIN);
+		for (int j = 0; j < 500000; j++) __NOP();
+		GPIO_RESET(RJLED_GPIO_X, RJLED_GREEN_PIN);
+		for (int j = 0; j < 500000; j++) __NOP();
+		for (int j = 0; j < 1000000; j++) __NOP();
+	}
 }
 
 void EnableADC()

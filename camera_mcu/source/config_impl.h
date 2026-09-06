@@ -213,7 +213,8 @@ extern bool hasHSEClock;
 
 // Functions
 
-void Setup_Peripherals();
+int Setup_Peripherals();
+void DisplaySystemError(int code, bool loop);
 
 void EnableADC();
 void DisableADC();

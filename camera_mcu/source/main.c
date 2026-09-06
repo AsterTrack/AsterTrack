@@ -153,7 +153,11 @@ void SystemInit(void)
 int main(void)
 {
 	// Base setup
-	Setup_Peripherals();
+	int setupError = Setup_Peripherals();
+	if (setupError > 0)
+	{ // Attempt to display error, this will not exit
+		DisplaySystemError(setupError, true);
+	}
 
 	// Initialise
 	startup = GetTimePoint();

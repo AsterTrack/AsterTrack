@@ -348,14 +348,13 @@ endif
 $(shell touch source/version.cpp >/dev/null)
 
 all: $(o)/astertrack-interface.so $(o)/astertrack-server copybinaries
-#$(o)/astertrack-static
 
 .PHONY: copybinaries
 copybinaries: $(o)/astertrack-interface.so $(o)/astertrack-server
 	@cp -u $(usblib) "$(b)/"
 	@-rm -f $(b)/astertrack*
 	@ln -sr $(o)/astertrack* $(b)/
-# $(o)/astertrack-static
+
 
 # May prefix this before each target to measure compile times
 # time --format="%E | $@"

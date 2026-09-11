@@ -43,4 +43,23 @@ cp -r $(dirname $0)/* $INSTALL_DIR/
 sed -i s,/opt/astertrack,$INSTALL_DIR,g $INSTALL_DIR/astertrack.desktop
 cp $INSTALL_DIR/astertrack.desktop $DESKTOP_DIR/
 
-echo "Done installing to '$INSTALL_DIR'!"
+# Installing udev-rules requires sudo
+NEW_RULES=$(dirname $0)/40-astertrack.rules
+OLD_RULES=/etc/udev/rules.d/40-astertrack.rules
+if ! cmp -s $NEW_RULES $OLD_RULES; then
+    echo "Updating udev rules for AsterTrack controller!"
+    # Does not work, execution from file browser not supported
+    sudo --askpass -p="Need privileges to update udev rules for AsterTrack controller" echo "+" > /dev/null || exit 1
+    sudo cp $NEW_RULES $OLD_RULES
+    sudo udevadm control --reload-rules && sudo udevadm trigger
+fi
+if [[ -z "$(getent group | grep sysplugdev)" ]]; then
+    echo "Adding sysplugdev group for user to access controller udev rules!"
+    # Does not work, execution from file browser not supported
+    sudo --askpass -p="Need privileges to add sysplugdev group for user to access controller udev rules" echo "+" > /dev/null || exit 1
+    sudo groupadd --system sysplugdev
+    sudo usermod -a -G sysplugdev $USER
+fi
+if [[ -z "$(getent group | grep sysplugdev)" ]]; then
+    echo "Failed to add sysplugdev group for user to access controller udev rules!"
+fi

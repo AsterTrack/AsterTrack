@@ -1,0 +1,10 @@
+# Rules for AsterTrack Controller based on CH32V307
+
+# Firmware, prerelease, shared ID for use with libusb
+SUBSYSTEM=="usb", ATTR{idVendor}=="16c0", ATTR{idProduct}=="05dc", MODE="0660", GROUP="sysplugdev"
+
+# ISP Bootloader of various WCH chips
+SUBSYSTEM=="usb", ATTR{idVendor}=="4348", ATTR{idProduct}=="55e0", MODE="0660", GROUP="sysplugdev"
+
+# WCH Link/LinkE just for development
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="8010", MODE="0660", GROUP="sysplugdev"

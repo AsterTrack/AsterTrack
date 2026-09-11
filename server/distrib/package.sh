@@ -37,6 +37,7 @@ cp $server/build/libusb-1.* .
 
 cp $server/README.md .
 cp $server/distrib/astertrack.desktop .
+cp $server/distrib/40-astertrack.rules .
 
 cp $server/distrib/install.sh install.sh
 

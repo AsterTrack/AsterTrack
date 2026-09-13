@@ -66,16 +66,18 @@ SignalCameraRefresh_t SignalCameraRefresh;
 SignalPipelineUpdate_t SignalPipelineUpdate;
 SignalObservationReset_t SignalObservationReset;
 SignalServerEvent_t SignalServerEvent;
+SignalCameraInteraction_t SignalCameraInteraction;
 
 #ifdef INTERFACE_LINKED
 extern "C" {
 	bool _InterfaceThread();
 	void _SignalShouldClose();
 	void _SignalLogUpdate();
-	void _SignalCameraRefresh(CameraID id);
+	void _SignalCameraRefresh(CameraID);
 	void _SignalPipelineUpdate();
-	void _SignalObservationReset(FrameNum firstFrame);
-	void _SignalServerEvent(ServerEvents event);
+	void _SignalObservationReset(FrameNum);
+	void _SignalServerEvent(ServerEvents);
+	void _SignalCameraInteraction(CameraID, CameraInteractEvent, bool);
 }
 static inline bool AssumeInterface()
 {
@@ -86,6 +88,7 @@ static inline bool AssumeInterface()
 	SignalPipelineUpdate = (SignalPipelineUpdate_t)&_SignalPipelineUpdate;
 	SignalObservationReset = (SignalObservationReset_t)&_SignalObservationReset;
 	SignalServerEvent = (SignalServerEvent_t)&_SignalServerEvent;
+	SignalCameraInteraction = (SignalCameraInteraction_t)&_SignalCameraInteraction;
 	return true;
 }
 #else
@@ -106,6 +109,7 @@ static inline void UnlinkInterface()
 	SignalPipelineUpdate = [](){};
 	SignalObservationReset = [](FrameNum){};
 	SignalServerEvent = [](ServerEvents){};
+	SignalCameraInteraction = [](CameraID, CameraInteractEvent, bool){};
 #ifdef ALLOW_DYNAMIC_LINKING
 	if (InterfaceDL) dlclose(InterfaceDL);
 	InterfaceDL = nullptr;
@@ -122,7 +126,8 @@ static inline bool LinkInterface(void *uidl)
 	SignalPipelineUpdate = (SignalPipelineUpdate_t)dlsym(uidl, "_SignalPipelineUpdate");
 	SignalObservationReset = (SignalObservationReset_t)dlsym(uidl, "_SignalObservationReset");
 	SignalServerEvent = (SignalServerEvent_t)dlsym(uidl, "_SignalServerEvent");
-	return InterfaceThread && SignalInterfaceShouldClose && SignalLogUpdate && SignalCameraRefresh && SignalPipelineUpdate && SignalObservationReset && SignalServerEvent;
+	SignalCameraInteraction = (SignalCameraInteraction_t)dlsym(uidl, "_SignalCameraInteraction");
+	return InterfaceThread && SignalInterfaceShouldClose && SignalLogUpdate && SignalCameraRefresh && SignalPipelineUpdate && SignalObservationReset && SignalServerEvent && SignalCameraInteraction;
 #else
 	return true;
 #endif

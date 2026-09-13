@@ -63,7 +63,7 @@ struct Color; // gl/visualisation.hpp
 struct GLFWwindow; // GLFW/glfw3.h
 // Defined later
 struct CameraView;
-class InterfaceState;
+struct InterfaceState;
 
 extern InterfaceState *InterfaceInstance;
 static inline InterfaceState &GetUI() { return *InterfaceInstance; }
@@ -315,8 +315,8 @@ struct VisualisationState
 
 	struct
 	{ // Visualisation settings of image frames
-		float brightness = 0.0f;
-		float contrast = 1.0f;
+		float brightness = 0.02f;
+		float contrast = 3.0f;
 	} image;
 
 	struct
@@ -390,9 +390,8 @@ struct View3D
 /**
  * Interface for the AsterTrack application
  */
-class InterfaceState
+struct InterfaceState
 {
-public:
 	bool init = false;
 
 	// Window and Platform state
@@ -673,11 +672,12 @@ struct CameraView
 	bool resized;
 	// ImGui State
 	std::string ImGuiTitle;
-	bool isDetached, isHidden, isIntendedFocus;
+	bool isDetached, isHidden;
+	bool isFocusDetach, isFocusImage;
 	int detachedIndex = -1;
 };
 
-// UI-only device functions
+// UI-only device functions implemented in system/state.cpp
 CameraConfig& getCameraConfig(const TrackingCameraState &camera);
 std::string getStatusText(const TrackingCameraState &camera);
 std::vector<std::string> getCameraDefects(const TrackingCameraState &camera, bool &hasDefects);

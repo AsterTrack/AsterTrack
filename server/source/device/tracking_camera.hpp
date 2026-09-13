@@ -236,4 +236,23 @@ void CameraUpdateEmbeddedState(TrackingCameraState &camera);
  */
 void CameraRequestFilterSwitch(TrackingCameraState &camera, CameraFilterState filter);
 
+/**
+ * Toggle camera selection with given modifiers and update camera device.
+ * If neither modifier is set, other cameras may loose their selection.
+ * If return value is true, this cameras selection has changed.
+ */
+bool CameraToggleSelectionState(TrackingCameraState &camera, bool append = false, bool single = false);
+
+/**
+ * Set camera focus state and update camera device.
+ */
+void CameraUpdateFocusState(TrackingCameraState &camera, bool focus);
+
+/**
+ * Update selection state of all cameras except the given one (may be None).
+ * uniqueFocus: Remove any existing focus. Set if given camera gained focus.
+ * clearSelection: Clear any existing selections.
+ */
+bool CamerasReconcileInteractionState(ServerState &state, int cameraID = CAMERA_ID_NONE, bool uniqueFocus = false, bool clearSelection = false);
+
 #endif // TRACKING_CAMERA_H

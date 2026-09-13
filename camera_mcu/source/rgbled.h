@@ -98,6 +98,12 @@ extern struct LED_Animation LED_ANIM_BOOTING;
 extern struct LED_Animation LED_ANIM_STREAMING;
 extern struct LED_Animation LED_ANIM_FLASH_BAD;
 
+extern uint8_t LED_INTERACT_SELECTED[RGBLED_COUNT*3];
+extern uint8_t LED_INTERACT_FOCUSED[RGBLED_COUNT*3];
+extern struct LED_Animation LED_ANIM_INTERACTION;
+void ConfigureInteractionAnimSelected(uint8_t *baseState);
+void ConfigureInteractionAnimFocused(uint8_t *baseState);
+
 // These timings are critical as they influence behaviour and the animation needs to convey that behaviour to the user
 #define CHARGE_TIME_MIN_MS 1000
 #define CHARGE_TIME_MAX_MS 3000

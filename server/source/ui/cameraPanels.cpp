@@ -258,7 +258,7 @@ void InterfaceState::UpdateDetachedCameraView(CameraView &view)
 		ConstrainWindowAspect, (void*)&aspect);
 
 	// Set initial windows size depending on whether we're just detaching or being instructed to focus on the camera externally (e.g. a button press)
-	ImGuiCond cond = view.isIntendedFocus? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+	ImGuiCond cond = view.isFocusDetach? ImGuiCond_Always : ImGuiCond_FirstUseEver;
 	ImVec2 workSize = ImGui::GetWindowViewport()->WorkSize;
 	ImVec2 size = workSize - SizeFrame(); // Leave some space to recognise it's a floating window
 	float base = std::max(100.0f, std::min(size.x, size.y/aspect));
@@ -278,9 +278,14 @@ void InterfaceState::UpdateDetachedCameraView(CameraView &view)
 		view.resized = false;
 	}
 	if (!view.isDetached)
+	{
 		cameraGridDirty = true;
-	if (view.isIntendedFocus && ImGui::GetCurrentWindowRead()->ResizeBorderHeld != -1)
-		view.isIntendedFocus = false;
+		view.isFocusDetach = false;
+	}
+	if (view.isFocusDetach && ImGui::GetCurrentWindowRead()->ResizeBorderHeld != -1)
+	{ // Release control over detached view focus
+		view.isFocusDetach = false;
+	}
 	ImGui::End();
 }
 

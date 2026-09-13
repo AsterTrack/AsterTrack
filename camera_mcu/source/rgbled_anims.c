@@ -21,6 +21,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
  * LED States
  * Button Order:
  * 1 2
+ *  O
  * 4 3
  */
 
@@ -96,55 +97,23 @@ struct LED_Animation LED_ANIM_BOOTING = {
 	}
 };
 
-struct LED_Animation LED_ANIM_STREAMING = {
-	.count = 5,
-	.repetitions = -1,
-	.transitions = {
-		{
-			.leds = LED_ACTIVE,
-			.time = 50*TICKS_PER_MS,
-			.mode = INTER_LERP_LINEAR
-		},
-		{
-			.leds = LED_ACTIVE,
-			.time = 150*TICKS_PER_MS,
-			.mode = INTER_IMMEDIATE
-		},
-		{
-			.leds = LED_STANDBY,
-			.time = 300*TICKS_PER_MS,
-			.mode = INTER_LERP_LINEAR
-		},
-		{
-			.leds = LED_STANDBY,
-			.time = 200*TICKS_PER_MS,
-			.mode = INTER_IMMEDIATE
-		},
-		{
-			.leds = LED_ACTIVE,
-			.time = 300*TICKS_PER_MS,
-			.mode = INTER_LERP_LINEAR
-		}
-	}
-};
-
-#define COL_INFRARED_ON 0xFF, 0x00, 0xFF
-#define COL_INFRARED_OFF 0x2A, 0x00, 0x2A
-#define COL_VISIBLE_ON 0x00, 0xFF, 0x88
-#define COL_VISIBLE_OFF 0x00, 0x33, 0x22
+#define COL_INFRARED_PRI 0xFF, 0x00, 0xFF
+#define COL_INFRARED_SEC 0x2A, 0x00, 0x2A
+#define COL_VISIBLE_PRI 0x00, 0xFF, 0x88
+#define COL_VISIBLE_SEC 0x00, 0x33, 0x22
 
 uint8_t LED_FILTER_INFRARED[RGBLED_COUNT*3] = {
-	COL_INFRARED_ON,
-	COL_INFRARED_ON,
-	COL_VISIBLE_OFF,
-	COL_VISIBLE_OFF,
+	COL_INFRARED_PRI,
+	COL_INFRARED_PRI,
+	COL_INFRARED_SEC,
+	COL_INFRARED_SEC,
 };
 
 uint8_t LED_FILTER_VISIBLE[RGBLED_COUNT*3] = {
-	COL_INFRARED_OFF,
-	COL_INFRARED_OFF,
-	COL_VISIBLE_ON,
-	COL_VISIBLE_ON,
+	COL_VISIBLE_PRI,
+	COL_VISIBLE_PRI,
+	COL_VISIBLE_SEC,
+	COL_VISIBLE_SEC,
 };
 
 
@@ -222,6 +191,68 @@ struct LED_Animation LED_ANIM_FLASH_BAD = {
 		},
 	}
 };
+
+
+#define COL_SELECTED 0xFF, 0x66, 0x22
+#define COL_FOCUSED 0xFF, 0x22, 0x66
+
+uint8_t LED_INTERACT_SELECTED[RGBLED_COUNT*3] = {
+	COL_SELECTED,
+	COL_SELECTED,
+	COL_SELECTED,
+	COL_SELECTED,
+};
+
+uint8_t LED_INTERACT_FOCUSED[RGBLED_COUNT*3] = {
+	COL_FOCUSED,
+	COL_FOCUSED,
+	COL_FOCUSED,
+	COL_FOCUSED,
+};
+
+struct LED_Animation LED_ANIM_INTERACTION = {
+	.count = 4,
+	.repetitions = -1,
+	.transitions = {
+		{
+			.leds = LED_STANDBY,
+			.time = 600*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_STANDBY,
+			.time = 50*TICKS_PER_MS,
+			.mode = INTER_IMMEDIATE
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 200*TICKS_PER_MS,
+			.mode = INTER_LERP_LINEAR
+		},
+		{
+			.leds = LED_ACTIVE,
+			.time = 100*TICKS_PER_MS,
+			.mode = INTER_IMMEDIATE
+		},
+	}
+};
+
+void ConfigureInteractionAnimSelected(uint8_t *baseState)
+{
+	LED_ANIM_INTERACTION.transitions[0].leds = baseState;
+	LED_ANIM_INTERACTION.transitions[1].leds = baseState;
+	LED_ANIM_INTERACTION.transitions[2].leds = LED_INTERACT_SELECTED;
+	LED_ANIM_INTERACTION.transitions[3].leds = LED_INTERACT_SELECTED;
+}
+
+void ConfigureInteractionAnimFocused(uint8_t *baseState)
+{
+	LED_ANIM_INTERACTION.transitions[0].leds = baseState;
+	LED_ANIM_INTERACTION.transitions[1].leds = baseState;
+	LED_ANIM_INTERACTION.transitions[2].leds = LED_INTERACT_FOCUSED;
+	LED_ANIM_INTERACTION.transitions[3].leds = LED_INTERACT_FOCUSED;
+}
+
 
 uint8_t LED_FLASH_CHARGE_INIT[RGBLED_COUNT*3] = {
 	COL_FLASH_BAD_2,

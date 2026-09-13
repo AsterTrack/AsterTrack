@@ -574,12 +574,24 @@ enum CameraFilterState
 	FILTER_INFRARED		= 3,
 };
 
+enum CameraInteractState
+{ // Reported interaction state (server authoritative)
+	// Camera may request interaction states
+	INTERACT_NONE		= 0,
+	INTERACT_SELECTED	= 1 << 0,
+	INTERACT_FOCUSED	= 1 << 1,
+	INTERACT_UNUSED		= 1 << 2, // Reserved for future use
+};
+
 struct CameraEmbeddedState
 { // 16 bit available
 	bool updated;						// 1 bit
 
 	enum CameraFilterState filter;		// 2 bit
 	bool changeFilter;					// 1 bit
+
+	enum CameraInteractState interact;	// 3 bit
+	bool changeInteract;				// 1 bit
 };
 #define EMBEDDED_STATE_SIZE				2
 
@@ -596,6 +608,8 @@ static inline struct CameraEmbeddedState parseEmbeddedState(const uint8_t data[E
 	mcu.updated = (states >> 15) & 0b1;
 	mcu.filter = (enum CameraFilterState)((states >> 13) & 0b11);
 	mcu.changeFilter = (states >> 12) & 0b1;
+	mcu.interact = (enum CameraInteractState)((states >> 1) & 0b111);
+	mcu.changeInteract = (states >> 0) & 0b1;
 	return mcu;
 };
 
@@ -603,7 +617,9 @@ static inline void storeEmbeddedState(struct CameraEmbeddedState state, uint8_t 
 {
 	uint16_t states = ((state.updated? 1 : 0) << 15)
 		| ((state.filter & 0b11) << 13)
-		| ((state.changeFilter? 1 : 0) << 12);
+		| ((state.changeFilter? 1 : 0) << 12)
+		| ((state.interact & 0b111) << 1)
+		| ((state.changeInteract? 1 : 0) << 0);
 	data[0] = states >> 8;
 	data[1] = states & 0xFF;
 };

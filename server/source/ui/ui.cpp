@@ -31,6 +31,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "comm/usb.hpp"
 #include "device/tracking_controller.hpp" // TrackingControllerState
+#include "device/tracking_camera.hpp" // TrackingControllerState
 
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -940,6 +941,74 @@ EXPORT void _SignalServerEvent(ServerEvents event)
 			break;
 		default:
 			break;
+	}
+}
+
+EXPORT void _SignalCameraInteraction(CameraID id, CameraInteractEvent event, bool affectAll)
+{
+	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
+		return; // UI not initialised
+
+	auto undoFocus = [](CameraView &view)
+	{
+		if (view.isFocusDetach)
+		{
+			view.isFocusDetach = view.isDetached = false;
+			GetUI().cameraGridDirty = true;
+		}
+		if (view.isFocusImage)
+		{
+			view.isFocusImage = view.vis.imageVis.show = false;
+			if (GetState().mode == MODE_Device)
+			{
+				view.camera->config.imageStreaming.enabled = false;
+				CameraUpdateStream(*view.camera);
+			}
+		}
+	};
+
+	if (affectAll)
+	{ // Others also changed interaction state as a consequence of this
+		for (auto &viewIt : GetUI().cameraViews)
+		{
+			if (viewIt.first == id) continue;
+			auto &view = viewIt.second;
+			if (event & EVT_INTERACT_FOCUSED)
+			{ // Other camera gained focus, join back to grid
+				undoFocus(view);
+			}
+		}
+	}
+
+	auto viewIt = GetUI().cameraViews.find(id);
+	if (viewIt == GetUI().cameraViews.end())
+		return; // Should not happen
+	auto &view = viewIt->second;
+	if (event & EVT_INTERACT_FOCUSED)
+	{ // Gained focus, show view
+		if (!view.isFocusDetach)
+		{
+			view.isFocusDetach = view.isDetached = true;
+			GetUI().cameraGridDirty = true;
+		}
+		if (!view.vis.imageVis.show)
+		{ // If it is already on, don't assume control
+			view.isFocusImage = view.vis.imageVis.show = true;
+			view.vis.imageVis.undistort = false;
+			view.vis.view.autoZoom = false;
+			view.vis.view.center.setZero();
+			view.vis.view.zoom = 1.0f;
+			if (GetState().mode == MODE_Device)
+			{
+				view.camera->config.imageStreaming.enabled = true;
+				view.camera->config.imageStreaming.focusQuality = true;
+				// Camera View UI will initiate update due to resize
+			}
+		}
+	}
+	else if (event & EVT_INTERACT_UNFOCUSED)
+	{ // Lost focus, undo modifications
+		undoFocus(view);
 	}
 }
 

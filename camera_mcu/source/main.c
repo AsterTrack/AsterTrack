@@ -123,6 +123,17 @@ static inline uint8_t HasSBCQueueSpace(){ return GetSBCQueueSize()+1 < SBCQueueS
 static int8_t AllocateSBCPacket(uint16_t size);
 uint8_t SBCWritingPacket;
 
+// Button Debounce State
+struct ButtonState
+{
+	int pin;
+	bool invalid;
+	TimePoint down;
+	TimePoint up;
+};
+static struct ButtonState topButton = { BUTTON_TOP_PIN, 0 }, bottomButton = { BUTTON_BOTTOM_PIN, 0 };
+
+inline int ButtonDebounce(struct ButtonState *button, TimePoint now);
 
 /* Functions */
 
@@ -337,39 +348,71 @@ int main(void)
 		UpdateFilterSwitcher(FILTER_INFRARED);
 		delayUS(10000000); */
 
-		{
-			// Allow switching of filter via buttons
-			enum CameraFilterState target = FILTER_KEEP;
-			if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_TOP_PIN))
-				target = FILTER_INFRARED;
-			else if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN))
-				target = FILTER_VISIBLE;
+		int topBtn = ButtonDebounce(&topButton, now);
+		int bottomBtn = ButtonDebounce(&bottomButton, now);
+		if (topBtn == 1 && bottomBtn == 1)
+		{ // Both pressed down, invalidate for single-button presses
+			topButton.invalid = true;
+			bottomButton.invalid = true;
+		}
 
-			// Update status of filter and LEDs showing status
-			if (target != FILTER_KEEP)
-			{ // Wish to switch filter
-				if (UpdateFilterSwitcher(target))
-				{
-					embeddedState.changeFilter = true; // Signal it was initiated by device
-					embeddedState.updated = true; // Ensure new state is sent to server 
-					GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
-				}
-				if (showingFSStatus != target)
-					rgbled_transition(target == FILTER_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
-				showingFSStatus = target;
-				lastFSStatus = GetTimePoint();
-			}
+		// Allow switching of filter via buttons
+		if (topBtn == 2)
+		{ // Short Press, cycle through filters
+			if (embeddedState.filter == FILTER_INFRARED)
+				UpdateFilterSwitcher(FILTER_VISIBLE);
 			else
-			{ // No change to filter desired
-				UpdateFilterSwitcher(FILTER_KEEP);
-				if (showingFSStatus != FILTER_KEEP &&
-					GetTimeSinceMS(lastFSStatus) > 500 &&
-					GetTimeSinceMS(lastFilterSwitch) > 1000)
-				{
-					ReturnToDefaultLEDState(500);
-					showingFSStatus = FILTER_KEEP;
-				}
+				UpdateFilterSwitcher(FILTER_INFRARED);
+
+			// Notify server
+			embeddedState.changeFilter = true; // Signal it was initiated by device
+			embeddedState.updated = true; // Ensure new state is sent to server
+			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+
+			// Show on LED
+			rgbled_transition(embeddedState.filter == FILTER_INFRARED? LED_FILTER_INFRARED : LED_FILTER_VISIBLE, 200);
+			showingFSStatus = embeddedState.filter;
+			lastFSStatus = GetTimePoint();
+		} 
+		else
+		{ // Maintain filter state
+			UpdateFilterSwitcher(FILTER_KEEP);
+
+			if (showingFSStatus != FILTER_KEEP &&
+				GetTimeSinceMS(lastFSStatus) > 500 &&
+				GetTimeSinceMS(lastFilterSwitch) > 1000)
+			{
+				ReturnToDefaultLEDState(500);
+				showingFSStatus = FILTER_KEEP;
 			}
+		}
+
+		if (bottomBtn == 2)
+		{ // Short Press, request to toggle camera focus
+			if (embeddedState.interact & INTERACT_FOCUSED)
+				embeddedState.interact = (embeddedState.interact & ~INTERACT_FOCUSED);
+			else
+				embeddedState.interact = (embeddedState.interact | INTERACT_FOCUSED);
+			embeddedState.changeInteract = true; // Signal request to change
+			embeddedState.updated = true; // Ensure new state is sent to server 
+			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+			// LEDs will be set once server acknowledges
+			rgbled_transition(embeddedState.interact & INTERACT_FOCUSED? LED_INTERACT_FOCUSED : LED_ALL_OFF, 0);
+			ReturnToDefaultLEDState(500);
+		}
+
+		if (bottomBtn == 3)
+		{ // Long Press, request to toggle camera selection
+			if (embeddedState.interact & INTERACT_SELECTED)
+				embeddedState.interact = (embeddedState.interact & ~INTERACT_SELECTED);
+			else
+				embeddedState.interact = (embeddedState.interact | INTERACT_SELECTED);
+			embeddedState.changeInteract = true; // Signal request to change
+			embeddedState.updated = true; // Ensure new state is sent to server 
+			GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
+			// LEDs will be set once server acknowledges
+			rgbled_transition(embeddedState.interact & INTERACT_SELECTED? LED_INTERACT_SELECTED : LED_ALL_OFF, 0);
+			ReturnToDefaultLEDState(500);
 		}
 
 		/* if (BUTTON_READ(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN) && brightness > 0.01f)
@@ -934,6 +977,26 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 				rgbled_displayError(2);
 			}
 
+			if (embeddedState.interact != state.interact || state.changeInteract)
+			{ // Server is authoritative, so always adopt state
+				int timeMS = 500;
+				if (state.changeInteract)
+				{
+					timeMS = 0;
+					if (state.interact & INTERACT_FOCUSED && !(embeddedState.interact & INTERACT_FOCUSED))
+						rgbled_transition(LED_INTERACT_FOCUSED, 0);
+					else if (state.interact & INTERACT_SELECTED && !(embeddedState.interact & INTERACT_SELECTED))
+						rgbled_transition(LED_INTERACT_SELECTED, 0);
+					else
+						timeMS = 500;
+				}
+				else // Server had unexpected state without initiating a change
+					rgbled_displayError(2);
+				embeddedState.interact = state.interact;
+				embeddedState.changeInteract = false; // Clear any past flag
+				ReturnToDefaultLEDState(timeMS);
+			}
+
 			embeddedState.updated = true; // Ensure new state is sent to server
 			return true;
 		}
@@ -998,6 +1061,7 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			storeEmbeddedState(embeddedState, response);
 			// Clear flags
 			embeddedState.changeFilter = false;
+			embeddedState.changeInteract = false;
 			embeddedState.updated = false;
 			// Latest supply voltage reading from ADC 
 			uint16_t powerMV = GetMillivolts();
@@ -1106,18 +1170,69 @@ void nrfd_receive_camera_packet(uint8_t *data, uint8_t len, TimePoint time)
 
 /* ------ Functional Behaviour ------ */
 
+inline int ButtonDebounce(struct ButtonState *button, TimePoint now)
+{
+	const int DEBOUNCE = 2 * TICKS_PER_MS;
+	const int MIN_PRESS = 10 * TICKS_PER_MS;
+	const int SHORT_PRESS = 300 * TICKS_PER_MS;
+
+	int pressState = 0;
+	if (BUTTON_READ(BUTTONS_GPIO_X, button->pin))
+	{
+		if (!button->down)
+			button->down = now;
+		else if ((now - button->down) > DEBOUNCE)
+		{
+			button->up = 0;
+			pressState = 1; // Down
+		}
+	}
+	else
+	{
+		if (!button->up)
+			button->up = now;
+		else if ((now - button->up) > DEBOUNCE)
+		{ // Consecutive up reads
+			if (button->down && (now - button->down) > MIN_PRESS && !button->invalid)
+			{ // Release after short or long down
+				pressState = (now - button->down) <= SHORT_PRESS? 2 : 3;
+			}
+			button->down = 0;
+			button->invalid = false;
+		}
+	}
+	return pressState;
+}
+
 void ReturnToDefaultLEDState(int timeMS)
 {
-	if (piIsStreaming) // Implies piHasPower && piIsBooted && uartState == UART_CamPi
-		rgbled_animation_start(&LED_ANIM_STREAMING, timeMS);
-	else if (uartState == UART_CamPi) // Implies piHasPower && piIsBooted
-		rgbled_transition(LED_ACTIVE, timeMS);
-	else if (uartState == UART_CamMCU && piHasPower)
-		rgbled_animation_start(&LED_ANIM_BOOTING, timeMS);
-	else if (uartState == UART_CamMCU)
-		rgbled_transition(LED_STANDBY, timeMS);
+	if (embeddedState.interact & (INTERACT_SELECTED | INTERACT_FOCUSED))
+	{
+		uint8_t *base;
+		if (uartState == UART_CamPi) // Implies piHasPower && piIsBooted
+			base = LED_ACTIVE;
+		else if (uartState == UART_CamMCU)
+			base = LED_STANDBY;
+		else
+			base = LED_INITIALISING;
+
+		if (embeddedState.interact & INTERACT_FOCUSED)
+			ConfigureInteractionAnimFocused(base);
+		else if (embeddedState.interact & INTERACT_SELECTED)
+			ConfigureInteractionAnimSelected(base);
+		rgbled_animation_start(&LED_ANIM_INTERACTION, timeMS);
+	}
 	else
-		rgbled_transition(LED_INITIALISING, timeMS);
+	{
+		if (uartState == UART_CamPi) // Implies piHasPower && piIsBooted
+			rgbled_transition(LED_ACTIVE, timeMS);
+		else if (uartState == UART_CamMCU && piHasPower)
+			rgbled_animation_start(&LED_ANIM_BOOTING, timeMS);
+		else if (uartState == UART_CamMCU)
+			rgbled_transition(LED_STANDBY, timeMS);
+		else
+			rgbled_transition(LED_INITIALISING, timeMS);
+	}
 }
 
 static bool UpdateFilterSwitcher(enum CameraFilterState state)

@@ -339,7 +339,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	else
 	{
 		if (ImGui::ImageButton("MaxView", darkModeIcons.detach, iconSize()))
-			view.isIntendedFocus = true;
+			view.isFocusDetach = true;
 		ImGui::SameLine();
 	}
 

@@ -422,6 +422,7 @@ void CameraUpdateEmbeddedState(TrackingCameraState &camera)
 	std::vector<uint8_t> request(EMBEDDED_STATE_SIZE);
 	camera.embeddedState.changeFilter = false; // Should never be set server-side
 	storeEmbeddedState(camera.embeddedState, request.data());
+	camera.embeddedState.changeInteract = false; // Will be set on authoritative change
 	camera.sendPacket(PACKET_CAMERA_STATE, request.data(), request.size());
 }
 
@@ -433,4 +434,82 @@ void CameraRequestFilterSwitch(TrackingCameraState &camera, CameraFilterState fi
 	std::vector<uint8_t> request(EMBEDDED_STATE_SIZE);
 	storeEmbeddedState(embeddedState, request.data());
 	camera.sendPacket(PACKET_CAMERA_STATE, request.data(), request.size());
+}
+
+bool CameraToggleSelectionState(TrackingCameraState &camera, bool append, bool single)
+{
+	if (!append && !single)
+	{ // Contextual toggle without explicit modifiers
+		if (CamerasReconcileInteractionState(GetState(), camera.id, false, true))
+		{ // Other cameras got deselected, only allow this to be selected
+			append = true;
+		}
+		else
+		{ // There was no other selection, toggle this cameras selection
+			single = true;
+		}
+	}
+
+	if (single)
+	{ // Toggle selection of just this camera
+		if (camera.embeddedState.interact & INTERACT_SELECTED)
+			camera.embeddedState.interact = (CameraInteractState)(camera.embeddedState.interact & ~INTERACT_SELECTED);
+		else
+			camera.embeddedState.interact = (CameraInteractState)(camera.embeddedState.interact | INTERACT_SELECTED);
+		camera.embeddedState.changeInteract = true;
+		CameraUpdateEmbeddedState(camera);
+		return true;
+	}
+	else if (append)
+	{ // Append to set of cameras, no deselect
+		if (!(camera.embeddedState.interact & INTERACT_SELECTED))
+		{ // Not already selected
+			camera.embeddedState.interact = (CameraInteractState)(camera.embeddedState.interact | INTERACT_SELECTED);
+			camera.embeddedState.changeInteract = true;
+			CameraUpdateEmbeddedState(camera);
+			return true;
+		}
+	}
+	return false;
+}
+
+void CameraUpdateFocusState(TrackingCameraState &camera, bool focus)
+{
+	CameraInteractState focusState = focus? INTERACT_FOCUSED : INTERACT_NONE;
+	if ((camera.embeddedState.interact & INTERACT_FOCUSED) != focusState)
+	{
+		camera.embeddedState.interact = (CameraInteractState)((camera.embeddedState.interact & ~INTERACT_FOCUSED) | focusState);
+		camera.embeddedState.changeInteract = true;
+		CamerasReconcileInteractionState(GetState(), camera.id, focus, false);
+		CameraUpdateEmbeddedState(camera);
+	}
+}
+
+bool CamerasReconcileInteractionState(ServerState &state, int cameraID, bool uniqueFocus, bool clearSelection)
+{
+	if (!uniqueFocus && !clearSelection)
+		return false;
+
+	std::shared_lock device_lock(state.deviceMutex); // cameras
+	bool reconciled = false;
+	for (auto &camera : state.cameras)
+	{
+		if (camera->id == cameraID)
+			continue;
+		if (clearSelection && (camera->embeddedState.interact & INTERACT_SELECTED))
+		{
+			camera->embeddedState.interact = (CameraInteractState)(camera->embeddedState.interact & ~INTERACT_SELECTED);
+			camera->embeddedState.changeInteract = true;
+			reconciled = true;
+		}
+		if (uniqueFocus && (camera->embeddedState.interact & INTERACT_FOCUSED))
+		{
+			camera->embeddedState.interact = (CameraInteractState)(camera->embeddedState.interact & ~INTERACT_FOCUSED);
+			camera->embeddedState.changeInteract = true;
+			reconciled = true;
+		}
+		if (camera->embeddedState.changeInteract)
+			CameraUpdateEmbeddedState(*camera);
+	}
+	return reconciled;
 }

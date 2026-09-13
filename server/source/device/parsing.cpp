@@ -981,6 +981,7 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 	if (length < EMBEDDED_STATE_SIZE) return false;
 
 	CameraEmbeddedState state = parseEmbeddedState(data);
+	bool updateCamera = false, interactCamera = false, interactAll = false;
 
 	if (camera.embeddedState.filter != state.filter)
 	{
@@ -1002,7 +1003,52 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 	}
 	state.changeFilter = false;
 
+	CameraInteractEvent event = EVT_INTERACT_NONE;
+	if (state.changeInteract && camera.embeddedState.interact != state.interact)
+	{ // May have a race condition of server changing one flag and camera requesting to change another, not problematic
+		if ((camera.embeddedState.interact & INTERACT_SELECTED) != (state.interact & INTERACT_SELECTED))
+		{
+			if (state.interact & INTERACT_SELECTED)
+				LOG(LCameraDevice, LInfo, "Camera #%u requested selection!", camera.id);
+			else
+				LOG(LCameraDevice, LInfo, "Camera #%u requested to be deselected!", camera.id);
+			// Don't change other selections via camera buttons, just accept new selection state
+			interactCamera = updateCamera = true;
+			event = (CameraInteractEvent)(event | (state.interact & INTERACT_SELECTED? EVT_INTERACT_SELECTED : EVT_INTERACT_DESELECTED));
+		}
+		if ((camera.embeddedState.interact & INTERACT_FOCUSED) != (state.interact & INTERACT_FOCUSED))
+		{
+			if (state.interact & INTERACT_FOCUSED)
+				LOG(LCameraDevice, LInfo, "Camera #%u requested focus!", camera.id);
+			else
+				LOG(LCameraDevice, LInfo, "Camera #%u requested to be defocused!", camera.id);
+			// Only allow one focused camera even via camera buttons
+			interactAll = CamerasReconcileInteractionState(GetState(), camera.id, state.interact & INTERACT_FOCUSED, false);
+			interactCamera = updateCamera = true;
+			event = (CameraInteractEvent)(event | (state.interact & INTERACT_FOCUSED? EVT_INTERACT_FOCUSED : EVT_INTERACT_UNFOCUSED));
+		}
+	}
+	else if (state.changeInteract)
+	{ // Not problematic
+		LOG(LCameraDevice, LDarn, "Camera #%u requested existing interaction state!", camera.id);
+	}
+	else if (camera.embeddedState.interact != state.interact)
+	{ // May be a race condition, not problematic
+		LOG(LCameraDevice, LDarn, "Camera #%u had invalid interaction state %d!", camera.id, state.interact);
+		state.interact = camera.embeddedState.interact;
+		updateCamera = true;
+	}
+	else
+	{ // Expected state by camera - unknown whether just changed or not
+		LOG(LCameraDevice, LDebug, "Camera #%u is in expected interaction state!", camera.id);
+	}
+	state.changeInteract = false;
+
 	camera.embeddedState = state;
+	if (updateCamera)
+		CameraUpdateEmbeddedState(camera);
+	if (interactCamera)
+		SignalCameraInteraction(camera.id, event, interactAll);
 	return true;
 }
 

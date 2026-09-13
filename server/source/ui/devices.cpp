@@ -513,6 +513,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::SetNextItemOpen(true);
 
 	bool showCameraFWUP = BeginCollapsingRegion(state.cameraFirmwareUpdate? "Camera Firmware Update" ICON_LA_DOWNLOAD "###CamFw" : "Camera Firmware Update###CamFw");
+	bool allowQuickReflash = false;
 	if (showCameraFWUP && state.cameraFirmwareUpdate)
 	{
 		auto status = state.cameraFirmwareUpdate->contextualLock();
@@ -520,6 +521,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::Text("%s", status->text.c_str());
 		SameLineTrailing(button.x);
 		bool canClose = status->concluded || status->code == FW_STATUS_NONE || status->code == FW_STATUS_ERROR;
+		allowQuickReflash = canClose; // Want on success, and on timeout (error), don't have finer control than that
 		ImGui::BeginDisabled(status->abort.stop_requested());
 		if (!canClose && ImGui::Button("Abort", button))
 		{
@@ -624,10 +626,19 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		{
 			ImGui::TextWrapped(ICON_LA_DOWNLOAD " to select cameras to update");
 		}
+	}
 
+	if (showCameraFWUP && (!state.cameraFirmwareUpdate || allowQuickReflash))
+	{
 		ImGui::BeginDisabled(!anySelected || !cameraFWSetup.valid);
-		if (ImGui::Button("Flash Cameras", SizeWidthFull()))
+		if (ImGui::Button(allowQuickReflash? "Flash Cameras Again" : "Flash Cameras", SizeWidthFull()))
 		{
+			if (allowQuickReflash)
+			{ // Mostly for development to quickly flash a new image
+				for (auto &camera : state.cameras)
+					camera->firmware = nullptr;
+				state.cameraFirmwareUpdate = nullptr;
+			}
 			validatedCameras.clear();
 			validatingUpdate = PrepareFirmwareUpdate(cameraFWSetup.file);
 			auto updateStatus = validatingUpdate->contextualRLock();
@@ -665,8 +676,11 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 					ImGui::Text("MCU Firmware Descriptor changed from '%s' to '%s'!", camera->storage.info.mcuFWDescriptor.c_str(), updateStatus->mcu_fw_desc.c_str());
 			}
 			ImGui::Text("Flash this camera anyway?");
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
 			if (ImGui::Button("Flash Anyway", SizeWidthDiv2()))
 				validatedCameras.insert(camera->id);
+			ImGui::PopStyleColor(2);
 			ImGui::SameLine();
 			if (ImGui::Button("Skip For Now", SizeWidthDiv2()))
 				camera->selectedForFirmware = false;

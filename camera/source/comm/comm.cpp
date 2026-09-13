@@ -401,7 +401,7 @@ void comm_force_close(CommState *commPtr, bool error)
 
 void comm_report_uart_interruption()
 { // Prepare for upcoming UART interruption (by e.g. resetting MCU)
-	CommState *comm_ptr = comms.medium[COMM_MEDIUM_UART];
+	CommState *comm_ptr = comms.medium[COMM_MEDIUM_UART]; // Fine if not enabled
 	// Interject in any packet being send on realtime thread using packet/write/submit API
 	if (!comm_interject(comm_ptr))
 		printf("Failed to interject in ongoing distributed UART write!\n");
@@ -458,6 +458,9 @@ phase_start:
 		}
 		comm.ready = false;
 		proto_clear(comm.protocol);
+		// For UART and MCU forwarding:
+		comm.relyOnExternal = true;
+		comm.receivedInternal = comm.receivedExternal = 0;
 
 		if (!comm.enabled)
 			break;
@@ -583,7 +586,7 @@ phase_comm:
 		time_read = sclock::now();
 		while (comm.enabled && comm.started && !comm.error && comm.ready)
 		{
-			if (comm.medium == COMM_MEDIUM_UART)
+			if (comm.medium == COMM_MEDIUM_UART && comm.relyOnExternal)
 			{
 				// UART RX on the Pi has severe problems, it relies on interrupts clearing the 16-byte FIFO within 22us at 8Mbaud
 				// So frequently, there are missed interrupts and thus bytes missing, making UART RX unreliable
@@ -602,6 +605,14 @@ phase_comm:
 				for (auto &packet : packetQueue)
 				{
 					ReceivePacketData(state, comm, packet.header, packet.data.data(), packet.data.size(), !packet.valid);
+					comm.receivedExternal++;
+				}
+				if ((comm.receivedInternal > 10 && comm.receivedExternal == 0) || comm.receivedInternal - comm.receivedExternal > 100)
+				{ // Packets received on UART but not forwarded by MCU
+					// Stop relying on MCU, may be a bad firmware that hasn't been caught during update
+					comm.relyOnExternal = false;
+					// TODO: Send to server as defect to notify user
+					printf("Found MCU forwarding unreliable, with %d packets received on UART and only %d forwarded from MCU!\n", comm.receivedInternal, comm.receivedExternal);
 				}
 			}
 
@@ -721,10 +732,11 @@ phase_comm:
 				} */
 				else if (ReceivePacketHeader(comm, proto.header))
 				{
-					if (mcu_active && comm.medium == COMM_MEDIUM_UART && proto.header.tag != PACKET_FW_BLOCK)
+					if (mcu_active && comm.medium == COMM_MEDIUM_UART && comm.relyOnExternal && proto.header.tag != PACKET_FW_BLOCK)
 					{ // UART control packets are routed through MCU if possible for more reliable comms
 						// Except firmware blocks - they have extensive redundancy and resend mechanisms by design, and they are too large to handle by MCU
 						// Reason is because Pis PL011 UART RX driver relies on timely interrupts (not DMA), which is unreliable at 8MBaud
+						comm.receivedInternal++;
 					}
 					else if (proto_fetchCmd(proto))
 					{ // Else fetch and parse here
@@ -752,7 +764,7 @@ phase_comm:
 
 		if (comm.error)
 			printf("%s: Comms got interrupted because of a write error in another thread!\n", commName);
-		else
+		else // May be from comm_report_uart_interruption which does not set error flag
 			printf("%s: Comms got interrupted for unknown reason!\n", commName);
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));

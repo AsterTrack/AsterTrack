@@ -33,6 +33,8 @@ extern std::atomic<uint16_t> floatingSupplyVoltageMV;
 
 extern std::atomic<bool> mcu_exists;
 extern std::atomic<bool> mcu_active;
+extern std::atomic<bool> mcu_disabled;
+extern std::atomic<int> mcu_error_count;
 
 struct MCUForwardedPacket
 {

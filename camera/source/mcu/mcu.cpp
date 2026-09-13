@@ -84,6 +84,7 @@ std::atomic<bool> mcu_exists;
 std::atomic<bool> mcu_active;
 std::atomic<bool> mcu_disabled;
 std::atomic<bool> mcu_intentional_bootloader;
+std::atomic<int> mcu_error_count;
 
 int mcu_leading_bytes = MCU_LEADING_BYTES;
 
@@ -165,38 +166,49 @@ bool mcu_initial_connect(bool probe_attached, std::string mcu_firmware_path)
 
 	if (mcu_active && mcu_firmware_version_known)
 	{ // MCU is responding and transmitted a valid info packet, check if its firmware version is older than stored
-		if (mcu_firmware_tag.valid)
-		{
-			//if (mcu_firmware_version.major < mcu_firmware_tag.version.major)
-			if (mcu_firmware_version < mcu_firmware_tag.version)
-			{ // Upgrade major versions - SBC-MCU comms might work, but MCU-Controller might not
-				// This is to allow upgrading old cameras by replacing the SD without having to downgrade anything else first
-				// But can also always auto-upgrade - the only case we should ever be in this scenario is if the SD card was swapped
-				// Or the user attached a debug probe to flash an older version onto the MCU
-				printf("Decided to auto-upgrade MCU!\n");
-				if (!mcu_switch_bootloader())
-				{ // Perhaps an unsupported chip / bootloader?
-					printf("Could not switch to bootloader even though MCU is known to exist!\n");
-				}
-				else
-				{
-					if (mcu_flash_program(mcu_firmware_path))
-						printf("Successfully flashed MCU to auto-upgrade it!\n");
-					else // Made it worse
-						printf("Failed to flash MCU in attempt to auto-upgrade!\n");
-				}
+		bool autoFlashMCU = false;
 
-				// Reset and probe
-				if (!mcu_reconnect())
-				{
-					printf("Failed to reconnect after auto-upgrading MCU!\n");
-					printf("Disabling MCU to ensure communication channel to controller!\n");
-					mcu_disable();
-				}
+		mcu_error_count = 0;
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		if (mcu_error_count > 0)
+		{
+			printf("Encountered %d errors with connection to MCU after 20ms!\n", mcu_error_count.load());
+			autoFlashMCU = true;
+		}
+
+		if (!mcu_firmware_tag.valid)
+			printf("Connected to MCU on startup, but could not verify MCU FW Version!\n");
+		else if (mcu_firmware_version < mcu_firmware_tag.version)
+		{ // Upgrade major versions - SBC-MCU comms might work, but MCU-Controller might not
+			// This is to allow upgrading old cameras by replacing the SD without having to downgrade anything else first
+			// But can also always auto-upgrade - the only case we should ever be in this scenario is if the SD card was swapped
+			// Or the user attached a debug probe to flash an older version onto the MCU
+			printf("Decided to auto-upgrade MCU!\n");
+			autoFlashMCU = true;
+		}
+
+		if (autoFlashMCU)
+		{
+			if (!mcu_switch_bootloader())
+			{ // Perhaps an unsupported chip / bootloader?
+				printf("Could not switch to bootloader even though MCU is known to exist!\n");
+			}
+			else
+			{
+				if (mcu_flash_program(mcu_firmware_path))
+					printf("Successfully auto-flashed MCU!\n");
+				else // Made it worse
+					printf("Failed to auto-flash MCU!\n");
+			}
+
+			// Reset and probe
+			if (!mcu_reconnect())
+			{
+				printf("Failed to reconnect after auto-flashing MCU!\n");
+				printf("Disabling MCU to ensure communication channel to controller!\n");
+				mcu_disable();
 			}
 		}
-		else
-			printf("Connected to MCU on startup, but could not verify MCU FW Version!\n");
 	}
 	else
 	{ // MCU is either still not responding, and thus either not available in hardware, or bricked
@@ -393,6 +405,7 @@ void mcu_reset()
 
 	printf("Resetting MCU...\n");
 
+	mcu_error_count = 0;
 	mcu_active = false;
 	mcu_disabled = false;
 	mcu_intentional_bootloader = false;
@@ -650,7 +663,7 @@ bool mcu_switch_bootloader()
 	}
 	if (res != 0 && gpio_chip)
 	{
-		res = mcu_switch_bootloader_rst();if (res == 1)
+		res = mcu_switch_bootloader_rst();
 		for (int j = 0; j < 10 && res != 0; j++)
 			res = mcu_switch_bootloader_rst();
 	}
@@ -1151,6 +1164,7 @@ static void i2c_cleanup()
 
 static bool i2c_handle_error()
 {
+	mcu_error_count++;
 	mcu_active = false;
 	if (errno == EBADF || errno == ETIMEDOUT)
 	{

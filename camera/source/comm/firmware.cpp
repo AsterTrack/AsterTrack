@@ -27,23 +27,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <thread>
 #include <unistd.h>
 
-static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm, uint8_t type, uint8_t status, uint8_t transfer = 0, uint16_t block = 0)
+static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm, uint8_t type, uint8_t status, uint8_t transfer = 0, uint16_t block = 0, std::string message = "")
 {
-	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER);
+	std::vector<uint8_t> FWPacket(FIRMWARE_PACKET_HEADER + message.size());
 	*(uint16_t*)(FWPacket.data()+0) = state.firmware.ID;
-	// 1 free byte for future use
+	*(uint8_t*)(FWPacket.data()+2) = message.size();
 	*(uint8_t*)(FWPacket.data()+3) = type;
 	*(uint8_t*)(FWPacket.data()+4) = status;
 	*(uint8_t*)(FWPacket.data()+5) = transfer;
 	*(uint16_t*)(FWPacket.data()+6) = block;
+	// 2 free bytes for future use
+	if (message.size() > 0)
+		memcpy(FWPacket.data()+FIRMWARE_PACKET_HEADER, message.data(), message.size());
 
 	if (!comm_send(&comm, PacketHeader(PACKET_FW_STATUS, FWPacket.size()), std::move(FWPacket), true))
 		printf("Failed to send firmware status packet!\n");
 }
 
-static void SendUpdateStatus(TrackingCameraState &state, CommState &comm, FirmwareStatus status)
+static void SendUpdateStatus(TrackingCameraState &state, CommState &comm, FirmwareStatus status, std::string message = "")
 {
-	SendFirmwareStatusPacket(state, comm, (uint8_t)FW_STATUS_UPDATE, (uint8_t)status);
+	SendFirmwareStatusPacket(state, comm, (uint8_t)FW_STATUS_UPDATE, (uint8_t)status, 0, 0, message);
 }
 static void SendTransferStatus(TrackingCameraState &state, CommState &comm, FirmwareTXStatus status, uint8_t transfer)
 {
@@ -328,8 +331,15 @@ static std::optional<ErrorMessage> AttemptUpgradeMCU(std::string updated, std::s
 	CommState *uart = comms.get(COMM_MEDIUM_UART);
 	if (uart && !uart->ready) uart = nullptr;
 	bool preMCU = mcu_active;
+	bool preFWD = preMCU && uart && uart->relyOnExternal;
 
 	std::optional<ErrorMessage> error = std::nullopt;
+	// Making heavy use of error->code to signify state of MCU:
+	//  < 0: error, needs recovery. -1 is normal, -2 is worse than before
+	// == 0: Failed to flash but in safe state, either recovered or never managed to flash
+	// == 1: Updated with issues, but want to proceed with update anyway
+	// == 2: Same image, didn't need flashing, can proceed with update
+
 	if (mcu_switch_bootloader())
 	{
 		if (!mcu_verify_program(updated))
@@ -346,19 +356,48 @@ static std::optional<ErrorMessage> AttemptUpgradeMCU(std::string updated, std::s
 			else
 				printf("Successfully flashed MCU with new firmware!\n");
 		}
-		else printf("Will not flash MCU, already flashed with firmware!\n");
+		else
+		{
+			printf("Will not flash MCU, already flashed with firmware!\n");
+			error = "Same MCU FW"; // The only message most users will ideally ever see
+			error->code = 2; // Proceed with upgrade, no issues at all, just a message
+		}
 	}
 	else
 	{
 		printf("Cannot flash MCU, failed to switch to the bootloader!\n");
 		error = "FailBootloader";
+		error->code = 0; // Recovered by default
 	}
 
-	// Reset and probe
-	if (!mcu_reconnect())
+	if (uart && uart->ready)
+	{ // Not observed, but be sure anyway
+		printf("UART was still ready after flashing, that can't be right!\n");
+		uart->ready = false;
+	}
+
+	if (!mcu_reconnect() && !(error && error->code < 0))
+	{ // Reset and probe, whether flashing was successful or not
+		if (!error) error = "FailReconnect";
+		else error->msg += "+FailReconnect";
+		error->code = -1; // Need recovery
+	}
+
+	if (!(error && error->code < 0))
+	{ // Verify stability after flash
+		mcu_error_count = 0;
+		mcu_lock.unlock();
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		mcu_lock.lock();
+		if (mcu_error_count > 0)
+		{
+			printf("Encountered %d errors with connection to MCU after 50ms!\n", mcu_error_count.load());
+			error = "FailVerify";
+		}
+	}
+
+	if (error && error->code < 0)
 	{
-		if (!error)
-			error = "FailReconnect";
 		if (preMCU && std::filesystem::exists(backup))
 		{ // Worked previously, now doesn't, and we have a prior known-good firmware
 			printf("Reverting to old firmware!\n");
@@ -367,65 +406,125 @@ static std::optional<ErrorMessage> AttemptUpgradeMCU(std::string updated, std::s
 				if (mcu_flash_program(backup))
 				{
 					printf("Successfully flashed MCU with old firmware! Reverting firmware update!\n");
+					error->code = 0; // Recovered, in theory
 				}
 				else
 				{
 					printf("Failed to flash MCU with the old firmware!\n");
-					error = error->msg + "+FailRecoverFlash";
+					error->msg += "+FailRecoverFlash";
 				}
 			}
 			else
 			{
 				printf("Cannot flash MCU, failed to switch to the bootloader!\n");
-				error = error->msg + "+FailRecoverBootloader";
+				error->msg += "+FailRecoverBootloader";
 			}
 
 			if (!mcu_reconnect())
 			{ // Just disable MCU for now to allow for communication
 				printf("Disabling MCU to ensure communication channel to controller!\n");
 				mcu_disable();
-				error = error->msg + "+Disable";
+				error->msg += "+Disable";
+				error->code = -2; // Worse than before
 			}
+			else
+				error->msg += "+Recovered";
 		}
 		else
 		{ // Just disable MCU for now to allow for communication
 			printf("Disabling MCU to ensure communication channel to controller!\n");
 			mcu_disable();
-			error = error->msg + "+NoRecoverDisable";
+			error->msg += "+NoRecoverDisable";
+			error->code = 0; // Same as before as far as we can tell
 		}
 	}
-	
+
+	if (error && mcu_active && !preMCU)
+	{ // MCU works when it didn't before - but maybe it was disabled, so check for UART regression
+		error->msg += "+MCUworks";
+		if (error->code < 0) // If not already recovered:
+			error->code = 1; // Proceed with upgrade despite error - unless we lost UART
+	}
+
 	mcu_lock.unlock();
 
-	if (uart)
+	// TODO: Ensure MCU itself can connect to controller?
+	// If it can't, controller may not even allow Pi to boot automatically
+	// So would need user intervention to fix later
+
+	if (uart && !(error && error->code < 0))
 	{ // If we previously had a UART connection, wait for it now
 		int ms;
-		for (ms = 0; ms < 500 && !uart->ready; ms++)
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		for (ms = 0; ms < 500 && !uart->ready; ms += 10)
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		if (uart->ready)
 		{ // Reconnected UART, either after upgrade or recovery
-			printf("Reconnect to UART after %dms!\n", ms);
-			return error;
+			printf("Reconnected to UART after %dms!\n", ms);
+			if (mcu_disabled)
+			{ // No forwarding needed when MCU is disabled
+				printf("Since MCU is disabled, that is sufficient.\n");
+				return error;
+			}
+
+			for (ms = 0; ms < 500 && uart->receivedInternal < 5; ms += 10)
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+			if (uart->receivedInternal >= 4 && uart->receivedExternal+1 >= uart->receivedInternal)
+			{ // Received forwarded packets
+				printf("Verified %d/%d packets got forwarded via MCU after %dms, UART works!\n", uart->receivedExternal, uart->receivedInternal, ms);
+				return error;
+			}
+			
+			printf("Waited %dms and only %d/%d packets got forwarded via MCU, suspected regression!\n", ms, uart->receivedExternal, uart->receivedInternal);
+			if (!error) error = "NoForwarding";
+			else error->msg += "+NoForwarding";
+			if (preFWD) error->msg += "(Lost)";
+			// Only try to recover old FW if forwarding worked with it
+			if (!preFWD) error->code = 1; // Proceed with upgrade despite error
+			// If we already recovered ( == 0), gained MCU ( == 1), or never flashed ( == 2), just disable forwarding
+			uart->relyOnExternal = false;
+			// If we successfully recover later, we may revert it
+
+			// On the off-chance MCU had issues while checking UART:
+			if (!mcu_active)
+			{ // Not active, it should have been disabled before, indicates trouble
+				if (error->code == 1)
+				{ // Previously decided to go ahead with update despite issues, not anymore
+					error->msg += "+MCUerror";
+					error->code = -1; // Need recovery
+				}
+				else if (!preMCU)
+				{ // Same image, wasn't magically fixed after all
+					error->msg += "+MCUdisable";
+					mcu_disable();
+				}
+			}
+		}
+		else
+		{ // Regression? Can't connect via UART anymore
+			printf("Failed to reconnect to UART after MCU upgrade!\n");
+			if (!error) error = "UARTRegression";
+			else error->msg += "+UARTRegression";
+			// Recover if not already done so
+			if (error->code != 0) error->code = -1;
 		}
 
-		// Regression? Can't connect via UART anymore
-		printf("Failed to reconnect to UART after MCU upgrade!\n");
-		error = "UARTRegression";
-		if (!preMCU)
+		if (mcu_active && !preMCU)
 		{ // TODO: Whats worse? Regression on UART or no MCU connection previously?
 			printf("Update DID allow connection with MCU, keeping it!\n");
-			error = error->msg + "+MCUworksUARTnot";
-			error->code = 1; // Despite error, proceed with upgrade
+			error->msg += "+MCUworks";
+			error->code = 1; // Proceed with upgrade despite error
 		}
-		else if ((state.firmware.flags & FW_REQUIRE_REBOOT))
+		if ((state.firmware.flags & FW_REQUIRE_REBOOT))
 		{ // TODO: Might have desired different MCU behaviour, allow?
 			printf("Update required reboot, trust UART will work again after!\n");
-			error = error->msg + "+MCUworksUARTnot";
-			error->code = 1; // Despite error, proceed with upgrade
+			error->msg += "+TryReboot";
+			error->code = 1; // Proceed with upgrade despite error
 		}
-		else 
-		{ // Try to recover from UART regression
+
+		if (error->code < 0)
+		{ // Try to recover from possible regression
 			mcu_lock.lock();
 
 			if (mcu_switch_bootloader())
@@ -433,34 +532,34 @@ static std::optional<ErrorMessage> AttemptUpgradeMCU(std::string updated, std::s
 				if (mcu_flash_program(backup))
 				{
 					printf("Successfully flashed MCU with old firmware! Reverting firmware update!\n");
+					error->code = 0; // Recovered, in theory
+					uart->relyOnExternal = preFWD;
 				}
 				else
 				{
 					printf("Failed to flash MCU with the old firmware!\n");
-					error = error->msg + "+FailRecoverFlash";
+					error->msg += "+FailRecoverFlash";
 				}
 			}
 			else
 			{
 				printf("Cannot flash MCU, failed to switch to the bootloader!\n");
-				error = error->msg + "+FailRecoverBootloader";
+				error->msg += "+FailRecoverBootloader";
 			}
 
 			if (!mcu_reconnect())
 			{ // Just disable MCU for now to allow for communication
 				printf("Disabling MCU to ensure communication channel to controller!\n");
 				mcu_disable();
-				error = error->msg + "+Disable";
+				error->msg += "+Disable";
+				if (preMCU)
+					error->code = -2; // Worse than befors
 			}
 			else
-				error = error->msg + "+Recovered";
+				error->msg += "+Recovered";
 		}
 	}
 
-	if (!preMCU)
-	{ // If MCU didn't work previously either, don't consider a complete failure
-		error->code = 1;
-	}
 	return error;
 }
 
@@ -473,7 +572,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	if (applyDelayMS > 100)
 	{ // Maybe main thread was not in a state to receive a firmware update, in which case, glad we didn't do it
 		printf("Main thread initiated applying firmware update only after %.2fms!\n", applyDelayMS);
-		SendUpdateStatus(state, comm, FW_STATUS_ISSUE);
+		SendUpdateStatus(state, comm, FW_STATUS_ISSUE, "DelayedMainThread");
 		return false;
 	}
 	if (!state.firmware.applyingUpdate)
@@ -535,7 +634,9 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		state.firmware.applyingUpdate = false;
-		SendUpdateStatus(state, comm, state.firmware.abortedUpdate? FW_STATUS_ABORT : FW_STATUS_ERROR);
+		SendUpdateStatus(state, comm,
+			state.firmware.abortedUpdate? FW_STATUS_ABORT : FW_STATUS_ERROR,
+			state.firmware.abortedUpdate? "" : "FailedWrite");
 		return false;
 	}
 
@@ -562,9 +663,12 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 		postApplyError = AttemptUpgradeMCU(mcu_firmware_updated, mcu_firmware_copy);
 		if (postApplyError)
 			printf("Post-Apply Error String: %s\n", postApplyError->c_str());
-		if (postApplyError && postApplyError->code != 1)
+		if (postApplyError && postApplyError->code <= 0)
 		{ // Abort, hopefully recovered MCU
-			printf("Applying firmware update was (safely) aborted due to flashing error!\n");
+			if (postApplyError->code == 0)
+				printf("Applying firmware update was safely aborted after flashing error!\n");
+			else
+			 	printf("Applying firmware update was aborted after flashing error, may be bricked!\n");
 			// Clean up after failed MCU upgrade
 			mcu_read_firmware_tag(mcu_firmware_copy, mcu_firmware_tag);
 			std::filesystem::remove(mcu_firmware_updated);
@@ -573,8 +677,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 				std::filesystem::remove(file.updated);
 			state.firmware.applyingUpdate = false;
 			state.firmware.issueApplyingUpdate = true;
-			// TODO: Send postApplyError along
-			SendUpdateStatus(state, comm, FW_STATUS_ISSUE);
+			SendUpdateStatus(state, comm, postApplyError->code == 0? FW_STATUS_ISSUE : FW_STATUS_ERROR, postApplyError->msg);
 			return false;
 		}
 
@@ -621,8 +724,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 			std::filesystem::remove(file.updated);
 		std::system(asprintf_s("umount %s", firmwareMount.c_str()).c_str());
 		state.firmware.applyingUpdate = false;
-		// TODO: Send any postApplyError along
-		SendUpdateStatus(state, comm, FW_STATUS_ERROR);
+		SendUpdateStatus(state, comm, FW_STATUS_ERROR, (postApplyError? (postApplyError->msg + "+") : "") + "FailedSwap");
 		return false;
 	}
 
@@ -649,8 +751,7 @@ bool ApplyFirmwareUpdate(TrackingCameraState &state)
 	state.firmware.applyingUpdate = false;
 	state.firmware.appliedUpdate = true;
 	state.firmware.issueApplyingUpdate = false;
-	// TODO: Send any postApplyError along
-	SendUpdateStatus(state, comm, FW_STATUS_UPDATED);
+	SendUpdateStatus(state, comm, FW_STATUS_UPDATED, postApplyError? postApplyError->msg : "");
 	return true;
 }
 

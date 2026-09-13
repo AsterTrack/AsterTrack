@@ -65,6 +65,10 @@ struct CommState
 	std::queue<CommPacket> packetQueue;
 	std::mutex queueMutex;
 
+	// Verifying packets received directly on UART vs forwarded from MCU
+	int32_t receivedInternal = 0, receivedExternal = 0;
+	bool relyOnExternal = true;
+
 	std::thread *thread;
 	void *port;
 	bool (*start)(void *port);

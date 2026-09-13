@@ -373,7 +373,7 @@ static bool CameraSendFirmwareStatus(FirmwareUpdatePlan &update, FirmwareTransfe
 static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate &camState, CameraFirmwareUpdateStatus &camStatus, std::vector<uint8_t> &packet)
 {
 	uint16_t ID = *(uint16_t*)(packet.data()+0);
-	// 1 free byte for future use
+	uint8_t messageLen = *(uint8_t*)(packet.data()+2);
 	FirmwareStatusType type = *(FirmwareStatusType*)(packet.data()+3);
 	uint8_t status = *(uint8_t*)(packet.data()+4);
 	uint8_t index = *(uint8_t*)(packet.data()+5);
@@ -387,6 +387,10 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		camStatus.code = FW_STATUS_ERROR;
 		return true;
 	}
+
+	std::string message = "";
+	if (messageLen > 0 && packet.size() >= FIRMWARE_PACKET_HEADER+messageLen)
+		message = std::string(packet.data()+FIRMWARE_PACKET_HEADER, packet.data()+FIRMWARE_PACKET_HEADER+messageLen);
 
 	auto concludeFWUpdate = [&]()
 	{
@@ -439,11 +443,11 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 			else if (camStatus.code == FW_STATUS_TRANSFERRING)
 				camStatus.text = "Failed transferring update!";
 			else if (camStatus.code == FW_STATUS_UPDATING && status == FW_STATUS_ERROR)
-				camStatus.text = "Failed to apply update!";
+				camStatus.text = "Failed to apply update: " + message;
 			else if (camStatus.code == FW_STATUS_UPDATING && status == FW_STATUS_ISSUE)
-				camStatus.text = "Issue applying update! Likely failed to flash MCU.";
-			else
-				camStatus.text = asprintf_s("Unexpected error during stage %d!", camStatus.code);
+				camStatus.text = "Issue applying update: " + message;
+			else // Shouldn't happen, but perhaps we got a message
+				camStatus.text = asprintf_s("Unexpected error during stage %d: '%s'", camStatus.code, message.c_str());
 			camStatus.code = FW_STATUS_ERROR;
 			return false;
 		}
@@ -458,13 +462,14 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		{ // Camera confirms it has applied the update to disk (but may still be flashing the MCU or rebooting)
 			LOG(LFirmwareUpdate, LInfo, "Camera %u successfully applied firmware update!", camState.camera->id);
 			concludeFWUpdate();
-			camStatus.text = "Update applied!";
+			if (message.empty()) camStatus.text = "Update applied!";
+			else camStatus.text = "Update applied: " + message;
 			camStatus.code = FW_STATUS_UPDATED;
 			return true;
 		}
 		default:
 			concludeFWUpdate();
-			camStatus.text = asprintf_s("Received unknown status %d!", status);
+			camStatus.text = asprintf_s("Received unknown status %d: '%s'", status, message.c_str());
 			camStatus.code = FW_STATUS_ERROR;
 			return false;
 		}
@@ -594,8 +599,10 @@ static void UpdateCameraStatus(FirmwareUpdatePlan &update, CameraFirmwareUpdate 
 			abort = !CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
 		else if (camState.status == FW_STATUS_REQAPPLY && dtMS(camState.applyTime, sclock::now()) > 100)
 			abort = !CameraApplyFirmwareUpdate(update, camState);
-		else if (camState.status == FW_STATUS_UPDATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
+		else if (camState.status == FW_STATUS_UPDATING && dtMS(camState.lastRequest, sclock::now()) > 100)
+		{ // Send a lot of inquiries to allow it to verify comms work if MCU got updated
 			CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);
+		}
 		else if (camState.status != FW_STATUS_NONE && camState.status != FW_STATUS_INITIATING && dtMS(camState.lastRequest, sclock::now()) > 2000)
 		{ // This one is not required, just to prevent a timeout in cameras that are waiting to apply the update if some cameras take significantly longer
 			CameraSendFirmwareStatus(update, camState, FW_INQUIRE_UPDATE);

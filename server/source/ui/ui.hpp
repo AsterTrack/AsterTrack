@@ -148,8 +148,10 @@ struct VisualisationState
 
 	struct
 	{
-		CameraID focusedID = CAMERA_ID_NONE;
-	} camera;
+		CameraID hoveredID = CAMERA_ID_NONE; // Hovered in 3D View
+		std::set<CameraID> boundedIDs; // In mouse drag bounds in 3D View
+		std::set<CameraID> selectedIDs; // In mouse drag bounds in 3D View
+	} cameras;
 
 	struct
 	{
@@ -244,7 +246,6 @@ struct VisualisationState
 		TargetCalibration3D inspectingCalib;
 
 		// Inspection visualisation and editing
-		std::vector<bool> cameraRays;
 		std::vector<bool> markerSelect;
 		bool focusOnMarkerSelection = false;
 		int markerFocused = -1; // Hovered in "Insights/Target Markers" Sequencer
@@ -365,8 +366,8 @@ struct View3D
 	int selectingBounded = 0;
 	Eigen::Vector2f selectMouseStart;
 	Bounds2f selectBounds;
-	struct ClickReg { ImGuiKey key; char source; int64_t id; int priority; };
-	ClickReg clickReg;
+	struct Clickable { ImGuiKey key; char source; int64_t id; int priority; };
+	Clickable clickReg;
 
 	bool sidePanelOpen = true;
 

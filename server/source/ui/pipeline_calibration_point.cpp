@@ -19,6 +19,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "pipeline/pipeline.hpp"
 #include "calib/obs_data.inl"
+#include "device/tracking_camera.hpp"
 
 #include "util/eigenutil.hpp"
 
@@ -193,9 +194,11 @@ void InterfaceState::UpdatePipelineCalibSection()
 			ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 5);
 			ImGui::TableSetupColumn("Edit", ImGuiTableColumnFlags_WidthStretch, 5);
 
-			for (auto &camera : *pipeline.cameras.contextualLock())
+			auto calib_lock = pipeline.cameras.contextualLock(); // Just for calibration
+			for (auto &device : state.cameras)
 			{
-				auto &calib = camera->calib;
+				auto &camera = device->pipeline;
+				auto &calib = device->pipeline->calib;
 				ImGui::PushID(camera->id);
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
@@ -310,13 +313,12 @@ void InterfaceState::UpdatePipelineCalibSection()
 				}
 				ImGui::SetItemTooltip("Reset and invalidate the existing camera calibration. If there is a default lens, it will be applied.");
 
-				bool selected = visState.camera.focusedID == camera->id;
+				bool selected = device->embeddedState.interact & INTERACT_SELECTED;
 				ImGui::SameLine();
 				if (ImGui::Selectable("", &selected,
 					ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
 				{
-					if (selected) visState.camera.focusedID = camera->id;
-					else visState.camera.focusedID = 0;
+					CameraToggleSelectionState(*device, ImGui::GetIO().KeyShift, ImGui::GetIO().KeyCtrl);
 				}
 				ImGui::PopID();
 			}

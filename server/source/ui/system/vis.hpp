@@ -137,6 +137,26 @@ void visualiseTarget2DUncertaintyAxis(UncertaintyAxisAlignment uncertaintyAxis);
  * 3D Interaction
  */
 
+int handleSelectBounds(View3D &view3D, ImGuiKey select, ImGuiKey abort);
+
+template<typename T>
+bool applyBoundedSelection(int selectBounds, std::set<T> &selected, std::set<T> &bounded);
+
+template<typename T>
+bool multiSelection(View3D &view3D, ImGuiKey key, char source, int priority, int priorityDeselect, std::set<T> &selected, T &hovered, T none);
+
+bool clickRegister(View3D &view3D, View3D::Clickable clickable);
+
+void cancelClickReg(View3D &view3D);
+
+struct CircleHit
+{
+	Eigen::Vector2f pos;
+	float sizeSq;
+};
+
+CircleHit sphereHitProjection(const Eigen::Isometry3f &view, float fInv, Eigen::Vector3f pos, float size);
+
 int probePointCloudPos2D(const std::vector<VisPoint> &points, Eigen::Isometry3f view, float fInv, Eigen::Vector2f mouse);
 
 std::vector<int> probePointCloudBounds2D(const std::vector<VisPoint> &points, Eigen::Isometry3f view, float fInv, Bounds2f bounds);

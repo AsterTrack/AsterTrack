@@ -30,6 +30,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "target/detail/covariance.hpp"
 #include "util/eigenalg.hpp"
 
+#include "device/tracking_camera.hpp"
+
 #include "implot/implot.h"
 
 struct wl_display;
@@ -87,35 +89,6 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	InteractionSurface("3DView", viewWin->InnerRect, viewBGHovered, viewHeld);
 	bool viewFocused = ImGui::IsItemFocused();
 	bool viewHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem);
-	auto clickReg = [this, viewHovered](ImGuiKey key, char source, int64_t id, int priority)
-	{ // Chosing to do own click processing on everything in 3D View, could instead implement it more in line with Dear ImGui
-		if (viewHovered && ImGui::IsKeyReleased(key) && view3D.clickReg.source == source && view3D.clickReg.id == id)
-		{
-			LOG(LGUI, LDebug, "Registered click in 3D View on %c %ld", source, id);
-			view3D.clickReg = {};
-			return true;
-		}
-		if (viewHovered && ImGui::IsKeyPressed(key, false))
-		{
-			if (view3D.clickReg.source != 0)
-				LOG(LGUI, LDebug, "Click in 3D View on %c %ld is competing with %c %ld, priorities %d and %d",
-					source, id, view3D.clickReg.source, view3D.clickReg.id, priority, view3D.clickReg.priority);
-			if (view3D.clickReg.priority < priority)
-			{
-				LOG(LGUI, LDebug, "Starting click in 3D View on %c %ld!", source, id);
-				view3D.clickReg = { key, source, id, priority };
-			}
-		}
-		return false;
-	};
-	auto cancelClickReg = [this]()
-	{
-		if (view3D.clickReg.source != 0)
-		{
-			LOG(LGUI, LDebug, "Cancelling click in 3D view on %c %ld", view3D.clickReg.source, view3D.clickReg.id);
-			view3D.clickReg = {};
-		}
-	};
 
 
 	/**
@@ -265,118 +238,57 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	}
 
 
-	/* Bounded Selection */
+	/* Selection logic */
 
 	const ImGuiKey KEY_SELECT = ImGuiKey_MouseLeft;
 	const ImGuiKey KEY_SELECT_ABORT = ImGuiKey_MouseRight;
 
-	int acceptSelectBounds = 0;
-	if (viewHovered && ImGui::IsKeyPressed(KEY_SELECT, false) && !ImGui::IsKeyDown(KEY_SELECT_ABORT))
-	{ // Start bounded selection
-		view3D.selectingBounded = io.KeyCtrl? 3 : (io.KeyShift? 2 : 1);
-		view3D.selectMouseStart = view3D.mousePos;
+	bool updateCameraSelection = false;
+
+	// Update selection bounds
+	int selectBounds = handleSelectBounds(view3D, KEY_SELECT, KEY_SELECT_ABORT);
+	if (selectBounds)
+	{ // Bounded selection of markers (high priority) and cameras (low priority)
+		bool updatedMarkerSelection = applyBoundedSelection(selectBounds, visState.markers.selectedIDs, visState.markers.boundedIDs);
+		// Prioritise markers, but just feels unintuitive. Don't allow bounded selection of cameras
+		//if (!updatedMarkerSelection)
+		//	updateCameraSelection = applyBoundedSelection(selectBounds, visState.cameras.selectedIDs, visState.cameras.boundedIDs);
 	}
-	if (view3D.selectingBounded && ImGui::IsKeyReleased(KEY_SELECT))
-	{ // Apply bounded selection (even if released outside)
-		if (!view3D.selectBounds.center().hasNaN())
-		{ // Too small bounds will be NaN and should not be regarded as a bounded selection
-			acceptSelectBounds = view3D.selectingBounded;
-			cancelClickReg(); // Override any other click registration
+	visState.markers.boundedIDs.clear();
+	visState.cameras.boundedIDs.clear();
+
+	// Tracked markers (high priority)
+	multiSelection<uint32_t>(view3D, KEY_SELECT, 'M', 10, 5,
+		visState.markers.selectedIDs, visState.markers.hoveredID, 0);
+	visState.markers.hoveredID = CAMERA_ID_NONE;
+
+	// Cameras (medium priority)
+	updateCameraSelection |= multiSelection<CameraID>(view3D, KEY_SELECT, 'C', 8, 4,
+			visState.cameras.selectedIDs, visState.cameras.hoveredID, CAMERA_ID_NONE);
+	visState.cameras.hoveredID = CAMERA_ID_NONE;
+
+	if (updateCameraSelection)
+	{ // Update ground truth selection state in camera devices
+		for (auto &camera : state.cameras)
+		{
+			bool oldSel = camera->embeddedState.interact & INTERACT_SELECTED;
+			bool newSel = visState.cameras.selectedIDs.contains(camera->id);
+			if (oldSel != newSel)
+				CameraToggleSelectionState(*camera, false, true);
 		}
-		view3D.selectingBounded = 0;
 	}
-	if (view3D.selectingBounded && ImGui::IsKeyDown(KEY_SELECT_ABORT))
-	{ // Abort without modifying selection
-		cancelClickReg(); // Override any other click registration
-		view3D.selectingBounded = 0;
-	}
-	if (view3D.selectingBounded && (view3D.mousePos - view3D.selectMouseStart).norm() > 5*PixelSize)
-	{
-		view3D.selectBounds = Bounds2f(view3D.selectMouseStart, Eigen::Vector2f::Zero());
-		view3D.selectBounds.include(view3D.mousePos);
-	}
-	else view3D.selectBounds = Bounds2f(Eigen::Vector2f::Constant(NAN), Eigen::Vector2f::Constant(NAN));
 
-
-	/* Target Inspection Interactions */
-
-	{
+	{ // Target Marker selection (low priority)
 		VisTargetLock visTarget = visState.lockVisTarget();
 		if (visTarget)
 			visState.updateVisTarget(visTarget);
 
-		if (visTarget.hasObs())
-		{
-			auto &frame = visTarget.obs->frames[visState.targetCalib.frameIdx % visTarget.obs->frames.size()];
-			viewLabel = asprintf_s("Frame %" PRIu64, frame.frame);
-			if (visTarget.hasPose)
-			{
-				Eigen::Projective3f proj = view3D.getProj(viewWin->InnerRect.GetHeight() / viewWin->InnerRect.GetWidth()) * view3D.viewTransform.inverse();
-				float radiusPx = 8.0f;
-				auto camera_lock = state.pipeline.cameras.contextualRLock();
-				for (auto &cam : *camera_lock)
-				{
-					Eigen::Vector3f dir = (cam->calib.transform.translation().cast<float>() - frame.pose.translation()).normalized();
-					Eigen::Vector3f pos3D = frame.pose.translation() + dir*0.2f;
-					Eigen::Vector3f pos2D = (proj * pos3D.homogeneous()).hnormalized();
-					if (pos2D.z() < 0) continue;
-					// GL z and y are inverted, so just invert y
-					ImVec2 posUI = posToUI(Eigen::Vector2f(pos2D.x(), -pos2D.y()));
-					//viewWin->DrawList->AddCircleFilled(posUI + viewWin->Pos, radiusPx, IM_COL32(100, 100, 150, 255));
-					ImGui::SetCursorPos(posUI - ImVec2(radiusPx, radiusPx));
-					ImGui::SetNextItemAllowOverlap();
-					if (ImGui::Button(asprintf_s("##CamBtn%d", cam->index).c_str(), ImVec2(radiusPx*2, radiusPx*2)))
-					{
-						visState.target.cameraRays.resize(camera_lock->size());
-						visState.target.cameraRays[cam->index] = !visState.target.cameraRays[cam->index];
-					}
-				}
-			}
-		}
-
-		if (visTarget && visState.target.markerHovered >= 0 && clickReg(KEY_SELECT, 'T', visState.target.markerHovered, 20))
+		if (visTarget && visState.target.markerHovered >= 0 && clickRegister(view3D, { KEY_SELECT, 'T', visState.target.markerHovered, 20 }))
 		{ // Different, much simplified selection mechanic than ordinaty transient markers, but still usable
 			visState.target.markerSelect[visState.target.markerHovered] = !visState.target.markerSelect[visState.target.markerHovered];
 		}
 		visState.target.markerHovered = -1;
 	}
-
-
-	/* Transient Markers Interaction */
-
-	if (acceptSelectBounds)
-	{
-		if (acceptSelectBounds == 1) // Normal
-			visState.markers.selectedIDs = std::move(visState.markers.boundedIDs);
-		else if (acceptSelectBounds == 2) // Shift
-			for (int id : visState.markers.boundedIDs)
-				visState.markers.selectedIDs.insert(id);
-		else if (acceptSelectBounds == 3) // Ctrl
-			for (int id : visState.markers.boundedIDs)
-				visState.markers.selectedIDs.erase(id);
-	}
-	visState.markers.boundedIDs.clear();
-
-	if (visState.markers.hoveredID > 0 && clickReg(KEY_SELECT, 'M', visState.markers.hoveredID, 10))
-	{
-		if (io.KeyCtrl)
-		{
-			if (visState.markers.selectedIDs.contains(visState.markers.hoveredID))
-				visState.markers.selectedIDs.erase(visState.markers.hoveredID);
-			else
-				visState.markers.selectedIDs.insert(visState.markers.hoveredID);
-		}
-		else
-		{
-			if (!io.KeyShift) visState.markers.selectedIDs.clear();
-			visState.markers.selectedIDs.insert(visState.markers.hoveredID);
-		}
-	}
-	if (visState.markers.hoveredID == 0 && !io.KeyShift && !io.KeyCtrl && clickReg(KEY_SELECT, 'D', 0, 5))
-	{ // Clear marker selection if clicked on nothing
-		visState.markers.selectedIDs.clear();
-	}
-	visState.markers.hoveredID = 0;
 
 
 	/* Finalise 3D View Interaction */
@@ -519,28 +431,46 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	if (visState.room.showOrigin)
 		visualiseOrigin(visState.room.origin, 1, 5);
 
+	visState.cameras.hoveredID = CAMERA_ID_NONE;
+	visState.cameras.boundedIDs.clear();
+	for (auto &camera : state.cameras)
 	{
-		auto camera_lock = pipeline.cameras.contextualRLock();
-
-		for (auto &camera : *camera_lock)
-			if (camera->disabled)
-				visualiseCamera(camera->calib.transform.cast<float>(), { 0.6f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
-		for (auto &camera : *camera_lock)
-			if (!camera->disabled)
-				visualiseCamera(camera->calib.transform.cast<float>(), { 0.3f, 0.3f, visState.camera.focusedID == camera->id? 0.6f : 0.3f, 1.0f });
+		Eigen::Isometry3f cam = camera->pipeline->calib.transform.cast<float>();
+		float flareSq = 8*8 * PixelSize*PixelSize;
+		bool hovered = false;
+		if (!view3D.selectBounds.center().hasNaN() || view3D.mouseIn)
+		{
+			// Align hit sphere with mesh, not origin of camera
+			auto circle = sphereHitProjection(view3D.viewTransform, view3D.fInv/visAspect,
+				cam.translation() + cam.rotation().col(2) * 0.1f, 0.1f);
+			/* if (!view3D.selectBounds.center().hasNaN())
+			{
+				hovered = view3D.selectBounds.extendedBy(std::sqrt(circle.sizeSq+flareSq)).includes(circle.pos);
+				if (hovered) visState.cameras.boundedIDs.insert(camera->id);
+			}
+			else */ if (view3D.mouseIn)
+			{
+				hovered = (circle.pos - view3D.mousePos).squaredNorm() < circle.sizeSq+flareSq;
+				if (hovered) visState.cameras.hoveredID = camera->id;
+			}
+		}
 
 		if (pipeline.isSimulationMode)
-		{
-			for (auto &camera : *camera_lock)
-				visualiseCamera(camera->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
-		}
+			visualiseCamera(camera->pipeline->simulation.calib.transform.cast<float>(), { 0.2f, 0.6f, 0.2f, 1.0f });
 
-		if (visState.pipeline.showMarkerRays && visFrame)
-		{
-			auto &frame = *visFrame.frameIt->get();
-			for (int c = 0; c < frame.cameras.size(); c++)
-				visualiseRays((*camera_lock)[c]->calib, frame.cameras[c].points2D, frame.cameras[c].blobUse);
-		}
+		float fac = hovered? 1.666f : 1.0f;
+		visualiseCamera(cam, {
+			fac * (camera->pipeline->disabled? 0.6f : 0.3f),
+			fac * (camera->embeddedState.interact & INTERACT_SELECTED? 0.6f : 0.3f),
+			fac * (camera->embeddedState.interact & INTERACT_FOCUSED? 0.6f : 0.3f),
+			1.0f });
+	}
+
+	if (visState.pipeline.showMarkerRays && visFrame)
+	{
+		auto &frame = *visFrame.frameIt->get();
+		for (int c = 0; c < frame.cameras.size(); c++)
+			visualiseRays(state.cameras[c]->pipeline->calib, frame.cameras[c].points2D, frame.cameras[c].blobUse);
 	}
 
 	if ((visState.pipeline.showClustersTri3D || visState.pipeline.showClusters2DTri) && visFrame && visFrame.isRealtimeFrame)

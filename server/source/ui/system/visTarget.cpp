@@ -371,13 +371,19 @@ void visualiseVisTargetObsCameraRays(const std::vector<CameraCalib> &calibs, con
 	assert(visTarget.hasObs() && visTarget.hasPose);
 	auto &curFrame = visTarget.obs->frames[visTarget.frameIdx];
 
+	static std::vector<bool> camerasSelected;
+	camerasSelected.clear();
+	camerasSelected.resize(calibs.size());
+	for (auto &camera : visState.cameras.boundedIDs)
+		camerasSelected[camera] = true;
+
 	Color rayColor = { 0.3f, 0.4f, 0.9f, 1.0f };
 	Color perpColor = { 0.9f, 0.4f, 0.2f, 1.0f };
 	thread_local std::vector<std::pair<VisPoint, VisPoint>> rayLines;
 	rayLines.clear();
 	for (auto &sample : curFrame.samples)
 	{
-		if (visState.target.cameraRays.size() <= sample.camera || !visState.target.cameraRays[sample.camera]) continue;
+		if (camerasSelected.size() <= sample.camera || !camerasSelected[sample.camera]) continue;
 		Eigen::Vector2f point = undistortPoint(calibs[sample.camera], sample.point);
 		Ray3f ray = castRay<float>(point, calibs[sample.camera]);
 		int m = visTarget.obs->markerMap.at(sample.marker);

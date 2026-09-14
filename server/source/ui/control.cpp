@@ -18,6 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "ui.hpp"
 #include "config.hpp"
 #include "sideline/recording.hpp"
+#include "device/tracking_camera.hpp"
 
 #include "imgui/imgui_custom.hpp"
 #include "imgui/imgui_onDemand.hpp"
@@ -965,12 +966,18 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 
 	if (ImGui::CollapsingHeader("Disable Cameras"))
 	{
-		for (auto &camera : *pipeline.cameras.contextualRLock())
+		for (auto &camera : state.cameras)
 		{
 			ImGui::PushID(camera->id);
-			ImGui::Text("#%u", camera->id);
+			std::string label = asprintf_s("#%u (%d)", camera->id, camera->pipeline->index);
+			bool selected = camera->embeddedState.interact & INTERACT_SELECTED;
+			ImGui::AlignTextToFramePadding();
+			if (ImGui::Selectable(label.c_str(), &selected, ImGuiSelectableFlags_AllowOverlap))
+			{
+				CameraToggleSelectionState(*camera, ImGui::GetIO().KeyShift, ImGui::GetIO().KeyCtrl);
+			}
 			SameLineTrailing(ImGui::GetFrameHeight());
-			ImGui::Checkbox("##CamDisable", &camera->disabled);
+			ImGui::Checkbox("##CamDisable", &camera->pipeline->disabled);
 			ImGui::PopID();
 		}
 	}

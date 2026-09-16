@@ -356,7 +356,7 @@ void triangulateRayIntersections(const std::vector<CameraCalib> &cameras,
 	auto handlePoints = [&](auto &ixm)
 	{
 		int clean = 0, conflict = 0;
-		std::vector<TriangulatedPoint::TriSample> samples;
+		std::vector<TriSample> samples;
 		auto blob = [&](int c, int b)
 		{
 			assert(points2D[c]->size() > b);

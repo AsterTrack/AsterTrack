@@ -355,9 +355,10 @@ struct TransientMarker
 {
 	uint32_t id;
 	TrackingResult result;
-	int samples, uncertain;
+	int uncertain;
 	float error2D;
-	std::vector<std::pair<FrameNum, int>> initMarkers;
+	std::vector<TriSample> samples;
+	std::vector<std::pair<FrameNum, int>> initTris;
 
 	// Single Marker tracking source
 	TrackerMarker marker;
@@ -365,9 +366,9 @@ struct TransientMarker
 	// Current filtered state
 	MarkerFilter filter;
 
-	inline TransientMarker(Eigen::Vector3f pos, float size, int samples,
+	inline TransientMarker(Eigen::Vector3f pos, float size, std::vector<TriSample> samples,
 		TimePoint_t time, FrameNum frame, const MarkerTrackingParameters &params)
-		: id(0), result(TrackingResult::TRACKED_MARKER), samples(samples), marker(size), filter(pos, time, frame, params) {}
+		: id(0), result(TrackingResult::TRACKED_MARKER), marker(size), samples(std::move(samples)), filter(pos, time, frame, params) {}
 };
 
 struct VirtualTracker : public virtual TrackedBase

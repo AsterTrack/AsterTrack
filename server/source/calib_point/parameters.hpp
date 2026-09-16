@@ -86,6 +86,11 @@ struct PointCalibParameters
 {
 	PointReconstructionParameters reconstruction;
 	PointOutlierErrors outliers;
+	struct
+	{
+		float maxSampleDeviation = 0.005f;
+		float maxSampleVelocity = 0.2;
+	} room;
 };
 
 #endif // CALIBRATION_POINT_PARAMETERS_H

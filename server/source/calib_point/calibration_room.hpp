@@ -37,12 +37,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 template<typename Scalar>
 struct StaticPointSamples
 {
+	int markerID;
+	bool sampling;
+	int sampleCount;
 	std::vector<std::pair<int,Vector2<Scalar>>> samples;
 	Eigen::Matrix<Scalar,3,1> pos;
 	float confidence;
 	int startObservation;
-	int sampleCount;
-	bool sampling;
 
     void update(const std::vector<CameraCalib> &calibs);
 };

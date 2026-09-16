@@ -660,7 +660,7 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				continue;
 			}
 			bool conflicted = false;
-			for (auto &initMarker : marker.initMarkers)
+			for (auto &initMarker : marker.initTris)
 				if (frames[initMarker.first]->markers3D[initMarker.second].id != 0)
 					conflicted = true;
 			if (conflicted)
@@ -669,13 +669,13 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 				markerIt = track.transientMarkers.erase(markerIt);
 				continue;
 			}
-			if (marker.initMarkers.size() >= pipeline.params.marker.detect.minValidationFrames)
+			if (marker.initTris.size() >= pipeline.params.marker.detect.minValidationFrames)
 			{ // Accept and assign ID - and retroactively set that ID for init markers
 				marker.id = track.ongoingMarkerID++;
 				LOG(LTracking, LDebug, "Validated newly detected tracked marker with ID %d!", marker.id);
-				for (auto &initMarker : marker.initMarkers)
+				for (auto &initMarker : marker.initTris)
 					frames[initMarker.first]->markers3D[initMarker.second].id = marker.id;
-				marker.initMarkers = {}; // Clear
+				marker.initTris = {}; // Clear
 			}
 			markerIt++;
 		}
@@ -964,17 +964,17 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 		Eigen::Vector3f pos = marker.filter.state.position().cast<float>();
 		Eigen::Matrix3f cov = marker.filter.state.errorCovariance().topLeftCorner<3,3>().cast<float>();
 		float uncertainty3D = get3DUncertainty(cov);
-		float confidence = getTriConfidence(marker.samples-marker.uncertain, marker.uncertain);
+		float confidence = getTriConfidence(marker.samples.size()-marker.uncertain, marker.uncertain);
 
 		LOG(LTriangulation, LTrace, "    -> Tracked marker of size %.3fmm with %d samples (confidence %.1f), %.2fmm 3D uncertainty and %.2fpx reprojection RMSE",
-			marker.marker.size*1000, marker.samples, confidence, uncertainty3D*1000, marker.error2D*PixelFactor);
+			marker.marker.size*1000, (int)marker.samples.size(), confidence, uncertainty3D*1000, marker.error2D*PixelFactor);
 
 		if (marker.id == 0)
 		{ // Not yet validated, add init marker using markers3D index
-			marker.initMarkers.emplace_back(frame->num, frame->markers3D.size());
+			marker.initTris.emplace_back(frame->num, frame->markers3D.size());
 		}
 
-		frame->markers3D.emplace_back(marker.id, pos, marker.error2D, uncertainty3D, marker.marker.size, marker.samples, confidence);
+		frame->markers3D.emplace_back(marker.id, pos, marker.error2D, uncertainty3D, marker.marker.size, marker.samples.size(), confidence);
 		frame->markersCov.emplace_back(cov.cast<CovStorageScalar>());
 		points3D.emplace_back(pos);
 	}

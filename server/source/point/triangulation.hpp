@@ -32,6 +32,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 typedef uint16_t CamIndex;
 typedef uint16_t BlobIndex;
 
+struct TriSample
+{
+	CamIndex camera;
+	BlobIndex blob;
+};
+
 /**
  * A triangulated point with reference to the blobs it was triangulated from
  */
@@ -42,11 +48,6 @@ struct TriangulatedPoint_t
 	Scalar error; // Mean distance to involved rays 
 	Scalar confidence; // Validity score
 	Scalar size;
-	struct TriSample
-	{
-		CamIndex camera;
-		BlobIndex blob;
-	};
 	std::vector<TriSample> samples;
 
 	TriangulatedPoint_t () {}

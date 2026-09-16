@@ -102,68 +102,87 @@ void UpdatePointCalibration(PipelineState &pipeline, std::vector<CameraPipeline*
 	// Allow selecting which point to use if there's multiple (currently needs one visible only)
 	// Account for physical marker sizes, etc.
 	auto roomCalib = ptCalib.room.contextualLock();
-	if (!roomCalib->floorPoints.empty() && roomCalib->floorPoints.back().sampling)
+	for (auto pointIt = roomCalib->floorPoints.begin(); pointIt != roomCalib->floorPoints.end();)
 	{
-		auto &point = roomCalib->floorPoints.back();
-		if (pipeline.tracking.triangulations3D.empty())
+		auto &point = *pointIt;
+		if (!point.sampling)
 		{
-			LOG(LPointCalib, LDebug, "No markers visible to calibrate floor point!\n");
-			if (point.sampleCount == 0)
+			pointIt++;
+			continue;
+		}
+		if (point.markerID == 0)
+		{
+			int options = 0, bestID = 0, bestFrames = 100000000;
+			for (auto &transient : pipeline.tracking.transientMarkers)
+			{
+				int frames = frame->num - transient.filter.firstObsFrame;
+				if (transient.id == 0 || frames < 10)
+					continue;
+				options++;
+				if (bestID == 0 || frames < bestFrames)
+				{
+					bestID = transient.id;
+					bestFrames = frames;
+				}
+			}
+			if (options == 0)
+			{
+				LOG(LPointCalib, LDarn, "No markers visible to calibrate floor point!\n");
 				SignalErrorToUser("No markers visible, please put a marker on the floor!");
-			else
-				SignalErrorToUser("Visibility of marker got interrupted, please try again!");
-			roomCalib->floorPoints.pop_back();
+				pointIt = roomCalib->floorPoints.erase(pointIt);
+				continue;
+			}
+			if (options > 1)
+			{
+				LOG(LPointCalib, LDarn, "Cannot automatically pick floor point from visible markers!\n");
+				SignalErrorToUser("Cannot automatically pick floor point from visible markers!");
+				pointIt = roomCalib->floorPoints.erase(pointIt);
+				continue;
+			}
+			point.markerID = bestID;
 		}
-		else
+
+		auto markerIt = std::find_if(pipeline.tracking.transientMarkers.begin(), pipeline.tracking.transientMarkers.end(),
+			[&](auto &m){ return m.id == point.markerID; });
+		if (markerIt == pipeline.tracking.transientMarkers.end())
 		{
-			TriangulatedPoint tri;
-			if (point.sampleCount == 0)
-			{
-				// Using the best available triangulation (tris are sorted) is actually a fine metric
-				/* if (pipeline.tracking.triangulations3D.size() > 1)
-				{
-					LOG(LPointCalib, LWarn, "== There are multiple markers visible, cannot start calibrating floor point %d!\n", (int)roomCalib->floorPoints.size());
-					SignalErrorToUser("There are multiple markers visible, please make sure only the marker on the floor is visible.");
-					roomCalib->floorPoints.pop_back();
-				}
-				else */
-				{
-					LOG(LPointCalib, LDebug, "== Started calibrating point %d!\n", (int)roomCalib->floorPoints.size());
-					tri = pipeline.tracking.triangulations3D.front();
-				}
-			}
-			else
-			{
-				float closest = 0.005f;
-				for (auto &t : pipeline.tracking.triangulations3D)
-				{
-					float dist = (point.pos.cast<float>() - t.pos).norm();
-					if (dist < closest)
-					{
-						tri = t;
-						closest = dist;
-					}
-				}
-			}
-			if (!tri.samples.empty())
-			{
-				point.samples.resize(frame->cameras.size(), { 0, Eigen::Vector2d::Zero() });
-				for (auto &sample : tri.samples)
-				{
-					// NOTE: Relies on sample.camera indexing into full cameras
-					point.samples[sample.camera].second += frame->cameras[sample.camera].points2D[sample.blob].cast<double>();
-					point.samples[sample.camera].first++;
-					point.sampleCount++;
-				}
-				point.update(pipeline.getCalibs());
-			}
-			if (point.sampleCount > 1000 || (point.sampleCount > 300 && point.startObservation-frame->num > 100))
-			{
-				LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", (int)roomCalib->floorPoints.size(), point.sampleCount);
-				point.sampling = false;
-				point.confidence = 10;
-			}
+			LOG(LPointCalib, LDarn, "Visibility of marker got interrupted, please try again!\n");
+			SignalErrorToUser("Visibility of marker got interrupted, please try again!");
+			pointIt = roomCalib->floorPoints.erase(pointIt);
+			continue;
 		}
+		auto &marker = *markerIt;
+		if (!marker.result.isTracked())
+		{
+			pointIt++;
+			continue;
+		}
+		if ((marker.filter.state.position() - point.pos).norm() > pipeline.pointCalib.params.room.maxSampleDeviation ||
+			marker.filter.state.velocity().norm() > pipeline.pointCalib.params.room.maxSampleVelocity)
+		{
+			LOG(LPointCalib, LDarn, "Please keep the marker on the floor still during capture!\n");
+			SignalErrorToUser("Please keep the marker on the floor still during capture!");
+			pointIt = roomCalib->floorPoints.erase(pointIt);
+			continue;
+		}
+
+		point.samples.resize(frame->cameras.size(), { 0, Eigen::Vector2d::Zero() });
+		for (auto &sample : marker.samples)
+		{
+			// NOTE: Relies on sample.camera indexing into full cameras
+			point.samples[sample.camera].second += frame->cameras[sample.camera].points2D[sample.blob].cast<double>();
+			point.samples[sample.camera].first++;
+			point.sampleCount++;
+		}
+		point.update(pipeline.getCalibs());
+		if (point.sampleCount > 1000 || (point.sampleCount > 300 && point.startObservation-frame->num > 100))
+		{
+			LOG(LPointCalib, LDebug, "== Calibrated point %d with %d samples!\n", (int)roomCalib->floorPoints.size(), point.sampleCount);
+			point.sampling = false;
+			point.confidence = 10;
+		}
+
+		pointIt++;
 	}
 	if (roomCalib->floorPoints.size() >= 2)
 	{ // Keep these invariant to potential calibration changes

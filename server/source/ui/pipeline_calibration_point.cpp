@@ -926,11 +926,17 @@ void InterfaceState::UpdatePipelinePointCalib()
 	}
 	ImGui::SetItemTooltip("Remove the last point added.");
 	ImGui::SameLine();
-	ImGui::BeginDisabled(!roomCalib->floorPoints.empty() && roomCalib->floorPoints.back().sampling);
+	ImGui::BeginDisabled(std::any_of(roomCalib->floorPoints.begin(), roomCalib->floorPoints.end(), [](auto &p){ return p.sampling; }));
 	if (ImGui::Button("+", ImVec2(ImGui::GetFrameHeight(), 0)))
 	{
-		roomCalib->floorPoints.push_back({});
-		roomCalib->floorPoints.back().sampling = true;
+		if (visState.markers.selectedIDs.empty())
+		{ // Make it pick marker if possible
+			roomCalib->floorPoints.emplace_back(0, true);
+		}
+		for (int markerID : visState.markers.selectedIDs)
+		{ // Add all selected markers
+			roomCalib->floorPoints.emplace_back(markerID, true);
+		}
 	}
 	ImGui::SetItemTooltip("Put a Marker on the ground, and push this button to record it over the period of one second.");
 	ImGui::EndDisabled();

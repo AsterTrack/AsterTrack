@@ -446,8 +446,9 @@ void trackMarker(std::list<TransientMarker> &markers,
 		{
 			LOG(LTracking, LDarn, "      Marker %d lost tracking entirely!", marker.id);
 			marker.result = TrackingResult::NO_TRACK;
-			marker.samples = marker.uncertain = 0;
+			marker.uncertain = 0;
 			marker.error2D = 0;
+			marker.samples.clear();
 			// Mark search as unsuccessful
 			markerSearch[m].found = false;
 			Breakpoint(3);
@@ -460,7 +461,7 @@ void trackMarker(std::list<TransientMarker> &markers,
 		// Update state
 		if (tri.samples.size() <= params.filter.obsLimit)
 		{ // Use 2D observations and rely on kalman to determine filtered posistion
-			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, using 2D filter update!", marker.id, marker.samples, (int)tri.samples.size());
+			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, using 2D filter update!", marker.id, (int)marker.samples.size(), (int)tri.samples.size());
 			auto measurement = TriangulationObservationMeasurement(
 				points2D, calibs, tri, params.filter.stdDevObs*params.filter.stdDevObs);
 			if (!flexkalman::correctUnscented(marker.filter.state, measurement, true, sigmaParams))
@@ -480,16 +481,19 @@ void trackMarker(std::list<TransientMarker> &markers,
 				LOG(LTrackingFilter, LWarn, "Failed to correct marker filter with pose from %d samples! Reset!", (int)tri.samples.size());
 				marker.result.setFlag(TrackingResult::FILTER_FAILED);
 			}
-			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, correcting prediction with 3D pos!", marker.id, marker.samples, (int)tri.samples.size());
+			LOG(LTracking, LTrace, "      Marker %d retained tracking with jump from %d to %d markers, correcting prediction with 3D pos!", marker.id, (int)marker.samples.size(), (int)tri.samples.size());
 		}
 
 		marker.error2D = getTriReprojectionRMSE<float>(points2D, calibs, tri);
 		marker.result = TrackingResult::TRACKED_MARKER;
-		marker.samples = tri.samples.size();
 		marker.uncertain = uncertainSamples;
 		marker.filter.lastObsTime = time;
 		marker.filter.lastObsFrame = frame;
 		marker.filter.time = time;
+		marker.samples.clear();
+		marker.samples.reserve(tri.samples.size());
+		for (auto &sample : tri.samples)
+			marker.samples.emplace_back(calibs[sample.camera].index, sample.blob);
 	}
 }
 
@@ -537,15 +541,15 @@ void adoptTransientMarkers(
 
 		// Add marker with direct estimate of velocity, without any estimate of covariance
 		TransientMarker &marker = transientMarkers.emplace_back(
-			tri.pos, (preTri.size + tri.size) / 2, tri.samples.size(),
+			tri.pos, (preTri.size + tri.size) / 2, tri.samples,
 			frame->time, frame->num, params);
 		marker.filter.state.velocity() = (tri.pos - preTri.pos).cast<double>() * (1.0f / dtS(preFrame->time, frame->time));
 		// COULD use calibs, points2D, and both frame records, to initialise covariance properly using both TriangulatedPoints
 
 		// Record markers used for initialisation
-		marker.initMarkers.reserve(params.detect.minValidationFrames);
-		marker.initMarkers.emplace_back(preFrame->num, preFrame->markers3D.size() - preTriangulations.size() + tt);
-		marker.initMarkers.emplace_back(frame->num, frame->markers3D.size() - triangulations.size() + t);
+		marker.initTris.reserve(params.detect.minValidationFrames);
+		marker.initTris.emplace_back(preFrame->num, preFrame->markers3D.size() - preTriangulations.size() + tt);
+		marker.initTris.emplace_back(frame->num, frame->markers3D.size() - triangulations.size() + t);
 
 		LOG(LTracking, LDebug, "    New Marker detected with %d and %d samples, moved %.2fmm, filter reflects %.2fmm!",
 			(int)preTri.samples.size(), (int)tri.samples.size(), (tri.pos - preTri.pos).norm()*1000,

@@ -91,5 +91,18 @@ void InterfaceState::UpdatePointCalibParameters(InterfaceWindow &window)
 		EndCollapsingRegion();
 	}
 
+	if (BeginCollapsingRegion("Room Calibration"))
+	{
+		const auto &standard = defaultParams.room;
+		auto &params = state.pipeline.pointCalib.params.room;
+
+		BeginSection("Floor Points");
+		ScalarProperty<float>("Max Sample Deviation", "mm", &params.maxSampleDeviation, &standard.maxSampleDeviation, 0, 10, 0.1f, 1000);
+		ScalarProperty<float>("Max Sample Velocity", "m/s", &params.maxSampleVelocity, &standard.maxSampleVelocity, 0, 1, 0.01f);
+		EndSection();
+
+		EndCollapsingRegion();
+	}
+
 	ImGui::End();
 }

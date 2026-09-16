@@ -786,6 +786,14 @@ static std::optional<ErrorMessage> parseTrackerConfigurationLegacy(std::filesyst
 	}
 	else return asprintf_s("Unknown tracker type %d!", tracker.type);
 
+	if (jsTracker.contains("cameraOpticalAxis") && jsTracker.contains("cameraUpwardsAxis"))
+	{
+		tracker.isVirtualCamera = true;
+		tracker.cameraFoV = jsTracker["cameraFoV"].get<float>();
+		tracker.cameraOpticalAxis = (TrackerAxis)jsTracker["cameraOpticalAxis"].get<int>();
+		tracker.cameraUpwardsAxis = (TrackerAxis)jsTracker["cameraUpwardsAxis"].get<int>();
+	}
+
 	if (jsTracker.contains("imu") && jsTracker["imu"].is_object())
 	{
 		auto &jsIMU = jsTracker["imu"];
@@ -961,6 +969,13 @@ static std::optional<ErrorMessage> writeTrackerConfiguration(json &jsTracker, co
 		jsVirtual["alignAxis"] = tracker.virtConfig.alignAxis.axis;
 	}
 	else error = asprintf_s("Unknown tracker type %d!", tracker.type);
+
+	if (tracker.isVirtualCamera)
+	{
+		jsTracker["cameraOpticalAxis"] = tracker.cameraOpticalAxis;
+		jsTracker["cameraUpwardsAxis"] = tracker.cameraUpwardsAxis;
+		jsTracker["cameraFoV"] = tracker.cameraFoV;
+	}
 
 	if (tracker.imuIdent)
 	{

@@ -141,21 +141,21 @@ void InterfaceState::UpdateVisualisationSettings(InterfaceWindow &window)
 	}
 	ImGui::EndDisabled();
 
-	if (BeginCollapsingRegion("Room References"))
+	if (BeginCollapsingRegion("General"))
 	{
+		ImGui::SeparatorText("Room References");
 		ImGui::Checkbox("Origin", &visState.room.showOrigin);
 		ImGui::SameLine();
 		ImGui::BeginDisabled(!visState.room.showOrigin);
 		ImGui::InputFloat3("##Origin", visState.room.origin.data(), "%.3f");
 		ImGui::EndDisabled();
 
-		EndCollapsingRegion();
-	}
-
-	if (BeginCollapsingRegion("Image Adjustment"))
-	{
+		ImGui::SeparatorText("Image Adjustment");
 		SliderInput("Brightness", &visState.image.brightness, -0.4f, 0.4f);
 		SliderInput("Contrast", &visState.image.contrast, 0.0f, 5.0f);
+
+		ImGui::SeparatorText("View 3D");
+		SliderInput("Field of View", &view3D.viewFoV, 10.0f, 160.0f);
 
 		EndCollapsingRegion();
 	}

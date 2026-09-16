@@ -231,6 +231,7 @@ void ServerUpdateTrackerConfig(ServerState &state, TrackerConfig &tracker, bool 
 		output.role = tracker.role;
 		output.config = tracker.output;
 		output.adoptConfig();
+		output.storeSmoothed = tracker.isVirtualCamera; // Or for all?
 	}
 
 	// Set (or update) tracked object with tracker config
@@ -399,7 +400,7 @@ void SignalTrackerDetected(int trackerID)
 	}
 }
 
-void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial)
+void SignalTrackerTracked(const FrameRecord &frame, TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial)
 { // Lowest-latency signal of tracker being tracked or detected
 	// For now only called from pipeline thread under processingMutex
 	// In the future, may be called from individual tracker thread
@@ -414,6 +415,7 @@ void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record,
 
 	// If configured, extrapolate filter (with or without additional inertial samples)
 	auto &params = state.pipeline.params.track;
+	bool extrapolated = true;
 	if (inertial && (output.config.extrapolateWithIMU || output.config.extrapolateAlways))
 	{ // Extrapolate with any new IMU samples
 		data.processedTime = sclock::now();
@@ -432,22 +434,35 @@ void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record,
 		flexkalman::predict(extState, model, dtS(filter.time, data.processedTime));
 		data.processedPose = extState.getIsometry().cast<float>();
 	}
+	else extrapolated = false;
 
-	if (output.config.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
-	{ // Apply simple filter as post-process
-		Eigen::Vector3f pos(data.processedPose.translation());
-		Eigen::Quaternionf rot(data.processedPose.rotation());
-		pos = output.filterPos.filter(pos, data.processedTime);
-		rot = output.filterRot.filter(rot, data.processedTime);
-		LOG(LIO, LTrace, "Post-Proc-Filter chose alphas %.5f (%.5f) and %.5f (%.5f)!",
-			output.filterPos.filterValue.alpha, output.filterPos.filterDelta.alpha,
-			output.filterRot.filterValue.alpha, output.filterRot.filterDelta.alpha);
-		data.processedPose.translation() = pos;
-		data.processedPose.linear() = rot.toRotationMatrix();
-	}
+	auto filterPose = [&](auto &filter, Eigen::Isometry3f &pose, TimePoint_t time)
+	{ // Apply simple filter
+		if (output.config.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
+		{
+			pose.translation() = filter.oneeuro.pos.filter(pose.translation(), time);
+			pose.linear() = filter.oneeuro.rot.filter(Eigen::Quaternionf(pose.rotation()), time).toRotationMatrix();
+			LOG(LIO, LTrace, "Post-Proc-Filter chose alphas %.5f (%.5f) and %.5f (%.5f)!",
+				filter.oneeuro.pos.filterValue.alpha, filter.oneeuro.pos.filterDelta.alpha,
+				filter.oneeuro.rot.filterValue.alpha, filter.oneeuro.rot.filterDelta.alpha);
+		}
+	};
+
+	filterPose(output.filter, data.processedPose, data.processedTime);
 
 	// Fast-track output to selected integrations and record for remaining
 	IntegrationsSendTracker(state.io, output, data, frame.time);
+
+	if (output.storeSmoothed)
+	{ // If smoothed output is desired for visualisation
+		if (extrapolated)
+		{ // Need to re-filter with non-extrapolated pose
+			record.pose.smoothed = record.pose.filtered;
+			filterPose(output.filterStore, record.pose.smoothed, frame.time);
+		}
+		else // Can use output pose
+			record.pose.smoothed = data.processedPose;
+	}
 }
 
 // ----------------------------------------------------------------------------

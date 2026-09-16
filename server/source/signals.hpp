@@ -40,6 +40,6 @@ void SignalTargetCalibUpdate(int trackerID, TargetCalibration3D calib);
 void SignalIMUCalibUpdate(int trackerID, IMUIdent ident, IMUCalib calib);
 void SignalCameraCalibUpdate(std::vector<CameraCalib> calibs);
 void SignalTrackerDetected(int trackerID);
-void SignalTrackerTracked(const FrameRecord &frame, const TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial);
+void SignalTrackerTracked(const FrameRecord &frame, TrackerRecord &record, const TrackerFilter &filter, const TrackerInertial &inertial);
 
 #endif // SERVER_SIGNALS_H

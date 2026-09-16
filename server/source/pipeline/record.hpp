@@ -234,6 +234,8 @@ struct TrackerPose
 	// Covariances of those poses
 	CovarianceMatrix observedCov;
 	CovarianceMatrix filteredCov;
+	// Filtered pose with additional smoothing if configured
+	Eigen::Isometry3f smoothed;
 };
 
 struct TrackerPoseExtended

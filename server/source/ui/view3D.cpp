@@ -96,14 +96,22 @@ void InterfaceState::Update3DViewUI(InterfaceWindow &window)
 	 */
 
 	ImGuiIO &io = ImGui::GetIO();
-	if (viewFocused || viewHovered)
+	if ((viewFocused || viewHovered))
 	{ // Process input
 		float dT = io.DeltaTime > 0.05f? 0.016f : io.DeltaTime;
 		float dM = dT *10.0f;
 		auto &transform = view3D.viewTransform;
 
 		// Movement
-		if (view3D.orbit)
+		if (view3D.virtualCameraTrackerID)
+		{
+			if (ImGui::IsKeyDown(ImGuiKey_U))
+			{
+				view3D.resetVirtualCamera();
+				view3D.orbit = view3D.explicitOrbit = false;
+			}
+		}
+		else if (view3D.orbit)
 		{
 			if (ImGui::IsKeyDown(ImGuiKey_S))
 			{
@@ -413,13 +421,28 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 	float visAspect = (float)viewSize.y()/viewSize.x();
 
 	VisFrameLock visFrame = visState.lockVisFrame(pipeline);
-	view3D.orbit = visFrame.target? true : view3D.explicitOrbit;
+
+	if (view3D.virtualCameraTrackerID != 0 && visFrame)
+	{
+		auto &frame = *visFrame.frameIt->get();
+		auto trackRec = std::find_if(frame.trackers.begin(), frame.trackers.end(),
+			[&](auto &t){ return t.id == view3D.virtualCameraTrackerID; });
+		if (trackRec != frame.trackers.end() && trackRec->result.isTracked())
+		{
+			view3D.viewTransform = trackRec->pose.smoothed;
+			view3D.viewTransform.linear() = view3D.viewTransform.rotation() * view3D.cameraOpticalTransform;
+		}
+	}
+
+	view3D.orbit = view3D.virtualCameraTrackerID == 0 && (visFrame.target || view3D.explicitOrbit);
 	if (view3D.orbit)
 	{
 		view3D.target = visState.getPreferredTarget(visFrame);
 		if (!view3D.target.hasNaN())
 			view3D.viewTransform.translation() = view3D.target + view3D.viewTransform.linear() * Eigen::Vector3f(0, 0, -view3D.distance); 
 	}
+
+	view3D.fInv = fInvFromFoV(view3D.virtualCameraTrackerID != 0? view3D.cameraFoV : view3D.viewFoV);
 	visSetupView(view3D.getProj(visAspect), view3D.viewTransform.inverse());
 
 	static float time = 15.0f;
@@ -698,6 +721,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		if (trackerIt == state.trackerConfigs.end()) continue;
 		auto tracker = *trackerIt;
 		bool trackerDebugged = debugging && trkDbg.trackerID == tracker.id;
+		bool hidePose = view3D.virtualCameraTrackerID == tracker.id; // Obstructing view
 		if (tracker.type == TrackerConfig::TRACKER_MARKER)
 		{
 			// TODO: Render marker
@@ -705,6 +729,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 		}
 		if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
 		{
+			if (hidePose) continue;
 			const Color colVirtual = Color{ 0.5f, 0.1f, 0.7f, 0.6f };
 			const Color colObserved = Color{ 0.4f, 0.8f, 0.2f, 0.6f };
 			visualisePose(trackRecord.pose.filtered, colVirtual, 0.15f, 2.0f);
@@ -790,15 +815,15 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			if (trackRecord.result.isTracked() && trackRecord.visual)
 				updateTargetMarkerVis(pipeline, target, trackRecord.visual->visibleMarkers,
 					trackRecord.ext->predicted, colPredicted, 0.5f, &markers[target.markers.size()*1]);
-			visualisePose(trackRecord.ext->predicted, colPredicted, 0.2f, 2.0f);
+			if (!hidePose) visualisePose(trackRecord.ext->predicted, colPredicted, 0.2f, 2.0f);
 		}
-		if (visState.tracking.showInertialIntegrated && trackRecord.ext)
+		if (!hidePose && visState.tracking.showInertialIntegrated && trackRecord.ext)
 			visualisePose(trackRecord.ext->inertialIntegrated, Color{ 0.5f, 0.1f, 1.0f, 1.0f }, 0.2f, 2.0f);
-		if (visState.tracking.showInertialFused && trackRecord.ext)
+		if (!hidePose && visState.tracking.showInertialFused && trackRecord.ext)
 			visualisePose(trackRecord.ext->inertialFused, Color{ 0.1f, 0.6f, 1.0f, 1.0f }, 0.2f, 2.0f);
-		if (visState.tracking.showInertialFiltered && trackRecord.ext)
+		if (!hidePose && visState.tracking.showInertialFiltered && trackRecord.ext)
 			visualisePose(trackRecord.ext->inertialFiltered, Color{ 0.1f, 1.0f, 0.6f, 1.0f }, 0.2f, 2.0f);
-		if (visState.tracking.showPoseExtrapolated && trackRecord.ext)
+		if (!hidePose && visState.tracking.showPoseExtrapolated && trackRecord.ext)
 			visualisePose(trackRecord.ext->extrapolated, colIMUQuatFiltered, 0.2f, 2.0f);
 
 		if (visState.tracking.showTargetObserved && trackRecord.result.isTracked())
@@ -806,7 +831,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			if (trackRecord.visual)
 				updateTargetMarkerVis(pipeline, target, trackRecord.visual->visibleMarkers,
 					trackRecord.pose.observed, colObserved, 0.7f, &markers[target.markers.size()*0]);
-			visualisePose(trackRecord.pose.observed, colObserved, 0.2f, 2.0f);
+			if (!hidePose) visualisePose(trackRecord.pose.observed, colObserved, 0.2f, 2.0f);
 		}
 
 		if (visState.tracking.showTargetFiltered && trackRecord.result.isTracked())
@@ -814,7 +839,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 			if (trackRecord.visual)
 				updateTargetMarkerVis(pipeline, target, trackRecord.visual->visibleMarkers,
 					trackRecord.pose.filtered, colFiltered, 1.0f, &markers[target.markers.size()*2]);
-			visualisePose(trackRecord.pose.filtered, colFiltered, 0.2f, 4.0f);
+			if (!hidePose) visualisePose(trackRecord.pose.filtered, colFiltered, 0.2f, 4.0f);
 		}
 
 		if (visState.tracking.showSearchBounds && trackRecord.ext)
@@ -891,7 +916,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 				trailPt[2] = { pastTrack->pose.filtered.translation(), colFiltered, 0.002f };
 		}
 
-		if (visState.tracking.showCovarianceSamples && (trackRecord.match2D || trackerDebugged))
+		if (!hidePose && visState.tracking.showCovarianceSamples && (trackRecord.match2D || trackerDebugged))
 		{ // Visualise samples on covariance ellipsoid shell
 			thread_local std::vector<VisPoint> samples;
 			const auto &tgtMatch = !trackerDebugged? *trackRecord.match2D.get() :
@@ -930,7 +955,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 					visState.tracking.scaleCovariance), Color{ 0.2f, 0.5f, 0.8f, 0.4f });
 			}
 		}
-		else if (visState.tracking.showCovariancePos)
+		else if (!hidePose && visState.tracking.showCovariancePos)
 		{ // Visualise positional covariance ellipsoids
 			enterCovariances(trackRecord);
 			if (visState.tracking.showTargetObserved && trackerDebugged)
@@ -943,7 +968,7 @@ static void visualiseState3D(const ServerState &state, VisualisationState &visSt
 					visState.tracking.scaleCovariance), colObserved);
 			}
 		}
-		if (visState.tracking.showCovarianceRot)
+		if (!hidePose && visState.tracking.showCovarianceRot)
 		{ // Visualise rotational covariance rings around pose cross
 			// TODO: Show different rotational covariances somehow (predicted, observed, filtered)
 			visualiseRotationalCovariance(trackRecord.pose.filtered, trackRecord.pose.filteredCov.bottomRightCorner<3,3>(),
@@ -1133,4 +1158,25 @@ static void visualRotationGenAnalysis(const VisualisationState &visState, const 
 	visualisePointsSprites(visPoints, true);
 	visualisePointsSprites(visAngles, true);
 	visualiseLines(visLines, 2);
+}
+
+void View3D::setVirtualCamera(const TrackerConfig &tracker)
+{
+	virtualCameraTrackerID = tracker.id;
+	cameraFoV = tracker.cameraFoV;
+	// Transform so that optical axis is positive Z, and upwards axis is positive Y. Infer remaining axis.
+	cameraOpticalTransform.setZero();
+	cameraOpticalTransform(tracker.cameraOpticalAxis & TrackerAxis::AXIS_MASK, 2) = (tracker.cameraOpticalAxis & TrackerAxis::AXIS_SIGN)? -1 : +1;
+	cameraOpticalTransform(tracker.cameraUpwardsAxis & TrackerAxis::AXIS_MASK, 1) = (tracker.cameraUpwardsAxis & TrackerAxis::AXIS_SIGN)? -1 : +1;
+	cameraOpticalTransform.col(0) = 1 - cameraOpticalTransform.rowwise().squaredNorm().array();
+	if (cameraOpticalTransform.determinant() < 0) cameraOpticalTransform.col(0) *= -1;
+}
+
+void View3D::resetVirtualCamera()
+{
+	virtualCameraTrackerID = 0;
+	Eigen::Vector3f rot = getEulerXYZ(viewTransform.rotation());
+	pitch = rot.x();
+	heading = rot.z();
+	viewTransform.linear() = getRotationXYZ(Eigen::Vector3f(pitch, 0, heading));
 }

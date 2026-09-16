@@ -196,7 +196,7 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 	auto ShowIMUStatus = [&](const auto &tracker)
 	{
 		if (tracker.imuState == TrackerInertialState::NO_IMU)
-			return;
+			return false;
 		SameLineTrailing(iconSize().x + ImGui::GetStyle().ItemSpacing.x + ImGui::GetFrameHeight());
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);
 		if (tracker.imuState == TrackerInertialState::IMU_CALIBRATING)
@@ -214,6 +214,8 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			ImGui::Image(icons().imu_lost, iconSize());
 			ImGui::SetItemTooltip("No IMU samples received for %.1fs", tracker.imuSampleAgo);
 		}
+		else return false;
+		return true;
 	};
 
 	bool hasDormant = false, hasTracked = false;
@@ -236,7 +238,17 @@ void InterfaceState::UpdatePipeline(InterfaceWindow &window)
 			label = asprintf_s("Lost '%s' (%d), %ld frames ago###TgtTrk", tracker.label.c_str(), tracker.id, trackedAgo);
 		SelectableTracker(tracker.id, label);
 
-		ShowIMUStatus(trackerRec->second);
+		bool showIMU = ShowIMUStatus(trackerRec->second);
+		if (tracker.isVirtualCamera)
+		{ // Append before
+			SameLineTrailing((showIMU? iconSize().x : 0) + (showIMU? 2 : 1) * ImGui::GetStyle().ItemSpacing.x + ImGui::GetFrameHeight()*2);
+			bool set = view3D.virtualCameraTrackerID == tracker.id;
+			if (set && IconButton(ICON_LA_EYE_SLASH "##VirtCam"))
+				view3D.resetVirtualCamera();
+			if (!set && IconButton(ICON_LA_EYE "##VirtCam"))
+				view3D.setVirtualCamera(tracker);
+		}
+
 		SameLineTrailing(ImGui::GetFrameHeight());
 		if (ImGui::ArrowButton("Unset", ImGuiDir_Down))
 			ServerUpdateTrackerConditions(state, tracker, false, -1, 0);

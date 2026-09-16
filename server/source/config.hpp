@@ -155,6 +155,12 @@ struct TrackerConfig
 	// Virtual-specific Config
 	TrackerVirtualConfig virtConfig;
 
+	// Optional Virtual Camera Config
+	bool isVirtualCamera = false;
+	float cameraFoV = 65.0f;
+	TrackerAxis cameraOpticalAxis = TrackerAxis::AXIS_ZP;
+	TrackerAxis cameraUpwardsAxis = TrackerAxis::AXIS_YP;
+
 	// Optional IMU
 	IMUIdent imuIdent = {};
 	IMUCalib imuCalib;

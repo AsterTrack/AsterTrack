@@ -379,88 +379,88 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 		EndSection();
 	}
 
-	if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+	auto trackerLabel = [&state](int trackerID, const char* none = nullptr)
 	{
-		auto trackerLabel = [&state](int trackerID, const char* none = nullptr)
-		{
-			auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
-					[&](auto &t){ return t.id == trackerID; });
-			return trackerIt == state.trackerConfigs.end()? (none? none : "None") : trackerIt->label;
-		};
+		auto trackerIt = std::find_if(state.trackerConfigs.begin(), state.trackerConfigs.end(),
+				[&](auto &t){ return t.id == trackerID; });
+		return trackerIt == state.trackerConfigs.end()? (none? none : "None") : trackerIt->label;
+	};
 
-		auto targetSelector = [&](const char* label, int &trackerID, const char* noneOption = nullptr)
+	auto targetSelector = [&](const char* label, int &trackerID, const char* noneOption = nullptr)
+	{
+		bool changed = false;
+		if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
 		{
-			bool changed = false;
-			if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
+			if (noneOption && ImGui::Selectable(noneOption, trackerID < 0))
 			{
-				if (noneOption && ImGui::Selectable(noneOption, trackerID < 0))
-				{
-					changed = true;
-					trackerID = -1;
-				}
-				for (const auto &trackerConfig : state.trackerConfigs)
-				{
-					if (trackerConfig.type != TrackerConfig::TRACKER_TARGET) continue;
-					if (!ImGui::Selectable(trackerConfig.label.c_str(), trackerID == trackerConfig.id)) continue;
-					changed = true;
-					trackerID = trackerConfig.id;
-				}
-				ImGui::EndCombo();
+				changed = true;
+				trackerID = -1;
 			}
-			return changed;
-		};
-
-		auto subtrackerSelector = [&](const char* label, int &subtrackerIdx, const std::vector<int> &subtrackers, const char* noneOption = nullptr)
-		{
-			int trackerID = subtrackerIdx < 0 || subtrackerIdx >= subtrackers.size()? -1 : subtrackers[subtrackerIdx];
-
-			bool changed = false;
-			if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
+			for (const auto &trackerConfig : state.trackerConfigs)
 			{
-				if (noneOption && ImGui::Selectable(noneOption, subtrackerIdx < 0))
-				{
-					changed = true;
-					subtrackerIdx = -1;
-				}
-				for (int t = 0; t < subtrackers.size(); t++)
-				{
-					if (!ImGui::Selectable(trackerLabel(subtrackers[t]).c_str(), subtrackerIdx == t)) continue;
-					changed = true;
-					subtrackerIdx = t;
-				}
-				ImGui::EndCombo();
+				if (trackerConfig.type != TrackerConfig::TRACKER_TARGET) continue;
+				if (!ImGui::Selectable(trackerConfig.label.c_str(), trackerID == trackerConfig.id)) continue;
+				changed = true;
+				trackerID = trackerConfig.id;
 			}
-			return changed;
-		};
+			ImGui::EndCombo();
+		}
+		return changed;
+	};
 
-		auto axisLabel = [](const TrackerAxis axis)
-		{
-			const char *axisLabel[] = { "X", "Y", "Z", "INVALID" };
-			return asprintf_s("Axis %s%s", axis & TrackerAxis::AXIS_SIGN? "-" : "+", axisLabel[axis & TrackerAxis::AXIS_MASK]);;
-		};
+	auto subtrackerSelector = [&](const char* label, int &subtrackerIdx, const std::vector<int> &subtrackers, const char* noneOption = nullptr)
+	{
+		int trackerID = subtrackerIdx < 0 || subtrackerIdx >= subtrackers.size()? -1 : subtrackers[subtrackerIdx];
 
-		auto axisSelector = [&](const char* label, TrackerAxis &axis)
+		bool changed = false;
+		if (ImGui::BeginCombo(label, trackerLabel(trackerID, noneOption).c_str()))
 		{
-			bool changed = false;
-			if (ImGui::BeginCombo(label, axisLabel(axis).c_str()))
+			if (noneOption && ImGui::Selectable(noneOption, subtrackerIdx < 0))
 			{
-				for (int s = 0; s <= TrackerAxis::AXIS_SIGN; s += TrackerAxis::AXIS_SIGN)
+				changed = true;
+				subtrackerIdx = -1;
+			}
+			for (int t = 0; t < subtrackers.size(); t++)
+			{
+				if (!ImGui::Selectable(trackerLabel(subtrackers[t]).c_str(), subtrackerIdx == t)) continue;
+				changed = true;
+				subtrackerIdx = t;
+			}
+			ImGui::EndCombo();
+		}
+		return changed;
+	};
+
+	auto axisLabel = [](const TrackerAxis axis)
+	{
+		const char *axisLabel[] = { "X", "Y", "Z", "INVALID" };
+		return asprintf_s("Axis %s%s", axis & TrackerAxis::AXIS_SIGN? "-" : "+", axisLabel[axis & TrackerAxis::AXIS_MASK]);;
+	};
+
+	auto axisSelector = [&](const char* label, TrackerAxis &axis)
+	{
+		bool changed = false;
+		if (ImGui::BeginCombo(label, axisLabel(axis).c_str()))
+		{
+			for (int s = 0; s <= TrackerAxis::AXIS_SIGN; s += TrackerAxis::AXIS_SIGN)
+			{
+				for (int a = 0; a < 3; a++)
 				{
-					for (int a = 0; a < 3; a++)
+					TrackerAxis axisOpt = (TrackerAxis)(a | s);
+					if (ImGui::Selectable(axisLabel(axisOpt).c_str(), axis == axisOpt))
 					{
-						TrackerAxis axisOpt = (TrackerAxis)(a | s);
-						if (ImGui::Selectable(axisLabel(axisOpt).c_str(), axis == axisOpt))
-						{
-							changed = true;
-							axis = axisOpt;
-						}
+						changed = true;
+						axis = axisOpt;
 					}
 				}
-				ImGui::EndCombo();
 			}
-			return changed;
-		};
+			ImGui::EndCombo();
+		}
+		return changed;
+	};
 
+	if (tracker.type == TrackerConfig::TRACKER_VIRTUAL)
+	{
 		BeginSection("Virtual Target");
 		bool virtConfigChanged = false;
 		auto &config = tracker.virtConfig;
@@ -907,6 +907,31 @@ void InterfaceState::UpdateTrackers(InterfaceWindow &window)
 			ServerUpdateTrackerConfig(state, tracker);
 		}
 
+		EndSection();
+	}
+
+	{
+		BeginSection("Virtual Camera");
+
+		bool updated = false;
+		updated |= BooleanProperty("Use as Virtual Camera", &tracker.isVirtualCamera);
+		ImGui::BeginDisabled(!tracker.isVirtualCamera);
+
+		updated |= SliderInput("Field of View", &tracker.cameraFoV, 10.0f, 160.0f);
+
+		updated |= axisSelector("Optical Axis", tracker.cameraOpticalAxis);
+		updated |= axisSelector("Upwards Axis", tracker.cameraUpwardsAxis);
+
+		if (updated)
+		{
+			if (tracker.isVirtualCamera && view3D.virtualCameraTrackerID == tracker.id)
+				view3D.setVirtualCamera(tracker);
+			else if (view3D.virtualCameraTrackerID == tracker.id)
+				view3D.resetVirtualCamera();
+			tracker.configDirty = true;
+		}
+
+		ImGui::EndDisabled();
 		EndSection();
 	}
 

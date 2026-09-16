@@ -74,11 +74,21 @@ struct TrackerOutput
 	std::string label;
 	TrackerConfig::TrackerRole role;
 	TrackerOutputConfig config;
+	bool storeSmoothed; // Always store smoothed pose (without any extrapolation)
 	std::queue<TrackerOutputData> processed;
 
+	struct Filter
+	{ // TODO: Turn into union? Needs to re-init types everytime config member is written
+		struct
+		{
+			OneEuroFilter<Eigen::Vector3f, float, Eigen::Vector3f> pos;
+			OneEuroFilter<Eigen::Quaternionf, float, Eigen::Vector3f> rot;
+		} oneeuro;
+	};
+
 	// Post-processing states
-	OneEuroFilter<Eigen::Vector3f, float, Eigen::Vector3f> filterPos;
-	OneEuroFilter<Eigen::Quaternionf, float, Eigen::Vector3f> filterRot;
+	Filter filter;
+	Filter filterStore;
 
 	// I/O-specific shortcuts
 	std::shared_ptr<vrpn_Tracker_AsterTrack> vrpn;
@@ -88,8 +98,10 @@ struct TrackerOutput
 		if (config.applyFiltering == TrackerOutputConfig::ONE_EURO_FILTER)
 		{ // Update OneEuroFilter
 			auto &params = config.oneEuroFilter;
-			filterPos.setParams(params.posCutoffBase, params.posCutoffBeta, params.posCutoffDelta);
-			filterRot.setParams(params.rotCutoffBase, params.rotCutoffBeta, params.rotCutoffDelta);
+			filter.oneeuro.pos.setParams(params.posCutoffBase, params.posCutoffBeta, params.posCutoffDelta);
+			filter.oneeuro.rot.setParams(params.rotCutoffBase, params.rotCutoffBeta, params.rotCutoffDelta);
+			filterStore.oneeuro.pos.setParams(params.posCutoffBase, params.posCutoffBeta, params.posCutoffDelta);
+			filterStore.oneeuro.rot.setParams(params.rotCutoffBase, params.rotCutoffBeta, params.rotCutoffDelta);
 		}
 	}
 };

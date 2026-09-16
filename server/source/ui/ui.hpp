@@ -350,7 +350,8 @@ struct VisualisationState
 struct View3D
 {
 	// General projection
-	float fInv = fInvFromFoV(65.0f);
+	float viewFoV = 65.0f;
+	float fInv = fInvFromFoV(viewFoV);
 	float pitch = 0, heading = 0;
 	Eigen::Isometry3f viewTransform;
 
@@ -358,6 +359,11 @@ struct View3D
 	bool explicitOrbit, orbit;
 	float distance;
 	Eigen::Vector3f target;
+
+	// Virtual Camera View
+	int virtualCameraTrackerID = 0;
+	float cameraFoV;
+	Eigen::Matrix3f cameraOpticalTransform;
 
 	// Mouse Interaction (though click may be remapped to any key)
 	bool rotatingView = false;
@@ -386,6 +392,9 @@ struct View3D
 			0, 0, 1, 0;
 		return proj;
 	}
+
+	void setVirtualCamera(const TrackerConfig &tracker);
+	void resetVirtualCamera();
 };
 
 /**

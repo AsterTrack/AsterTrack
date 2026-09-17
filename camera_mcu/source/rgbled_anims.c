@@ -346,7 +346,7 @@ struct LED_Animation LED_ANIM_FLASH_SWITCH_BOOT0_PI = {
 			.mode = INTER_LERP_LINEAR
 		},
 		{
-			.leds = LED_FLASH_BAD_PHASE_1,
+			.leds = LED_STANDBY,
 			.time = 200*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}
@@ -363,7 +363,7 @@ struct LED_Animation LED_ANIM_FLASH_SWITCH_DEBUG_SWD = {
 			.mode = INTER_LERP_LINEAR
 		},
 		{
-			.leds = LED_FLASH_BAD_PHASE_2,
+			.leds = LED_STANDBY,
 			.time = 200*TICKS_PER_MS,
 			.mode = INTER_LERP_LINEAR
 		}

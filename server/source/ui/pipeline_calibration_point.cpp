@@ -734,7 +734,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 			}
 			return camUniqueLenses;
 		};
-		if (ImGui::Button("Reconstruct", SizeWidthDiv2()))
+		if (ImGui::Button("Reconstruct", SizeWidthDiv3()))
 		{
 			if (state.pipeline.cameras.contextualRLock()->size() < 3)
 				ImGui::OpenPopup("RecConfirm");
@@ -774,7 +774,7 @@ void InterfaceState::UpdatePipelinePointCalib()
 			}
 			return camUnknownLenses;
 		};
-		if (ImGui::Button("Optimise", SizeWidthDiv2()))
+		if (ImGui::Button("Optimise", SizeWidthDiv3()))
 		{
 			auto camera_lock = state.pipeline.cameras.contextualRLock();
 			if (getUnknownLenses(camera_lock) > 1 && ptCalib.settings.options.radial && ptCalib.settings.options.sharedRadial)
@@ -801,6 +801,25 @@ void InterfaceState::UpdatePipelinePointCalib()
 			}
 			ImGui::EndPopup();
 		}
+
+		ImGui::SameLine();
+
+		static bool recoverOldSettings = false;
+		static OptimisationOptions oldOptSettings;
+		if (recoverOldSettings && !ptCalib.planned)
+		{ // Pipeline will clear planned and start thread, so this code won't run until optimisation is done
+			ptCalib.settings.options = oldOptSettings;
+			recoverOldSettings = false;
+		}
+		if (ImGui::Button("Refine", SizeWidthDiv3()))
+		{
+			recoverOldSettings = true;
+			oldOptSettings = ptCalib.settings.options;
+			ptCalib.settings.options = OptimisationOptions(true, false, false, false);
+			startCalibration(0b10);
+		}
+		ImGui::SetItemTooltip("Optimise only the extrinsics of the cameras.\n"
+			"Great to quickly refine an existing calibration.");
 	}
 	ImGui::EndDisabled();
 

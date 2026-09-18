@@ -455,7 +455,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			int advanceFrames = obsAdvance;
 
 			// Consider waiting a bit more for next frame to reset (accumulated) delay
-			/* float timeDelay = newInterval - expInterval*advanceFrames;
+			float timeDelay = newInterval - expInterval*advanceFrames;
 			float maxDelay = expInterval - avgTimes.cpu/1000.0f;
 			// NOTE: Here should be the average time of the single largest bottleneck - currently, CPU
 			if (timeDelay > maxDelay)
@@ -482,13 +482,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				advanceFrames++;
 				time_cur = sclock::now();
 #ifdef LOG_DROPS
-				printf("%.2fms: QPU: SKIPPED %.2fms TO CURRENT FRAME, new interval %ldus\n",
+				printf("%.2fms: QPU: SKIPPED %.2fms TO CURRENT FRAME, new interval %lldus\n",
 					dtMS(time_start, time_cur), dtMS(waitStart, time_cur), dtUS(time_frameRecv, time_cur));
 				printf("%.2fms: QPU: Reason: time_diff %.2fms, time_delay %.2fms, advance frames %d, avg processing %.2fms, max delay %.2fms\n",
 					dtMS(time_start, time_cur), newInterval, timeDelay, advanceFrames, avgTimes.processing/1000.0f, maxDelay);
 #endif
 				newInterval = dtMS(time_frameRecv, time_cur);
-			} */
+			}
 
 			// Update frameID with advanced frames
 			float expFrameIntervals = newInterval / expInterval;

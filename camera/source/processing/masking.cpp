@@ -192,6 +192,8 @@ ExclusiveQPU::ExclusiveQPU(VC_BASE &base, const QPUCoreMasking &cores, int numTh
 
 ExclusiveQPU::~ExclusiveQPU()
 {
+	if (!enabled) return;
+
 	for (int i = 0; i < 12; i++) // Reset all QPUs to be freely sheduled
 		qpu_setReservationSetting(&base, i, 0b0000);
 

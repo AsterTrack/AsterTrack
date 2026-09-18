@@ -452,7 +452,8 @@ int main(int argc, char **argv)
 
 		// ---- Processing Setup & Loop ----
 
-		running = ProcessingStage(state, base);
+		if (!ProcessingStage(state, base))
+			running = false;
 
 		if (errorCode != ERROR_NONE)
 			break;

@@ -432,9 +432,7 @@ uint8_t gcs_start(GCS *gcs)
 /* Stop GCS (camera output). Stops watchdog and disabled MMAL camera */
 void gcs_stop(GCS *gcs)
 {
-	if (gcs->started == 0) return;
 	std::unique_lock lock(gcs->accessMutex);
-	gcs->started = 0;
 	// Do not clear gcs->error
 
 	//printf("Stop Streaming in GCS!\n");
@@ -452,7 +450,7 @@ void gcs_stop(GCS *gcs)
 	}*/
 
 	// Directly access camera I2C (i2c-vs)
-	if (gcs->cameraParams->extTrig && gcs->sensor == SENSOR_OV9281)
+	if (gcs->started && gcs->cameraParams->extTrig && gcs->sensor == SENSOR_OV9281)
 	{ // TODO: Make sure that OV9281 driver is loaded
 		unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 		if (i2c_fd < 0)
@@ -461,7 +459,7 @@ void gcs_stop(GCS *gcs)
 		{ // Now modify camera streaming behaviour
 
 			// Disable external trigger mode so that a sync pulse without this camera set to stream will not make the camera take frames
-			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x00 };		// Enabling FSIN to wake camera and expose
+			unsigned char PSV_CTRL[3] = { 0x4f, 0x00, 0x00 };		// Prevent FSIN from waking camera and exposing
 
 			struct i2c_msg I2C_MSG[] = {
 				{ 0x60, 0, sizeof(PSV_CTRL), PSV_CTRL }
@@ -482,6 +480,7 @@ void gcs_stop(GCS *gcs)
 		gcs->error = 1;
 		return;
 	}
+	gcs->started = 0;
 }
 
 /* Returns error flag and resets it */

@@ -96,8 +96,9 @@ bool getRefinementEstimate(const std::vector<Vector2<float>> &edge, const HoughP
 		Vector2<float> positionMin = params.boundsMid - positionRange.cast<float>()*params.positionStep/2;
 		Vector2<float> positionMax = params.boundsMid + positionRange.cast<float>()*params.positionStep/2;
 
-		votes.resize(positionRange.x()*positionRange.y());
-		memset(votes.data(), 0, positionRange.x()*positionRange.y());
+		if (positionRange.prod() == 0) continue;
+		votes.clear();
+		votes.resize(positionRange.prod());
 
 		float radius = params.radiusMin + r * params.radiusStep;
 		float radiusSq = radius*radius;

@@ -104,6 +104,8 @@ mul24 r1, qpu_num, r1;
 ldi r0, vpm_setup(0, 1, h32(0));
 add vpmSetup, r0, r1;
 
+# Anything faulty with this that certain QPUs don't work?
+
 # Create VPM DMA Basic setup
 shl r1, r1, 7; # Same VPM position, different place in register
 ldi r0, vdw_setup_0(16, 5, dma_v32(0, 0));

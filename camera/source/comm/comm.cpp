@@ -601,6 +601,8 @@ phase_comm:
 					std::unique_lock lock(mcu_packet_mutex);
 					packetQueue = std::move(mcu_packet_queue);
 				}
+				if (packetQueue.size() > 5)
+					printf("%d packets received via MCU forwarding before they were parsed!\n", (int)packetQueue.size());
 				for (auto &packet : packetQueue)
 				{
 					ReceivePacketData(state, comm, packet.header, packet.data.data(), packet.data.size(), !packet.valid);
@@ -613,6 +615,15 @@ phase_comm:
 					// TODO: Send to server as defect to notify user
 					printf("Found MCU forwarding unreliable, with %d packets received on UART and only %d forwarded from MCU!\n", comm.receivedInternal, comm.receivedExternal);
 				}
+			}
+			else if (comm.medium == COMM_MEDIUM_UART)
+			{
+				std::unique_lock lock(mcu_packet_mutex);
+				int discarded = mcu_packet_queue.size();
+				mcu_packet_queue.clear();
+				mcu_packet_mutex.unlock();
+				if (discarded > 5)
+					printf("%d packets received via MCU forwarding being discarded at once!\n", discarded);
 			}
 
 			int num = comm_read_internal(comm, COMM_INTERVAL_US);

@@ -44,7 +44,7 @@ bool SetThreadPriority(std::thread &thread, int priority)
 	sched_param sch;
 	int policy; 
 	pthread_getschedparam(thread.native_handle(), &policy, &sch);
-	sch.sched_priority = 20;
+	sch.sched_priority = priority;
 	return !pthread_setschedparam(thread.native_handle(), SCHED_FIFO, &sch);
 #endif
 }
@@ -58,7 +58,7 @@ bool SetCurrentThreadPriority(int priority)
 	sched_param sch;
 	int policy; 
 	pthread_getschedparam(pid, &policy, &sch);
-	sch.sched_priority = 20;
+	sch.sched_priority = priority;
 	return !pthread_setschedparam(pid, SCHED_FIFO, &sch);
 #endif
 }

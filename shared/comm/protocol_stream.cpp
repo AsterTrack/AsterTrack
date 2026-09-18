@@ -36,6 +36,7 @@ void proto_clear(ProtocolState &comm)
 	comm.head = 0;
 	comm.blockPos = 0;
 	comm.mrk = 0;
+	comm.rcvBuf.resize(1024);
 }
 
 void proto_clean(ProtocolState &comm, bool move)

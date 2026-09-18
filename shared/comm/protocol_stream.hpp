@@ -45,7 +45,7 @@ struct ProtocolState
 	bool cmdSkip; // Ignore current packet. Requires call to fetchCmd/handleCmdBlock afer rcvCmd returns true to clear the flag
 	bool cmdEnd; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error
 	bool cmdErr; // Current packet had frame/parity errors - even if rcvCmd returned true before, it will not after such an error
-	std::vector<uint8_t> rcvBuf = std::vector<uint8_t>(1024);
+	std::vector<uint8_t> rcvBuf;
 };
 
 void proto_clear(ProtocolState &comm);

@@ -281,6 +281,7 @@ inline int comm_read_internal(ClientCommState &comm, uint32_t timeoutUS)
 		return 0;
 	proto_clean(comm.protocol, true);
 
+	assert(!comm.protocol.rcvBuf.empty());
 	int num = recv(comm.socket, (char*)comm.protocol.rcvBuf.data()+comm.protocol.tail, comm.protocol.rcvBuf.size()-comm.protocol.tail, 0);
 	if (num < 0)
 	{
@@ -350,6 +351,7 @@ void ClientThread(std::stop_token stop_token, ClientCommState *clientState)
 {
 	ClientCommState &comm = *clientState;
 	ProtocolState &proto = comm.protocol;
+	proto_clear(proto);
 
 	SetCurrentThreadName("Wireless Client");
 

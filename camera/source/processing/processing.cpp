@@ -49,7 +49,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 // Number of emulated buffers to iterate over if RUN_CAMERA is not defined
 const int emulBufCnt = 4;
 
-static ctpl::thread_pool threadPool(6);
+ctpl::thread_pool threadPool(6);
 static std::atomic<bool> isVisualising, isPreparingFrame;
 static GCS *gcs = NULL;
 // Keeping track of frame buffers

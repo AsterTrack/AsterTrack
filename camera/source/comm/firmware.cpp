@@ -21,11 +21,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "mcu/mcu.hpp"
 
 #include "hash/sha256.hpp"
+#include "ctpl/ctpl.hpp"
 
 #include <fstream>
 #include <filesystem>
 #include <thread>
 #include <unistd.h>
+
+extern ctpl::thread_pool threadPool;
 
 static void SendFirmwareStatusPacket(TrackingCameraState &state, CommState &comm, uint8_t type, uint8_t status, uint8_t transfer = 0, uint16_t block = 0, std::string message = "")
 {
@@ -90,7 +93,11 @@ static bool validateID(TrackingCameraState &state, uint16_t ID)
 
 static FirmwareTXStatus CheckFirmwareTransfer(FirmwareTransferState &transfer)
 {
-	if (transfer.completeAndValid)
+	if (transfer.verifying)
+		return FW_TX_VERIFYING;
+	if (transfer.verified && !transfer.valid)
+		return FW_TX_ERROR;
+	if (transfer.verified && transfer.valid)
 		return FW_TX_TRANSFERRED;
 
 	uint32_t transferredSize = 0;
@@ -98,22 +105,28 @@ static FirmwareTXStatus CheckFirmwareTransfer(FirmwareTransferState &transfer)
 		if (!transfer.blockMap[i])
 			return FW_TX_TRANSFERRING;
 
-	uint8_t sha256[SHA256::HashBytes];
-	SHA256 sha;
-	sha.add(transfer.data.data(), transfer.data.size());
-	sha.getHash(sha256);
+	transfer.verifying = true;
+	threadPool.push([](int, FirmwareTransferState* transfer){
+		uint8_t sha256[SHA256::HashBytes];
+		SHA256 sha;
+		sha.add(transfer->data.data(), transfer->data.size());
+		sha.getHash(sha256);
 
-	for (int i = 0; i < SHA256::HashBytes; i++)
-	{
-		if (transfer.sha256[i] != sha256[i])
+		bool valid = true;
+		for (int i = 0; i < SHA256::HashBytes; i++)
 		{
-			printf("Firmware Update: Transfer %d has mismatched SHA256!\n", transfer.index);
-			return FW_TX_ERROR;
+			if (transfer->sha256[i] != sha256[i])
+			{
+				printf("Firmware Update: Transfer %d has mismatched SHA256!\n", transfer->index);
+				valid = false;
+			}
 		}
-	}
-	printf("Firmware Update: Transfer %d finished successfully!\n", transfer.index);
-	transfer.completeAndValid = true;
-	return FW_TX_TRANSFERRED;
+		printf("Firmware Update: Transfer %d finished successfully!\n", transfer->index);
+		transfer->valid = valid;
+		transfer->verified = true;
+		transfer->verifying = false;
+	}, &transfer);
+	return FW_TX_VERIFYING;
 }
 
 
@@ -130,7 +143,7 @@ static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 
 	for (int i = 0; i < firmware.transfers.size(); i++)
 	{
-		if (!firmware.transfers[i].completeAndValid)
+		if (!firmware.transfers[i].valid)
 			return FW_STATUS_TRANSFERRING;
 	}
 
@@ -308,7 +321,7 @@ bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, co
 
 	for (auto &transfer : state.firmware.transfers)
 	{
-		if (transfer.second.completeAndValid) continue;
+		if (transfer.second.valid) continue;
 		SendUpdateStatus(state, comm, FW_STATUS_FAILEDTRANSFER);
 		return false;
 	}
@@ -328,7 +341,7 @@ static std::optional<ErrorMessage> AttemptUpgradeMCU(std::string updated, std::s
 	std::unique_lock mcu_lock(mcu_mutex);
 
 	// Check if we're currently connected via UART and to MCU
-	CommState *uart = comms.get(COMM_MEDIUM_UART);
+	CommState *uart = comms.medium[COMM_MEDIUM_UART];
 	if (uart && !uart->ready) uart = nullptr;
 	bool preMCU = mcu_active;
 	bool preFWD = preMCU && uart && uart->relyOnExternal;

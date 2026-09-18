@@ -46,7 +46,7 @@ struct FirmwareTransferState
 
 	std::vector<uint8_t> data;
 	std::vector<bool> blockMap;
-    bool completeAndValid;
+	bool verifying, verified, valid;
 };
 
 struct FirmwareUpdateState

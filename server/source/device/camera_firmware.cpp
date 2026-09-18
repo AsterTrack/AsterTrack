@@ -172,6 +172,10 @@ static void CameraShowTransferStatus(CameraFirmwareUpdateStatus &status, Firmwar
 	{
 		status.text = asprintf_s("%dKB / %dKB", camTXStatus.progress*BLOCK_SIZE/1000, (int)camTXStatus.blocks.size()*BLOCK_SIZE/1000);
 	}
+	else if (camTXStatus.code == FW_TX_VERIFYING)
+	{
+		status.text = asprintf_s("Verifying transfer %d...", transfer.index+1);
+	}
 	else if (camTXStatus.code == FW_TX_TRANSFERRED)
 	{
 		status.text = asprintf_s("Transfer %d succeeded!", transfer.index+1);
@@ -512,6 +516,11 @@ static bool CameraReceiveFirmwareStatus(FirmwareUpdatePlan &update, CameraFirmwa
 		else if (txStatus == FW_TX_TRANSFERRING)
 		{ // Still just transferring
 			camTXStatus.code = FW_TX_TRANSFERRING;
+			return true;
+		}
+		else if (txStatus == FW_TX_VERIFYING)
+		{ // Verifying completed transfer
+			camTXStatus.code = FW_TX_VERIFYING;
 			return true;
 		}
 		LOG(LFirmwareUpdate, LWarn, "Received unknown status %d for transfer %d!!", status, index);

@@ -100,7 +100,8 @@ enum FirmwareTXStatus : uint8_t
 	FW_TX_QUEUED,
 	FW_TX_TRANSFERRING,
 	FW_TX_TRANSFERRED,
-	FW_TX_ERROR
+	FW_TX_ERROR,
+	FW_TX_VERIFYING
 };
 
 enum FirmwareStatus : uint8_t

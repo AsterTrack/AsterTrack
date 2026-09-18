@@ -140,7 +140,7 @@ static void DeviceSupervisorThread(std::stop_token stop_token, ServerState *stat
 
 	int it = 0;
 
-	static bool checkingIMU = false;
+	static std::atomic<bool> checkingIMU = false;
 	TimePoint_t lastContCheck = sclock::now();
 	TimePoint_t lastIMUCheck = sclock::now();
 	TimePoint_t lastIOCheck = sclock::now();

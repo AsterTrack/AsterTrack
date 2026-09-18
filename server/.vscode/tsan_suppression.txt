@@ -1,6 +1,24 @@
 # ThreadSanitizer suppressions file
 
-# Uninstrumented library
-called_from_lib:radeonsi_dri.so
+# Signals dynamically loaded from UI library at the start
+race:InterfaceThread
+race:SignalInterfaceShouldClose
+race:SignalLogUpdate
+race:SignalCameraRefresh
+race:SignalPipelineUpdate
+race:SignalObservationReset
+race:SignalServerEvent
+race:SignalCameraInteraction
 
-# For documentation, see https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions
+# Global state, members individually secured
+race:StateInstance
+race:InterfaceInstance
+
+# Async target detection is designed to be racy
+# FrameRecord::trackers (pushes back a new one in pre-allocated vector storage)
+race:detectTargetAsync
+
+# False positive, finishedProcessing is written once, then read only
+race:FrameRecord::finishedProcessing
+
+# For documentation, see https://github.com/google/sanitizers/wiki/FrameRecord::ThreadSanitizerSuppressions

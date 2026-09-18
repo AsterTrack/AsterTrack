@@ -75,7 +75,7 @@
 			"cwd": "${workspaceFolder}",
             "env": { 
 				"LD_LIBRARY_PATH": "$ORIGIN", // Because GCCs Adress Sanitizer is loaded dynamically and overwrites our own runpath...
-				"TSAN_OPTIONS": "suppressions=.vscode/tsan_suppression.txt",
+				"TSAN_OPTIONS": "ignore_noninstrumented_modules=1 suppressions=.vscode/tsan_suppression.txt",
 				"UBSAN_OPTIONS": "print_stacktrace=1",
 				"ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=0"
 			},
@@ -88,7 +88,7 @@
 			"program": "${workspaceFolder}/build/astertrack-static",
 			"cwd": "${workspaceFolder}",
             "env": { 
-				"TSAN_OPTIONS": "suppressions=.vscode/tsan_suppression.txt",
+				"TSAN_OPTIONS": "ignore_noninstrumented_modules=1 suppressions=.vscode/tsan_suppression.txt",
 				"UBSAN_OPTIONS": "print_stacktrace=1",
 				"ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=0"
 			},

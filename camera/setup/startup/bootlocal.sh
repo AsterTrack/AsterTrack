@@ -15,17 +15,6 @@
 # Set swappiness very low, SD card swap should not be used unless there's no other way 
 sudo sysctl vm.swappiness=1
 
-# Make sure we have a valid ID
-IDPATH=/mnt/mmcblk0p4/config/id
-if [[ "$(<$IDPATH wc -c)" != 4 ]]; then
-	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
-	sync
-fi
-while [ "$(cat $IDPATH | od -N 4 -A n -t d4)" == 0 ]; do
-	sudo dd if=/dev/urandom of=$IDPATH bs=1 count=4
-	sync
-done
-
 # Do any compilation required
 STORAGE=/mnt/mmcblk0p4
 if [[ ! -f "/home/tc/TrackingCamera/TrackingCamera_$(uname -m)" ]]; then

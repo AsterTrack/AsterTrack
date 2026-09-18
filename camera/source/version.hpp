@@ -37,6 +37,10 @@ extern int numCPUCores;
 // Both from config files, system drivers
 void gatherInfo(CameraID overrideID = 0);
 
+void loadCameraID(CameraID overrideID = 0);
+
+void storeCameraID();
+
 void receivedInfoFromMCU(CameraStoredInfo &&info);
 
 /* Returns whether MCU should be instructed to update its own stored ID */

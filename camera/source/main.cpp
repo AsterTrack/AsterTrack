@@ -379,7 +379,9 @@ int main(int argc, char **argv)
 					case 'i':
 					{
 						std::unique_lock lock(mcu_mutex);
-						mcu_update_id(35236462);
+						loadCameraID(rand());
+						storeCameraID();
+						mcu_update_id(cameraID);
 						break;
 					}
 					case 'x':

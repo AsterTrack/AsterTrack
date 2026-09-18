@@ -76,12 +76,13 @@ static void gatherSBCInfo()
 	numCPUCores = std::thread::hardware_concurrency();
 }
 
-static void loadCameraID(CameraID overrideID)
+void loadCameraID(CameraID overrideID)
 {
 	if (overrideID != 0)
 	{ // Passed in by argument
 		cameraID = overrideID;
 		isOverwritten = true;
+		isStored = false;
 	}
 	else if (std::filesystem::exists(id_file))
 	{ // Read from SD card storage
@@ -93,6 +94,7 @@ static void loadCameraID(CameraID overrideID)
 			idFS.seekg(0);
 			idFS.read((char*)&cameraID, 4);
 			isStored = true;
+			isOverwritten = false;
 			printf("Read ID %u from config!\n", cameraID);
 		}
 		else
@@ -102,7 +104,15 @@ static void loadCameraID(CameraID overrideID)
 	}
 	
 	if (cameraID == 0)
+		isStored = isOverwritten = false;
+	while (cameraID == 0)
 		cameraID = rand();
+}
+
+void storeCameraID()
+{
+	std::ofstream id_stream(id_file, std::ios::binary);
+	id_stream.write((char*)&cameraID, sizeof(CameraID));
 }
 
 void gatherInfo(CameraID overrideID)
@@ -147,17 +157,15 @@ bool receivedConfigFromMCU(CameraStoredConfig &&config)
 	}
 	else if (cameraID != config.cameraID)
 	{ // IDs differ, perhaps SD card got reflashed / exchanged
-		/* if (isStored)
+		if (isStored)
 			printf("Have different ID stored, updating MCUs ID!\n");
 		else if (isOverwritten)
 			printf("Had different overwritten ID, updating MCUs ID!\n");
-		else */
-		// Adopting MCUs ID makes things easier for the server/controller, which already got the ID from the MCU
+		else
 		{ // Else adopt MCUs ID
 			printf("Adopting MCUs ID #%u, replacing previous ID #%u!\n", config.cameraID, cameraID);
 			cameraID = config.cameraID;
-			std::ofstream id_stream(id_file, std::ios::binary);
-			id_stream.write((char*)&cameraID, sizeof(CameraID));
+			storeCameraID();
 			return false; // Don't update MCU ID
 		}
 		return true; // Update MCU ID

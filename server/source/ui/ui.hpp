@@ -316,7 +316,7 @@ struct VisualisationState
 
 	struct
 	{ // Visualisation settings of image frames
-		float brightness = 0.02f;
+		float brightness = -0.02f;
 		float contrast = 3.0f;
 	} image;
 

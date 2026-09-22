@@ -35,12 +35,13 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 
 	{
 		static TimePoint_t lastAction = sclock::now();
-		static int cycle = 0;
+		static int cycle = 0, iterations = 0;
 		static bool running = false;
 		if (!running && ImGui::Button("Test Startup Reliability", SizeWidthFull()))
 		{
 			StopDeviceMode(GetState());
 			cycle = 0;
+			iterations = 0;
 			running = true;
 		}
 		else if (running && ImGui::Button("Abort Test##Startup", SizeWidthFull()))
@@ -57,7 +58,7 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 					StartDeviceMode(state);
 				else
 				{
-					LOG(LGUI, LOutput, "Unexpected cycle %d when disconnected!", cycle);
+					LOG(LGUI, LOutput, "Unexpected cycle %d when disconnected after %d iterations!", cycle, iterations);
 					running = false;
 				}
 				cycle = 1;
@@ -67,14 +68,14 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 			{
 				if (state.cameras.empty())
 				{
-					LOG(LGUI, LOutput, "Did not connect to camera as expected!");
+					LOG(LGUI, LOutput, "Did not connect to camera as expected after %d iterations!", iterations);
 					running = false;
 				}
 				else if (cycle == 1)
 					StartStreaming(state);
 				else
 				{
-					LOG(LGUI, LOutput, "Unexpected cycle %d when connected!", cycle);
+					LOG(LGUI, LOutput, "Unexpected cycle %d when connected after %d iterations!", cycle, iterations);
 					running = false;
 				}
 				cycle = 2;
@@ -84,18 +85,83 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 			{
 				if (state.pipeline.frameNum.load() < 256)
 				{
-					LOG(LGUI, LOutput, "Only got %ld frames!", state.pipeline.frameNum.load());
+					LOG(LGUI, LOutput, "Only got %ld frames after %d iterations!", state.pipeline.frameNum.load(), iterations);
 					running = false;
 				}
 				if (cycle == 2)
 					StopDeviceMode(state);
 				else
 				{
-					LOG(LGUI, LOutput, "Unexpected cycle %d when streaming!", cycle);
+					LOG(LGUI, LOutput, "Unexpected cycle %d when streaming after %d iterations!", cycle, iterations);
 					running = false;
 				}
 				cycle = 0;
+				iterations++;
 				lastAction = sclock::now();
+				LOG(LGUI, LOutput, "Survived %d sartup test iterations!", iterations);
+			}
+		}
+	}
+
+	{
+		static TimePoint_t lastAction = sclock::now();
+		static int cycle = 0, iterations = 0;
+		static bool running = false;
+		if (!running && ImGui::Button("Test Strobe Reliability", SizeWidthFull()))
+		{
+			for (auto &config : GetState().cameraConfig.configurations)
+			{
+				config.strobeLength = 255;
+				config.enableStrobe = false;
+			}
+			StartDeviceMode(GetState());
+			StartStreaming(GetState());
+			cycle = 0;
+			iterations = 0;
+			running = true;
+			lastAction = sclock::now();
+		}
+		else if (running && ImGui::Button("Abort Test##Strobe", SizeWidthFull()))
+		{
+			StopDeviceMode(GetState());
+			running = false;
+		}
+		if (running)
+		{
+			auto &state = GetState();
+			if (cycle == 0 && dtMS(lastAction, sclock::now()) > 2000)
+			{
+				for (auto &config : GetState().cameraConfig.configurations)
+					config.enableStrobe = true;
+				for (auto &camera : state.cameras)
+				{
+					if (!camera->isStreaming() || !camera->hasComms())
+					{
+						LOG(LGUI, LOutput, "Camera #%u is not streaming anymore after %d iterations!", camera->id, iterations);
+						running = false;
+					}
+					CameraUpdateSetup(state, *camera);
+				}
+				cycle = 1;
+				lastAction = sclock::now();
+			}
+			else if (cycle == 1 && dtMS(lastAction, sclock::now()) > 1000)
+			{
+				for (auto &config : GetState().cameraConfig.configurations)
+					config.enableStrobe = false;
+				for (auto &camera : state.cameras)
+				{
+					if (!camera->isStreaming() || !camera->hasComms())
+					{
+						LOG(LGUI, LOutput, "Camera #%u is not streaming anymore after %d iterations!", camera->id, iterations);
+						running = false;
+					}
+					CameraUpdateSetup(state, *camera);
+				}
+				cycle = 0;
+				iterations++;
+				lastAction = sclock::now();
+				LOG(LGUI, LOutput, "Survived %d strobe test iterations!", iterations);
 			}
 		}
 	}
@@ -260,6 +326,10 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 			RequestUpdates();
 		}
 	}
+
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0xDD, 0x88, 0x44, 0xFF));
+	ImGui::TextWrapped("Window needs to be visible during testing!");
+	ImGui::PopStyleColor();
 
 	ImGui::End();
 }

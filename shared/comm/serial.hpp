@@ -25,7 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <vector>
 
 
-#define SBC_INFO_VERSION		1
+#define SBC_INFO_VERSION		2
 
 union HardwareSerial
 {
@@ -113,6 +113,12 @@ union HardwareSerial
 	};
 };
 
+enum CameraSBCHardware
+{
+	SBC_HW_NO_MCU = 1 << 0,
+	SBC_HW_NO_SENSOR = 1 << 1,
+};
+
 struct CameraStoredInfo
 {
 	VersionDesc sbcFWVersion;			// SBC Firmware Version, embedded in firmware
@@ -121,17 +127,20 @@ struct CameraStoredInfo
 	std::string mcuFWDescriptor;		// MCU Firmware Descriptor, embedded in firmware
 
 	uint8_t mcuOTPVersion;				// Indicates revision in how OTP is formatted, potentially even affecting the format of the following members
-	CameraHWDetection mcuHWDetection;	// Flags of hardware detected via code, not necessarily encoded in serial number
 	HardwareSerial hardwareSerial = {};	// Camera Serial Number (96Bit) stored in MCU OTP, bound to hardware & production
     std::vector<uint64_t> subpartSerials; // Optional serial numbers of subparts
 	std::string mcuHWDescriptor;		// MCU Hardware Descriptor, written to OTP, may be composed of successively written texts separated by MCU_MULTI_TEXT_SEP
+
+	CameraMCUHardware mcuHWDetection;	// Flags of features or defects detected by MCU, not necessarily encoded in OTP
+	CameraSBCHardware sbcHWDetection;	// Flags of features or defects detected by SBC
+	std::string cameraSensor;			// ID of camera sensor detected, if any
 
 	uint32_t sbcRevisionCode;			// SBC Revision Code identifying Raspberry Pi Model
 	uint32_t sbcSerialNumber;			// SBC Serial Number, 32Bit for Raspberry Pi
 	uint32_t mcuUniqueID[3];			// MCU Chip Unique ID, 96Bit for STM32
 
 	std::string sbcHWDescriptor;		// Inferred from sbcRevisionCode, NOT SENT
-	std::vector<std::string> mcuHWDescriptorParts; // Split mcuHWDescriptor
+	std::vector<std::string> mcuHWDescriptorParts; // Split mcuHWDescriptor, NOT SENT
 };
 
 struct CameraStoredConfig

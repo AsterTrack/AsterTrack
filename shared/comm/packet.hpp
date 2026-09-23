@@ -169,7 +169,8 @@ static inline bool parseFirmwareTagHeader(const uint8_t data[FIRMWARE_TAG_SIZE],
 }
 
 
-#define CAMERA_INFO_BASE_LENGTH			52
+#define CAMERA_INFO_MIN_LENGTH			52
+#define CAMERA_INFO_BASE_LENGTH			54
 
 
 static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])

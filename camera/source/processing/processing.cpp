@@ -55,7 +55,7 @@ static GCS *gcs = NULL;
 // Keeping track of frame buffers
 static std::mutex frameAccess;
 
-extern int numCPUCores; // version.hpp
+extern int numCPUCores; // info.hpp
 
 struct GCSWrapper
 {

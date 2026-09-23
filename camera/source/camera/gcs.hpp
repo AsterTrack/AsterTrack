@@ -63,7 +63,15 @@ enum SENSOR_NUM
 {
 	SENSOR_ERROR = -1,
 	SENSOR_INVALID = 0,
-	SENSOR_OV9281
+	SENSOR_OV9281,
+	// Insert here, update ID below
+	SENSOR_MAX
+};
+
+static const char* SENSOR_ID[SENSOR_MAX]
+{
+	"Invalid",
+	"OV9281"
 };
 
 

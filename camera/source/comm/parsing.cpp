@@ -21,7 +21,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "wireless.hpp"
 #include "firmware.hpp"
 #include "mcu/mcu.hpp"
-#include "version.hpp"
+#include "info.hpp"
 
 #include <thread>
 #include <chrono>

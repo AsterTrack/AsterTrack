@@ -56,7 +56,7 @@ set(SOURCES
 	source/processing/masking.cpp
 	source/processing/framesync.cpp
 	source/processing/processing.cpp
-	source/version.cpp
+	source/info.cpp
 	source/state.cpp
 	source/main.cpp
 	source/util/crash_handler.cpp

@@ -206,7 +206,8 @@ struct TrackingCameraState
 		ControllerCommState commState;
 		Errors error;
 		struct { bool triggered; TimePoint_t time; }
-			unsupported, usesHSI, noMCU, overtemp;
+			unsupported, noSensor, overtemp,
+			noMCU, usesHSI, altBoot;
 	};
 	Synchronised<Status> state = {};
 };

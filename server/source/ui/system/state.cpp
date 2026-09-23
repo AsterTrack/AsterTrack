@@ -412,6 +412,14 @@ std::vector<std::string> getCameraDefects(const TrackingCameraState &camera, boo
 		hasDefects = true;
 	}
 
+	if (info.mcuHWDetection & MCU_HW_ALT_BOOT)
+	{
+		statusMsgs.push_back("The Cameras MCU is in a non-default boot mode.\n"
+			"This may prevent firmware update from flashing the MCU correctly.\n"
+			"Unless you configured this explicitly, this may need to be reverted."); // Can't hardcode exact instructions
+		hasDefects = true;
+	}
+
 	return statusMsgs;
 }
 
@@ -485,8 +493,12 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 		{ // MCU may be disabled at this point when SBC could not automatically recover it
 			statusMsgs.push_back("MCU not found - check documentation for recovery steps!");
 		}
+		if (status.noSensor.triggered && dtMS(status.noSensor.time, sclock::now()) < 5000)
+		{ // Sensor recognised on camera
+			statusMsgs.push_back("Camera Sensor not recognised - check Camera CSI FFC!");
+		}
 		if (status.overtemp.triggered && dtMS(status.overtemp.time, sclock::now()) < 2000)
-		{ // MCU may be disabled at this point when SBC could not automatically recover it
+		{ // May indicate bad SBC, should not happen
 			statusMsgs.push_back(asprintf_s("SoC over-temperature - %.2f°C!", camera.receiving.statistics.contextualRLock()->header.tempSOC/100.0f));
 		}
 	}

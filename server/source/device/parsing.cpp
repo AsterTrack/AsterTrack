@@ -1055,24 +1055,38 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (erroneous) return false;
-	if (length < CAMERA_INFO_BASE_LENGTH) return false;
+	if (length < CAMERA_INFO_MIN_LENGTH) return false;
 
 	CameraStoredInfo info = {};
-	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
+	static_assert(CAMERA_INFO_BASE_LENGTH == 54);
 
 	uint8_t packetVersion = data[0];
-	if (packetVersion != SBC_INFO_VERSION)
+	int baseLength;
+	if (packetVersion == 1)
+		baseLength = 52;
+	else if (packetVersion == 2)
+		baseLength = 54;
+	else
 	{ // Keep support for older versions in here!
 		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
 		camera.storage.receivedInfo = true;
 		camera.state.contextualLock()->unsupported = { true, sclock::now() };
 		return false;
 	}
+	if (length < baseLength) return false;
+
 	info.mcuOTPVersion = data[1];
-	info.mcuHWDetection = (CameraHWDetection)data[2];
-	uint8_t resv1 = data[3];
+	info.mcuHWDetection = (CameraMCUHardware)data[2];
+	if (packetVersion >= 2)
+		info.sbcHWDetection = (CameraSBCHardware)data[3];
 	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
 		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
+	if (info.mcuHWDetection & MCU_HW_ALT_BOOT)
+		camera.state.contextualLock()->altBoot = { true, sclock::now() };
+	if (info.sbcHWDetection & SBC_HW_NO_MCU)
+		camera.state.contextualLock()->noMCU = { true, sclock::now() };
+	if (info.sbcHWDetection & SBC_HW_NO_SENSOR)
+		camera.state.contextualLock()->noSensor = { true, sclock::now() };
 
 	static_assert(sizeof(VersionDesc) == 4);
 	static_assert(sizeof(HardwareSerial) == 12);
@@ -1089,14 +1103,17 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	int mcuFWDesc = (data[46] << 8) | data[47];
 	int mcuHWDesc = (data[48] << 8) | data[49];
 	int mcuSubparts = ((data[50] << 8) | data[51]);
-	if (length < CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts)
+	int sensorID = 0;
+	if (packetVersion >= 2)
+		sensorID = ((data[52] << 8) | data[53]);
+	if (length < baseLength + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID)
 	{
-		LOG(LParsing, LError, "Camera #%u: Failed to parse info packet of size %d, expected %d + %d + %d + %d + %d!",
-			camera.id, length, CAMERA_INFO_BASE_LENGTH, sbcFWDesc, mcuFWDesc, mcuHWDesc, mcuSubparts);
+		LOG(LParsing, LError, "Camera #%u: Failed to parse info packet of size %d, expected %d + %d + %d + %d + %d + %d!",
+			camera.id, length, baseLength, sbcFWDesc, mcuFWDesc, mcuHWDesc, mcuSubparts, sensorID);
 		return false;
 	}
 
-	const uint8_t *ptr = data + CAMERA_INFO_BASE_LENGTH;
+	const uint8_t *ptr = data + baseLength;
 	info.sbcFWDescriptor.resize(sbcFWDesc);
 	memcpy(info.sbcFWDescriptor.data(), ptr, sbcFWDesc);
 	ptr += sbcFWDesc;
@@ -1111,6 +1128,16 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 		info.subpartSerials.resize(mcuSubparts / sizeof(uint64_t));
 		memcpy(info.subpartSerials.data(), ptr, mcuSubparts % sizeof(uint64_t));
 		ptr += mcuSubparts;
+	}
+	if (sensorID > 0)
+	{
+		info.cameraSensor.resize(sensorID);
+		memcpy(info.cameraSensor.data(), ptr, sensorID);
+		ptr += sensorID;
+	}
+	else
+	{
+		info.cameraSensor = "Unknown";
 	}
 
 	if ((info.sbcRevisionCode >> 24) == 0xFF)
@@ -1216,6 +1243,8 @@ bool ReadCameraMCUInfoPacket(TrackingCameraState &camera, const PacketHeader hea
 	}
 	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
 		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
+	if (info.mcuHWDetection & MCU_HW_ALT_BOOT)
+		camera.state.contextualLock()->altBoot = { true, sclock::now() };
 	const uint8_t *ptr = data + infoSize;
 
 	memcpy(info.mcuHWDescriptor.data(), ptr, info.mcuHWDescriptor.size());

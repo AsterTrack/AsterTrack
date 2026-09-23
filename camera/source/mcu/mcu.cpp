@@ -23,7 +23,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "comm/comm.hpp"
 #include "comm/firmware.inl"
 #include "stm32_bootloader.hpp"
-#include "version.hpp"
+#include "info.hpp"
 
 #include "util/util.hpp"
 
@@ -250,8 +250,8 @@ bool mcu_probe()
 
 	if (i2c_probe())
 	{
-		mcu_is_connected();
 		mcu_does_exist();
+		mcu_is_connected();
 	}
 	else mcu_active = false;
 	return mcu_active;

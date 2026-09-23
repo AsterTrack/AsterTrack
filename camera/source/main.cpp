@@ -42,7 +42,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "util/image.hpp"
 #include "util/util.hpp"
 
-#include "version.hpp"
+#include "info.hpp"
 
 #include "vcsm/vcsm.hpp"
 #include "videocore/mailbox.h"

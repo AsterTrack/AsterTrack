@@ -23,7 +23,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "state.hpp"
 
-#include "version.hpp"
+#include "info.hpp"
 #include "mcu/mcu.hpp"
 #include "comm/comm.hpp"
 

@@ -240,9 +240,10 @@ enum CameraMCUFlashConfig {
 	MCU_FLASH_USER_ABORTED = 10,
 };
 
-enum CameraHWDetection
+enum CameraMCUHardware
 {
 	MCU_HW_HAS_HSE = 1 << 0,
+	MCU_HW_ALT_BOOT = 1 << 1,
 };
 
 /**

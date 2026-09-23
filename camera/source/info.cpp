@@ -15,9 +15,10 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "version.hpp"
+#include "info.hpp"
 #include "mcu/mcu.hpp"
 #include "comm/comm.hpp"
+#include "camera/gcs.hpp"
 #include "util/system.hpp"
 
 #include <filesystem>
@@ -50,6 +51,10 @@ int numCPUCores = 0;
 
 std::string sbcModel, sbcSerialString;
 uint32_t sbcRevisionCode, sbcSerialNumber;
+
+CameraSBCHardware sbcHWDetection;
+bool cameraSensorExists = false;
+std::string cameraSensorID;
 
 static void gatherSBCInfo()
 {
@@ -115,14 +120,46 @@ void storeCameraID()
 	id_stream.write((char*)&cameraID, sizeof(CameraID));
 }
 
+static void updateInfo(CameraStoredInfo &info)
+{
+	info.sbcFWVersion = sbcFWVersion;
+	info.sbcFWDescriptor = sbcFWDescriptor;
+	info.sbcRevisionCode = sbcRevisionCode;
+	info.sbcSerialNumber = sbcSerialNumber;
+
+	info.sbcHWDetection = (CameraSBCHardware)(0
+		| (mcu_exists? 0 : SBC_HW_NO_MCU)
+		| (cameraSensorExists? 0 : SBC_HW_NO_SENSOR)
+	);
+	info.cameraSensor = cameraSensorID;
+}
+
 void gatherInfo(CameraID overrideID)
 {
 	gatherSBCInfo();
 	loadCameraID(overrideID);
-	storedInfo.sbcFWVersion = sbcFWVersion;
-	storedInfo.sbcFWDescriptor = sbcFWDescriptor;
-	storedInfo.sbcRevisionCode = sbcRevisionCode;
-	storedInfo.sbcSerialNumber = sbcSerialNumber;
+
+	// Detect camera sensor
+	SENSOR_NUM sensor = gcs_findCamera();
+	if (sensor == SENSOR_ERROR)
+	{
+		printf("Failed to open camera I2C!\n");
+		cameraSensorID = "Error";
+	}
+	else if (sensor == SENSOR_INVALID || sensor >= SENSOR_MAX)
+	{
+		printf("Failed to identify camera sensor: %d!\n", sensor);
+		cameraSensorID = "Invalid";
+	}
+	else
+	{
+		cameraSensorExists = true;
+		cameraSensorID = SENSOR_ID[sensor];
+		printf("Detected camera sensor %s!\n", cameraSensorID.c_str());
+	}
+
+	storedInfo = {};
+	updateInfo(storedInfo);
 }
 
 void receivedInfoFromMCU(CameraStoredInfo &&info)
@@ -138,11 +175,8 @@ void receivedInfoFromMCU(CameraStoredInfo &&info)
 		printf("    MCU FW Descriptor: %s\n", info.mcuFWDescriptor.c_str());
 
 	// Update stored info
+	updateInfo(info);
 	storedInfo = std::move(info);
-	storedInfo.sbcFWVersion = sbcFWVersion;
-	storedInfo.sbcFWDescriptor = sbcFWDescriptor;
-	storedInfo.sbcRevisionCode = sbcRevisionCode;
-	storedInfo.sbcSerialNumber = sbcSerialNumber;
 
 	sendInfoPacket(largeDataAff);
 }
@@ -179,14 +213,14 @@ void sendInfoPacket(CommMedium medium)
 	int mcuFWDesc = storedInfo.mcuFWDescriptor.size() & 0xFFFF;
 	int mcuHWDesc = storedInfo.mcuHWDescriptor.size() & 0xFFFF;
 	int mcuSubparts = storedInfo.subpartSerials.size()*sizeof(uint64_t);
+	int sensorID = storedInfo.cameraSensor.size() & 0xFFFF;
 
-	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts);
-	static_assert(CAMERA_INFO_BASE_LENGTH == 52);
+	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID);
 
 	infoPacket[0] = SBC_INFO_VERSION; // Packet version
 	infoPacket[1] = storedInfo.mcuOTPVersion;
 	infoPacket[2] = storedInfo.mcuHWDetection;
-	infoPacket[3] = 0; // Reserved
+	infoPacket[3] = storedInfo.sbcHWDetection;
 
 	static_assert(sizeof(VersionDesc) == 4);
 	static_assert(sizeof(HardwareSerial) == 12);
@@ -205,6 +239,9 @@ void sendInfoPacket(CommMedium medium)
 	infoPacket[49] = mcuHWDesc & 0xFF;
 	infoPacket[50] = mcuSubparts >> 8;
 	infoPacket[51] = mcuSubparts & 0xFF;
+	infoPacket[52] = sensorID >> 8;
+	infoPacket[53] = sensorID & 0xFF;
+	static_assert(CAMERA_INFO_BASE_LENGTH == 54);
 
 	uint8_t *ptr = infoPacket.data() + CAMERA_INFO_BASE_LENGTH;
 	memcpy(ptr, storedInfo.sbcFWDescriptor.data(), sbcFWDesc);
@@ -215,6 +252,8 @@ void sendInfoPacket(CommMedium medium)
 	ptr += mcuHWDesc;
 	memcpy(ptr, storedInfo.subpartSerials.data(), mcuSubparts);
 	ptr += mcuSubparts;
+	memcpy(ptr, storedInfo.cameraSensor.data(), sensorID);
+	ptr += sensorID;
 
 	comm_send(medium, PacketHeader(PACKET_CAMERA_INFO, infoPacket.size()), std::move(infoPacket));
 }

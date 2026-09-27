@@ -244,8 +244,8 @@ int main(int argc, char **argv)
 		uartComms.write = uart_write;
 		uartComms.submit = uart_submit;
 		uartComms.flush = uart_flush;
-		uartComms.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_UART, sbcFWVersion);
-		uartComms.expIdent.device = DEVICE_TRCONT;
+		uartComms.ownIdent = IdentPacket(cameraID, DEVICE_CAMERA_SBC, INTERFACE_UART, sbcFWVersion);
+		uartComms.expIdent.device = DEVICE_CONTROLLER;
 		uartComms.started = false;
 	}
 	atexit([]{ // Close at exit
@@ -270,7 +270,7 @@ int main(int argc, char **argv)
 		serverComms.write = server_write;
 		serverComms.submit = server_submit;
 		serverComms.flush = server_flush;
-		serverComms.ownIdent = IdentPacket(cameraID, DEVICE_TRCAM, INTERFACE_SERVER, sbcFWVersion);
+		serverComms.ownIdent = IdentPacket(cameraID, DEVICE_CAMERA_SBC, INTERFACE_SERVER, sbcFWVersion);
 		serverComms.expIdent.device = DEVICE_SERVER;
 		serverComms.started = false;
 	}
@@ -451,7 +451,7 @@ int main(int argc, char **argv)
 				uint8_t statPacket[STAT_PACKET_HEADER];
 				storeStatPacketHeader(stats, statPacket);
 				// Send packet
-				comm_send(largeDataAff, PacketHeader(PACKET_STAT, sizeof(statPacket)), statPacket);
+				comm_send(largeDataAff, PacketHeader(PACKET_STATS, sizeof(statPacket)), statPacket);
 			}
 		}
 

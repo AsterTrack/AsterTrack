@@ -140,7 +140,7 @@ inline int ButtonDebounce(struct ButtonState *button, TimePoint now);
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCAM_MCU, .id = PERSISTENT_CONFIG[0], .type = INTERFACE_UART, .version = firmwareVersion };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_CAMERA_SBC, .id = PERSISTENT_CONFIG[0], .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -739,7 +739,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		}
 		// Received full identification, check
 		struct IdentPacket ident = parseIdentPacket(receive.packetBuffer);
-		if (ident.device != DEVICE_TRCONT || ident.type != INTERFACE_UART)
+		if (ident.device != DEVICE_CONTROLLER || ident.type != INTERFACE_UART)
 		{ // Ident packet was plain wrong
 			WARN_STR("!IdentFail:");
 			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));

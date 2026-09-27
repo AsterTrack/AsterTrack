@@ -98,13 +98,6 @@ struct TrackingCameraState
 		ImageRequest request;
 	};
 
-	struct HDMIVis
-	{ // HDMI Visualisation configuration
-		bool enabled;
-		int width = 480, height = 400, fps = 10;
-		bool displayFrame = true, displayBlobs = true;
-	};
-
 	struct Wireless
 	{ // Wireless configuration
 		WirelessConfig lastConfig, setConfig;
@@ -119,7 +112,6 @@ struct TrackingCameraState
 	struct 
 	{
 		ImageStreaming imageStreaming = {};
-		HDMIVis hdmiVis = {};
 		Wireless wireless = {};
 	} config = {};
 
@@ -141,25 +133,6 @@ struct TrackingCameraState
 	* Receiving state
 	*/
 
-	struct VisualDebug
-	{ // Visual Debug data sent by the TrackingCamera
-		bool hasBlob;
-		// Normal blob data
-		Eigen::Vector2f pos; // In image space
-		float size;
-		// Bounds
-		Bounds2i bounds; // In pixel space
-		Bounds2i lastBounds; // In pixel space
-		Eigen::Vector2f offset; // To last bounds, in pixel space
-		// Point debug
-		int refinementMethod;
-		int dbgPtCount;
-		// Grayscale image and binary mask
-		std::vector<uint8_t> image;
-		std::vector<uint8_t> mask;
-		std::vector<Eigen::Vector2f> boundPoints;
-	};
-
 	struct BackgroundCalib
 	{ // Background calibration data sent by the TrackingCamera
 		std::vector<Eigen::Vector2f> tiles;
@@ -176,7 +149,6 @@ struct TrackingCameraState
 
 	struct
 	{
-		Synchronised<VisualDebug> visualDebug = {};
 		Synchronised<BackgroundCalib> background = {};
 		std::shared_ptr<CameraImageRecord> latestFrameImageRecord = nullptr;
 		std::shared_ptr<const CameraImage> latestFrameImage = nullptr;
@@ -219,10 +191,9 @@ bool CameraCheckDisconnected(ServerState &state, TrackingCameraState &camera);
  */
 bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraState> &camera);
 
-void CameraUpdateSetup(ServerState &state, TrackingCameraState &device);
+void CameraUpdateConfig(ServerState &state, TrackingCameraState &device);
 bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const std::string &credentials, WirelessAction action = WIRELESS_ACTION_NONE);
 void CameraUpdateStream(TrackingCameraState &device);
-void CameraUpdateVis(TrackingCameraState &device);
 void CameraRequestMCUInfo(TrackingCameraState &device);
 
 /**

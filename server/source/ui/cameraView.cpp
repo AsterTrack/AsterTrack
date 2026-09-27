@@ -62,16 +62,14 @@ static CameraVisMode getVisMode(CameraView &view)
 	if (!view.vis.errors.hasMap)
 		view.vis.errors.show = false;
 	if (view.vis.errors.show)
-		return VIS_ERROR_VIS;
+		return VIS_ERROR;
 	if (!view.vis.imageVis.show)
 		view.vis.emulation.enabled = false;
 	if (view.vis.emulation.enabled)
 		return VIS_EMULATION;
 	if (view.camera->hasSetMode(TRCAM_MODE_BGCALIB))
-		return VIS_BACKGROUND_TILES;
-	if (view.camera->hasSetMode(TRCAM_MODE_VISUAL))
-		return VIS_VISUAL_DEBUG;
-	return VIS_BLOB;
+		return VIS_TILES;
+	return VIS_DEFAULT;
 }
 
 void InterfaceState::ShowConnectingCameraUI(int index)
@@ -124,7 +122,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 	bool device = state.mode == MODE_Device;
 	bool bgCalib = device && view.camera->hasSetMode(TRCAM_MODE_BGCALIB);
-	bool visDebug = device && view.camera->hasSetMode(TRCAM_MODE_VISUAL);
 	bool updateImageStreaming = false;
 
 	/**
@@ -477,34 +474,13 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		// Would need to properly set up sync groups if not done already (also see "Start Streaming" button that has to do something similar)
 		// Probably would want this to start the cameras as free-running if the rest of the system doesn't stream yet
 		if (ImGui::MenuItem("Background Calibration", nullptr, 
-			&bgCalib, device && state.isStreaming && !visDebug))
+			&bgCalib, device && state.isStreaming))
 		{
 			if (bgCalib)
 				view.camera->updateBackgroundCalib(TrackingCameraState::BG_CALIB);
 			else
 				view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
 			view.camera->receiving.background.contextualLock()->tiles.clear();
-		}
-		if (ImGui::MenuItem("Visual Debug", nullptr, 
-			&visDebug, device && state.isStreaming && !bgCalib))
-		{
-			if (visDebug)
-			{ // Enable visual debug
-				view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_VISUAL);
-			}
-			else if (state.isStreaming)
-			{ // Return to normal tracking
-				view.camera->sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BLOB);
-			}
-			else
-			{ // Return to standby
-				view.camera->sendModeSet(TRCAM_STANDBY);
-			}
-		}
-		if (ImGui::MenuItem("HDMI Visualisation", nullptr, 
-			&view.camera->config.hdmiVis.enabled, device))
-		{
-			CameraUpdateVis(*view.camera);
 		}
 
 		ImGui::EndCombo();
@@ -1140,13 +1116,13 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		blobAlpha = 0.6f;
 		blobCross = 2.0f / mode.widthPx;
 	}
-	if (visCamera.visMode == VIS_BACKGROUND_TILES)
+	if (visCamera.visMode == VIS_TILES)
 	{
 		auto bgCalib = camera.receiving.background.contextualRLock();
 		float PixelSizeCur = bgCalib->tileSize * viewSize.x() * pixelRatio;
 		visualisePoints2D(bgCalib->tiles, Color{ 0, 0, 1, 0.2f }, PixelSizeCur, 0.5f, false);
 	}
-	else if (visCamera.visMode == VIS_BLOB)
+	else if (visCamera.visMode == VIS_DEFAULT)
 	{
 		bool drawDistorted = phase == PHASE_Calibration_Point || !visCamera.imageVis.undistort;
 		bool hideBlobsOnFrame = visCamera.imageVis.show && visCamera.image && !visCamera.imageVis.showBlobs;
@@ -1393,7 +1369,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 			}
 		}
 	}
-	else if (visCamera.visMode == VIS_ERROR_VIS)
+	else if (visCamera.visMode == VIS_ERROR)
 	{
 		// TODO: Unmaintained, needs testing
 
@@ -1413,63 +1389,6 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		}
 		visualiseBlobs2D(camFrame.rawPoints2D, camFrame.properties, Color{ 1, 0, 0, blobAlpha }, viewSize.x(), blobCross);
 	}
-	else if (visCamera.visMode == VIS_VISUAL_DEBUG)
-	{
-		// TODO: Unmaintained, needs testing
-
-		// Show other blobs next to it normally
-		visualiseBlobs2D(camFrame.points2D, camFrame.properties, Color{ 1, 1.0, 0.2, blobAlpha }, viewSize.x(), blobCross);
-
-		auto vis_lock = camera.receiving.visualDebug.contextualRLock();
-		auto &visual = *vis_lock;
-		if (!visual.hasBlob) return;
-
-		float PixelSize = (float)viewSize.x() / mode.widthPx;
-		float PixelStride = 2.0f / mode.widthPx; // 2 because of -1 to 1 space
-
-		// Bounds
-		Eigen::Vector2i extendsPX = visual.bounds.extends();
-		Eigen::Vector2f boundsCenterPX = visual.bounds.center<float>();
-		Eigen::Vector2f boundsCenter = pix2cam(mode, visual.bounds.center<float>());
-
-		// Actual detected blob
-		Eigen::Vector2f centroidPX = cam2pix(mode, visual.pos);
-		//Eigen::Vector2f centroidOffsetPX = centroidPX - boundsCenterPX;
-		//float blobRadiusPX = visual.size;
-		Eigen::Vector2f vizCenterPX = boundsCenterPX-centroidPX;
-
-		// Adjust for size of visualisation pixels
-		auto vizCenterPXOld = vizCenterPX;
-		vizCenterPX *= PixelStride;
-
-		LOG(LGUI, LDebug, "VisualDebug: viewSize %dx%d, PixelStride %f", viewSize.x(), viewSize.y(), PixelStride);
-		LOG(LGUI, LDebug, "   VizCenterPX %fx%f then %fx%f, boundsCenterPX %fx%f, centroid %fx%f, centroidPX %fx%f, ",
-			vizCenterPXOld.x(), vizCenterPXOld.y(), vizCenterPX.x(), vizCenterPX.y(),
-			boundsCenterPX.x(), boundsCenterPX.y(), visual.pos.x(), visual.pos.y(), centroidPX.x(), centroidPX.y());
-
-		// Visualise grayscale image
-		thread_local unsigned int imagePixelVBO = 0;
-		updatePixelVBO(imagePixelVBO, visual.image, extendsPX, boundsCenter, 
-			PixelStride, PixelSize, Color{ 0,0,0,1.0f }, Color{ 1,1,1,1.0f });
-		visualisePointsVBOSprites(imagePixelVBO, extendsPX.prod(), false);
-
-		// Visualise binary mask
-		thread_local unsigned int maskPixelVBO = 0;
-		updatePixelVBO(maskPixelVBO, visual.mask, extendsPX, boundsCenter, 
-			PixelStride, PixelSize, Color{ 0,0,0,0 }, Color{ 0,1,0,0.4f });
-		visualisePointsVBOSprites(maskPixelVBO, extendsPX.prod(), false);
-
-		// Visualise detected blob
-		visualiseBlobCircle(visual.pos, visual.size*PixelStride, Color{ 1, 0, 0, 1 }, PixelStride);
-
-		// Visualise refined edge
-		Eigen::Vector2f boundsOrigin = pix2cam<float>(mode, visual.bounds.min.cast<float>());
-		thread_local std::vector<VisPoint> edgePoints;
-		edgePoints.clear();
-		for (auto &pt : visual.boundPoints)
-			edgePoints.push_back(VisPoint{ (boundsOrigin + pt*PixelStride).homogeneous(), Color{ 0,1,1,1.0f }, PixelSize/2 });
-		visualisePointsSprites(edgePoints);
-	}
 	else if (visCamera.visMode == VIS_EMULATION)
 	{
 		updateEmulationVisualisation(camera, visCamera, camFrame, viewSize);
@@ -1480,21 +1399,6 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 {
 	CameraMode &mode = camera.pipeline->mode;
 	CameraCalib &calib = camera.pipeline->calib;
-	if (visCamera.visMode == VIS_VISUAL_DEBUG)
-	{ // Zoom into blob and snap to it if it moves off-screen
-		auto vis_lock = camera.receiving.visualDebug.contextualRLock();
-		if (vis_lock->hasBlob)
-		{ // Need to move center so that full bounds are visible
-			Eigen::Vector2i center = cam2pix(mode, visCamera.view.center).cast<int>();
-			Eigen::Vector2i size(mode.widthPx/visCamera.view.zoom, mode.heightPx/visCamera.view.zoom);
-			if (!Bounds2i(center, size).includes(vis_lock->bounds))
-			{
-				visCamera.view.center = vis_lock->pos;
-				return true;
-			}
-		}
-		return false;
-	}
 
 	// Try to find a 3D target to zoom into
 	Eigen::Vector3f target3D = visState.getPreferredTarget(visFrame);

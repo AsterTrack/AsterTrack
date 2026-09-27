@@ -39,15 +39,13 @@ bool ReceivePacketHeader(CommState &comm, const PacketHeader header)
 			return header.length >= SYNC_PACKET_SIZE;
 		case PACKET_SOF:
 			return header.length >= SOF_PACKET_SIZE;
-		case PACKET_CFG_SETUP:
+		case PACKET_CONFIG:
 			return header.length >= CONFIG_PACKET_MIN_SIZE;
-		case PACKET_CFG_MODE:
+		case PACKET_MODE:
 			return header.length >= 1;
-		case PACKET_CFG_WIFI:
+		case PACKET_WIRELESS:
 			return header.length >= 8;
-		case PACKET_CFG_IMAGE:
-			return header.length >= 1;
-		case PACKET_CFG_VIS:
+		case PACKET_IMAGE:
 			return header.length >= 1;
 		case PACKET_FW_PREPARE:
 		case PACKET_FW_BLOCK:
@@ -72,7 +70,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 		return false;
 	switch (header.tag)
 	{
-		case PACKET_CFG_SETUP:
+		case PACKET_CONFIG:
 		{ // Received setup packet
 			ConfigPacket packet = parseConfigPacket(data, length);
 			printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
@@ -84,7 +82,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 			state.updateSetupCPU = true;
 			return true;
 		}
-		case PACKET_CFG_MODE:
+		case PACKET_MODE:
 		{ // Mode set
 			uint8_t modePacket = data[0];
 			TrackingCameraMode newMode = {};
@@ -106,11 +104,11 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 			state.updateMode = true;
 			return true;
 		}
-		case PACKET_CFG_WIFI:
+		case PACKET_WIRELESS:
 		{
 			return parseWirelessConfigPacket(state, data, length);
 		}
-		case PACKET_CFG_IMAGE:
+		case PACKET_IMAGE:
 		{
 			ImageStreamState stream = {};
 			stream.enabled = data[0] != 0;
@@ -150,23 +148,6 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 				state.imageRequests.push(stream);
 			else
 				state.streaming = stream;
-			return true;
-		}
-		case PACKET_CFG_VIS:
-		{
-			state.visualisation.enabled = data[0];
-			if (state.visualisation.enabled)
-			{
-				state.visualisation.displayFrame = data[0];
-				state.visualisation.width = *((uint16_t*)&data[1]);
-				state.visualisation.height = *((uint16_t*)&data[3]);
-				state.visualisation.interval = 1000000/data[5];
-				state.visualisation.displayFrame = data[6];
-				state.visualisation.displayBlobs = data[7];
-				printf("Visualisation at %dx%d every %d frames!\n", state.visualisation.width, state.visualisation.height, state.visualisation.interval);
-			}
-			else
-				printf("Visualisation disabled!\n");
 			return true;
 		}
 		case PACKET_FW_PREPARE:

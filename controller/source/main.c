@@ -161,7 +161,7 @@ extern int _susrstack, _eusrstack;
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_TRCONT, .id = 0, .type = INTERFACE_UART, .version = firmwareVersion };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_CONTROLLER, .id = 0, .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -602,7 +602,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 			EnterPacketHubZone();
 
 			// Stage 4&5: Ensure cameras are notified and stop streaming
-			const struct PacketHeader header = { .tag = PACKET_CFG_MODE, .length = 1 };
+			const struct PacketHeader header = { .tag = PACKET_MODE, .length = 1 };
 			UARTPacketRef *packet = allocateUARTPacket(header.length);
 			packet->data[0] = TRCAM_STANDBY;
 		#if PACKET_CHECKSUM_SIZE == 4 && TRCAM_STANDBY == 0 // Precalculated CRC32
@@ -1241,7 +1241,7 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		{
 			if (!((req->wIndex >> i) & 1) || (camStates[i].comm & COMM_READY) != COMM_READY) continue;
 			uartd_send_int(i, packet, UART_PACKET_OVERHEAD_SEND-PACKET_CHECKSUM_SIZE+req->wLength, false);
-			if (req->wValue == PACKET_CFG_MODE && packetLen > 0)
+			if (req->wValue == PACKET_MODE && packetLen > 0)
 			{ // Snoop in to check if camera/streaming is enabled
 				if (req->data[0]&TRCAM_FLAG_STREAMING)
 					camStates[i].status |= PORT_CAM_STREAMING;
@@ -1448,7 +1448,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 				DEBUG_CHARR('/', INT9_TO_CHARR(port), 'S', 'F', 'S', INT99_TO_CHARR(state->lastAnnounceID), ':', INT99_TO_CHARR(state->header.frameID));
 			cam->lastAnnounceID = state->header.frameID;
 		}
-		else if (state->header.tag == PACKET_BLOB)
+		else if (state->header.tag == PACKET_STREAM)
 		{
 			if (state->header.frameID != (cam->lastStreamID+1)%256)
 				DEBUG_CHARR('/', INT9_TO_CHARR(port), 'S', 'S', 'P', INT99_TO_CHARR(state->lastStreamID), ':', INT99_TO_CHARR(state->header.frameID));
@@ -1620,7 +1620,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		}
 		// Received full identification, check
 		struct IdentPacket ident = parseIdentPacket(cam->packetBuffer);
-		if ((ident.device != DEVICE_TRCAM && ident.device != DEVICE_TRCAM_MCU) || ident.type != INTERFACE_UART)
+		if ((ident.device != DEVICE_CAMERA_SBC && ident.device != DEVICE_CAMERA_SBC) || ident.type != INTERFACE_UART)
 		{ // Ident packet was plain wrong
 			WARN_STR("!IdentFail:");
 			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
@@ -1637,12 +1637,12 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		}
 		// Idenfication verified
 		cam->comm = COMM_HAS_ID;
-		if (ident.device == DEVICE_TRCAM)
+		if (ident.device == DEVICE_CAMERA_SBC)
 		{
 			cam->comm |= COMM_SBC;
 			cam->identitySBC = ident;
 		}
-		else if (ident.device == DEVICE_TRCAM_MCU)
+		else if (ident.device == DEVICE_CAMERA_SBC)
 		{
 			cam->comm |= COMM_MCU;
 			cam->identityMCU = ident;

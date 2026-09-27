@@ -253,7 +253,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 					assert(camera->pipeline->mode.widthPx == mode.widthPx && camera->pipeline->mode.heightPx == mode.heightPx);
 				else
 					camera->pipeline->mode = mode;
-				CameraUpdateSetup(state, *camera);
+				CameraUpdateConfig(state, *camera);
 			}
 		}
 		if (updateProc && state.mode == MODE_Replay)
@@ -351,7 +351,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 				for (auto &camera : controller->cameras)
 				{
 					if (camera && camera->sync == controller->sync)
-						CameraUpdateSetup(state, *camera);
+						CameraUpdateConfig(state, *camera);
 				}
 			}
 		}

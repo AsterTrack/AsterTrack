@@ -33,12 +33,73 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "blob/parameters.hpp"
 #include "hash/crc32.hpp"
 
+/**
+ * Extended Stream Protocol Definitions for Server<->SBC Comms
+ */
+
+enum CommMedium
+{
+	COMM_MEDIUM_UART = 0,
+	COMM_MEDIUM_WIFI = 1,
+	COMM_MEDIUM_MAX
+};
+
+struct LargePacketHeader
+{
+	uint32_t totalSize;
+	uint32_t blockOffset;
+	uint32_t blockSize;
+	uint8_t data[];
+};
+
+static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
+{
+	if (PACKET_CHECKSUM_SIZE == 1)
+	{ // Old simple checksum
+		for (int i = 0; i < length; i++)
+			checksum[0] += data[i];
+	}
+	if (PACKET_CHECKSUM_SIZE == 2)
+	{
+		uint16_t accum[2] = { checksum[0], checksum[1] };
+		for (int i = 0; i < length; i++)
+		{ // TODO: Proper CRC
+			accum[0] += data[i];
+			accum[0] += accum[0] >> 8;
+			accum[1] += accum[0];
+		}
+		checksum[0] = accum[0];
+		checksum[1] = accum[1];
+	}
+	if (PACKET_CHECKSUM_SIZE == CRC32::HashBytes)
+	{ // Use proper CRC32 for forwarded (camera<->host) packets
+		CRC32 crc;
+		crc.add(data, length);
+		crc.getHash(checksum);
+	}
+}
+
+
+/**
+ * Misc Packet Definitions
+ * Writing/Parsing is in respective code, this is just for sanity-checks
+ */
+
 #define STREAM_PACKET_HEADER_SIZE		0
 #define STREAM_PACKET_BLOB_SIZE			6
 
+#define CAMERA_INFO_MIN_LENGTH			52
+#define CAMERA_INFO_BASE_LENGTH			54
+
+
+/**
+ * Wireless Packet
+ */
+
 #define WIRELESS_PACKET_HEADER			8
 
-enum WirelessStatus {
+enum WirelessStatus
+{
 	WIRELESS_STATUS_NONE = 0,
 	WIRELESS_STATUS_DISABLED,
 	WIRELESS_STATUS_ENABLED,
@@ -52,7 +113,8 @@ enum WirelessStatus {
 	WIRELESS_STATUS_AUTOENABLE = 64
 };
 
-enum WirelessConfig {
+enum WirelessConfig
+{
 	WIRELESS_CONFIG_NONE = 0,
 	WIRELESS_CONFIG_WIFI = 1,
 	WIRELESS_CONFIG_SSH = 2,
@@ -60,7 +122,8 @@ enum WirelessConfig {
 	WIRELESS_CONFIG_RTDATA = 8,
 };
 
-enum WirelessAction {
+enum WirelessAction
+{
 	WIRELESS_ACTION_NONE = 0,
 	WIRELESS_STORE_CONFIG,
 	WIRELESS_CLEAR_CREDS,
@@ -68,6 +131,10 @@ enum WirelessAction {
 	WIRELESS_DISALLOW_SSH_PERMANENTLY
 };
 
+
+/**
+ * Firmware Packets
+ */
 
 #define FIRMWARE_PACKET_HEADER			10
 #define FIRMWARE_FILE_HEADER			6
@@ -130,6 +197,11 @@ enum FirmwareUpdateFlags : uint8_t
 	FW_FLASH_MCU = 2,
 };
 
+
+/**
+ * Firmware File Tag
+ */
+
 static const uint8_t FIRMWARE_TAG_KEY[] = { 0x08, 0x39, 0xA5, 0x73, 0x20, 0x72, 0xAC, 0x80 };
 #define FIRMWARE_TAG_HEADER		10
 #define FIRMWARE_TAG_SIZE		(FIRMWARE_TAG_HEADER + sizeof(FIRMWARE_TAG_KEY))
@@ -167,46 +239,6 @@ static inline bool parseFirmwareTagHeader(const uint8_t data[FIRMWARE_TAG_SIZE],
 	// May expand here
 	return true;
 }
-
-
-#define CAMERA_INFO_MIN_LENGTH			52
-#define CAMERA_INFO_BASE_LENGTH			54
-
-
-static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t length, uint8_t checksum[PACKET_CHECKSUM_SIZE])
-{
-	if (PACKET_CHECKSUM_SIZE == 1)
-	{ // Old simple checksum
-		for (int i = 0; i < length; i++)
-			checksum[0] += data[i];
-	}
-	if (PACKET_CHECKSUM_SIZE == 2)
-	{
-		uint16_t accum[2] = { checksum[0], checksum[1] };
-		for (int i = 0; i < length; i++)
-		{ // TODO: Proper CRC
-			accum[0] += data[i];
-			accum[0] += accum[0] >> 8;
-			accum[1] += accum[0];
-		}
-		checksum[0] = accum[0];
-		checksum[1] = accum[1];
-	}
-	if (PACKET_CHECKSUM_SIZE == CRC32::HashBytes)
-	{ // Use proper CRC32 for forwarded (camera<->host) packets
-		CRC32 crc;
-		crc.add(data, length);
-		crc.getHash(checksum);
-	}
-}
-
-struct LargePacketHeader
-{
-	uint32_t totalSize;
-	uint32_t blockOffset;
-	uint32_t blockSize;
-	uint8_t data[];
-};
 
 
 /**
@@ -418,8 +450,9 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 
 
 /**
- * Camera statistics packet
+ * Camera Statistics Packet
  */
+
 struct StatPacket
 {
 	struct

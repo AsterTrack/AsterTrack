@@ -28,32 +28,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 typedef uint32_t CameraID;
 
-enum TrCamMode
-{
-	TRCAM_STANDBY					= 0b00000000,
-	TRCAM_FLAG_STREAMING			= 0b10000000,
-	TRCAM_MODE_MASK					= 0b01111111,
-
-	TRCAM_MODE_BGCALIB				= 0b00010000,
-	TRCAM_OPT_BGCALIB_MSK			= 0b00001111,
-	TRCAM_OPT_BGCALIB_RESET			= 0b00000001,
-	TRCAM_OPT_BGCALIB_DISCARD		= 0b00000010,
-	TRCAM_OPT_BGCALIB_RETRY			= 0b00000011,
-	TRCAM_OPT_BGCALIB_ACCEPT		= 0b00000111,
-	TRCAM_MODE_BLOB					= 0b00001000,
-	TRCAM_OPT_BLOB_MSK				= 0b00000111,
-	TRCAM_MODE_SIM					= 0b00000100,
-	TRCAM_OPT_SIM_MSK				= 0b00000011,
-	TRCAM_OPT_SIM_LVL				= 0b00000010,
-	TRCAM_OPT_SIM_PROC				= 0b00000001,
-	TRCAM_MODE_VISUAL				= 0b00000010,
-	TRCAM_OPT_VISUAL_MSK			= 0b00000001,
-	TRCAM_MODE_IDLE					= 0, // Last bit set or none
-	TRCAM_OPT_NONE					= 0,
-
-	TRCAM_MODE_SIZE					= 0b11111111
-};
-
 enum PacketTag
 {
 	// All below are for Camera <-> Controller comms, using fletcher32 checksum
@@ -73,37 +47,32 @@ enum PacketTag
 
 	// All below are for Camera SBC <-> Host comm, using CRC32 checksum
 	PACKET_HOST_SBC = 24,
-	PACKET_CFG_SETUP = 24,	// Set base camera configuration
-	PACKET_CFG_MODE,		// Set mode/status configuration - response PACKET_CONFIG, toggles
-	PACKET_CFG_WIFI,		// Set wireless configuration & state - response PACKET_WIRELESS
-	PACKET_CFG_IMAGE,		// Set streaming configuration - enables/disables PACKET_IMAGE
-	PACKET_CFG_VIS,			// Set HDMI visualisation configuration
-	PACKET_MODE,			// Report mode change status (response to PACKET_CFG_MODE)
+	PACKET_CONFIG = 24,		// Configure streaming behaviour of camera
+	PACKET_MODE,			// Configure/Report operation mode
+	PACKET_WIRELESS,		// Configure/Report wireless config & state
+	PACKET_IMAGE,			// Configure image streaming / Frame image packet
+	PACKET_BACKGROUND,		// Configure/Update background mask
 	PACKET_ERROR,			// Report error (failed configuration change or runtime error)
-	PACKET_STAT,			// Report streaming statistics
-	PACKET_WIRELESS,		// Report status of wireless connection
+	PACKET_STATS,			// Report streaming statistics
 	PACKET_FRAME_SIGNAL,	// Signal acceptance of frame
-	PACKET_BLOB,			// Send blob data of frame
-	PACKET_VISUAL,			// Send visual debug data of frame
-	PACKET_IMAGE,			// Send camera frame image
-	PACKET_BGTILES,			// Send updated background tiles
-	PACKET_UNUSED1,			// Unused
-	PACKET_UNUSED2,			// Unused
-	PACKET_FW_PREPARE,		// Prepare firmware update
-	PACKET_FW_BLOCK,		// Send block of a file for firmware update
-	PACKET_FW_STATUS,		// Send status of prior firmware update packet
-	PACKET_FW_APPLY,		// Apply firmware update
-	PACKET_CAMERA_INFO,		// Exchange SBC & MCU firmware version, MCU/SBC connection status, hardware serial numbers
-	PACKET_CAMERA_STATE,	// Report camera status and request changes
+	PACKET_STREAM,			// Send streaming data of frame
+
+	PACKET_FW_PREPARE = 40,	// Prepare firmware update
+	PACKET_FW_BLOCK = 41,	// Send block of a file for firmware update
+	PACKET_FW_STATUS = 42,	// Inquire/Report status of prior firmware update packet
+	PACKET_FW_APPLY = 43,	// Apply firmware update
+	PACKET_CAMERA_INFO,		// Request/Report mostly static information about camera hardware and firmwares
+	PACKET_CAMERA_STATE,	// Request/Set/Report state of embedded system (forwarded by SBC to MCU via MCU_GET_STATUS/MCU_UPDATE_STATE)
+
 	PACKET_MAX_ID_POSSIBLE = 63
 };
 
 enum DeviceTag
 {
 	DEVICE_SERVER					= 1<<2,
-	DEVICE_TRCAM					= 1<<4,
-	DEVICE_TRCAM_MCU				= 1<<5,
-	DEVICE_TRCONT					= 1<<6,
+	DEVICE_CAMERA_SBC				= 1<<4,
+	DEVICE_CAMERA_MCU				= 1<<5,
+	DEVICE_CONTROLLER				= 1<<6,
 };
 
 enum InterfaceTag
@@ -224,28 +193,6 @@ static const char *ErrorTag_String[ERROR_MAX] =
 	"Camera program exception (abort)"
 };
 
-enum CommMedium
-{
-	COMM_MEDIUM_UART = 0,
-	COMM_MEDIUM_WIFI = 1,
-	COMM_MEDIUM_MAX
-};
-
-enum CameraMCUFlashConfig {
-	MCU_FLASH_KEEP = 0,
-	MCU_FLASH_UNKNOWN = 0,
-	MCU_FLASH_BOOT0_PI = 1,
-	MCU_FLASH_DEBUG_SWD = 2,
-	MCU_FLASH_ERROR = 10,
-	MCU_FLASH_USER_ABORTED = 10,
-};
-
-enum CameraMCUHardware
-{
-	MCU_HW_HAS_HSE = 1 << 0,
-	MCU_HW_ALT_BOOT = 1 << 1,
-};
-
 /**
  * Checksum size used for packet header during UART comms
  */
@@ -273,11 +220,11 @@ struct PacketHeader
 	PacketHeader(){}
 	PacketHeader(enum PacketTag Tag, uint32_t Length, uint8_t FrameID = 0) : tag(Tag), frameID(FrameID), length(Length) {}
 
-	inline bool isStreamPacket() const { return tag == PACKET_BLOB; }
+	inline bool isStreamPacket() const { return tag == PACKET_STREAM; }
 #endif
 };
 #ifndef __cplusplus
-static inline bool isStreamPacket(struct PacketHeader header) { return header.tag == PACKET_BLOB; }
+static inline bool isStreamPacket(struct PacketHeader header) { return header.tag == PACKET_STREAM; }
 #endif
 #define PACKET_HEADER_SIZE 4
 #define PACKET_MAX_LENGTH ((1 << 18) - 1)
@@ -623,6 +570,39 @@ static inline void storeEmbeddedState(struct CameraEmbeddedState state, uint8_t 
 		| ((state.changeInteract? 1 : 0) << 0);
 	data[0] = states >> 8;
 	data[1] = states & 0xFF;
+};
+
+
+/**
+ * Other shared definitions for MCU, SBC & Host
+ */
+
+enum TrCamMode
+{
+	TRCAM_STANDBY					= 0b00000000,
+	TRCAM_FLAG_STREAMING			= 0b10000000,
+	TRCAM_MODE_MASK					= 0b01111111,
+
+	TRCAM_MODE_BGCALIB				= 0b00010000,
+	TRCAM_OPT_BGCALIB_MSK			= 0b00001111,
+	TRCAM_OPT_BGCALIB_RESET			= 1,
+	TRCAM_OPT_BGCALIB_DISCARD		= 2,
+	TRCAM_OPT_BGCALIB_RETRY			= 3,
+	TRCAM_OPT_BGCALIB_ACCEPT		= 4,
+
+	TRCAM_MODE_BLOB					= 0b00001000,
+	TRCAM_OPT_BLOB_MSK				= 0b00000111,
+
+	TRCAM_MODE_IDLE					= 0, // Last bit set or none
+	TRCAM_OPT_NONE					= 0,
+
+	TRCAM_MODE_SIZE					= 0b11111111
+};
+
+enum CameraMCUHardware
+{
+	MCU_HW_HAS_HSE = 1 << 0,
+	MCU_HW_ALT_BOOT = 1 << 1,
 };
 
 #endif // PACKET_H

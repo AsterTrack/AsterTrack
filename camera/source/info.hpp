@@ -18,7 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #ifndef VERSION_H
 #define VERSION_H
 
-#include "comm/packet.h"
+#include "comm/packet.hpp"
 #include "comm/serial.hpp"
 
 #include <string>

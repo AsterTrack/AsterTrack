@@ -40,7 +40,6 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketH
 // Normal camera packets
 bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadModePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
-bool ReadVisualPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);

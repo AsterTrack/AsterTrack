@@ -546,116 +546,6 @@ bool ReadModePacket(TrackingCameraState &camera, const PacketHeader header, cons
 	return true;
 }
 
-bool ReadVisualPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
-{
-	if (erroneous) return false;
-	const int metaSize = 2*4 + 2*2 + 2 + 2; // Bounds, Center, Size, Refinement Method
-	if (length <= metaSize) return false;
-
-	LOG(LParsing, LDebug, "Parsing visualdebug packet of size %d", (int)length);
-
-	// Parse metadata
-	uint16_t *metaData = (uint16_t*)data;
-	Bounds2i bounds(metaData[0], metaData[1], metaData[2], metaData[3]);
-	Eigen::Vector2f centerPos = Eigen::Vector2f(metaData[4] / 65536.0f, metaData[5] / 65536.0f);
-	centerPos = npix2cam(camera.pipeline->mode, centerPos); // Convert from normalised pixel space (0-1) to our coordinate system
-	float size = metaData[6] / 65536.0f * 256.0f;
-	int refinementMethod = metaData[7] >> 8;
-	int dbgPtCount = metaData[7] & 0xFF;
-
-	// Verify, especially bounds
-	const int MAX_IMAGE_SIZE = 4096;
-	Eigen::Vector2i extends = bounds.extends();
-	if (extends.x() <= 0 || extends.y() <= 0 || (extends.x() * extends.y() > MAX_IMAGE_SIZE))
-	{
-		LOG(LParsing, LError, "Bounds are invalid! (%dx%d)\n", extends.x(), extends.y());
-		return false;
-	}
-	int imgSize = extends.x() * extends.y();
-	int bitSize = imgSize / 8;
-	if (imgSize & 7) bitSize++;
-	int ptSize = dbgPtCount * 3;
-	if (length != (metaSize + imgSize + bitSize + ptSize))
-	{
-		LOG(LParsing, LError, "VisualDebug packet size of %d doesn't match derived size of %d! Split as %d, %d, %d, %d\n",
-			(int)length, metaSize + imgSize + bitSize + ptSize,
-			metaSize, imgSize, bitSize, ptSize);
-		return false;
-	}
-	if (dbgPtCount > 0 && !(refinementMethod == 2 || refinementMethod == 3))
-	{
-		LOG(LParsing, LError, "VisualDebug packet includes %d debug points, but declared refinement method %d should not include any!\n",
-			dbgPtCount, refinementMethod);
-		return false;
-	}
-	// Debug
-	LOG(LParsing, LDebug, "Parsed meta. %dx%d area, bounds (%d, %d, %d, %d), %f size, center pos (%f, %f)/(%fpx, %fpx)\n",
-		extends.x(), extends.y(), bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y(), size,
-		centerPos.x(), centerPos.y(), (centerPos.x()+1)*PixelFactor, (centerPos.y()+camera.pipeline->mode.aspect)*PixelFactor);
-
-	// Read image, flipped on Y-axis
-	std::vector<uint8_t> image(imgSize);
-	const uint8_t *imgData = data + metaSize;
-	std::vector<uint8_t> flippedImg(imgSize);
-	for (int y = 0; y < extends.y(); y++)
-		memcpy(image.data()+(extends.y()-y-1)*extends.x(), image.data()+y*extends.x(), extends.x());
-
-	// Read bitmask
-	std::bitset<MAX_IMAGE_SIZE> bitmask;
-	const uint8_t *bitData = data + metaSize + imgSize;
-	for (int b = 0; b < bitSize; b++)
-	{ // Parse bit mask byte by byte (if imgSize%8 != 0, remaining bits don't matter anyway)
-		for (int i = 0; i < 8; i++)
-			bitmask.set(b*8 + i, (bitData[b] >> i) & 1);
-	}
-	if (!bitmask.any())
-	{ // Should not happen
-		LOG(LParsing, LWarn, "VisualDebug with no blob mask!\n");
-	}
-	// Copy to mask grayscale
-	std::vector<uint8_t> mask(extends.prod());
-	for (int y = 0; y < extends.y(); y++)
-		for (int x = 0; x < extends.x(); x++)
-			mask[y*extends.x()+x] = bitmask.test((extends.y()-y-1)*extends.x()+x)? 255 : 0;
-
-	// Parse debug points
-	std::vector<Eigen::Vector2f> boundPoints(dbgPtCount);
-	const uint8_t *pointData = data + metaSize + imgSize + bitSize;
-	for (int p = 0; p < dbgPtCount; p++)
-	{
-		uint32_t ptData = (pointData[p*3+0] << 16) | (pointData[p*3+1] << 8) | pointData[p*3+2];
-		uint8_t outlier = ptData & 0b11;
-		uint16_t y = (ptData >> 2) & 0x7FF;
-		uint16_t x = (ptData >> 13) & 0x7FF;
-		boundPoints.push_back(Eigen::Vector2f(x / 2047.0f * extends.x() + 0.5f, - (y / 2047.0f * extends.y() + 0.5f)));
-	}
-
-	{ // Move parsed data to camera state
-		auto visual_lock = camera.receiving.visualDebug.contextualLock();
-		if (visual_lock->hasBlob && visual_lock->bounds.overlaps(bounds))
-		{ // Overlap, move anchor point with centers (not real centers, both offset by half a pixel)
-			visual_lock->offset += bounds.center<float>() - visual_lock->bounds.center<float>();
-			// Viz will reset when it hits the borders
-		}
-		else
-		{
-			visual_lock->offset = Eigen::Vector2f::Zero();
-		}
-		visual_lock->lastBounds = visual_lock->bounds;
-		visual_lock->mask = std::move(mask);
-		visual_lock->image = std::move(image);
-		visual_lock->pos = centerPos;
-		visual_lock->size = size;
-		visual_lock->refinementMethod = refinementMethod;
-		visual_lock->dbgPtCount = dbgPtCount;
-		visual_lock->boundPoints = boundPoints;
-		visual_lock->bounds = bounds;
-		visual_lock->hasBlob = true;
-	}
-	SignalCameraRefresh(camera.id);
-	return true;
-}
-
 bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (!camera.config.imageStreaming.enabled)
@@ -1296,17 +1186,12 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 		ReadModePacket(camera, header, data, length, erroneous);
 		break;
 	}
-	case PACKET_VISUAL:
-	{
-		ReadVisualPacket(camera, header, data, length, erroneous);
-		break;
-	}
 	case PACKET_IMAGE:
 	{
 		ReadFramePacket(camera, header, data, length, erroneous);
 		break;
 	}
-	case PACKET_STAT:
+	case PACKET_STATS:
 	{
 		ReadStatPacket(camera, header, data, length, erroneous);
 		break;
@@ -1316,7 +1201,7 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 		ReadWirelessPacket(camera, header, data, length, erroneous);
 		break;
 	}
-	case PACKET_BGTILES:
+	case PACKET_BACKGROUND:
 	{
 		ReadBGTilesPacket(camera, header, data, length, erroneous);
 		break;

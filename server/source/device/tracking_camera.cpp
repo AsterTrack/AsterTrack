@@ -118,7 +118,7 @@ bool TrackingCameraState::sendModeSet(uint8_t setMode, bool handleIndividually)
 	}
 	uint8_t modePacket[1];
 	modePacket[0] = setMode;
-	if (!sendPacket(PACKET_CFG_MODE, modePacket, sizeof(modePacket)))
+	if (!sendPacket(PACKET_MODE, modePacket, sizeof(modePacket)))
 	{
 		LOG(LCameraDevice, LWarn, "Camera %u failed to send packet to request mode %x!", id, setMode);
 		return false;
@@ -269,12 +269,11 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 		return false;
 	}
 
-	// Send setup data incase it didn't already happen
-	CameraUpdateSetup(state, *camera);
+	// Send config data incase it didn't already happen
+	CameraUpdateConfig(state, *camera);
 
 	// Make sure secondary features match expected state
 	CameraUpdateStream(*camera);
-	CameraUpdateVis(*camera);
 
 	if (camera->controller)
 	{ // May not be configured to use it (CameraConfig::synchronised)
@@ -292,7 +291,7 @@ bool CameraRestartStreaming(ServerState &state, std::shared_ptr<TrackingCameraSt
 // Device Comms
 // ----------------------------------------------------------------------------
 
-void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
+void CameraUpdateConfig(ServerState &state, TrackingCameraState &device)
 {
 	CameraConfig &config = state.cameraConfig.getCameraConfig(device.id);
 	ConfigPacket packet = {};
@@ -328,7 +327,7 @@ void CameraUpdateSetup(ServerState &state, TrackingCameraState &device)
 
 	uint8_t setup[CONFIG_PACKET_SIZE];
 	storeConfigPacket(packet, setup);
-	device.sendPacket(PACKET_CFG_SETUP, setup, sizeof(setup));
+	device.sendPacket(PACKET_CONFIG, setup, sizeof(setup));
 }
 
 bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const std::string &credentials, WirelessAction action)
@@ -369,7 +368,7 @@ bool CameraUpdateWireless(ServerState &state, TrackingCameraState &device, const
 
 	wireless.sendTime = sclock::now();
 	wireless.error.clear(); // Clear past failure
-	device.sendPacket(PACKET_CFG_WIFI, packet.data(), packet.size());
+	device.sendPacket(PACKET_WIRELESS, packet.data(), packet.size());
 	return true;
 }
 
@@ -393,29 +392,12 @@ static void CameraSendImageRequest(TrackingCameraState &device, uint8_t mode, Im
 		stream[10] = request.jpegQuality;
 		stream[11] = request.frame;
 	}
-	device.sendPacket(PACKET_CFG_IMAGE, stream.data(), stream.size());
+	device.sendPacket(PACKET_IMAGE, stream.data(), stream.size());
 }
 
 void CameraUpdateStream(TrackingCameraState &device)
 {
 	CameraSendImageRequest(device, device.config.imageStreaming.enabled, device.config.imageStreaming.request);
-}
-
-void CameraUpdateVis(TrackingCameraState &device)
-{
-	// Send vis config to Tracking Camera
-	auto &config = device.config.hdmiVis;
-	std::vector<uint8_t> vis(config.enabled? 8 : 1);
-	vis[0] = config.enabled;
-	if (vis[0])
-	{ // Width, Height, interval in frames
-		*((uint16_t *)&vis[1]) = config.width;
-		*((uint16_t *)&vis[3]) = config.height;
-		vis[5] = config.fps;
-		vis[6] = config.displayFrame;
-		vis[7] = config.displayBlobs;
-	}
-	device.sendPacket(PACKET_CFG_VIS, vis.data(), vis.size());
 }
 
 void CameraRequestMCUInfo(TrackingCameraState &device)

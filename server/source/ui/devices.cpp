@@ -226,7 +226,7 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 					{
 						state.cameraConfig.cameraConfigs[camera.id] = i;
 						camera.pipeline->mode = getCameraMode(state, camera.id);
-						CameraUpdateSetup(state, camera);
+						CameraUpdateConfig(state, camera);
 					}
 				}
 				ImGui::EndCombo();

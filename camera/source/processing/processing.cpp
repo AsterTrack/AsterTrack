@@ -855,52 +855,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 		TimePoint_t time_cpu_begin = sclock::now();
 
-		if (state.curMode.mode == TRCAM_MODE_SIM && !(state.curMode.opt&TRCAM_OPT_SIM_PROC))
-		{ // Simulation mode, no processing
-			int simBlobCnt = 2<<(state.curMode.opt&TRCAM_OPT_SIM_LVL); // Range: 2 - 256
-
-			if (clusters.size() != simBlobCnt)
-			{
-				clusters.resize(simBlobCnt);
-				for (int i = 0; i < simBlobCnt; i++)
-				{
-					clusters[i].centroid.x() = (rand()%(10*state.camera.width))/10.0f;
-					clusters[i].centroid.y() = (rand()%(10*state.camera.height))/10.0f;
-					clusters[i].size = (rand()%255) / 255.0f * 5.0f + 1.0f;
-				}
-			}
-			else
-			{
-				for (int i = 0; i < simBlobCnt; i++)
-				{
-					clusters[i].centroid.x() += (rand()%100)/10.0f;
-					clusters[i].centroid.y() += (rand()%100)/10.0f;
-					if (clusters[i].centroid.x() <= 0 || clusters[i].centroid.x() >= state.camera.width || clusters[i].centroid.y() <= 0 || clusters[i].centroid.y() >= state.camera.height)
-					{
-						clusters[i].centroid.x() = (rand()%(10*state.camera.width))/10.0f;
-						clusters[i].centroid.y() = (rand()%(10*state.camera.height))/10.0f;
-					}
-
-				}
-			}
-			for (int i = 0; i < simBlobCnt; i++)
-			{
-				float posX = clusters[i].centroid.x(), posY = clusters[i].centroid.y(), size = clusters[i].size/2;
-				int dots = 0;
-				clusters[i].dots.clear();
-				for (int y = -size; y < size; y++)
-				for (int x = -size; x < size; x++)
-				{
-					if (x*x + y*y <= size*size)
-					{
-						int pX = posX+x, pY = posY+y;
-						if (pX >= 0 && pY >= 0 && pX < state.camera.width && pY < state.camera.height)
-							clusters[i].dots.emplace_back(pX, pY);
-					}
-				}
-			}
-		}
-		else if (state.curMode.mode != TRCAM_MODE_IDLE)
+		if (state.curMode.mode != TRCAM_MODE_IDLE)
 		{ // Perform blob detection on bitmask
 
 			// Lock bitmask buffer
@@ -1049,7 +1004,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			{
 				//printf("Added %d new tiles to the background mask!\n", bgTiles.size()/2-1));
 				TimePoint_t t0 = sclock::now();
-				comm_send(largeDataAff, PacketHeader(PACKET_BGTILES, bgTiles.size()), std::move(bgTiles));
+				comm_send(largeDataAff, PacketHeader(PACKET_BACKGROUND, bgTiles.size()), std::move(bgTiles));
 				bytesSentAccum += bgTiles.size();
 				curTimes.send += dtUS(t0, sclock::now());
 			}
@@ -1096,7 +1051,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		//		blobData[i] = data;
 			}
 
-			if (comm_packet(rtComm, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF)))
+			if (comm_packet(rtComm, PacketHeader(PACKET_STREAM, reportLength, curFrame->ID&0xFF)))
 			{
 				comm_write(rtComm, packetBuffer.data(), reportLength);
 				comm_submit(rtComm);
@@ -1104,118 +1059,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			//comm_send(realTimeAff, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF), packetBuffer.data());
 			bytesSentAccum += packetBuffer.size();
 			curTimes.send += dtUS(t0, sclock::now());
-		}
-
-		if (state.curMode.mode == TRCAM_MODE_VISUAL)
-		{ // Visual Debug mode
-			// TODO: Deprecate Visual Debug. Have full blob detection emulation instead 
-
-			// Select blob to debug
-			int maxInd = -1, maxSz = 4;
-			for (int i = 0; i < clusters.size(); i++)
-			{
-				Cluster &blob = clusters[i];
-				int size = blob.bounds.size();
-				if (size < 1000 && size > maxSz)
-				{
-					maxInd = i;
-					maxSz = size;
-				}
-			}
-			
-			if (maxInd >= 0)
-			{
-				Cluster &blob = clusters[maxInd];
-
-				// Refine blob
-				std::vector<Vector2<float>> edgeRefined;
-				std::vector<bool> edgeOutliers;
-				refineCluster(blob, curFrame->memory, srcStride,
-					state.blobParams.refinement, estimateHoughParameters1(blob), 10,
-					edgeRefined, edgeOutliers);
-				edgeRefined.clear();
-
-				// Determine sizes needed for buffer
-				auto bounds = blob.bounds;
-				bounds.extendBy(Vector2<uint16_t>(2, 2));
-				bounds.overlapWith(Bounds2<uint16_t>(0, 0, state.camera.width, state.camera.height));
-				auto extends = bounds.extends();
-				int ptSize = edgeRefined.size()*3;
-				int imgSize = extends.prod();
-				int bitSize = imgSize / 8;
-				if (imgSize & 7) bitSize++;
-				int metaSize = 2*4 + 2*2 + 2 + 2; // Bounds, Center, Size, Refinement Method + Point Count
-
-				TimePoint_t t0 = sclock::now();
-
-				// Write header
-				int packetLength = metaSize + imgSize + bitSize + ptSize;
-				if (packetBuffer.size() < packetLength)
-					packetBuffer.resize(packetLength*3/2);
-
-				// Write metadata
-				uint16_t *metaData = (uint16_t*)packetBuffer.data();
-				metaData[0] = bounds.min.x();
-				metaData[1] = bounds.min.y();
-				metaData[2] = bounds.max.x();
-				metaData[3] = bounds.max.y();
-				metaData[4] = (uint16_t)(((double)blob.centroid.x()+0.5) * 65536 / state.camera.width);
-				metaData[5] = (uint16_t)(((double)blob.centroid.y()+0.5) * 65536 / state.camera.height);
-				metaData[6] = (uint16_t)((double)blob.size * 65536 / 256);
-				metaData[7] = (edgeRefined.size() & 0xFFFF);
-
-				// Read out image data from bounds
-				uint8_t *imgData = (uint8_t*)metaData + metaSize;
-				for (int y = 0; y < extends.y(); y++)
-				{
-					int imgPos = y*extends.x();
-					int ptrPos = (bounds.min.y()+y)*srcStride + bounds.min.x();
-					memcpy(imgData + imgPos, curFrame->memory + ptrPos, extends.x());
-				}
-				
-				// Write bit buf
-				uint8_t *bitBuf = imgData + imgSize;
-				memset(bitBuf, 0, bitSize);
-				for (int i = 0; i < blob.dots.size(); i++)
-				{
-					Vector2<uint16_t> pt = blob.dots[i] - bounds.min;
-					int pos = pt.y()*extends.x() + pt.x();
-					bitBuf[pos/8] |= 1 << (pos % 8);
-				}
-				
-				// Write points
-				uint8_t *ptBuf = bitBuf + bitSize;
-				/* for (int i = 0; i < edgeRefined.size(); i++)
-				{
-					Vector2<float> pt = edgeRefined[i] - bounds.min().cast<float>();
-					pt = pt.cwiseQuotient(bounds.extends().cast<float>());
-					uint32_t dat = 0;
-					dat |= (uint16_t)(pt.x() * 2047) << 13;
-					dat |= (uint16_t)(pt.y() * 2047) << 2;
-					dat |= edgeOutliers[i]? 0x01 : 0x00;
-					ptBuf[i*3+0] = (dat >> 16)&0xFF;
-					ptBuf[i*3+1] = (dat >> 8)&0xFF;
-					ptBuf[i*3+2] = (dat >> 0)&0xFF;
-				} */
-
-				//printf("Selected blob %d of size %d = %dx%d (%d, %d, %d, %d) with %d points, size %f, as debug target! Total report length is %d!\n",
-				//	maxInd, maxSz, extends.x(), extends.y(), blob.bounds.minX, blob.bounds.minY, blob.bounds.maxX, blob.bounds.maxY, blob.ptCnt, blob.centroid.S, blobPayloadLength);
-
-				if (comm_packet(rtComm, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF)))
-				{
-					comm_write(rtComm, packetBuffer.data(), packetLength);
-					comm_submit(rtComm);
-				}
-				//comm_send(rtComm, PacketHeader(PACKET_VISUAL, packetLength, curFrame->ID&0xFF), packetBuffer.data());
-				bytesSentAccum += packetLength;
-				curTimes.send += dtUS(t0, sclock::now());
-			}
-			else 
-			{ // Write empty packet
-				TimePoint_t t0 = sclock::now();
-				comm_send(rtComm, PacketHeader(PACKET_VISUAL, 0, curFrame->ID&0xFF), nullptr);
-				curTimes.send += dtUS(t0, sclock::now());
-			}
 		}
 
 
@@ -1336,7 +1179,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			uint8_t statPacket[STAT_PACKET_SIZE];
 			storeStatPacket(stats, statPacket);
 			// Send packet
-			comm_send(largeDataAff, PacketHeader(PACKET_STAT, sizeof(statPacket)), statPacket);
+			comm_send(largeDataAff, PacketHeader(PACKET_STATS, sizeof(statPacket)), statPacket);
 
 			if (state.writeStatLogs)
 			{

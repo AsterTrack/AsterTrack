@@ -140,7 +140,7 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 						LOG(LGUI, LOutput, "Camera #%u is not streaming anymore after %d iterations!", camera->id, iterations);
 						running = false;
 					}
-					CameraUpdateSetup(state, *camera);
+					CameraUpdateConfig(state, *camera);
 				}
 				cycle = 1;
 				lastAction = sclock::now();
@@ -156,7 +156,7 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 						LOG(LGUI, LOutput, "Camera #%u is not streaming anymore after %d iterations!", camera->id, iterations);
 						running = false;
 					}
-					CameraUpdateSetup(state, *camera);
+					CameraUpdateConfig(state, *camera);
 				}
 				cycle = 0;
 				iterations++;

@@ -18,7 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #ifndef COMM_H
 #define COMM_H
 
-#include "comm/packet.h"
+#include "comm/packet.hpp"
 #include "comm/protocol_stream.hpp"
 #include "hash/crc32.hpp"
 

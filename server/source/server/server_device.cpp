@@ -393,12 +393,11 @@ void DevicesStartStreaming(ServerState &state)
 			|| cam->state.contextualRLock()->commState != COMM_SBC_READY))
 			continue;
 
-		// Send setup data incase it didn't already happen
-		CameraUpdateSetup(state, *cam);
+		// Send config data incase it didn't already happen
+		CameraUpdateConfig(state, *cam);
 
 		// Make sure secondary features match expected state
 		CameraUpdateStream(*cam);
-		CameraUpdateVis(*cam);
 	}
 
 	// Configure controllers for external sync

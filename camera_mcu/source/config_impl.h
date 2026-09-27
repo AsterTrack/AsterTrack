@@ -28,8 +28,6 @@ extern "C"
 #endif
 #include "compat.h"
 
-#include "comm/packet.h"
-
 #define V0_3 1
 #define V0_4 2
 #define V1_0 2
@@ -206,6 +204,15 @@ extern "C"
 
 #define FSIN_PULSE_WIDTH_US		10
 #define FILTER_SWITCHER_COIL_PULSE_MS	100
+
+enum CameraMCUFlashConfig {
+	MCU_FLASH_KEEP = 0,
+	MCU_FLASH_UNKNOWN = 0,
+	MCU_FLASH_BOOT0_PI = 1,
+	MCU_FLASH_DEBUG_SWD = 2,
+	MCU_FLASH_ERROR = 10,
+	MCU_FLASH_USER_ABORTED = 10,
+};
 
 // Detected Hardware Features
 

@@ -978,6 +978,32 @@ void mcu_sync_info()
 	}
 }
 
+bool mcu_update_embedded_state(const uint8_t state[EMBEDDED_STATE_SIZE])
+{
+	if (i2c_fd < 0) return false;
+
+	unsigned char I2C_CMD[1+EMBEDDED_STATE_SIZE] = { MCU_UPDATE_STATE };
+	memcpy(I2C_CMD+1, state, EMBEDDED_STATE_SIZE);
+	struct i2c_msg I2C_MSG[] = {
+		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
+	};
+	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
+	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
+	{
+		printf("Failed to send I2C message to MCU (update state)! %d: %s\n", errno, strerror(errno));
+		i2c_handle_error();
+		return false;
+	}
+	return true;
+}
+
+bool mcu_send_embedded_state()
+{
+	PacketHeader header(PACKET_CAMERA_STATE, EMBEDDED_STATE_SIZE);
+	std::vector<uint8_t> data(mcu_embedded_state, mcu_embedded_state+EMBEDDED_STATE_SIZE);
+	return comm_queue_send(comms.get(realTimeAff), header, std::move(data));
+}
+
 bool mcu_fetch_packet(uint16_t size)
 {
 	if (i2c_fd < 0) return false;
@@ -1031,13 +1057,6 @@ bool mcu_fetch_packet(uint16_t size)
 	std::unique_lock lock(mcu_packet_mutex);
 	mcu_packet_queue.push_back(std::move(mcuPacket));
 	return true;
-}
-
-bool mcu_send_embedded_state()
-{
-	PacketHeader header(PACKET_CAMERA_STATE, EMBEDDED_STATE_SIZE);
-	std::vector<uint8_t> data(mcu_embedded_state, mcu_embedded_state+EMBEDDED_STATE_SIZE);
-	return comm_queue_send(comms.get(realTimeAff), header, std::move(data));
 }
 
 bool mcu_get_status()
@@ -1144,25 +1163,6 @@ bool mcu_get_status()
 		}
 	}
 
-	return true;
-}
-
-bool mcu_update_embedded_state(const uint8_t state[EMBEDDED_STATE_SIZE])
-{
-	if (i2c_fd < 0) return false;
-
-	unsigned char I2C_CMD[1+EMBEDDED_STATE_SIZE] = { MCU_UPDATE_STATE };
-	memcpy(I2C_CMD+1, state, EMBEDDED_STATE_SIZE);
-	struct i2c_msg I2C_MSG[] = {
-		{ MCU_I2C_ADDRESS, 0, sizeof(I2C_CMD), I2C_CMD },
-	};
-	struct i2c_rdwr_ioctl_data I2C_DATA = { I2C_MSG, sizeof(I2C_MSG)/sizeof(i2c_msg) };
-	if (ioctl(i2c_fd, I2C_RDWR, &I2C_DATA) < 0)
-	{
-		printf("Failed to send I2C message to MCU (update state)! %d: %s\n", errno, strerror(errno));
-		i2c_handle_error();
-		return false;
-	}
 	return true;
 }
 

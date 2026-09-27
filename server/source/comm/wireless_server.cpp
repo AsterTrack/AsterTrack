@@ -201,7 +201,7 @@ void WirelessServerThread(std::stop_token stop_token, ServerCommState *serverSta
 		comm->socket = socket;
 		comm->callbacks = server.callbacks;
 		comm->ownIdent = IdentPacket(DEVICE_SERVER, INTERFACE_SERVER, serverVersion);
-		comm->expIdent.device = DEVICE_TRCAM;
+		comm->expIdent.device = DEVICE_CAMERA_SBC;
 		comm->thread = new std::jthread(ClientThread, comm.get());
 		server.clients.push_back(std::move(comm));
 	}

@@ -539,7 +539,7 @@ void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr)
 
 			IntegrationsSendFrame(state.io, state, frame);
 
-			SignalCameraRefresh(0);
+			SignalCameraUpdate(0, EVT_CAMERA_PROCESSED_FRAME);
 		}
 		else
 		{ // Can wait long, getting notified on any new frame and IMU sample
@@ -551,8 +551,6 @@ void RealtimeProcessingThread(std::stop_token stop_token, ServerState *statePtr)
 			{
 				// TODO: Integrate IMU samples ontop of latest frame for lower latency (3/3)
 				// Then PushTrackingIO without full frame
-
-				SignalCameraRefresh(0);
 			}
 		}
 	}

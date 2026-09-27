@@ -207,7 +207,7 @@ void PreprocessCameraData(const CameraCalib &calib, CameraFrameRecord &record)
 {
 	record.points2D.clear();
 	record.points2D.reserve(record.rawPoints2D.size());
-	if (calib.valid())
+	if (calib.lensValid())
 	{ // Undistort points based on calibration
 		for (int p = 0; p < record.rawPoints2D.size(); p++)
 			record.points2D.push_back(undistortPoint(calib, record.rawPoints2D[p]));

@@ -41,6 +41,14 @@ enum ServerEvents : uint8_t
 	EVT_UPDATE_INTERFACE
 };
 
+enum CameraUpdateEvent : uint8_t
+{ // Generic camera-specific update
+	EVT_CAMERA_UNKNOWN,
+	EVT_CAMERA_PROCESSED_FRAME,
+	EVT_CAMERA_UPDATE_IMAGE,
+	EVT_CAMERA_UPDATE_MODE,
+};
+
 enum CameraInteractEvent : uint8_t
 { // Event for CameraInteractState
 	EVT_INTERACT_NONE		= 0,
@@ -53,7 +61,7 @@ enum CameraInteractEvent : uint8_t
 typedef bool (*InterfaceThread_t)();
 typedef void (*SignalShouldClose_t)();
 typedef void (*SignalLogUpdate_t)();
-typedef void (*SignalCameraRefresh_t)(CameraID id);
+typedef void (*SignalCameraUpdate_t)(CameraID id, CameraUpdateEvent event);
 typedef void (*SignalPipelineUpdate_t)();
 typedef void (*SignalObservationReset_t)(FrameNum firstFrame);
 typedef void (*SignalServerEvent_t)(ServerEvents event);
@@ -69,7 +77,7 @@ typedef void (*SignalCameraInteraction_t)(CameraID id, CameraInteractEvent event
 extern InterfaceThread_t InterfaceThread;
 extern SignalShouldClose_t SignalInterfaceShouldClose;		// Signal: Server -> UI
 extern SignalLogUpdate_t SignalLogUpdate;					// Signal: Server -> UI
-extern SignalCameraRefresh_t SignalCameraRefresh;			// Signal: Server -> UI
+extern SignalCameraUpdate_t SignalCameraUpdate;				// Signal: Server -> UI
 extern SignalPipelineUpdate_t SignalPipelineUpdate;			// Signal: Pipeline -> UI
 extern SignalObservationReset_t SignalObservationReset;		// Signal: Pipeline -> UI
 extern SignalServerEvent_t SignalServerEvent;				// Signal: Server -> UI

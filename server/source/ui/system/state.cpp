@@ -156,7 +156,7 @@ void InterfaceState::UpdateCalibrations()
 
 	// Tell visualisation to update precalculated calibration data
 	for (auto &cam : cameraViews)
-		cam.second.vis.calibration.precalculated = false;
+		cam.second.vis.calibration.dirtyCalib = true;
 }
 
 void InterfaceState::ResetIncrementalSequenceVis()

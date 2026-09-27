@@ -280,6 +280,30 @@ struct Bounds
 		max = center+size/2;
 	}
 
+	static Bounds<Scalar,N> fromMinMax(VEC min, VEC max) 
+	{
+		Bounds<Scalar,N> bounds;
+		bounds.min = min;
+		bounds.max = max;
+		return bounds;
+	}
+
+	static Bounds<Scalar,N> fromCorners(VEC a, VEC b) 
+	{
+		Bounds<Scalar,N> bounds;
+		bounds.min = a.cwiseMin(b);
+		bounds.max = a.cwiseMax(b);
+		return bounds;
+	}
+
+	static Bounds<Scalar,N> fromCenter(VEC center, VEC size) 
+	{
+		Bounds<Scalar,N> bounds;
+		bounds.min = center-size/2;
+		bounds.max = center+size/2;
+		return bounds;
+	}
+
 	template<typename T>
 	Bounds<T,N> cast() const
 	{ // Conversion

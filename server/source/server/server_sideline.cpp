@@ -536,7 +536,7 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 						cam->receiving.latestFrameImageRecord.swap(imageRecord);
 						// Swap so deconstructor of last frame happens after switch
 
-						SignalCameraRefresh(cam->id);
+						SignalCameraUpdate(cam->id, EVT_CAMERA_UPDATE_IMAGE);
 					}, frameRecord->cameras[cam->pipeline->index].image); // new shared_ptr
 				}
 
@@ -610,8 +610,7 @@ static void SidelineCoprocessingThread(std::stop_token stop_token, ServerState *
 
 		IntegrationsSendFrame(state.io, state, frameRecord);
 
-		SignalCameraRefresh(0);
-		SignalPipelineUpdate();
+		SignalCameraUpdate(0, EVT_CAMERA_PROCESSED_FRAME);
 
 		{ // Special cases for advancing
 			int count = state.sideline.advance.mode;

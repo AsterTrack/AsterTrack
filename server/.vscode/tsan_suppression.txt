@@ -4,7 +4,7 @@
 race:InterfaceThread
 race:SignalInterfaceShouldClose
 race:SignalLogUpdate
-race:SignalCameraRefresh
+race:SignalCameraUpdate
 race:SignalPipelineUpdate
 race:SignalObservationReset
 race:SignalServerEvent

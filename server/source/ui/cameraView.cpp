@@ -49,8 +49,8 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 static bool updateAutoZoom(const VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, const VisFrameLock &visFrame);
 static void assureValidView(CameraVisState &visCamera, const CameraMode &mode);
 static Eigen::Isometry3f generateProjectionMatrix(CameraVisState &visCamera, const CameraMode &mode);
-static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calibHost, const CameraCalib &calib, const CameraMode &mode,
-	std::vector<VisPoint> &fullBorder, std::vector<VisPoint> &usedBorder);
+static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calib,
+	const Bounds2f bounds, float visF, float visAspect, Color8 col, std::vector<VisPoint> &border);
 static void calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera);
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera);
@@ -806,6 +806,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 static void visualiseCamera(const ServerState &state, VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, Eigen::Vector2i viewSize)
 {
 	const PipelineState &pipeline = state.pipeline;
+	float visAspect = (float)viewSize.y() / viewSize.x();
 
 	/**
 	 * Gather camera data
@@ -822,47 +823,63 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (calib.lensValid())
 	{
-		if (!visCamera.calibration.precalculated)
+		if (visCamera.calibration.dirtyMode || visCamera.calibration.dirtyCalib)
+		{
+			float sensorAspect = (float)mode.sensor.y() / mode.sensor.x();
+			visCamera.view.camZoom =
+			updateUndistortedBorders(visCamera, calib,
+				Bounds2f::fromCenter(Eigen::Vector2f(0,0), Eigen::Vector2f(2, 2*sensorAspect)),
+				calib.f, visAspect, Color{ 0.5f, 0.5f, 0.5f, 0.4f }, visCamera.calibration.sensorBorder);
+			updateUndistortedBorders(visCamera, calib,
+				Bounds2f::fromCorners(pix2cam<float>(mode, Eigen::Vector2f(0,0)), pix2cam<float>(mode, mode.frame.cast<float>())),
+				calib.f, visAspect, Color{ 0.6f, 0.4f, 0.4f, 0.4f }, visCamera.calibration.frameBorder);
+			updateUndistortedBorders(visCamera, calib,
+				Bounds2f::fromCorners(pix2cam<float>(mode, mode.frameMin.cast<float>()), pix2cam<float>(mode, mode.frameMax.cast<float>())),
+				calib.f, visAspect, Color{ 0.4f, 0.6f, 0.4f, 0.4f }, visCamera.calibration.maskBorder);
+			visCamera.calibration.dirtyMode = false;
+		}
+		if (visCamera.calibration.dirtyCalib)
 		{
 			calculateCameraDistortionMap(camera, visCamera);
 		}
 	}
 	else
 	{
-		visCamera.calibration.precalculated = false;
+		visCamera.calibration.dirtyCalib = true;
 		visCamera.view.camZoom = 1.0f;
 	}
+	thread_local std::vector<std::vector<VisPoint>> designBorders;
+	if (visState.calib.showDesignCalib)
+	{
+		designBorders.resize(visState.calib.designCalibs.size());
+		for (int i = 0; i < visState.calib.designCalibs.size(); i++)
+		{
+			float designZoom =
+			updateUndistortedBorders(visCamera, visState.calib.designCalibs[i],
+				Bounds2f::fromCorners(pix2cam<float>(mode, mode.frameMin.cast<float>()), pix2cam<float>(mode, mode.frameMax.cast<float>())),
+				calib.f, visAspect, Color{ 0.4f, 0.6f, 0.4f, 0.4f }, designBorders[i]);
+			visCamera.view.camZoom = std::max(visCamera.view.camZoom, designZoom);
+		}
+	}
+	else designBorders.clear();
 	visCamera.view.maxZoom = 0.99f*visCamera.view.camZoom;
 	if (visState.calib.showFoVCircle)
 		visCamera.view.maxZoom = std::min<float>(std::min(0.5f, visCamera.view.maxZoom), 0.99f*calib.fInv/std::tan(visState.calib.circularFoV / 180 * PI / 2));
 	if (visState.calib.showFoVBounds)
 		visCamera.view.maxZoom = std::min<float>(std::min(0.5f, visCamera.view.maxZoom), 0.99f*calib.fInv/std::tan(visState.calib.boundsFoV[2] / 180 * PI / 2));
-	if (visState.calib.showDesignCalib)
-	{
-		for (auto &dCalib : visState.calib.designCalibs)
-		{
-			auto corner = undistortPoint(dCalib, Eigen::Vector2f(1, mode.aspect))*dCalib.fInv*calib.f;
-			float maxDist = std::max(corner.x(), corner.y()/(float)mode.aspect);
-			visCamera.view.maxZoom = std::min<float>(std::min(0.5f, visCamera.view.maxZoom), 0.99f/maxDist);
-		}
-	}
 
 	auto drawCalibrationGuides = [&]()
 	{
-		if (visCamera.calibration.precalculated)
+		if (!visCamera.calibration.dirtyCalib)
 		{
-			visualiseLines(visCamera.calibration.fullBorder, 2.0f);
-			visualiseLines(visCamera.calibration.usedBorder, 2.0f);
+			visualiseLines(visCamera.calibration.frameBorder, 2.0f);
+			visualiseLines(visCamera.calibration.maskBorder, 2.0f);
 		}
 		if (visState.calib.showDesignCalib)
 		{
-			for (auto &dCalib : visState.calib.designCalibs)
-			{
-				thread_local std::vector<VisPoint> fullBorder, usedBorder;
-				updateUndistortedBorders(visCamera, calib, dCalib, mode, fullBorder, usedBorder);
-				visualiseLines(fullBorder, 1.0f);
-				visualiseLines(usedBorder, 1.0f);
-			}
+			assert(designBorders.size() == visState.calib.designCalibs.size());
+			for (auto &border : designBorders)
+				visualiseLines(border, 1.0f);
 		}
 
 		if (visState.calib.showFoVCircle)
@@ -1543,53 +1560,33 @@ static Eigen::Isometry3f generateProjectionMatrix(CameraVisState &visCamera, con
 	return postProjMat;
 }
 
-static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calibHost, const CameraCalib &calib, const CameraMode &mode,
-	std::vector<VisPoint> &fullBorder, std::vector<VisPoint> &usedBorder)
+static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calib,
+	const Bounds2f bounds, float visF, float visAspect, Color8 col, std::vector<VisPoint> &border)
 {
 	float maxZoom = 0.0f;
-	float correction = calib.fInv/calibHost.fInv;
 
-	// Calculate rect actually used for blob detection
-	Bounds2i validMaskRect = getValidMaskRect(mode.widthPx, mode.heightPx);
-	Eigen::Vector2f tl = validMaskRect.min.cast<float>() * 2.0f / mode.widthPx;
-	Eigen::Vector2f br = validMaskRect.max.cast<float>() * 2.0f / mode.widthPx;
-	tl = Eigen::Vector2f(tl.x()-1, mode.aspect-tl.y());
-	br = Eigen::Vector2f(br.x()-1, mode.aspect-br.y());
-
-	// Pepare corners of both rects
-	std::array<Eigen::Vector2f, 4> cornersFull = {
-		Eigen::Vector2f(-1,  mode.aspect), Eigen::Vector2f( 1,  mode.aspect),
-		Eigen::Vector2f( 1, -mode.aspect), Eigen::Vector2f(-1, -mode.aspect)
-	};
-	std::array<Eigen::Vector2f, 4> cornersUsed = {
-		tl, Eigen::Vector2f( br.x(),  tl.y()),
-		br, Eigen::Vector2f( tl.x(), br.y())
+	// Pepare corners of rects
+	std::array<Eigen::Vector2f, 4> corners = {
+		bounds.min.cast<float>(), Eigen::Vector2f( bounds.min.x(),  bounds.max.y()),
+		bounds.max.cast<float>(), Eigen::Vector2f( bounds.max.x(), bounds.min.y())
 	};
 
 	// Generate visualisation points
 	int sideRes = 40;
-	Color8 colFull = Color{ 0.5f, 0.5f, 0.5f, 0.4f };
-	Color8 colUsed = Color{ 0.4f, 0.6f, 0.4f, 0.4f };
-	fullBorder.clear();
-	usedBorder.clear();
-	fullBorder.reserve(sideRes*4 - 4);
-	usedBorder.reserve(sideRes*4 - 4);
+	border.clear();
+	border.reserve(sideRes*4 - 4);
 	for (int s = 0; s < 4; s++)
 	{
-		Eigen::Vector2f dirFull = cornersFull[(s+1)%4] - cornersFull[s];
-		Eigen::Vector2f dirUsed = cornersUsed[(s+1)%4] - cornersUsed[s];
+		Eigen::Vector2f dir = corners[(s+1)%4] - corners[s];
 		for (int i = 0; i < sideRes; i++)
 		{
 			float side = (float)i/sideRes;
-			Eigen::Vector2f posFull = cornersFull[s] + dirFull*side;
-			Eigen::Vector2f posUsed = cornersUsed[s] + dirUsed*side;
-			posFull = undistortPoint(calib, posFull)*calib.fInv*calibHost.f;
-			posUsed = undistortPoint(calib, posUsed)*calib.fInv*calibHost.f;
-			fullBorder.emplace_back(Eigen::Vector3f(posFull.x(), posFull.y(), 0.1f), colFull);
-			usedBorder.emplace_back(Eigen::Vector3f(posUsed.x(), posUsed.y(), 0.1f), colUsed);
+			Eigen::Vector2f pos = corners[s] + dir*side;
+			pos = undistortPoint(calib, pos)*calib.fInv*visF;
+			border.emplace_back(Eigen::Vector3f(pos.x(), pos.y(), 0.1f), col);
 			// Also expand zoom area if it reaches outside
-			maxZoom = std::max(maxZoom, posFull.x());
-			maxZoom = std::max(maxZoom, posFull.y()/(float)mode.aspect);
+			maxZoom = std::max(maxZoom, pos.x());
+			maxZoom = std::max(maxZoom, pos.y() / visAspect);
 		}
 	}
 	return 1.0f / maxZoom;
@@ -1610,9 +1607,6 @@ static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCal
 
 static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &camera, CameraVisState &visCamera)
 {
-	CameraMode &mode = camera.pipeline->mode;
-	CameraCalib &calib = camera.pipeline->calib;
-	visCamera.view.camZoom = updateUndistortedBorders(visCamera, calib, calib, mode, visCamera.calibration.fullBorder, visCamera.calibration.usedBorder);
 	// Update a map from undistorted to distorted
 	// Maximum iterations should only ever be necessary in very distorted areas, tolerance is the real threshold
 	// But a few highly distorted areas can tank performance, resulting in lags, so hope this is fine
@@ -1624,7 +1618,7 @@ static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &cam
 #elif PERF == 0
 	int tgtSize = 20, itCount = 10;
 #endif
-	int tgtHeight = std::ceil(tgtSize*mode.aspect);
+	int tgtHeight = std::ceil(tgtSize*camera.pipeline->mode.aspect);
 	int width = tgtSize/std::max(0.5f, visCamera.view.camZoom), height = tgtHeight/std::max(0.5f, visCamera.view.camZoom);
 	thread_local std::vector<Eigen::Vector2f> undistortionTex;
 	undistortionTex.clear();
@@ -1633,11 +1627,11 @@ static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &cam
 		for (int x = 0; x < width; x++)
 		{
 			Eigen::Vector2f pos(((x+0.5f)*2.0f-width)/tgtSize, ((y+0.5f)*2.0f-height)/tgtSize);
-			undistortionTex[y*width + x] = distortPointUnstable(calib, pos, itCount, 0.5f*PixelSize);
+			undistortionTex[y*width + x] = distortPointUnstable(camera.pipeline->calib, pos, itCount, 0.5f*PixelSize);
 		}
 	loadVectorField(visCamera.calibration.undistortionTexID, undistortionTex, width, height);
 	visCamera.calibration.undistortMapScale = Eigen::Vector2f((float)width/tgtSize, (float)height/tgtSize);
-	visCamera.calibration.precalculated = true;
+	visCamera.calibration.dirtyCalib = false;
 }
 
 #if defined(__MINGW32__) || defined(__MINGW64__) || defined(__GNUC__) || defined(__clang_version__)

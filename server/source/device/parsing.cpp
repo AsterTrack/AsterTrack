@@ -581,6 +581,7 @@ bool ReadConfigPacket(TrackingCameraState &camera, const PacketHeader header, co
 
 	// Update mode
 	camera.pipeline->mode = CameraMode(sensor, sensorMin, sensorMax, frame, frameMin, frameMax);
+	SignalCameraUpdate(camera.id, EVT_CAMERA_UPDATE_MODE);
 
 	return true;
 }
@@ -737,7 +738,7 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 			camera->receiving.latestFrameImageRecord.swap(imageRecord);
 			// Swap so deconstructor of last frame happens after switch
 
-			SignalCameraRefresh(camera->id);
+			SignalCameraUpdate(camera->id, EVT_CAMERA_UPDATE_IMAGE);
 		}, std::move(imageRecord));
 
 		return true;

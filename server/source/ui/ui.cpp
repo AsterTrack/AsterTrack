@@ -857,15 +857,29 @@ EXPORT void _SignalLogUpdate()
 	GetUI().requireUpdates = std::max(GetUI().requireUpdates, 1);
 }
 
-EXPORT void _SignalCameraRefresh(CameraID id)
+EXPORT void _SignalCameraUpdate(CameraID id, CameraUpdateEvent event)
 {
 	if (!InterfaceInstance || InterfaceInstance->setCloseInterface || !ImGui::GetCurrentContext())
 		return; // UI not initialised
-	// Update parts of the screen with OnDemand rendered items
-	if (id == 0)
-		GetUI().RequestRender();
-	else // TODO: Update one camera? Doesn't seem reasonable nor necessary
-		GetUI().RequestRender();
+	switch (event)
+	{
+		case EVT_CAMERA_UNKNOWN:
+			break;
+		case EVT_CAMERA_PROCESSED_FRAME:
+			GetUI().RequestRender();
+			break;
+		case EVT_CAMERA_UPDATE_IMAGE:
+			GetUI().RequestRender();
+			break;
+		case EVT_CAMERA_UPDATE_MODE:
+		{
+			auto viewIt = GetUI().cameraViews.find(id);
+			if (viewIt != GetUI().cameraViews.end())
+				viewIt->second.vis.calibration.dirtyMode = true;
+			GetUI().RequestRender();
+			break;
+		}
+	}
 }
 
 EXPORT void _SignalPipelineUpdate()

@@ -645,8 +645,8 @@ struct CameraVisState
 	} emulation = {};
 
 	struct {
-		bool precalculated = false;
-		std::vector<VisPoint> fullBorder, usedBorder;
+		bool dirtyCalib = true, dirtyMode = true;
+		std::vector<VisPoint> sensorBorder, frameBorder, maskBorder;
 		unsigned int undistortionTexID;
 		Eigen::Vector2f undistortMapScale;
 	} calibration = {};

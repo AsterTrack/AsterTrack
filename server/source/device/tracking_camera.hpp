@@ -80,7 +80,7 @@ struct TrackingCameraState
 	bool sendModeSet(uint8_t mode, bool handleIndividually = true);
 	void recvModeSet(uint8_t mode);
 
-	enum BackgroundCalibOpt { BG_CALIB, BG_RESET, BG_RETRY, BG_ACCEPT, BG_DISCARD };
+	enum BackgroundCalibOpt { BG_CALIB, BG_RESET, BG_DISCARD, BG_RETRY, BG_ACCEPT };
 	bool updateBackgroundCalib(BackgroundCalibOpt opt);
 
 	/**
@@ -135,6 +135,7 @@ struct TrackingCameraState
 
 	struct BackgroundCalib
 	{ // Background calibration data sent by the TrackingCamera
+		std::vector<bool> bgBitmask;
 		std::vector<Eigen::Vector2f> tiles;
 		float tileSize;
 	};

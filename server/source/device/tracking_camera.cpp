@@ -145,25 +145,26 @@ void TrackingCameraState::recvModeSet(uint8_t recvMode)
 
 bool TrackingCameraState::updateBackgroundCalib(BackgroundCalibOpt opt)
 {
+	if (opt != BG_ACCEPT)
+	{
+		auto bg_lock = receiving.background.contextualLock();
+		bg_lock->bgBitmask.clear();
+		bg_lock->tiles.clear();
+	}
+	int streaming = (isStreaming() || hasSetStreaming()? TRCAM_FLAG_STREAMING : 0);
 	switch (opt)
 	{
 		case BG_CALIB:
-			receiving.background.contextualLock()->tiles.clear();
-			if (GetState().isStreaming)
-				return sendModeSet(TRCAM_FLAG_STREAMING | TRCAM_MODE_BGCALIB);
+			return sendModeSet(streaming | TRCAM_MODE_BGCALIB);
 		case BG_RESET:
-			receiving.background.contextualLock()->tiles.clear();
-			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
-		case BG_RETRY:
-			receiving.background.contextualLock()->tiles.clear();
-			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RETRY);
-		case BG_ACCEPT:
-			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT);
+			return sendModeSet(streaming | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RESET);
 		case BG_DISCARD:
-			receiving.background.contextualLock()->tiles.clear();
-			return sendModeSet((GetState().isStreaming? TRCAM_FLAG_STREAMING : 0) | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_DISCARD);
+			return sendModeSet(streaming | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_DISCARD);
+		case BG_RETRY:
+			return sendModeSet(streaming | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_RETRY);
+		case BG_ACCEPT:
+			return sendModeSet(streaming | TRCAM_MODE_BGCALIB | TRCAM_OPT_BGCALIB_ACCEPT);
 	}
-	return false;
 }
 
 static bool CameraControllerDisconnected(const ServerState &state, const TrackingCameraState &camera, const TrackingCameraState::Status &camStatus)

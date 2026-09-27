@@ -885,32 +885,50 @@ bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, 
 	return true;
 }
 
-bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
+bool ReadBackgroundPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
 {
 	if (erroneous) return false;
-	if (length < 3) return false;
-	// TODO: Replace extends in packet with tilePx + offsetPx
-	uint8_t extendsX = data[0], extendsY = data[1];
-	const float tilePx = 8;
-	ProgramLayout layout = SetupProgramLayout(camera.pipeline->mode.widthPx, camera.pipeline->mode.heightPx, 8, false);
-	Eigen::Vector2i offsetPx = layout.maskOffset;
-	const uint8_t *tiles = &data[2];
-	uint16_t tileCnt = ((uint16_t)length-2)/2;
-	LOG(LParsing, LDebug, "Received a total of %d background tiles! Range %d, %d; Offset %d, %d\n",
-		tileCnt, extendsX, extendsY, offsetPx.x(), offsetPx.y());
+	if (length < BACKGROUND_HEADER_SIZE) return false;
+	CameraBackgroundTag tag = (CameraBackgroundTag)data[0];
+	uint8_t tilePx = data[1];
+	if (tilePx == 0) return false;
+	if (tag != CAMERA_BG_TILES_UPDATE && tag != CAMERA_BG_TILES_APPEND)
+		return false; // Not currently supported
+
+	uint32_t tileCnt = (length - BACKGROUND_HEADER_SIZE) / sizeof(uint32_t);
+	const uint32_t *tileData = (uint32_t*)&data[BACKGROUND_HEADER_SIZE];
+
+	Eigen::Vector2i mask = camera.pipeline->mode.frameMax - camera.pipeline->mode.frameMin;
+	if (mask.prod() == 0)
+	{
+		LOG(LParsing, LWarn, "Received background tile packet with %d background tiles before config has been set!", tileCnt);
+		return false;
+	}
+	Eigen::Vector2i tileGrid = mask / tilePx;
+
+	LOG(LParsing, LDebug, "Received a total of %d background tiles of size %dx%d px in %dx%d total tiles!\n",
+		tileCnt, tilePx, tilePx, tileGrid.x(), tileGrid.y());
+
 	// Update background tiles
 	auto bg_lock = camera.receiving.background.contextualLock();
-	//bg_lock->tiles.clear();
+	if (bg_lock->bgBitmask.size() != tileGrid.prod() || tag == CAMERA_BG_TILES_UPDATE)
+	{
+		bg_lock->bgBitmask.clear();
+		bg_lock->bgBitmask.resize(tileGrid.prod(), false);
+		bg_lock->tiles.clear();
+	}
+	bg_lock->tiles.reserve(bg_lock->tiles.size() + tileCnt);
+	CameraMode &mode = camera.pipeline->mode;
 	for (int i = 0; i < tileCnt; i++)
 	{
-		float x = (tiles[i*2+0]*tilePx + offsetPx.x() + tilePx/2) * 2.0f/camera.pipeline->mode.widthPx - camera.pipeline->mode.sizeW;
-		float y = (tiles[i*2+1]*tilePx + offsetPx.y() + tilePx/2) * 2.0f/camera.pipeline->mode.widthPx - camera.pipeline->mode.sizeH;
-		bg_lock->tiles.emplace_back(x, -y);
+		if (bg_lock->bgBitmask[tileData[i]]) continue;
+		bg_lock->bgBitmask[tileData[i]] = true;
+		Eigen::Vector2i tile(tileData[i] % tileGrid.x(), tileData[i] / tileGrid.x());
+		Eigen::Vector2f px = (tile * tilePx + mode.frameMin).cast<float>() + Eigen::Vector2f::Constant(tilePx/2.0f);
+		Eigen::Vector2f pos = pix2cam<float>(mode, px);
+		bg_lock->tiles.push_back(pos);
 	}
-	// TODO: Figure out why this point scale factor is necessary, and just for tiles
-	//float scaleFactor = (float)layout.maskSize.y()/layout.maskSize.x(); // 800/1152 - Not quite
-	float scaleFactor = 1.0f;//0.69f; // Seems exactly right, really confused
-	bg_lock->tileSize = tilePx / camera.pipeline->mode.widthPx * scaleFactor;
+	bg_lock->tileSize = tilePx * mode.PixelSize / 2;
 	return true;
 }
 
@@ -1257,7 +1275,7 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 	}
 	case PACKET_BACKGROUND:
 	{
-		ReadBGTilesPacket(camera, header, data, length, erroneous);
+		ReadBackgroundPacket(camera, header, data, length, erroneous);
 		break;
 	}
 	case PACKET_FW_STATUS:

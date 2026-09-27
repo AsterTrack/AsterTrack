@@ -415,7 +415,7 @@ void InterfaceState::UpdateMainMenuBar()
 				};
 				ImGui::TextUnformatted("Background:");
 				if (RetryButton("Retry"))
-					updateWith(TrackingCameraState::BG_RESET);
+					updateWith(TrackingCameraState::BG_RETRY);
 				focusOnUIElement |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 				if (CheckButton("Accept"))
 					updateWith(TrackingCameraState::BG_ACCEPT);

@@ -43,7 +43,7 @@ bool ReadModePacket(TrackingCameraState &camera, const PacketHeader header, cons
 bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 bool ReadWirelessPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
-bool ReadBGTilesPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
+bool ReadBackgroundPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 // Delegate to correct parsing function
 void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous);
 

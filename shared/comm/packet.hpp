@@ -91,6 +91,16 @@ static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t 
 #define CAMERA_INFO_MIN_LENGTH			52
 #define CAMERA_INFO_BASE_LENGTH			54
 
+#define BACKGROUND_HEADER_SIZE			4
+
+enum CameraBackgroundTag
+{
+	CAMERA_BG_CONFIGURE,
+	CAMERA_BG_TILES_UPDATE,
+	CAMERA_BG_TILES_APPEND,
+	CAMERA_BG_TILES_REMOVE,
+};
+
 
 /**
  * Wireless Packet

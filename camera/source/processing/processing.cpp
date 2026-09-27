@@ -195,7 +195,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (!state.noVPU && !fetching)
 		printf("-- Failed to setup VPU fetching program! Falling back to CPU only! --\n");
 
-	BlobDetection detect(layout.maskSize, layout.maskOffset, state.blobParams.classification);
+	BlobDetection detect(layout.maskSize, layout.maskOffset, bgBitmask, state.blobParams.classification);
 	if (!detect)
 	{ // Shouldn't actually fail, just basic init
 		printf("-- Failed to initialize blob detection! --\n");
@@ -720,12 +720,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 	{
 		if (state.curMode.opt == TRCAM_OPT_NONE)
-			detect.initBackgroundCalibration(bgBitmask);
+			detect.initBackgroundCalibration();
 	}
 
 	PrecomputedKernels kernels;
 	if (state.blobParams.base.blur)
 		kernels = precomputeKernels(state.blobParams);
+
 
 	// ---- Processing Loop ----
 
@@ -773,14 +774,14 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				if (newMode.opt == TRCAM_OPT_NONE)
 				{ // Reset temp mask
 					printf("Init Background Calibration!\n");
-					detect.initBackgroundCalibration(bgBitmask);
+					detect.initBackgroundCalibration();
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_RESET)
 				{ // Reset current mask (and temp mask)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Resetting Background Calibration!\n");
-						detect.resetBackgroundCalibration(bgBitmask);
+						detect.resetBackgroundCalibration();
 					}
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_RETRY)
@@ -788,7 +789,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Resetting ongoing Background Calibration!\n");
-						detect.retryBackgroundCalibration(bgBitmask);
+						detect.retryBackgroundCalibration();
 					}
 				}
 				else if (newMode.opt == TRCAM_OPT_BGCALIB_DISCARD)
@@ -796,7 +797,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Discarding Background Calibration!\n");
-						detect.discardBackgroundCalibration(bgBitmask);
+						detect.discardBackgroundCalibration();
 					}
 					newMode.mode = TRCAM_MODE_BLOB;
 					newMode.opt = TRCAM_OPT_NONE;
@@ -806,7 +807,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 					{
 						printf("Accepting Background Calibration!\n");
-						detect.acceptBackgroundCalibration(bgBitmask);
+						detect.acceptBackgroundCalibration();
 					}
 					newMode.mode = TRCAM_MODE_BLOB;
 					newMode.opt = TRCAM_OPT_NONE;
@@ -917,7 +918,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				curTimes.find = dtUS(t11, t12);
 
 				TimePoint_t t21 = sclock::now();
-				detect.fetchMaskRegionsVPU(curFrame->bitmsk->ptr.arm.uptr, bgBitmask, fetching.maskIndexBuffer.ptr.arm.vptr);
+				detect.fetchMaskRegionsVPU(curFrame->bitmsk->ptr.arm.uptr, fetching.maskIndexBuffer.ptr.arm.vptr);
 				TimePoint_t t22 = sclock::now();
 				curTimes.fetch = dtUS(t21, t22);
 
@@ -1010,18 +1011,28 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		bytesSentAccum = getInterleavedQueuedBytes();
 
 		if (state.curMode.mode == TRCAM_MODE_BGCALIB)
-		{
-			Vector2<uint8_t> extends = (layout.validMaskRect.extends()/8).cast<uint8_t>();
-			std::vector<uint8_t> bgTiles(2);
-			bgTiles[0] = extends.x();
-			bgTiles[1] = extends.y();
-			detect.updateBackgroundCalibration(bgBitmask, bgTiles);
-			if (bgTiles.size() > 2)
-			{
-				//printf("Added %d new tiles to the background mask!\n", bgTiles.size()/2-1));
+		{ // Basic automatic background calib
+			const int bgTileSize = 4;
+			std::vector<uint32_t> bgTiles;
+			detect.updateBackgroundCalibration(bgTiles, bgTileSize);
+
+			if (!bgTiles.empty())
+			{ // Send packet with new background tiles
+				//printf("Added %d new tiles to the background mask!\n", (int)bgTiles.size()));
+
+				std::vector<uint8_t> bgTilesPacket(BACKGROUND_HEADER_SIZE + bgTiles.size()*4);
+				uint8_t *header = (uint8_t*)bgTilesPacket.data();
+				header[0] = CAMERA_BG_TILES_APPEND;
+				header[1] = bgTileSize; // Tile Side Size in PX
+				header[2] = 0; // Unused
+				header[3] = 0; // Unused
+
+				// TODO: Runlength encoding
+				memcpy(bgTilesPacket.data()+BACKGROUND_HEADER_SIZE, bgTiles.data(), bgTiles.size()*4);
+
 				TimePoint_t t0 = sclock::now();
-				comm_send(largeDataAff, PacketHeader(PACKET_BACKGROUND, bgTiles.size()), std::move(bgTiles));
-				bytesSentAccum += bgTiles.size();
+				comm_send(largeDataAff, PacketHeader(PACKET_BACKGROUND, bgTilesPacket.size()), std::move(bgTilesPacket));
+				bytesSentAccum += bgTilesPacket.size();
 				curTimes.send += dtUS(t0, sclock::now());
 			}
 		}

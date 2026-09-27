@@ -46,7 +46,7 @@ struct wl_resource;
 
 static void visualiseCamera(const ServerState &state, VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, Eigen::Vector2i viewSize);
 
-static bool updateAutoZoom(const VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, const VisFrameLock &visFrame);
+static bool updateAutoZoom(const VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, const VisFrameLock &visFrame, bool undistort);
 static void assureValidView(CameraVisState &visCamera, const CameraMode &mode);
 static Eigen::Isometry3f generateProjectionMatrix(CameraVisState &visCamera, const CameraMode &mode);
 static float updateUndistortedBorders(CameraVisState &visCamera, const CameraCalib &calib,
@@ -446,7 +446,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 	}
 
 	// Right-aligned bar of 2 buttons
-	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize()), 3)));
+	ImGui::SetCursorPosX(GetRightAlignedCursorPos(GetBarWidth(GetIconWidth(iconSize()), 2)));
 
 	if (ImGui::ImageButton("ImgStr", darkModeIcons.frame_wireless, iconSize()))
 	{
@@ -463,26 +463,6 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		RequestUpdates();
 	}
 	ImGui::SetItemTooltip("Toggle image streaming - Shortcut 'H'");
-	ImGui::SameLine();
-
-	// One Dropdown for modes the camera can be in:
-	if (BeginIconDropdown("Mode", darkModeIcons.mode, iconSize(), ImGuiComboFlags_PopupAlignLeft))
-	{
-		// TODO: Allow these buttons to start streaming for individual cameras? Not sure
-		// Would need to properly set up sync groups if not done already (also see "Start Streaming" button that has to do something similar)
-		// Probably would want this to start the cameras as free-running if the rest of the system doesn't stream yet
-		if (ImGui::MenuItem("Background Calibration", nullptr, 
-			&bgCalib, device && state.isStreaming))
-		{
-			if (bgCalib)
-				view.camera->updateBackgroundCalib(TrackingCameraState::BG_CALIB);
-			else
-				view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
-			view.camera->receiving.background.contextualLock()->tiles.clear();
-		}
-
-		ImGui::EndCombo();
-	}
 	ImGui::SameLine();
 
 	// One Dropdown for all toggles for camera visualisation
@@ -510,6 +490,15 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		{
 			if (view.vis.emulation.enabled)
 				view.vis.imageVis.undistort = false;
+		}
+
+		if (ImGui::MenuItem("Background Calibration", nullptr, 
+			&bgCalib, device && state.isStreaming))
+		{
+			if (bgCalib)
+				view.camera->updateBackgroundCalib(TrackingCameraState::BG_CALIB);
+			else
+				view.camera->updateBackgroundCalib(TrackingCameraState::BG_DISCARD);
 		}
 
 		ImGui::EndCombo();
@@ -816,6 +805,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		calib = camera.pipeline->simulation.calib;
 	float pixelRatio = ImGui::GetIO().DisplayFramebufferScale.y;
 	float flip = visCamera.view.rotate180? -1 : +1;
+	bool undistort = (!visCamera.imageVis.show || visCamera.imageVis.undistort) && visCamera.visMode != VIS_TILES;
 
 	/**
 	 * Update undistorted camera borders
@@ -1025,7 +1015,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.view.autoZoom)
 	{ // Control zoom target based on phase
-		if (updateAutoZoom(visState, camera, visCamera, camFrame, visFrame))
+		if (updateAutoZoom(visState, camera, visCamera, camFrame, visFrame, undistort))
 		{ // Set new target, update UI
 			float diffRel = (visCamera.view.prevCenter-visCamera.view.center).norm() * visCamera.view.zoom;
 			float zoomRel = visCamera.view.zoom / visCamera.view.prevZoom;
@@ -1048,7 +1038,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	 */
 	if (visCamera.imageVis.show && visCamera.imageVis.texID > 0 && visCamera.image)
 	{ // Display in appropriate part of the frame
-		if (visCamera.imageVis.undistort && calib.lensValid())
+		if (undistort && calib.lensValid())
 		{ // Use special shader that undistorts and correctly positions image
 			//showGrayscaleFrameUndistorted(vis.imageVis.texID, vis.image->boundsRel,
 			//	mode, calib, vis.calibration.undistortMapScale,
@@ -1081,9 +1071,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	/**
 	 * Visualise outline of full frame and used area
 	 */
-	if (!(visCamera.imageVis.show && visCamera.image && !visCamera.imageVis.undistort) && calib.lensValid())
+	if (undistort && calib.lensValid())
 	{
-		drawWithoutFrame();
+		drawCalibrationGuides();
 	}
 
 	/**
@@ -1140,7 +1130,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	}
 	else if (visCamera.visMode == VIS_DEFAULT)
 	{
-		bool drawDistorted = phase == PHASE_Calibration_Point || !visCamera.imageVis.undistort;
+		bool drawDistorted = phase == PHASE_Calibration_Point || !undistort;
 		bool hideBlobsOnFrame = visCamera.imageVis.show && visCamera.image && !visCamera.imageVis.showBlobs;
 		if (!hideBlobsOnFrame)
 		{
@@ -1411,7 +1401,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	}
 }
 
-static bool updateAutoZoom(const VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, const VisFrameLock &visFrame)
+static bool updateAutoZoom(const VisualisationState &visState, const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, const VisFrameLock &visFrame, bool undistort)
 {
 	CameraMode &mode = camera.pipeline->mode;
 	CameraCalib &calib = camera.pipeline->calib;
@@ -1435,7 +1425,7 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 	}
 
 	Bounds2f focusBounds;
-	auto &points = visCamera.imageVis.undistort? frame.points2D : frame.rawPoints2D;
+	auto &points = undistort? frame.points2D : frame.rawPoints2D;
 	bool gotBounds = false;
 
 	{ // Try to find a big nearby cluster to keep focus on

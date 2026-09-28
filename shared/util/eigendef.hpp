@@ -198,11 +198,6 @@ struct CameraMode
 	Eigen::Vector<CVScalar,2> center;
 	float PixelFactor, PixelSize;
 
-	// Legacy shorthands
-	CVScalar sizeW, sizeH; // Same as size
-	CVScalar factorW, factorH; // Same as factor
-	int widthPx, heightPx; // Same as frame
-
 	CameraMode() {}
 
 	CameraMode(int w, int h) :
@@ -232,13 +227,7 @@ struct CameraMode
 		Eigen::Vector2i offset2 = sensorMax + sensorMin - sensor; // Offset*2
 		center = Eigen::Vector<CVScalar,2>(offset2.x(), -offset2.y()) / sensor.x();
 
-		// Update legacy shorthands
-		widthPx = frame.x();
-		heightPx = frame.y();
-		sizeW = size.x();
-		sizeH = size.y();
-		factorW = factor.x();
-		factorH = factor.y();
+		// Update dynamic pixel size & factor
 		PixelSize = 2.0 * (1.0f / frame.x()) * area.x() / sensor.x();
 		PixelFactor = 1.0f / PixelSize;
 	}

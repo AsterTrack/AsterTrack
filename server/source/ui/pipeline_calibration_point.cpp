@@ -42,7 +42,7 @@ void InterfaceState::UpdatePipelineCalibSection()
 		{ // For external logging, so try to use real pixel size
 			auto camera_lock = pipeline.cameras.contextualRLock();
 			if (!camera_lock->empty())
-				DynPixelFactor = camera_lock->front()->mode.widthPx / 2.0f;
+				DynPixelFactor = camera_lock->front()->mode.PixelFactor;
 		}
 		ImGui::AlignTextToFramePadding();
 		if (ptCalib.control && ptCalib.control->running() && ptCalib.state)

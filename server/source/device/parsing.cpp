@@ -466,7 +466,7 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketH
 		pt = npix2cam(camera.pipeline->mode, pt); // Convert from normalised pixel space (0-1) to our coordinate system
 		frame.rawPoints2D.push_back(pt);
 		frame.properties.emplace_back(
-			(float)*(uint8_t*)&blobData[base+4] / camera.pipeline->mode.widthPx,
+			(float)*(uint8_t*)&blobData[base+4] / camera.pipeline->mode.frame.x(),
 			*(uint8_t*)&blobData[base+5] * 4
 		);
 		static_assert(STREAM_PACKET_BLOB_SIZE == 6);
@@ -692,8 +692,8 @@ bool ReadFramePacket(TrackingCameraState &camera, const PacketHeader header, con
 		imageRecord->frameID = parseImg.frameID;
 		imageRecord->boundsPx = imageBounds;
 		// Record frame size because camera mode might have changed since frame was captured
-		imageRecord->frameX = camera.pipeline->mode.widthPx;
-		imageRecord->frameY = camera.pipeline->mode.heightPx;
+		imageRecord->frameX = camera.pipeline->mode.frame.x();
+		imageRecord->frameY = camera.pipeline->mode.frame.y();
 		imageRecord->imageX = imageWidth;
 		imageRecord->imageY = imageHeight;
 		imageRecord->jpeg = std::move(parseImg.jpeg);

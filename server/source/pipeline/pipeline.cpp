@@ -343,7 +343,7 @@ void UpdateErrorMaps(PipelineState &pipeline, const ObsData &data, const std::ve
 			camera.errorVisDirty = true;
 			continue;
 		}
-		err_lock->mapSize = Eigen::Vector2i(camera.mode.widthPx/32, camera.mode.heightPx/32);
+		err_lock->mapSize = camera.mode.frame/32;
 		// Stope pointer to error maps
 		errorMaps[c] = &*err_lock;
 		// Keep lock alive until error maps are not used anymore

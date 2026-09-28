@@ -482,7 +482,7 @@ void InterfaceState::UpdateControl(InterfaceWindow &window)
 							std::vector<CameraCalib> calibs;
 							for (auto &cam : *pipeline.cameras.contextualRLock())
 							{
-								cameras.emplace_back(cam->id, cam->mode.widthPx, cam->mode.heightPx);
+								cameras.emplace_back(cam->id, cam->mode.frame.x(), cam->mode.frame.y());
 								calibs.push_back(cam->calib);
 							}
 							{ // Verify frames are available

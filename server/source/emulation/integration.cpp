@@ -177,10 +177,9 @@ void updateEmulationVisUI(CameraVisState &visCamera)
 
 void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisState &visCamera, const CameraFrameRecord &frame, Eigen::Vector2i viewSize)
 {
-	CameraMode mode = camera.pipeline->mode;
-	float PixelSize = (float)viewSize.x() / mode.widthPx;
-	float PixelStride = 2.0f / mode.widthPx; // 2 because of -1 to 1 space
-	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f, blobCross = 2.0f / mode.widthPx;
+	Eigen::Vector2f size = camera.pipeline->mode.size.cast<float>();
+	float pixelSize = camera.pipeline->mode.PixelSize;
+	float blobAlpha = visCamera.image && visCamera.imageVis.show? 0.6f : 1.0f;
 	auto &emul = visCamera.emulation;
 
 	if (emul.update && visCamera.image && threadPool.n_idle() > 1)
@@ -200,7 +199,7 @@ void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisSt
 		// Display image in appropriate part of the frame
 		Eigen::Affine3f bgProjMat = Eigen::Affine3f(
 			// 3. Correct for aspect ratio already applied in projection matrix (from 1,1 to 1,aspect)
-			Eigen::AlignedScaling3f((float)mode.sizeW, (float)mode.sizeH, 1.0f)
+			Eigen::AlignedScaling3f(size.homogeneous())
 			// 2. Move image
 			* Eigen::Translation3f(
 				+(emul.result->boundsRel.center().x()-0.5f)*2.0f,
@@ -254,32 +253,32 @@ void updateEmulationVisualisation(const TrackingCameraState &camera, CameraVisSt
 
 		if (emul.options.blobCam)
 		{ // Show blobs from camera normally
-			visualiseBlobs2D(frame.rawPoints2D, frame.properties, Color{ 1, 1, 0.2, blobAlpha }, viewSize.x(), blobCross);
+			visualiseBlobs2D(frame.rawPoints2D, frame.properties, Color{ 1, 1, 0.2, blobAlpha }, viewSize.x(), pixelSize);
 		}
 
 		if (emul.options.blobEmulated)
 		{ // Show emulated blobs using blob circle
 			for (const auto &blob : emul.result->emulatedBlobs)
-				visualiseBlobCircle(blob.pos.head<2>(), blob.size, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, Color8 { blob.color.r, blob.color.g, blob.color.b, 200 }, pixelSize);
 			visualisePointsSprites(emul.result->emulatedBlobs, true, viewSize.x());
 		}
 
 		if (emul.options.blobRefined)
 		{ // Show refined blobs using blob circle
 			for (const auto &blob : emul.result->refinedBlobs)
-				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, pixelSize);
 		}
 
 		if (emul.options.blobResegmented)
 		{ // Show resegmented blobs using blob circle
 			for (const auto &blob : emul.result->resegmentedBlobs)
-				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, PixelStride);
+				visualiseBlobCircle(blob.pos.head<2>(), blob.size, blob.color, pixelSize);
 		}
 
 		if (emul.options.maximaHints)
 		{ // Show emulated blobs using blob circle
 			for (const auto &blob : emul.result->maximaHints)
-				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, PixelStride);
+				visualiseBlobCircle(blob.head<2>(), blob.z(), Color{ 1, 0, 0, 1 }, pixelSize);
 		}
 
 		if (emul.options.peripheralCenters)

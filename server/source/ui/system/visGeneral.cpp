@@ -349,9 +349,9 @@ void visualiseDistortion(const CameraCalib &calibCB, const CameraCalib &calibGT,
 			Eigen::Vector2f projGT = projectPoint2D(PGT, point);
 			Eigen::Vector2f projCB = projectPoint2D(PCB, point);
 			undistorted.push_back(projGT);
-			if (projGT.x() > -mode.sizeW*1.2 && projGT.y() > -mode.sizeH*1.2 && projGT.x() < mode.sizeW*1.2 && projGT.y() < mode.sizeH*1.2)
+			if (Bounds2f(Eigen::Vector2f::Zero(), mode.size.cast<float>()*1.2f).includes(projGT))
 				distortedGT.push_back(distortPointUnstable(calibGT, projGT));
-			if (projCB.x() > -mode.sizeW*1.2 && projCB.y() > -mode.sizeH*1.2 && projCB.x() < mode.sizeW*1.2 && projCB.y() < mode.sizeH*1.2)
+			if (Bounds2f(Eigen::Vector2f::Zero(), mode.size.cast<float>()*1.2f).includes(projCB))
 				distortedCB.push_back(distortPointUnstable(calibCB, projCB));
 		}
 	}

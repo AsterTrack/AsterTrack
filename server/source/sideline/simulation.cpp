@@ -586,10 +586,10 @@ static Eigen::Vector3f centeringForce(const PipelineState::CameraList &cameras, 
 			tgt2D = projectPoint2D(cam->simulation.calib.camera, pos);
 			if (!std::isfinite(tgt2D.x()) || !std::isfinite(tgt2D.y()))
 				tgt2D = Eigen::Vector2f::Zero();
-			if (std::abs(tgt2D.x()) > cam->mode.sizeW)
-				tgt2D *= cam->mode.sizeW / std::abs(tgt2D.x());
-			if (std::abs(tgt2D.y()) > cam->mode.sizeH)
-				tgt2D *= cam->mode.sizeH / std::abs(tgt2D.y());
+			if (std::abs(tgt2D.x()) > cam->mode.size.x())
+				tgt2D *= cam->mode.size.x() / std::abs(tgt2D.x());
+			if (std::abs(tgt2D.y()) > cam->mode.size.y())
+				tgt2D *= cam->mode.size.y() / std::abs(tgt2D.y());
 		}
 		// Determine closest 3D target
 		Ray3f ray3D = castRay<float>(tgt2D, cam->simulation.calib);
@@ -769,7 +769,7 @@ static bool projectMarker(const CameraCalib &calib, const CameraMode &mode, cons
 		return false;
 	// TODO: This acts as an upper limit to simulated distortion
 	// But it serves to filter before an unstable distortion below
-	if (proj.x() < -mode.sizeW*2 || proj.y() < -mode.sizeH*2 || proj.x() > mode.sizeW*2 || proj.y() > mode.sizeH*2)
+	if (!Bounds2f(Eigen::Vector2f::Zero(), mode.size.cast<float>()*2).includes(proj.head<2>()))
 		return false;
 
 	// Apply distortion
@@ -781,7 +781,7 @@ static bool projectMarker(const CameraCalib &calib, const CameraMode &mode, cons
 	ptPos = projDist + generateNoise(params);
 
 	// Clip
-	if (ptPos.x() < -mode.sizeW || ptPos.y() < -mode.sizeH || ptPos.x() > mode.sizeW || ptPos.y() > mode.sizeH)
+	if (!Bounds2f(Eigen::Vector2f::Zero(), mode.size.cast<float>()).includes(proj.head<2>()))
 		return false;
 	if (ptPos.hasNaN())
 		return false;

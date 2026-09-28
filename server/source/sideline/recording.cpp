@@ -165,7 +165,7 @@ std::optional<ErrorMessage> loadRecording(ServerState &state, Recording &&record
 		// Add existing cameras for verification
 		cameras.resize(camera_lock->size());
 		for (auto &camera : *camera_lock)
-			cameras[camera->index] = { camera->id, camera->mode.widthPx, camera->mode.heightPx };
+			cameras[camera->index] = { camera->id, camera->mode.frame.x(), camera->mode.frame.y() };
 	}
 	else
 	{ // Clear previous recording

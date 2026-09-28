@@ -134,9 +134,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 
 		auto &viewCtrl = view.vis.view;
 
-		Eigen::Vector2f viewFactor(
-			+2.0f*view.camera->pipeline->mode.sizeW * flip,
-			-2.0f*view.camera->pipeline->mode.sizeH * flip);
+		Eigen::Vector2f viewFactor = Eigen::Vector2f(+2.0f, -2.0f).cwiseProduct(view.camera->pipeline->mode.size.cast<float>()) * flip;
 
 		if (viewPressed && io.KeyCtrl)
 			viewCtrl.isDragging = true;
@@ -551,7 +549,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		}
 		else
 		{
-			Bounds2i imageBounds = Bounds2i(0, 0, mode.widthPx, mode.heightPx);
+			Bounds2i imageBounds = Bounds2i(0, 0, mode.frame.x(), mode.frame.y());
 			if (request.bounds != imageBounds)
 			{
 				request.bounds = imageBounds;
@@ -575,7 +573,7 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 			updateImageStreaming = true;
 
 			// Pixel counts to consider
-			unsigned int frameSize = mode.widthPx * mode.heightPx;
+			unsigned int frameSize = mode.frame.prod();
 			unsigned int viewSize = rect.GetWidth() * rect.GetHeight(); // Consider scaling?
 			unsigned int streamSize = request.bounds.extends().prod();
 
@@ -761,7 +759,8 @@ void InterfaceState::UpdateCameraUI(CameraView &view)
 		{
 			auto &mode = view.camera->pipeline->mode;
 			ImVec2 pos = (ImGui::GetMousePos() - boundsMin) / (boundsMax-boundsMin);
-			view.vis.view.center = Eigen::Vector2f(+flip * (pos.x-0.5f) * 2.0f * mode.sizeW / view.vis.view.camZoom, -flip * (pos.y-0.5f) * 2.0f * mode.sizeH / view.vis.view.camZoom);
+			view.vis.view.center = Eigen::Vector2f(+2.0f * (pos.x-0.5f), -2.0f * (pos.y-0.5f))
+				.cwiseProduct(mode.size.cast<float>()) * flip / view.vis.view.camZoom;
 			assureValidView(view.vis, mode);
 		}
 	}
@@ -1028,9 +1027,9 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	{ // Control zoom target based on phase
 		if (updateAutoZoom(visState, camera, visCamera, camFrame, visFrame))
 		{ // Set new target, update UI
-			float diffRel = (visCamera.view.prevCenter-visCamera.view.center).norm()*mode.widthPx/2.0f * visCamera.view.zoom;
+			float diffRel = (visCamera.view.prevCenter-visCamera.view.center).norm() * visCamera.view.zoom;
 			float zoomRel = visCamera.view.zoom / visCamera.view.prevZoom;
-			if (diffRel > 50 || zoomRel > 1.1f || zoomRel < 0.9f)
+			if (diffRel > 50*mode.PixelSize || zoomRel > 1.1f || zoomRel < 0.9f)
 				GetUI().RequestUpdates();
 			// Will both update the zoom visualisation in the bottom right
 			// And update streaming request to camera if adaptive image streaming is enabled
@@ -1062,7 +1061,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 		{ // Display image in appropriate part of the frame
 			Eigen::Affine3f bgProjMat = Eigen::Affine3f(
 				// 3. Correct for aspect ratio already applied in projection matrix (from 1,1 to 1,aspect)
-				Eigen::AlignedScaling3f((float)mode.sizeW, (float)mode.sizeH, 1.0f)
+				Eigen::AlignedScaling3f(mode.size.cast<float>().homogeneous())
 				// 2. Move image
 				* Eigen::Translation3f(
 					+(visCamera.image->boundsRel.center().x()-0.5f)*2.0f,
@@ -1131,7 +1130,7 @@ static void visualiseCamera(const ServerState &state, VisualisationState &visSta
 	if (visCamera.image && visCamera.imageVis.show)
 	{ // Make blob more transparent and instead use blob cross
 		blobAlpha = 0.6f;
-		blobCross = 2.0f / mode.widthPx;
+		blobCross = mode.PixelSize;
 	}
 	if (visCamera.visMode == VIS_TILES)
 	{
@@ -1428,8 +1427,8 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 	if (GetState().mode == MODE_Replay && visCamera.imageVis.followFrame && visCamera.image)
 	{ // Follow the frame that was sent, which roughly matches the view in the recorded live session
 		visCamera.view.center = Eigen::Vector2f(
-			+(visCamera.image->boundsRel.center().x()-0.5f)*2.0f*mode.sizeW,
-			-(visCamera.image->boundsRel.center().y()-0.5f)*2.0f*mode.sizeH);
+			+(visCamera.image->boundsRel.center().x()-0.5f)*2.0f*mode.size.x(),
+			-(visCamera.image->boundsRel.center().y()-0.5f)*2.0f*mode.size.y());
 		visCamera.view.center = distortPointUnstable(calib, visCamera.view.center);
 		visCamera.view.zoom = 1.0f/visCamera.image->boundsRel.extends().x();
 		return true;
@@ -1522,7 +1521,7 @@ static bool updateAutoZoom(const VisualisationState &visState, const TrackingCam
 			visCamera.view.autoZoomDelay--;
 		const float lerpCenter = 0.2f, lerpZoomIn = 0.01f, lerpZoomOut = 0.02f;
 		visCamera.view.center = focusBounds.center() * lerpCenter + visCamera.view.center * (1-lerpCenter);
-		float zoom = std::min(2.0f * mode.sizeW / focusBounds.extends().x(), 2.0f * mode.sizeH / focusBounds.extends().y()) * 0.7f;
+		float zoom = mode.size.cast<float>().cwiseQuotient(focusBounds.extends()).minCoeff() * 2.0f * 0.7f;
 		if (zoom > visCamera.view.zoom)
 			visCamera.view.zoom = zoom*lerpZoomIn + visCamera.view.zoom*(1-lerpZoomIn);
 		else
@@ -1537,12 +1536,9 @@ static void assureValidView(CameraVisState &visCamera, const CameraMode &mode)
 	// Clamp zoom to range
 	visCamera.view.zoom = std::max(visCamera.view.maxZoom, std::min(50.0f, visCamera.view.zoom));
 	// Clamp view rect to frame size
-	Bounds2f allowableRect = Bounds2f(
-		-mode.sizeW/visCamera.view.maxZoom + mode.sizeW/visCamera.view.zoom,
-		-mode.sizeH/visCamera.view.maxZoom + mode.sizeH/visCamera.view.zoom,
-		+mode.sizeW/visCamera.view.maxZoom - mode.sizeW/visCamera.view.zoom,
-		+mode.sizeH/visCamera.view.maxZoom - mode.sizeH/visCamera.view.zoom
-	);
+	Eigen::Vector2f zoomSize = mode.size.cast<float>() / visCamera.view.maxZoom;
+	Eigen::Vector2f viewSize = mode.size.cast<float>() / visCamera.view.zoom;
+	Bounds2f allowableRect = Bounds2f::fromMinMax(viewSize - zoomSize, zoomSize - viewSize);
 	visCamera.view.center = allowableRect.clamp(visCamera.view.center);
 }
 
@@ -1553,8 +1549,8 @@ static Eigen::Isometry3f generateProjectionMatrix(CameraVisState &visCamera, con
 	assureValidView(visCamera, mode);
 	// Build zoom / flip projection matrix
 	float flip = visCamera.view.rotate180? -1 : +1;
-	postProjMat(0,0) = visCamera.view.zoom * flip * (float)mode.factorW;
-	postProjMat(1,1) = visCamera.view.zoom * flip * (float)mode.factorH;
+	postProjMat(0,0) = visCamera.view.zoom * flip * (float)mode.factor.x();
+	postProjMat(1,1) = visCamera.view.zoom * flip * (float)mode.factor.y();
 	postProjMat.translation().x() = -visCamera.view.center.x()*postProjMat(0,0);
 	postProjMat.translation().y() = -visCamera.view.center.y()*postProjMat(1,1);
 	return postProjMat;
@@ -1640,10 +1636,10 @@ static void OPT_ATTR calculateCameraDistortionMap(const TrackingCameraState &cam
 
 static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState &visCamera, const CameraPipeline &camera)
 { // Adapt requested image to zoomed view
-	Bounds2i fullFrame(0, 0, camera.mode.widthPx, camera.mode.heightPx);
+	Bounds2i fullFrame(0, 0, camera.mode.frame.x(), camera.mode.frame.y());
 	float expansionFactor = 1.2f; // To reduce image load, disable expansion
-	Bounds2f view(visCamera.view.center, 
-		Eigen::Vector2f(camera.mode.sizeW*2.0f/visCamera.view.zoom, camera.mode.sizeH*2.0f/visCamera.view.zoom));
+	Eigen::Vector2f viewSize = camera.mode.size.cast<float>() / visCamera.view.zoom;
+	Bounds2f view(visCamera.view.center, viewSize * 2.0f);
 	Bounds2f imageBounds;
 	if (visCamera.imageVis.undistort && camera.calib.valid())
 	{ // Undistort roughly - since values outside of image could be used, it could be even more unstable than usual
@@ -1654,15 +1650,11 @@ static bool updateAdaptiveImageStreaming(Bounds2i &bounds, const CameraVisState 
 	}
 	else
 	 	imageBounds = view;
-	Bounds2f normBounds(Eigen::Vector2f(
-			+imageBounds.center().x()*camera.mode.factorW/2.0f + 0.5f,
-			-imageBounds.center().y()*camera.mode.factorH/2.0f + 0.5f),
-		Eigen::Vector2f(
-			imageBounds.extends().x()*camera.mode.factorW/2.0f * expansionFactor,
-			imageBounds.extends().y()*camera.mode.factorH/2.0f * expansionFactor));
-	Bounds2i pixelBounds(
-		normBounds.min.x()*camera.mode.widthPx, normBounds.min.y()*camera.mode.heightPx,
-		normBounds.max.x()*camera.mode.widthPx, normBounds.max.y()*camera.mode.heightPx);
+	Bounds2i pixelBounds = Bounds2f::fromCenter(
+		cam2pix(camera.mode, imageBounds.center()),
+		(imageBounds.extends() / 2 * expansionFactor)
+		.cwiseProduct(camera.mode.factor.cast<float>())
+		.cwiseProduct(camera.mode.frame.cast<float>())).cast<int>();
 	pixelBounds.overlapWith(fullFrame); // Due to expansionFactor and undistortion
 	if (bounds != pixelBounds)
 	{

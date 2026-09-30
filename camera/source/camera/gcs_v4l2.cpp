@@ -193,7 +193,7 @@ static int16_t Read8Bit(unsigned int fd, uint16_t reg)
 }
 
 /* Returns SENSOR_NUM for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
-SENSOR_NUM gcs_findCamera()
+SENSOR_NUM gcs_probeSensor()
 {
 	// Tell OV9281 camera to enable strobe (to force LEDs off as a temporary hardware fix)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
@@ -215,7 +215,6 @@ SENSOR_NUM gcs_findCamera()
 	close(i2c_fd);
 	return sensor;
 }
-
 
 GCS *gcs_create(GCS_CameraParams *cameraParams)
 {
@@ -309,7 +308,7 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 //		printf("Deallocate %d. \n", gcs->buffers[j].vcsm.fd);
 	}
 
-	gcs->sensor = gcs_findCamera();
+	gcs->sensor = gcs_probeSensor();
 
 ////	printf("Set up GCS!\n");
 
@@ -483,6 +482,51 @@ void gcs_stop(GCS *gcs)
 	gcs->started = 0;
 }
 
+/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+SENSOR_NUM gcs_getSensor(GCS *gcs)
+{
+	return gcs->sensor;
+}
+
+/* Get the sensor area of current mode, or none if not streaming or sensor is not recognised. */
+bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY)
+{
+	if (!gcs->started)
+	{ // Since we're relying on V4L2 driver to select closest existing mode
+		printf("Cannot get used sensor area before stream start!\n");
+		return false;
+	}
+	minX = minY = 0;
+	switch (gcs->sensor)
+	{
+		case SENSOR_OV9281:
+			sensorX = maxX = 1280;
+			sensorY = maxY = 800;
+			switch (gcs->cameraParams->height)
+			{
+				case 800: // Full frame
+				case 400: // Subsampled from full frame
+					return true;
+				case 720: // Cropped vertically
+					minY = 40;
+					maxY = 760;
+					return true;
+				case 480: // Cropped,but not supported by driver
+					minX = 320;
+					maxX = 960;
+					minY = 160;
+					maxY = 640;
+					return true;
+				default: // Should not happen
+					printf("Invalid mode %d x %d for OV9281!\n", gcs->cameraParams->width, gcs->cameraParams->height);
+					return false;
+			}
+		default:
+			printf("No sensor detected to determine area!\n");
+			return false;
+	}
+}
+
 /* Returns error flag and resets it */
 uint8_t gcs_readErrorFlag(GCS *gcs)
 {
@@ -514,12 +558,16 @@ void gcs_updateParameters(GCS *gcs)
 			printf("Failed to get pixel rate!\n");
 
 		// Calculate vblank to achieve the desired FPS
-		double magicScaleFactor = gcs->sensor == SENSOR_OV9281? 0.96 : 1.0f;
-		int64_t desiredVBlank = pixelRate * magicScaleFactor / (gcs->cameraParams->fps * (gcs->usedWidth+minHBlank)) - gcs->usedHeight;
+		double magicScaleFactor = gcs->sensor == SENSOR_OV9281? 0.96 : 1.0;
+		int64_t desiredVBlank = magicScaleFactor * (pixelRate * gcs->cameraParams->frameTimeNS)
+			/ ((uint64_t)1000000000 * (gcs->usedWidth+minHBlank))
+			- gcs->usedHeight;
 		uint32_t setVBlank = std::clamp<int64_t>(desiredVBlank, minVBlank, maxVBlank);
-		float predFps = (double)pixelRate * magicScaleFactor / ((gcs->usedWidth+minHBlank) * (gcs->usedHeight+setVBlank));
-		printf("Setting vblank to %d (desired %lld) to get FPS %.2f (desired %d)!\n",
-			setVBlank, desiredVBlank, predFps, gcs->cameraParams->fps);
+		float predFrameTimeNS = (uint64_t)((gcs->usedWidth+minHBlank) * (gcs->usedHeight+setVBlank)) * 1000000000
+			/ (magicScaleFactor * pixelRate);
+		printf("Setting vblank to %d (desired %lld) to get FPS %.2f (desired %.2f)!\n",
+			setVBlank, desiredVBlank, 1000000000.0/predFrameTimeNS, 1000000000.0/gcs->cameraParams->frameTimeNS);
+		gcs->cameraParams->frameTimeNS = predFrameTimeNS;
 
 		// Set hblank (extra time between lines)
 		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, minHBlank, 0)))

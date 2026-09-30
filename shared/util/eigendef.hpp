@@ -186,44 +186,61 @@ typedef CameraCalib_t<CVScalar> CameraCalib;
  */
 struct CameraMode
 {
-	int widthPx, heightPx;
-	int binningX, binningY;
-	int sensorWidth, sensorHeight;
-	// Derivatives
-	CVScalar cropWidth, cropHeight;
+	// Sensor Size, Frame Pixels Min + Max within Sensor
+	Eigen::Vector2i sensor, sensorMin, sensorMax;
+	// Frame Size, Mask Pixels Min + Max within Frame
+	Eigen::Vector2i frame, frameMin, frameMax;
+
+	// Derivatives in normalised image coordinates
 	CVScalar aspect;
-	CVScalar sizeW, sizeH;
-	CVScalar factorW, factorH;
-	Eigen::Vector<CVScalar,2> crop;
 	Eigen::Vector<CVScalar,2> size;
 	Eigen::Vector<CVScalar,2> factor;
-	// TODO: Rework CameraMode completely
-	// Has a lot of "support" for different camera modes, but was never actually tested
-	// Need to correct CameraCalib for full sensor if calibrated in a cropped mode
-	// And gotta work on the layout/structure, perhaps use eigen
-	// Maybe even exchange/join some stuff with CameraCalib since they are often needed together and highly dependent on each other
+	Eigen::Vector<CVScalar,2> center;
+	float PixelFactor, PixelSize;
+
+	// Legacy shorthands
+	CVScalar sizeW, sizeH; // Same as size
+	CVScalar factorW, factorH; // Same as factor
+	int widthPx, heightPx; // Same as frame
 
 	CameraMode() {}
 
-	CameraMode(int width, int height) : widthPx(width), heightPx(height), binningX(1), binningY(1), sensorWidth(width), sensorHeight(height)
+	CameraMode(int w, int h) :
+		sensor(w, h), sensorMin(0, 0), sensorMax(w, h), frame(w, h), frameMin(0, 0), frameMax(w, h)
 	{
 		update();
 	}
 
+	CameraMode(Eigen::Vector2i sensor, Eigen::Vector2i sensorMin, Eigen::Vector2i sensorMax,
+		Eigen::Vector2i frame, Eigen::Vector2i frameMin, Eigen::Vector2i frameMax) :
+		sensor(sensor), sensorMin(sensorMin), sensorMax(sensorMax), frame(frame), frameMin(frameMin), frameMax(frameMax)
+	{
+		update();
+	}
+
+	/* Update derived parameters given mode parameters */
 	void update()
 	{
-		cropWidth = (CVScalar)(widthPx*binningX) / sensorWidth;
-		cropHeight = (CVScalar)(heightPx*binningY) / sensorHeight;
+		// Sensor area used for current mode in pixels
+		Eigen::Vector<CVScalar,2> area = (sensorMax - sensorMin).cast<CVScalar>();
 		// Assuming square pixels, assumption made in calibration system as well
-		aspect = (CVScalar)(heightPx*binningY) / (widthPx*binningX);
-		sizeW = cropWidth;
-		sizeH = cropHeight*aspect;
-		factorW = (CVScalar)1.0 / sizeW;
-		factorH = (CVScalar)1.0 / sizeH;
-		crop = Eigen::Vector<CVScalar,2>(cropWidth, cropHeight);
-		size = Eigen::Vector<CVScalar,2>(sizeW, sizeH);
-		factor = Eigen::Vector<CVScalar,2>(factorW, factorH);
-		// TODO: Convert to getter functions for lesser used stuff?
+		aspect = area.y() / area.x();
+		size = area / sensor.x();
+		factor = size.cwiseInverse();
+
+		// Offset of used area from sensor center in pixels
+		Eigen::Vector2i offset2 = sensorMax + sensorMin - sensor; // Offset*2
+		center = Eigen::Vector<CVScalar,2>(offset2.x(), -offset2.y()) / sensor.x();
+
+		// Update legacy shorthands
+		widthPx = frame.x();
+		heightPx = frame.y();
+		sizeW = size.x();
+		sizeH = size.y();
+		factorW = factor.x();
+		factorH = factor.y();
+		PixelSize = 2.0 * (1.0f / frame.x()) * area.x() / sensor.x();
+		PixelFactor = 1.0f / PixelSize;
 	}
 };
 

@@ -58,7 +58,7 @@ struct TrackingCameraState
 		.width = 1280,
 		.height = 800,
 		.stride = 0, // Will be set by gcs
-		.fps = 144,
+		.frameTimeNS = 1000000000 / 144,
 		.shutterSpeed = 100,
 		.digitalGain = 1,
 		.analogGain = 1,

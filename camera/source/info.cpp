@@ -140,7 +140,7 @@ void gatherInfo(CameraID overrideID)
 	loadCameraID(overrideID);
 
 	// Detect camera sensor
-	SENSOR_NUM sensor = gcs_findCamera();
+	SENSOR_NUM sensor = gcs_probeSensor();
 	if (sensor == SENSOR_ERROR)
 	{
 		printf("Failed to open camera I2C!\n");

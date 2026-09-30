@@ -137,8 +137,17 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 #ifdef RUN_CAMERA
 
-	// Init camera subsystem
-	SENSOR_NUM gcsSensor = gcs_findCamera();
+	// Create GCS (static) in RAII. Not nice, but ensures deconstruction in-order
+	GCSWrapper camera(&state.camera);
+	if (!camera)
+	{
+		printf("Failed to initialise camera!\n");
+		if (handleError(ERROR_GCS_CREATE))
+			return false;
+	}
+
+	// Double-check detected camera sensor
+	SENSOR_NUM gcsSensor = gcs_getSensor(gcs);
 	if (gcsSensor == SENSOR_ERROR)
 	{
 		printf("Failed to open camera I2C!\n");
@@ -152,20 +161,16 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			return false;
 	}
 
-	// Create GCS (static) in RAII. Not nice, but ensures deconstruction in-order
-	GCSWrapper camera(&state.camera);
-	if (!camera)
+	// Start GPU camera stream
+	if (gcs_start(gcs) != 0)
 	{
-		printf("Failed to initialise camera!\n");
-		if (handleError(ERROR_GCS_CREATE))
+		printf("-- Failed to start camera stream! --\n");
+		if (handleError(ERROR_GCS_START))
 			return false;
 	}
-#else // Camera emulation buffers
-#ifdef EMUL_VCSM
-	VCSM_BUFFER camEmulBuf[emulBufCnt];
-#else
-	VC_BUFFER camEmulBuf[emulBufCnt];
-#endif
+	printf("-- Camera Stream started --\n");
+
+	uint32_t srcStride = state.camera.stride;
 #endif
 
 
@@ -173,14 +178,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 	// Layout QPU program instances across camera frame according to cores used
 	ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, state.qpuCores.getUsed());
-
-	BlobDetection detect(layout.maskSize, layout.maskOffset, state.blobParams.classification);
-	if (!detect)
-	{ // Shouldn't actually fail, just basic init
-		printf("-- Failed to initialize blob detection! --\n");
-		if (handleError(ERROR_INIT_BD))
-			return false;
-	}
 
 	MaskingProgram masking(base, layout, state.qpuProgBin);
 	if (!masking && !state.noQPU)
@@ -190,6 +187,21 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			return false;
 	}
 	masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
+
+	FetchingProgram fetching = {};
+	if (!state.noVPU) // Construct in-place
+		new (&fetching) FetchingProgram(base, layout.maskSize, state.vpuProgBin);
+	uint32_t *bgBitmask = fetching? fetching.bgBitmaskBuffer.ptr.arm.uptr : nullptr;
+	if (!state.noVPU && !fetching)
+		printf("-- Failed to setup VPU fetching program! Falling back to CPU only! --\n");
+
+	BlobDetection detect(layout.maskSize, layout.maskOffset, state.blobParams.classification);
+	if (!detect)
+	{ // Shouldn't actually fail, just basic init
+		printf("-- Failed to initialize blob detection! --\n");
+		if (handleError(ERROR_INIT_BD))
+			return false;
+	}
 
 	std::vector<uint32_t> verifyBitmaskBuffer;
 	if (state.verifyQPU || state.noQPU)
@@ -203,35 +215,38 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			return false;
 	}
 
-	FetchingProgram fetching = {};
-	if (!state.noVPU) // Construct in-place
-		new (&fetching) FetchingProgram(base, layout.maskSize, state.vpuProgBin);
-	uint32_t *bgBitmask = fetching? fetching.bgBitmaskBuffer.ptr.arm.uptr : nullptr;
-	if (!state.noVPU && !fetching)
-		printf("-- Failed to setup VPU fetching program! Falling back to CPU only! --\n");
-
-#ifdef RUN_CAMERA
-	uint32_t srcStride = state.camera.stride;
-#else // Camera emulation buffers
-	uint32_t srcStride = (state.camera.width+31)/32*32;
-#endif
-
-
-	// ---- Start camera stream ----
-
-	// Start GPU camera stream
-#ifdef RUN_CAMERA
-	if (gcs_start(gcs) != 0)
-	{
-		printf("-- Failed to start camera stream! --\n");
-		if (handleError(ERROR_GCS_START))
-			return false;
+	{ // Send configuration packet
+		std::vector<uint8_t> packet(CONFIG_REPORT_SIZE);
+		packet[0] = CONFIG_REPORT_SENSOR_MODE;
+		packet[1] = CONFIG_PACKET_VERSION;
+		packet[2] = 0; // Unused
+		packet[3] = 0; // Unused
+		uint16_t *modeData = (uint16_t*)(packet.data() + CONFIG_REPORT_HEADER);
+		// Sensor Size, Frame Pixels Min + Max within Sensor
+		bool valid = gcs_getSensorArea(gcs, modeData[0], modeData[1], modeData[2], modeData[3], modeData[4], modeData[5]);
+		// Frame Size, Mask Pixels Min + Max within Frame
+		modeData[6] = state.camera.width;
+		modeData[7] = state.camera.height;
+		modeData[8] = layout.validMaskRect.min.x();
+		modeData[9] = layout.validMaskRect.min.y();
+		modeData[10] = layout.validMaskRect.max.x();
+		modeData[11] = layout.validMaskRect.max.y();
+		// Actual frame time configured, may be larger than requested
+		// Ideally this would be minimum for selected mode even beyond requested
+		// But this is enough to readjust to an integer multiple of requested
+		*(uint32_t*)(modeData+12) = state.camera.frameTimeNS;
+		if (valid)
+			comm_send(realTimeAff, PacketHeader(PACKET_CONFIG, packet.size()), std::move(packet));
 	}
-	printf("-- Camera Stream started --\n");
-#else
 
+
+	// ---- Setup emulated camera frames ----
+
+#ifndef RUN_CAMERA
 	// Allocate emulated buffers
+	uint32_t srcStride = (state.camera.width+31)/32*32;
 #ifdef EMUL_VCSM
+	VCSM_BUFFER camEmulBuf[emulBufCnt];
 	for (int i = 0; i < emulBufCnt; i++)
 	{ // Allocate only grayscale buffer
 		camEmulBuf[i] = vcsm_malloc(srcStride*(state.camera.height+2));
@@ -242,6 +257,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		return false;
 	}
 #else
+	VC_BUFFER camEmulBuf[emulBufCnt];
 	for (int i = 0; i < emulBufCnt; i++)
 	{ // Allocate only grayscale buffer
 		int ret = vc_allocBuffer(&camEmulBuf[i], &base, srcStride*(state.camera.height+2), 4096);
@@ -323,12 +339,12 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	// Setup incident statistics
 	StatPacket::Incidents incidents = {};
 	// Limits achievable on Zero 1 and Zero 2 without overclocking, with some spikes
-	uint16_t awaitLimit = 1000000/state.camera.fps,
+	uint16_t awaitLimit = state.camera.frameTimeNS/1000,
 		skipLimit = 30,
 		accessLimit = 10,
 		procLimit = 2500,
 		handleLimit = 50,
-		cpuwaitLimit = 1000000/state.camera.fps;
+		cpuwaitLimit = state.camera.frameTimeNS/1000;
 
 	// Buffers
 	std::vector<Cluster> clusters;
@@ -395,11 +411,11 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 						return true;
 					}
 					long waitTimeUS = dtUS(waitStart, sclock::now());
-					long waitFrames = waitTimeUS*state.camera.fps/1000000;
+					long waitFrames = waitTimeUS*1000/state.camera.frameTimeNS;
 					if ((waitFrames >= minorWait && !sentMinorTimeout) || waitFrames >= seriousWait)
 					{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 						printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
-							dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS * state.camera.fps / 1000000));
+							dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS*1000/state.camera.frameTimeNS));
 						sentMinorTimeout = true;
 						// Notify host
 						if (handleError(ERROR_GCS_TIMEOUT, waitFrames >= seriousWait))
@@ -450,7 +466,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 #endif
 
 			float newInterval = dtMS(time_frameRecv, time_cur);
-			float expInterval = 1000.0f/state.camera.fps;
+			float expInterval = 1000000000.0f/state.camera.frameTimeNS;
 			float minInterval = expInterval;
 			int advanceFrames = obsAdvance;
 

@@ -113,6 +113,8 @@ static inline ProgramLayout SetupProgramLayout(uint32_t width, uint32_t height, 
 
 	// Calculate processed pixels in the output mask
 	layout.maskSize = Vector2<int>(layout.columns*mskColumnWidth, ROUND_DOWN(height, mskBlockLines));
+	if (layout.maskSize.prod() == 0)
+		return layout;
 
 	/**
 	* Vertical distribution

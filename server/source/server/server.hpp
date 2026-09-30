@@ -125,7 +125,7 @@ void ServerUpdateTrackerConditions(ServerState &state, TrackerConfig &tracker, b
 
 std::shared_ptr<TrackingCameraState> EnsureCamera(ServerState &state, CameraID id);
 std::shared_ptr<TrackingCameraState> GetCamera(ServerState &state, CameraID id);
-CameraMode getCameraMode(ServerState &state, CameraID id);
+CameraMode getProvisionalCameraMode(ServerState &state, CameraID id);
 
 void StartDeviceMode(ServerState &state);
 void StopDeviceMode(ServerState &state);

@@ -47,7 +47,7 @@ enum PacketTag
 
 	// All below are for Camera SBC <-> Host comm, using CRC32 checksum
 	PACKET_HOST_SBC = 24,
-	PACKET_CONFIG = 24,		// Configure streaming behaviour of camera
+	PACKET_CONFIG = 24,		// Configure streaming settings / Report sensor configuration
 	PACKET_MODE,			// Configure/Report operation mode
 	PACKET_WIRELESS,		// Configure/Report wireless config & state
 	PACKET_IMAGE,			// Configure image streaming / Frame image packet

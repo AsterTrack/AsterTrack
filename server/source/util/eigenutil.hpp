@@ -202,12 +202,13 @@ inline Eigen::Projective3f createProjectionMatrixGL(const CameraCalib &calib, co
 {
 	float zN = 0.1f, zF = 100.0f; // 0.1m-100m probably
 	float a = -(float)((zF+zN)/(zF-zN)), b = (float)(2*zF*zN/(zF-zN));
-	float sX = (float)calib.f*mode.factorW, sY = (float)(calib.f*mode.factorH);
+	float sX = (float)calib.f*mode.factor.x(), sY = (float)(calib.f*mode.factor.y());
+	Eigen::Vector2f pp = calib.principalPoint.cwiseProduct(mode.factor).cast<float>();
 	// Projection - negative z because of blender-style camera coordinate system
 	Eigen::Projective3f p;
 	p.matrix() << 
-		sX, 0, (float)calib.principalPoint.x()*mode.factorW, 0,
-		0, sY, (float)calib.principalPoint.y()*mode.factorH, 0,
+		sX, 0, pp.x(), 0,
+		0, sY, pp.y(), 0,
 		0, 0, a, b,
 		0, 0, 1, 0;
 	return p;
@@ -250,7 +251,7 @@ inline double getFoVH(const CameraCalib &calib)
  */
 inline double getFoVH(const CameraCalib &calib, const CameraMode &mode)
 {
-	return 2 * std::atan(calib.fInv*mode.sizeW) / PI * 180.0;
+	return 2 * std::atan(calib.fInv*mode.size.x()) / PI * 180.0;
 }
 
 /**
@@ -258,7 +259,7 @@ inline double getFoVH(const CameraCalib &calib, const CameraMode &mode)
  */
 inline double getFoVV(const CameraCalib &calib, const CameraMode &mode)
 {
-	return 2 * std::atan(calib.fInv*mode.sizeH) / PI * 180.0;
+	return 2 * std::atan(calib.fInv*mode.size.y()) / PI * 180.0;
 }
 
 /**
@@ -266,7 +267,7 @@ inline double getFoVV(const CameraCalib &calib, const CameraMode &mode)
  */
 inline double getFoVD(const CameraCalib &calib, const CameraMode &mode)
 {
-	return 2 * std::atan(calib.fInv*std::sqrt(mode.sizeH*mode.sizeH+mode.sizeW*mode.sizeW)) / PI * 180.0;
+	return 2 * std::atan(calib.fInv*mode.size.norm()) / PI * 180.0;
 }
 
 /**
@@ -285,7 +286,7 @@ inline Scalar getEffectiveFoVH(const CameraCalib &calib)
 template<typename Scalar = double>
 inline Scalar getEffectiveFoVH(const CameraCalib &calib, const CameraMode &mode)
 {
-	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(mode.sizeW,0)).norm()*(Scalar)calib.fInv;
+	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(mode.size.x(),0)).norm()*(Scalar)calib.fInv;
 	return 2 * std::atan(effFInv) / PI * 180.0;
 }
 
@@ -295,7 +296,7 @@ inline Scalar getEffectiveFoVH(const CameraCalib &calib, const CameraMode &mode)
 template<typename Scalar = double>
 inline Scalar getEffectiveFoVV(const CameraCalib &calib, const CameraMode &mode)
 {
-	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(0,mode.sizeH)).norm()*(Scalar)calib.fInv;
+	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(0,mode.size.y())).norm()*(Scalar)calib.fInv;
 	return 2 * std::atan(effFInv) / PI * 180.0;
 }
 
@@ -305,7 +306,7 @@ inline Scalar getEffectiveFoVV(const CameraCalib &calib, const CameraMode &mode)
 template<typename Scalar = double>
 inline Scalar getEffectiveFoVD(const CameraCalib &calib, const CameraMode &mode)
 {
-	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(mode.sizeW,mode.sizeH)).norm()*(Scalar)calib.fInv;
+	float effFInv = undistortPoint(calib, Eigen::Matrix<Scalar,2,1>(mode.size.x(),mode.size.y())).norm()*(Scalar)calib.fInv;
 	return 2 * std::atan(effFInv) / PI * 180.0;
 }
 
@@ -456,38 +457,14 @@ inline std::pair<Scalar,Scalar> calculatePoseError(const Eigen::Transform<Scalar
 }
 
 /**
- * Convert the given point in pixel space to camera space
- */
-template<typename Scalar>
-inline Eigen::Matrix<Scalar,2,1> pix2cam(const CameraMode &camera, Eigen::Matrix<Scalar,2,1> point)
-{
-	return Eigen::Matrix<Scalar,2,1>(
-		+(point.x() / (Scalar)camera.widthPx * 2 - 1) * (Scalar)camera.sizeW,
-		-(point.y() / (Scalar)camera.heightPx * 2 - 1) * (Scalar)camera.sizeH);
-	// Inverting y to convert from pixel coordinates (top left origin) to our coordinate system (bottom left origin)
-	// The first is great for camera image processing, but for linear algebra the second is more commonly used
-}
-/**
  * Convert the given point in normalised pixel space (0-1 on both axis) to camera space
  */
 template<typename Scalar>
-inline Eigen::Matrix<Scalar,2,1> npix2cam(const CameraMode &camera, Eigen::Matrix<Scalar,2,1> point)
+inline Eigen::Matrix<Scalar,2,1> npix2cam(const CameraMode &mode, Eigen::Matrix<Scalar,2,1> point)
 {
-	return Eigen::Matrix<Scalar,2,1>(
-		+(point.x() * 2 - 1) * (Scalar)camera.sizeW,
-		-(point.y() * 2 - 1) * (Scalar)camera.sizeH);
-	// Inverting y to convert from pixel coordinates (top left origin) to our coordinate system (bottom left origin)
-	// The first is great for camera image processing, but for linear algebra the second is more commonly used
-}
-/**
- * Convert the given point in camera space to pixel space
- */
-template<typename Scalar>
-inline Eigen::Matrix<Scalar,2,1> cam2pix(const CameraMode &camera, Eigen::Matrix<Scalar,2,1> point)
-{
-	return Eigen::Matrix<Scalar,2,1>(
-		(+point.x()/(Scalar)camera.sizeW + 1) / 2 * (Scalar)camera.widthPx, 
-		(-point.y()/(Scalar)camera.sizeH + 1) / 2 * (Scalar)camera.heightPx);
+	point = Eigen::Matrix<Scalar,2,1>(+(point.x() * 2 - 1), -(point.y() * 2 - 1));
+	point = point.cwiseProduct(mode.size.cast<Scalar>()) - mode.center.cast<Scalar>();
+	return point;
 	// Inverting y to convert from pixel coordinates (top left origin) to our coordinate system (bottom left origin)
 	// The first is great for camera image processing, but for linear algebra the second is more commonly used
 }
@@ -495,13 +472,29 @@ inline Eigen::Matrix<Scalar,2,1> cam2pix(const CameraMode &camera, Eigen::Matrix
  * Convert the given point in camera space to normalised pixel space (0-1 on both axis)
  */
 template<typename Scalar>
-inline Eigen::Matrix<Scalar,2,1> cam2npix(const CameraMode &camera, Eigen::Matrix<Scalar,2,1> point)
+inline Eigen::Matrix<Scalar,2,1> cam2npix(const CameraMode &mode, Eigen::Matrix<Scalar,2,1> point)
 {
-	return Eigen::Matrix<Scalar,2,1>(
-		(+point.x()/(Scalar)camera.sizeW + 1) / 2, 
-		(-point.y()/(Scalar)camera.sizeH + 1) / 2);
+	point = (point + mode.center.cast<Scalar>()).cwiseProduct(mode.factor.cast<Scalar>());
+	point = Eigen::Matrix<Scalar,2,1>((+point.x() + 1) / 2, (-point.y() + 1) / 2);
+	return point;
 	// Inverting y to convert from pixel coordinates (top left origin) to our coordinate system (bottom left origin)
 	// The first is great for camera image processing, but for linear algebra the second is more commonly used
+}
+/**
+ * Convert the given point in pixel space to camera space
+ */
+template<typename Scalar>
+inline Eigen::Matrix<Scalar,2,1> pix2cam(const CameraMode &mode, Eigen::Matrix<Scalar,2,1> point)
+{
+	return npix2cam<Scalar>(mode, point.cwiseQuotient(mode.frame.cast<Scalar>()));
+}
+/**
+ * Convert the given point in camera space to pixel space
+ */
+template<typename Scalar>
+inline Eigen::Matrix<Scalar,2,1> cam2pix(const CameraMode &mode, Eigen::Matrix<Scalar,2,1> point)
+{
+	return cam2npix<Scalar>(mode, point).cwiseProduct(mode.frame.cast<Scalar>());
 }
 
 /**

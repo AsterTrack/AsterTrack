@@ -469,10 +469,11 @@ void SignalTrackerTracked(const FrameRecord &frame, TrackerRecord &record, const
 // Camera Setup
 // ----------------------------------------------------------------------------
 
-CameraMode getCameraMode(ServerState &state, CameraID id)
+CameraMode getProvisionalCameraMode(ServerState &state, CameraID id)
 {
 	CameraConfig &config = state.cameraConfig.getCameraConfig(id);
-	// TODO:Rework CameraMode to properly support cropping/zooming, it is only surface level supported right now, and ugly
+	// Create provisional camera mode just from generic width/height config
+	// Real mode supported by sensor is sent by camera on streaming start
 	return CameraMode(config.width, config.height);
 }
 
@@ -490,8 +491,8 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 	// Assign slot in observations
 	state.pipeline.seqDatabase.contextualLock()->verifyCameraCount(camera_lock->size());
 
-	// Setup camera settings
-	camera->mode = getCameraMode(state, id);
+	// Set provisional camera mode
+	camera->mode = getProvisionalCameraMode(state, id);
 
 	// Add calibration
 	for (int i = 0; i < state.cameraCalibrations.size(); i++)

@@ -129,7 +129,7 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			}
 			case 3:
-				state.camera.fps = std::stoi(optarg);
+				state.camera.frameTimeNS = 1000000000 / std::stoi(optarg);
 				break;
 			case 4:
 				state.camera.shutterSpeed = std::stoi(optarg);
@@ -281,7 +281,7 @@ void acceptQPUConfig(TrackingCameraState &state)
 		state.camera.width = setupPacket.width;
 		state.camera.height = setupPacket.height;
 	}
-	state.camera.fps = setupPacket.fps;
+	state.camera.frameTimeNS = setupPacket.frameTimeNS;
 	state.camera.shutterSpeed = setupPacket.shutterSpeed;
 	state.camera.analogGain = setupPacket.analogGain;
 	state.thresholds = setupPacket.blobProc.thresholds;

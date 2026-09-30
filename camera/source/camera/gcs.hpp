@@ -43,7 +43,7 @@ struct GCS_CameraParams
 	uint16_t width;
 	uint16_t height;
 	uint32_t stride;
-	uint16_t fps;
+	uint32_t frameTimeNS;
 	uint32_t shutterSpeed;
 	uint8_t digitalGain;
 	uint8_t analogGain;
@@ -79,7 +79,7 @@ static const char* SENSOR_ID[SENSOR_MAX]
 struct GCS;
 
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
-SENSOR_NUM gcs_findCamera();
+SENSOR_NUM gcs_probeSensor();
 
 /* Creates a GCS (camera stream) instance. Requires cameraParams to stay allocated until gcs_destroy is called. It is used to update actual parameters, such as width, and stride, as well as update parameters for gcs_updateParameters */
 GCS *gcs_create(GCS_CameraParams *cameraParams);
@@ -92,6 +92,12 @@ uint8_t gcs_start(GCS *gcs);
 
 /* Stop GCS (camera output). Stops watchdog and disabled MMAL camera */
 void gcs_stop(GCS *gcs);
+
+/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+SENSOR_NUM gcs_getSensor(GCS *gcs);
+
+/* Get the sensor area of current mode, or none if not streaming or sensor is not recognised */
+bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY);
 
 /* Returns error flag and resets it */
 uint8_t gcs_readErrorFlag(GCS *gcs);

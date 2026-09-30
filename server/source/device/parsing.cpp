@@ -445,7 +445,6 @@ CameraFrameRecord ReadStreamingPacket(TrackingCameraState &camera, const PacketH
 		return frame;
 
 	// Determine packet structure
-	const int blobEncSize = 6;
 	int totalBlobCount = (length-STREAM_PACKET_HEADER_SIZE) / STREAM_PACKET_BLOB_SIZE;
 	if (totalBlobCount*STREAM_PACKET_BLOB_SIZE + STREAM_PACKET_HEADER_SIZE != length)
 	{
@@ -535,6 +534,54 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 
 	if (camera.controller && camera.controller->comm)
 		comm_submit_control_request(camera.controller->comm, COMMAND_IN_STATUS, 0, 0);
+	return true;
+}
+
+bool ReadConfigPacket(TrackingCameraState &camera, const PacketHeader header, const uint8_t *data, int length, bool erroneous)
+{
+	if (length < 2)
+		return false;
+
+	ConfigReportTag tag = (ConfigReportTag)data[0];
+	int expectedVersion = data[1];
+	if (tag == CONFIG_REPORT_INVALID_VERSION)
+	{
+		// TODO: Support older versions, store expectedVersion and resend config
+		return true;
+	}
+	if (tag != CONFIG_REPORT_SENSOR_MODE)
+	{ // Not sensor mode we expected
+		return false;
+	}
+	if (expectedVersion > CONFIG_PACKET_VERSION)
+	{ // Camera has newer firmware, not desired
+		return false;
+	}
+	if (length < CONFIG_REPORT_SIZE_MIN)
+	{ // Camera has newer firmware, not desired
+		return false;
+	}
+
+	// Received sensor mode, generally set on streaming start before first frame
+
+	uint16_t *modeData = (uint16_t*)(data + CONFIG_REPORT_HEADER);
+	// Sensor Size, Frame Pixels Min + Max within Sensor
+	Eigen::Vector2i sensor(modeData[0], modeData[1]);
+	Eigen::Vector2i sensorMin(modeData[2], modeData[3]);
+	Eigen::Vector2i sensorMax(modeData[4], modeData[5]);
+	// Frame Size, Mask Pixels Min + Max within Frame
+	Eigen::Vector2i frame(modeData[6], modeData[7]);
+	Eigen::Vector2i frameMin(modeData[8], modeData[9]);
+	Eigen::Vector2i frameMax(modeData[10], modeData[11]);
+	// Actual frame time configured, may be larger than requested
+	uint32_t frameTimeNS  = *(uint32_t*)(modeData+12);
+
+	// Ensure to only parse beyond min size of length matches!
+	static_assert(CONFIG_REPORT_SIZE_MIN == CONFIG_REPORT_SIZE);
+
+	// Update mode
+	camera.pipeline->mode = CameraMode(sensor, sensorMin, sensorMax, frame, frameMin, frameMax);
+
 	return true;
 }
 
@@ -1176,11 +1223,16 @@ void ReadCameraPacket(TrackingCameraState &camera, const PacketHeader header, co
 {
 	switch (header.tag)
 	{
-    case PACKET_ERROR:
-    {
+	case PACKET_ERROR:
+	{
 		ReadErrorPacket(camera, header, data, length, erroneous);
-        break;
-    }
+		break;
+	}
+	case PACKET_CONFIG:
+	{
+		ReadConfigPacket(camera, header, data, length, erroneous);
+		break;
+	}
 	case PACKET_MODE:
 	{
 		ReadModePacket(camera, header, data, length, erroneous);

@@ -73,8 +73,15 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 		case PACKET_CONFIG:
 		{ // Received setup packet
 			ConfigPacket packet = parseConfigPacket(data, length);
-			printf("Received configuration: %dx%d @ %d fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
-				packet.width, packet.height, packet.fps, packet.shutterSpeed,
+			if (packet.version == 0 || packet.version > CONFIG_PACKET_VERSION)
+			{
+				printf("Could not parse configuration version %d, supported %d\n", packet.version, CONFIG_PACKET_VERSION);
+				std::vector<uint8_t> response = { CONFIG_REPORT_INVALID_VERSION, CONFIG_PACKET_VERSION };
+				comm_send(&comm, PacketHeader(PACKET_CONFIG, response.size()), std::move(response));
+				return false;
+			}
+			printf("Received configuration: %dx%d @ %.1f fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, extTrig? %d, strobe? %c (%d)\n",
+				packet.width, packet.height, 1000000000.0/packet.frameTimeNS, packet.shutterSpeed,
 				packet.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,
 				packet.extTrig, packet.strobe? 'y' : 'n', packet.strobeLength);
 			state.newConfigPacket = packet;

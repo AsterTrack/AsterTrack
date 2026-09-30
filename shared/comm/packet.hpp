@@ -242,14 +242,35 @@ static inline bool parseFirmwareTagHeader(const uint8_t data[FIRMWARE_TAG_SIZE],
 
 
 /**
- * Configuration of camera parameters
+ * Configuration Packets
  */
+
+enum ConfigReportTag : uint8_t
+{
+	CONFIG_REPORT_NONE,
+	CONFIG_REPORT_INVALID_VERSION,
+	CONFIG_REPORT_SENSOR_MODE,
+};
+
+enum ConfigUpdateTag : uint8_t
+{
+	CONFIG_UPDATE_INVALID,
+	CONFIG_UPDATE_MAIN,
+};
+
+#define CONFIG_REPORT_HEADER		4
+#define CONFIG_REPORT_SIZE_MIN		(CONFIG_REPORT_HEADER + 14*2)
+#define CONFIG_REPORT_SIZE			CONFIG_REPORT_SIZE_MIN
+
+/* Configuration of camera parameters */
 struct ConfigPacket
 {
-	int version;
+	ConfigUpdateTag tag;
+	uint8_t version;
 
 	uint16_t width, height;
-	uint16_t fps, shutterSpeed;
+	uint32_t frameTimeNS;
+	uint16_t shutterSpeed;
 	uint8_t analogGain;
 	bool extTrig;
 	bool strobe;
@@ -258,8 +279,12 @@ struct ConfigPacket
 	
 	BlobProcessingParameters blobProc;
 };
-#define CONFIG_PACKET_MIN_SIZE		70
-#define CONFIG_PACKET_SIZE			70
+
+#define CONFIG_PACKET_VERSION		1
+
+#define CONFIG_PACKET_MIN_SIZE		73
+#define CONFIG_PACKET_SIZE			73
+
 
 static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int length)
 {
@@ -267,21 +292,24 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int len
 	auto &proc = config.blobProc;
 
 	// Try to keep compatible!
-	config.version = data[0];
-	int base = 1;
+	config.tag = (ConfigUpdateTag)data[0];
+	config.version = data[1];
+	if (config.tag != CONFIG_UPDATE_MAIN || config.version == 0 || config.version > CONFIG_PACKET_VERSION)
+		return config; // Can't parse
+	int base = 2;
 
 	{
 		config.width = *(uint16_t*)&data[base+0];
 		config.height = *(uint16_t*)&data[base+2];
-		config.fps = *(uint16_t*)&data[base+4];
-		config.shutterSpeed = *(uint16_t*)&data[base+6];
-		config.analogGain = *(uint8_t*)&data[base+8];
-		config.extTrig = *(uint8_t*)&data[base+9];
-		config.strobe = *(uint8_t*)&data[base+10];
-		config.strobeOffset = *(int16_t*)&data[base+11];
-		config.strobeLength = *(uint16_t*)&data[base+13];
+		memcpy(&config.frameTimeNS, &data[base+4], 4);
+		config.shutterSpeed = *(uint16_t*)&data[base+8];
+		config.analogGain = *(uint8_t*)&data[base+10];
+		config.extTrig = *(uint8_t*)&data[base+11];
+		config.strobe = *(uint8_t*)&data[base+12];
+		config.strobeOffset = *(int16_t*)&data[base+13];
+		config.strobeLength = *(uint16_t*)&data[base+15];
 	}
-	base += 15;
+	base += 17;
 
 	{
 		proc.thresholds.absolute = *(uint8_t*)&data[base+0];
@@ -360,21 +388,22 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 {
 	auto &proc = config.blobProc;
 
-	data[0] = 1; // Config version
-	int base = 1;
+	data[0] = CONFIG_UPDATE_MAIN; // Config tag
+	data[1] = CONFIG_PACKET_VERSION; // Config version
+	int base = 2;
 
 	{
 		*(uint16_t*)&data[base+0] = config.width;
 		*(uint16_t*)&data[base+2] = config.height;
-		*(uint16_t*)&data[base+4] = config.fps;
-		*(uint16_t*)&data[base+6] = config.shutterSpeed;
-		*(uint8_t*)&data[base+8] = config.analogGain;
-		*(uint8_t*)&data[base+9] = config.extTrig;
-		*(uint8_t*)&data[base+10] = config.strobe;
-		*(int16_t*)&data[base+11] = config.strobeOffset;
-		*(uint16_t*)&data[base+13] = config.strobeLength;
+		memcpy(&data[base+4], &config.frameTimeNS, 4);
+		*(uint16_t*)&data[base+8] = config.shutterSpeed;
+		*(uint8_t*)&data[base+10] = config.analogGain;
+		*(uint8_t*)&data[base+11] = config.extTrig;
+		*(uint8_t*)&data[base+12] = config.strobe;
+		*(int16_t*)&data[base+13] = config.strobeOffset;
+		*(uint16_t*)&data[base+15] = config.strobeLength;
 	}
-	base += 15;
+	base += 17;
 
 	{
 		*(uint8_t*)&data[base+0] = proc.thresholds.absolute;
@@ -489,8 +518,8 @@ struct StatPacket
 static inline struct StatPacket parseStatPacketHeader(const uint8_t data[STAT_PACKET_HEADER])
 { // Header has padding, so need to manually copy
 	struct StatPacket stat;
-	stat.header.frame = *(uint32_t*)&data[0];
-	stat.header.deltaUS = *(uint32_t*)&data[4];
+	memcpy(&stat.header.frame, &data[0], 4);
+	memcpy(&stat.header.deltaUS, &data[4], 4);
 	stat.header.tempSOC = *(uint16_t*)&data[8];
 	stat.header.voltage = *(uint16_t*)&data[10];
 	stat.header.reserved1 = *(uint16_t*)&data[12];
@@ -517,8 +546,8 @@ static inline struct StatPacket parseStatPacket(const uint8_t data[STAT_PACKET_S
 static inline void storeStatPacketHeader(const struct StatPacket stat, uint8_t data[STAT_PACKET_HEADER])
 {
 	// Header has padding, so need to manually copy
-	*(uint32_t*)&data[0] = stat.header.frame;
-	*(uint32_t*)&data[4] = stat.header.deltaUS;
+	memcpy(&data[0], &stat.header.frame, 4);
+	memcpy(&data[4], &stat.header.deltaUS, 4);
 	*(uint16_t*)&data[8] = stat.header.tempSOC;
 	*(uint16_t*)&data[10] = stat.header.voltage;
 	*(uint16_t*)&data[12] = stat.header.reserved1;

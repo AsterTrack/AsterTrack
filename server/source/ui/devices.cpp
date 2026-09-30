@@ -225,7 +225,8 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 					if (ImGui::Selectable(getConfigLabel(i).c_str(), i == index))
 					{
 						state.cameraConfig.cameraConfigs[camera.id] = i;
-						camera.pipeline->mode = getCameraMode(state, camera.id);
+						if (!state.isStreaming) // If streaming, keep actual mode sent by camera on stream start
+							camera.pipeline->mode = getProvisionalCameraMode(state, camera.id);
 						CameraUpdateConfig(state, camera);
 					}
 				}

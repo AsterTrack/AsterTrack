@@ -248,11 +248,8 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 					if (!(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
 						continue;
 				}
-				auto mode = getCameraMode(state, camera->id);
-				if (state.isStreaming)
-					assert(camera->pipeline->mode.widthPx == mode.widthPx && camera->pipeline->mode.heightPx == mode.heightPx);
-				else
-					camera->pipeline->mode = mode;
+				if (!state.isStreaming) // If streaming, keep actual mode sent by camera on stream start
+					camera->pipeline->mode = getProvisionalCameraMode(state, camera->id);
 				CameraUpdateConfig(state, *camera);
 			}
 		}

@@ -147,14 +147,14 @@ void InterfaceState::UpdateTargetCalibParameters(InterfaceWindow &window)
 		auto &assembly = calibParams.assembly;
 		const auto &standard = defaultParams.assembly;
 		ScalarProperty<int>("Min Check Length", "", &assembly.reevaluation.minOverlap, &standard.reevaluation.minOverlap, 0, 100);
-		ScalarProperty<float>("Uncertainty##Markers", "px", &assembly.reevaluation.uncertainty, &standard.reevaluation.uncertainty, 0, 10, 0.01f, 1, "%.2f");
-		ScalarProperty<float>("Max Sequence RMSE", "px", &assembly.reevaluation.maxSeqRMSE, &standard.reevaluation.maxSeqRMSE, 0, 20, 0.5f, 1, "%.2f");
+		ScalarProperty<float>("Uncertainty##Markers", "px", &assembly.reevaluation.uncertainty, &standard.reevaluation.uncertainty, 0, 10, 0.01f, PixelFactor, "%.2f");
+		ScalarProperty<float>("Max Sequence RMSE", "px", &assembly.reevaluation.maxSeqRMSE, &standard.reevaluation.maxSeqRMSE, 0, 20, 0.5f, PixelFactor, "%.2f");
 		ScalarProperty<float>("Add Sequence Sigma", "o", &assembly.reevaluation.sigmaAddSeq, &standard.reevaluation.sigmaAddSeq, 0, 10, 0.1f, 1, "%.2f");
 		ScalarProperty<float>("Merge Markers Sigma", "o", &assembly.reevaluation.sigmaMerge, &standard.reevaluation.sigmaMerge, 0, 10, 0.1f, 1, "%.2f");
 		ImGui::SeparatorText("Sequence->Marker Matching Algorithm");
 		ScalarProperty<float>("Primary Advantage", "", &assembly.reevaluation.match.primAdvantage, &standard.reevaluation.match.primAdvantage, 0, 10, 0.1f);
 		ScalarProperty<float>("Competitive Advantage", "", &assembly.reevaluation.match.compAdvantage, &standard.reevaluation.match.compAdvantage, 0, 10, 0.1f);
-		ScalarProperty<float>("Uncertainty##ReSeqMatch", "px", &assembly.reevaluation.match.uncertainty, &standard.reevaluation.match.uncertainty, 0, 10, 0.1f, 1, "%.2f");
+		ScalarProperty<float>("Uncertainty##ReSeqMatch", "px", &assembly.reevaluation.match.uncertainty, &standard.reevaluation.match.uncertainty, 0, 10, 0.1f, PixelFactor, "%.2f");
 		ScalarProperty<int>("Conservative Level", "", &assembly.reevaluation.match.conservativeLevel, &standard.reevaluation.match.conservativeLevel, 0, 3);
 		ScalarProperty<int>("Compete Range", "", &assembly.reevaluation.match.competeRange, &standard.reevaluation.match.competeRange, 0, 10);
 		EndCollapsingRegion();

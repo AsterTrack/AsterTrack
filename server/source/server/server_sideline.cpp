@@ -74,9 +74,8 @@ void StartSimulation(ServerState &state)
 		std::vector<CameraMode> modes;
 		modes.reserve(testingCalibrations.size());
 		for (auto &calib : testingCalibrations)
-		{ // Real one not needed for debugging
-			modes.push_back(CameraMode(1280, 800));
-			//modes.push_back(getCameraMode(state, calib.id));
+		{ // Mode specifies aspect ratio used for field of view calculation
+			modes.push_back(getProvisionalCameraMode(state, calib.id));
 		}
 		DebugSpecificCameraParameters(testingCalibrations, modes);
 	}

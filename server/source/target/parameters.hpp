@@ -35,8 +35,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 struct TargetMatchingParametersFast
 {
-	float matchRadius = 2.0f*PixelSize;
-	MatchingParameters match = { 0.1f*PixelSize, 2, 2, 2, 1 };
+	float matchRadius = 2.0f*InvariantPixelSize;
+	MatchingParameters match = { 0.1f*InvariantPixelSize, 2, 2, 2, 1 };
 };
 
 // Cannot be constexpr because of MSVC and standard < C++26
@@ -55,19 +55,19 @@ struct TargetMatchingParametersSlow
 
 	// Matches to consider
 	int maxCandidates = 10;
-	float matchRadius = 20.0f*PixelSize;
+	float matchRadius = 20.0f*InvariantPixelSize;
 
 	// Calculation of difference in position
-	float differenceRadius = 15.0f*PixelSize;
+	float differenceRadius = 15.0f*InvariantPixelSize;
 	int differenceFalloff = 2;
 	float differenceFalloffFactorSq = getFalloffFactorSq(differenceRadius, differenceFalloff);
 
 	// Influence of neighbouring markers on mismatch
-	float influenceRadius = 70.0f*PixelSize;
+	float influenceRadius = 70.0f*InvariantPixelSize;
 	int influenceFalloff = 2;
 	float influenceFalloffFactorSq = getFalloffFactorSq(influenceRadius, influenceFalloff);
 	// Evaluating similarity of neighbouring matches for mismatch
-	float similarityRadius = 7.0f*PixelSize;
+	float similarityRadius = 7.0f*InvariantPixelSize;
 	int similarityFalloff = 2;
 	float similarityFalloffFactorSq = getFalloffFactorSq(similarityRadius, similarityFalloff);
 	// Mismatch is roughly 1 / (similarity*influence)
@@ -80,7 +80,7 @@ struct TargetMatchingParametersUncertain
 {
 	// Accounting for excessive uncertainty after initial match
 	float perpDeviation = 1.2f;
-	float stepLength = 3.0f*PixelSize;
+	float stepLength = 3.0f*InvariantPixelSize;
 	int maxSteps = 20;
 	TargetMatchingParametersFast subMatch = {};
 };

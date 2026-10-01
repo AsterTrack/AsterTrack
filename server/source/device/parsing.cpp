@@ -581,6 +581,7 @@ bool ReadConfigPacket(TrackingCameraState &camera, const PacketHeader header, co
 
 	// Update mode
 	camera.pipeline->mode = CameraMode(sensor, sensorMin, sensorMax, frame, frameMin, frameMax);
+	camera.pipeline->calib.resFactor = camera.pipeline->mode.PixelFactor / PixelFactor;
 	SignalCameraUpdate(camera.id, EVT_CAMERA_UPDATE_MODE);
 
 	return true;

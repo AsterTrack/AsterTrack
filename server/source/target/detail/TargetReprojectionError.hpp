@@ -179,7 +179,7 @@ struct TargetReprojectionError
 		Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 		if constexpr (!(Options&OptUndistorted))
 			measurement = undistortPoint(m_calibs[pt.camera], measurement);
-		return (proj - measurement).norm();
+		return (proj - measurement).norm() * m_calibs[pt.camera].resFactor;
 		// TODO: Switch to squaredNorm to save on many sqrts in tracking
 		// Previous attempts resulted in optimisation that couldn't optimise (did not abort early, just no progress)
 	}
@@ -313,7 +313,7 @@ struct TargetReprojectionError
 			Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 			if constexpr (!(Options&OptUndistorted))
 				measurement = undistortPoint(m_calibs[pt.camera], measurement);
-			errors.template segment<2>(p*2) = proj - measurement;
+			errors.template segment<2>(p*2) = (proj - measurement) * m_calibs[pt.camera].resFactor;
 		}
 	}
 
@@ -326,7 +326,7 @@ struct TargetReprojectionError
 			auto &pt = m_observedPoints[p];
 			Vector3<DiffScalar> tgtPt = pt.marker.template cast<DiffScalar>();
 			Vector2<DiffScalar> proj = projectPoint2D(m_mvps[pt.camera], pose * tgtPt);
-			projections.template segment<2>(p*2) = proj;
+			projections.template segment<2>(p*2) = proj * m_calibs[pt.camera].resFactor;
 		}
 	}
 
@@ -340,7 +340,7 @@ struct TargetReprojectionError
 			Vector2<DiffScalar> measurement = pt.obs.template cast<DiffScalar>();
 			if constexpr (!(Options&OptUndistorted))
 				measurement = undistortPoint(m_calibs[pt.camera], measurement);
-			measurements.template segment<2>(p*2) = measurement;
+			measurements.template segment<2>(p*2) = measurement * m_calibs[pt.camera].resFactor;
 		}
 	}
 

@@ -248,8 +248,11 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 					if (!(updateProc && config.shareBlobProcessing && cfg.shareBlobProcessing))
 						continue;
 				}
-				if (!state.isStreaming) // If streaming, keep actual mode sent by camera on stream start
+				if (!state.isStreaming)
+				{ // If streaming, keep actual mode sent by camera on stream start
 					camera->pipeline->mode = getProvisionalCameraMode(state, camera->id);
+					camera->pipeline->calib.resFactor = camera->pipeline->mode.PixelFactor / PixelFactor;
+				}
 				CameraUpdateConfig(state, *camera);
 			}
 		}

@@ -1126,15 +1126,15 @@ void UpdateTrackingPipeline(PipelineState &pipeline, std::vector<CameraPipeline*
 			for (int p = 0; p < points2D[c]->size(); p++)
 			{
 				Eigen::Vector2f pt = (*points2D[c])[p];
-				float blobSize = (*properties[c])[p].size;
+				float blobSize = (*properties[c])[p].size * calibs[c].resFactor;
 				BlobUsage usage = (*blobUse[c])[p];
 				int exact = 0, fitting = 0, closeby = 0;
 				for (int m = 0; m < frame->markers3D.size(); m++)
 				{
 					auto trMk = frame->markers3D[m];
 					Eigen::Vector2f proj = projectPoint2D(calibs[c].camera, trMk.pos);
-					float projSize = calculate2DSizeSimple(calibs[c], trMk.pos, trMk.size);
-					float dist = (pt - proj).norm();
+					float projSize = calculate2DSizeSimple(calibs[c], trMk.pos, trMk.size) * calibs[c].resFactor;
+					float dist = (pt - proj).norm() * calibs[c].resFactor;
 					float rayHit = dist - projSize;
 					float overlap = dist - projSize - blobSize;
 					LOG(LPipeline, LTrace, "Camera %d Observation %d dist %.2fpx, proj size %.2fpx, blob size %.2fpx, ray hit %.2fpx, overlap %.2fpx, ",

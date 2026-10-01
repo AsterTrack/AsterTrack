@@ -489,7 +489,7 @@ Scalar getTriReprojectionRMSE(const std::vector<std::vector<Eigen::Matrix<PointS
 		auto camMat = cameras[sample.camera].camera.matrix().template cast<Scalar>();
 		auto point = points2D[sample.camera]->at(sample.blob).template cast<Scalar>();
 		Eigen::Vector<Scalar,2> proj = projectPoint2D(cameras[sample.camera].camera, point3D.pos).template cast<Scalar>();
-		reprojectionRMSE += (point - proj).squaredNorm();
+		reprojectionRMSE += (point - proj).squaredNorm() * (cameras[sample.camera].resFactor*cameras[sample.camera].resFactor);
 	}
 	return std::sqrt(reprojectionRMSE / point3D.samples.size());
 }

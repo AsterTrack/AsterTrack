@@ -144,7 +144,7 @@ bool determineTargetOutliers(const std::vector<CameraCalib> &calibs, ObsTarget &
 			Eigen::Vector3f pt3D = frameIt->pose * target.markers[m];
 			Eigen::Vector2f proj = (calibs[sampleIt->camera].camera.cast<float>() * pt3D.homogeneous()).hnormalized().head<2>();
 			Eigen::Vector2f pt2D = undistortPoint(calibs[sampleIt->camera], sampleIt->point);
-			float diff = (proj-pt2D).norm();
+			float diff = (proj-pt2D).norm() * calibs[sampleIt->camera].resFactor;
 			if (diff > maxErrors.sample)
 			{
 				sampleOutliers++;
@@ -252,9 +252,6 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 	ReevaluateSequenceParameters params)
 {
 	if (target.frames.size() < params.minOverlap) return 0;
-	params.maxSeqRMSE *= PixelSize;
-	params.uncertainty *= PixelSize;
-	params.match.uncertainty *= PixelSize;
 
 	ScopedLogCategory scopedLogCategory(LTargetCalib);
 
@@ -326,7 +323,7 @@ int reevaluateMarkerSequences(const std::vector<CameraCalib> &calibs, const std:
 				for (int m = 0; m < markers.size(); m++)
 				{
 					Eigen::Vector2f proj = (calibs[c].camera.cast<float>() * markers[m].homogeneous()).hnormalized().head<2>();
-					markerMatch[m].value += (proj-seq.getPoint(seqOffset+i)).squaredNorm();
+					markerMatch[m].value += (proj-seq.getPoint(seqOffset+i)).squaredNorm() * (calibs[c].resFactor*calibs[c].resFactor);
 				}
 			}
 		});

@@ -41,7 +41,7 @@ struct ClusteringParameters
 	struct
 	{
 		int minPoints = 2;
-		float maxDistance = 40.0f*PixelSize;
+		float maxDistance = 40.0f*InvariantPixelSize;
 	} blob2DCluster;
 	// Triangulate 2D clusters to 3D clusters
 	struct

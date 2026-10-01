@@ -118,6 +118,12 @@ struct CameraCalib_t
 	int lensID;
 
 	/**
+	 * Scale factor for resolution of camera over default assumed by PixelFactor.
+	 * May scale errors and parameters when appropriate.
+	 */
+	float resFactor = 1.0f;
+
+	/**
 	 * Update the view and camera matrix when transform or intrinsiv parameters of cameras changed
 	 * If you get a linker error here, include eigenutil.hpp to get the inline definition
 	 */
@@ -392,8 +398,18 @@ typedef Bounds3<float> Bounds3f;
 
 static const double PI = 3.14159265358979323846;
 
-// This is arbitrarily chosen and is only for visualisation and some easy-to-read limits
-static const float PixelFactor = 1280/2.0f;
-static const float PixelSize = 2.0f/1280;
+/**
+ * Pixel Scale Factor used for logging and as parameter units for pixel values
+ * Only used in subsystems that scale values with CameraCalib::resFactor
+ * So this value should be arbitrary, but that is not the case yet
+ */
+static const float PixelFactor = 1280/2.0f, PixelSize = 2.0f/1280;
+
+/**
+ * Pixel Scale Factor used as parameter units invariant to resolution changes
+ * Some subsystems do not scale values with CameraCalib::resFactor
+ * So these parameters rely on this value not changing
+ */
+static const float InvariantPixelSize = 2.0f/1280;
 
 #endif // EIGEN_DEF_H

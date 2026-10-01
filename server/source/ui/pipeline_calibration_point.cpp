@@ -38,12 +38,6 @@ void InterfaceState::UpdatePipelineCalibSection()
 	BeginSection("Camera Calibration");
 	{
 		const auto &ptCalib = pipeline.pointCalib;
-		float DynPixelFactor = PixelFactor;
-		{ // For external logging, so try to use real pixel size
-			auto camera_lock = pipeline.cameras.contextualRLock();
-			if (!camera_lock->empty())
-				DynPixelFactor = camera_lock->front()->mode.PixelFactor;
-		}
 		ImGui::AlignTextToFramePadding();
 		if (ptCalib.control && ptCalib.control->running() && ptCalib.state)
 		{
@@ -55,9 +49,9 @@ void InterfaceState::UpdatePipelineCalibSection()
 			else if (ptCalib.settings.typeFlags & 0b010)
 			{
 				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*DynPixelFactor,
-					errors.stdDev*DynPixelFactor,
-					errors.max*DynPixelFactor,
+					errors.mean*PixelFactor,
+					errors.stdDev*PixelFactor,
+					errors.max*PixelFactor,
 					errors.num);
 			}
 		}
@@ -68,17 +62,17 @@ void InterfaceState::UpdatePipelineCalibSection()
 			{
 				ImGui::TextUnformatted("Calibration is numerically unstable!");
 				ImGui::SetItemTooltip("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*DynPixelFactor,
-					errors.stdDev*DynPixelFactor,
-					errors.max*DynPixelFactor,
+					errors.mean*PixelFactor,
+					errors.stdDev*PixelFactor,
+					errors.max*PixelFactor,
 					errors.num);
 			}
 			else
 			{
 				ImGui::Text("%.4fpx += %.4fpx error, %.4fpx max (%d samples)",
-					errors.mean*DynPixelFactor,
-					errors.stdDev*DynPixelFactor,
-					errors.max*DynPixelFactor,
+					errors.mean*PixelFactor,
+					errors.stdDev*PixelFactor,
+					errors.max*PixelFactor,
 					errors.num);
 			}
 		}
@@ -343,7 +337,8 @@ void InterfaceState::UpdatePipelineCalibSection()
 			{
 				LensCalib &lens = lensIt->second;
 				CameraCalib calib(lens);
-				CameraMode mode(1280, 800);
+				// Mode only determines aspect ratio used to describe lens distortion
+				CameraMode mode = getProvisionalCameraMode(state, 0);
 				ImGui::PushID(lens.id);
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();

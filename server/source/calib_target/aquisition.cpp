@@ -485,7 +485,7 @@ OptErrorRes getTargetErrorDist(const std::vector<CameraCalib> &calibs, const Obs
 			Eigen::Vector3f pt3D = frame.pose * target.markers[m];
 			Eigen::Vector2f proj = (calibs[samples.camera].camera.cast<float>() * pt3D.homogeneous()).hnormalized().head<2>();
 			Eigen::Vector2f pt2D = undistortPoint(calibs[samples.camera], samples.point);
-			errorVec(i++) = (proj-pt2D).norm();
+			errorVec(i++) = (proj-pt2D).norm() * calibs[samples.camera].resFactor;
 		}
 	}
 	assert(i == errorVec.size());

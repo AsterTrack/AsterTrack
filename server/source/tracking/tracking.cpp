@@ -289,7 +289,7 @@ void trackMarker(std::list<TransientMarker> &markers,
 			float distSq = (camPoints[p] - proj).squaredNorm();
 			float blobSizeSq = camProps[p].size * camProps[p].size;
 			// TODO: Compare blobSizeSq to projSizeSq
-			matchCand.value = std::max(0.0f, distSq - blobSizeSq);
+			matchCand.value = std::max(0.0f, distSq - blobSizeSq) * calibs[c].resFactor * calibs[c].resFactor;
 			if (matchCand.value > radiusSq) continue;
 			matchCand.index = p;
 			matchCnt++;

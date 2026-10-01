@@ -301,7 +301,7 @@ static void ThreadTargetViewReconstruction(PipelineState *pipeline, std::shared_
 			return false;
 		}
 		viewPtr->state.calibrated = true;
-		if (viewPtr->state.errors.rmse < 0.5*PixelSize && viewPtr->state.errors.max < 1)
+		if (viewPtr->state.errors.rmse < 0.5*PixelSize && viewPtr->state.errors.max < 1*PixelSize)
 			viewPtr->selected = true;
 		ObsTarget &target = obsData.targets.front();
 		if (target.markers.empty() || target.frames.empty())

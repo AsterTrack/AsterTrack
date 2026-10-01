@@ -217,6 +217,8 @@ struct CameraConfigMap
 	{
 		if (configurations.empty())
 			configurations.push_back({});
+		if (id == CAMERA_ID_NONE)
+			return 0;
 		return cameraConfigs.insert(std::make_pair(id, 0)).first->second;
 	}
 

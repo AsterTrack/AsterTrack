@@ -56,12 +56,12 @@ struct TargetViewParameters
 
 struct ReevaluateSequenceParameters
 {
-	float uncertainty = 0.5f;
-	float maxSeqRMSE = 10.0f;
+	float uncertainty = 0.5f * PixelSize;
+	float maxSeqRMSE = 10.0f * PixelSize;
 	float sigmaAddSeq = 3;
 	float sigmaMerge = 3;
 	int minOverlap = 10;
-	MatchingParameters match = { 1, 3, 3, 2, 1 };
+	MatchingParameters match = { 1 * PixelSize, 3, 3, 2, 1 };
 };
 
 struct SubsampleTargetParameters

@@ -87,9 +87,8 @@ bool ServerInit(ServerState &state)
 		std::vector<CameraMode> modes;
 		modes.reserve(state.cameraCalibrations.size());
 		for (auto &calib : state.cameraCalibrations)
-		{ // Real one not needed for debugging
-			modes.push_back(CameraMode(1280, 800));
-			//modes.push_back(getCameraMode(state, calib.id));
+		{ // Mode specifies aspect ratio used for field of view calculation
+			modes.push_back(getProvisionalCameraMode(state, calib.id));
 		}
 		DebugSpecificCameraParameters(state.cameraCalibrations, modes);
 	}
@@ -493,6 +492,7 @@ static std::shared_ptr<CameraPipeline> EnsureCameraPipeline(ServerState &state, 
 
 	// Set provisional camera mode
 	camera->mode = getProvisionalCameraMode(state, id);
+	camera->calib.resFactor = camera->mode.PixelFactor / PixelFactor;
 
 	// Add calibration
 	for (int i = 0; i < state.cameraCalibrations.size(); i++)

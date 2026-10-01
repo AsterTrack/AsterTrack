@@ -239,7 +239,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 					if (obsData.hasNaN()) continue;
 					auto recData = basis.middleRows<3>(v*3) * P_approx.col(p);
 					auto diff = obsData.hnormalized() - recData.hnormalized();
-					float valError = diff.norm() * viewNormInv(0, vv*3);
+					float valError = diff.norm() * viewNormInv(0, vv*3) * cameraCalibs[vv].resFactor;
 					errorStats.update(valError);
 				}
 			}
@@ -277,7 +277,7 @@ std::optional<ErrorMessage> reconstructGeometry(const ObsPointData &data, std::v
 				else
 				{ // Verify reconstruction against existing measurement
 					auto diff = obsData.hnormalized() - recData.hnormalized();
-					float valError = diff.norm() * viewNormInv(0, vv*3);
+					float valError = diff.norm() * viewNormInv(0, vv*3) * cameraCalibs[vv].resFactor;
 					if (removeOutliers && valError > maxOutlier)
 					{
 						obsData.setConstant(NAN);

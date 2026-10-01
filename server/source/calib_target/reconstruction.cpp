@@ -372,18 +372,19 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 		}
 	};
 
-	auto calculateErrors = [mutableCount, immutableCount, &disableFrame](const char *label, const Decomp &tucker, const SparseTensor<double, 3> &dataTensor, const Eigen::VectorXd &measurements, LogLevel logLevel)
+	auto calculateErrors = [mutableCount, immutableCount, &disableFrame, &cameraCalibs]
+		(const char *label, const Decomp &tucker, const SparseTensor<double, 3> &dataTensor, const Eigen::VectorXd &measurements, LogLevel logLevel)
 	{
 		double errorSq = 0, error = 0, maxError = 0;
 		int ptCnt = 0;
 		for (int i = 0; i < mutableCount; i += 2)
 		{
-			int dc = dataTensor.indices(i,0), f = dataTensor.indices(i,1), s = dataTensor.indices(i,2);
+			int dc = dataTensor.indices(i,0), f = dataTensor.indices(i,1), s = dataTensor.indices(i,2), c = dc/3;
 			if (disableFrame(f)) continue;
 
 			Eigen::Vector2d measuredPtN(measurements(i), measurements(i+1));
 			Eigen::Vector3d reconPt(tucker(Eigen::Vector3i(dc+0, f, s)), tucker(Eigen::Vector3i(dc+1, f, s)), tucker(Eigen::Vector3i(dc+2, f, s)));
-			Eigen::Vector2d ptDiff = measuredPtN-reconPt.hnormalized();
+			Eigen::Vector2d ptDiff = (measuredPtN - reconPt.hnormalized()) * cameraCalibs[c].resFactor;
 
 			errorSq += ptDiff.squaredNorm();
 			double ptError = ptDiff.norm();
@@ -398,7 +399,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 
 			Eigen::Vector3d measuredPt(dataTensor.values(i), dataTensor.values(i+1), dataTensor.values(i+2));
 			Eigen::Vector3d reconPt(tucker(Eigen::Vector3i(dc+0, f, s)), tucker(Eigen::Vector3i(dc+1, f, s)), tucker(Eigen::Vector3i(dc+2, f, s)));
-			Eigen::Vector2d ptDiff = measuredPt.hnormalized()-reconPt.hnormalized();
+			Eigen::Vector2d ptDiff = (measuredPt.hnormalized() - reconPt.hnormalized()) * cameraCalibs[c].resFactor;
 
 			errorSq += ptDiff.squaredNorm();
 			double ptError = ptDiff.norm();
@@ -439,7 +440,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 
 			Eigen::Vector2d measuredPtN(measurements(i), measurements(i+1));
 			Eigen::Vector3d reconPt(tucker(Eigen::Vector3i(dc+0, f, s)), tucker(Eigen::Vector3i(dc+1, f, s)), tucker(Eigen::Vector3i(dc+2, f, s)));
-			double errSq = (measuredPtN-reconPt.hnormalized()).squaredNorm();
+			double errSq = (measuredPtN - reconPt.hnormalized()).squaredNorm() * (cameraCalibs[c].resFactor*cameraCalibs[c].resFactor);
 			markerError(s) += errSq;
 			markerNum(s)++;
 			frameError(f) += errSq;
@@ -453,7 +454,7 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 			if (disableFrame(f)) continue;
 			Eigen::Vector3d measuredPt(dataTensor.values(i), dataTensor.values(i+1), dataTensor.values(i+2));
 			Eigen::Vector3d reconPt(tucker(Eigen::Vector3i(dc+0, f, s)), tucker(Eigen::Vector3i(dc+1, f, s)), tucker(Eigen::Vector3i(dc+2, f, s)));
-			double errSq = (measuredPt.hnormalized()-reconPt.hnormalized()).squaredNorm();
+			double errSq = (measuredPt.hnormalized() - reconPt.hnormalized()).squaredNorm() * (cameraCalibs[c].resFactor*cameraCalibs[c].resFactor);
 			markerError(s) += errSq;
 			markerNum(s)++;
 			frameError(f) += errSq;
@@ -792,10 +793,10 @@ bool reconstructTarget(const std::vector<CameraCalib> &cameraCalibs, ObsTarget &
 				{
 					Eigen::Vector3d transPointB = std::get<0>(best) * tucker.factor<2>().row(target.markerMap[sample.marker]).transpose().homogeneous();
 					Eigen::Vector4d projPointB = cameraCalibs[sample.camera].camera * transPointB.homogeneous();
-					errB += (projPointB.hnormalized().head<2>() - sample.point.cast<double>()).norm();
+					errB += (projPointB.hnormalized().head<2>() - sample.point.cast<double>()).norm() * cameraCalibs[sample.camera].PixelFactor;
 					Eigen::Vector3d transPointC = pose * tucker.factor<2>().row(target.markerMap[sample.marker]).transpose().homogeneous();
 					Eigen::Vector4d projPointC = cameraCalibs[sample.camera].camera * transPointC.homogeneous();
-					errC += (projPointC.hnormalized().head<2>() - sample.point.cast<double>()).norm();
+					errC += (projPointC.hnormalized().head<2>() - sample.point.cast<double>()).norm() * cameraCalibs[sample.camera].PixelFactor;
 				}
 				if (errB > errC)
 				{

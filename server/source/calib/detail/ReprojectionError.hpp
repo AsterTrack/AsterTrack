@@ -598,7 +598,7 @@ struct ReprojectionError
 			{
 				int c = sample.camera;
 				Vector2<ErrorScalar> point = projectPoint2D(cameras[c].camera, tri);
-				errors(errorIndex++) = (blobContainer[c][0] - point).norm();
+				errors(errorIndex++) = (blobContainer[c][0] - point).norm() * cameras[c].resFactor;
 			}
 		}
 
@@ -678,7 +678,7 @@ struct ReprojectionError
 			Vector2<ErrorScalar> measurement = sample.point.template cast<ErrorScalar>();
 			Vector2<ErrorScalar> proj = projectPoint2D(cameras[sample.camera].camera, motion * marker);
 			Vector2<ErrorScalar> point = undistortPoint(cameras[sample.camera], measurement);
-			errors(errorIndex++) = (point - proj).norm();
+			errors(errorIndex++) = (point - proj).norm() * cameras[sample.camera].resFactor;
 		}
 	}
 
@@ -705,7 +705,7 @@ struct ReprojectionError
 				Vector2<ErrorScalar> measurement = sample.point.template cast<ErrorScalar>();
 				Vector2<ErrorScalar> proj = projectPoint2D(cameras[sample.camera].camera, tgtParams.motion[f] * marker);
 				Vector2<ErrorScalar> point = undistortPoint(cameras[sample.camera], measurement);
-				errors(errorIndex++) = (point - proj).norm();
+				errors(errorIndex++) = (point - proj).norm() * cameras[sample.camera].resFactor;
 			}
 		}
 		assert(errorIndex == errors.size());

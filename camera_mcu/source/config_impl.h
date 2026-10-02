@@ -33,6 +33,18 @@ extern "C"
 #define V1_0 2
 #define V1_1 3
 #define V1_2 4
+// These names are to describe firmware compatibility
+// Add custom hardware revisions with NAME_VX_X if they are not exactly Firmware-Compatible with an existing version
+// Then Makefile can be called with make BOARD_REV='NAME_VX.X'
+// Note that version.sh replaces any '.' with '_' for the macro usage, but retains them for FW compatibility string
+
+#include "../build/version.h" // Defines BOARD_REV
+
+#define USE_UART 1
+#define USE_I2C 1
+#if BOARD_REV >= V1_1
+#define USE_SPI_NRF_SYNC 1
+#endif
 
 #if BOARD_REV == V0_3 // using hardware sync line over Cat5e
 

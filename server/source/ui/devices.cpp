@@ -263,10 +263,12 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 		ImGui::EndGroup();
 		if (ImGui::BeginItemTooltip())
 		{
-			ImGui::Text("SBC Firmware v%d.%d.%d (Build %.2x - %s)",
-				info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch, info.sbcFWVersion.build, info.sbcFWDescriptor.c_str());
-			ImGui::Text("MCU Firmware v%d.%d.%d (Build %.2x - %s)",
-				info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build, info.mcuFWDescriptor.c_str());
+			ImGui::Text("SBC Firmware v%d.%d.%d (Build %.2x, %s, %s)",
+				info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch,
+				info.sbcFWVersion.build, info.sbcFWDescriptor.c_str(), info.sbcFWCompatibility.c_str());
+			ImGui::Text("MCU Firmware v%d.%d.%d (Build %.2x, %s, %s)",
+				info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch,
+				info.mcuFWVersion.build, info.mcuFWDescriptor.c_str(), info.mcuFWCompatibility.c_str());
 			ImGui::EndTooltip();
 		}
 		ImGui::SameLine();

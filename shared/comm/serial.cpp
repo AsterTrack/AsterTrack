@@ -28,12 +28,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 uint32_t parseMCUInfoPacket(CameraStoredInfo &info, CameraStoredConfig &config, const uint8_t *packet, uint32_t length)
 { // Packet received by MCU_FETCH_INFO either via I2C or PACKET_READ_MCU_INFO
 	uint8_t version = packet[0]; // Received info packet version
-	if (version != MCU_INFO_VERSION)
+	if (version > MCU_INFO_VERSION)
 	{ // Keep support for older versions in here!
-		printf("Fetch info packet version %d is unsupported, expected %d!\n", version, MCU_INFO_VERSION);
+		printf("Fetch info packet version %d is unsupported, expected %d or lower!\n", version, MCU_INFO_VERSION);
 		return 0;
 	}
-	uint32_t versionedSize = 8+4+4+12+12;
+	uint8_t header8Len = version >= 2? 12 : 8;
+	uint32_t versionedSize = header8Len+4+4+12+12;
 	if (length < versionedSize) return 0;
 
 	info.mcuOTPVersion = packet[1]; // Should not concern us too much, but may be of interest in interpreting the data
@@ -42,8 +43,10 @@ uint32_t parseMCUInfoPacket(CameraStoredInfo &info, CameraStoredConfig &config, 
 	info.subpartSerials.resize(packet[2]);
 	info.mcuHWDescriptor.resize((packet[4] << 8) | packet[5]);
 	info.mcuFWDescriptor.resize((packet[6] << 8) | packet[7]);
+	if (version >= 2)
+		info.mcuFWCompatibility.resize((packet[8] << 8) | packet[9]);
 
-	const uint8_t *ptr = packet+8;
+	const uint8_t *ptr = packet+header8Len;
 	memcpy(&config.cameraID, ptr, sizeof(CameraID));
 	ptr += sizeof(CameraID);
 	memcpy(&info.mcuFWVersion, ptr, sizeof(VersionDesc));
@@ -69,12 +72,14 @@ std::vector<std::string> describeCameraInfo(const CameraStoredInfo &info)
 	bool sbc = info.sbcFWVersion.num != 0, mcu = info.mcuFWVersion.num != 0;
 	if (!sbc && !mcu) return desc;
 	if (sbc)
-		desc.push_back(asprintf_s("SBC Firmware v%d.%d.%d (Build %.2x - %s)",
-			info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch, info.sbcFWVersion.build, info.sbcFWDescriptor.c_str()));
+		desc.push_back(asprintf_s("SBC Firmware v%d.%d.%d (Build %.2x, %s, %s)",
+			info.sbcFWVersion.major, info.sbcFWVersion.minor, info.sbcFWVersion.patch,
+			info.sbcFWVersion.build, info.sbcFWDescriptor.c_str(), info.sbcFWCompatibility.c_str()));
 	else desc.push_back("No info on SBC.");
 	if (mcu)
-		desc.push_back(asprintf_s("MCU Firmware v%d.%d.%d (Build %.2x - %s)",
-			info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch, info.mcuFWVersion.build, info.mcuFWDescriptor.c_str()));
+		desc.push_back(asprintf_s("MCU Firmware v%d.%d.%d (Build %.2x, %s, %s)",
+			info.mcuFWVersion.major, info.mcuFWVersion.minor, info.mcuFWVersion.patch,
+			info.mcuFWVersion.build, info.mcuFWDescriptor.c_str(), info.mcuFWCompatibility.c_str()));
 	else desc.push_back("No info on MCU.");
 	if (sbc)
 	{

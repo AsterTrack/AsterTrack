@@ -46,6 +46,7 @@ enum CameraMCUCommand
 	MCU_GET_STATUS,		// Get Status
 	MCU_GET_PACKET, 	// Get last packet
 	MCU_UPDATE_STATE,	// Send embedded state update to MCU
+	MCU_GET_FW_COMPAT,	// Get Firmware Compatibility String
 
 	MCU_COMMANDS = 32,
 	MCU_SWITCH_BOOTLOADER
@@ -59,9 +60,9 @@ enum CameraMCUCommand
 
 // Most recent MCU Info packet version supported
 // ALWAYS update all uses across projects to be backwards compatible
-#define MCU_INFO_VERSION		1
+#define MCU_INFO_VERSION		2
 // Max length of MCU_FETCH_INFO across versions (may only increase)
-#define MCU_INFO_MAX_LENGTH		(10 * sizeof(uint32_t))
+#define MCU_INFO_MAX_LENGTH		(11 * sizeof(uint32_t))
 // Non-Zero Separator in strings indicating separate texts
 #define MCU_MULTI_TEXT_SEP		'\2' // Unicode Text Start
 

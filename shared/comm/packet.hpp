@@ -89,7 +89,7 @@ static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t 
 #define STREAM_PACKET_BLOB_SIZE			6
 
 #define CAMERA_INFO_MIN_LENGTH			52
-#define CAMERA_INFO_BASE_LENGTH			54
+#define CAMERA_INFO_BASE_LENGTH			58
 
 #define BACKGROUND_HEADER_SIZE			4
 
@@ -213,42 +213,29 @@ enum FirmwareUpdateFlags : uint8_t
  */
 
 static const uint8_t FIRMWARE_TAG_KEY[] = { 0x08, 0x39, 0xA5, 0x73, 0x20, 0x72, 0xAC, 0x80 };
-#define FIRMWARE_TAG_HEADER		10
-#define FIRMWARE_TAG_SIZE		(FIRMWARE_TAG_HEADER + sizeof(FIRMWARE_TAG_KEY))
+#define FIRMWARE_TAG_HEADER_MIN	10
+#define FIRMWARE_TAG_HEADER_MAX	12
 
 enum FirmwareTagType : uint8_t
 {
-	FW_TAG_CAM_UPDATE = 0x53,
-	FW_TAG_CAM_SBC_PKG = 0x17,
-	FW_TAG_CAM_MCU_BIN = 0x9F,
-	FW_TAG_CONT_MCU_BIN = 0xE1
+	FW_TAG_CAM_UPDATE		= 0x53,
+	FW_TAG_CAM_SBC_PKG		= 0x17,
+	FW_TAG_CAM_MCU_BIN		= 0x9F,
+	FW_TAG_CONT_MCU_BIN		= 0xE1
 };
 
-struct FirmwareTagHeader
+struct FirmwareTag
 {
 	bool valid = false;
+	int tagVersion = 0;
 	int size = 0;
 	FirmwareTagType type;
 	union VersionDesc version;
 	uint16_t descLen;
-	std::string descriptor;
+	std::string descStr;
+	uint16_t compatLen;
+	std::string compatStr;
 };
-
-static inline bool parseFirmwareTagHeader(const uint8_t data[FIRMWARE_TAG_SIZE], struct FirmwareTagHeader *tag)
-{
-	if (memcmp(data+FIRMWARE_TAG_HEADER, FIRMWARE_TAG_KEY, sizeof(FIRMWARE_TAG_KEY)))
-		return false; // Not tagged.
-	uint8_t version = data[FIRMWARE_TAG_HEADER-1];
-	if (version != 1)
-		return false;
-	tag->size = FIRMWARE_TAG_SIZE; // Version 1
-	tag->type = (FirmwareTagType)data[FIRMWARE_TAG_HEADER-2];
-	// 2 reserved bytes
-	memcpy(&tag->version.num, &data[FIRMWARE_TAG_HEADER-8], 4);
-	tag->descLen = *(uint16_t*)&data[FIRMWARE_TAG_HEADER-10];
-	// May expand here
-	return true;
-}
 
 
 /**

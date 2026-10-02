@@ -53,6 +53,8 @@ typedef enum
 extern union VersionDesc firmwareVersion;
 extern const char* firmwareDescriptor;
 extern const uint16_t firmwareDescriptorLength;
+extern const char* firmwareCompatibility;
+extern const uint16_t firmwareCompatibilityLength;
 
 // Times for supervision
 TimePoint startup = 0;
@@ -145,7 +147,7 @@ static void uart_set_identification()
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
 
-static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion);
+static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version);
 
 static bool UpdateFilterSwitcher(enum CameraFilterState state);
 
@@ -801,19 +803,23 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		return uartd_accept;
 	}
 	else if (state->header.tag == PACKET_READ_MCU_INFO)
-	{ // Received request to write mcu info into OTP
+	{ // Received request to read mcu info
 		if (receive.packetSize < 1) return uartd_reset_nak;
 		// To avoid having to allocate one huge buffer and copy all data
 		// Packet is split in main data and additional data, written one after another
 
 		// Prepare main data in infoPacket
-		uint16_t infoSize = fillInfoPacket(infoPacket->data, receive.packetBuffer[0]);
+		uint8_t version = receive.packetBuffer[0];
+		uint16_t infoSize = fillInfoPacket(infoPacket->data, &version);
+		if (infoSize == 0) return uartd_reset_nak;
+		uint16_t fwCompatLength = version >= 2? firmwareCompatibilityLength : 0;
+
 		otp_get_subparts((uint32_t*)(infoPacket->data+infoSize));
 		uint16_t mainPacketSize = infoSize + OTP_NumSubParts*sizeof(uint64_t);
 		uint8_t *mainPacketEnd = infoPacket->data + mainPacketSize;
 		// Calculate total size with additional data
 		uint8_t *OTP_HWStringPtr = OTP_HwStringData + OTP_HW_STRING_PREPEND;
-		uint16_t totalPacketSize = mainPacketSize + OTP_HwStringLength + firmwareDescriptorLength;
+		uint16_t totalPacketSize = mainPacketSize + OTP_HwStringLength + firmwareDescriptorLength + fwCompatLength;
 
 		// Prepare packet headers including additional data
 		writeUARTPacketHeader(infoPacket, (struct PacketHeader){ .tag = PACKET_READ_MCU_INFO, .length = totalPacketSize});
@@ -823,6 +829,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 			updateDirectPacketChecksum(infoPacket->data, mainPacketSize, &accum1, &accum2);
 			updateDirectPacketChecksum(OTP_HWStringPtr, OTP_HwStringLength, &accum1, &accum2);
 			updateDirectPacketChecksum((uint8_t*)firmwareDescriptor, firmwareDescriptorLength, &accum1, &accum2);
+			updateDirectPacketChecksum((uint8_t*)firmwareCompatibility, fwCompatLength, &accum1, &accum2);
 			writeDirectPacketChecksum(mainPacketEnd, &accum1, &accum2);
 		}
 		writeUARTPacketEnd(infoPacket, mainPacketSize+PACKET_CHECKSUM_SIZE);
@@ -835,6 +842,8 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 			uartd_send_int(port, OTP_HWStringPtr, OTP_HwStringLength, true);
 		if (firmwareDescriptorLength)
 			uartd_send_int(port, firmwareDescriptor, firmwareDescriptorLength, true);
+		if (fwCompatLength)
+			uartd_send_int(port, firmwareCompatibility, fwCompatLength, true);
 		uartd_send_int(port, mainPacketEnd, UART_POST_OVERHEAD_SEND, true);
 		NVIC_EnableIRQ(I2C1_IRQn);
 		LeaveUARTPortZone(port);
@@ -1005,19 +1014,19 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 	}
 }
 
-static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
+static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version)
 {
 	response = __builtin_assume_aligned(response, 4);
 
 	// This is a critical packet, so make sure misinterpretations can not happen
-	uint8_t Packet_Version = MCU_INFO_VERSION;
-	if (requestedVersion != 0 && requestedVersion < Packet_Version)
-		Packet_Version = requestedVersion;
+	if (*version == 0 || *version > MCU_INFO_VERSION)
+		*version = MCU_INFO_VERSION;
 	// TODO: KEEP BACKWARDS COMPATIBLE TO LOWER Packet_Version requested by SBC!!
 	// IF new data is added to OTP, update PACKET_READ_MCU_INFO and PACKET_WRITE_MCU_INFO, too!
 
 	// Write packet header
-	response[0] = Packet_Version;		// Fetch Info packet version
+	uint8_t header32Len = *version >= 2? 3 : 2;
+	response[0] = *version;				// Fetch Info packet version
 	response[1] = OTP_Version; 			// OTP Format Version
 	response[2] = OTP_NumSubParts; 		// Sub-Part Count
 	response[3] =						// Detected Hardware Features / Defects
@@ -1030,19 +1039,26 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t requestedVersion)
 	response[5] = OTP_HwStringLength & 0xFF;
 	response[6] = firmwareDescriptorLength >> 8;
 	response[7] = firmwareDescriptorLength & 0xFF;
+	if (*version >= 2)
+	{
+		response[8] = firmwareCompatibilityLength >> 8;
+		response[9] = firmwareCompatibilityLength & 0xFF;
+		response[10] = 0; // Unused
+		response[11] = 0; // Unused
+	}
 
-	uint32_t *packet32 = ((uint32_t*)response);
-	packet32[2] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
-	packet32[3] = firmwareVersion.num;	// MCU Firmware Version
-	packet32[4] = OTP[2];				// 96-Bit Camera Serial Number Word 1
-	packet32[5] = OTP[3];				// 96-Bit Camera Serial Number Word 2
-	packet32[6] = OTP[4];				// 96-Bit Camera Serial Number Word 3
-	packet32[7] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
-	packet32[8] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
-	packet32[9] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
+	uint32_t *packet32 = ((uint32_t*)response) + header32Len;
+	packet32[0] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
+	packet32[1] = firmwareVersion.num;	// MCU Firmware Version
+	packet32[2] = OTP[2];				// 96-Bit Camera Serial Number Word 1
+	packet32[3] = OTP[3];				// 96-Bit Camera Serial Number Word 2
+	packet32[4] = OTP[4];				// 96-Bit Camera Serial Number Word 3
+	packet32[5] = LL_GetUID_Word0();	// 96-Bit Unique MCU ID Word 1
+	packet32[6] = LL_GetUID_Word1();	// 96-Bit Unique MCU ID Word 2
+	packet32[7] = LL_GetUID_Word2();	// 96-Bit Unique MCU ID Word 3
 
-	static_assert(MCU_INFO_MAX_LENGTH == (10 * sizeof(uint32_t)));
-	return MCU_INFO_MAX_LENGTH;
+	static_assert(MCU_INFO_MAX_LENGTH == ((3+8) * sizeof(uint32_t)));
+	return (header32Len+8) * sizeof(uint32_t);
 }
 
 uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr)
@@ -1091,9 +1107,9 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 		}
 		case MCU_FETCH_INFO:
 		{
-			// Response is 8-bit aligned
+			// Response is 8-byte aligned
 			uint8_t requestedVersion = len > 0? data[0] : 0;
-			return fillInfoPacket(response, requestedVersion);
+			return fillInfoPacket(response, &requestedVersion);
 		}
 		case MCU_GET_HW_STR:
 		{
@@ -1114,6 +1130,14 @@ uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint
 			// Can't DMA from rodata (flash)
 			memcpy(response+2, firmwareDescriptor, firmwareDescriptorLength);
 			return 2 + firmwareDescriptorLength;
+		}
+		case MCU_GET_FW_COMPAT:
+		{
+			response[0] = firmwareCompatibilityLength >> 8;
+			response[1] = firmwareCompatibilityLength & 0xFF;
+			// Can't DMA from rodata (flash)
+			memcpy(response+2, firmwareCompatibility, firmwareCompatibilityLength);
+			return 2 + firmwareCompatibilityLength;
 		}
 		case MCU_GET_PARTS:
 		{

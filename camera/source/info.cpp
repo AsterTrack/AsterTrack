@@ -39,11 +39,12 @@ bool isStored = false, isOverwritten = false;
 // Version and build number
 const VersionDesc sbcFWVersion(FW_MAJOR, FW_MINOR, FW_PATCH, FW_BUILD);
 
-// Optional text descriptor
-#ifndef FIRMWARE_DESCRIPTOR
+// Text descriptors
+#if !defined(FIRMWARE_DESCRIPTOR) || !defined(FIRMWARE_COMPATIBILITY)
 #error "Script did not prepare version file properly!"
 #endif
 const std::string sbcFWDescriptor = FIRMWARE_DESCRIPTOR;
+const std::string sbcFWCompatibility = FIRMWARE_COMPATIBILITY;
 
 CameraStoredInfo storedInfo;
 
@@ -124,6 +125,7 @@ static void updateInfo(CameraStoredInfo &info)
 {
 	info.sbcFWVersion = sbcFWVersion;
 	info.sbcFWDescriptor = sbcFWDescriptor;
+	info.sbcFWCompatibility = sbcFWCompatibility;
 	info.sbcRevisionCode = sbcRevisionCode;
 	info.sbcSerialNumber = sbcSerialNumber;
 
@@ -173,6 +175,8 @@ void receivedInfoFromMCU(CameraStoredInfo &&info)
 		printf("    MCU HW Descriptor: %s\n", info.mcuHWDescriptor.c_str());
 	if (!info.mcuFWDescriptor.empty())
 		printf("    MCU FW Descriptor: %s\n", info.mcuFWDescriptor.c_str());
+	if (!info.mcuFWCompatibility.empty())
+		printf("    MCU FW Compatibility: %s\n", info.mcuFWCompatibility.c_str());
 
 	// Update stored info
 	updateInfo(info);
@@ -214,8 +218,10 @@ void sendInfoPacket(CommMedium medium)
 	int mcuHWDesc = storedInfo.mcuHWDescriptor.size() & 0xFFFF;
 	int mcuSubparts = storedInfo.subpartSerials.size()*sizeof(uint64_t);
 	int sensorID = storedInfo.cameraSensor.size() & 0xFFFF;
+	int sbcFWCompat = storedInfo.sbcFWCompatibility.size() & 0xFFFF;
+	int mcuFWCompat = storedInfo.mcuFWCompatibility.size() & 0xFFFF;
 
-	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID);
+	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID + sbcFWCompat + mcuFWCompat);
 
 	infoPacket[0] = SBC_INFO_VERSION; // Packet version
 	infoPacket[1] = storedInfo.mcuOTPVersion;
@@ -241,7 +247,11 @@ void sendInfoPacket(CommMedium medium)
 	infoPacket[51] = mcuSubparts & 0xFF;
 	infoPacket[52] = sensorID >> 8;
 	infoPacket[53] = sensorID & 0xFF;
-	static_assert(CAMERA_INFO_BASE_LENGTH == 54);
+	infoPacket[54] = sbcFWCompat >> 8;
+	infoPacket[55] = sbcFWCompat & 0xFF;
+	infoPacket[56] = mcuFWCompat >> 8;
+	infoPacket[57] = mcuFWCompat & 0xFF;
+	static_assert(CAMERA_INFO_BASE_LENGTH == 58);
 
 	uint8_t *ptr = infoPacket.data() + CAMERA_INFO_BASE_LENGTH;
 	memcpy(ptr, storedInfo.sbcFWDescriptor.data(), sbcFWDesc);
@@ -254,6 +264,10 @@ void sendInfoPacket(CommMedium medium)
 	ptr += mcuSubparts;
 	memcpy(ptr, storedInfo.cameraSensor.data(), sensorID);
 	ptr += sensorID;
+	memcpy(ptr, storedInfo.sbcFWCompatibility.data(), sbcFWCompat);
+	ptr += sbcFWCompat;
+	memcpy(ptr, storedInfo.mcuFWCompatibility.data(), mcuFWCompat);
+	ptr += mcuFWCompat;
 
 	comm_send(medium, PacketHeader(PACKET_CAMERA_INFO, infoPacket.size()), std::move(infoPacket));
 }

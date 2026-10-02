@@ -175,7 +175,7 @@ LDFLAGS = $(COPTIONS) \
 #######################################
 
 # Force rebuild of version which includes a build indentifier
-$(shell ./source/version.sh)
+$(shell ./source/version.sh CH32V307_V1)
 
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 

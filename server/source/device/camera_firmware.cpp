@@ -922,7 +922,7 @@ static void ExecuteFirmwareUpdatePlan(FirmwareUpdatePlan &update)
  * Different firmware update plans
  */
 
-static FirmwareTransferType GetFirmwareType(const std::string &firmware, const FirmwareTagHeader &tag)
+static FirmwareTransferType GetFirmwareType(const std::string &firmware, const FirmwareTag &tag)
 {
 	if (firmware.ends_with(".tgz") || firmware.ends_with(".tar.gz"))
 	{
@@ -996,16 +996,8 @@ FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile)
 	{
 		auto handleFirmwareFile_impl = [&](const std::string &firmwareFile, std::vector<uint8_t> &data, auto &handleFile) -> bool
 		{
-			FirmwareTagHeader tag;
-			if (data.size() > FIRMWARE_TAG_SIZE)
-			{ // Some firmware files may be tagged. Not required, but provides meta info
-				tag.valid = parseFirmwareTagHeader(data.data()+data.size()-FIRMWARE_TAG_SIZE, &tag);
-				if (tag.valid && data.size() > FIRMWARE_TAG_SIZE+tag.descLen)
-				{
-					tag.descriptor.resize(tag.descLen);
-					memcpy(tag.descriptor.data(), data.data()+data.size()-FIRMWARE_TAG_SIZE-tag.descLen, tag.descLen);
-				}
-			}
+			// Some firmware files may be tagged. Not required, but provides meta info
+			FirmwareTag tag = ReadFirmwareTag(data.data(), data.size());
 
 			// Determine transfer type from file name and, if available, tag
 			FirmwareTransferType type = GetFirmwareType(firmwareFile, tag);
@@ -1013,8 +1005,8 @@ FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile)
 			{
 			case FW_TX_TYPE_SBC_PKG:
 				if (!sbc_fw_desc.empty()) return false; // Two SBC updates in one zip?
-				if (tag.descriptor.empty()) sbc_fw_desc = "Untagged";
-				else sbc_fw_desc = tag.descriptor;
+				if (tag.descStr.empty()) sbc_fw_desc = "Untagged";
+				else sbc_fw_desc = tag.descStr;
 				update->flags = (FirmwareUpdateFlags)(update->flags | FW_REQUIRE_REBOOT);
 				// Translate to generic file until cameras all support SBC_PKG
 				update->transfers.emplace_back("/mnt/mmcblk0p2/tce/mydata.tgz");
@@ -1022,8 +1014,8 @@ FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile)
 				break;
 			case FW_TX_TYPE_MCU_BIN:
 				if (!mcu_fw_desc.empty()) return false; // Two MCU updates in one zip? Not currently supported
-				if (tag.descriptor.empty()) mcu_fw_desc = "Untagged";
-				else mcu_fw_desc = tag.descriptor;
+				if (tag.descStr.empty()) mcu_fw_desc = "Untagged";
+				else mcu_fw_desc = tag.descStr;
 				update->flags = (FirmwareUpdateFlags)(update->flags | FW_FLASH_MCU);
 				// Translate to generic file until cameras all support MCU_BIN
 				update->transfers.emplace_back("/mnt/mmcblk0p2/tce/TrackingCameraMCU.bin");
@@ -1185,22 +1177,30 @@ bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmw
 	}
 
 	// Some firmware files may be tagged. Not required, but provides meta info
-	FirmwareTagHeader tag;
-	ReadFirmwareTag(fs, tag);
+	FirmwareTag tag = ReadFirmwareTag(fs);
 
 	// Determine transfer type from file name and, if available, tag
 	FirmwareTransferType type = GetFirmwareType(firmwareFile, tag);
+	std::string tagStr = "";
+	if (tag.valid)
+	{
+		tagStr = asprintf_s("v%d.%d.%d (Build %.2x, %s, %s)",
+			tag.version.major, tag.version.minor, tag.version.patch,
+			tag.version.build, tag.descStr.c_str(), tag.compatStr.c_str());
+	}
 	switch (type)
 	{
 	case FW_TX_TYPE_SBC_PKG:
 		if (tag.valid)
-			firmwareDescriptor = asprintf_s("Camera SBC v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera SBC %s", tagStr.c_str());
 		else
 		 	firmwareDescriptor = asprintf_s("Untagged Package '%s'", firmware.filename().generic_string().c_str());
 		return true;
 	case FW_TX_TYPE_MCU_BIN:
 		if (tag.valid)
-			firmwareDescriptor = asprintf_s("Camera MCU v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera MCU %s", tagStr.c_str());
+		else if (tag.tagVersion != 0)
+		 	firmwareDescriptor = asprintf_s("Unreadable Tag (%d): '%s'", tag.tagVersion, firmware.filename().generic_string().c_str());
 		else
 		 	firmwareDescriptor = asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
 		return true;
@@ -1213,7 +1213,7 @@ bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmw
 	case FW_TX_TYPE_ARCHIVE:
 	case FW_TX_TYPE_UPDATE:
 		if (tag.valid)
-			firmwareDescriptor = asprintf_s("Camera Update v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+			firmwareDescriptor = asprintf_s("Camera Update %s", tagStr.c_str());
 		else
 		 	firmwareDescriptor = asprintf_s("Untagged Update '%s'", firmware.filename().generic_string().c_str());
 		return type == FW_TX_TYPE_ARCHIVE;

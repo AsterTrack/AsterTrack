@@ -1017,7 +1017,7 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	if (length < CAMERA_INFO_MIN_LENGTH) return false;
 
 	CameraStoredInfo info = {};
-	static_assert(CAMERA_INFO_BASE_LENGTH == 54);
+	static_assert(CAMERA_INFO_BASE_LENGTH == 58);
 
 	uint8_t packetVersion = data[0];
 	int baseLength;
@@ -1025,6 +1025,8 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 		baseLength = 52;
 	else if (packetVersion == 2)
 		baseLength = 54;
+	else if (packetVersion == 3)
+		baseLength = 58;
 	else
 	{ // Keep support for older versions in here!
 		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
@@ -1062,13 +1064,18 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	int mcuFWDesc = (data[46] << 8) | data[47];
 	int mcuHWDesc = (data[48] << 8) | data[49];
 	int mcuSubparts = ((data[50] << 8) | data[51]);
-	int sensorID = 0;
+	int sensorID = 0, sbcFWCompat = 0, mcuFWCompat = 0;
 	if (packetVersion >= 2)
 		sensorID = ((data[52] << 8) | data[53]);
-	if (length < baseLength + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID)
+	if (packetVersion >= 3)
 	{
-		LOG(LParsing, LError, "Camera #%u: Failed to parse info packet of size %d, expected %d + %d + %d + %d + %d + %d!",
-			camera.id, length, baseLength, sbcFWDesc, mcuFWDesc, mcuHWDesc, mcuSubparts, sensorID);
+		sbcFWCompat = ((data[54] << 8) | data[55]);
+		mcuFWCompat = ((data[56] << 8) | data[57]);
+	}
+	if (length < baseLength + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID + sbcFWCompat + mcuFWCompat)
+	{
+		LOG(LParsing, LError, "Camera #%u: Failed to parse info packet of size %d, expected %d + %d + %d + %d + %d + %d + %d + %d!",
+			camera.id, length, baseLength, sbcFWDesc, mcuFWDesc, mcuHWDesc, mcuSubparts, sensorID, sbcFWCompat, mcuFWCompat);
 		return false;
 	}
 
@@ -1097,6 +1104,18 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	else
 	{
 		info.cameraSensor = "Unknown";
+	}
+	if (sbcFWCompat > 0)
+	{
+		info.sbcFWCompatibility.resize(sbcFWCompat);
+		memcpy(info.sbcFWCompatibility.data(), ptr, sbcFWCompat);
+		ptr += sbcFWCompat;
+	}
+	if (mcuFWCompat > 0)
+	{
+		info.mcuFWCompatibility.resize(mcuFWCompat);
+		memcpy(info.mcuFWCompatibility.data(), ptr, mcuFWCompat);
+		ptr += mcuFWCompat;
 	}
 
 	if ((info.sbcRevisionCode >> 24) == 0xFF)
@@ -1214,6 +1233,16 @@ bool ReadCameraMCUInfoPacket(TrackingCameraState &camera, const PacketHeader hea
 	{
 		memcpy(info.subpartSerials.data(), ptr, info.subpartSerials.size()*sizeof(uint64_t));
 		ptr += info.subpartSerials.size()*sizeof(uint64_t);
+	}
+	if (info.sbcFWCompatibility.size() > 0)
+	{
+		memcpy(info.sbcFWCompatibility.data(), ptr, info.sbcFWCompatibility.size());
+		ptr += info.sbcFWCompatibility.size();
+	}
+	if (info.mcuFWCompatibility.size() > 0)
+	{
+		memcpy(info.mcuFWCompatibility.data(), ptr, info.mcuFWCompatibility.size());
+		ptr += info.mcuFWCompatibility.size();
 	}
 
 	if (info.mcuHWDescriptor.size() > 0)

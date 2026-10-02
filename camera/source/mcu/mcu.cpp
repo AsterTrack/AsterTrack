@@ -62,7 +62,7 @@ gpiod_line_settings *line_boot0, *line_reset, *line_int;
 gpiod_line_request *line_request_out, *line_request_in;
 gpiod_edge_event_buffer *edge_events;
 
-FirmwareTagHeader mcu_firmware_tag;
+FirmwareTag mcu_firmware_tag;
 bool mcu_firmware_version_known = false;
 VersionDesc mcu_firmware_version;
 
@@ -783,7 +783,7 @@ bool mcu_verify_program(const std::string &filename)
 	return ret != RES_FAIL;
 }
 
-bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag)
+bool mcu_read_firmware_tag(const std::string &filename, FirmwareTag &tag)
 {
 	tag.valid = false;
 	std::filesystem::path firmware(filename);
@@ -800,7 +800,8 @@ bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag)
 		return false;
 	}
 
-	if (!ReadFirmwareTag(fs, tag))
+	tag = ReadFirmwareTag(fs);
+	if (!tag.valid)
 	{
 		printf("MCU Firmware stored on camera is not tagged!\n");
 		return false;
@@ -938,6 +939,9 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 		return false;
 
 	if (!mcu_fetch_descriptor(info.mcuFWDescriptor, MCU_GET_FW_STR))
+		return false;
+
+	if (!mcu_fetch_descriptor(info.mcuFWCompatibility, MCU_GET_FW_COMPAT))
 		return false;
 
 	return true;

@@ -25,7 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <vector>
 
 
-#define SBC_INFO_VERSION		2
+#define SBC_INFO_VERSION		3
 
 union HardwareSerial
 {
@@ -123,8 +123,10 @@ struct CameraStoredInfo
 {
 	VersionDesc sbcFWVersion;			// SBC Firmware Version, embedded in firmware
 	std::string sbcFWDescriptor;		// SBC Firmware Descriptor, embedded in firmware
+	std::string sbcFWCompatibility;		// SBC Firmware Compatibility, embedded in firmware
 	VersionDesc mcuFWVersion;			// MCU Firmware Version, embedded in firmware
 	std::string mcuFWDescriptor;		// MCU Firmware Descriptor, embedded in firmware
+	std::string mcuFWCompatibility;		// MCU Firmware Compatibility, embedded in firmware
 
 	uint8_t mcuOTPVersion;				// Indicates revision in how OTP is formatted, potentially even affecting the format of the following members
 	HardwareSerial hardwareSerial = {};	// Camera Serial Number (96Bit) stored in MCU OTP, bound to hardware & production

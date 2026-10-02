@@ -109,16 +109,19 @@ bool ControllerCheckFirmwareFile(const std::string &firmwareFile, std::string &f
 	}
 
 	// Some firmware files may be tagged. Not required, but provides meta info
-	FirmwareTagHeader tag;
-	if (!ReadFirmwareTag(fs, tag))
+	FirmwareTag tag = ReadFirmwareTag(fs);
+	if (!tag.valid)
 	{
-		firmwareDescriptor = asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
+		if (tag.tagVersion != 0)
+		 	firmwareDescriptor = asprintf_s("Unreadable Tag (%d): '%s'", tag.tagVersion, firmware.filename().generic_string().c_str());
+		else
+			firmwareDescriptor = asprintf_s("Untagged Binary '%s'", firmware.filename().generic_string().c_str());
 		return true;
 	}
 
 	if (tag.type == FW_TAG_CONT_MCU_BIN)
 	{
-		firmwareDescriptor = asprintf_s("Controller FW v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descriptor.c_str());
+		firmwareDescriptor = asprintf_s("Controller FW v%d.%d.%d (%s)", tag.version.major, tag.version.minor, tag.version.patch, tag.descStr.c_str());
 		return true;
 	}
 	else if (tag.type == FW_TAG_CAM_MCU_BIN)

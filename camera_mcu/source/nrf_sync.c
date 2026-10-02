@@ -16,6 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "config_impl.h"
+
 #ifdef USE_SPI_NRF_SYNC
 
 #if defined(STM32G0)
@@ -28,7 +30,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "nrf_sync.h"
 #include "util.h"
 #include "comm/commands.h"
-#include "config_impl.h"
 #include "spi_nrf_driver.h"
 #include "mcu/timesync.h"
 

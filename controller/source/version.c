@@ -21,9 +21,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 union VersionDesc firmwareVersion = { { FW_MAJOR, FW_MINOR, FW_PATCH, FW_BUILD } };
 
-// Optional text descriptor
-#ifndef FIRMWARE_DESCRIPTOR
+// Text descriptors
+#if !defined(FIRMWARE_DESCRIPTOR) || !defined(FIRMWARE_COMPATIBILITY)
 #error "Script did not prepare version file properly!"
 #endif
 const char* firmwareDescriptor = FIRMWARE_DESCRIPTOR;
 const uint16_t firmwareDescriptorLength = sizeof(FIRMWARE_DESCRIPTOR)-1;
+const char* firmwareCompatibility = FIRMWARE_COMPATIBILITY;
+const uint16_t firmwareCompatibilityLength = sizeof(FIRMWARE_COMPATIBILITY)-1;

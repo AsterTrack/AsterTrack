@@ -26,6 +26,8 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "config_impl.h"
+
 #ifdef USE_SPI_NRF_SYNC
 
 #include "util.h"

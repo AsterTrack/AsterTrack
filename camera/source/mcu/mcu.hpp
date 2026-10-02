@@ -25,7 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <mutex>
 #include <atomic>
 
-extern FirmwareTagHeader mcu_firmware_tag;
+extern FirmwareTag mcu_firmware_tag;
 
 extern std::timed_mutex mcu_mutex;
 
@@ -59,7 +59,7 @@ bool mcu_probe_bootloader();
 bool mcu_switch_bootloader();
 bool mcu_flash_program(const std::string &filename);
 bool mcu_verify_program(const std::string &filename);
-bool mcu_read_firmware_tag(const std::string &filename, FirmwareTagHeader &tag);
+bool mcu_read_firmware_tag(const std::string &filename, FirmwareTag &tag);
 void mcu_sync_info();
 bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config);
 bool mcu_update_id(CameraID cameraID);

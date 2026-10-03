@@ -4,25 +4,18 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Ensure Board",
-			"type": "shell",
-			"group": "build",
-			"command": "mkdir -p build && [ -z $(cat build/rev 2&>/dev/null) ] && echo V1.2 > build/rev; echo Selected Board Rev: $(cat build/rev)",
-			"hide": true
-		},
-		{
 			"label": "Select Board (clangd)",
 			"type": "shell",
 			"group": "build",
-			"command": "rm -rf build && mkdir -p build && bear --output build/compile_commands.json -- make REV='${input:boardRev}' DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"command": "./source/version.sh ${input:boardRev} && bear --append --output build/compile_commands.json -- make REV=${input:boardRev} DEVICE='STM32G030' -j $(nproc --ignore=2)",
 		},
 		{
 			"label": "Build",
 			"type": "shell",
 			"group": "build",
-			"command": "mkdir -p build && make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"command": "./source/version.sh $(cat build/rev) && make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 			"windows": {
-				"command": "mkdir -p build & make REV='$(cat build/rev)' DEVICE='STM32G030' -j $(nproc --ignore=2)",
+				"command": "mkdir -p build & make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 				"options": {
 					"env": { "CHERE_INVOKING": "1" },
 					"shell": { // Can use either MSYS2 or Cygwin
@@ -31,15 +24,13 @@
 						"args": [ "-l", "-c" ]
 					}
 				}
-			},
-			"dependsOn": [ "Ensure Board" ]
+			}
 		},
 		{
 			"label": "Build (clangd)",
 			"type": "shell",
 			"group": "build",
-			"command": "mkdir -p build && bear --output build/compile_commands.json --append -- make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
-			"dependsOn": [ "Ensure Board" ]
+			"command": "./source/version.sh $(cat build/rev) && bear --append --output build/compile_commands.json -- make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 		},
 		{
 			"label": "Flash (OpenOCD)",

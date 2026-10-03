@@ -219,9 +219,10 @@ static const uint8_t FIRMWARE_TAG_KEY[] = { 0x08, 0x39, 0xA5, 0x73, 0x20, 0x72, 
 enum FirmwareTagType : uint8_t
 {
 	FW_TAG_CAM_UPDATE		= 0x53,
+	FW_TAG_CAM_ARCHIVE		= 0x83,
 	FW_TAG_CAM_SBC_PKG		= 0x17,
 	FW_TAG_CAM_MCU_BIN		= 0x9F,
-	FW_TAG_CONT_MCU_BIN		= 0xE1
+	FW_TAG_CONT_MCU_BIN		= 0xE1,
 };
 
 struct FirmwareTag

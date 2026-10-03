@@ -44,14 +44,14 @@ struct FirmwareUpdateStatus
 	std::string text;
 	std::stop_source abort;
 	bool concluded;
-	std::string sbc_fw_desc, mcu_fw_desc;
-	std::shared_ptr<FirmwareUpdatePlan> update;
+	std::unique_ptr<FirmwareUpdatePlan> update; // Only assigned while still validating
 };
 
 typedef std::shared_ptr<Synchronised<CameraFirmwareUpdateStatus>> CameraFirmwareUpdateRef;
 typedef std::shared_ptr<Synchronised<FirmwareUpdateStatus>> FirmwareUpdateRef;
 
 FirmwareUpdateRef PrepareFirmwareUpdate(std::string firmwareFile);
+bool FindUpdateConflicts(const FirmwareUpdateRef &updateRef, const TrackingCameraState &camera, std::vector<std::string> &conflicts);
 bool CamerasUpdateFirmware(std::vector<std::shared_ptr<TrackingCameraState>> &cameras, FirmwareUpdateRef &updateStatus);
 
 bool CameraCheckFirmwareFile(const std::string &firmwareFile, std::string &firmwareDescriptor);

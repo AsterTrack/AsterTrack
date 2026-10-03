@@ -121,7 +121,7 @@ static FirmwareTXStatus CheckFirmwareTransfer(FirmwareTransferState &transfer)
 				valid = false;
 			}
 		}
-		printf("Firmware Update: Transfer %d finished successfully!\n", transfer->index);
+		printf("Firmware Update: Transfer %d finished %s!\n", transfer->index, valid? "successfully" : "with invalid checksum");
 		transfer->valid = valid;
 		transfer->verified = true;
 		transfer->verifying = false;
@@ -141,9 +141,9 @@ static FirmwareStatus CheckFirmwareUpdate(FirmwareUpdateState &firmware)
 	if (firmware.applyingUpdate)
 		return FW_STATUS_UPDATING;
 
-	for (int i = 0; i < firmware.transfers.size(); i++)
+	for (auto &transferIt : firmware.transfers)
 	{
-		if (!firmware.transfers[i].valid)
+		if (!transferIt.second.valid)
 			return FW_STATUS_TRANSFERRING;
 	}
 
@@ -252,20 +252,20 @@ bool ReceiveFirmwareBlock(TrackingCameraState &state, CommState &comm, const uin
 	auto transferIt = state.firmware.transfers.find(index);
 	if (transferIt == state.firmware.transfers.end())
 	{
-		printf("Received firmware block for invalid transfer!\n");
+		printf("Received firmware block for invalid transfer %d!\n", index);
 		return false; // Ignore - can't send status for proper transfer
 	}
 	auto &transfer = transferIt->second;
 	if (block >= transfer.blockMap.size())
 	{
-		printf("Received firmware block for invalid block!\n");
+		printf("Received firmware block for invalid block %d >= %d!\n", block, (int)transfer.blockMap.size());
 		return false; // Ignore - can't send status for proper block
 	}
 
 	// Then find additional faults just in case they weren't caught by checksum
 	if (!erroneous && !validateID(state, ID))
 	{
-		printf("Received firmware packet with invalid firmware ID!\n");
+		printf("Received firmware packet with invalid firmware ID %d!\n", ID);
 		erroneous = true; // Can send packet since we have our own firmware ID
 	}
 	if (!erroneous && FIRMWARE_PACKET_HEADER+size != length)
@@ -319,9 +319,9 @@ bool ReceiveFirmwareApplyRequest(TrackingCameraState &state, CommState &comm, co
 	if (!validateID(state, ID)) return false;
 	// 8 free bytes for future use
 
-	for (auto &transfer : state.firmware.transfers)
+	for (auto &transferIt : state.firmware.transfers)
 	{
-		if (transfer.second.valid) continue;
+		if (transferIt.second.valid) continue;
 		SendUpdateStatus(state, comm, FW_STATUS_FAILEDTRANSFER);
 		return false;
 	}
@@ -812,16 +812,21 @@ bool ReceiveFirmwareStatus(TrackingCameraState &state, CommState &comm, const ui
 
 	if (type == FW_INQUIRE_UPDATE)
 	{
-		for (int i = 0; i < state.firmware.transfers.size(); i++)
-			CheckFirmwareTransfer(state.firmware.transfers[i]);
+		for (auto &transferIt : state.firmware.transfers)
+			CheckFirmwareTransfer(transferIt.second);
 		SendUpdateStatus(state, comm, CheckFirmwareUpdate(state.firmware));
 		return true;
 	}
 
 	if (type == FW_INQUIRE_TRANSFER)
 	{
-		auto &transfer = state.firmware.transfers[index];
-		SendTransferStatus(state, comm, CheckFirmwareTransfer(transfer), index);
+		auto transferIt = state.firmware.transfers.find(index);
+		if (transferIt == state.firmware.transfers.end())
+		{
+			printf("Received firmware status inquiry for invalid transfer %d!\n", index);
+			return false; // Ignore - can't send status for proper transfer
+		}
+		SendTransferStatus(state, comm, CheckFirmwareTransfer(transferIt->second), index);
 		return true;
 	}
 

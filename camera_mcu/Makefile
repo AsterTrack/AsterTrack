@@ -3,7 +3,7 @@
 # BUILD OPTIONS
 #######################################
 
-TARGET = TrackingCameraMCU
+TARGET = TrackingCameraMCU_$(REV)
 # Allow for debugging and flashing over JTAG/SWD - only disable if you know you can flash over other means!
 # Worst case, you may still be able to use SWD if booting with Boot0 active
 DEBUG_FLASH = 1
@@ -38,7 +38,8 @@ LOG_FLAGS += -DCMDD_LOG
 # BUILD FILES
 #######################################
 
-BUILD_DIR = build
+BUILD_ROOT = build
+BUILD_DIR = $(BUILD_ROOT)/$(REV)
 
 # ----- C sources -----
 
@@ -156,9 +157,6 @@ LDFLAGS = $(COPTIONS) \
 # BUILD TARGETS
 #######################################
 
-# Force rebuild of version which includes a build identifier
-$(shell ./source/version.sh $(REV))
-
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).asm
 
 C_OBJECTS = $(addprefix $(BUILD_DIR)/,$(C_SOURCES:.c=.o)) $(addprefix $(BUILD_DIR)/shared/,$(C_SOURCES_SHARED:.c=.o))
@@ -184,6 +182,7 @@ $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf
 $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf
 	$(BIN) $< $@
 	cat $(BUILD_DIR)/tag.bin >> $@
+	cp $@ $(BUILD_ROOT)
 
 $(BUILD_DIR)/%.asm: $(BUILD_DIR)/%.elf
 	$(DP) -d $< > $@

@@ -656,43 +656,44 @@ void InterfaceState::UpdateDevices(InterfaceWindow &window)
 	}
 	if (showCameraFWUP && BeginPopup(validatingPopupID))
 	{
-		auto updateStatus = validatingUpdate->contextualRLock();
 		bool validUpdate = true;
 		for (auto &camera : state.cameras)
 		{
 			if (!camera->selectedForFirmware) continue;
 			if (validatedCameras.contains(camera->id)) continue;
-			bool sbcOK = updateStatus->sbc_fw_desc.empty() || updateStatus->sbc_fw_desc == camera->storage.info.sbcFWDescriptor;
-			bool mcuOK = camera->storage.info.mcuFWVersion.num == 0 || updateStatus->mcu_fw_desc.empty() || updateStatus->mcu_fw_desc == camera->storage.info.mcuFWDescriptor;
-			if (camera->storage.receivedInfo && sbcOK && mcuOK)
+
+			std::vector<std::string> conflicts;
+			bool blocking = FindUpdateConflicts(validatingUpdate, *camera, conflicts);
+			if (!blocking && conflicts.empty())
 			{
 				validatedCameras.insert(camera->id);
 				continue;
 			}
-			// Else, valdiate this camera with user
-			validUpdate = false;
-			ImGui::Text("Potentially Unsafe Update of Camera #%u:", camera->id);
-			if (!camera->storage.receivedInfo)
-				ImGui::Text("Received no info packet to validate compatibility!");
-			else
-			{
-				if (!sbcOK)
-					ImGui::Text("SBC Firmware Descriptor changed from '%s' to '%s'!", camera->storage.info.sbcFWDescriptor.c_str(), updateStatus->sbc_fw_desc.c_str());
-				if (!mcuOK)
-					ImGui::Text("MCU Firmware Descriptor changed from '%s' to '%s'!", camera->storage.info.mcuFWDescriptor.c_str(), updateStatus->mcu_fw_desc.c_str());
+			if (blocking)
+			{ // Camera cannot be updated with given update file, block
+				validUpdate = false;
+				for (auto &conflict : conflicts)
+					ImGui::TextUnformatted(conflict.c_str());
+				if (ImGui::Button("Skip Camera", SizeWidthFull()))
+					camera->selectedForFirmware = false;
 			}
-			ImGui::Text("Flash this camera anyway?");
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
-			if (ImGui::Button("Flash Anyway", SizeWidthDiv2()))
-				validatedCameras.insert(camera->id);
-			ImGui::PopStyleColor(2);
-			ImGui::SameLine();
-			if (ImGui::Button("Skip For Now", SizeWidthDiv2()))
-				camera->selectedForFirmware = false;
+			else
+			{ // Else, valdiate this camera with user
+				validUpdate = false;
+				for (auto &conflict : conflicts)
+					ImGui::TextUnformatted(conflict.c_str());
+				ImGui::Text("Flash this camera anyway?");
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 1.00f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.38f, 0.38f, 1.00f));
+				if (ImGui::Button("Flash Anyway", SizeWidthDiv2()))
+					validatedCameras.insert(camera->id);
+				ImGui::PopStyleColor(2);
+				ImGui::SameLine();
+				if (ImGui::Button("Skip For Now", SizeWidthDiv2()))
+					camera->selectedForFirmware = false;
+			}
 			break;
 		}
-		updateStatus.unlock();
 
 		if (validUpdate && validatedCameras.empty())
 		{

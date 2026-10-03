@@ -1,21 +1,21 @@
 #!/bin/bash
 
 rev=$1
+echo "Got default $rev"
 
 # Ensure complete rebuild when board revision changes
 # tasks.json may have already handled this if we use bear, otherwise, do here
 if [[ -f "build/rev" ]]; then
 	if [[ -z $rev ]]; then
 		rev=$(cat build/rev)
-	elif [[ $(cat build/rev) != $rev ]]; then
-		rm -r build
 	fi
 elif [[ -z $rev ]]; then
-	echo -e "#error \"Need to select revision to compile for!\"" > build/version.h
-	exit 1
+	echo "No default board!"
+	rev="V1.2"
+	echo "Selecting default board as $rev"
 fi
 # Update with current version
-mkdir -p build
+mkdir -p "build/$rev"
 echo "$rev" > build/rev
 
 version=$(cat source/version | head -n 1 )
@@ -36,7 +36,7 @@ echo -e \
 "#define FW_BUILD ${build}\\n" > build/version.h
 
 # Clear firmware tag
-tag=build/tag.bin
+tag=build/$rev/tag.bin
 : > $tag
 
 # Descriptor Texts

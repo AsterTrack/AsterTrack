@@ -143,25 +143,28 @@ enum ErrorTag
 {
 	ERROR_NONE = 0,
 	ERROR_UNKNOWN,
-	ERROR_GCS_NO_I2C,
-	ERROR_GCS_NO_SENSOR,
-	ERROR_GCS_CREATE,
-	ERROR_INIT_BD,
-	ERROR_QPU_ENABLE,
-	ERROR_GCS_START,
-	ERROR_GCS_TIMEOUT,
-	ERROR_GCS_RETURN,
-	ERROR_GCS_REQUEST,
-	ERROR_MEM_ACCESS,
-	ERROR_QPU_STALL_CPY,
-	ERROR_QPU_STALL_MSK,
-	ERROR_EXCEPTION_UNKNOWN,
+	ERROR_SPECIFIED,
+
+	ERROR_EXCEPTION_UNKNOWN = 4,
 	ERROR_EXCEPTION_ILLEGAL,
 	ERROR_EXCEPTION_BUS,
 	ERROR_EXCEPTION_FPE,
 	ERROR_EXCEPTION_SEGFAULT,
 	ERROR_EXCEPTION_PIPE,
 	ERROR_EXCEPTION_ABORT,
+
+	ERROR_CAMERA_NO_I2C = 12,
+	ERROR_CAMERA_NO_SENSOR,
+	ERROR_CAMERA_SETUP,
+	ERROR_CAMERA_START,
+	ERROR_CAMERA_TIMEOUT,
+	ERROR_CAMERA_RETURN,
+	ERROR_CAMERA_REQUEST,
+	ERROR_CAMERA_ACCESS,
+
+	ERROR_INITIALISE = 24,
+	ERROR_ACCEL_SETUP,
+	ERROR_ACCEL_STALL,
 	ERROR_MAX
 };
 
@@ -172,25 +175,31 @@ static const char *ErrorTag_String[ERROR_MAX] =
 {
 	"No Error",
 	"Unknown Error",
-	"Failed to find camera I2C - system broken",
-	"Failed to find camera sensor - check connection",
-	"Camera subsystem failed to start",
-	"Error during Blob Detection initialisation",
-	"Failed to enable QPU",
-	"Failed to start GCS",
-	"No camera frames (missing sync?)",
-	"Failed to return image frame",
-	"Failed to request image frame",
-	"Failed to access image frame",
-	"QPU stalled during copying",
-	"QPU stalled during mask thresholding",
+	"", // Error message will be sent
+	"", // Unused
 	"Unknown camera program exception",
 	"Camera program exception (illegal instruction)",
 	"Camera program exception (bus error)",
 	"Camera program exception (floating point error)",
 	"Camera program exception (segfault)",
 	"Camera program exception (pipe)",
-	"Camera program exception (abort)"
+	"Camera program exception (abort)",
+	"", // Unused
+	"", // Unused
+	"Failed to find camera I2C - system broken",
+	"Failed to find camera sensor - check connection",
+	"Failed to setup camera subsystem",
+	"Failed to start camera streaming",
+	"No camera frames (missing sync?)",
+	"Failed to return image frame",
+	"Failed to request image frame",
+	"Failed to access image frame",
+	"", // Unused
+	"", // Unused
+	"", // Unused
+	"Failed to initialise processing",
+	"Failed to setup hardware accelerator",
+	"Hardware accelerator stalled",
 };
 
 /**

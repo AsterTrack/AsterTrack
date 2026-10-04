@@ -580,8 +580,8 @@ std::string getStatusText(const TrackingCameraState &camera)
 		// May happen if controller stopped streaming on it's own and told cameras to stop, too
 		// e.g. when server hung for several seconds in debug
 		state = abnormalStreamingState? "not streaming!" : "working properly.";
-		if (status.error.code != ERROR_NONE)
-			postfix = asprintf_s("\nLast Error was '%s'.", ErrorTag_String[status.error.code]);
+		if (status.error.code != ERROR_NONE && !status.error.messages.empty())
+			postfix = asprintf_s("\nLast Error was '%s'.", status.error.messages.front().c_str());
 		if (camera.controller && !camera.client)
 			return "Camera is connected to a controller and " + state + postfix;
 		else if (!camera.controller && camera.client)

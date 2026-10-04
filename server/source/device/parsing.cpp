@@ -494,15 +494,17 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 		error.serious = (bool)data[1];
 	}
 
-	std::vector<std::string> backtrace;
+	if (error.code < ERROR_MAX && *ErrorTag_String[error.code] != '\n')
+		error.messages.push_back(ErrorTag_String[error.code]);
+
 	if (length > 2)
-	{
+	{ // Specific error message or backtrace
 		std::size_t pos = 2;
 		while (pos < length)
 		{ // Copy line-by-line, could also directly print
 			char *start = (char*)&data[pos];
 			std::size_t len = strnlen(start, length-pos);
-			backtrace.push_back(std::string(start, start+len));
+			error.messages.push_back(std::string(start, start+len));
 			pos += len+1; // Include null-termination
 		}
 	}
@@ -511,9 +513,6 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 	if (error.serious)
 		camera.recvModeSet(TRCAM_STANDBY);
 
-	// Update error state
-	camera.state.contextualLock()->error = error;
-
 	if (error.code == ERROR_UNKNOWN)
 	{
 		LOG(LCameraDevice, LError, "Received invalid error from camera %u in port %d!\n",
@@ -521,13 +520,16 @@ bool ReadErrorPacket(TrackingCameraState &camera, const PacketHeader header, con
 	}
 	else
 	{
-		LOG(LCameraDevice, LError, "Received %s error from camera %u in port %d: %s (%d)\n",
-			error.serious? "serious" : "regular", camera.id, camera.port, ErrorTag_String[error.code], (int)error.code);
+		LOG(LCameraDevice, LError, "Received %s error from camera %u in port %d, code %d:\n",
+			error.serious? "serious" : "regular", camera.id, camera.port, (int)error.code);
 	}
-	for (auto &func : backtrace)
+	for (auto &func : error.messages)
 	{
 		LOG(LCameraDevice, LError, "%s", func.c_str());
 	}
+
+	// Update error state
+	camera.state.contextualLock()->error = std::move(error);
 
 	// We will keep camera, but it will be in error.encountered state until it restarts comms
 	// Then it will be in error.recovered state until we tell it to start streaming again

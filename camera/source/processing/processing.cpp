@@ -79,7 +79,7 @@ FrameBuffer::~FrameBuffer()
 	std::unique_lock lock(frameAccess);
 	if (gcs && !gcs_returnFrameBuffer(gcs, header))
 	{ // TODO: Properly abort with camAbort
-		//error = ERROR_GCS_RETURN;
+		//error = ERROR_CAMERA_RETURN;
 		printf("Error returning frame buffer during FrameBuffer destructor!\n");
 	}
 #endif
@@ -142,7 +142,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (!camera)
 	{
 		printf("Failed to initialise camera!\n");
-		if (handleError(ERROR_GCS_CREATE))
+		if (handleError(ERROR_CAMERA_SETUP))
 			return false;
 	}
 
@@ -151,13 +151,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (gcsSensor == SENSOR_ERROR)
 	{
 		printf("Failed to open camera I2C!\n");
-		if (handleError(ERROR_GCS_NO_I2C))
+		if (handleError(ERROR_CAMERA_NO_I2C))
 			return false;
 	}
 	else if (gcsSensor == SENSOR_INVALID)
 	{
 		printf("Failed to identify camera sensor!\n");
-		if (handleError(ERROR_GCS_NO_SENSOR))
+		if (handleError(ERROR_CAMERA_NO_SENSOR))
 			return false;
 	}
 
@@ -165,7 +165,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (gcs_start(gcs) != 0)
 	{
 		printf("-- Failed to start camera stream! --\n");
-		if (handleError(ERROR_GCS_START))
+		if (handleError(ERROR_CAMERA_START))
 			return false;
 	}
 	printf("-- Camera Stream started --\n");
@@ -183,7 +183,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (!masking && !state.noQPU)
 	{
 		printf("-- Failed to setup QPU masking program! --\n");
-		if (handleError(ERROR_INIT_BD))
+		if (handleError(ERROR_INITIALISE))
 			return false;
 	}
 	masking.SetParameters(state.thresholds.absolute, state.thresholds.edge);
@@ -199,7 +199,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (!detect)
 	{ // Shouldn't actually fail, just basic init
 		printf("-- Failed to initialize blob detection! --\n");
-		if (handleError(ERROR_INIT_BD))
+		if (handleError(ERROR_INITIALISE))
 			return false;
 	}
 
@@ -211,7 +211,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	if (!qpu && !state.noQPU)
 	{
 		printf("QPU enable failed!\n");
-		if (handleError(ERROR_QPU_ENABLE))
+		if (handleError(ERROR_ACCEL_SETUP))
 			return false;
 	}
 
@@ -418,7 +418,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 							dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS*1000/state.camera.frameTimeNS));
 						sentMinorTimeout = true;
 						// Notify host
-						if (handleError(ERROR_GCS_TIMEOUT, waitFrames >= seriousWait))
+						if (handleError(ERROR_CAMERA_TIMEOUT, waitFrames >= seriousWait))
 							return true;
 					}
 				}
@@ -455,7 +455,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			if (frameHeader == NULL || obsAdvance == 0)
 			{
 				printf("== GCS returned NULL frame with error flag %d! ==\n", gcs_readErrorFlag(gcs));
-				if (handleError(ERROR_GCS_REQUEST))
+				if (handleError(ERROR_CAMERA_REQUEST))
 					break;
 			}
 
@@ -481,7 +481,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				if (!gcs_returnFrameBuffer(gcs, frameHeader))
 				{
 					printf("== GCS failed to return frame buffer with error flag %d while skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-					if (handleError(ERROR_GCS_RETURN))
+					if (handleError(ERROR_CAMERA_RETURN))
 						break;
 				}
 				TimePoint_t waitStart = sclock::now();
@@ -491,7 +491,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				if (frameHeader == NULL)
 				{
 					printf("== GCS returned NULL frame with error flag %d after skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-					if (handleError(ERROR_GCS_REQUEST))
+					if (handleError(ERROR_CAMERA_REQUEST))
 						break;
 				}
 				// Update values
@@ -581,7 +581,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			if (!locked)
 			{
 				printf("== %.2fms: QPU: Failed to access frame! ==\n", dtMS(time_start, sclock::now()));
-				if (handleError(ERROR_MEM_ACCESS))
+				if (handleError(ERROR_CAMERA_ACCESS))
 					break;
 			}
 
@@ -661,7 +661,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			if (code != 0)
 			{
 				printf("== %.2fms: QPU: Failed to process frame! ==\n", dtMS(time_start, sclock::now()));
-				if (handleError(ERROR_QPU_STALL_MSK))
+				if (handleError(ERROR_ACCEL_STALL))
 					break;
 			}
 

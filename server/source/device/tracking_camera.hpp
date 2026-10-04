@@ -166,6 +166,7 @@ struct TrackingCameraState
 	{ // Camera error data sent by the TrackingCamera
 		bool encountered, recovered;
 		ErrorTag code;
+		std::vector<std::string> messages;
 		bool serious;
 		TimePoint_t time, recoverTime;
 		operator bool() { return encountered && !recovered; }

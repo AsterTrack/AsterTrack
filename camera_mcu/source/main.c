@@ -91,7 +91,8 @@ volatile bool onUSBPower = false;
 // Boot mode (flash config)
 volatile enum CameraMCUFlashConfig mcuFlashConfig = MCU_FLASH_UNKNOWN;
 // Configuration update
-volatile CameraID cameraIDToWrite = 0;
+CameraID cameraIDStored = 0;
+volatile bool updateFlashConfig = false;
 
 // Embedded device state synced with server
 volatile struct CameraEmbeddedState embeddedState = {0};
@@ -142,7 +143,7 @@ inline int ButtonDebounce(struct ButtonState *button, TimePoint now);
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_CAMERA_SBC, .id = PERSISTENT_CONFIG[0], .type = INTERFACE_UART, .version = firmwareVersion };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_CAMERA_SBC, .id = cameraIDStored, .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -152,6 +153,9 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version);
 static bool UpdateFilterSwitcher(enum CameraFilterState state);
 
 static bool ApplyUserFlashConfiguration();
+
+static void ParseFlashConfig();
+static uint16_t ProgramFlashConfig();
 
 // This flag (setup in linker script to be ontop of stack) persists across software resets
 extern int _bflag;
@@ -225,8 +229,9 @@ int main(void)
 
 	DEBUG_STR("/START");
 
-	// Read OTP memory
+	// Read stored data
 	otp_read();
+	ParseFlashConfig();
 
 #if defined(USE_UART)
 	// Prepare identification to be sent out over UART
@@ -320,28 +325,22 @@ int main(void)
 			while (true);
 		}
 
-		if (cameraIDToWrite)
+		if (updateFlashConfig)
 		{
-			CameraID cameraIDWrite = cameraIDToWrite;
-			cameraIDToWrite = 0;
+			updateFlashConfig = false;
 			// Signal write state
 			rgbled_transition(LED_BOOTLOADER, 0);
 			SafeDelayMS(100);
-			// Write config
-			uint32_t config[] = { cameraIDWrite, 0 };
-			uint16_t error = EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint64_t));
+			uint16_t error = ProgramFlashConfig();
+			ParseFlashConfig();
 			// Signal result
 			if (error == 1)
 				rgbled_displayError(0b1100);
 			else if (error)
 				rgbled_displayError(3);
-			else if (config[0] != PERSISTENT_CONFIG[0] && config[1] != PERSISTENT_CONFIG[1])
-				rgbled_displayError(4);
 			else
 				rgbled_transition(LED_STANDBY, 0);
 			ReturnToDefaultLEDState(500);
-			// Update identification packet to use new ID
-			uart_set_identification();
 		}
 
 		/* // Automatic switching of filter switcher for testing
@@ -948,14 +947,17 @@ bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t l
 				ReturnToDefaultLEDState(1000);
 				return true;
 			}
-			else if (PERSISTENT_CONFIG[0] == id)
+			else if (cameraIDStored == id)
 			{
 				rgbled_transition(LED_STANDBY, 0);
 				ReturnToDefaultLEDState(500);
 			}
 			else
 			{ // Tell main thread to write to flash
-				cameraIDToWrite = id;
+				cameraIDStored = id;
+				updateFlashConfig = true;
+				// Update identification packet to use new ID
+				uart_set_identification();
 			}
 			return true;
 		}
@@ -1396,4 +1398,26 @@ static int8_t AllocateSBCPacket(uint16_t size)
 	SBCPacketQueue[packet].ptr = SBCPacketBuffer+tail;
 	SBCPacketQueue[packet].size = size;
 	return packet;
+}
+
+static void ParseFlashConfig()
+{
+	uint32_t configVersion = PERSISTENT_CONFIG[0];
+	cameraIDStored = PERSISTENT_CONFIG[2];
+	if (cameraIDStored == 0xFFFFFFFF && configVersion != 0xFFFFFFFF)
+	{ // Likely unversioned config
+		cameraIDStored = PERSISTENT_CONFIG[0];
+		// Update to versioned config
+		ProgramFlashConfig();
+		return;
+	}
+}
+
+static uint16_t ProgramFlashConfig()
+{
+	uint32_t config[] = {
+		1, 0,				// Version
+		cameraIDStored, 0	// CameraID
+	};
+	return EraseAndProgramFlash(PERSISTENT_CONFIG, config, sizeof(config)/sizeof(uint64_t));
 }

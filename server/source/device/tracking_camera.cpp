@@ -314,7 +314,10 @@ void CameraUpdateConfig(ServerState &state, TrackingCameraState &device)
 	packet.analogGain = config.gain;
 	packet.strobe = config.enableStrobe;
 	packet.strobeOffset = config.strobeOffset;
-	packet.strobeLength = config.strobeLength;
+	if (device.embeddedState.filter == FILTER_VISIBLE)
+		packet.strobeLength = 0; // Suppress strobe
+	else
+	 	packet.strobeLength = config.strobeLength;
 	packet.blobProc = config.blobProcessing;
 	if (device.storage.receivedInfo)
 	{ // Adjust limits for performance based on SBC

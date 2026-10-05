@@ -940,7 +940,7 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 	if (length < EMBEDDED_STATE_SIZE) return false;
 
 	CameraEmbeddedState state = parseEmbeddedState(data);
-	bool updateCamera = false, interactCamera = false, interactAll = false;
+	bool updateCamera = false, updateConfig = true, interactCamera = false, interactAll = false;
 
 	if (camera.embeddedState.filter != state.filter)
 	{
@@ -955,6 +955,9 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 			LOG(LCameraDevice, LInfo, "Camera #%u filter set to show visible light %s!", camera.id, initiator);
 		else
 			LOG(LCameraDevice, LWarn, "Camera #%u filter switcher set to unknown state %s!", camera.id, initiator);
+
+		// May have masked strobe due to filter
+		updateConfig = true;
 	}
 	else if (state.changeFilter)
 	{ // May be a race condition, not problematic
@@ -1006,6 +1009,8 @@ bool ReadCameraStatePacket(TrackingCameraState &camera, const PacketHeader heade
 	camera.embeddedState = state;
 	if (updateCamera)
 		CameraUpdateEmbeddedState(camera);
+	if (updateConfig)
+		CameraUpdateConfig(GetState(), camera);
 	if (interactCamera)
 		SignalCameraInteraction(camera.id, event, interactAll);
 	return true;

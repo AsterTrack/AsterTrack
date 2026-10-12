@@ -41,7 +41,7 @@ extern "C"
 // Implemented generally
 uint8_t i2cd_handle_init(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t *response);
 bool i2cd_handle_command(enum CameraMCUCommand command, uint8_t *data, uint8_t len);
-uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr);
+uint16_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr);
 
 // Implemented specfically
 void i2c_driver_init();

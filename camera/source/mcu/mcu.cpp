@@ -1152,7 +1152,7 @@ bool mcu_get_status()
 #endif
 
 	uint8_t queueSize = packet[9];
-	uint8_t packetSize = (packet[10] << 8) | packet[11];
+	uint16_t packetSize = (packet[10] << 8) | packet[11];
 	if (queueSize > 0)
 	{ // Got packets in queue
 		if (queueSize > 5)

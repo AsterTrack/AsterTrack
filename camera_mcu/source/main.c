@@ -1061,7 +1061,7 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version)
 	return (header32Len+8) * sizeof(uint32_t);
 }
 
-uint8_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr)
+uint16_t i2cd_prepare_response(enum CameraMCUCommand command, uint8_t *data, uint8_t len, uint8_t **responsePtr)
 {
 	lastPiComm = GetTimePoint();
 	piIsBooted = true;
@@ -1365,14 +1365,14 @@ static bool ApplyUserFlashConfiguration()
 static int8_t AllocateSBCPacket(uint16_t size)
 {
 	if (!HasSBCQueueSpace()) return -1;
+	if (size > SBCBufferSize) return -1;
 	if (SBCQueueHead == SBCQueueTail)
 	{ // Empty
-		if (size > SBCBufferSize) return -1;
-		int packet = SBCQueueTail;
-		SBCQueueTail = (SBCQueueTail+1) % SBCQueueSize;
-		SBCPacketQueue[packet].ptr = SBCPacketBuffer;
-		SBCPacketQueue[packet].size = size;
-		return packet;
+		SBCQueueHead = 0;
+		SBCQueueTail = 1;
+		SBCPacketQueue[0].ptr = SBCPacketBuffer;
+		SBCPacketQueue[0].size = size;
+		return 0;
 	}
 	uint16_t head = (int)(SBCPacketQueue[SBCQueueHead].ptr - SBCPacketBuffer);
 	uint8_t last = SBCQueueTail == 0? SBCQueueSize-1 : SBCQueueTail-1;

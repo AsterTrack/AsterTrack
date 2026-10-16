@@ -690,10 +690,10 @@ phase_comm:
 							ResetTimeSync(timesync);
 						uint64_t timestampUS = RebaseSourceTimestamp(timesync, sync.timeUS, 1<<24, time_read);
 						TimePoint_t SOF = UpdateTimeSync(timesync, timestampUS, time_read);
-						std::unique_lock lock(framesync.access);
-						if (framesync.frameSOFs.size() > 5)
-							framesync.frameSOFs.pop();
-						framesync.frameSOFs.emplace(sync.frameID & 0xFF, SOF);
+						std::unique_lock lock(frameSync.access);
+						if (frameSync.frameSOFs.size() > 5)
+							frameSync.frameSOFs.pop();
+						frameSync.frameSOFs.emplace(sync.frameID & 0xFF, SOF);
 						//printf("Corrected SOF read %lldus ago to be %.2fms in the past!\n", std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-time_read).count(), std::chrono::duration_cast<std::chrono::microseconds>(sclock::now()-SOF).count()/1000.0f);
 					}
 				}

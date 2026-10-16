@@ -29,7 +29,7 @@ struct FrameBuffer
 	uint16_t stride;
 	VC_BUFFER *bitmsk = nullptr;
 	uint32_t ID = 0;
-	TimePoint_t SOF, rcv;
+	TimePoint_t SOF, arrived, received;
 	uint32_t time_qpu;
 	int skippedTrigger, skippedCPU, skippedQPU;
 
@@ -46,7 +46,6 @@ bool getFramesyncActive();
 void sendWirelessStatusPacket(TrackingCameraState &state);
 StatPacket prepareSystemStatusPacket(TrackingCameraState &state, long deltaStatUS);
 bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stream);
-int getInterleavedQueuedBytes();
 int sendInterleavedQueuedPackets(int commTimeUS);
 
 // Defined in processing.cpp

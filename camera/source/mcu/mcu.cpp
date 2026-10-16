@@ -1141,10 +1141,10 @@ bool mcu_get_status()
 		else if (dtMS(SOF, sclock::now()) > 6.0f)
 			printf("Frame %d SOF is reported to be from %dus ago, timesync set it to be %.2fms ago (drift %.5f) with roundtime of %.2fms!\n",
 			lastFrameID, usSinceFrameID, dtMS(SOF, sclock::now()), timesync.drift, roundtripTimeUS/1000.0f);
-		std::unique_lock lock(framesync.access);
-		if (framesync.frameSOFs.size() > 5)
-			framesync.frameSOFs.pop();
-		framesync.frameSOFs.emplace(lastReceivedFrameID, SOF);
+		std::unique_lock lock(frameSync.access);
+		if (frameSync.frameSOFs.size() > 5)
+			frameSync.frameSOFs.pop();
+		frameSync.frameSOFs.emplace(lastReceivedFrameID, SOF);
 	}
 #ifdef WRITE_TIMESYNC_LOG
 	timesyncOut << timestamp << "," << dtUS(timeReference, estSendTime) << ","

@@ -601,22 +601,6 @@ StatPacket prepareSystemStatusPacket(TrackingCameraState &state, long deltaStatU
 	return stats;
 }
 
-int getInterleavedQueuedBytes()
-{
-	if (uartComms.ready)
-	{ // Verify the large packet interleaving works by checking the TX queue size
-		// Mostly interested in UART for now
-
-		int txQueue = uart_getTXQueue(uartComms.port);
-		/* if (txQueue > 0)
-		{
-			printf("Failed to constrain large packet blocks to idle times, have %d bytes in TX buffer before reporting!\n", txQueue);
-		} */
-		return txQueue;
-	}
-	return 0;
-}
-
 int sendInterleavedQueuedPackets(int commTimeUS)
 {
 	// Interleave packet with low-latency comm to not disrupt it

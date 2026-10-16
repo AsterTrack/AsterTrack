@@ -26,13 +26,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 struct FrameSync
 {
+	std::mutex access; // Mostly for frameSOFs
+
+	struct
+	{
+		bool synced;
+		float intervalUS;
+		bool continuous;
+	} config;
+
+	uint32_t frameID;
+	TimePoint_t estArrival;
+	Statisticsf estInterval = Statisticsf(100);
+
+	// If external sync is provided:
 	std::queue<std::pair<uint8_t, TimePoint_t>> frameSOFs;
-	StatDistf SOF2RecvDelay; // Models delay from trigger to receiving the frame through V4L2
-	std::mutex access;
+	StatDistf sensorLatency; // Models latency from trigger to receiving the frame through V4L2
 };
 
-extern FrameSync framesync;
 
-uint32_t correctFromFrameSync(FrameSync &framesync, TimePoint_t frameRecv, uint32_t frameID, uint32_t obsAdvance, uint32_t expAdvance, bool likelyDropped);
+extern FrameSync frameSync;
+
+bool getEarliestNextArrival(TimePoint_t lastArrival, TimePoint_t &nextArrival);
+
+uint32_t getNextFrameID(TimePoint_t frameReceived, bool frameDelayed, uint32_t obsAdvance, TimePoint_t &estArrival);
 
 #endif // FRAMESYNC_H

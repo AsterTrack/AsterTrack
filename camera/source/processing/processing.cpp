@@ -89,9 +89,9 @@ struct StreamingState
 	StreamingState()
 	{
 		printf("== Entering camera streaming mode! ==\n");
-		std::unique_lock lock(framesync.access);
-		framesync.frameSOFs = {};
-		framesync.SOF2RecvDelay.reset();
+		std::unique_lock lock(frameSync.access);
+		frameSync.frameSOFs = {};
+		frameSync.sensorLatency.reset();
 	}
 	~StreamingState()
 	{
@@ -159,6 +159,14 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		printf("Failed to identify camera sensor!\n");
 		if (handleError(ERROR_CAMERA_NO_SENSOR))
 			return false;
+	}
+
+	if (gcsSensor == SENSOR_OV9281)
+	{ // TODO: Dependant on sensor mode
+		// 7000us at least from trigger signal to a frame being received in the camera
+		// Usually 7150us, with early timesync 7080us - just to be safe from timesync wonkyness, lower
+		frameSync.sensorLatency.floating = 6800;
+		frameSync.sensorLatency.floatCount = 10;
 	}
 
 	// Start GPU camera stream
@@ -331,10 +339,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	uint32_t numFrames = 0;
 	StatPacket::Times avgTimes = {}, curTimes = {};
 	int skip_count_trigger = 0, skip_count_qpu = 0, skip_count_cpu = 0;
-
-	// Prediction when a new frame will arrive through V4L2
-	float avgInterval = 0.0f;
-	TimePoint_t time_frameRecv;
 	
 	// Setup incident statistics
 	StatPacket::Incidents incidents = {};
@@ -350,7 +354,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	std::vector<Cluster> clusters;
 	std::vector<uint8_t> packetBuffer;
 	packetBuffer.reserve(4096);
-	int bytesSentAccum = 0;
 
 
 	// ---- Setup QPU thread ----
@@ -369,9 +372,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		sched_setaffinity(0, sizeof(set), &set);*/
 
 		int qpu_it = 0; // Detached frame count, doesn't need to match numFrames
-		uint32_t frameID = -1;
 		int cumulFrameNoTrigger = 0, cumulFramePassedQPU = 0, cumulFramePassedCPU = 0;
-		time_frameRecv = sclock::now();
 
 		while (!abortStreaming)
 		{
@@ -386,6 +387,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				// Update camera parameters (previously linked to gcs)
 			#ifdef RUN_CAMERA
 				gcs_updateParameters(gcs);
+				// TODO: Update derived defaults like frameSync.sensorLatency
 			#endif
 
 				// Update QPU parameters in uniform memory
@@ -394,6 +396,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			}
 
 #ifdef RUN_CAMERA
+			TimePoint_t frameReceived;
+			bool frameDelayed = false;
 			auto waitForFrame = [&]() -> bool
 			{
 				// Wait for a frame to be received in the VideoCore
@@ -415,13 +419,15 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					if ((waitFrames >= minorWait && !sentMinorTimeout) || waitFrames >= seriousWait)
 					{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 						printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
-							dtMS(time_start, sclock::now()), waitTimeUS, (int)(waitTimeUS*1000/state.camera.frameTimeNS));
+							dtMS(time_start, sclock::now()), waitTimeUS, (int)waitFrames);
 						sentMinorTimeout = true;
 						// Notify host
 						if (handleError(ERROR_CAMERA_TIMEOUT, waitFrames >= seriousWait))
 							return true;
 					}
 				}
+				frameReceived = sclock::now();
+				frameDelayed = dtUS(waitStart, frameReceived) < 100; // Frame was already waiting
 				return false;
 			};
 			if (waitForFrame())
@@ -458,117 +464,23 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				if (handleError(ERROR_CAMERA_REQUEST))
 					break;
 			}
-
-			TimePoint_t time_cur = sclock::now();
-#ifdef LOG_DROPS
 			if (obsAdvance > 1)
-				printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dtMS(time_start, time_cur), obsAdvance-1, frameID);
-#endif
-
-			float newInterval = dtMS(time_frameRecv, time_cur);
-			float expInterval = 1000000000.0f/state.camera.frameTimeNS;
-			float minInterval = expInterval;
-			int advanceFrames = obsAdvance;
-
-			// Consider waiting a bit more for next frame to reset (accumulated) delay
-			float timeDelay = newInterval - expInterval*advanceFrames;
-			float maxDelay = expInterval - avgTimes.cpu/1000.0f;
-			// NOTE: Here should be the average time of the single largest bottleneck - currently, CPU
-			if (timeDelay > maxDelay)
-			{ // Skip current frame as well, or else future frames will be delayed, too
-				printf("-- Skipping one frame deliberately because frame delay %fms (%f - %f) took longer than %fms!\n",
-					timeDelay, newInterval, expInterval*advanceFrames, maxDelay);
-				if (!gcs_returnFrameBuffer(gcs, frameHeader))
-				{
-					printf("== GCS failed to return frame buffer with error flag %d while skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-					if (handleError(ERROR_CAMERA_RETURN))
-						break;
-				}
-				TimePoint_t waitStart = sclock::now();
-				if (waitForFrame())
-					break;
-				frameHeader = gcs_requestFrameBuffer(gcs);
-				if (frameHeader == NULL)
-				{
-					printf("== GCS returned NULL frame with error flag %d after skipping delayed! ==\n", gcs_readErrorFlag(gcs));
-					if (handleError(ERROR_CAMERA_REQUEST))
-						break;
-				}
-				// Update values
-				advanceFrames++;
-				time_cur = sclock::now();
+			{
+				frameDelayed = true;
 #ifdef LOG_DROPS
-				printf("%.2fms: QPU: SKIPPED %.2fms TO CURRENT FRAME, new interval %lldus\n",
-					dtMS(time_start, time_cur), dtMS(waitStart, time_cur), dtUS(time_frameRecv, time_cur));
-				printf("%.2fms: QPU: Reason: time_diff %.2fms, time_delay %.2fms, advance frames %d, avg processing %.2fms, max delay %.2fms\n",
-					dtMS(time_start, time_cur), newInterval, timeDelay, advanceFrames, avgTimes.processing/1000.0f, maxDelay);
-#endif
-				newInterval = dtMS(time_frameRecv, time_cur);
-			}
-
-			// Update frameID with advanced frames
-			float expFrameIntervals = newInterval / expInterval;
-			int expAdvance = std::max(1, (int)(expFrameIntervals+0.2f));
-			bool likelyDropped = std::abs(expFrameIntervals - obsAdvance) > 1;
-			if (likelyDropped)
-			{
-				printf("May have dropped frames! %.1f frame times passed, but only got %d new frames!\n", expFrameIntervals, obsAdvance);
-			}
-
-			if (getFramesyncActive() && state.camera.sync)
-			{ // Match current frame with frame SOFs from PACKET_SOF - can be assumed to be continuous
-				uint32_t frameIDNext = correctFromFrameSync(framesync, time_cur, frameID, obsAdvance, expAdvance, likelyDropped);
-				int unexpectedDiff = frameIDNext - (frameID + obsAdvance);
-				cumulFramePassedQPU += obsAdvance-1;
-				cumulFrameNoTrigger += unexpectedDiff;
-				advanceFrames += unexpectedDiff;
-				frameID = frameIDNext;
-			}
-			else
-			{
-				if (likelyDropped && advanceFrames == 1)
-				{
-					cumulFramePassedQPU += obsAdvance-1;
-					cumulFrameNoTrigger += expAdvance - obsAdvance;
-					advanceFrames = expAdvance;
-					printf("    Determined to likely have skipped %d frames with no trigger!\n", advanceFrames);
-				}
-				frameID += advanceFrames;
-			}
-
-			const int gracePeriod = 100;
-			if (qpu_it < gracePeriod)
-			{ // Accept SOF as it is in the beginning
-				time_frameRecv = time_cur;
-			}
-			else if (advanceFrames > 1)
-			{ // Advance SOF prediction
-				time_frameRecv += std::chrono::microseconds((int)(expInterval*advanceFrames * 1000));
-			}
-			else if (std::abs(newInterval-expInterval) < 400)
-			{ // Update SOF prediction
-				const int expWeight = 10, newWeight = 100;
-				int avgWeight = std::min(50, qpu_it-gracePeriod);
-				// Update prediction and average
-				float avg = avgWeight*avgInterval;
-				float advInterval = (expInterval*expWeight + newInterval*newWeight + avg) / (expWeight + avgWeight + newWeight);
-				avgInterval = (avg + newInterval)/(avgWeight+1);
-				time_frameRecv += std::chrono::microseconds((int)(advInterval * 1000));
-			}
-			else if (std::abs(advanceFrames-expAdvance) > 1)
-			{
-				time_frameRecv = time_cur;
-				printf("Received frame interval is WAY off from expectation at %.2fms, average %.2fms, expected %.2fms! Adopting new rythm.\n",
-					newInterval, avgInterval, expInterval);
-			}
-			else
-			{ // Advance SOF prediction, too different to use for update
-				time_frameRecv += std::chrono::microseconds((int)(expInterval*advanceFrames * 1000));
-#ifdef LOG_TIMING
-				printf("Current frame interval is %.2fms, average %.2fms, expected %.2fms, indicating QPU thread is not as realtime as it should be!\n",
-					newInterval, avgInterval, expInterval);
+				printf("%.2fms: QPU THREAD MISSED %d+ FRAMES AFTER ID %d\n", dtMS(time_start, sclock::now()), obsAdvance-1, frameSync.frameID);
 #endif
 			}
+
+			// Ensure the frameID is correct, via external sync or estimated pacing
+			frameSync.config.synced = getFramesyncActive() && state.camera.sync;
+			frameSync.config.intervalUS = state.camera.frameTimeNS / 1000.0f;
+			frameSync.config.continuous = state.camera.sync != 1; // TODO: Explicitly configure continuous or triggered frames
+			TimePoint_t estArrival = frameReceived;
+			uint32_t preFrameID = frameSync.frameID;
+			uint32_t newFrameID = getNextFrameID(frameReceived, frameDelayed, obsAdvance, estArrival);
+			cumulFramePassedQPU += obsAdvance - 1;
+			cumulFrameNoTrigger += newFrameID - (preFrameID + obsAdvance);
 
 			TimePoint_t t2 = sclock::now();
 
@@ -586,8 +498,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			}
 
 			uint8_t *framePtrARM = (uint8_t*)frameBuffer.mem;
-			uint32_t framePtrVC = frameBuffer.VCMem; 
-
+			uint32_t framePtrVC = frameBuffer.VCMem;
 #else
 			// Somewhat emulate framerate
 			usleep(std::max(0,(int)(1.0f/state.camera.fps*1000*1000)-4000));
@@ -687,8 +598,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			newFrame->memory = framePtrARM;
 			newFrame->stride = srcStride;
 			newFrame->bitmsk = &bitmskBuf;
-			newFrame->rcv = t3;
-			newFrame->ID = frameID;
+			newFrame->received = frameReceived;
+			newFrame->arrived = estArrival;
+			newFrame->ID = newFrameID;
 			newFrame->time_qpu = dtUS(t3, t4);
 			newFrame->skippedTrigger = cumulFrameNoTrigger;
 			newFrame->skippedQPU = cumulFramePassedQPU;
@@ -860,7 +772,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		}
 
 		// Allow sending from now until processing is expected to end, at which point we need to send the results with low latency
-		bytesSentAccum += sendInterleavedQueuedPackets(avgTimes.cpu-200);
+		sendInterleavedQueuedPackets(avgTimes.cpu-200);
 
 		// Increase clock rate after boot (likely has to be done through linux CPU governor, not directly)
 		//printf("======\nHad ARM Core clock rate of %dMhz!\n", getClockRate(base.mb, 3)/1000000);
@@ -1008,7 +920,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		// ---- Reporting & Comms ---
 
 		TimePoint_t time_report_begin = sclock::now();
-		bytesSentAccum = getInterleavedQueuedBytes();
 
 		if (state.curMode.mode == TRCAM_MODE_BGCALIB)
 		{ // Basic automatic background calib
@@ -1032,7 +943,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 				TimePoint_t t0 = sclock::now();
 				comm_send(largeDataAff, PacketHeader(PACKET_BACKGROUND, bgTilesPacket.size()), std::move(bgTilesPacket));
-				bytesSentAccum += bgTilesPacket.size();
 				curTimes.send += dtUS(t0, sclock::now());
 			}
 		}
@@ -1084,7 +994,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				comm_submit(rtComm);
 			}
 			//comm_send(realTimeAff, PacketHeader(PACKET_BLOB, reportLength, curFrame->ID&0xFF), packetBuffer.data());
-			bytesSentAccum += packetBuffer.size();
 			curTimes.send += dtUS(t0, sclock::now());
 		}
 
@@ -1152,11 +1061,6 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		//setClockRate(base.mb, 3, 600000000); // 1000Mhz fixed
 		//printf("Set ARM Core clock rate to fixed %dMhz!\n", getClockRate(base.mb, 3)/1000000);
 
-		// Allow sending from start of comm until next frame is passed to CPU, at which point we need to send a SOF to host software
-		// Assumes near constant QPU processing time
-		bytesSentAccum += sendInterleavedQueuedPackets(avgInterval*1000 - dtUS(time_cpu_begin, sclock::now()) - 500);
-		// TODO: Very often doesn't send in time, something is likely off in the calculations
-
 		TimePoint_t time_report_end = sclock::now();
 
 
@@ -1172,7 +1076,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			curTimes.processing = curTimes.qpu + curTimes.cpu;
 			// Doesn't including reporting times ( & comms)
 			[[maybe_unused]] uint16_t report = dtUS(time_report_begin, time_report_end);
-			curTimes.latency = dtUS(curFrame->rcv, time_cpu_end);
+			curTimes.latency = dtUS(curFrame->arrived, time_cpu_end);
 			// Update average
 			addDeltaTimes(avgTimes, curTimes, avgNum);
 			if (numFrames > 20 && curTimes.latency*2 > avgTimes.latency*3)
@@ -1273,7 +1177,12 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			sendWirelessStatusPacket(state);
 		}
 
-		bytesSentAccum = 0;
+		if (!frameExchange)
+		{ // Allow sending until next frame is expected to be passed to CPU, at which point we need to send a SOF to host software
+			TimePoint_t nextArrival;
+			getEarliestNextArrival(curFrame->arrived, nextArrival);
+			sendInterleavedQueuedPackets(dtUS(sclock::now(), nextArrival) - 200);
+		}
 	}
 
 	for (auto &comm : comms.medium)

@@ -46,7 +46,7 @@ struct GCS_CameraParams
 	uint32_t shutterSpeed;
 	uint8_t digitalGain;
 	uint8_t analogGain;
-	uint8_t extTrig;
+	uint8_t sync;
 	uint8_t strobe;
 	int32_t strobeOffset;
 	uint32_t strobeLength;

@@ -515,7 +515,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				printf("May have dropped frames! %.1f frame times passed, but only got %d new frames!\n", expFrameIntervals, obsAdvance);
 			}
 
-			if (getFramesyncActive() && state.camera.extTrig)
+			if (getFramesyncActive() && state.camera.sync)
 			{ // Match current frame with frame SOFs from PACKET_SOF - can be assumed to be continuous
 				uint32_t frameIDNext = correctFromFrameSync(framesync, time_cur, frameID, obsAdvance, expAdvance, likelyDropped);
 				int unexpectedDiff = frameIDNext - (frameID + obsAdvance);

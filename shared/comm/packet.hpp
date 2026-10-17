@@ -270,7 +270,7 @@ struct ConfigPacket
 	uint32_t frameTimeNS;
 	uint16_t shutterSpeed;
 	uint8_t analogGain;
-	bool extTrig;
+	uint8_t sync;
 	bool strobe;
 	int16_t strobeOffset;
 	uint16_t strobeLength;
@@ -302,7 +302,7 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int len
 		memcpy(&config.frameTimeNS, &data[base+4], 4);
 		config.shutterSpeed = *(uint16_t*)&data[base+8];
 		config.analogGain = *(uint8_t*)&data[base+10];
-		config.extTrig = *(uint8_t*)&data[base+11];
+		config.sync = *(uint8_t*)&data[base+11];
 		config.strobe = *(uint8_t*)&data[base+12];
 		config.strobeOffset = *(int16_t*)&data[base+13];
 		config.strobeLength = *(uint16_t*)&data[base+15];
@@ -396,7 +396,7 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 		memcpy(&data[base+4], &config.frameTimeNS, 4);
 		*(uint16_t*)&data[base+8] = config.shutterSpeed;
 		*(uint8_t*)&data[base+10] = config.analogGain;
-		*(uint8_t*)&data[base+11] = config.extTrig;
+		*(uint8_t*)&data[base+11] = config.sync;
 		*(uint8_t*)&data[base+12] = config.strobe;
 		*(int16_t*)&data[base+13] = config.strobeOffset;
 		*(uint16_t*)&data[base+15] = config.strobeLength;

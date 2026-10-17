@@ -284,7 +284,7 @@ std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, Camer
 					if (!cfg["label"].empty()) config.label = cfg["label"].get<std::string>();
 					if (!cfg["resolutionX"].empty()) config.width = cfg["resolutionX"].get<int>();
 					if (!cfg["resolutionY"].empty()) config.height = cfg["resolutionY"].get<int>();
-					if (!cfg["synchronised"].empty()) config.synchronised = cfg["synchronised"].get<bool>();
+					if (!cfg["sync"].empty()) config.sync = cfg["sync"].get<int>();
 					if (!cfg["framerate"].empty()) config.framerate = cfg["framerate"].get<int>();
 					if (!cfg["shutterSpeed"].empty()) config.exposure = cfg["shutterSpeed"].get<int>();
 					if (!cfg["gain"].empty()) config.gain = cfg["gain"].get<int>();
@@ -335,7 +335,7 @@ std::optional<ErrorMessage> storeCameraConfigFile(const std::string &path, const
 		cfg["label"] = config.label;
 		cfg["resolutionX"] = config.width;
 		cfg["resolutionY"] = config.height;
-		cfg["synchronised"] = config.synchronised;
+		cfg["sync"] = config.sync;
 		cfg["framerate"] = config.framerate;
 		cfg["shutterSpeed"] = config.exposure;
 		cfg["gain"] = config.gain;

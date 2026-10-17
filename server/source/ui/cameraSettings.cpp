@@ -68,29 +68,66 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		ImGui::BeginDisabled(state.isStreaming);
 		updateConfig |= ScalarInput2<int>("Resolution", "", &config.width, &config.height, 64, 9999);
 		ImGui::EndDisabled();
-		// Synchronised toggle to attach or detach it from it's host controllers framerate
-		updateSyncGroup |= CheckboxInput("Synchronised", &config.synchronised);
-		updateSyncGroup |= ScalarInput<int>("Free Framerate", "Hz", &config.framerate, 5, 144);
+
+		BeginLabelledGroup("Sync");
+		std::array<const char*,3> syncLabels = {
+			"Free",
+			"External Trigger",
+			"Frame Sync",
+		};
+		if (ImGui::BeginCombo("##Sync", syncLabels[config.sync]))
 		{
-			float fac = 7.62f, off = 5.2f; // Experimentally determined by visually comparing brightness between strobe changes
+			if (ImGui::Selectable(syncLabels[0], config.sync == 0))
+			{
+				updateSyncGroup = config.sync != 0;
+				config.sync = 0;
+			}
+			if (ImGui::Selectable(syncLabels[2], config.sync == 2))
+			{
+				updateSyncGroup = config.sync != 2;
+				config.sync = 2;
+			}
+			if (ImGui::Selectable(syncLabels[1], config.sync == 1))
+			{
+				updateSyncGroup = config.sync != 1;
+				config.sync = 1;
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::EndGroup();
+		if (config.sync == 0)
+			updateSyncGroup |= ScalarInput<int>("Framerate", "Hz", &config.framerate, 5, 144);
+
+		static bool editAsIntegers = false;
+		BooleanProperty("Edit times as integers", &editAsIntegers);
+		if (!editAsIntegers)
+		{
+			float fac = 7.5834f, off = -fac; // Experimentally determined by visually comparing brightness between strobe changes
 			float exposureUS = config.exposure*fac + off;
 			ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
 			int exposure = (int)std::round((exposureUS-off)/fac);
 			updateConfig |= (config.exposure != exposure);
 			config.exposure = exposure;
 		}
+		if (!editAsIntegers)
 		{
 			updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
-			float fac = 8.0f/3.0f, offLen = fac; // Experimentally determined with Oscilloscope
-			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + offLen;
-			ScalarInput<float>("Strobe Length", "us", &lengthUS, offLen, 255*fac+offLen, fac, 1, "%.1f");
-			ScalarInput<float>("Strobe Offset", "us", &offsetUS, 0, 255*fac, fac, 1, "%.1f");
-			// TODO: Negative strobe offset should also work, but doesn't currently - min: -255*fac
+			float fac = 7.5834f, off = 10.5f; // Experimentally determined with Oscilloscope
+			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + off;
+			ScalarInput<float>("Strobe Length", "us", &lengthUS, off, 255*fac+off, fac, 1, "%.1f");
+			ScalarInput<float>("Strobe Offset", "us", &offsetUS, -255*fac, 255*fac, fac, 1, "%.1f");
 			int strobeOffset = int(offsetUS/fac + (std::signbit(offsetUS)? -0.5f : 0.5f));
-			int strobeLength = std::lround((lengthUS-offLen)/fac);
+			int strobeLength = std::lround((lengthUS-off)/fac);
 			updateConfig |= (config.strobeOffset != strobeOffset) || (config.strobeLength != strobeLength);
 			config.strobeOffset = strobeOffset;
 			config.strobeLength = strobeLength;
+		}
+		if (editAsIntegers)
+		{
+			updateConfig |= ScalarInput<int>("Exposure", "x", &config.exposure, 0, 65535);
+			updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
+			updateConfig |= ScalarInput<int>("Strobe Length", "x", &config.strobeLength, 0, 65535);
+			updateConfig |= ScalarInput<int>("Strobe Offset", "x", &config.strobeOffset, -32767, 32767);
 		}
 		updateConfig |= ScalarInput<int>("Gain", "x", &config.gain, 1, 16);
 		EndSection();
@@ -337,8 +374,8 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 	BeginSection("Controller Configuration");
 
 	// NOTE: Low framerates currently result in an integer overflow in controller because the timer is precise
-	int defaultFramerate = 120;
-	bool updateFramerate = ScalarProperty<int>("Framerate", "Hz", &state.controllerConfig.framerate, &defaultFramerate, 20, 144);
+	const ControllerConfig defaultConfig = {};
+	bool updateFramerate = ScalarProperty<int>("Framerate", "Hz", &state.controllerConfig.framerate, &defaultConfig.framerate, 20, 144);
 	if (updateFramerate)
 	{ // Update framerate configuration
 		for (auto &controller : state.controllers)
@@ -358,8 +395,7 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 	}
 
 	// TODO: Make selection of current controllers (and don't edit if not connected)?
-	int anySource = -1;
-	bool updateSource = ScalarProperty<int>("Preferred Sync Source", "", &state.controllerConfig.preferredSyncSource, &anySource, -1, 5);
+	bool updateSource = ScalarProperty<int>("Preferred Sync Source", "", &state.controllerConfig.preferredSyncSource, &defaultConfig.preferredSyncSource, -1, 5);
 	ImGui::SetItemTooltip("Preferred source of sync signal. Currently maps to controller IDs.");
 	if (updateSource)
 	{

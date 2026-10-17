@@ -789,7 +789,7 @@ void ConfigureCameraSync(ServerState &state, std::shared_ptr<TrackingCameraState
 
 	// Setup default sync source to controller
 	auto &config = state.cameraConfig.getCameraConfig(camera->id);
-	if (config.synchronised && camera->controller && camera->controller->sync)
+	if (config.sync && camera->controller && camera->controller->sync)
 		SetCameraSync(*stream_lock, camera, camera->controller->sync);
 	else
 		SetCameraSyncNone(*stream_lock, camera, 1000.0f / config.framerate);

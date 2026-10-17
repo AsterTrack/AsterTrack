@@ -302,13 +302,13 @@ void CameraUpdateConfig(ServerState &state, TrackingCameraState &device)
 	{ // Use already set-up sync groups, do not parse config again
 		auto sync_lock = device.sync->rlock();
 		packet.frameTimeNS = sync_lock->frameIntervalMS * 1000000;
-		packet.extTrig = sync_lock->type != SYNC_NONE;
+		packet.sync = config.sync;
 	}
 	else
 	{ // Should not happen, all cameras should have a sync group
 		LOG(LCameraDevice, LError, "Sync group of camera has not been set up yet!");
 		packet.frameTimeNS = 1000000000 / config.framerate;
-		packet.extTrig = false;
+		packet.sync = 0;
 	}
 	packet.shutterSpeed = config.exposure;
 	packet.analogGain = config.gain;

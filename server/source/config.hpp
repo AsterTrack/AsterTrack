@@ -52,8 +52,8 @@ struct CameraConfig
 	std::string label;
 	int width = 1280;
 	int height = 800;
-	bool synchronised = true;
-	int framerate = 144; // Only used if synchronised == false
+	uint8_t sync = 2; // 0: free - 1: external trigger - 2: frame sync
+	int framerate = 144; // Only used if sync == 0
 	int exposure = 20;
 	int gain = 2;
 	int filter = 0;
@@ -69,7 +69,7 @@ struct CameraConfig
 
 struct ControllerConfig
 {
-	int framerate = 120;
+	int framerate = 144;
 	//SyncSource syncSource = SYNC_INTERNAL;
 	// TODO: Should contain relations between controllers
 	// E.g. not just whether it takes input, but from where

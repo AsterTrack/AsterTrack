@@ -50,8 +50,8 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"dg",					required_argument,	0,	6 },
 		{"digital-gain",		required_argument,	0,	6 },
 		{"nostrobe",			no_argument,		0,	7 },
-		{"s",					no_argument,		0,	8 },
-		{"sync",				no_argument,		0,	8 },
+		{"trig",				no_argument,		0,	8 },
+		{"sync",				no_argument,		0,	9 },
 		{"ct",					required_argument,	0,	10 },
 		{"center-threshold",	required_argument,	0,	10 },
 		{"et",					required_argument,	0,	11 },
@@ -144,7 +144,10 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				state.camera.strobe = false;
 				break;
 			case 8:
-				state.camera.extTrig = 1;
+				state.camera.sync = 1;
+				break;
+			case 9:
+				state.camera.sync = 2;
 				break;
 			case 10:
 				state.thresholds.absolute = 255*std::stof(optarg);
@@ -285,7 +288,7 @@ void acceptQPUConfig(TrackingCameraState &state)
 	state.camera.shutterSpeed = setupPacket.shutterSpeed;
 	state.camera.analogGain = setupPacket.analogGain;
 	state.thresholds = setupPacket.blobProc.thresholds;
-	state.camera.extTrig = setupPacket.extTrig;
+	state.camera.sync = setupPacket.sync;
 	state.camera.strobe = setupPacket.strobe;
 	state.camera.strobeOffset = setupPacket.strobeOffset;
 	state.camera.strobeLength = setupPacket.strobeLength;

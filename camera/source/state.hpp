@@ -62,7 +62,7 @@ struct TrackingCameraState
 		.shutterSpeed = 100,
 		.digitalGain = 1,
 		.analogGain = 1,
-		.extTrig = 0,
+		.sync = 0,
 		.strobe = 1,
 		.strobeOffset = 0,
 		.strobeLength = 10,

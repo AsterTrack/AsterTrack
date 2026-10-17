@@ -454,7 +454,7 @@ void gcs_updateParameters(GCS *gcs)
 	}
 
 	int status;
-	if (gcs->cameraParams->extTrig != 1)
+	if (gcs->cameraParams->sync != 1)
 	{
 		uint32_t minHBlank, maxHBlank;
 		if ((status = gcs_getParameterRange(gcs, V4L2_CID_HBLANK, minHBlank, maxHBlank)))

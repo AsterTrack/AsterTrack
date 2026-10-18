@@ -25,7 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <vector>
 
 
-#define SBC_INFO_VERSION		3
+#define SBC_INFO_VERSION		4
 
 union HardwareSerial
 {
@@ -113,10 +113,11 @@ union HardwareSerial
 	};
 };
 
-enum CameraSBCHardware
+enum CameraSBCHardware : uint16_t
 {
 	SBC_HW_NO_MCU = 1 << 0,
 	SBC_HW_NO_SENSOR = 1 << 1,
+	SBC_HW_UNRELIABLE_WIRED = 1 << 2,
 };
 
 struct CameraStoredInfo

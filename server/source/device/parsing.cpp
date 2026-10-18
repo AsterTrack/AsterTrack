@@ -1017,16 +1017,18 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 	if (length < CAMERA_INFO_MIN_LENGTH) return false;
 
 	CameraStoredInfo info = {};
-	static_assert(CAMERA_INFO_BASE_LENGTH == 58);
 
 	uint8_t packetVersion = data[0];
-	int baseLength;
+	static_assert(SBC_INFO_VERSION == 4); // Update parsing as version changes
+	struct { int header, data32, strLens; } len;
 	if (packetVersion == 1)
-		baseLength = 52;
+		len = { 4, 40, 8 };
 	else if (packetVersion == 2)
-		baseLength = 54;
+		len = { 4, 40, 10 }; // Added sensorID
 	else if (packetVersion == 3)
-		baseLength = 58;
+		len = { 4, 40, 14 }; // Added FW compat strings
+	else if (packetVersion == 4)
+		len = { 8, 40, 14 }; // Increased HW detection bit field size
 	else
 	{ // Keep support for older versions in here!
 		LOG(LParsing, LInfo, "Camera #%u: Received info packet with unsupported version %d!", camera.id, packetVersion);
@@ -1034,43 +1036,57 @@ bool ReadCameraInfoPacket(TrackingCameraState &camera, const PacketHeader header
 		camera.state.contextualLock()->unsupported = { true, sclock::now() };
 		return false;
 	}
+	int baseLength = len.header+len.data32+len.strLens;
 	if (length < baseLength) return false;
 
 	info.mcuOTPVersion = data[1];
-	info.mcuHWDetection = (CameraMCUHardware)data[2];
-	if (packetVersion >= 2)
-		info.sbcHWDetection = (CameraSBCHardware)data[3];
-	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
-		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
+	if (packetVersion < 4)
+	{
+		info.mcuHWDetection = (CameraMCUHardware)(data[2] ^ MCU_HW_UNRELIABLE_CLOCK);
+		if (packetVersion >= 2)
+			info.sbcHWDetection = (CameraSBCHardware)data[3];
+	}
+	else
+	{
+		info.mcuHWDetection = (CameraMCUHardware)((data[2] << 8) || data[3]);
+		info.sbcHWDetection = (CameraSBCHardware)((data[4] << 8) || data[5]);
+		// data[6] and data[7] are unused
+	}
+	if (info.mcuHWDetection & MCU_HW_UNRELIABLE_CLOCK)
+		camera.state.contextualLock()->unreliableClock = { true, sclock::now() };
 	if (info.mcuHWDetection & MCU_HW_ALT_BOOT)
 		camera.state.contextualLock()->altBoot = { true, sclock::now() };
 	if (info.sbcHWDetection & SBC_HW_NO_MCU)
 		camera.state.contextualLock()->noMCU = { true, sclock::now() };
 	if (info.sbcHWDetection & SBC_HW_NO_SENSOR)
 		camera.state.contextualLock()->noSensor = { true, sclock::now() };
+	if (info.sbcHWDetection & SBC_HW_UNRELIABLE_WIRED)
+		camera.state.contextualLock()->unreliableWired = { true, sclock::now() };
 
+	const uint8_t *data32 = data+len.header;
 	static_assert(sizeof(VersionDesc) == 4);
 	static_assert(sizeof(HardwareSerial) == 12);
-	memcpy(&info.sbcFWVersion.num, &data[4], 4);
-	memcpy(&info.mcuFWVersion.num, &data[8], 4);
-	memcpy(&info.hardwareSerial.serial, &data[12], 12);
-	memcpy(&info.mcuUniqueID, &data[24], 12);
-	memcpy(&info.sbcRevisionCode, &data[36], 4);
-	memcpy(&info.sbcSerialNumber, &data[40], 4);
+	memcpy(&info.sbcFWVersion.num, data32+0, 4);
+	memcpy(&info.mcuFWVersion.num, data32+4, 4);
+	memcpy(&info.hardwareSerial.serial, data32+8, 12);
+	memcpy(&info.mcuUniqueID, data32+20, 12);
+	memcpy(&info.sbcRevisionCode, data32+32, 4);
+	memcpy(&info.sbcSerialNumber, data32+36, 4);
 	if (info.mcuFWVersion.num == 0 && info.mcuUniqueID[0] == 0)
 		camera.state.contextualLock()->noMCU = { true, sclock::now() };
 
-	int sbcFWDesc = (data[44] << 8) | data[45];
-	int mcuFWDesc = (data[46] << 8) | data[47];
-	int mcuHWDesc = (data[48] << 8) | data[49];
-	int mcuSubparts = ((data[50] << 8) | data[51]);
+	const uint8_t *strLens = data+len.header+len.data32;
+	int sbcFWDesc = (strLens[0] << 8) | strLens[1];
+	int mcuFWDesc = (strLens[2] << 8) | strLens[3];
+	int mcuHWDesc = (strLens[4] << 8) | strLens[5];
+	int mcuSubparts = ((strLens[6] << 8) | strLens[7]);
 	int sensorID = 0, sbcFWCompat = 0, mcuFWCompat = 0;
 	if (packetVersion >= 2)
-		sensorID = ((data[52] << 8) | data[53]);
+		sensorID = ((strLens[8] << 8) | strLens[9]);
 	if (packetVersion >= 3)
 	{
-		sbcFWCompat = ((data[54] << 8) | data[55]);
-		mcuFWCompat = ((data[56] << 8) | data[57]);
+		sbcFWCompat = ((strLens[10] << 8) | strLens[11]);
+		mcuFWCompat = ((strLens[12] << 8) | strLens[13]);
 	}
 	if (length < baseLength + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID + sbcFWCompat + mcuFWCompat)
 	{
@@ -1219,8 +1235,8 @@ bool ReadCameraMCUInfoPacket(TrackingCameraState &camera, const PacketHeader hea
 			(int)(info.subpartSerials.size()*sizeof(uint64_t)), (int)info.mcuHWDescriptor.size(), (int)info.mcuFWDescriptor.size());
 		return false;
 	}
-	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
-		camera.state.contextualLock()->usesHSI = { true, sclock::now() };
+	if (info.mcuHWDetection & MCU_HW_UNRELIABLE_CLOCK)
+		camera.state.contextualLock()->unreliableClock = { true, sclock::now() };
 	if (info.mcuHWDetection & MCU_HW_ALT_BOOT)
 		camera.state.contextualLock()->altBoot = { true, sclock::now() };
 	const uint8_t *ptr = data + infoSize;

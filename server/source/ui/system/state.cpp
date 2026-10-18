@@ -394,16 +394,32 @@ std::vector<std::string> getCameraDefects(const TrackingCameraState &camera, boo
 	}
 	auto &info = camera.storage.info;
 
-	if (info.mcuFWVersion.num == 0 && info.mcuUniqueID[0] == 0)
+	if (info.sbcHWDetection & SBC_HW_NO_MCU || (info.mcuFWVersion.num == 0 && info.mcuUniqueID[0] == 0))
 	{
 		statusMsgs.push_back("The Cameras SBC could not connect with the MCU - if it exists at all.\n"
 			"If the MCU is bricked, check the documentation or contact support for recovery instructions.\n"
 			"Designs without MCUs are not supported.");
 		hasDefects = true;
-		return statusMsgs; // All other defects assume MCU is there to report them
 	}
 
-	if (!(info.mcuHWDetection & MCU_HW_HAS_HSE))
+	if (info.sbcHWDetection & SBC_HW_NO_SENSOR)
+	{
+		statusMsgs.push_back("The Cameras SBC could not identify the camera sensor.\n"
+			"Please check if the SBC and Camera CSI FFC are connected and undamaged.\n"
+			"For DIY builds, please check if the sensor is supported with a driver.");
+		hasDefects = true;
+	}
+
+	if (info.sbcHWDetection & SBC_HW_UNRELIABLE_WIRED)
+	{
+		statusMsgs.push_back("The Cameras SBC does not have a reliable wired link.\n"
+			"Raspberry Pi SBC have known issues and use the MCU to forward control packets.\n"
+			"If the MCU is bricked in some way, it falls back to unreliable UART RX.\n"
+			"Please check the MCU firmware compatibility.");
+		hasDefects = true;
+	}
+
+	if (info.mcuHWDetection & MCU_HW_UNRELIABLE_CLOCK)
 	{
 		statusMsgs.push_back("The Cameras MCU uses the unstable HSI clock, not an HSE crystal.\n"
 			"This may indicate an issue with the hardware or an insufficient PCB Design.\n"
@@ -481,7 +497,7 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 		{ // Limited use as of now
 			statusMsgs.push_back("Received an unsupported packet - ensure firmware is compatible!");
 		}
-		if (status.usesHSI.triggered && dtMS(status.usesHSI.time, sclock::now()) < 5000)
+		if (status.unreliableClock.triggered && dtMS(status.unreliableClock.time, sclock::now()) < 5000)
 		{ // In production hardware, HSE relies on SBC and Camera FFC working
 			// So if SBC is already booted, this may indicate a FFC failure
 			if (status.hadPiConnected)
@@ -496,6 +512,10 @@ std::vector<std::string> getAbnormalStatus(const TrackingCameraState &camera, bo
 		if (status.noSensor.triggered && dtMS(status.noSensor.time, sclock::now()) < 5000)
 		{ // Sensor recognised on camera
 			statusMsgs.push_back("Camera Sensor not recognised - check Camera CSI FFC!");
+		}
+		if (status.unreliableWired.triggered && dtMS(status.unreliableWired.time, sclock::now()) < 5000)
+		{ // Sensor recognised on camera
+			statusMsgs.push_back("Camera has unreliable wired comms - check MCU Firmware!");
 		}
 		if (status.overtemp.triggered && dtMS(status.overtemp.time, sclock::now()) < 2000)
 		{ // May indicate bad SBC, should not happen

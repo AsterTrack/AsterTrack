@@ -89,7 +89,7 @@ static inline void calculateForwardPacketChecksum(const uint8_t *data, uint16_t 
 #define STREAM_PACKET_BLOB_SIZE			6
 
 #define CAMERA_INFO_MIN_LENGTH			52
-#define CAMERA_INFO_BASE_LENGTH			58
+#define CAMERA_INFO_BASE_LENGTH			62
 
 #define BACKGROUND_HEADER_SIZE			4
 

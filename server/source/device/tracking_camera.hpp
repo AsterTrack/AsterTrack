@@ -180,8 +180,9 @@ struct TrackingCameraState
 		ControllerCommState commState;
 		Errors error;
 		struct { bool triggered; TimePoint_t time; }
-			unsupported, noSensor, overtemp,
-			noMCU, usesHSI, altBoot;
+			unsupported, overtemp,
+			noSensor, unreliableWired,
+			noMCU, unreliableClock, altBoot;
 	};
 	Synchronised<Status> state = {};
 };

@@ -94,12 +94,12 @@ std::vector<std::string> describeCameraInfo(const CameraStoredInfo &info)
 			desc.push_back(asprintf_s("    Appended: %s", info.mcuHWDescriptorParts[i].c_str()));
 	}
 	desc.push_back(asprintf_s("Camera Sensor: %s", info.cameraSensor.c_str()));
-	#define BYTE_BIT(byte,bit) ((byte & (1 << bit)) ? '1' : '0')
+	#define BYTE_BIT(byte,bit) (((byte) & (1 << bit)) ? '1' : '0')
 	#define BYTE_BIT_LIST(byte) BYTE_BIT(byte,7), BYTE_BIT(byte,6), BYTE_BIT(byte,5), BYTE_BIT(byte,4), BYTE_BIT(byte,3), BYTE_BIT(byte,2), BYTE_BIT(byte,1), BYTE_BIT(byte,0)
-	desc.push_back(asprintf_s("SBC Detected Hardware Bitmask: %c%c%c%c%c%c%c%c", BYTE_BIT_LIST(info.sbcHWDetection)));
+	desc.push_back(asprintf_s("SBC Detected Hardware Bitmask: %c%c%c%c%c%c%c%c %c%c%c%c%c%c%c%c", BYTE_BIT_LIST(info.sbcHWDetection >> 8), BYTE_BIT_LIST(info.sbcHWDetection)));
 	if (mcu)
 	{
-		desc.push_back(asprintf_s("MCU Detected Hardware Bitmask: %c%c%c%c%c%c%c%c", BYTE_BIT_LIST(info.mcuHWDetection)));
+		desc.push_back(asprintf_s("MCU Detected Hardware Bitmask: %c%c%c%c%c%c%c%c %c%c%c%c%c%c%c%c", BYTE_BIT_LIST(info.mcuHWDetection >> 8), BYTE_BIT_LIST(info.mcuHWDetection)));
 		desc.push_back(asprintf_s("Hardware Serial Number: %s", describeHardwareSerial(info.hardwareSerial).c_str()));
 		for (int i = 0; i < info.subpartSerials.size(); i++)
 			//if (info.subpartSerials[i] != (uint64_t)-1)

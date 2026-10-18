@@ -913,13 +913,13 @@ bool mcu_fetch_info(CameraStoredInfo &info, CameraStoredConfig &config)
 	if (!parseMCUInfoPacket(info, config, packet, MCU_INFO_MAX_LENGTH))
 		return false;
 
-	if ((info.mcuHWDetection & MCU_HW_HAS_HSE))
-		timesync.params = TimeSyncParamsForMCU_HSE;
-	else
+	if ((info.mcuHWDetection & MCU_HW_UNRELIABLE_CLOCK))
 	{ // If MCU doesn't have a stable HSE clock, timesync needs to be much more aggressive to counter the wildly varying drift
 		printf("Using aggressive timesync parameters to compensate for MCU using HSI!\n");
 		timesync.params = TimeSyncParamsForMCU_HSI;
 	}
+	else
+		timesync.params = TimeSyncParamsForMCU_HSE;
 
 	// Copy for future reference
 	mcu_firmware_version_known = true;

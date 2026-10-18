@@ -132,6 +132,7 @@ static void updateInfo(CameraStoredInfo &info)
 	info.sbcHWDetection = (CameraSBCHardware)(0
 		| (mcu_exists? 0 : SBC_HW_NO_MCU)
 		| (cameraSensorExists? 0 : SBC_HW_NO_SENSOR)
+		| (!comms.medium[COMM_MEDIUM_UART] || comms.medium[COMM_MEDIUM_UART]->relyOnExternal? 0 : SBC_HW_UNRELIABLE_WIRED)
 	);
 	info.cameraSensor = cameraSensorID;
 }
@@ -222,52 +223,62 @@ void sendInfoPacket(CommMedium medium)
 	int mcuFWCompat = storedInfo.mcuFWCompatibility.size() & 0xFFFF;
 
 	std::vector<uint8_t> infoPacket(CAMERA_INFO_BASE_LENGTH + sbcFWDesc + mcuFWDesc + mcuHWDesc + mcuSubparts + sensorID + sbcFWCompat + mcuFWCompat);
+	const int headerLen = 8, data32Len = 40, strLensLen = 14;
+	static_assert(CAMERA_INFO_BASE_LENGTH == headerLen+data32Len+strLensLen);
 
 	infoPacket[0] = SBC_INFO_VERSION; // Packet version
 	infoPacket[1] = storedInfo.mcuOTPVersion;
-	infoPacket[2] = storedInfo.mcuHWDetection;
-	infoPacket[3] = storedInfo.sbcHWDetection;
+	infoPacket[2] = storedInfo.mcuHWDetection << 8;
+	infoPacket[3] = storedInfo.mcuHWDetection & 0xFF;
+	infoPacket[4] = storedInfo.sbcHWDetection << 8;
+	infoPacket[5] = storedInfo.sbcHWDetection & 0xFF;
+	infoPacket[6] = 0; // Unused
+	infoPacket[7] = 0; // Unused
+	static_assert(headerLen == 8);
 
+	uint8_t *data32 = infoPacket.data()+headerLen;
 	static_assert(sizeof(VersionDesc) == 4);
 	static_assert(sizeof(HardwareSerial) == 12);
-	memcpy(&infoPacket[4], &storedInfo.sbcFWVersion.num, 4);
-	memcpy(&infoPacket[8], &storedInfo.mcuFWVersion.num, 4);
-	memcpy(&infoPacket[12], &storedInfo.hardwareSerial.serial, 12);
-	memcpy(&infoPacket[24], &storedInfo.mcuUniqueID, 12);
-	memcpy(&infoPacket[36], &storedInfo.sbcRevisionCode, 4);
-	memcpy(&infoPacket[40], &storedInfo.sbcSerialNumber, 4);
+	memcpy(data32+0, &storedInfo.sbcFWVersion.num, 4);
+	memcpy(data32+4, &storedInfo.mcuFWVersion.num, 4);
+	memcpy(data32+8, &storedInfo.hardwareSerial.serial, 12);
+	memcpy(data32+20, &storedInfo.mcuUniqueID, 12);
+	memcpy(data32+32, &storedInfo.sbcRevisionCode, 4);
+	memcpy(data32+36, &storedInfo.sbcSerialNumber, 4);
+	static_assert(data32Len == 40);
 
-	infoPacket[44] = sbcFWDesc >> 8;
-	infoPacket[45] = sbcFWDesc & 0xFF;
-	infoPacket[46] = mcuFWDesc >> 8;
-	infoPacket[47] = mcuFWDesc & 0xFF;
-	infoPacket[48] = mcuHWDesc >> 8;
-	infoPacket[49] = mcuHWDesc & 0xFF;
-	infoPacket[50] = mcuSubparts >> 8;
-	infoPacket[51] = mcuSubparts & 0xFF;
-	infoPacket[52] = sensorID >> 8;
-	infoPacket[53] = sensorID & 0xFF;
-	infoPacket[54] = sbcFWCompat >> 8;
-	infoPacket[55] = sbcFWCompat & 0xFF;
-	infoPacket[56] = mcuFWCompat >> 8;
-	infoPacket[57] = mcuFWCompat & 0xFF;
-	static_assert(CAMERA_INFO_BASE_LENGTH == 58);
+	uint8_t *strLens = infoPacket.data()+headerLen+data32Len;
+	strLens[0] = sbcFWDesc >> 8;
+	strLens[1] = sbcFWDesc & 0xFF;
+	strLens[2] = mcuFWDesc >> 8;
+	strLens[3] = mcuFWDesc & 0xFF;
+	strLens[4] = mcuHWDesc >> 8;
+	strLens[5] = mcuHWDesc & 0xFF;
+	strLens[6] = mcuSubparts >> 8;
+	strLens[7] = mcuSubparts & 0xFF;
+	strLens[8] = sensorID >> 8;
+	strLens[9] = sensorID & 0xFF;
+	strLens[10] = sbcFWCompat >> 8;
+	strLens[11] = sbcFWCompat & 0xFF;
+	strLens[12] = mcuFWCompat >> 8;
+	strLens[13] = mcuFWCompat & 0xFF;
+	static_assert(strLensLen == 14);
 
-	uint8_t *ptr = infoPacket.data() + CAMERA_INFO_BASE_LENGTH;
-	memcpy(ptr, storedInfo.sbcFWDescriptor.data(), sbcFWDesc);
-	ptr += sbcFWDesc;
-	memcpy(ptr, storedInfo.mcuFWDescriptor.data(), mcuFWDesc);
-	ptr += mcuFWDesc;
-	memcpy(ptr, storedInfo.mcuHWDescriptor.data(), mcuHWDesc);
-	ptr += mcuHWDesc;
-	memcpy(ptr, storedInfo.subpartSerials.data(), mcuSubparts);
-	ptr += mcuSubparts;
-	memcpy(ptr, storedInfo.cameraSensor.data(), sensorID);
-	ptr += sensorID;
-	memcpy(ptr, storedInfo.sbcFWCompatibility.data(), sbcFWCompat);
-	ptr += sbcFWCompat;
-	memcpy(ptr, storedInfo.mcuFWCompatibility.data(), mcuFWCompat);
-	ptr += mcuFWCompat;
+	uint8_t *strData = infoPacket.data()+headerLen+data32Len+strLensLen;
+	memcpy(strData, storedInfo.sbcFWDescriptor.data(), sbcFWDesc);
+	strData += sbcFWDesc;
+	memcpy(strData, storedInfo.mcuFWDescriptor.data(), mcuFWDesc);
+	strData += mcuFWDesc;
+	memcpy(strData, storedInfo.mcuHWDescriptor.data(), mcuHWDesc);
+	strData += mcuHWDesc;
+	memcpy(strData, storedInfo.subpartSerials.data(), mcuSubparts);
+	strData += mcuSubparts;
+	memcpy(strData, storedInfo.cameraSensor.data(), sensorID);
+	strData += sensorID;
+	memcpy(strData, storedInfo.sbcFWCompatibility.data(), sbcFWCompat);
+	strData += sbcFWCompat;
+	memcpy(strData, storedInfo.mcuFWCompatibility.data(), mcuFWCompat);
+	strData += mcuFWCompat;
 
 	comm_send(medium, PacketHeader(PACKET_CAMERA_INFO, infoPacket.size()), std::move(infoPacket));
 }

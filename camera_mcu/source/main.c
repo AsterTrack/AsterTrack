@@ -1030,8 +1030,8 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version)
 	response[1] = OTP_Version; 			// OTP Format Version
 	response[2] = OTP_NumSubParts; 		// Sub-Part Count
 	response[3] =						// Detected Hardware Features / Defects
-		(hasHSEClock? MCU_HW_HAS_HSE : 0) |
-		(mcuFlashConfig != MCU_FLASH_BOOT0_PI? MCU_HW_ALT_BOOT : 0) |
+		(hasHSEClock? 0 : MCU_HW_UNRELIABLE_CLOCK) |
+		(mcuFlashConfig == MCU_FLASH_BOOT0_PI? 0 : MCU_HW_ALT_BOOT) |
 		0;
 
 	// Write string lengths for separate request

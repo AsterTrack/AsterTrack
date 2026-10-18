@@ -608,9 +608,9 @@ enum TrCamMode
 	TRCAM_MODE_SIZE					= 0b11111111
 };
 
-enum CameraMCUHardware
+enum CameraMCUHardware : uint16_t
 {
-	MCU_HW_HAS_HSE = 1 << 0,
+	MCU_HW_UNRELIABLE_CLOCK = 1 << 0,
 	MCU_HW_ALT_BOOT = 1 << 1,
 };
 

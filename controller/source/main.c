@@ -1620,7 +1620,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		}
 		// Received full identification, check
 		struct IdentPacket ident = parseIdentPacket(cam->packetBuffer);
-		if ((ident.device != DEVICE_CAMERA_SBC && ident.device != DEVICE_CAMERA_SBC) || ident.type != INTERFACE_UART)
+		if ((ident.device != DEVICE_CAMERA_SBC && ident.device != DEVICE_CAMERA_MCU) || ident.type != INTERFACE_UART)
 		{ // Ident packet was plain wrong
 			WARN_STR("!IdentFail:");
 			WARN_CHARR(INT9_TO_CHARR(port), '+', UI8_TO_HEX_ARR(ident.device), '+', UI8_TO_HEX_ARR(ident.type));
@@ -1642,7 +1642,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 			cam->comm |= COMM_SBC;
 			cam->identitySBC = ident;
 		}
-		else if (ident.device == DEVICE_CAMERA_SBC)
+		else if (ident.device == DEVICE_CAMERA_MCU)
 		{
 			cam->comm |= COMM_MCU;
 			cam->identityMCU = ident;

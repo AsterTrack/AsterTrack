@@ -158,6 +158,7 @@ bool usbd_ep_set_dma(usbd_device *dev, uint8_t ep, uint8_t *buf, uint16_t len)
 		ERR_STR("\n#EpSet");
 		return false;
 	}
+	dev->ep_set[ep] = true;
 	LOG_EVT_USB(CONTROLLER_EVENT_USB_DATA_TX, true);
 	EP_TX_CTRL(ep) = (EP_TX_CTRL(ep) & ~USBHS_UEP_T_RES_MASK) | USBHS_UEP_T_RES_NAK;
 	EPx_TX_DMA(ep) = (uint32_t)buf;

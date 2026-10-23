@@ -143,7 +143,7 @@ inline int ButtonDebounce(struct ButtonState *button, TimePoint now);
 static void uart_set_identification()
 { // This is theoretically constant, but requires code to initialise nicely
 	UARTPacketRef *uartIdentPacket = (UARTPacketRef*)ownIdentPacket;
-	ownIdent = (struct IdentPacket){ .device = DEVICE_CAMERA_SBC, .id = cameraIDStored, .type = INTERFACE_UART, .version = firmwareVersion };
+	ownIdent = (struct IdentPacket){ .device = DEVICE_CAMERA_MCU, .id = cameraIDStored, .type = INTERFACE_UART, .version = firmwareVersion };
 	storeIdentPacket(ownIdent, uartIdentPacket->data);
 	finaliseDirectUARTPacket(uartIdentPacket, (struct PacketHeader){ .tag = PACKET_IDENT, .length = IDENT_PACKET_SIZE });
 }
@@ -1050,7 +1050,7 @@ static uint16_t fillInfoPacket(uint8_t *response, uint8_t *version)
 	}
 
 	uint32_t *packet32 = ((uint32_t*)response) + header32Len;
-	packet32[0] = PERSISTENT_CONFIG[0];	// 32-Bit Camera ID
+	packet32[0] = cameraIDStored;		// 32-Bit Camera ID
 	packet32[1] = firmwareVersion.num;	// MCU Firmware Version
 	packet32[2] = OTP[2];				// 96-Bit Camera Serial Number Word 1
 	packet32[3] = OTP[3];				// 96-Bit Camera Serial Number Word 2
@@ -1402,15 +1402,19 @@ static int8_t AllocateSBCPacket(uint16_t size)
 
 static void ParseFlashConfig()
 {
-	uint32_t configVersion = PERSISTENT_CONFIG[0];
-	cameraIDStored = PERSISTENT_CONFIG[2];
-	if (cameraIDStored == 0xFFFFFFFF && configVersion != 0xFFFFFFFF)
+	if (PERSISTENT_CONFIG[2] == 0xFFFFFFFF && PERSISTENT_CONFIG[0] != 0xFFFFFFFF)
 	{ // Likely unversioned config
 		cameraIDStored = PERSISTENT_CONFIG[0];
 		// Update to versioned config
 		ProgramFlashConfig();
 		return;
 	}
+	uint32_t configVersion = PERSISTENT_CONFIG[0];
+	if (configVersion == 0xFFFFFFFF)
+	{ // Unwritten
+		return;
+	}
+	cameraIDStored = PERSISTENT_CONFIG[2];
 }
 
 static uint16_t ProgramFlashConfig()

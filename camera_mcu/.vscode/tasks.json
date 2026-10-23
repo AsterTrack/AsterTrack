@@ -7,13 +7,13 @@
 			"label": "Select Board (clangd)",
 			"type": "shell",
 			"group": "build",
-			"command": "./source/version.sh ${input:boardRev} && bear --append --output build/compile_commands.json -- make REV=${input:boardRev} DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"command": "source/version.sh ${input:boardRev} && bear --append --output build/compile_commands.json -- make REV=${input:boardRev} DEVICE='STM32G030' -j $(nproc --ignore=2)",
 		},
 		{
 			"label": "Build",
 			"type": "shell",
 			"group": "build",
-			"command": "./source/version.sh $(cat build/rev) && make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"command": "source/version.sh $(cat build/rev) && make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 			"windows": {
 				"command": "mkdir -p build & make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 				"options": {
@@ -30,31 +30,31 @@
 			"label": "Build (clangd)",
 			"type": "shell",
 			"group": "build",
-			"command": "./source/version.sh $(cat build/rev) && bear --append --output build/compile_commands.json -- make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
+			"command": "source/version.sh $(cat build/rev) && bear --append --output build/compile_commands.json -- make REV=$(cat build/rev) DEVICE='STM32G030' -j $(nproc --ignore=2)",
 		},
 		{
 			"label": "Flash (OpenOCD)",
 			"type": "shell",
 			"group": "test",
-			"command": "openocd -f interface/stlink.cfg -f target/stm32g0x.cfg -c 'program build/TrackingCameraMCU.elf verify reset exit'",
+			"command": "openocd -f interface/stlink.cfg -f target/stm32g0x.cfg -c 'program build/$(cat build/rev)/TrackingCameraMCU_$(cat build/rev).elf verify reset exit'",
 			"dependsOn": [ "Build" ]
 		},
 		{ // REQUIRES stlink/st-flash: https://github.com/stlink-org/stlink
 			"label": "Flash (st-flash)",
 			"type": "shell",
 			"group": "test",
-			"command": "st-flash --reset write build/TrackingCameraMCU.bin 0x08000000",
+			"command": "st-flash --reset write build/TrackingCameraMCU_$(cat build/rev).bin 0x08000000",
 			"dependsOn": [ "Build" ]
 		},
 		{ // REQUIRES STM32_Programmer_CLI: https://www.st.com/en/development-tools/stm32cubeprog.html
 			"label": "Flash (STM32_Programmer_CLI)",
 			"type": "shell",
 			"group": "test",
-			"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf",
-			"command_serial": "STM32_Programmer_CLI -c port=/dev/ttyUSB0 -d build/TrackingCameraMCU.elf", // For USB-To-Serial programmer (e.g. FTDI) using STM32_Programmer
+			"command": "STM32_Programmer_CLI -c port=SWD -d build/$(cat build/rev)/TrackingCameraMCU_$(cat build/rev).elf",
+			"command_serial": "STM32_Programmer_CLI -c port=/dev/ttyUSB0 -d build/$(cat build/rev)/TrackingCameraMCU_$(cat build/rev).elf", // For USB-To-Serial programmer (e.g. FTDI) using STM32_Programmer
 			"windows": {
-				"command": "STM32_Programmer_CLI -c port=SWD -d build/TrackingCameraMCU.elf", // For ST-Link using programmer
-				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/TrackingCameraMCU.elf" // For serial programmer, pick correct COM port
+				"command": "STM32_Programmer_CLI -c port=SWD -d build/$(cat build/rev)/TrackingCameraMCU_$(cat build/rev).elf", // For ST-Link using programmer
+				"command_serial": "STM32_Programmer_CLI -c port=COM1 -d build/$(cat build/rev)/TrackingCameraMCU_$(cat build/rev).elf" // For serial programmer, pick correct COM port
 			},
 			"dependsOn": [ "Build" ]
 		},

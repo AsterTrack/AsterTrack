@@ -329,7 +329,7 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			LOG(LDefault, LError, "Could not find controller when adding camera - was it removed already?\n");
 			return false;
 		}
-		LOG(LDefault, LInfo, "Added Camera with ID %d on port %d!\n", id, i);
+		LOG(LDefault, LInfo, "Added Camera with ID #%u on port %d!\n", id, i);
 		camera->controller = *contIt;
 		camera->port = i;
 		controller.cameras[i] = camera; // new shared_ptr
@@ -348,9 +348,6 @@ bool ReadStatusPacket(ServerState &state, TrackingControllerState &controller, u
 			camsConnected, portCount, camsConnecting, newCamsConnecting, (int)state.cameras.size());
 		SignalServerEvent(EVT_UPDATE_CAMERAS);
 	}
-	else
-		LOG(LControllerDevice, LTrace, "Controller: %d/%d cameras connected, %d connecting. Total: %d!\n",
-			camsConnected, portCount, camsConnecting, (int)state.cameras.size());
 
 	// Step 3: Update camera states
 	bool updatedCameras = false;
@@ -805,9 +802,9 @@ bool ReadStatPacket(TrackingCameraState &camera, const PacketHeader header, cons
 	float elapsedS = s.header.deltaUS/1000000.0f;
 	LOG(LCameraDevice, LInfo, "Camera %u, Frame %d, %.2f fps, %.1f\u00B0C, %.2fV\n", camera.id, s.header.frame,
 		(s.header.frame-lastStatFrame)/elapsedS, s.header.tempSOC/100.0f, s.header.voltage/1000.0f);
-	LOG(LCameraDevice, LInfo, "   Latency %.2fms (qpu %.2f, fetch %.2f, CCL %.2f, "
+	LOG(LCameraDevice, LInfo, "   Latency %.2fms (qpu %.2f, find %.2f, fetch %.2f, CCL %.2f, "
 		"post %.2f, TX %.2f), Vis: (%dus, %.0fHz), Stream: (%dms, %.0fHz)\n",
-		s.times.latency/1000.0f, s.times.qpu/1000.0f, s.times.fetch/1000.0f,
+		s.times.latency/1000.0f, s.times.qpu/1000.0f, s.times.find/1000.0f, s.times.fetch/1000.0f,
 		s.times.ccl/1000.0f, s.times.post/1000.0f, s.times.send/1000.0f,
 		s.incidents.vis.avg, s.incidents.vis.occurences/elapsedS,
 		(s.incidents.stream.avg<<8)/1000, s.incidents.stream.occurences/elapsedS);

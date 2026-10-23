@@ -175,6 +175,7 @@ $(BUILD_DIR)/%.o: %.s Makefile
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 	$(LD) $(OBJECTS) $(LDFLAGS) -T$(LDSCRIPT) -o $@
+	cp $@ $(BUILD_ROOT)/TrackingCameraMCU.elf
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf
 	$(HEX) $< $@

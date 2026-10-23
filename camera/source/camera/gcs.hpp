@@ -33,7 +33,6 @@ SOFTWARE.
 /* GPU Camera Stream
 	Simple camera stream interface
 	CameraParams covers all possible cameras, backends choose which parameters to support
-	Has V4L2 (OV9281 specific) backend
 */
 
 /* Camera parameters passed for MMAL camera set up */
@@ -47,7 +46,6 @@ struct GCS_CameraParams
 	uint32_t shutterSpeed;
 	uint8_t digitalGain;
 	uint8_t analogGain;
-	uint8_t grayscale;
 	uint8_t extTrig;
 	uint8_t strobe;
 	int32_t strobeOffset;
@@ -96,7 +94,7 @@ void gcs_stop(GCS *gcs);
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 SENSOR_NUM gcs_getSensor(GCS *gcs);
 
-/* Get the sensor area of current mode, or none if not streaming or sensor is not recognised */
+/* Get the sensor area of current mode. Returns false if not streaming or sensor is not recognised */
 bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY);
 
 /* Returns error flag and resets it */

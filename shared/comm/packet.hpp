@@ -30,6 +30,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include <assert.h>
 
 #include "packet.h"
+#include "util/camera.hpp"
 #include "blob/parameters.hpp"
 #include "hash/crc32.hpp"
 
@@ -266,27 +267,21 @@ struct ConfigPacket
 	ConfigUpdateTag tag;
 	uint8_t version;
 
-	uint16_t width, height;
-	uint32_t frameTimeNS;
-	uint16_t shutterSpeed;
-	uint8_t analogGain;
-	uint8_t sync;
-	bool strobe;
-	int16_t strobeOffset;
-	uint16_t strobeLength;
-	
+	CameraSensorConfig camera;
+
 	BlobProcessingParameters blobProc;
 };
 
 #define CONFIG_PACKET_VERSION		1
 
-#define CONFIG_PACKET_MIN_SIZE		73
-#define CONFIG_PACKET_SIZE			73
+#define CONFIG_PACKET_MIN_SIZE		72
+#define CONFIG_PACKET_SIZE			72
 
 
 static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int length)
 {
 	struct ConfigPacket config;
+	auto &camera = config.camera;
 	auto &proc = config.blobProc;
 
 	// Try to keep compatible!
@@ -297,17 +292,16 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int len
 	int base = 2;
 
 	{
-		config.width = *(uint16_t*)&data[base+0];
-		config.height = *(uint16_t*)&data[base+2];
-		memcpy(&config.frameTimeNS, &data[base+4], 4);
-		config.shutterSpeed = *(uint16_t*)&data[base+8];
-		config.analogGain = *(uint8_t*)&data[base+10];
-		config.sync = *(uint8_t*)&data[base+11];
-		config.strobe = *(uint8_t*)&data[base+12];
-		config.strobeOffset = *(int16_t*)&data[base+13];
-		config.strobeLength = *(uint16_t*)&data[base+15];
+		camera.width = *(uint16_t*)&data[base+0];
+		camera.height = *(uint16_t*)&data[base+2];
+		memcpy(&camera.frameTimeNS, &data[base+4], 4);
+		camera.exposureUS = *(uint16_t*)&data[base+8];
+		camera.analogGain = *(uint8_t*)&data[base+10];
+		camera.sync = (SensorSyncMode)*(uint8_t*)&data[base+11];
+		camera.strobeOffsetUS = *(int16_t*)&data[base+12];
+		camera.strobeLengthUS = *(uint16_t*)&data[base+14];
 	}
-	base += 17;
+	base += 16;
 
 	{
 		proc.thresholds.absolute = *(uint8_t*)&data[base+0];
@@ -384,6 +378,7 @@ static inline struct ConfigPacket parseConfigPacket(const uint8_t *data, int len
 
 static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CONFIG_PACKET_SIZE])
 {
+	auto &camera = config.camera;
 	auto &proc = config.blobProc;
 
 	data[0] = CONFIG_UPDATE_MAIN; // Config tag
@@ -391,17 +386,16 @@ static inline void storeConfigPacket(struct ConfigPacket config, uint8_t data[CO
 	int base = 2;
 
 	{
-		*(uint16_t*)&data[base+0] = config.width;
-		*(uint16_t*)&data[base+2] = config.height;
-		memcpy(&data[base+4], &config.frameTimeNS, 4);
-		*(uint16_t*)&data[base+8] = config.shutterSpeed;
-		*(uint8_t*)&data[base+10] = config.analogGain;
-		*(uint8_t*)&data[base+11] = config.sync;
-		*(uint8_t*)&data[base+12] = config.strobe;
-		*(int16_t*)&data[base+13] = config.strobeOffset;
-		*(uint16_t*)&data[base+15] = config.strobeLength;
+		*(uint16_t*)&data[base+0] = camera.width;
+		*(uint16_t*)&data[base+2] = camera.height;
+		memcpy(&data[base+4], &camera.frameTimeNS, 4);
+		*(uint16_t*)&data[base+8] = camera.exposureUS;
+		*(uint8_t*)&data[base+10] = camera.analogGain;
+		*(uint8_t*)&data[base+11] = camera.sync;
+		*(int16_t*)&data[base+12] = camera.strobeOffsetUS;
+		*(uint16_t*)&data[base+14] = camera.strobeLengthUS;
 	}
-	base += 17;
+	base += 16;
 
 	{
 		*(uint8_t*)&data[base+0] = proc.thresholds.absolute;

@@ -29,32 +29,31 @@ SOFTWARE.
 #include <inttypes.h>
 
 #include "vcsm/vcsm.hpp"
+#include "util/camera.hpp"
 
 /* GPU Camera Stream
 	Simple camera stream interface
 	CameraParams covers all possible cameras, backends choose which parameters to support
 */
 
-/* Camera parameters passed for MMAL camera set up */
+/* Input camera parameters */
 struct GCS_CameraParams
 {
 	char *devName;
-	uint16_t width;
-	uint16_t height;
-	uint32_t stride;
-	uint32_t frameTimeNS;
-	uint32_t shutterSpeed;
-	uint8_t digitalGain;
-	uint8_t analogGain;
-	uint8_t sync;
-	uint8_t strobe;
-	int32_t strobeOffset;
-	uint32_t strobeLength;
+	CameraSensorConfig sensor;
 
 	// Padding control
 	//uint32_t padL, padR, padT; // TODO: Possible to implement horizontal padding?
 	uint32_t padB;
 	uint32_t padValue;
+};
+
+/* Actually used camera config */
+struct GCS_CameraConfig
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
 };
 
 enum SENSOR_NUM
@@ -76,35 +75,35 @@ static const char* SENSOR_ID[SENSOR_MAX]
 /* Opaque GPU Camera Stream structure */
 struct GCS;
 
-/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
+/* Returns SENSOR_NUM indicating a valid sensor, no valid sensor found, or a system error (e.g. no camera I2C) */
 SENSOR_NUM gcs_probeSensor();
 
-/* Creates a GCS (camera stream) instance. Requires cameraParams to stay allocated until gcs_destroy is called. It is used to update actual parameters, such as width, and stride, as well as update parameters for gcs_updateParameters */
-GCS *gcs_create(GCS_CameraParams *cameraParams);
+/* Creates a GCS (camera stream) instance. Uses params for sensor configuration, and immediately writes actually used width, height and stride into config. */
+GCS *gcs_create(const GCS_CameraParams &params, GCS_CameraConfig &config);
 
 /* Destroys GCS */
 void gcs_destroy(GCS *gcs);
 
-/* Start GCS (camera stream). Enables MMAL camera and starts watchdog */
+/* Start GCS (camera stream) */
 uint8_t gcs_start(GCS *gcs);
 
-/* Stop GCS (camera output). Stops watchdog and disabled MMAL camera */
+/* Stop GCS (camera output) */
 void gcs_stop(GCS *gcs);
 
 /* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 SENSOR_NUM gcs_getSensor(GCS *gcs);
 
-/* Get the sensor area of current mode. Returns false if not streaming or sensor is not recognised */
+/* Get the sensor area of current mode. Returns false if not streaming or sensor is not recognised. */
 bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY);
 
 /* Returns error flag and resets it */
 uint8_t gcs_readErrorFlag(GCS *gcs);
 
-/* Updates parameters from linked GCS_CameraParams struct */
-void gcs_updateParameters(GCS *gcs);
+/* Updates given parameters, except for width and height, which are locked along with stride in gcs_create. */
+void gcs_updateParameters(GCS *gcs, const GCS_CameraParams &params);
 
 /* Returns once a new camera frame is available */
-uint8_t gcs_waitForFrameBuffer(GCS *gcs, uint32_t waitUS = 200000);
+bool gcs_waitForFrameBuffer(GCS *gcs, uint32_t waitUS = 200000);
 
 /* Returns whether there is a new camera frame available */
 uint8_t gcs_hasFrameBuffer(GCS *gcs);
@@ -112,14 +111,13 @@ uint8_t gcs_hasFrameBuffer(GCS *gcs);
 /* Returns the next camera frame. If no camera frame is available yet, blocks until there is. */
 void* gcs_requestFrameBuffer(GCS *gcs);
 
-/* Returns the most recent camera frame. Assumes gcs_waitForFrameBuffer or gcs_hasFrameBuffer has returned true (frameWaiting is true). */
+/* Returns the most recent camera frame. If no camera frame is available yet, blocks until there is. */
 void* gcs_requestLatestFrameBuffer(GCS *gcs, unsigned int *num);
 
 /* Returns the VCSM buffer data of the given framebuffer. */
 VCSM_BUFFER& gcs_getFrameBufferData(void *framebuffer);
 
-/* Return requested Frane Buffer after processing is done.
- * Has to be called before a new frame buffer can be requested. */
+/* Return requested Frame Buffer after processing is done. */
 bool gcs_returnFrameBuffer(GCS *gcs, void *bufferHeader);
 
 #endif

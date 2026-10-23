@@ -296,28 +296,27 @@ void CameraUpdateConfig(ServerState &state, TrackingCameraState &device)
 {
 	CameraConfig &config = state.cameraConfig.getCameraConfig(device.id);
 	ConfigPacket packet = {};
-	packet.width = config.width;
-	packet.height = config.height;
+	packet.camera.width = config.width;
+	packet.camera.height = config.height;
 	if (device.sync)
 	{ // Use already set-up sync groups, do not parse config again
 		auto sync_lock = device.sync->rlock();
-		packet.frameTimeNS = sync_lock->frameIntervalMS * 1000000;
-		packet.sync = config.sync;
+		packet.camera.frameTimeNS = sync_lock->frameIntervalMS * 1000000;
+		packet.camera.sync = config.sync;
 	}
 	else
 	{ // Should not happen, all cameras should have a sync group
 		LOG(LCameraDevice, LError, "Sync group of camera has not been set up yet!");
-		packet.frameTimeNS = 1000000000 / config.framerate;
-		packet.sync = 0;
+		packet.camera.frameTimeNS = 1000000000 / config.framerate;
+		packet.camera.sync = SENSOR_NO_SYNC;
 	}
-	packet.shutterSpeed = config.exposure;
-	packet.analogGain = config.gain;
-	packet.strobe = config.enableStrobe;
-	packet.strobeOffset = config.strobeOffset;
-	if (device.embeddedState.filter == FILTER_VISIBLE)
-		packet.strobeLength = 0; // Suppress strobe
+	packet.camera.exposureUS = config.exposureUS;
+	packet.camera.analogGain = config.gain;
+	packet.camera.strobeOffsetUS = config.strobeOffsetUS;
+	if (!config.enableStrobe || device.embeddedState.filter == FILTER_VISIBLE)
+		packet.camera.strobeLengthUS = 0; // Suppress strobe
 	else
-	 	packet.strobeLength = config.strobeLength;
+	 	packet.camera.strobeLengthUS = config.strobeLengthUS;
 	packet.blobProc = config.blobProcessing;
 	if (device.storage.receivedInfo)
 	{ // Adjust limits for performance based on SBC

@@ -77,20 +77,20 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		};
 		if (ImGui::BeginCombo("##Sync", syncLabels[config.sync]))
 		{
-			if (ImGui::Selectable(syncLabels[0], config.sync == 0))
+			if (ImGui::Selectable(syncLabels[SENSOR_NO_SYNC], config.sync == SENSOR_NO_SYNC))
 			{
-				updateSyncGroup = config.sync != 0;
-				config.sync = 0;
+				updateSyncGroup = config.sync != SENSOR_NO_SYNC;
+				config.sync = SENSOR_NO_SYNC;
 			}
-			if (ImGui::Selectable(syncLabels[2], config.sync == 2))
+			if (ImGui::Selectable(syncLabels[SENSOR_FRAME_SYNC], config.sync == SENSOR_FRAME_SYNC))
 			{
-				updateSyncGroup = config.sync != 2;
-				config.sync = 2;
+				updateSyncGroup = config.sync != SENSOR_FRAME_SYNC;
+				config.sync = SENSOR_FRAME_SYNC;
 			}
-			if (ImGui::Selectable(syncLabels[1], config.sync == 1))
+			if (ImGui::Selectable(syncLabels[SENSOR_EXTERNAL_TRIGGER], config.sync == SENSOR_EXTERNAL_TRIGGER))
 			{
-				updateSyncGroup = config.sync != 1;
-				config.sync = 1;
+				updateSyncGroup = config.sync != SENSOR_EXTERNAL_TRIGGER;
+				config.sync = SENSOR_EXTERNAL_TRIGGER;
 			}
 			ImGui::EndCombo();
 		}
@@ -98,37 +98,11 @@ void InterfaceState::UpdateCameraSettings(InterfaceWindow &window)
 		if (config.sync == 0)
 			updateSyncGroup |= ScalarInput<int>("Framerate", "Hz", &config.framerate, 5, 144);
 
-		static bool editAsIntegers = false;
-		BooleanProperty("Edit times as integers", &editAsIntegers);
-		if (!editAsIntegers)
-		{
-			float fac = 7.5834f, off = -fac; // Experimentally determined by visually comparing brightness between strobe changes
-			float exposureUS = config.exposure*fac + off;
-			ScalarInput<float>("Exposure", "us", &exposureUS, off+4*fac, 255*fac+off, fac, 1, "%.1f");
-			int exposure = (int)std::round((exposureUS-off)/fac);
-			updateConfig |= (config.exposure != exposure);
-			config.exposure = exposure;
-		}
-		if (!editAsIntegers)
-		{
-			updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
-			float fac = 7.5834f, off = 10.5f; // Experimentally determined with Oscilloscope
-			float offsetUS = config.strobeOffset*fac, lengthUS = config.strobeLength*fac + off;
-			ScalarInput<float>("Strobe Length", "us", &lengthUS, off, 255*fac+off, fac, 1, "%.1f");
-			ScalarInput<float>("Strobe Offset", "us", &offsetUS, -255*fac, 255*fac, fac, 1, "%.1f");
-			int strobeOffset = int(offsetUS/fac + (std::signbit(offsetUS)? -0.5f : 0.5f));
-			int strobeLength = std::lround((lengthUS-off)/fac);
-			updateConfig |= (config.strobeOffset != strobeOffset) || (config.strobeLength != strobeLength);
-			config.strobeOffset = strobeOffset;
-			config.strobeLength = strobeLength;
-		}
-		if (editAsIntegers)
-		{
-			updateConfig |= ScalarInput<int>("Exposure", "x", &config.exposure, 0, 65535);
-			updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
-			updateConfig |= ScalarInput<int>("Strobe Length", "x", &config.strobeLength, 0, 65535);
-			updateConfig |= ScalarInput<int>("Strobe Offset", "x", &config.strobeOffset, -32767, 32767);
-		}
+		updateConfig |= ScalarInput<int>("Exposure", "us", &config.exposureUS, 0, 65535, 10);
+		updateConfig |= BooleanProperty("Enable Strobe", &config.enableStrobe);
+		updateConfig |= ScalarInput<int>("Strobe Length", "us", &config.strobeLengthUS, 0, 65535, 10);
+		updateConfig |= ScalarInput<int>("Strobe Offset", "us", &config.strobeOffsetUS, -32767, 32767, 10);
+
 		updateConfig |= ScalarInput<int>("Gain", "x", &config.gain, 1, 16);
 		EndSection();
 

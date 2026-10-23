@@ -80,10 +80,11 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 				comm_send(&comm, PacketHeader(PACKET_CONFIG, response.size()), std::move(response));
 				return false;
 			}
-			printf("Received configuration: %dx%d @ %.1f fps, exposure level %d, %dx gain, m=%.2f, n=%.2f, sync? %d, strobe? %c (%d)\n",
-				packet.width, packet.height, 1000000000.0/packet.frameTimeNS, packet.shutterSpeed,
-				packet.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,
-				packet.sync, packet.strobe? 'y' : 'n', packet.strobeLength);
+			auto &cam = packet.camera;
+			printf("Received configuration: %dx%d @ %.1f fps, exposure %dus, %dx gain, m=%.2f, n=%.2f, sync? %d, strobe %dus %c%dus\n",
+				cam.width, cam.height, 1000000000.0/cam.frameTimeNS, cam.exposureUS,
+				cam.analogGain, packet.blobProc.thresholds.absolute/255.0f, packet.blobProc.thresholds.edge/255.0f,
+				cam.sync, cam.strobeLengthUS, cam.strobeOffsetUS < 0? '-' : '+', std::abs(cam.strobeOffsetUS));
 			state.newConfigPacket = packet;
 			state.updateSetupQPU = true;
 			state.updateSetupCPU = true;

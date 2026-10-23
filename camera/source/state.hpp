@@ -55,17 +55,16 @@ struct TrackingCameraState
 	std::string camName = "/dev/video0";
 	GCS_CameraParams camera = {
 		.devName = (char*)camName.c_str(),
-		.width = 1280,
-		.height = 800,
-		.stride = 0, // Will be set by gcs
-		.frameTimeNS = 1000000000 / 144,
-		.shutterSpeed = 100,
-		.digitalGain = 1,
-		.analogGain = 1,
-		.sync = 0,
-		.strobe = 1,
-		.strobeOffset = 0,
-		.strobeLength = 10,
+		.sensor = {
+			.width = 1280,
+			.height = 800,
+			.frameTimeNS = 1000000000 / 144,
+			.exposureUS = 100,
+			.analogGain = 1,
+			.sync = SENSOR_NO_SYNC,
+			.strobeOffsetUS = 0,
+			.strobeLengthUS = 100,
+		},
 		// Required for QPU masking:
 		.padB = 2, 
 		.padValue = 0xFF,

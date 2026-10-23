@@ -42,7 +42,7 @@ static SENSOR_NUM sensor_probe(unsigned int i2c_fd)
 	return sensor;
 }
 
-static bool sensor_isGrayscale(SENSOR_NUM sensor, const GCS_CameraParams *params)
+static bool sensor_isGrayscale(SENSOR_NUM sensor, const GCS_CameraParams &params)
 {
 	if (sensor == SENSOR_OV9281)
 		return true;
@@ -50,28 +50,35 @@ static bool sensor_isGrayscale(SENSOR_NUM sensor, const GCS_CameraParams *params
 	return false;
 }
 
-static bool sensor_getSensorArea(SENSOR_NUM sensor, const GCS_CameraParams *params, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY)
+static bool sensor_getSensorArea(SENSOR_NUM sensor, const GCS_CameraParams &params, const GCS_CameraConfig &config, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY)
 {
 	if (sensor == SENSOR_OV9281)
-		return ov9281_getSensorArea(params, sensorX, sensorY, minX, minY, maxX, maxY);
+		return ov9281_getSensorArea(params, config, sensorX, sensorY, minX, minY, maxX, maxY);
 	return false;
 }
 
-static double sensor_getVBlankScale(SENSOR_NUM sensor, const GCS_CameraParams *params)
+static double sensor_getVBlankScale(SENSOR_NUM sensor, const GCS_CameraParams &params, const GCS_CameraConfig &config)
 { // Unsure why this is needed
 	if (sensor == SENSOR_OV9281)
 		return 0.96;
 	return 1.0;
 }
 
-static void sensor_configure(SENSOR_NUM sensor, unsigned int i2c_fd, const GCS_CameraParams *params)
+static uint32_t sensor_getExposure(SENSOR_NUM sensor, const GCS_CameraParams &params, const GCS_CameraConfig &config)
 {
 	if (sensor == SENSOR_OV9281)
-		ov9281_configure(i2c_fd, params);
+		return params.sensor.exposureUS/OV9281_TIME_FACTOR + 1;
+	return 0;
 }
 
-static void sensor_deconfigure(SENSOR_NUM sensor, unsigned int i2c_fd, const GCS_CameraParams *params)
+static void sensor_configure(SENSOR_NUM sensor, unsigned int i2c_fd, const GCS_CameraParams &params, const GCS_CameraConfig &config)
 {
 	if (sensor == SENSOR_OV9281)
-		ov9281_deconfigure(i2c_fd, params);
+		ov9281_configure(i2c_fd, params, config);
+}
+
+static void sensor_deconfigure(SENSOR_NUM sensor, unsigned int i2c_fd, const GCS_CameraParams &params, const GCS_CameraConfig &config)
+{
+	if (sensor == SENSOR_OV9281)
+		ov9281_deconfigure(i2c_fd, params, config);
 }

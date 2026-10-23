@@ -47,8 +47,6 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 		{"shutter-speed",		required_argument,	0,	4 },
 		{"g",					required_argument,	0,	5 },
 		{"gain",				required_argument,	0,	5 },
-		{"dg",					required_argument,	0,	6 },
-		{"digital-gain",		required_argument,	0,	6 },
 		{"nostrobe",			no_argument,		0,	7 },
 		{"trig",				no_argument,		0,	8 },
 		{"sync",				no_argument,		0,	9 },
@@ -119,8 +117,8 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				sscanf(optarg, "%dx%d", &width, &height);
 				if (width <= 2000 && width >= 64 && height <= 2000 && height >= 64)
 				{
-					state.camera.width = width;
-					state.camera.height = height;
+					state.camera.sensor.width = width;
+					state.camera.sensor.height = height;
 				}
 				else
 				{
@@ -129,25 +127,22 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 				break;
 			}
 			case 3:
-				state.camera.frameTimeNS = 1000000000 / std::stoi(optarg);
+				state.camera.sensor.frameTimeNS = 1000000000 / std::stoi(optarg);
 				break;
 			case 4:
-				state.camera.shutterSpeed = std::stoi(optarg);
+				state.camera.sensor.exposureUS = std::stoi(optarg);
 				break;
 			case 5:
-				state.camera.analogGain = std::stoi(optarg);
-				break;
-			case 6:
-				state.camera.digitalGain = std::stoi(optarg);
+				state.camera.sensor.analogGain = std::stoi(optarg);
 				break;
 			case 7:
-				state.camera.strobe = false;
+				state.camera.sensor.strobeLengthUS = 0;
 				break;
 			case 8:
-				state.camera.sync = 1;
+				state.camera.sensor.sync = SENSOR_EXTERNAL_TRIGGER;
 				break;
 			case 9:
-				state.camera.sync = 2;
+				state.camera.sensor.sync = SENSOR_FRAME_SYNC;
 				break;
 			case 10:
 				state.thresholds.absolute = 255*std::stof(optarg);
@@ -273,25 +268,12 @@ bool options_read(TrackingCameraState &state, int argc, char **argv)
 
 void acceptCPUConfig(TrackingCameraState &state)
 {
-	ConfigPacket &setupPacket = state.newConfigPacket;
-	state.blobParams = setupPacket.blobProc;
+	state.blobParams = state.newConfigPacket.blobProc;
 }
 void acceptQPUConfig(TrackingCameraState &state)
 {
-	ConfigPacket &setupPacket = state.newConfigPacket;
-	if (!state.curMode.streaming)
-	{ // If not streaming
-		state.camera.width = setupPacket.width;
-		state.camera.height = setupPacket.height;
-	}
-	state.camera.frameTimeNS = setupPacket.frameTimeNS;
-	state.camera.shutterSpeed = setupPacket.shutterSpeed;
-	state.camera.analogGain = setupPacket.analogGain;
-	state.thresholds = setupPacket.blobProc.thresholds;
-	state.camera.sync = setupPacket.sync;
-	state.camera.strobe = setupPacket.strobe;
-	state.camera.strobeOffset = setupPacket.strobeOffset;
-	state.camera.strobeLength = setupPacket.strobeLength;
+	state.camera.sensor = state.newConfigPacket.camera;
+	state.thresholds = state.newConfigPacket.blobProc.thresholds;
 }
 
 void sendInitialState(TrackingCameraState &state, CommMedium medium)

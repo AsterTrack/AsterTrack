@@ -284,17 +284,17 @@ std::optional<ErrorMessage> parseCameraConfigFile(const std::string &path, Camer
 					if (!cfg["label"].empty()) config.label = cfg["label"].get<std::string>();
 					if (!cfg["resolutionX"].empty()) config.width = cfg["resolutionX"].get<int>();
 					if (!cfg["resolutionY"].empty()) config.height = cfg["resolutionY"].get<int>();
-					if (!cfg["sync"].empty()) config.sync = cfg["sync"].get<int>();
+					if (!cfg["sync"].empty()) config.sync = (SensorSyncMode)cfg["sync"].get<int>();
 					if (!cfg["framerate"].empty()) config.framerate = cfg["framerate"].get<int>();
-					if (!cfg["shutterSpeed"].empty()) config.exposure = cfg["shutterSpeed"].get<int>();
+					if (!cfg["exposureUS"].empty()) config.exposureUS = cfg["exposureUS"].get<int>();
 					if (!cfg["gain"].empty()) config.gain = cfg["gain"].get<int>();
 					if (!cfg["absThreshold"].empty()) config.blobProcessing.thresholds.absolute = cfg["absThreshold"].get<int>();
 					if (!cfg["edgeThreshold"].empty()) config.blobProcessing.thresholds.edge = cfg["edgeThreshold"].get<int>();
 					if (!cfg["filter"].empty()) config.filter = cfg["filter"].get<int>();
 					if (config.filter != 0 || config.filter != 1) config.filter = 0; // Might have more than two in the future
 					if (!cfg["enableStrobe"].empty()) config.enableStrobe = cfg["enableStrobe"].get<bool>();
-					if (!cfg["strobeOffset"].empty()) config.strobeOffset = cfg["strobeOffset"].get<int>();
-					if (!cfg["strobeLength"].empty()) config.strobeLength = cfg["strobeLength"].get<int>();
+					if (!cfg["strobeOffsetUS"].empty()) config.strobeOffsetUS = cfg["strobeOffsetUS"].get<int>();
+					if (!cfg["strobeLengthUS"].empty()) config.strobeLengthUS = cfg["strobeLengthUS"].get<int>();
 				}
 			}
 		}
@@ -337,14 +337,14 @@ std::optional<ErrorMessage> storeCameraConfigFile(const std::string &path, const
 		cfg["resolutionY"] = config.height;
 		cfg["sync"] = config.sync;
 		cfg["framerate"] = config.framerate;
-		cfg["shutterSpeed"] = config.exposure;
+		cfg["exposureUS"] = config.exposureUS;
 		cfg["gain"] = config.gain;
 		cfg["absThreshold"] = config.blobProcessing.thresholds.absolute;
 		cfg["edgeThreshold"] = config.blobProcessing.thresholds.edge;
 		cfg["filter"] = config.filter;
 		cfg["enableStrobe"] = config.enableStrobe;
-		cfg["strobeOffset"] = config.strobeOffset;
-		cfg["strobeLength"] = config.strobeLength;
+		cfg["strobeOffsetUS"] = config.strobeOffsetUS;
+		cfg["strobeLengthUS"] = config.strobeLengthUS;
 		file["configurations"].push_back(std::move(cfg));
 	}
 

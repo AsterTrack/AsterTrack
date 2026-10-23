@@ -64,15 +64,15 @@ struct GCS_FrameBuffer
 struct GCS
 {
 	// Flags
-	uint8_t started = 0; // Specifies that stream have started
 	uint8_t error = 0;
-	uint8_t frameWaiting = 0;
+	bool started = false;
+	bool frameWaiting = false;
 
 	SENSOR_NUM sensor;
 
 	// Camera parameters
-	GCS_CameraParams *cameraParams = NULL;
-	int usedWidth, usedHeight, usedStride;
+	GCS_CameraParams params = {};
+	GCS_CameraConfig config;
 
 	int fd = -1;
 	int bufferCount = 0;
@@ -138,7 +138,6 @@ int gcs_readPixelRate(GCS *gcs, int64_t &pixelRate)
 	return status;
 }
 
-/* Returns SENSOR_NUM for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 SENSOR_NUM gcs_probeSensor()
 {
 	// Tell OV9281 camera to enable strobe (to force LEDs off as a temporary hardware fix)
@@ -153,31 +152,31 @@ SENSOR_NUM gcs_probeSensor()
 	return sensor;
 }
 
-GCS *gcs_create(GCS_CameraParams *cameraParams)
+GCS *gcs_create(const GCS_CameraParams &params, GCS_CameraConfig &config)
 {
 	int status;
 	int o = 0;
 
 	GCS *gcs = new GCS();
-	gcs->cameraParams = cameraParams;
+	gcs->params = params;
 	gcs->processingBufferIndex = -1;
 
 	gcs->sensor = gcs_probeSensor();
 
-	gcs->fd = open(gcs->cameraParams->devName, O_RDWR);
+	gcs->fd = open(gcs->params.devName, O_RDWR);
 	CHECK_STATUS(gcs->fd < 0, "Failed to open camera fd!", error_open);
 
 //	printf("IOCTL %d: MSG: %d VIDIOC_LOG_STATUS, CONTENT: %d\n", gcs->fd, VIDIOC_LOG_STATUS, 0);
 	//ioctl(gcs->fd, VIDIOC_LOG_STATUS);
 
-	//printf("Successfully opened Camera %s\n", gcs->cameraParams->devName);
+	//printf("Successfully opened Camera %s\n", gcs->params.devName);
 
 	struct v4l2_format format;
 	memset(&format, 0, sizeof format);
 	format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	format.fmt.pix.width = gcs->cameraParams->width;
-	format.fmt.pix.height = gcs->cameraParams->height;
-	format.fmt.pix.pixelformat = sensor_isGrayscale(gcs->sensor, gcs->cameraParams)? V4L2_PIX_FMT_GREY : V4L2_PIX_FMT_YUV420;
+	format.fmt.pix.width = gcs->params.sensor.width;
+	format.fmt.pix.height = gcs->params.sensor.height;
+	format.fmt.pix.pixelformat = sensor_isGrayscale(gcs->sensor, gcs->params)? V4L2_PIX_FMT_GREY : V4L2_PIX_FMT_YUV420;
 	status = ioctl(gcs->fd, VIDIOC_TRY_FMT, &format);
 	CHECK_STATUS(status, "Failed to test camera format!", error_format);
 	format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -195,12 +194,11 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 	printf("Format: %ux%u, stride %u, size %u\n",
 		getFormat.fmt.pix.width, getFormat.fmt.pix.height,
 		getFormat.fmt.pix.bytesperline, getFormat.fmt.pix.sizeimage);
-	gcs->usedWidth = getFormat.fmt.pix.width;
-	gcs->usedHeight = getFormat.fmt.pix.height;
-	gcs->usedStride = getFormat.fmt.pix.bytesperline;
-	gcs->cameraParams->width = getFormat.fmt.pix.width;
-	gcs->cameraParams->height = getFormat.fmt.pix.height;
-	gcs->cameraParams->stride = getFormat.fmt.pix.bytesperline;
+	gcs->config = config = {
+		.width = getFormat.fmt.pix.width,
+		.height = getFormat.fmt.pix.height,
+		.stride = getFormat.fmt.pix.bytesperline,
+	};
 
 	// Notify V4L2 we'll allocate buffers externally (through VCSM) and import them as DMABUFs
 	struct v4l2_requestbuffers reqBuf;
@@ -231,7 +229,7 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 
 		gcs->buffers[i].index = i;
 
-		uint32_t desiredBufferSize = (gcs->cameraParams->height+gcs->cameraParams->padB) * gcs->usedStride;
+		uint32_t desiredBufferSize = (gcs->config.height+gcs->params.padB) * gcs->config.stride;
 		gcs->buffers[i].vcsm = vcsm_malloc(std::max(buffer.length, desiredBufferSize));
 		CHECK_STATUS(gcs->buffers[i].vcsm.fd < 0, "Failed to allocate vcsm memory!", error_bufmalloc);
 
@@ -242,7 +240,7 @@ GCS *gcs_create(GCS_CameraParams *cameraParams)
 	{
 		vcsm_lock(gcs->buffers[j].vcsm);
 		uint8_t *ptr = (uint8_t*)gcs->buffers[j].vcsm.mem;
-		memset(ptr + gcs->cameraParams->height * gcs->usedStride, gcs->cameraParams->padValue, gcs->cameraParams->padB * gcs->usedStride);
+		memset(ptr + gcs->config.height * gcs->config.stride, gcs->params.padValue, gcs->params.padB * gcs->config.stride);
 		vcsm_unlock(gcs->buffers[j].vcsm);
 //		printf("Deallocate %d. \n", gcs->buffers[j].vcsm.fd);
 	}
@@ -309,7 +307,6 @@ void gcs_destroy(GCS *gcs)
 	delete gcs;
 }
 
-/* Start GCS (camera stream) */
 uint8_t gcs_start(GCS *gcs)
 {
 	// Ensure GCS is stopped first
@@ -318,7 +315,7 @@ uint8_t gcs_start(GCS *gcs)
 	// Init
 	std::unique_lock lock(gcs->accessMutex);
 	gcs->error = 0;
-	gcs->started = 1;
+	gcs->started = true;
 
 	// Enqueue all buffers
 	int i;
@@ -344,7 +341,7 @@ uint8_t gcs_start(GCS *gcs)
 				printf("Failed to dequeue buffer on error handling: %s!\n", strerror(errno));
 		}
 		gcs->error = 1;
-		gcs->started = 0;
+		gcs->started = false;
 		return 1;
 	}
 
@@ -355,17 +352,16 @@ uint8_t gcs_start(GCS *gcs)
 	{
 		printf("gcs_start: Failed to start streaming!");
 		gcs->error = 1;
-		gcs->started = 0;
+		gcs->started = false;
 		return 2;
 	}
 
 	// Attempt to set parameters
-	gcs_updateParameters(gcs);
+	gcs_updateParameters(gcs, gcs->params);
 
 	return 0;
 }
 
-/* Stop GCS (camera output). Stops watchdog and disabled MMAL camera */
 void gcs_stop(GCS *gcs)
 {
 	std::unique_lock lock(gcs->accessMutex);
@@ -397,7 +393,7 @@ void gcs_stop(GCS *gcs)
 
 	if (!gcs->started)
 		return;
-	gcs->started = 0;
+	gcs->started = false;
 
 	// Directly access camera I2C (i2c-vs)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
@@ -405,18 +401,16 @@ void gcs_stop(GCS *gcs)
 		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 	else
 	{
-	 	sensor_deconfigure(gcs->sensor, i2c_fd, gcs->cameraParams);
+	 	sensor_deconfigure(gcs->sensor, i2c_fd, gcs->params, gcs->config);
 		close(i2c_fd);
 	}
 }
 
-/* Returns 1 for valid sensor, 0 for no valid sensor found, -1 for system error (no camera I2C) */
 SENSOR_NUM gcs_getSensor(GCS *gcs)
 {
 	return gcs->sensor;
 }
 
-/* Get the sensor area of current mode. Returns false if not streaming or sensor is not recognised. */
 bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t &minX, uint16_t &minY, uint16_t &maxX, uint16_t &maxY)
 {
 	if (!gcs->started)
@@ -429,10 +423,9 @@ bool gcs_getSensorArea(GCS *gcs, uint16_t &sensorX, uint16_t &sensorY, uint16_t 
 		printf("No sensor detected to determine area!\n");
 		return false;
 	}
-	return sensor_getSensorArea(gcs->sensor, gcs->cameraParams, sensorX, sensorY, minX, minY, maxX, maxY);
+	return sensor_getSensorArea(gcs->sensor, gcs->params, gcs->config, sensorX, sensorY, minX, minY, maxX, maxY);
 }
 
-/* Returns error flag and resets it */
 uint8_t gcs_readErrorFlag(GCS *gcs)
 {
 	uint8_t flag = gcs->error;
@@ -440,21 +433,22 @@ uint8_t gcs_readErrorFlag(GCS *gcs)
 	return flag;
 }
 
-/* Updates internal parameters if possible */
-void gcs_updateParameters(GCS *gcs)
+void gcs_updateParameters(GCS *gcs, const GCS_CameraParams &params)
 {
+	gcs->params = params;
+
 	// Directly access camera I2C (i2c-vs)
 	unsigned int i2c_fd = open("/dev/i2c-10", O_RDWR);
 	if (i2c_fd < 0)
 		printf("Failed to open camera I2C fd! %s \n", strerror(errno));
 	else
 	{
-	 	sensor_configure(gcs->sensor, i2c_fd, gcs->cameraParams);
+	 	sensor_configure(gcs->sensor, i2c_fd, gcs->params, gcs->config);
 		close(i2c_fd);
 	}
 
 	int status;
-	if (gcs->cameraParams->sync != 1)
+	if (gcs->params.sensor.sync != SENSOR_EXTERNAL_TRIGGER)
 	{
 		uint32_t minHBlank, maxHBlank;
 		if ((status = gcs_getParameterRange(gcs, V4L2_CID_HBLANK, minHBlank, maxHBlank)))
@@ -469,16 +463,16 @@ void gcs_updateParameters(GCS *gcs)
 			printf("Failed to get pixel rate!\n");
 
 		// Calculate vblank to achieve the desired FPS
-		double magicScaleFactor = sensor_getVBlankScale(gcs->sensor, gcs->cameraParams);
-		int64_t desiredVBlank = magicScaleFactor * (pixelRate * gcs->cameraParams->frameTimeNS)
-			/ ((uint64_t)1000000000 * (gcs->usedWidth+minHBlank))
-			- gcs->usedHeight;
+		double magicScaleFactor = sensor_getVBlankScale(gcs->sensor, gcs->params, gcs->config);
+		int64_t desiredVBlank = magicScaleFactor * (pixelRate * gcs->params.sensor.frameTimeNS)
+			/ ((uint64_t)1000000000 * (gcs->config.width+minHBlank))
+			- gcs->config.height;
 		uint32_t setVBlank = std::clamp<int64_t>(desiredVBlank, minVBlank, maxVBlank);
-		float predFrameTimeNS = (uint64_t)((gcs->usedWidth+minHBlank) * (gcs->usedHeight+setVBlank)) * 1000000000
+		float predFrameTimeNS = (uint64_t)((gcs->config.width+minHBlank) * (gcs->config.height+setVBlank)) * 1000000000
 			/ (magicScaleFactor * pixelRate);
 		printf("Setting vblank to %d (desired %lld) to get FPS %.2f (desired %.2f)!\n",
-			setVBlank, desiredVBlank, 1000000000.0/predFrameTimeNS, 1000000000.0/gcs->cameraParams->frameTimeNS);
-		gcs->cameraParams->frameTimeNS = predFrameTimeNS;
+			setVBlank, desiredVBlank, 1000000000.0/predFrameTimeNS, 1000000000.0/gcs->params.sensor.frameTimeNS);
+		gcs->params.sensor.frameTimeNS = predFrameTimeNS;
 
 		// Set hblank (extra time between lines)
 		if ((status = gcs_setParameter(gcs, V4L2_CID_HBLANK, minHBlank, 0)))
@@ -499,17 +493,14 @@ void gcs_updateParameters(GCS *gcs)
 			printf("Failed to set vblank to minimum!\n");
 	}
 
-	// Digital camera gain not supported by OV9281 driver
-	//if ((status = gcs_setParameter(gcs, V4L2_CID_GAIN, gcs->cameraParams->digitalGain, 16)))
-	//	printf("Failed to set digital camera gain!\n");
-	if ((status = gcs_setParameter(gcs, V4L2_CID_ANALOGUE_GAIN, gcs->cameraParams->analogGain, 16)))
+	if ((status = gcs_setParameter(gcs, V4L2_CID_ANALOGUE_GAIN, gcs->params.sensor.analogGain, 16)))
 		printf("Failed to set analog camera gain!\n");
-	if ((status = gcs_setParameter(gcs, V4L2_CID_EXPOSURE, gcs->cameraParams->shutterSpeed, 0)))
+	if ((status = gcs_setParameter(gcs, V4L2_CID_EXPOSURE, sensor_getExposure(gcs->sensor, gcs->params, gcs->config), 0)))
 		printf("Failed to set camera exposure / shutter speed!\n");
 }
 
 /* Returns once a new camera frame is available */
-uint8_t gcs_waitForFrameBuffer(GCS *gcs, uint32_t waitUS)
+bool gcs_waitForFrameBuffer(GCS *gcs, uint32_t waitUS)
 {
 	if (gcs->frameWaiting)
 		return gcs->frameWaiting;
@@ -537,13 +528,11 @@ uint8_t gcs_waitForFrameBuffer(GCS *gcs, uint32_t waitUS)
 	return gcs->frameWaiting;
 }
 
-/* Returns whether there is a new camera frame available */
 uint8_t gcs_hasFrameBuffer(GCS *gcs)
 {
 	return gcs_waitForFrameBuffer(gcs, 0);
 }
 
-/* Returns the next camera frame. If no camera frame is available yet, blocks until there is. */
 void* gcs_requestFrameBuffer(GCS *gcs)
 {
 	if (!gcs->frameWaiting && !gcs_waitForFrameBuffer(gcs))
@@ -553,7 +542,7 @@ void* gcs_requestFrameBuffer(GCS *gcs)
 
 	if (!gcs->frameWaiting)
 		return NULL;
-	gcs->frameWaiting = 0;
+	gcs->frameWaiting = false;
 
 	struct v4l2_buffer buffer;
 	memset(&buffer, 0, sizeof buffer);
@@ -576,7 +565,6 @@ void* gcs_requestFrameBuffer(GCS *gcs)
 	return &gcs->buffers[buffer.index];
 }
 
-/* Returns the most recent camera frame. Assumes gcs_waitForFrameBuffer or gcs_hasFrameBuffer has returned true (frameWaiting is true). */
 void* gcs_requestLatestFrameBuffer(GCS *gcs, unsigned int *num)
 {
 	if (!gcs->frameWaiting && !gcs_waitForFrameBuffer(gcs))
@@ -586,7 +574,7 @@ void* gcs_requestLatestFrameBuffer(GCS *gcs, unsigned int *num)
 
 	if (!gcs->frameWaiting)
 		return NULL;
-	gcs->frameWaiting = 0;
+	gcs->frameWaiting = false;
 
 	bool waiting = true;
 	void* bufferHeader = NULL;
@@ -635,13 +623,11 @@ error_abort:
 	return NULL;
 }
 
-/* Returns the VCSM buffer data of the given framebuffer. */
 VCSM_BUFFER& gcs_getFrameBufferData(void *framebuffer)
 {
 	return ((struct GCS_FrameBuffer*)framebuffer)->vcsm;
 }
 
-/* Return requested Franme Buffer after processing is done. */
 bool gcs_returnFrameBuffer(GCS *gcs, void *bufferHeader)
 {
 	if (!bufferHeader) return true;

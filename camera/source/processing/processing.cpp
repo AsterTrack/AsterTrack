@@ -59,9 +59,11 @@ extern int numCPUCores; // info.hpp
 
 struct GCSWrapper
 {
-	GCSWrapper(GCS_CameraParams *cameraParams)
+	GCS_CameraConfig config;
+
+	GCSWrapper(const GCS_CameraParams &params)
 	{
-		gcs = gcs_create(cameraParams);
+		gcs = gcs_create(params, config);
 	}
 	~GCSWrapper()
 	{
@@ -138,7 +140,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 #ifdef RUN_CAMERA
 
 	// Create GCS (static) in RAII. Not nice, but ensures deconstruction in-order
-	GCSWrapper camera(&state.camera);
+	GCSWrapper camera(state.camera);
 	if (!camera)
 	{
 		printf("Failed to initialise camera!\n");
@@ -178,14 +180,14 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	}
 	printf("-- Camera Stream started --\n");
 
-	uint32_t srcStride = state.camera.stride;
+	uint32_t srcStride = camera.config.stride;
 #endif
 
 
 	// ---- Setup blob processing ----
 
 	// Layout QPU program instances across camera frame according to cores used
-	ProgramLayout layout = SetupProgramLayout(state.camera.width, state.camera.height, state.qpuCores.getUsed());
+	ProgramLayout layout = SetupProgramLayout(camera.config.width, camera.config.height, state.qpuCores.getUsed());
 
 	MaskingProgram masking(base, layout, state.qpuProgBin);
 	if (!masking && !state.noQPU)
@@ -233,8 +235,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		// Sensor Size, Frame Pixels Min + Max within Sensor
 		bool valid = gcs_getSensorArea(gcs, modeData[0], modeData[1], modeData[2], modeData[3], modeData[4], modeData[5]);
 		// Frame Size, Mask Pixels Min + Max within Frame
-		modeData[6] = state.camera.width;
-		modeData[7] = state.camera.height;
+		modeData[6] = camera.config.width;
+		modeData[7] = camera.config.height;
 		modeData[8] = layout.validMaskRect.min.x();
 		modeData[9] = layout.validMaskRect.min.y();
 		modeData[10] = layout.validMaskRect.max.x();
@@ -242,7 +244,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 		// Actual frame time configured, may be larger than requested
 		// Ideally this would be minimum for selected mode even beyond requested
 		// But this is enough to readjust to an integer multiple of requested
-		*(uint32_t*)(modeData+12) = state.camera.frameTimeNS;
+		*(uint32_t*)(modeData+12) = state.camera.sensor.frameTimeNS;
 		if (valid)
 			comm_send(realTimeAff, PacketHeader(PACKET_CONFIG, packet.size()), std::move(packet));
 	}
@@ -343,12 +345,12 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 	// Setup incident statistics
 	StatPacket::Incidents incidents = {};
 	// Limits achievable on Zero 1 and Zero 2 without overclocking, with some spikes
-	uint16_t awaitLimit = state.camera.frameTimeNS/1000,
+	uint16_t awaitLimit = state.camera.sensor.frameTimeNS/1000,
 		skipLimit = 30,
 		accessLimit = 10,
 		procLimit = 2500,
 		handleLimit = 50,
-		cpuwaitLimit = state.camera.frameTimeNS/1000;
+		cpuwaitLimit = state.camera.sensor.frameTimeNS/1000;
 
 	// Buffers
 	std::vector<Cluster> clusters;
@@ -386,7 +388,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 				// Update camera parameters (previously linked to gcs)
 			#ifdef RUN_CAMERA
-				gcs_updateParameters(gcs);
+				gcs_updateParameters(gcs, state.camera);
 				// TODO: Update derived defaults like frameSync.sensorLatency
 			#endif
 
@@ -415,7 +417,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 						return true;
 					}
 					long waitTimeUS = dtUS(waitStart, sclock::now());
-					long waitFrames = waitTimeUS*1000/state.camera.frameTimeNS;
+					long waitFrames = waitTimeUS*1000/state.camera.sensor.frameTimeNS;
 					if ((waitFrames >= minorWait && !sentMinorTimeout) || waitFrames >= seriousWait)
 					{ // Unsuccessfully waited a few frames (or more if just after streaming start) for next frame
 						printf("== %.2fms: QPU: Waited for %ldus / %d frames - way over expected frame interval! ==\n",
@@ -473,9 +475,9 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			}
 
 			// Ensure the frameID is correct, via external sync or estimated pacing
-			frameSync.config.synced = getFramesyncActive() && state.camera.sync;
-			frameSync.config.intervalUS = state.camera.frameTimeNS / 1000.0f;
-			frameSync.config.continuous = state.camera.sync != 1; // TODO: Explicitly configure continuous or triggered frames
+			frameSync.config.synced = getFramesyncActive() && state.camera.sensor.sync;
+			frameSync.config.intervalUS = state.camera.sensor.frameTimeNS / 1000.0f;
+			frameSync.config.continuous = state.camera.sensor.sync != 1; // TODO: Explicitly configure continuous or triggered frames
 			TimePoint_t estArrival = frameReceived;
 			uint32_t preFrameID = frameSync.frameID;
 			uint32_t newFrameID = getNextFrameID(frameReceived, frameDelayed, obsAdvance, estArrival);
@@ -550,13 +552,13 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 			{ // Verify trailing 2 lines are still 0xFF as initially set up by gcs
 				// This should never NOT be the case but verifying is cheap
-				bool diffFront = framePtrARM[state.camera.height * srcStride] != 0xFF;
-				bool diffBack = framePtrARM[(state.camera.height+2) * srcStride - 1] != 0xFF;
+				bool diffFront = framePtrARM[camera.config.height * srcStride] != 0xFF;
+				bool diffBack = framePtrARM[(camera.config.height+2) * srcStride - 1] != 0xFF;
 				if (diffFront || diffBack)
 				{
 					if (diffFront) printf("Begin of 2 trailing padded lines is not 0xFF!\n");
 					if (diffBack) printf("End of 2 trailing padded lines is not 0xFF!\n");
-					memset(framePtrARM + state.camera.height * srcStride, 0xFF, 2 * srcStride);
+					memset(framePtrARM + camera.config.height * srcStride, 0xFF, 2 * srcStride);
 				}
 			}
 
@@ -794,7 +796,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			{
 				TimePoint_t t11 = sclock::now();
 				auto visLock = state.displayVerifyMask? state.visualisation.lockWrite() : VisualisationLock{};
-				detect.manualMasking(curFrame->memory, srcStride, state.camera.width, state.camera.height,
+				detect.manualMasking(curFrame->memory, srcStride, camera.config.width, camera.config.height,
 					verifyBitmaskBuffer.data(), state.thresholds.absolute, state.thresholds.edge, visLock);
 				TimePoint_t t12 = sclock::now();
 				curFrame->time_qpu = dtUS(t11, t12);
@@ -809,7 +811,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			{
 				TimePoint_t t11 = sclock::now();
 				auto visLock = state.displayVerifyMask? state.visualisation.lockWrite() : VisualisationLock{};
-				detect.manualMasking(curFrame->memory, srcStride, state.camera.width, state.camera.height,
+				detect.manualMasking(curFrame->memory, srcStride, camera.config.width, camera.config.height,
 					verifyBitmaskBuffer.data(), state.thresholds.absolute, state.thresholds.edge, visLock);
 				TimePoint_t t12 = sclock::now();
 				curTimes.find = dtUS(t11, t12);
@@ -891,7 +893,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 
 					int blurTimeUS = 0, maximaTimeUS = 0, localMaxTimeUS = 0, maxIterTimeUS = 0, finalCheckTimeUS = 0, resegTimeUS = 0, refineTimeUS = 0;
 					std::vector<Cluster> subClusters = handleCluster(std::move(oldClusters[index]), 
-						curFrame->memory, srcStride, state.camera.width, state.camera.height,
+						curFrame->memory, srcStride, camera.config.width, camera.config.height,
 						state.blobParams, kernels,
 						blurTimeUS, maximaTimeUS, localMaxTimeUS, maxIterTimeUS, finalCheckTimeUS, resegTimeUS, refineTimeUS);
 
@@ -970,8 +972,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 			{
 				Cluster *blob = &clusters[i];
 				int base = i*STREAM_PACKET_BLOB_SIZE;
-				uint16_t blobX = (blob->centroid.x()+0.5f) * std::numeric_limits<uint16_t>::max() / state.camera.width;
-				uint16_t blobY = (blob->centroid.y()+0.5f) * std::numeric_limits<uint16_t>::max() / state.camera.height;
+				uint16_t blobX = (blob->centroid.x()+0.5f) * std::numeric_limits<uint16_t>::max() / camera.config.width;
+				uint16_t blobY = (blob->centroid.y()+0.5f) * std::numeric_limits<uint16_t>::max() / camera.config.height;
 				uint8_t blobSz = std::min<int>(blob->size * 2, std::numeric_limits<uint8_t>::max());
 				uint8_t blobVal = std::min<int>(clusters[i].value/4, std::numeric_limits<uint8_t>::max());
 				*(uint16_t*)&blobData[base+0] = blobX;
@@ -979,8 +981,8 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 				*(uint8_t*)&blobData[base+4] = blobSz;
 				*(uint8_t*)&blobData[base+5] = blobVal;
 				static_assert(STREAM_PACKET_BLOB_SIZE == 6);
-		//		int blobX = (int)((double)blob->centroid.x() * 16383 / state.camera.width);
-		//		int blobY = (int)((double)blob->centroid.y() * 16383 / state.camera.height);
+		//		int blobX = (int)((double)blob->centroid.x() * 16383 / camera.config.width);
+		//		int blobY = (int)((double)blob->centroid.y() * 16383 / camera.config.height);
 		//		int blobS = std::min((int)(blob->centroid.S * 2), 255);
 		//		uint32_t data = (blobX << 0) | (blobY << 14)
 		//				|  << 22
@@ -1011,7 +1013,7 @@ bool ProcessingStage(TrackingCameraState &state, VC_BASE &base)
 					nice(20); // Low priority
 					TimePoint_t t0 = sclock::now();
 
-					state.visualisation.visualise(curBlobs, pastBlobs, frame->memory, state.camera.width, state.camera.height, srcStride);
+					state.visualisation.visualise(curBlobs, pastBlobs, frame->memory, camera.config.width, camera.config.height, srcStride);
 					pastBlobs.swap(curBlobs);
 
 					recordIncident(incidents.vis, dtUS(t0, sclock::now()));

@@ -25,6 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "imu/imu.hpp"
 #include "tracking/virtual.hpp"
 
+#include "util/camera.hpp"
 #include "util/eigendef.hpp"
 #include "util/blocked_vector.hpp"
 
@@ -52,14 +53,14 @@ struct CameraConfig
 	std::string label;
 	int width = 1280;
 	int height = 800;
-	uint8_t sync = 2; // 0: free - 1: external trigger - 2: frame sync
-	int framerate = 144; // Only used if sync == 0
-	int exposure = 20;
+	SensorSyncMode sync = SENSOR_FRAME_SYNC;
+	int framerate = 144; // Only used if sync == SENSOR_NO_SYNC
+	int exposureUS = 200;
 	int gain = 2;
 	int filter = 0;
 	bool enableStrobe = true;
-	int strobeOffset = 0;
-	int strobeLength = 55;
+	int strobeOffsetUS = 0;
+	int strobeLengthUS = 200;
 
 	ClassificationParameters limitsWeak = { 256, false };
 

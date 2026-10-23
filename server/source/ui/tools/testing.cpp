@@ -111,7 +111,7 @@ void InterfaceState::UpdateTestingTool(InterfaceWindow &window)
 		{
 			for (auto &config : GetState().cameraConfig.configurations)
 			{
-				config.strobeLength = 255;
+				config.strobeLengthUS = 600;
 				config.enableStrobe = false;
 			}
 			StartDeviceMode(GetState());

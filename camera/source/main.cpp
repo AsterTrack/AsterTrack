@@ -524,7 +524,7 @@ bool prepareImageStreamingPacket(const FrameBuffer &frame, ImageStreamState stre
 	// Extract image data that we want (and subsample if necessary)
 	int encX, encY, encStride;
 	Bounds2<int> encBounds;
-	uint8_t* encData = sampleImageBounds(frame.memory, state.camera.width, state.camera.height, frame.stride,
+	uint8_t* encData = sampleImageBounds(frame.memory, state.camera.sensor.width, state.camera.sensor.height, frame.stride,
 		stream.bounds, stream.subsampling, encX, encY, encStride, encBounds);
 	if (!encData)
 	{

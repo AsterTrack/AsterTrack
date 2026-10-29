@@ -1085,6 +1085,25 @@ bool mcu_get_status()
 		receiveUS = (rxLen*9 + 2)*1000/400 + 10;
 	TimePoint_t estSendTime = receiveTime - std::chrono::microseconds(receiveUS);
 
+	// Check for all 0xFF packets, happens sometimes when MCU misbehaves
+	int firstValid = -1;
+	for (int i = 0; i < 4; i++)
+	{
+		if (packet[i] == 0xFF) continue;
+		firstValid = i;
+		break;
+	}
+	if (firstValid == -1)
+	{
+		printf("All bytes of MCU status packet are set, MCU may be in invalid state!\n");
+		return false;
+	}
+	else if (firstValid >= 4)
+	{
+		printf("First %d bytes of MCU status packet are set, MCU may be in invalid state!\n", firstValid);
+		return false;
+	}
+
 	memcpy(mcu_embedded_state, packet, EMBEDDED_STATE_SIZE);
 	if (isEmbeddedStateUpdated(packet))
 	{ // Set updated flag to ensure server is updated

@@ -32,9 +32,10 @@ union HardwareSerial
 	enum class Class : uint8_t
     {
 		Controller,
+		SyncInput,
 		SyncBeacon,
 		Camera,
-		Tracker,
+		Max = 15
     };
 
     enum class Type : uint8_t
@@ -43,28 +44,34 @@ union HardwareSerial
 		ThirdParty,	// manufacturer signifies company sign
 		DIY_Reg_1,	// manufacturer signifies registered seller ID
 		DIY_Free_1,	// manufacturer signifies DIY sign (free-for-all)
+		Max = 15
     };
 
 	struct Camera
 	{
 		enum class Interface : uint8_t
 		{
-			RS422_WIFI_NRF24 = 0x1
+			RS422_WIFI				= 0x1,
+			RS422_WIFI_NRF24		= 0x2,
+			Max						= 0xF
 		};
 		enum class Sensor : uint8_t
 		{
-			OV9281 = 0x1
+			OV9281					= 0x1,
+			Max						= 0xF
 		};
 		enum class Lens : uint8_t
 		{
-			HSW_9D4024 = 0x1
+			HSW_9D4024				= 0x1,
+			Max						= 0xF
 		};
 		enum class Filter : uint8_t
 		{ // For simplicity, a specific number implies pass-filter
-			Filter_None = 0x1,
-			Filter_IRCut = 0x2,
-			Filter_850nm = 0x3,
-			Switched_850nm_IRCut = 0x4
+			Filter_None				= 0x1,
+			Filter_IRCut			= 0x2,
+			Filter_850nm			= 0x3,
+			Switched_850nm_IRCut	= 0x4,
+			Max						= 0xF
 		};
 	};
 
@@ -72,8 +79,9 @@ union HardwareSerial
 	{
 		enum class Interface : uint8_t
 		{
-			USB2HS_RS422,
-			USB2HS_RS422_NRF24
+			USB2HS_RS422			= 0x1,
+			USB2HS_RS422_NRF24		= 0x2,
+			Max						= 0xF
 		};
 	};
 
@@ -89,7 +97,7 @@ union HardwareSerial
 		uint8_t product;			// Different product versions / major iterations
 		uint8_t revision;			// Revision of a specific product, may include fixes or minor feature additions, but not change the product itself
 		union
-		{ // Mainly for configurations external to the PCB itself
+		{ // Mainly for (initial) configurations external to the PCB itself
 			uint16_t config;
 			struct
 			{
@@ -109,15 +117,15 @@ union HardwareSerial
 		// Production:
 		uint8_t batch; 				// Different Batches of product (per production facility)
 		uint8_t run;				// Different shifts/people, different batch of components, etc. - basically increase whenever a major factor changes
-		uint32_t ID;				// Unique within run, centrally allocated, to make it harder to fake serial numbers
+		uint32_t ID;				// Unique within run, random and centrally allocated
 	};
 };
 
 enum CameraSBCHardware : uint16_t
 {
-	SBC_HW_NO_MCU = 1 << 0,
-	SBC_HW_NO_SENSOR = 1 << 1,
-	SBC_HW_UNRELIABLE_WIRED = 1 << 2,
+	SBC_HW_NO_MCU				= 1 << 0,
+	SBC_HW_NO_SENSOR			= 1 << 1,
+	SBC_HW_UNRELIABLE_WIRED		= 1 << 2,
 };
 
 struct CameraStoredInfo

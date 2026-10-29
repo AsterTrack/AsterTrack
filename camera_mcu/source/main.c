@@ -853,15 +853,16 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		if (!correctChecksum) // Already gated wrong checksum, but make sure
 			return uartd_ignore;
 		uint8_t request = receive.packetBuffer[0];
-		uint32_t *otpStart = (uint32_t*)(receive.packetBuffer+4);
-		uint16_t errorCode;
+		uint32_t *otpData = (uint32_t*)(receive.packetBuffer+4);
+		uint16_t otpLength = receive.packetSize-4;
+		uint16_t errorCode = 0;
 
 		if (request == 1)
-			errorCode = otp_program_main(otpStart, receive.packetSize-4);
+			errorCode = otp_program_main(otpData, otpLength);
 		else if (request == 2)
-			errorCode = otp_set_subparts(otpStart, receive.packetSize-4);
+			errorCode = otp_set_subparts(otpData, otpLength);
 		else if (request == 3)
-			errorCode = otp_append_hw_string(otpStart, receive.packetSize-4);
+			errorCode = otp_append_hw_string(otpData, otpLength);
 		else
 		 	return uartd_ignore;
 

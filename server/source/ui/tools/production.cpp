@@ -29,6 +29,9 @@ const uint8_t OTP_Version = 1; // Sync with OTP_Version_Latest, as well as below
 const uint8_t OTP_MaxSubpartBlocks = 8;
 const auto OTP_MaxHwDescBlocks = [](int OTP_Version){ return OTP_Version == 1? 100 : 0; };
 
+// MCU packet receive limit is 256, account for UART_PACKET_OVERHEAD_SEND with extra buffer
+const int OTP_MaxHwStringPartSize = 200;
+
 static void ShowHardwareSerial(HardwareSerial hwSerial);
 static void EditHardwareSerial(HardwareSerial &hwSerial);
 static int EditHardwareDescriptor(std::string &hwDesc);
@@ -54,6 +57,7 @@ static bool ProgramInitialMainOTP(TrackingCameraState &camera, HardwareSerial hw
 
 static bool ProgramSetHWSubparts(TrackingCameraState &camera, const std::vector<uint64_t> &hwSubparts)
 {
+	if (hwSubparts.empty()) return true;
 	std::vector<uint8_t> request(4 + hwSubparts.size()*sizeof(uint32_t));
 	request[0] = 2; // Program subparts into OTP
 	uint32_t *otpPtr = (uint32_t*)&request[4];
@@ -63,10 +67,22 @@ static bool ProgramSetHWSubparts(TrackingCameraState &camera, const std::vector<
 
 static bool ProgramAppendHWString(TrackingCameraState &camera, const std::string &hwDescriptor)
 {
+	if (hwDescriptor.empty()) return true;
+	if (hwDescriptor.size() > OTP_MaxHwStringPartSize) return false;
 	std::vector<uint8_t> request(4 + hwDescriptor.size());
 	request[0] = 3; // Program hw string into OTP
 	memcpy(request.data()+4, hwDescriptor.data(), hwDescriptor.size());
 	return camera.sendPacket(PACKET_WRITE_MCU_INFO, request.data(), request.size());
+}
+
+static void RefetchCameraInfo(TrackingCameraState &camera)
+{
+	camera.storage.receivedInfo = camera.storage.receivedMCUInfo = false;
+	camera.storage.lastFetchTime = sclock::now(); // Reset timer for automatic update
+	if (!camera.hasComms())
+	{ // Have to directly request from camera MCU
+		CameraRequestMCUInfo(camera);
+	}
 }
 
 void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
@@ -127,7 +143,7 @@ void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
 		},
 	};
 	static std::vector<uint64_t> hwSubparts;
-	static std::string hwDescriptor = "AsterTrack Camera V1.1";
+	static std::string hwDescriptor = "AsterTrack Camera Rev 1.2";
 
 	if (ImGui::CollapsingHeader("Initial OTP Config"))
 	{
@@ -173,8 +189,7 @@ void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
 		else
 			ImGui::Text("OTP of selected camera is not yet initialised!");
 
-		ImGui::BeginDisabled(!canModCamera);
-		// Allow writing even if already initialised for MCU testing FW using Flash instead of OTP
+		ImGui::BeginDisabled(!canModCamera || otpInitialised);
 		if (ImGui::Button("Permanently Initialise OTP", SizeWidthFull()))
 		{
 			if (!ProgramInitialMainOTP(*selCamera, hwSerial))
@@ -183,8 +198,7 @@ void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
 				SignalErrorToUser("Failed to send message to program subparts to OTP!");
 			else if (!ProgramAppendHWString(*selCamera, hwDescriptor))
 				SignalErrorToUser("Failed to send message to program hardware descriptor!");
-			selCamera->storage.receivedInfo = selCamera->storage.receivedMCUInfo = false;
-			CameraRequestMCUInfo(*selCamera);
+			RefetchCameraInfo(*selCamera);
 		}
 		ImGui::EndDisabled();
 	}
@@ -203,8 +217,7 @@ void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
 		{
 			if (!ProgramSetHWSubparts(*selCamera, appendHWSubparts))
 				SignalErrorToUser("Failed to send message to set additional hardware subparts!");
-			selCamera->storage.receivedInfo = selCamera->storage.receivedMCUInfo = false;
-			CameraRequestMCUInfo(*selCamera);
+			RefetchCameraInfo(*selCamera);
 		}
 		ImGui::EndDisabled();
 	}
@@ -239,8 +252,7 @@ void InterfaceState::UpdateProductionTool(InterfaceWindow &window)
 		{
 			if (!ProgramAppendHWString(*selCamera, appendHWDescriptor))
 				SignalErrorToUser("Failed to send message to append to hardware descriptor!");
-			selCamera->storage.receivedInfo = selCamera->storage.receivedMCUInfo = false;
-			CameraRequestMCUInfo(*selCamera);
+			RefetchCameraInfo(*selCamera);
 		}
 		ImGui::EndDisabled();
 	}
@@ -287,7 +299,7 @@ static void EditHardwareSerial(HardwareSerial &hwSerial)
 {
 	int header = (int)hwSerial.header;
 	BeginLabelledGroup("Class");
-	if (ImGui::Combo("##Class", &header, "Controller\0Sync Beacon\0Camera\0Tracker\0\0"))
+	if (ImGui::Combo("##Class", &header, "Controller\0Sync Input\0Sync Beacon\0Camera\0\0"))
 		hwSerial.header = (HardwareSerial::Class)header;
 	ImGui::EndGroup();
 
@@ -313,7 +325,7 @@ static void EditHardwareSerial(HardwareSerial &hwSerial)
 	{
 		int interface = (int)hwSerial.camera.interface;
 		BeginLabelledGroup("Interface");
-		if (ImGui::Combo("##Interface", &interface, "Unknown\0RS422/Wifi/nRF24\0\0"))
+		if (ImGui::Combo("##Interface", &interface, "Unknown\0RS422/Wifi\0RS422/Wifi/nRF24\0\0"))
 			hwSerial.camera.interface = (HardwareSerial::Camera::Interface)interface;
 		ImGui::EndGroup();
 
@@ -367,7 +379,9 @@ static int EditHardwareDescriptor(std::string &hwDesc)
 	std::size_t nulPos = hwDesc.find('\0');
 	if (nulPos != std::string::npos) // Disallow
 		hwDesc.resize(nulPos);
-	return ((hwDesc.size()+1) + 7) / 8; // Add space for trailing \0, then round up
+	if (hwDesc.size() > OTP_MaxHwStringPartSize)
+		hwDesc.resize(OTP_MaxHwStringPartSize);
+	return hwDesc.empty()? 0 : ((hwDesc.size()+1) + 7) / 8; // Add space for trailing \0, then round up
 }
 
 static int EditHardwareSubparts(std::vector<uint64_t> &hwSubparts, const std::vector<uint64_t> *exSubparts)

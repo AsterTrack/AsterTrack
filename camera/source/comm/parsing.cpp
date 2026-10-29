@@ -176,6 +176,7 @@ bool ReceivePacketData(TrackingCameraState &state, CommState &comm, const Packet
 		}
 		case PACKET_CAMERA_INFO:
 		{ // Request for camera info, but will send other state along as well
+			mcu_sync_info();
 			sendInitialState(state, comm.medium);
 			return true;
 		}

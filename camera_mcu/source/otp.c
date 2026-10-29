@@ -133,25 +133,23 @@ void otp_get_subparts(uint32_t *target)
 
 uint16_t otp_program_main(uint32_t *mainData, uint16_t length)
 {
-	if (length & 0x7)
-		return 1;
-	uint64_t OTP_HEADER = ((uint64_t)mainData[0] << 32) | mainData[1];
+	// Check existing OTP
+	uint64_t OTP_HEADER = ((uint64_t)OTP[0] << 32) | OTP[1];
+	if (otp_parse_header(OTP_HEADER) || OTP_Version != OTP_Version_NotWritten)
+		return 1; // Can't overwrite existing header
+	// Check provided data
+	OTP_HEADER = ((uint64_t)mainData[0] << 32) | mainData[1];
 	if (!otp_parse_header(OTP_HEADER))
-		return 5; // Did not receive a valid header
+		return 2; // Did not receive a valid header
+	if (length & 0x7)
+		return 3;
 	uint16_t length64 = length / sizeof(uint64_t);
 	if (length64 > OTP_LenMainData)
-		return 2; // Only allow main data to be written
-	// TODO: Remove FakeOTP
-	//if (OTP_Version != OTP_Version_NotWritten)
-	//	return 3; // Can't overwrite existing header
+		return 4; // Only allow main data to be written
 	if (OTP_Version != OTP_Version_Latest)
-		return 4; // Don't allow older versions
+		return 5; // Don't allow older versions
 
 	uint16_t error;
-
-	// TODO: Remove FakeOTP
-	error = EraseFlashPage(FAKE_OTP_PAGE);
-	if (error) return error + 10;
 
 	error = ProgramFlash(OTP, mainData, length64);
 	if (error) return error + 10;

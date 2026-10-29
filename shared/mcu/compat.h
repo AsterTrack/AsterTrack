@@ -258,7 +258,7 @@ static inline void StopTimer(TIM_TypeDef *TIM)
 #define OTP_BASE			0x1FFF7000
 #define FAKE_OTP_PAGE		30
 #define FAKE_OTP_BASE		(FLASH_BASE + FLASH_PAGE_SIZE * FAKE_OTP_PAGE)
-#define OTP ((volatile uint32_t*)FAKE_OTP_BASE)
+#define OTP ((volatile uint32_t*)OTP_BASE)
 #endif
 
 

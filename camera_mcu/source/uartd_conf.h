@@ -35,7 +35,7 @@ extern "C"
 #define UART_HEADROOM			0
 
 // Size temporary buffer for receiving packets addressed at the MCU, not the Host
-#define UART_TEMP_PACKET_BUF	256
+#define UART_TEMP_PACKET_BUF	256     // TODO: Increase for programming OTP?
 
 // UART Timing
 #define UART_COMM_TIMEOUT_MS		250		// Controller sends a ping every 100ms when not already streaming

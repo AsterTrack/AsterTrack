@@ -23,6 +23,8 @@ extern "C"
 {
 #endif
 
+#include "compat.h"
+
 #include <stdbool.h>
 
 
@@ -30,6 +32,9 @@ extern "C"
 
 #define WWDG_TIMEOUT			0x5F
 
+__attribute__((used)) static uint32_t GPIOD_SYNC_PIN[CAM_PORT_COUNT] = {
+	GPIO_PIN_8, GPIO_PIN_9, GPIO_PIN_10, GPIO_PIN_11, GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_13, GPIO_PIN_12
+};
 
 // Functions
 

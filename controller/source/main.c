@@ -98,6 +98,7 @@ static volatile bool commChannelsOpen; // Stage 1
 static volatile bool enforceTimeSync; // Stage 2
 //	bool PortState::cameraEnabled; // Stage 4
 //	bool PortState::frameSyncEnabled; // Stage 5
+static volatile uint32_t enabledSyncPinsGPIOD; // Stage 5
 
 // Camera state
 typedef struct
@@ -324,6 +325,7 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 		if (syncPulseHigh && (GetTimePoint() - cachedSOF) > SYNC_MIN_PULSE_WIDTH_US * TICKS_PER_US)
 		{ // Set camera & output sync pulse low
 			syncPulseHigh = false;
+			GPIO_RESET(GPIOD, enabledSyncPinsGPIOD);
 			if (syncSource == SYNC_CFG_GEN_RATE || syncSource == SYNC_CFG_GEN_TRIG)
 			{
 				GPIO_RESET(GPIOE, GPIO_PIN_3);
@@ -620,6 +622,8 @@ int main()//(uint16_t after, uint16_t before, uint16_t start)
 				if (camStates[i].comm == COMM_SBC_READY && (camStates[i].status & PORT_CAM_STREAMING))
 					uartd_send(i, packet, UART_PACKET_OVERHEAD_SEND+1, false);
 			}
+			// Stage 3: Disable frame sync
+			enabledSyncPinsGPIOD = 0;
 
 			// Forcefully reset USB interface, which will clean streaming state via usbd_close_interface
 			//class_impl_setconf(&hUSB, 0);
@@ -980,6 +984,7 @@ void usbd_close_interface()
 	CMDD_STR("+CloseInterface");
 
 	// Reset streaming state
+	enabledSyncPinsGPIOD = 0;
 	curFrameID = 0;
 	cachedFrameID = 0;
 
@@ -1222,7 +1227,10 @@ usbd_respond usbd_control_receive(usbd_device *usbd, usbd_ctlreq *req)
 		for (int i = 0; i < UART_PORT_COUNT; i++)
 		{
 			if ((req->wIndex >> i) & 1)
+			{
 				camStates[i].status |= PORT_SYNC_ENABLED;
+				enabledSyncPinsGPIOD |= GPIOD_SYNC_PIN[i];
+			}
 			else
 				camStates[i].status &= ~PORT_SYNC_ENABLED;
 		}
@@ -1458,6 +1466,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 		{ // Snoop in, and stop streaming already
 			// If the error is serious, camera software will send a NAK and restart anyways, in which case this is not necessary
 			cam->status &= ~(PORT_CAM_STREAMING | PORT_SYNC_ENABLED);
+			enabledSyncPinsGPIOD &= ~(GPIOD_SYNC_PIN[port]);
 		}
 
 		// Set flag on next block header that a new packet starts
@@ -1697,6 +1706,7 @@ void TIM3_IRQHandler()
 
 	// Generate External Trigger Signal on output and camera pins
 	GPIO_SET(GPIOE, GPIO_PIN_3);
+	GPIO_SET(GPIOD, enabledSyncPinsGPIOD);
 
 	// Update Sync SOF
 	curSOF = GetTimePoint();
@@ -1717,6 +1727,7 @@ void EXTI3_IRQHandler()
 	LOG_EVT_INT(CONTROLLER_INTERRUPT_SYNC_INPUT, true);
 	if (EXTI->INTFR & EXTI_LINE_3)
 	{ // Interrupt pending
+		GPIO_SET(GPIOD, enabledSyncPinsGPIOD);
 
 		// Update Sync SOF
 		curSOF = GetTimePoint();

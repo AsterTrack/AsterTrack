@@ -63,9 +63,9 @@
 		{
 			"id": "boardRev",
 			"description": "Board Revision:",
-			"default": "V1.2",
+			"default": "REV_1.2",
 			"type": "pickString",
-			"options": [ "V0.3", "V0.4", "V1.0", "V1.1", "V1.2" ]
+			"options": [ "REV_0.3", "REV_0.4", "REV_1.0", "REV_1.1", "REV_1.2" ]
 		},
 	]
 }

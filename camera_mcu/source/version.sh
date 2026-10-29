@@ -11,7 +11,7 @@ if [[ -f "build/rev" ]]; then
 	fi
 elif [[ -z $rev ]]; then
 	echo "No default board!"
-	rev="V1.2"
+	rev="REV_1.2"
 	echo "Selecting default board as $rev"
 fi
 # Update with current version

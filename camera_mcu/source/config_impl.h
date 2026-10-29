@@ -28,11 +28,11 @@ extern "C"
 #endif
 #include "compat.h"
 
-#define V0_3 1
-#define V0_4 2
-#define V1_0 2
-#define V1_1 3
-#define V1_2 4
+#define REV_0_3 1
+#define REV_0_4 2
+#define REV_1_0 2
+#define REV_1_1 3
+#define REV_1_2 4
 // These names are to describe firmware compatibility
 // Add custom hardware revisions with NAME_VX_X if they are not exactly Firmware-Compatible with an existing version
 // Then Makefile can be called with make BOARD_REV='NAME_VX.X'
@@ -42,11 +42,11 @@ extern "C"
 
 #define USE_UART 1
 #define USE_I2C 1
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 #define USE_SPI_NRF_SYNC 1
 #endif
 
-#if BOARD_REV == V0_3 // using hardware sync line over Cat5e
+#if BOARD_REV == REV_0_3 // using hardware sync line over Cat5e
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOA
@@ -101,8 +101,8 @@ extern "C"
 #define I2C_INT_PIN GPIO_PIN_8
 
 #else
-// BOARD_REV == V1_0 (also V0.4.x) using UART sync
-// BOARD_REV >= V1_1 using UART or nRF sync
+// BOARD_REV == REV_1_0 (also REV_0.4.x) using UART sync
+// BOARD_REV >= REV_1_1 using UART or nRF sync
 
 // RJ45 LED pins
 #define RJLED_GPIO_X GPIOB
@@ -115,10 +115,10 @@ extern "C"
 
 // UART Select Pins
 #define UARTSEL_GPIO_X GPIOA
-#if BOARD_REV == V1_0
+#if BOARD_REV == REV_1_0
 #define UARTSEL_TX_PIN GPIO_PIN_3
 #define UARTSEL_RX_PIN GPIO_PIN_3
-#elif BOARD_REV >= V1_1
+#elif BOARD_REV >= REV_1_1
 #define UARTSEL_TX_PIN GPIO_PIN_11
 #define UARTSEL_RX_PIN GPIO_PIN_12
 #endif
@@ -142,9 +142,9 @@ extern "C"
 
 // Camera STROBE pin
 #define STROBE_GPIO_X GPIOB
-#if BOARD_REV == V1_0
+#if BOARD_REV == REV_1_0
 #define STROBE_PIN GPIO_PIN_9
-#elif BOARD_REV >= V1_1
+#elif BOARD_REV >= REV_1_1
 #define STROBE_PIN 0 // N/A
 #endif
 
@@ -152,7 +152,7 @@ extern "C"
 #define BUTTONS_GPIO_X GPIOA
 #define BUTTON_BOTTOM_PIN GPIO_PIN_0
 #define BUTTON_TOP_PIN GPIO_PIN_1
-#if BOARD_REV == V1_1
+#if BOARD_REV == REV_1_1
 #define BUTTON_READ(GPIOX, PIN) GPIO_READ(GPIOX, PIN)
 #else
 #define BUTTON_READ(GPIOX, PIN) (!GPIO_READ(GPIOX, PIN))
@@ -160,10 +160,10 @@ extern "C"
 
 // VSense ADC pins
 #define VSENSE_GPIO_X GPIOA
-#if BOARD_REV == V1_0
+#if BOARD_REV == REV_1_0
 #define VSENSE_USB_PIN 0 // N/A
 #define VSENSE_VCC_PIN GPIO_PIN_2
-#elif BOARD_REV >= V1_1
+#elif BOARD_REV >= REV_1_1
 #define VSENSE_USB_PIN GPIO_PIN_2
 #define VSENSE_VCC_PIN GPIO_PIN_3
 #endif
@@ -177,7 +177,7 @@ extern "C"
 
 #endif
 
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 
 // Voltage Source Control pins
 #define VSOURCE_DISABLE_5V_GPIO_X GPIOA

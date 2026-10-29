@@ -626,7 +626,7 @@ uartd_respond uartd_handle_header(uint_fast8_t port)
 	{ // Received packet indicating an immediate Start of Frame
 		lastMarker = GetTimePoint();
 
-#if BOARD_REV != V0_3
+#if BOARD_REV != REV_0_3
 		GPIO_SET(FSIN_GPIO_X, FSIN_PIN);
 		lastFrameSync = GetTimePoint();
 #endif
@@ -794,7 +794,7 @@ uartd_respond uartd_handle_packet(uint_fast8_t port)
 		// Tell SBC to fetch status packet with new frame ID
 		GPIO_RESET(I2C_INT_GPIO_X, I2C_INT_PIN);
 		// Reset FSIN after desired pulse width
-#if BOARD_REV != V0_3
+#if BOARD_REV != REV_0_3
 		TimePoint frameSyncEnd = lastFrameSync + FSIN_PULSE_WIDTH_US * TICKS_PER_US;
 		while (GetTimePoint() < frameSyncEnd);
 		GPIO_RESET(FSIN_GPIO_X, FSIN_PIN);

@@ -212,7 +212,7 @@ int Setup_Peripherals()
 	LL_GPIO_SetPinSpeed(I2C_INT_GPIO_X, I2C_INT_PIN, LL_GPIO_SPEED_FREQ_LOW);
 
 	// Button Inputs
-	// NOTE: Buttons have pullups on BOARD_REV <= V1_, pulldowns on BOARD_REV >= V1_1
+	// NOTE: Buttons have pullups on BOARD_REV <= V1_, pulldowns on BOARD_REV >= REV_1_1
 	LL_GPIO_SetPinMode(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_MODE_INPUT);
 	LL_GPIO_SetPinPull(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_PULL_NO);
 	LL_GPIO_SetPinSpeed(BUTTONS_GPIO_X, BUTTON_BOTTOM_PIN, LL_GPIO_SPEED_FREQ_LOW);
@@ -224,7 +224,7 @@ int Setup_Peripherals()
 	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_VCC_PIN, LL_GPIO_MODE_ANALOG);
 	LL_GPIO_SetPinMode(VSENSE_GPIO_X, VSENSE_USB_PIN, LL_GPIO_MODE_ANALOG);
 
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 
 	// Camera VSource Selected input
 	LL_GPIO_SetPinMode(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN, LL_GPIO_MODE_INPUT);
@@ -285,7 +285,7 @@ int Setup_Peripherals()
 
 	// -- EXTI --
 
-#if BOARD_REV == V0_3
+#if BOARD_REV == REV_0_3
 
 	// Setup NVIC interrupt handler for EXTI lines 4-15
 	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
@@ -298,7 +298,7 @@ int Setup_Peripherals()
 	EXTI->IMR1 |= LL_EXTI_LINE_9; // Enable interrupt generation
 #endif
 
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 
 	// Setup NVIC interrupt handler for EXTI lines 4-15
 	NVIC_SetPriority(EXTI4_15_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(), 1, 0));
@@ -439,7 +439,7 @@ void nrf_handle_interrupt();
 void EXTI4_15_IRQHandler(void) __IRQ;
 void EXTI4_15_IRQHandler()
 {
-#if BOARD_REV == V0_3
+#if BOARD_REV == REV_0_3
 	if (EXTI->RPR1 & LL_EXTI_LINE_9)
 	{ // Interrupt pending
 
@@ -452,7 +452,7 @@ void EXTI4_15_IRQHandler()
 		EXTI->RPR1 = LL_EXTI_LINE_9;
 	}
 #endif
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 	if (EXTI->RPR1 & LL_EXTI_LINE_6)
 	{ // Selected Voltage Source changed to USB
 		StartADCMonitor(true);
@@ -475,7 +475,7 @@ void EXTI4_15_IRQHandler()
 
 bool IsUsingUSBPower()
 {
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 	return GPIO_READ(VSOURCE_SELECTED_GPIO_X, VSOURCE_SELECTED_PIN);
 #else
 	return false;
@@ -484,7 +484,7 @@ bool IsUsingUSBPower()
 
 void SetUSBPowerEnabled(bool enable)
 {
-#if BOARD_REV >= V1_1
+#if BOARD_REV >= REV_1_1
 	if (enable)
 		GPIO_RESET(VSOURCE_DISABLE_5V_GPIO_X, VSOURCE_DISABLE_5V_PIN);
 	else
